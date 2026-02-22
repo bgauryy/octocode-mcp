@@ -52,7 +52,7 @@ export function transformFileContentResult(
     path: data.path || query.path,
     content: data.content || '',
     encoding: 'utf-8',
-    size: data.contentLength || 0,
+    size: data.content?.length || 0,
     ref: data.branch || query.ref || '',
     lastModified: data.lastModified,
     lastModifiedBy: data.lastModifiedBy,

@@ -29,6 +29,7 @@ export const ToolMetadataSchema = z.object({
   name: z.string(),
   description: z.string(),
   schema: z.record(z.string()),
+  outputSchema: z.record(z.unknown()).optional(),
   hints: z.object({
     hasResults: z.array(z.string()),
     empty: z.array(z.string()),

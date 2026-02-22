@@ -69,7 +69,7 @@ import {
   resetSessionManager,
 } from '../src/session.js';
 import { initialize, cleanup } from '../src/serverConfig.js';
-import { TOOL_NAMES } from '../src/tools/toolMetadata.js';
+import { TOOL_NAMES } from '../src/tools/toolMetadata/index.js';
 
 // Set LOG environment variable to enable logging
 process.env.LOG = 'true';

@@ -152,7 +152,7 @@ export interface CallHierarchyItem {
   /** Range of the function definition */
   range: LSPRange;
   /** Selection range (usually the function name) */
-  selectionRange: LSPRange;
+  selectionRange?: LSPRange;
   /** Code content around the call site */
   content?: string;
   /** 1-indexed line numbers for display */
@@ -252,8 +252,7 @@ export interface FindReferencesResult extends LSPToolResultBase {
   locations?: ReferenceLocation[];
   /** Pagination info */
   pagination?: LSPPaginationInfo;
-  /** Total reference count (before pagination) */
-  totalReferences?: number;
+
   /** Whether references span multiple files */
   hasMultipleFiles?: boolean;
 }

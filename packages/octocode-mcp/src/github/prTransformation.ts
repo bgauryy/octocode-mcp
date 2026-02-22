@@ -83,6 +83,38 @@ export function createBasePRTransformation(item: RawPRData): {
 }
 
 /**
+ * Compute the body character limit based on the batch size (query `limit`).
+ *
+ * | Condition   | Body limit     | Rationale           |
+ * |-------------|---------------|---------------------|
+ * | limit = 1   | No truncation | Deep-dive intent    |
+ * | limit = 2-3 | 2000 chars    | Moderate exploration|
+ * | limit = 4+  | 800 chars     | Batch scan          |
+ */
+export function getBodyLimitForBatchSize(
+  limit: number | undefined
+): number | undefined {
+  const effectiveLimit = limit ?? 5; // default limit from schema is 5
+  if (effectiveLimit <= 1) return undefined; // no truncation
+  if (effectiveLimit <= 3) return 2000;
+  return 800;
+}
+
+/**
+ * Truncate a PR body string to the given character limit.
+ * When truncated, appends a hint with the PR number so the LLM can request the full body.
+ */
+export function truncatePRBody(
+  body: string | null | undefined,
+  prNumber: number,
+  bodyLimit: number | undefined
+): string | null | undefined {
+  if (!body || bodyLimit === undefined || body.length <= bodyLimit) return body;
+  const truncatedChars = body.length - bodyLimit;
+  return `${body.slice(0, bodyLimit)}... [truncated ${truncatedChars} chars, use type='fullContent' or prNumber=${prNumber} for complete body]`;
+}
+
+/**
  * Format a transformed PR item for API response output.
  * Standardizes the output format across all PR search/fetch methods.
  */
@@ -100,9 +132,9 @@ export function formatPRForResponse(pr: GitHubPullRequestItem) {
     merged_at: pr.merged_at,
     author: pr.author,
     head_ref: pr.head || '',
-    head_sha: pr.head_sha || '',
+    ...(pr.head_sha ? { head_sha: pr.head_sha } : {}),
     base_ref: pr.base || '',
-    base_sha: pr.base_sha || '',
+    ...(pr.base_sha ? { base_sha: pr.base_sha } : {}),
     body: pr.body,
     comments: pr.comments?.length || 0,
     commits: pr.commits?.length || 0,

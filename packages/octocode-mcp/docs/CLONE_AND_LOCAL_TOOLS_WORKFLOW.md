@@ -80,9 +80,10 @@ githubCloneRepo:
 
 **Result:**
 ```yaml
+owner: vercel
+repo: next.js
+branch: main
 localPath: ~/.octocode/repos/vercel/next.js/main
-cached: false
-expiresAt: "2026-02-13T12:00:00.000Z"
 ```
 
 ### Mode 2: Sparse (Folder) Fetch
@@ -98,9 +99,10 @@ githubCloneRepo:
 
 **Result:**
 ```yaml
+owner: microsoft
+repo: TypeScript
+branch: main
 localPath: ~/.octocode/repos/microsoft/TypeScript/main__sp_a3f8c1
-cached: false
-expiresAt: "2026-02-13T12:00:00.000Z"
 sparse_path: "src/compiler"
 ```
 
@@ -205,7 +207,8 @@ Step 4: Find files by metadata
 | **Branch** | Auto-detected via GitHub API when omitted; resolved branch always included in path and result |
 | **Sparse clones** | Separate cache: `{branch}__sp_{hash}/` |
 | **Coexistence** | Full clone and sparse clones of the same repo can coexist |
-| **Cache hit** | Returns instantly (no network call), includes `cached: true` |
+| **Cache hit** | Returns instantly (no network call) |
+| **Clone vs directory** | Clone-cache is never overwritten by directory fetch — if a git clone exists, directory fetch reuses it as-is |
 | **Expired** | Automatically evicted by periodic GC (every 10 min) and on next request |
 | **Force refresh** | Set `forceRefresh: true` in the query to bypass cache and re-clone/re-fetch |
 | **Periodic GC** | Expired clones are cleaned up every 10 minutes (runs on server startup and periodically) |
@@ -217,9 +220,10 @@ Step 4: Find files by metadata
 
 Local tools validate all paths against allowed roots. Cloned repos are accessible because:
 
-1. **Clone destination**: `~/.octocode/repos/...` is under the home directory (`$HOME`)
-2. **PathValidator**: Includes `$HOME` as an allowed root by default
-3. **Result**: Any `localPath` returned by `githubCloneRepo` is automatically valid for all local + LSP tools
+1. **Clone destination**: `~/.octocode/repos/...` is under the octocode home directory
+2. **PathValidator & ExecutionContextValidator**: Both automatically add `~/.octocode/` as an allowed root alongside the workspace directory
+3. **Workspace root resolution**: All tools use a unified `resolveWorkspaceRoot()` function (explicit parameter → `WORKSPACE_ROOT` env → config → `process.cwd()`)
+4. **Result**: Any `localPath` returned by `githubCloneRepo` or `githubGetFileContent` (directory mode) is automatically valid for all local + LSP tools
 
 No extra configuration is needed beyond enabling both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
 

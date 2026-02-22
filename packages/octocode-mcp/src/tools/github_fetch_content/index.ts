@@ -5,7 +5,6 @@ export { fetchMultipleGitHubFileContents } from './execution.js';
 export type {
   FileContentQuery,
   ContentFetchType,
-  SamplingInfo,
   ContentResultData,
   ContentResult,
   DirectoryFileEntry,

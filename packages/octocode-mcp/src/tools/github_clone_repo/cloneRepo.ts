@@ -97,7 +97,6 @@ export async function cloneRepo(
     return {
       localPath: cloneDir,
       cached: true,
-      expiresAt: cacheResult.meta.expiresAt,
       owner,
       repo,
       branch,
@@ -133,7 +132,6 @@ export async function cloneRepo(
   return {
     localPath: cloneDir,
     cached: false,
-    expiresAt: newMeta.expiresAt,
     owner,
     repo,
     branch,

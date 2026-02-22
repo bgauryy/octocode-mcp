@@ -382,7 +382,6 @@ describe('LSP Find References - Filtering and Lazy Enhancement', () => {
 
     expect(result).not.toBeNull();
     expect(result!.status).toBe('hasResults');
-    expect(result!.totalReferences).toBe(1);
     expect(result!.locations).toHaveLength(1);
     expect(result!.locations![0]!.uri).toContain('helper.test.ts');
   });
@@ -421,7 +420,7 @@ describe('LSP Find References - Filtering and Lazy Enhancement', () => {
 
     expect(result).not.toBeNull();
     expect(result!.status).toBe('hasResults');
-    expect(result!.totalReferences).toBe(1);
+    expect(result!.locations).toHaveLength(1);
     expect(result!.locations![0]!.uri).not.toContain('node_modules');
   });
 
@@ -496,7 +495,7 @@ describe('LSP Find References - Filtering and Lazy Enhancement', () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result!.totalReferences).toBe(2);
+    expect(result!.locations).toHaveLength(2);
     expect(result!.hints!.some(h => h.includes('Filtered: 2 of 3'))).toBe(true);
   });
 
@@ -531,7 +530,6 @@ describe('LSP Find References - Filtering and Lazy Enhancement', () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result!.totalReferences).toBe(5);
     expect(result!.locations).toHaveLength(2);
     // readFile called only for the 2 paginated items, not all 5
     expect(readCount).toBe(2);
@@ -646,7 +644,7 @@ describe('LSP Find References - Filtering and Lazy Enhancement', () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result!.totalReferences).toBe(1);
+    expect(result!.locations).toHaveLength(1);
     expect(result!.locations![0]!.uri).toBe('src/utils/helper.test.ts');
   });
 
@@ -682,7 +680,6 @@ describe('LSP Find References - Filtering and Lazy Enhancement', () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result!.totalReferences).toBe(2);
     expect(result!.locations).toHaveLength(2);
   });
 });

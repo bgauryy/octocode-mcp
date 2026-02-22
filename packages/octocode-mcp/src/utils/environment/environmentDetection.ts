@@ -1,16 +1,8 @@
 import { getConfigSync } from 'octocode-shared';
 
-type Environment =
-  | 'vscode'
-  | 'claude-code-native'
-  | 'claude-code-mcp'
-  | 'cursor'
-  | 'standalone';
+type Environment = 'vscode' | 'claude-code-mcp' | 'cursor' | 'standalone';
 
 export function detectEnvironment(): Environment {
-  if (process.env.ENABLE_LSP_TOOL === '1') {
-    return 'claude-code-native';
-  }
   if (process.env.VSCODE_PID || process.env.VSCODE_IPC_HOOK) {
     return 'vscode';
   }

@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, afterAll, vi } from 'vitest';
-import { initializeToolMetadata } from '../src/tools/toolMetadata';
+import { initializeToolMetadata } from '../src/tools/toolMetadata/index.js';
 
 // Increase max listeners to avoid warnings in test environments
 // Tests may legitimately register many listeners due to module isolation
@@ -138,6 +138,12 @@ const buildMockConfig = () => {
       ...mockDefaultConfig.local,
       enabled: envEnableLocal ?? mockDefaultConfig.local.enabled,
       enableClone: envEnableClone ?? mockDefaultConfig.local.enableClone,
+      workspaceRoot:
+        process.env.WORKSPACE_ROOT?.trim() ||
+        mockDefaultConfig.local.workspaceRoot,
+      allowedPaths:
+        mockParseStringArrayEnv(process.env.ALLOWED_PATHS) ??
+        mockDefaultConfig.local.allowedPaths,
     },
     tools: {
       enabled: envToolsToRun ?? mockDefaultConfig.tools.enabled,
@@ -188,6 +194,7 @@ vi.mock('octocode-shared', () => ({
   }),
   ensureOctocodeDir: vi.fn(),
   OCTOCODE_DIR: '/mock/.octocode',
+  getOctocodeDir: vi.fn(() => '/mock/.octocode'),
   getOctocodeToken: vi.fn().mockResolvedValue(null),
   getToken: vi.fn().mockResolvedValue(null),
   getTokenFromEnv: vi.fn(() => {

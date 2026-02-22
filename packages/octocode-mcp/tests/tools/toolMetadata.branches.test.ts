@@ -42,14 +42,14 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
   describe('getMeta() when METADATA_JSON is null (lines 103-107)', () => {
     it('should return empty array when getGenericErrorHintsSync is called before initialization', async () => {
       const { getGenericErrorHintsSync } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       expect(getGenericErrorHintsSync()).toEqual([]);
     });
 
     it('should return empty array when getDynamicHints is called before initialization', async () => {
       const { getDynamicHints } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       // getDynamicHints defensively returns empty array when not initialized
       expect(getDynamicHints('anyTool', 'topicsHasResults')).toEqual([]);
@@ -58,7 +58,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
 
   describe('BASE_SCHEMA proxy fallback (lines 245-249)', () => {
     it('should return fallback bulkQuery function when uninitialized', async () => {
-      const { BASE_SCHEMA } = await import('../../src/tools/toolMetadata.js');
+      const { BASE_SCHEMA } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Access bulkQuery before initialization
       const bulkQueryFn = BASE_SCHEMA.bulkQuery;
@@ -72,7 +73,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
     });
 
     it('should return empty string for non-bulkQuery properties when uninitialized', async () => {
-      const { BASE_SCHEMA } = await import('../../src/tools/toolMetadata.js');
+      const { BASE_SCHEMA } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Access other properties before initialization
       expect(BASE_SCHEMA.mainResearchGoal).toBe('');
@@ -84,7 +86,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
   describe('GENERIC_ERROR_HINTS proxy fallback (lines 264-265)', () => {
     it('should return undefined for array methods when uninitialized', async () => {
       const { GENERIC_ERROR_HINTS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Access the proxy before initialization - it returns an empty array fallback
       expect(GENERIC_ERROR_HINTS.length).toBe(0);
@@ -95,7 +97,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
   describe('isToolInMetadata returns false when uninitialized (line 272)', () => {
     it('should return false when METADATA_JSON is null', async () => {
       const { isToolInMetadata } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Before initialization, should return false
       expect(isToolInMetadata('githubSearchCode')).toBe(false);
@@ -105,7 +107,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
 
   describe('TOOL_HINTS proxy fallback when uninitialized (lines 329-332)', () => {
     it('should return empty hints for base when uninitialized', async () => {
-      const { TOOL_HINTS } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_HINTS } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Access 'base' before initialization
       const baseHints = TOOL_HINTS.base;
@@ -113,7 +116,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
     });
 
     it('should return empty hints for any tool when uninitialized', async () => {
-      const { TOOL_HINTS } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_HINTS } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Access tool hints before initialization
       const hints = TOOL_HINTS.githubSearchCode;
@@ -121,7 +125,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
     });
 
     it('should return empty hints for non-existent tool when uninitialized', async () => {
-      const { TOOL_HINTS } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_HINTS } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Access non-existent tool before initialization
       const hints = TOOL_HINTS.nonExistentTool;
@@ -131,7 +136,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
 
   describe('TOOL_HINTS getOwnPropertyDescriptor fallback (lines 344-351, 367)', () => {
     it('should return descriptor for base when uninitialized', async () => {
-      const { TOOL_HINTS } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_HINTS } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       // getOwnPropertyDescriptor for 'base' when uninitialized
       const descriptor = Object.getOwnPropertyDescriptor(TOOL_HINTS, 'base');
@@ -142,7 +148,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
     });
 
     it('should return undefined descriptor for non-base tool when uninitialized', async () => {
-      const { TOOL_HINTS } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_HINTS } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       // getOwnPropertyDescriptor for a tool when uninitialized (line 351 - returns undefined)
       const descriptor = Object.getOwnPropertyDescriptor(
@@ -153,7 +160,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
     });
 
     it('should return undefined descriptor for non-existent tool when uninitialized', async () => {
-      const { TOOL_HINTS } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_HINTS } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       // getOwnPropertyDescriptor for non-existent tool when uninitialized
       const descriptor = Object.getOwnPropertyDescriptor(
@@ -199,7 +207,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
       vi.mocked(fetchWithRetries).mockResolvedValueOnce(mockMetadata);
 
       const { initializeToolMetadata, TOOL_HINTS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       await initializeToolMetadata();
 
@@ -215,7 +223,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
 
   describe('TOOL_NAMES proxy fallback when uninitialized', () => {
     it('should return static tool names when uninitialized', async () => {
-      const { TOOL_NAMES } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_NAMES } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Access tool names before initialization - should use static fallback
       expect(TOOL_NAMES.GITHUB_SEARCH_CODE).toBe('githubSearchCode');
@@ -224,7 +233,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
     });
 
     it('should support ownKeys when uninitialized', async () => {
-      const { TOOL_NAMES } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_NAMES } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       const keys = Object.keys(TOOL_NAMES);
       expect(keys).toContain('GITHUB_SEARCH_CODE');
@@ -232,7 +242,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
     });
 
     it('should support getOwnPropertyDescriptor when uninitialized', async () => {
-      const { TOOL_NAMES } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_NAMES } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       const descriptor = Object.getOwnPropertyDescriptor(
         TOOL_NAMES,
@@ -243,7 +254,8 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
     });
 
     it('should return undefined for non-existent key when uninitialized', async () => {
-      const { TOOL_NAMES } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_NAMES } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       const descriptor = Object.getOwnPropertyDescriptor(
         TOOL_NAMES,
@@ -256,7 +268,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
   describe('getToolHintsSync when uninitialized', () => {
     it('should return empty array when METADATA_JSON is null', async () => {
       const { getToolHintsSync } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Before initialization, should return empty array
       expect(getToolHintsSync('githubSearchCode', 'hasResults')).toEqual([]);
@@ -300,7 +312,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
       vi.mocked(fetchWithRetries).mockResolvedValueOnce(validMetadata);
 
       const { initializeToolMetadata, getToolHintsSync } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       await initializeToolMetadata();
 
@@ -340,7 +352,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
       vi.mocked(fetchWithRetries).mockResolvedValueOnce(metadataWithNullTools);
 
       const { initializeToolMetadata, TOOL_HINTS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       await initializeToolMetadata();
 
@@ -384,7 +396,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
       vi.mocked(fetchWithRetries).mockResolvedValueOnce(validMetadata);
 
       const { initializeToolMetadata, TOOL_HINTS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       await initializeToolMetadata();
 

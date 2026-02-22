@@ -41,6 +41,6 @@ export {
   getToolHintsSync,
   getGenericErrorHintsSync,
   getDynamicHints,
-} from '../tools/toolMetadata.js';
+} from '../tools/toolMetadata/index.js';
 
-export type { ToolName } from '../tools/toolMetadata.js';
+export type { ToolName } from '../tools/toolMetadata/index.js';

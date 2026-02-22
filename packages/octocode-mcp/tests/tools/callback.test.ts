@@ -6,6 +6,7 @@ import { registerFetchGitHubFileContentTool } from '../../src/tools/github_fetch
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos/github_search_repos.js';
 import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests/github_search_pull_requests.js';
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure/github_view_repo_structure.js';
+import { registerGitHubCloneRepoTool } from '../../src/tools/github_clone_repo/index.js';
 import { registerTools } from '../../src/tools/toolsManager.js';
 
 // Mock dependencies
@@ -90,6 +91,16 @@ describe('Tool Invocation Callback', () => {
 
     it('should register github_view_repo_structure with callback', () => {
       const tool = registerViewGitHubRepoStructureTool(server, mockCallback);
+      expect(tool).toBeDefined();
+    });
+
+    it('should register github_clone_repo with callback', () => {
+      const tool = registerGitHubCloneRepoTool(server, mockCallback);
+      expect(tool).toBeDefined();
+    });
+
+    it('should register github_clone_repo without callback', () => {
+      const tool = registerGitHubCloneRepoTool(server);
       expect(tool).toBeDefined();
     });
   });

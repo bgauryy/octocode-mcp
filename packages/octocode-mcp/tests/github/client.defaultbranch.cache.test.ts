@@ -20,6 +20,7 @@ vi.mock('octokit', () => {
     rest: {
       repos: {
         get: vi.fn(function () {}),
+        getBranch: vi.fn(function () {}),
       },
     },
   };
@@ -110,22 +111,43 @@ describe('resolveDefaultBranch - caching', () => {
     expect(mockReposGet).toHaveBeenCalledTimes(2);
   });
 
-  it('should cache "main" fallback when API fails', async () => {
+  it('should cache smart fallback result when repos.get fails but getBranch succeeds', async () => {
     mockGetGitHubToken.mockResolvedValue('test-token');
     const mockReposGet = vi.fn().mockRejectedValue(new Error('Not found'));
+    const mockGetBranch = vi.fn().mockResolvedValue({ data: { name: 'main' } });
     mockOctokit.mockImplementation(function () {
-      return { rest: { repos: { get: mockReposGet } } };
+      return {
+        rest: { repos: { get: mockReposGet, getBranch: mockGetBranch } },
+      };
     });
 
-    const branch1 = await resolveDefaultBranch('org', 'missing-repo');
-    const branch2 = await resolveDefaultBranch('org', 'missing-repo');
+    const branch1 = await resolveDefaultBranch('org', 'fallback-repo');
+    const branch2 = await resolveDefaultBranch('org', 'fallback-repo');
 
     expect(branch1).toBe('main');
     expect(branch2).toBe('main');
 
-    // Error fallbacks are NOT cached (error may be transient),
-    // so the API is called on every attempt.
-    expect(mockReposGet).toHaveBeenCalledTimes(2);
+    // repos.get called once, getBranch called once — second call uses cache
+    expect(mockReposGet).toHaveBeenCalledTimes(1);
+    expect(mockGetBranch).toHaveBeenCalledTimes(1);
+  });
+
+  it('should throw when all resolution attempts fail (not cached)', async () => {
+    mockGetGitHubToken.mockResolvedValue('test-token');
+    const mockReposGet = vi.fn().mockRejectedValue(new Error('Not found'));
+    const mockGetBranch = vi.fn().mockRejectedValue(new Error('Not found'));
+    mockOctokit.mockImplementation(function () {
+      return {
+        rest: { repos: { get: mockReposGet, getBranch: mockGetBranch } },
+      };
+    });
+
+    await expect(resolveDefaultBranch('org', 'missing-repo')).rejects.toThrow(
+      'Could not determine default branch'
+    );
+
+    // Both candidates tried: main, master
+    expect(mockGetBranch).toHaveBeenCalledTimes(2);
   });
 
   it('should not exceed MAX_BRANCH_CACHE_SIZE', async () => {

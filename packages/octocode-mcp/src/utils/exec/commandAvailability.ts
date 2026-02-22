@@ -57,7 +57,6 @@ export async function checkCommandAvailability(
   command: CommandName,
   forceCheck = false
 ): Promise<CommandAvailabilityResult> {
-  // Return cached result if available
   if (!forceCheck && availabilityCache.has(command)) {
     return availabilityCache.get(command)!;
   }

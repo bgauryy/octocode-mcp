@@ -76,7 +76,7 @@ describe('formatPRForResponse', () => {
       expect(result.base_sha).toBe('xyz789012345');
     });
 
-    it('should default head/base refs to empty strings when undefined', () => {
+    it('should default head/base refs to empty strings and omit SHAs when undefined', () => {
       const pr = createBasePR({
         head: undefined,
         head_sha: undefined,
@@ -86,9 +86,9 @@ describe('formatPRForResponse', () => {
       const result = formatPRForResponse(pr);
 
       expect(result.head_ref).toBe('');
-      expect(result.head_sha).toBe('');
+      expect(result).not.toHaveProperty('head_sha');
       expect(result.base_ref).toBe('');
-      expect(result.base_sha).toBe('');
+      expect(result).not.toHaveProperty('base_sha');
     });
   });
 

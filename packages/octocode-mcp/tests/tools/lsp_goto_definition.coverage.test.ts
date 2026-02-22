@@ -358,7 +358,9 @@ describe('LSP Goto Definition Coverage Tests', () => {
         searchRadius: 5,
         researchGoal: 'Find definition',
         reasoning: 'User requested',
-        hints: ['Note: Using text-based resolution'],
+        hints: [
+          'Each location = a definition site; use range.start.line+1 as lineHint for follow-up LSP calls',
+        ],
       };
 
       expect(fallbackResult.status).toBe('hasResults');
@@ -366,14 +368,12 @@ describe('LSP Goto Definition Coverage Tests', () => {
       expect(fallbackResult.searchRadius).toBe(5);
     });
 
-    it('should include hint about text-based resolution', () => {
+    it('should include tool-specific hints (LSP fallback hints in server.instructions)', () => {
+      // LSP no-server hints moved to server.instructions; fallback returns tool hints only
       const hints = [
-        'Note: Using text-based resolution (language server not available)',
-        'Install typescript-language-server for semantic definition lookup',
+        'Each location = a definition site; use range.start.line+1 as lineHint',
       ];
-
-      expect(hints[0]).toContain('text-based');
-      expect(hints[1]).toContain('typescript-language-server');
+      expect(hints[0]).toContain('lineHint');
     });
 
     it('should include line mismatch hint when applicable', () => {

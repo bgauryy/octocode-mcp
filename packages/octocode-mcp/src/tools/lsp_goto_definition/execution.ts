@@ -25,7 +25,8 @@ import {
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { getHints } from '../../hints/index.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
+import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import {
   applyOutputSizeLimit,
@@ -33,7 +34,7 @@ import {
 } from '../../utils/pagination/index.js';
 import { safeReadFile } from '../../lsp/validation.js';
 
-const TOOL_NAME = STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION;
+export const TOOL_NAME = TOOL_NAMES.LSP_GOTO_DEFINITION;
 
 /**
  * Execute bulk goto definition operation.
@@ -123,7 +124,7 @@ async function gotoDefinition(
     }
 
     // Try to use LSP for semantic definition lookup
-    const workspaceRoot = process.env.WORKSPACE_ROOT || process.cwd();
+    const workspaceRoot = resolveWorkspaceRoot();
 
     if (await isLanguageServerAvailable(absolutePath)) {
       try {
@@ -346,10 +347,6 @@ async function gotoDefinitionWithLSP(
         enhancedLocations.push({
           ...loc,
           content: numberedContent,
-          displayRange: {
-            startLine: startLine + 1,
-            endLine: endLine + 1,
-          },
         });
       } catch {
         // Keep original if we can't read the file
@@ -357,9 +354,12 @@ async function gotoDefinitionWithLSP(
       }
     }
 
+    const strippedLocations = enhancedLocations.map(
+      ({ displayRange: _, ...rest }) => rest
+    );
     return {
       status: 'hasResults',
-      locations: enhancedLocations,
+      locations: strippedLocations,
       resolvedPosition: _position,
       searchRadius: 5,
       researchGoal: query.researchGoal,
@@ -367,6 +367,7 @@ async function gotoDefinitionWithLSP(
       hints: [
         ...getHints(TOOL_NAME, 'hasResults'),
         `Found ${locations.length} definition(s) via Language Server`,
+        'Each location = a definition site; use range.start.line+1 as lineHint for follow-up LSP calls',
         followedImport
           ? 'Followed import chain to source definition'
           : undefined,
@@ -472,10 +473,6 @@ function createFallbackResult(
       },
     },
     content: numberedContent,
-    displayRange: {
-      startLine: context.startLine,
-      endLine: context.endLine,
-    },
   };
 
   return {
@@ -487,8 +484,7 @@ function createFallbackResult(
     reasoning: query.reasoning,
     hints: [
       ...getHints(TOOL_NAME, 'hasResults'),
-      'Note: Using text-based resolution (language server not available)',
-      'Install typescript-language-server for semantic definition lookup',
+      'Each location = a definition site; use range.start.line+1 as lineHint for follow-up LSP calls',
       resolvedSymbol.foundAtLine !== query.lineHint
         ? `Symbol found at line ${resolvedSymbol.foundAtLine} (hint was ${query.lineHint})`
         : undefined,

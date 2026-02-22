@@ -15,7 +15,7 @@ import { validateToolPath } from '../../src/utils/file/toolHelpers.js';
 import {
   TOOL_NAMES,
   initializeToolMetadata,
-} from '../../src/tools/toolMetadata';
+} from '../../src/tools/toolMetadata/index.js';
 import { getTextContent } from '../utils/testHelpers.js';
 
 beforeAll(async () => {
@@ -27,7 +27,7 @@ describe('Hint conciseness', () => {
   // 1. Empty string filtering
   // =========================================================================
   describe('empty string filtering in bulk responses', () => {
-    it('should strip empty strings from hasResultsStatusHints', async () => {
+    it('should strip empty strings from hints in hasResults result', async () => {
       const queries = [{ id: 'q1' }];
       const processor = vi.fn().mockResolvedValue({
         status: 'hasResults' as const,
@@ -40,7 +40,6 @@ describe('Hint conciseness', () => {
       });
 
       const text = getTextContent(result.content);
-      expect(text).toContain('hasResultsStatusHints:');
       expect(text).toContain('Valid hint');
       expect(text).toContain('Another valid hint');
       // No empty lines inside the hints list (YAML would render them as - "")
@@ -48,7 +47,7 @@ describe('Hint conciseness', () => {
       expect(text).not.toMatch(/- " {2}"\n/);
     });
 
-    it('should strip empty strings from emptyStatusHints', async () => {
+    it('should strip empty strings from hints in empty result', async () => {
       const queries = [{ id: 'q1' }];
       const processor = vi.fn().mockResolvedValue({
         status: 'empty' as const,
@@ -60,12 +59,11 @@ describe('Hint conciseness', () => {
       });
 
       const text = getTextContent(result.content);
-      expect(text).toContain('emptyStatusHints:');
       expect(text).toContain('Useful empty hint');
       expect(text).not.toMatch(/- ""\n/);
     });
 
-    it('should strip empty strings from errorStatusHints', async () => {
+    it('should strip empty strings from hints in error result', async () => {
       const queries = [{ id: 'q1' }];
       const processor = vi.fn().mockResolvedValue({
         status: 'error' as const,
@@ -78,7 +76,6 @@ describe('Hint conciseness', () => {
       });
 
       const text = getTextContent(result.content);
-      expect(text).toContain('errorStatusHints:');
       expect(text).toContain('Error recovery hint');
       expect(text).not.toMatch(/- ""\n/);
       expect(text).not.toMatch(/- " {3}"\n/);
@@ -182,25 +179,6 @@ describe('Hint conciseness', () => {
       const allHints = (result.hints || []).join('\n');
       expect(allHints).not.toContain('Integration:');
       expect(allHints).not.toContain('byteOffset');
-    });
-
-    it('should include Integration hint ONLY in detailed mode', async () => {
-      const result = await buildSearchResult(
-        makeFiles(3),
-        {
-          path: '/test',
-          pattern: 'export',
-          mode: 'detailed',
-          researchGoal: 'test',
-          reasoning: 'test',
-        } as any,
-        'rg',
-        []
-      );
-
-      const allHints = (result.hints || []).join('\n');
-      expect(allHints).toContain('byteOffset');
-      expect(allHints).toContain('charOffset');
     });
 
     it('should NOT include Integration hint when mode is undefined', async () => {

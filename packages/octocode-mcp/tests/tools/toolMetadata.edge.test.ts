@@ -50,7 +50,7 @@ describe('toolMetadata - Final Edge Cases', () => {
       );
 
       const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Call initializeToolMetadata multiple times concurrently
       // Second call should hit line 146 (return initializationPromise)
@@ -92,7 +92,7 @@ describe('toolMetadata - Final Edge Cases', () => {
       });
 
       const { loadToolContent } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       // This should trigger line 206 (await initializeToolMetadata())
       const content = await loadToolContent();
@@ -127,7 +127,7 @@ describe('toolMetadata - Final Edge Cases', () => {
       });
 
       const { initializeToolMetadata, loadToolContent } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Initialize first
       await initializeToolMetadata();

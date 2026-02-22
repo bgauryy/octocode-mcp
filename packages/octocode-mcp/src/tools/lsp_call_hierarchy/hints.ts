@@ -1,6 +1,9 @@
 /**
  * Dynamic hints for lspCallHierarchy tool
  * @module tools/lsp_call_hierarchy/hints
+ *
+ * API dynamic keys available: incomingResults, outgoingResults, notAFunction,
+ * timeout, entryPoint, leafNode, flowComplete
  */
 
 import { getMetadataDynamicHints } from '../../hints/static.js';
@@ -10,7 +13,6 @@ export const TOOL_NAME = 'lspCallHierarchy';
 
 export const hints: ToolHintGenerators = {
   hasResults: (ctx: HintContext = {}) => {
-    // Only context-aware hints - base hints come from HOST static hints
     const hints: (string | undefined)[] = [];
     const direction = (ctx as Record<string, unknown>).direction;
     const callCount = (ctx as Record<string, unknown>).callCount;
@@ -29,39 +31,20 @@ export const hints: ToolHintGenerators = {
       hints.push(...getMetadataDynamicHints(TOOL_NAME, 'outgoingResults'));
     }
 
-    // Depth hints
+    // Depth inline hint (no API key available)
     if (depth && depth > 1) {
       hints.push(`Depth=${depth} showing ${depth}-level call chain.`);
-      hints.push(...getMetadataDynamicHints(TOOL_NAME, 'deepChain'));
     }
 
-    // Pagination hints
+    // Pagination inline hint (no API key available)
     if ((ctx as Record<string, unknown>).hasMorePages) {
       hints.push(`Page ${currentPage}/${totalPages}.`);
-      hints.push(...getMetadataDynamicHints(TOOL_NAME, 'pagination'));
-    }
-
-    // Fallback hints
-    if ((ctx as Record<string, unknown>).isFallback) {
-      hints.push(...getMetadataDynamicHints(TOOL_NAME, 'fallbackMode'));
     }
 
     return hints;
   },
 
-  empty: (ctx: HintContext = {}) => {
-    // Only context-aware hints - base hints come from HOST static hints
-    const hints: (string | undefined)[] = [];
-    const direction = (ctx as Record<string, unknown>).direction;
-
-    if (direction === 'incoming') {
-      hints.push(...getMetadataDynamicHints(TOOL_NAME, 'noCallers'));
-    } else {
-      hints.push(...getMetadataDynamicHints(TOOL_NAME, 'noCallees'));
-    }
-
-    return hints;
-  },
+  empty: (_ctx: HintContext = {}) => [],
 
   error: (ctx: HintContext = {}) => {
     const depth = (ctx as Record<string, unknown>).depth;

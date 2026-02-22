@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fetchGitHubFileContentAPI } from '../../src/github/fileOperations.js';
-import { getOctokit } from '../../src/github/client.js';
+import { getOctokit, resolveDefaultBranch } from '../../src/github/client.js';
 import { clearAllCache } from '../../src/utils/http/cache.js';
 import { RequestError } from 'octokit';
 
@@ -13,16 +13,16 @@ describe('File Operations - Branch Fallback & Caching', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearAllCache();
+    vi.mocked(resolveDefaultBranch).mockResolvedValue('main');
   });
 
-  it('should fallback to default branch and cache it', async () => {
+  it('should fallback to default branch using resolveDefaultBranch', async () => {
     const getContentMock = vi.fn();
-    const getRepoMock = vi.fn();
 
     const mockOctokit = {
       rest: {
         repos: {
-          get: getRepoMock,
+          get: vi.fn(),
           getContent: getContentMock,
           listCommits: vi.fn().mockResolvedValue({ data: [] }),
         },
@@ -32,8 +32,8 @@ describe('File Operations - Branch Fallback & Caching', () => {
     vi.mocked(getOctokit).mockResolvedValue(
       mockOctokit as unknown as ReturnType<typeof getOctokit>
     );
+    vi.mocked(resolveDefaultBranch).mockResolvedValue('develop');
 
-    // Helper to create 404 error
     const create404 = () =>
       new RequestError('Not Found', 404, {
         request: { method: 'GET', url: '', headers: {} },
@@ -46,19 +46,13 @@ describe('File Operations - Branch Fallback & Caching', () => {
         },
       });
 
-    // Scenario: User asks for 'main', but repo uses 'develop'
     // 1. Try 'main' -> 404
     getContentMock.mockRejectedValueOnce(create404());
-
-    // 2. Fetch repo info -> default_branch = 'develop'
-    getRepoMock.mockResolvedValue({ data: { default_branch: 'develop' } });
-
-    // 3. Try 'develop' -> 200
+    // 2. resolveDefaultBranch returns 'develop', try 'develop' -> 200
     getContentMock.mockResolvedValueOnce({
       data: { type: 'file', content: 'base64encoded', encoding: 'base64' },
     });
 
-    // First call
     await fetchGitHubFileContentAPI({
       owner: 'test',
       repo: 'repo',
@@ -66,19 +60,15 @@ describe('File Operations - Branch Fallback & Caching', () => {
       branch: 'main',
     });
 
-    // Check calls
-    expect(getContentMock).toHaveBeenCalledTimes(2); // main, then develop
-    expect(getRepoMock).toHaveBeenCalledTimes(1);
+    expect(getContentMock).toHaveBeenCalledTimes(2);
+    expect(resolveDefaultBranch).toHaveBeenCalledWith(
+      'test',
+      'repo',
+      undefined
+    );
 
-    // RESET MOCKS for Second call
+    // Second call uses the same resolveDefaultBranch (caching is internal)
     getContentMock.mockClear();
-    getRepoMock.mockClear();
-
-    // Second call - asking for 'main' again, but different file (to avoid data cache)
-    // We expect:
-    // 1. Try 'main' -> 404 (mock needed)
-    // 2. Fallback to 'develop' (cached) -> Success
-
     getContentMock.mockRejectedValueOnce(create404());
     getContentMock.mockResolvedValueOnce({
       data: { type: 'file', content: 'base64encoded', encoding: 'base64' },
@@ -91,7 +81,6 @@ describe('File Operations - Branch Fallback & Caching', () => {
       branch: 'main',
     });
 
-    expect(getRepoMock).toHaveBeenCalledTimes(0); // CACHED!
-    expect(getContentMock).toHaveBeenCalledTimes(2); // main (fail) -> develop (success)
+    expect(getContentMock).toHaveBeenCalledTimes(2);
   });
 });

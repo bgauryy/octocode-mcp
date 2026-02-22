@@ -1,6 +1,6 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { GitHubCodeSearchQuery, SearchResult } from './types.js';
-import { TOOL_NAMES } from '../toolMetadata.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { handleCatchError, createSuccessResult } from '../utils.js';
@@ -54,9 +54,16 @@ export async function searchMultipleGitHubCode(
 
         // Transform provider response to tool result format
         const files = apiResult.data.items.map(item => {
+          const repoFullName = item.repository.name || '';
+          const slashIdx = repoFullName.indexOf('/');
+          const owner = slashIdx > 0 ? repoFullName.substring(0, slashIdx) : '';
+          const repoName =
+            slashIdx > 0 ? repoFullName.substring(slashIdx + 1) : repoFullName;
+
           const baseFile = {
             path: item.path,
-            repo: item.repository.name,
+            owner,
+            repo: repoName,
             ...(item.lastModifiedAt && { lastModifiedAt: item.lastModifiedAt }),
           };
 
@@ -71,8 +78,10 @@ export async function searchMultipleGitHubCode(
 
         const result: SearchResult = { files };
 
-        if (apiResult.data.repositoryContext) {
-          result.repositoryContext = apiResult.data.repositoryContext;
+        if (apiResult.data.repositoryContext?.branch) {
+          result.repositoryContext = {
+            branch: apiResult.data.repositoryContext.branch,
+          };
         }
 
         if (apiResult.data.pagination) {

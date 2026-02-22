@@ -157,6 +157,8 @@ owner="facebook", keywordsToSearch=["config"], match="path"
 owner="mygroup", repo="myproject", keywordsToSearch=["middleware"]
 ```
 
+**Response format:** Each file in the result contains `path`, `text_matches`, and `lastModifiedAt`. When all results come from the same repo, a `repositoryContext` with just the `branch` name is included (for follow-up calls to `githubGetFileContent`).
+
 **⚠️ Gotchas:**
 - Use 1-2 filters max. **Never combine** extension + filename + path together
 - `path` is a strict prefix: `pkg` finds `pkg/file`, NOT `parent/pkg/file`
@@ -243,6 +245,16 @@ owner="wix-private", keywordsToSearch=["auth-service"]
 - `closed`/`merged-at`: Date-based close/merge filters
 - `comments`/`reactions`/`interactions`: Numeric range filters
 - `match`: Search scope (`title`, `body`, `comments`)
+
+**PR body auto-truncation:** PR body text is automatically truncated based on the `limit` (batch size) to save tokens:
+
+| Batch Size | Body Limit | Rationale |
+|------------|-----------|-----------|
+| `limit=1` | No truncation | Deep-dive intent |
+| `limit=2-3` | 2000 chars | Moderate exploration |
+| `limit=4+` | 800 chars | Batch scan |
+
+Truncated bodies include a hint with the PR number for requesting the full body.
 
 **Example queries:**
 
@@ -348,6 +360,10 @@ branch="main", matchString="export class"
 path="package.json", fullContent=true, owner="org", repo="repo"
 ```
 
+**Response format (file mode):** Returns `owner`, `repo`, `path`, `branch`, `content`, and optional `pagination`, `matchLocations`, `isPartial`, `startLine`/`endLine`. Fields like `contentLength`, minification metadata, and `cached`/`expiresAt` are not included.
+
+**Response format (directory mode):** Returns `localPath`, `owner`, `repo`, `branch`, `directoryPath`, `fileCount`, `totalSize`, `files`. Internal cache fields (`cached`, `expiresAt`) are not included. Clone-cache is never overwritten by directory fetch — if a git clone already exists, it is used as-is.
+
 **⚠️ Gotchas:**
 - Choose ONE mode: `matchString` OR `startLine/endLine` OR `fullContent` (file mode only)
 - When `type="directory"`: `startLine`, `endLine`, `matchString`, `charOffset`, `charLength` are rejected
@@ -358,7 +374,7 @@ path="package.json", fullContent=true, owner="org", repo="repo"
 - **GitLab REQUIRES `branch`** - unlike GitHub which auto-detects
 - For `branch`: Use NAME (e.g., `main`), not SHA
 - Prefer `matchString` for large files (token efficient)
-- Directory mode shares cache with `githubCloneRepo` — if a clone exists, it's reused
+- Directory mode shares cache with `githubCloneRepo` — if a clone exists, it's reused (clone content is never downgraded)
 
 ---
 
@@ -460,13 +476,15 @@ owner="microsoft", repo="TypeScript", sparse_path="src/compiler"
 ```
 
 **After cloning, use these tools on the returned `localPath`:**
-- `localSearchCode` — ripgrep code search
-- `localGetFileContent` — read files
-- `localViewStructure` — browse directory tree
+- `localSearchCode` — search code with ripgrep
+- `localGetFileContent` — read file content
+- `localViewStructure` — browse the directory tree
 - `localFindFiles` — find files by name/metadata
-- `lspGotoDefinition` — jump to symbol definitions
+- `lspGotoDefinition` — jump to symbol definitions (semantic)
 - `lspFindReferences` — find all usages of a symbol
-- `lspCallHierarchy` — trace call relationships
+- `lspCallHierarchy` — trace call chains (incoming/outgoing)
+
+**Response format:** Returns `owner`, `repo`, `branch`, `localPath`, and optionally `sparse_path`. Internal fields like `cached` and `expiresAt` are not included in the response.
 
 **⚠️ Gotchas:**
 - **GitHub only** — returns an error if GitLab is the active provider
@@ -727,6 +745,20 @@ GitLab requires project scope for code search.
 ```
 
 `githubCloneRepo` and `githubGetFileContent` directory mode use GitHub-specific APIs (Contents API, git clone). These features are not available when GitLab is the active provider. Use file mode for GitLab content retrieval.
+
+---
+
+## Response Optimization
+
+All GitHub/GitLab tool responses are optimized for LLM token efficiency:
+
+- **Per-result hints**: Hints are included inline within each query result (not aggregated at the top level)
+- **Compact instructions**: Bulk response instructions are a single short line (e.g., `"3 results: 2 data, 1 empty."`)
+- **No redundant metadata**: Fields like `contentLength`, `cached`, `expiresAt`, minification metadata, `searchEngine` are not included in responses
+- **PR body auto-truncation**: PR bodies are truncated based on batch size (`limit`) — unlimited for single PR, 2000 chars for 2-3, 800 chars for 4+
+- **Slimmed PR info**: Assignees are returned as `string[]` (login names only); `milestone`, `review_comments`, `id`, `html_url` are removed
+- **Conditional fields**: `head_sha` and `base_sha` are only included when present (not empty strings)
+- **Code search context**: `repositoryContext` contains only `branch` (not redundant `owner`/`repo`)
 
 ---
 

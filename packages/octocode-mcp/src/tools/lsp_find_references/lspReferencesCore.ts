@@ -22,7 +22,7 @@ import type { LSPFindReferencesQuery } from './scheme.js';
 import type { SymbolKind } from '../../lsp/types.js';
 import { createClient } from '../../lsp/index.js';
 import { getHints } from '../../hints/index.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import { TOOL_NAME } from './execution.js';
 
 /**
  * Infer symbol kind from the definition line content.
@@ -48,8 +48,6 @@ export function inferSymbolKindFromContent(lineContent: string): SymbolKind {
     return 'property';
   return 'function';
 }
-
-const TOOL_NAME = STATIC_TOOL_NAMES.LSP_FIND_REFERENCES;
 
 /**
  * Check if a relative file path matches include/exclude glob patterns.
@@ -109,7 +107,6 @@ export async function findReferencesWithLSP(
     if (!locations || locations.length === 0) {
       return {
         status: 'empty',
-        totalReferences: 0,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
         hints: [
@@ -162,7 +159,6 @@ export async function findReferencesWithLSP(
     if (filteredLocations.length === 0) {
       return {
         status: 'empty',
-        totalReferences: 0,
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
         hints: [
@@ -212,6 +208,7 @@ export async function findReferencesWithLSP(
     const hints = [
       ...getHints(TOOL_NAME, 'hasResults'),
       `Found ${totalReferences} reference(s) via Language Server`,
+      'Each location = a usage of this symbol; isDefinition=true marks the declaration',
     ];
 
     if (hasFilters && totalUnfiltered !== totalReferences) {
@@ -234,7 +231,6 @@ export async function findReferencesWithLSP(
       status: 'hasResults',
       locations: paginatedReferences,
       pagination,
-      totalReferences,
       hasMultipleFiles,
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
@@ -266,8 +262,6 @@ async function enhanceReferenceLocation(
   contextLines: number
 ): Promise<ReferenceLocation> {
   let content = raw.content;
-  let displayStartLine = raw.range.start.line + 1;
-  let displayEndLine = raw.range.end.line + 1;
 
   // Get context if needed
   if (contextLines > 0) {
@@ -290,9 +284,6 @@ async function enhanceReferenceLocation(
           return `${marker}${String(lineNum).padStart(4, ' ')}| ${line}`;
         })
         .join('\n');
-
-      displayStartLine = startLine + 1;
-      displayEndLine = endLine + 1;
     } catch {
       // Keep original content
     }
@@ -306,9 +297,5 @@ async function enhanceReferenceLocation(
     symbolKind: raw.isDefinition
       ? inferSymbolKindFromContent(content)
       : undefined,
-    displayRange: {
-      startLine: displayStartLine,
-      endLine: displayEndLine,
-    },
   };
 }

@@ -3,7 +3,7 @@ import {
   BaseQuerySchema,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import { GITHUB_SEARCH_CODE, TOOL_NAMES } from '../toolMetadata.js';
+import { GITHUB_SEARCH_CODE, TOOL_NAMES } from '../toolMetadata/index.js';
 
 export const GitHubCodeSearchQuerySchema = BaseQuerySchema.extend({
   keywordsToSearch: z

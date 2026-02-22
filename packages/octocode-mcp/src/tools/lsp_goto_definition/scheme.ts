@@ -7,14 +7,14 @@ import {
   BaseQuerySchemaLocal,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
-import { LSP_GOTO_DEFINITION, DESCRIPTIONS } from '../toolMetadata.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
+import { LSP_GOTO_DEFINITION, DESCRIPTIONS } from '../toolMetadata/index.js';
 
 /**
  * Tool description for lspGotoDefinition
  */
 export const LSP_GOTO_DEFINITION_DESCRIPTION =
-  DESCRIPTIONS[STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION];
+  DESCRIPTIONS[TOOL_NAMES.LSP_GOTO_DEFINITION];
 
 /**
  * Base schema for LSP goto definition query
@@ -78,7 +78,7 @@ export const LSPGotoDefinitionQuerySchema = LSPGotoDefinitionBaseSchema;
  * Bulk query schema for LSP goto definition (max 5 queries)
  */
 export const BulkLSPGotoDefinitionSchema = createBulkQuerySchema(
-  STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
+  TOOL_NAMES.LSP_GOTO_DEFINITION,
   LSPGotoDefinitionQuerySchema,
   { maxQueries: 5 }
 );

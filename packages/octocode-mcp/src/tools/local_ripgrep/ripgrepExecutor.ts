@@ -11,7 +11,7 @@ import {
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
-import { TOOL_NAMES } from '../toolMetadata.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import type { SearchContentResult } from '../../utils/core/types.js';
 import { promises as fs } from 'fs';
 import { join } from 'path';

@@ -39,7 +39,7 @@ vi.mock('../src/session.js', () => ({
   logSessionError: vi.fn(() => Promise.resolve()),
 }));
 
-vi.mock('../src/tools/toolMetadata.js', () => ({
+vi.mock('../src/tools/toolMetadata/index.js', () => ({
   loadToolContent: vi.fn(() =>
     Promise.resolve({
       instructions: 'Test instructions',
@@ -128,7 +128,8 @@ describe('index.ts - Server Lifecycle', () => {
         failedTools: [],
       });
 
-      const { loadToolContent } = await import('../src/tools/toolMetadata.js');
+      const { loadToolContent } =
+        await import('../src/tools/toolMetadata/index.js');
       const content = await loadToolContent();
 
       await registerAllTools(mockServer as never, content as never);
@@ -165,7 +166,8 @@ describe('index.ts - Server Lifecycle', () => {
         .spyOn(process.stderr, 'write')
         .mockImplementation(() => true);
 
-      const { loadToolContent } = await import('../src/tools/toolMetadata.js');
+      const { loadToolContent } =
+        await import('../src/tools/toolMetadata/index.js');
       const content = await loadToolContent();
 
       await registerAllTools(mockServer as never, content as never);
@@ -188,7 +190,8 @@ describe('index.ts - Server Lifecycle', () => {
         failedTools: [],
       });
 
-      const { loadToolContent } = await import('../src/tools/toolMetadata.js');
+      const { loadToolContent } =
+        await import('../src/tools/toolMetadata/index.js');
       const content = await loadToolContent();
 
       await expect(
@@ -208,7 +211,8 @@ describe('index.ts - Server Lifecycle', () => {
 
       const { logSessionError } = await import('../src/session.js');
 
-      const { loadToolContent } = await import('../src/tools/toolMetadata.js');
+      const { loadToolContent } =
+        await import('../src/tools/toolMetadata/index.js');
       const content = await loadToolContent();
 
       try {
@@ -235,7 +239,8 @@ describe('index.ts - Server Lifecycle', () => {
         .spyOn(process.stderr, 'write')
         .mockImplementation(() => true);
 
-      const { loadToolContent } = await import('../src/tools/toolMetadata.js');
+      const { loadToolContent } =
+        await import('../src/tools/toolMetadata/index.js');
       const content = await loadToolContent();
 
       await registerAllTools(mockServer as never, content as never);
@@ -271,7 +276,8 @@ describe('index.ts - Server Lifecycle', () => {
         failedTools: [],
       });
 
-      const { loadToolContent } = await import('../src/tools/toolMetadata.js');
+      const { loadToolContent } =
+        await import('../src/tools/toolMetadata/index.js');
       const content = await loadToolContent();
 
       await registerAllTools(mockServer as never, content as never);
@@ -306,7 +312,8 @@ describe('index.ts - Server Lifecycle', () => {
         failedTools: [],
       });
 
-      const { loadToolContent } = await import('../src/tools/toolMetadata.js');
+      const { loadToolContent } =
+        await import('../src/tools/toolMetadata/index.js');
       const content = await loadToolContent();
 
       try {

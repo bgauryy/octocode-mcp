@@ -5,10 +5,17 @@ import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { logToolCall, logSessionError } from '../session.js';
 import { isLoggingEnabled as isSessionEnabled } from '../serverConfig.js';
 import { TOOL_ERRORS } from '../errorCodes.js';
+import { isLocalTool } from '../tools/toolNames.js';
 
 /**
  * Default timeout for tool execution (1 minute).
  * Per MCP spec: "Implementations SHOULD establish timeouts for all sent requests."
+ *
+ * Timeout interaction: This is the OUTER timeout — it applies to the entire tool
+ * invocation. Bulk tools also use a per-query timeout (OCTOCODE_BULK_QUERY_TIMEOUT_MS
+ * in bulk.ts). For multi-query operations, the outer timeout dominates: e.g. 3 queries
+ * at 55s each would exceed 60s total, so the outer timeout fires before all complete.
+ * Configure OCTOCODE_BULK_QUERY_TIMEOUT_MS to balance per-query limits vs total budget.
  */
 const TOOL_TIMEOUT_MS = 60_000;
 
@@ -75,6 +82,20 @@ function withToolTimeout(
   });
 }
 
+/**
+ * Security wrapper for GitHub/remote tools that require authentication.
+ *
+ * Use this wrapper for tools that:
+ * - Need `authInfo` (GitHub/GitLab token) or `sessionId` passed to the handler
+ * - Should log queries to session telemetry via `handleBulk`
+ * - Access remote APIs (GitHub, GitLab, NPM, PyPI)
+ *
+ * Provides: input sanitization, 60s timeout, auth passthrough, session logging.
+ *
+ * Current tools: all github_* tools, package_search, github_clone_repo.
+ *
+ * @see withBasicSecurityValidation for local/LSP tools that don't need auth
+ */
 export function withSecurityValidation<T extends Record<string, unknown>>(
   toolName: string,
   toolHandler: (
@@ -135,6 +156,21 @@ export function withSecurityValidation<T extends Record<string, unknown>>(
   };
 }
 
+/**
+ * Lightweight security wrapper for local filesystem and LSP tools.
+ *
+ * Use this wrapper for tools that:
+ * - Operate on local files only (no remote API access)
+ * - Don't need `authInfo` or `sessionId`
+ * - Don't need session telemetry logging
+ *
+ * Provides: input sanitization, 60s timeout.
+ * Does NOT provide: auth passthrough, session logging.
+ *
+ * Current tools: all local_* tools, all lsp_* tools.
+ *
+ * @see withSecurityValidation for GitHub/remote tools that need auth + logging
+ */
 export function withBasicSecurityValidation<T extends object>(
   toolHandler: (sanitizedArgs: T) => Promise<CallToolResult>,
   toolName?: string
@@ -159,6 +195,20 @@ export function withBasicSecurityValidation<T extends object>(
           },
           isError: true,
         });
+      }
+
+      // Log local/LSP tool usage for telemetry (same as GitHub tools)
+      if (
+        toolName &&
+        isLocalTool(toolName) &&
+        isSessionEnabled() &&
+        validation.sanitizedParams &&
+        typeof validation.sanitizedParams === 'object'
+      ) {
+        handleBulk(
+          toolName,
+          validation.sanitizedParams as Record<string, unknown>
+        );
       }
 
       return await withToolTimeout(
@@ -197,10 +247,11 @@ function handleBulk(toolName: string, params: Record<string, unknown>): void {
 
 /**
  * Logs a single query with its specific repos and research fields.
+ * For local tools (no owner/repo), still logs tool usage for telemetry.
  */
 function handleQuery(toolName: string, query: Record<string, unknown>): void {
   const repos = extractRepoOwnerFromQuery(query);
-  if (repos.length === 0) {
+  if (repos.length === 0 && !isLocalTool(toolName)) {
     return;
   }
 
@@ -216,13 +267,14 @@ function handleQuery(toolName: string, query: Record<string, unknown>): void {
 
 /**
  * Logs a single operation with aggregated repos and research fields.
+ * For local tools (no owner/repo), still logs tool usage for telemetry.
  */
 function logSingleOperation(
   toolName: string,
   params: Record<string, unknown>
 ): void {
   const repos = extractRepoOwnerFromParams(params);
-  if (repos.length === 0) {
+  if (repos.length === 0 && !isLocalTool(toolName)) {
     return;
   }
 

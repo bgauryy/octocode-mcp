@@ -22,7 +22,10 @@ import {
   logSessionInit,
   logSessionError,
 } from './session.js';
-import { loadToolContent, CompleteMetadata } from './tools/toolMetadata.js';
+import {
+  loadToolContent,
+  CompleteMetadata,
+} from './tools/toolMetadata/index.js';
 import { registerTools } from './tools/toolsManager.js';
 import { version, name } from '../package.json';
 import { STARTUP_ERRORS } from './errorCodes.js';
@@ -58,7 +61,6 @@ function createShutdownHandler(
     try {
       const logger = getLogger();
 
-      // Log while transport is still connected
       await logger?.info('Shutting down', { signal });
 
       if (state.timeout) {
@@ -180,9 +182,25 @@ async function createServer(content: CompleteMetadata): Promise<McpServer> {
     capabilities.prompts = {};
   }
 
+  const genericHints = [
+    "Follow 'mainResearchGoal', 'researchGoal', 'reasoning', 'hints' to navigate research",
+    'Do findings answer your question? If partial, identify gaps and continue',
+    'Got 3+ examples? Consider stopping to avoid over-research',
+    'Check last modified dates - skip stale content',
+    'Try broader terms or related concepts when results are empty',
+    'Remove filters one at a time to find what blocks results',
+    'Separate concerns into multiple simpler queries',
+    'If stuck in loop - STOP and ask user',
+    'If LSP tools return text-based fallback, install typescript-language-server for semantic analysis',
+  ].join('\n');
+
+  const fullInstructions = content.instructions
+    ? `${content.instructions}\n\n${genericHints}`
+    : genericHints;
+
   return new McpServer(SERVER_CONFIG, {
     capabilities,
-    instructions: content.instructions,
+    instructions: fullInstructions,
   });
 }
 

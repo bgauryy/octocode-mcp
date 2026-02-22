@@ -16,7 +16,7 @@ import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { shouldIgnoreFile } from '../utils/file/filters';
 import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
-import { TOOL_NAMES } from '../tools/toolMetadata.js';
+import { TOOL_NAMES } from '../tools/toolMetadata/index.js';
 
 export async function searchGitHubCodeAPI(
   params: GitHubCodeSearchQuery,
@@ -117,7 +117,8 @@ async function searchGitHubCodeAPIInternal(
     // GitHub caps at 1000 total results
     const totalMatches = Math.min(optimizedResult.total_count, 1000);
     const totalPages = Math.min(Math.ceil(totalMatches / perPage), 10);
-    const hasMore = currentPage < totalPages;
+    const clampedPage = Math.min(currentPage, Math.max(1, totalPages));
+    const hasMore = clampedPage < totalPages;
 
     return {
       data: {
@@ -130,7 +131,7 @@ async function searchGitHubCodeAPIInternal(
         minificationTypes: optimizedResult.minificationTypes,
         _researchContext: optimizedResult._researchContext,
         pagination: {
-          currentPage,
+          currentPage: clampedPage,
           totalPages,
           perPage,
           totalMatches,

@@ -24,7 +24,6 @@ import type {
   RepoStructureResult,
 } from '../types.js';
 
-// Import extracted modules
 import * as githubSearch from './githubSearch.js';
 import * as githubContent from './githubContent.js';
 import * as githubPullRequests from './githubPullRequests.js';

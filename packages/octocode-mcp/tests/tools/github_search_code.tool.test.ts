@@ -28,7 +28,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 }));
 
 import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code/github_search_code.js';
-import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata/index.js';
 
 describe('GitHub Search Code Tool - Tool Layer Integration', () => {
   let mockServer: MockMcpServer;
@@ -106,7 +106,7 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('src/utils.ts');
     });
 
-    it('should include repo field in each file result', async () => {
+    it('should include owner and repo fields in each file result', async () => {
       mockProvider.searchCode.mockResolvedValue({
         data: {
           items: [
@@ -138,7 +138,38 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('facebook/react');
+      expect(responseText).toContain('owner: "facebook"');
+      expect(responseText).toContain('repo: "react"');
+      expect(responseText).toContain('owner: "vercel"');
+      expect(responseText).toContain('repo: "next"');
+    });
+
+    it('should handle repo name without slash (e.g. GitLab project ID)', async () => {
+      mockProvider.searchCode.mockResolvedValue({
+        data: {
+          items: [
+            {
+              path: 'src/main.ts',
+              repository: { id: '42', name: '12345', url: '' },
+              matches: [{ context: 'main()', positions: [] }],
+              url: '',
+            },
+          ],
+          totalCount: 1,
+          pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+        },
+        status: 200,
+        provider: 'gitlab',
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [{ keywordsToSearch: ['main'] }],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('owner: ""');
+      expect(responseText).toContain('repo: "12345"');
     });
   });
 

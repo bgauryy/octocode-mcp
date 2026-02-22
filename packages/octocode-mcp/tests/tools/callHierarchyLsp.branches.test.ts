@@ -13,6 +13,11 @@ import {
 } from '../../src/tools/lsp_call_hierarchy/callHierarchyLsp.js';
 import { createCallItemKey } from '../../src/tools/lsp_call_hierarchy/callHierarchyHelpers.js';
 
+// Mock fs/promises for readFile in auto-follow
+vi.mock('node:fs/promises', () => ({
+  readFile: vi.fn().mockResolvedValue('export function testFunction() {}'),
+}));
+
 // Mock LSP client creation
 vi.mock('../../src/lsp/index.js', () => ({
   createClient: vi.fn(),
@@ -67,6 +72,7 @@ describe('LSP Call Hierarchy - Branch Coverage Tests', () => {
     prepareCallHierarchy: vi.fn(),
     getIncomingCalls: vi.fn(),
     getOutgoingCalls: vi.fn(),
+    gotoDefinition: vi.fn(),
     stop: vi.fn().mockResolvedValue(undefined),
   };
 
@@ -95,6 +101,7 @@ describe('LSP Call Hierarchy - Branch Coverage Tests', () => {
     ]);
     vi.mocked(mockClient.getIncomingCalls).mockResolvedValue([]);
     vi.mocked(mockClient.getOutgoingCalls).mockResolvedValue([]);
+    vi.mocked(mockClient.gotoDefinition).mockResolvedValue([]);
   });
 
   describe('callHierarchyWithLSP - Direction and Client Branches', () => {
@@ -531,6 +538,128 @@ describe('LSP Call Hierarchy - Branch Coverage Tests', () => {
 
       expect(result).toHaveLength(1);
       expect(enhanceOutgoingCalls).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Auto-follow from import lines', () => {
+    const definitionItem = {
+      name: 'testFunction',
+      kind: 'function' as const,
+      uri: '/workspace/src/definitions.ts',
+      range: {
+        start: { line: 10, character: 0 },
+        end: { line: 10, character: 30 },
+      },
+      selectionRange: {
+        start: { line: 10, character: 0 },
+        end: { line: 10, character: 30 },
+      },
+    };
+
+    it('should auto-follow to definition when prepareCallHierarchy returns empty', async () => {
+      // First prepareCallHierarchy returns empty (import line)
+      vi.mocked(mockClient.prepareCallHierarchy)
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([definitionItem]);
+
+      // gotoDefinition returns the definition location
+      vi.mocked(mockClient.gotoDefinition).mockResolvedValue([
+        {
+          uri: '/workspace/src/definitions.ts',
+          range: {
+            start: { line: 10, character: 0 },
+            end: { line: 10, character: 30 },
+          },
+          content: 'export function testFunction() {}',
+        },
+      ]);
+
+      const incomingCall = {
+        from: {
+          ...mockCallHierarchyItem,
+          name: 'callerFunction',
+          uri: '/workspace/src/caller.ts',
+          range: {
+            start: { line: 5, character: 0 },
+            end: { line: 5, character: 20 },
+          },
+        },
+        fromRanges: [
+          {
+            start: { line: 5, character: 0 },
+            end: { line: 5, character: 20 },
+          },
+        ],
+      };
+      vi.mocked(mockClient.getIncomingCalls).mockResolvedValue([incomingCall]);
+
+      const result = await callHierarchyWithLSP(
+        '/workspace/src/file.ts',
+        '/workspace',
+        { line: 1, character: 10 },
+        { ...baseQuery, direction: 'incoming' },
+        'import { testFunction } from "./definitions";'
+      );
+
+      expect(result).not.toBeNull();
+      expect(result?.status).toBe('hasResults');
+      expect(mockClient.gotoDefinition).toHaveBeenCalledWith(
+        '/workspace/src/file.ts',
+        { line: 1, character: 10 }
+      );
+      expect(mockClient.prepareCallHierarchy).toHaveBeenCalledTimes(2);
+    });
+
+    it('should return empty when auto-follow also fails', async () => {
+      vi.mocked(mockClient.prepareCallHierarchy).mockResolvedValue([]);
+      vi.mocked(mockClient.gotoDefinition).mockResolvedValue([]);
+
+      const result = await callHierarchyWithLSP(
+        '/workspace/src/file.ts',
+        '/workspace',
+        { line: 1, character: 10 },
+        { ...baseQuery, direction: 'incoming' },
+        'import { testFunction } from "./definitions";'
+      );
+
+      expect(result).not.toBeNull();
+      expect(result?.status).toBe('empty');
+      expect(result?.errorType).toBe('symbol_not_found');
+    });
+
+    it('should return empty when gotoDefinition returns no range', async () => {
+      vi.mocked(mockClient.prepareCallHierarchy).mockResolvedValue([]);
+      vi.mocked(mockClient.gotoDefinition).mockResolvedValue([
+        { uri: '', range: null as any, content: '' },
+      ]);
+
+      const result = await callHierarchyWithLSP(
+        '/workspace/src/file.ts',
+        '/workspace',
+        { line: 1, character: 10 },
+        { ...baseQuery, direction: 'incoming' },
+        'import { testFunction } from "./definitions";'
+      );
+
+      expect(result?.status).toBe('empty');
+    });
+
+    it('should handle gotoDefinition throwing an error gracefully', async () => {
+      vi.mocked(mockClient.prepareCallHierarchy).mockResolvedValue([]);
+      vi.mocked(mockClient.gotoDefinition).mockRejectedValue(
+        new Error('LSP error')
+      );
+
+      const result = await callHierarchyWithLSP(
+        '/workspace/src/file.ts',
+        '/workspace',
+        { line: 1, character: 10 },
+        { ...baseQuery, direction: 'incoming' },
+        'import { testFunction } from "./definitions";'
+      );
+
+      expect(result?.status).toBe('empty');
+      expect(result?.errorType).toBe('symbol_not_found');
     });
   });
 });

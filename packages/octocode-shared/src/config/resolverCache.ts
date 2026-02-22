@@ -166,7 +166,6 @@ const CACHE_TTL_MS = 60000;
 export function getConfigSync(): ResolvedConfig {
   const now = Date.now();
 
-  // Return cached if still valid
   if (cachedConfig && now - cacheTimestamp < CACHE_TTL_MS) {
     return cachedConfig;
   }

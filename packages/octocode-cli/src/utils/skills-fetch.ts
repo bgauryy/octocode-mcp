@@ -533,7 +533,6 @@ export async function installMarketplaceSkill(
 
     const tree = await fetchMarketplaceTree(source);
 
-    // Create destination directory
     const skillDestDir = join(destDir, skill.name);
     if (!dirExists(skillDestDir)) {
       mkdirSync(skillDestDir, { recursive: true, mode: 0o700 });
@@ -564,7 +563,6 @@ export async function installMarketplaceSkill(
           throw new Error('Invalid skill file path traversal');
         }
 
-        // Create subdirectories if needed
         const destSubDir = join(
           skillDestDir,
           relativePath.split('/').slice(0, -1).join('/')

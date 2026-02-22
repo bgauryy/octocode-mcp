@@ -7,7 +7,7 @@ import type {
 import {
   TOOL_NAMES,
   getDynamicHints as getMetadataDynamicHints,
-} from '../toolMetadata.js';
+} from '../toolMetadata/index.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { handleCatchError, createSuccessResult } from '../utils.js';
@@ -128,6 +128,10 @@ export async function searchMultipleGitHubRepos(
           topics: query.topicsToSearch,
           owner: query.owner,
           stars: query.stars,
+          size: query.size,
+          created: query.created,
+          updated: query.updated,
+          match: query.match,
           sort: query.sort as
             | 'stars'
             | 'forks'

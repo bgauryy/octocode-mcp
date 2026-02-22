@@ -7,14 +7,14 @@ import {
   BaseQuerySchemaLocal,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
-import { LSP_CALL_HIERARCHY, DESCRIPTIONS } from '../toolMetadata.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
+import { LSP_CALL_HIERARCHY, DESCRIPTIONS } from '../toolMetadata/index.js';
 
 /**
  * Tool description for lspCallHierarchy
  */
 export const LSP_CALL_HIERARCHY_DESCRIPTION =
-  DESCRIPTIONS[STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY];
+  DESCRIPTIONS[TOOL_NAMES.LSP_CALL_HIERARCHY];
 
 /**
  * Single query schema for LSP call hierarchy
@@ -98,7 +98,7 @@ export const LSPCallHierarchyQuerySchema = BaseQuerySchemaLocal.extend({
  * Lower limit (maxQueries: 3) due to expensive operation
  */
 export const BulkLSPCallHierarchySchema = createBulkQuerySchema(
-  STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
+  TOOL_NAMES.LSP_CALL_HIERARCHY,
   LSPCallHierarchyQuerySchema,
   { maxQueries: 3 }
 );

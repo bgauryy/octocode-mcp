@@ -7,7 +7,6 @@
 import { STATIC_TOOL_NAMES } from '../tools/toolNames.js';
 import type { HintContext, HintStatus, ToolHintGenerators } from './types.js';
 
-// Import hints from individual tool modules
 import { hints as localRipgrepHints } from '../tools/local_ripgrep/hints.js';
 import {
   hints as localFetchContentHints,

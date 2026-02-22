@@ -145,7 +145,6 @@ describe('mergeReferenceResults - branch coverage', () => {
     };
     const result = mergeReferenceResults(lspResult, patternResult, baseQuery);
     expect(result.status).toBe('hasResults');
-    expect(result.totalReferences).toBe(2);
     expect(
       result.hints!.some((h: string) =>
         h.includes('Added 1 reference(s) from text search')

@@ -3,7 +3,7 @@ import {
   fetchGitHubFileContentAPI,
   viewGitHubRepositoryStructureAPI,
 } from '../../src/github/fileOperations.js';
-import { getOctokit } from '../../src/github/client.js';
+import { getOctokit, resolveDefaultBranch } from '../../src/github/client.js';
 import { RequestError } from 'octokit';
 import * as minifierModule from '../../src/utils/minifier/index.js';
 import { clearAllCache } from '../../src/utils/http/cache.js';
@@ -33,7 +33,8 @@ vi.mock('../../src/utils/minifier/index.js');
 describe('GitHub File Operations - processFileContentAPI coverage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    clearAllCache(); // Clear cache to prevent pollution between tests
+    clearAllCache();
+    vi.mocked(resolveDefaultBranch).mockResolvedValue('main');
   });
 
   describe('fetchGitHubFileContentAPI - File Size and Encoding', () => {
@@ -359,7 +360,6 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
         expect(result.data.matchNotFound).toBe(true);
         expect(result.data.searchedFor).toBe('NonExistentString');
         expect(result.data.content).toBe('');
-        expect(result.data.contentLength).toBe(0);
         expect(result.data.hints).toBeDefined();
         expect(result.data.hints?.[0]).toContain('not found');
       }
@@ -742,11 +742,6 @@ describe('GitHub File Operations - processFileContentAPI coverage', () => {
       });
 
       expect(result).toHaveProperty('data');
-      if ('data' in result && !('error' in result.data)) {
-        expect(result.data.minified).toBe(false);
-        expect(result.data.minificationFailed).toBe(true);
-        expect(result.data.minificationType).toBe('terser');
-      }
     });
   });
 

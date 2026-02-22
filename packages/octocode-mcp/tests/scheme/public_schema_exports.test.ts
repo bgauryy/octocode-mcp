@@ -217,6 +217,8 @@ describe('Public Schema Exports', () => {
   describe('Schema Content Verification - Local Tools', () => {
     it('RipgrepQuerySchema should have required fields', () => {
       const validQuery = {
+        researchGoal: 'Find exports',
+        reasoning: 'Pattern matches export statements',
         pattern: 'export function',
         path: '/src',
       };
@@ -229,10 +231,14 @@ describe('Public Schema Exports', () => {
       const validBulk = {
         queries: [
           {
+            researchGoal: 'Find imports',
+            reasoning: 'Pattern matches import statements',
             pattern: 'import',
             path: '/src',
           },
           {
+            researchGoal: 'Find exports',
+            reasoning: 'Pattern matches export statements',
             pattern: 'export',
             path: '/lib',
           },
@@ -245,6 +251,8 @@ describe('Public Schema Exports', () => {
 
     it('FetchContentQuerySchema should have required path field', () => {
       const validQuery = {
+        researchGoal: 'Read file',
+        reasoning: 'Need file content',
         path: '/path/to/file.ts',
       };
 
@@ -254,6 +262,8 @@ describe('Public Schema Exports', () => {
 
     it('FindFilesQuerySchema should have required path field', () => {
       const validQuery = {
+        researchGoal: 'Find files',
+        reasoning: 'Browse project structure',
         path: '/project',
       };
 
@@ -263,6 +273,8 @@ describe('Public Schema Exports', () => {
 
     it('ViewStructureQuerySchema should have required path field', () => {
       const validQuery = {
+        researchGoal: 'Browse structure',
+        reasoning: 'View project layout',
         path: '/project',
       };
 
@@ -274,6 +286,8 @@ describe('Public Schema Exports', () => {
   describe('Schema Content Verification - LSP Tools', () => {
     it('LSPGotoDefinitionQuerySchema should have required LSP fields', () => {
       const validQuery = {
+        researchGoal: 'Find definition',
+        reasoning: 'Navigate to symbol',
         uri: 'file:///path/to/file.ts',
         symbolName: 'myFunction',
         lineHint: 10,
@@ -285,6 +299,8 @@ describe('Public Schema Exports', () => {
 
     it('LSPFindReferencesQuerySchema should have required LSP fields', () => {
       const validQuery = {
+        researchGoal: 'Find usages',
+        reasoning: 'Trace symbol references',
         uri: 'file:///path/to/file.ts',
         symbolName: 'MyType',
         lineHint: 5,
@@ -296,6 +312,8 @@ describe('Public Schema Exports', () => {
 
     it('LSPCallHierarchyQuerySchema should have required fields including direction', () => {
       const validQuery = {
+        researchGoal: 'Trace calls',
+        reasoning: 'Analyze call flow',
         uri: 'file:///path/to/file.ts',
         symbolName: 'handleRequest',
         lineHint: 20,
@@ -310,12 +328,16 @@ describe('Public Schema Exports', () => {
       const validBulk = {
         queries: [
           {
+            researchGoal: 'Trace func1',
+            reasoning: 'Find callers',
             uri: 'file:///path/to/file.ts',
             symbolName: 'func1',
             lineHint: 10,
             direction: 'incoming',
           },
           {
+            researchGoal: 'Trace func2',
+            reasoning: 'Find callees',
             uri: 'file:///path/to/file.ts',
             symbolName: 'func2',
             lineHint: 20,
@@ -395,9 +417,16 @@ describe('Public Schema Exports', () => {
       expect(result.success).toBe(false);
     });
 
-    it('BaseQuerySchemaLocal should have optional research fields', () => {
-      // All fields optional for local tools
+    it('BaseQuerySchemaLocal should require researchGoal and reasoning', () => {
       const result = BaseQuerySchemaLocal.safeParse({});
+      expect(result.success).toBe(false);
+    });
+
+    it('BaseQuerySchemaLocal should accept valid research fields', () => {
+      const result = BaseQuerySchemaLocal.safeParse({
+        researchGoal: 'Find X',
+        reasoning: 'Search pattern helps',
+      });
       expect(result.success).toBe(true);
     });
   });
@@ -487,6 +516,8 @@ describe('Public Schema Exports', () => {
     it('should reject invalid data for single query schemas', () => {
       // Missing required pattern field
       const invalidRipgrep = RipgrepQuerySchema.safeParse({
+        researchGoal: 'Test',
+        reasoning: 'Test',
         path: '/src',
       });
       expect(invalidRipgrep.success).toBe(false);
@@ -515,6 +546,8 @@ describe('Public Schema Exports', () => {
   describe('Schema Default Values', () => {
     it('RipgrepQuerySchema should apply default values', () => {
       const query = {
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
         pattern: 'test',
         path: '/src',
       };
@@ -537,6 +570,8 @@ describe('Public Schema Exports', () => {
 
     it('ViewStructureQuerySchema should apply default values', () => {
       const query = {
+        researchGoal: 'Browse',
+        reasoning: 'View structure',
         path: '/project',
       };
 
@@ -554,6 +589,8 @@ describe('Public Schema Exports', () => {
 
     it('LSPCallHierarchyQuerySchema should apply default values', () => {
       const query = {
+        researchGoal: 'Trace calls',
+        reasoning: 'Find callers',
         uri: 'file:///test.ts',
         symbolName: 'myFunc',
         lineHint: 10,

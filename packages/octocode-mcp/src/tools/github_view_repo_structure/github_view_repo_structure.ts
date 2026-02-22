@@ -4,10 +4,11 @@ import type { AnySchema } from '../../types/toolTypes.js';
 import { withSecurityValidation } from '../../security/withSecurityValidation.js';
 import type { ToolInvocationCallback } from '../../types.js';
 import type { GitHubViewRepoStructureQuery } from './types.js';
-import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata.js';
+import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/index.js';
 import { GitHubViewRepoStructureBulkQuerySchema } from './scheme.js';
 import { invokeCallbackSafely } from '../utils.js';
 import { exploreMultipleRepositoryStructures } from './execution.js';
+import { GitHubViewRepoStructureOutputSchema } from '../../scheme/outputSchemas.js';
 
 export function registerViewGitHubRepoStructureTool(
   server: McpServer,
@@ -19,6 +20,7 @@ export function registerViewGitHubRepoStructureTool(
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE],
       inputSchema:
         GitHubViewRepoStructureBulkQuerySchema as unknown as AnySchema,
+      outputSchema: GitHubViewRepoStructureOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'GitHub Repository Structure Explorer',
         readOnlyHint: true,

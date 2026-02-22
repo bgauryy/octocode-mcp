@@ -30,24 +30,24 @@ import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
 import { ToolErrors } from '../../errorCodes.js';
-import { executeFindReferences } from './execution.js';
+import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
+import { executeFindReferences, TOOL_NAME } from './execution.js';
 import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
 import { findReferencesWithLSP } from './lspReferencesCore.js';
 import { findReferencesWithPatternMatching } from './lspReferencesPatterns.js';
-
-const TOOL_NAME = STATIC_TOOL_NAMES.LSP_FIND_REFERENCES;
+import { LspFindReferencesOutputSchema } from '../../scheme/outputSchemas.js';
 
 /**
  * Register the LSP find references tool with the MCP server.
  */
 export function registerLSPFindReferencesTool(server: McpServer) {
   return server.registerTool(
-    'lspFindReferences',
+    TOOL_NAME,
     {
       description: LSP_FIND_REFERENCES_DESCRIPTION,
       inputSchema: BulkLSPFindReferencesSchema as unknown as AnySchema,
+      outputSchema: LspFindReferencesOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'Find References',
         readOnlyHint: true,
@@ -56,10 +56,7 @@ export function registerLSPFindReferencesTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    withBasicSecurityValidation(
-      executeFindReferences,
-      STATIC_TOOL_NAMES.LSP_FIND_REFERENCES
-    )
+    withBasicSecurityValidation(executeFindReferences, TOOL_NAME)
   );
 }
 
@@ -138,9 +135,7 @@ export async function findReferences(
       throw error;
     }
 
-    // Get workspace root - use process.cwd() like callHierarchy and gotoDefinition
-    // to ensure full monorepo scope (findWorkspaceRoot stops at first package.json)
-    const workspaceRoot = process.env.WORKSPACE_ROOT || process.cwd();
+    const workspaceRoot = resolveWorkspaceRoot();
 
     // Try LSP for semantic reference finding, then merge with pattern matching
     let lspResult: FindReferencesResult | null = null;
@@ -261,7 +256,6 @@ export function mergeReferenceResults(
       hasMore: page < totalPages,
       resultsPerPage: referencesPerPage,
     },
-    totalReferences,
     hasMultipleFiles: uniqueFiles.size > 1,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,

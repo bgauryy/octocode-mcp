@@ -7,7 +7,11 @@ import {
   BaseQuerySchemaLocal,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import { LOCAL_FIND_FILES, TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata.js';
+import {
+  LOCAL_FIND_FILES,
+  TOOL_NAMES,
+  DESCRIPTIONS,
+} from '../toolMetadata/index.js';
 
 /**
  * Tool description for localFindFiles

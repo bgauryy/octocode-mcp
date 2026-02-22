@@ -11,7 +11,7 @@ import {
 // Internal function imported directly for testing
 import { getMetadataDynamicHints } from '../../src/hints/static.js';
 import { STATIC_TOOL_NAMES } from '../../src/tools/toolNames.js';
-import { initializeToolMetadata } from '../../src/tools/toolMetadata.js';
+import { initializeToolMetadata } from '../../src/tools/toolMetadata/index.js';
 
 // Initialize metadata before tests
 beforeAll(async () => {

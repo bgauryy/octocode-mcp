@@ -108,7 +108,6 @@ describe('Tool Execution Branch Coverage Tests', () => {
 
       expect(result).not.toBeNull();
       expect(result?.status).toBe('empty');
-      expect(result?.totalReferences).toBe(0);
       expect(mockClient.findReferences).toHaveBeenCalled();
       expect(mockClient.stop).toHaveBeenCalled();
     });
@@ -138,7 +137,6 @@ describe('Tool Execution Branch Coverage Tests', () => {
 
       expect(result).not.toBeNull();
       expect(result?.status).toBe('empty');
-      expect(result?.totalReferences).toBe(0);
       expect(mockClient.stop).toHaveBeenCalled();
     });
 

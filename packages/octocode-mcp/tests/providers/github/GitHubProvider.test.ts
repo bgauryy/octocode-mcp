@@ -475,7 +475,6 @@ describe('GitHubProvider', () => {
           data: {
             path: 'src/index.ts',
             content: 'export default function() {}',
-            contentLength: 28,
             branch: 'main',
             owner: 'owner',
             repo: 'repo',
@@ -503,7 +502,6 @@ describe('GitHubProvider', () => {
           data: {
             path: 'src/utils.ts',
             content: 'function helper() {\n  return true;\n}',
-            contentLength: 35,
             branch: 'feature-branch',
             owner: 'test',
             repo: 'project',
@@ -567,7 +565,6 @@ describe('GitHubProvider', () => {
           data: {
             path: 'empty.ts',
             content: '',
-            contentLength: 0,
             branch: 'main',
           },
           status: 200,
@@ -586,7 +583,6 @@ describe('GitHubProvider', () => {
         mockFetchGitHubFileContentAPI.mockResolvedValue({
           data: {
             content: 'content',
-            contentLength: 7,
           },
           status: 200,
         });
@@ -604,7 +600,6 @@ describe('GitHubProvider', () => {
           data: {
             path: 'test.ts',
             content: 'content',
-            contentLength: 7,
           },
           status: 200,
         });
@@ -2066,7 +2061,7 @@ describe('GitHubProvider', () => {
       });
 
       mockFetchGitHubFileContentAPI.mockResolvedValue({
-        data: { path: 'test.ts', content: '', contentLength: 0 },
+        data: { path: 'test.ts', content: '' },
         status: 200,
       });
 

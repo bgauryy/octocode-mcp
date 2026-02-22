@@ -138,3 +138,29 @@ export function formatEntryString(
     return `${indentation}${typeMarker}${permStr}${dateStr} ${nameDisplay}`;
   }
 }
+
+export interface EntryOutput {
+  name: string;
+  type: 'file' | 'dir' | 'link';
+  depth?: number;
+  size?: string;
+  modified?: string;
+  permissions?: string;
+}
+
+export function toEntryObject(entry: DirectoryEntry): EntryOutput {
+  const obj: EntryOutput = {
+    name: entry.type === 'directory' ? `${entry.name}/` : entry.name,
+    type:
+      entry.type === 'directory'
+        ? 'dir'
+        : entry.type === 'symlink'
+          ? 'link'
+          : 'file',
+  };
+  if (entry.depth !== undefined && entry.depth > 0) obj.depth = entry.depth;
+  if (entry.size) obj.size = entry.size;
+  if (entry.modified) obj.modified = entry.modified;
+  if (entry.permissions) obj.permissions = entry.permissions;
+  return obj;
+}

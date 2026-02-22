@@ -169,7 +169,6 @@ export function getProvider(
 ): ICodeHostProvider {
   const cacheKey = getCacheKey(type, config);
 
-  // Return cached instance if available and not expired
   const cached = instanceCache.get(cacheKey);
   if (cached && isProviderCacheValid(cached)) {
     cached.lastAccessedAt = Date.now();
@@ -195,7 +194,6 @@ export function getProvider(
     );
   }
 
-  // Create new instance
   const provider = new ProviderClass({
     ...config,
     type,
@@ -285,7 +283,6 @@ export function clearProviderInstance(
  * Called during server startup.
  */
 export async function initializeProviders(): Promise<void> {
-  // Import and register GitHub provider
   try {
     const { GitHubProvider } = await import('./github/GitHubProvider.js');
     registerProvider('github', GitHubProvider);
@@ -293,7 +290,6 @@ export async function initializeProviders(): Promise<void> {
     // GitHub provider initialization failed - will be unavailable
   }
 
-  // Import and register GitLab provider
   try {
     const { GitLabProvider } = await import('./gitlab/GitLabProvider.js');
     registerProvider('gitlab', GitLabProvider);

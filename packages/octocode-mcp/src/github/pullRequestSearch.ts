@@ -15,7 +15,7 @@ import {
 import type { PullRequestSearchResult } from '../tools/github_search_pull_requests/types.js';
 import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
-import { TOOL_NAMES } from '../tools/toolMetadata.js';
+import { TOOL_NAMES } from '../tools/toolMetadata/index.js';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
 import {
@@ -183,14 +183,15 @@ async function searchGitHubPullRequestsAPIInternal(
 
     const totalMatches = Math.min(searchResult.data.total_count, 1000);
     const totalPages = Math.min(Math.ceil(totalMatches / perPage), 10);
-    const hasMore = currentPage < totalPages;
+    const clampedPage = Math.min(currentPage, Math.max(1, totalPages));
+    const hasMore = clampedPage < totalPages;
 
     return {
       pull_requests: formattedPRs,
       total_count: searchResult.data.total_count,
       ...(searchResult.data.incomplete_results && { incomplete_results: true }),
       pagination: {
-        currentPage,
+        currentPage: clampedPage,
         totalPages,
         perPage,
         totalMatches,

@@ -14,7 +14,6 @@ import {
 import {
   validateToolPath,
   createErrorResult,
-  checkLargeOutputSafety,
 } from '../../utils/file/toolHelpers.js';
 import type {
   FindFilesQuery,
@@ -22,8 +21,8 @@ import type {
   FoundFile,
 } from '../../utils/core/types.js';
 import fs from 'fs';
-import { ToolErrors, type LocalToolErrorCode } from '../../errorCodes.js';
-import { TOOL_NAMES } from '../toolMetadata.js';
+import { ToolErrors } from '../../errorCodes.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 
 export async function findFiles(
   query: FindFilesQuery
@@ -174,26 +173,6 @@ export async function findFiles(
     const endIdx = Math.min(startIdx + filesPerPage, totalFiles);
     const paginatedFiles = filesForOutput.slice(startIdx, endIdx);
 
-    const safetyCheck = checkLargeOutputSafety(
-      paginatedFiles.length,
-      !!query.charLength,
-      {
-        threshold: 100,
-        itemType: 'file',
-        detailed: details,
-      }
-    );
-    if (safetyCheck.shouldBlock) {
-      return {
-        status: 'error',
-        errorCode: safetyCheck.errorCode! as LocalToolErrorCode,
-        totalFiles,
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
-        hints: safetyCheck.hints!,
-      };
-    }
-
     let finalFiles = paginatedFiles;
     let paginationMetadata: PaginationMetadata | null = null;
 
@@ -286,8 +265,6 @@ export async function findFiles(
     return {
       status,
       files: finalFiles,
-      cwd: process.cwd(),
-      totalFiles,
       pagination: {
         currentPage: filePageNumber,
         totalPages,

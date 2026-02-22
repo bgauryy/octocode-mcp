@@ -55,7 +55,6 @@ export function applyContentPagination(
   return {
     ...data,
     content: paginationMeta.paginatedContent,
-    contentLength: paginationMeta.paginatedContent.length,
     pagination: paginationInfo,
     hints: paginationHints,
   };
@@ -144,7 +143,6 @@ export async function processFileContentAPI(
         repo,
         path: filePath,
         content: '',
-        contentLength: 0,
         branch,
         matchNotFound: true,
         searchedFor: matchString,
@@ -228,8 +226,6 @@ export async function processFileContentAPI(
 
   const minifyResult = await minifyContent(finalContent, filePath);
   finalContent = minifyResult.content;
-  const minificationFailed = minifyResult.failed;
-  const minificationType = minifyResult.type;
 
   const matchLocations = Array.from(matchLocationsSet);
 
@@ -237,7 +233,6 @@ export async function processFileContentAPI(
     owner,
     repo,
     path: filePath,
-    contentLength: finalContent.length,
     content: finalContent,
     branch,
     ...(isPartial && {
@@ -245,9 +240,6 @@ export async function processFileContentAPI(
       endLine: actualEndLine,
       isPartial,
     }),
-    minified: !minificationFailed,
-    minificationFailed: minificationFailed,
-    minificationType: minificationType,
     ...(matchLocations.length > 0 && {
       matchLocations,
     }),

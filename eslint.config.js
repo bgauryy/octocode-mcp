@@ -103,6 +103,17 @@ export default tseslint.config(
     },
   },
 
+  // octocode-local-cli specific rules
+  {
+    files: [
+      'packages/octocode-local-cli/src/**/*.ts',
+      'packages/octocode-local-cli/tests/**/*.ts',
+    ],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+
   // Test files - add globals for vitest and relax rules
   {
     files: ['**/tests/**/*.ts', '**/tests/**/*.tsx'],

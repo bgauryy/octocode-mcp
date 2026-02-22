@@ -15,7 +15,11 @@ import {
 } from '../../src/tools/local_ripgrep/scheme.js';
 
 const createQuery = (query: Parameters<typeof RipgrepQuerySchema.parse>[0]) =>
-  RipgrepQuerySchema.parse(query);
+  RipgrepQuerySchema.parse({
+    researchGoal: 'Test',
+    reasoning: 'Schema validation',
+    ...query,
+  });
 
 describe('RipgrepCommandBuilder - Discovery Mode', () => {
   /**

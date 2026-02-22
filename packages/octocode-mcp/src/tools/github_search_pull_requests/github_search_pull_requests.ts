@@ -4,41 +4,11 @@ import type { AnySchema } from '../../types/toolTypes.js';
 import { withSecurityValidation } from '../../security/withSecurityValidation.js';
 import type { ToolInvocationCallback } from '../../types.js';
 import type { GitHubPullRequestSearchQuery } from './types.js';
-import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata.js';
+import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/index.js';
 import { GitHubPullRequestSearchBulkQuerySchema } from './scheme.js';
 import { invokeCallbackSafely } from '../utils.js';
 import { searchMultipleGitHubPullRequests } from './execution.js';
-
-const VALIDATION_MESSAGES = {
-  QUERY_TOO_LONG: 'Query too long. Maximum 256 characters allowed.',
-  MISSING_PARAMS:
-    'At least one valid search parameter, filter, or PR number is required.',
-} as const;
-
-function hasQueryLengthError(query: GitHubPullRequestSearchQuery): boolean {
-  return Boolean(query?.query && String(query.query).length > 256);
-}
-
-function hasValidSearchParams(query: GitHubPullRequestSearchQuery): boolean {
-  return Boolean(
-    query?.query?.trim() ||
-    query?.owner ||
-    query?.repo ||
-    query?.author ||
-    query?.assignee ||
-    (query?.prNumber && query?.owner && query?.repo)
-  );
-}
-
-function addValidationError(
-  query: GitHubPullRequestSearchQuery,
-  error: string
-): GitHubPullRequestSearchQuery {
-  return {
-    ...query,
-    _validationError: error,
-  } as GitHubPullRequestSearchQuery;
-}
+import { GitHubSearchPullRequestsOutputSchema } from '../../scheme/outputSchemas.js';
 
 export function registerSearchGitHubPullRequestsTool(
   server: McpServer,
@@ -50,6 +20,8 @@ export function registerSearchGitHubPullRequestsTool(
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
       inputSchema:
         GitHubPullRequestSearchBulkQuerySchema as unknown as AnySchema,
+      outputSchema:
+        GitHubSearchPullRequestsOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'GitHub Pull Request Search',
         readOnlyHint: true,
@@ -67,23 +39,13 @@ export function registerSearchGitHubPullRequestsTool(
         authInfo,
         sessionId
       ): Promise<CallToolResult> => {
-        let queries = args.queries || [];
+        const queries = args.queries || [];
 
         await invokeCallbackSafely(
           callback,
           TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
           queries
         );
-
-        queries = queries.map(q => {
-          if (hasQueryLengthError(q)) {
-            return addValidationError(q, VALIDATION_MESSAGES.QUERY_TOO_LONG);
-          }
-          if (!hasValidSearchParams(q)) {
-            return addValidationError(q, VALIDATION_MESSAGES.MISSING_PARAMS);
-          }
-          return q;
-        });
 
         return searchMultipleGitHubPullRequests({
           queries,

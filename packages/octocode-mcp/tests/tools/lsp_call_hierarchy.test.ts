@@ -34,8 +34,10 @@ describe('LSP Call Hierarchy Tool', () => {
 
       registerLSPCallHierarchyTool(mockServer as any);
 
+      const { STATIC_TOOL_NAMES } =
+        await import('../../src/tools/toolNames.js');
       expect(mockServer.registerTool).toHaveBeenCalledWith(
-        'lspCallHierarchy',
+        STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
         expect.objectContaining({
           description: expect.any(String),
           inputSchema: expect.any(Object),

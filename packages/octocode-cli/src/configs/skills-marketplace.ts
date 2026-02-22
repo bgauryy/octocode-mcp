@@ -237,7 +237,6 @@ export async function fetchMarketplaceStars(
   const cacheKey = `${source.owner}/${source.repo}`;
   const cached = starsCache.get(cacheKey);
 
-  // Return cached value if still valid
   if (cached && Date.now() - cached.timestamp < STARS_CACHE_TTL_MS) {
     return cached.stars;
   }

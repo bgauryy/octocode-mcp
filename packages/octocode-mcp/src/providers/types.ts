@@ -33,7 +33,6 @@ export type {
   RepoStructureResult,
 } from './providerResults.js';
 
-// Import for use in this file
 import type {
   CodeSearchQuery,
   FileContentQuery,

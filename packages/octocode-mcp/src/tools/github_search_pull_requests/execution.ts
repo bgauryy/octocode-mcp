@@ -3,7 +3,7 @@ import type {
   GitHubPullRequestSearchQuery,
   PullRequestSearchResult,
 } from './types.js';
-import { TOOL_NAMES } from '../toolMetadata.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import {
@@ -29,10 +29,26 @@ export async function searchMultipleGitHubPullRequests(
     queries,
     async (query: GitHubPullRequestSearchQuery, _index: number) => {
       try {
-        const validationError = (query as unknown as Record<string, unknown>)
-          ?._validationError;
-        if (validationError && typeof validationError === 'string') {
-          return createErrorResult(validationError, query);
+        if (query.query && String(query.query).length > 256) {
+          return createErrorResult(
+            'Query too long. Maximum 256 characters allowed.',
+            query
+          );
+        }
+
+        const hasValidParams =
+          query.query?.trim() ||
+          query.owner ||
+          query.repo ||
+          query.author ||
+          query.assignee ||
+          (query.prNumber && query.owner && query.repo);
+
+        if (!hasValidParams) {
+          return createErrorResult(
+            'At least one valid search parameter, filter, or PR number is required.',
+            query
+          );
         }
 
         const provider = getProvider(providerType, {
@@ -57,15 +73,34 @@ export async function searchMultipleGitHubPullRequests(
             | undefined,
           author: query.author,
           assignee: query.assignee,
+          commenter: query.commenter,
+          involves: query.involves,
+          mentions: query.mentions,
+          reviewRequested: query['review-requested'],
+          reviewedBy: query['reviewed-by'],
           labels: query.label
             ? Array.isArray(query.label)
               ? query.label
               : [query.label]
             : undefined,
+          noLabel: query['no-label'],
+          noMilestone: query['no-milestone'],
+          noProject: query['no-project'],
+          noAssignee: query['no-assignee'],
           baseBranch: query.base,
           headBranch: query.head,
           created: query.created,
           updated: query.updated,
+          closed: query.closed,
+          mergedAt: query['merged-at'],
+          comments: query.comments,
+          reactions: query.reactions,
+          interactions: query.interactions,
+          merged: query.merged,
+          draft: query.draft,
+          match: query.match as
+            | Array<'title' | 'body' | 'comments'>
+            | undefined,
           withComments: query.withComments,
           withCommits: query.withCommits,
           type: query.type as
@@ -73,6 +108,7 @@ export async function searchMultipleGitHubPullRequests(
             | 'fullContent'
             | 'partialContent'
             | undefined,
+          partialContentMetadata: query.partialContentMetadata,
           sort: query.sort as 'created' | 'updated' | 'best-match' | undefined,
           order: query.order as 'asc' | 'desc' | undefined,
           limit: query.limit,
@@ -231,6 +267,7 @@ export async function searchMultipleGitHubPullRequests(
               ...paginationHints,
               ...outputLimitHints,
               ...fileChangeHints,
+              "file_changes[].patch = diff hunks; use prNumber + type='partialContent' for full file diffs",
             ],
           }
         );

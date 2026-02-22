@@ -3,7 +3,7 @@ import {
   fetchGitHubFileContentAPI,
   clearDefaultBranchCache,
 } from '../../src/github/fileOperations.js';
-import { getOctokit } from '../../src/github/client.js';
+import { getOctokit, resolveDefaultBranch } from '../../src/github/client.js';
 import { clearAllCache } from '../../src/utils/http/cache.js';
 import { RequestError } from 'octokit';
 import * as minifierModule from '../../src/utils/minifier/index.js';
@@ -37,6 +37,7 @@ describe('File Operations - Branch and ResolvedRef Behavior', () => {
     vi.clearAllMocks();
     clearAllCache();
     clearDefaultBranchCache();
+    vi.mocked(resolveDefaultBranch).mockResolvedValue('main');
     vi.mocked(minifierModule.minifyContent).mockResolvedValue({
       content: 'test content',
       failed: false,
@@ -126,6 +127,8 @@ describe('File Operations - Branch and ResolvedRef Behavior', () => {
     });
 
     it('should set branch to fallback branch when main/master redirects to default', async () => {
+      vi.mocked(resolveDefaultBranch).mockResolvedValue('develop');
+
       const mockOctokit = {
         rest: {
           repos: {

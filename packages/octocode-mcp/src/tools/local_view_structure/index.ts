@@ -1,5 +1,5 @@
 // Registration
-export { registerLocalViewStructureTool } from './local_view_structure.js';
+export { registerLocalViewStructureTool } from './register.js';
 
 // Execution functions
 export { viewStructure } from './local_view_structure.js';

@@ -3,10 +3,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerTools } from '../../src/tools/toolsManager.js';
 
 // Mock toolMetadata module
-vi.mock('../../src/tools/toolMetadata.js', async () => {
+vi.mock('../../src/tools/toolMetadata/index.js', async () => {
   const actual = await vi.importActual<
-    typeof import('../../src/tools/toolMetadata.js')
-  >('../../src/tools/toolMetadata.js');
+    typeof import('../../src/tools/toolMetadata/index.js')
+  >('../../src/tools/toolMetadata/index.js');
   return {
     ...actual,
     isToolInMetadata: vi.fn(),
@@ -74,7 +74,7 @@ vi.mock('../../src/session.js', () => ({
 
 import { ALL_TOOLS } from '../../src/tools/toolConfig.js';
 import { getServerConfig } from '../../src/serverConfig.js';
-import { isToolInMetadata } from '../../src/tools/toolMetadata.js';
+import { isToolInMetadata } from '../../src/tools/toolMetadata/index.js';
 import { logSessionError } from '../../src/session.js';
 import { TOOL_METADATA_ERRORS } from '../../src/errorCodes.js';
 

@@ -123,7 +123,7 @@ export function parseRipgrepJson(
           if (ctx) contextLines.push(ctx);
         }
 
-        let value = contextLines.join('\n');
+        let value = contextLines.join('\n').replace(/\n+$/, '');
         const charArray = [...value];
         if (charArray.length > maxLength) {
           // Slice to maxLength - 3 to leave room for '...'
@@ -132,12 +132,6 @@ export function parseRipgrepJson(
 
         return {
           value,
-          location: {
-            byteOffset: m.absoluteOffset,
-            byteLength: m.matchLength,
-            charOffset: m.absoluteOffset,
-            charLength: m.matchLength,
-          },
           line: m.lineNumber,
           column: m.column,
         };
@@ -233,7 +227,7 @@ export function parseGrepOutput(
   const files: RipgrepFileMatches[] = Array.from(fileMap.entries()).map(
     ([path, rawMatches]) => {
       const matches: RipgrepMatch[] = rawMatches.map(m => {
-        let value = m.lineText;
+        let value = m.lineText.replace(/\n+$/, '');
         const charArray = [...value];
         if (charArray.length > maxLength) {
           value = charArray.slice(0, maxLength - 3).join('') + '...';
@@ -241,13 +235,6 @@ export function parseGrepOutput(
 
         return {
           value,
-          location: {
-            // grep doesn't provide byte offsets, use 0 as placeholder
-            byteOffset: 0,
-            byteLength: 0,
-            charOffset: 0,
-            charLength: value.length,
-          },
           line: m.lineNumber,
           column: m.column,
         };

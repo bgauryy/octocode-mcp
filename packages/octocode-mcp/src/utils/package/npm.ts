@@ -99,13 +99,13 @@ interface NpmViewResult {
 }
 
 interface NpmRegistrySearchItem {
-  name: string;
-  version: string;
-  description?: string;
+  name: string | null | undefined;
+  version: string | null | undefined;
+  description?: string | null;
   links?: {
-    npm?: string;
-    homepage?: string;
-    repository?: string;
+    npm?: string | null;
+    homepage?: string | null;
+    repository?: string | null;
   };
 }
 
@@ -333,15 +333,24 @@ async function searchNpmPackageViaSearch(
 
     const validation = NpmRegistrySearchSchema.safeParse(raw);
     if (!validation.success) {
+      const issues = validation.error.issues.map(i => i.message).join('; ');
       return {
-        error: 'Invalid npm registry search response format',
-        hints: ['Try a different search term'],
+        error: `Invalid npm registry search response format: ${issues}`,
+        hints: [
+          'Try a different search term',
+          'Try searchLimit=1 for an exact package lookup',
+        ],
       };
     }
 
-    const searchResults = validation.data.objects
-      .map(obj => obj.package as NpmRegistrySearchItem)
-      .slice(0, limit);
+    const searchResults = (
+      validation.data.objects
+        .map(obj => obj.package as NpmRegistrySearchItem)
+        .filter(
+          (pkg): pkg is NpmRegistrySearchItem & { name: string } =>
+            typeof pkg.name === 'string' && pkg.name.length > 0
+        ) as (NpmRegistrySearchItem & { name: string })[]
+    ).slice(0, limit);
 
     const packages = await Promise.all(
       searchResults.map(async item => {
@@ -351,11 +360,12 @@ async function searchNpmPackageViaSearch(
         }
 
         return {
-          repoUrl: item.links?.repository
-            ? cleanRepoUrl(item.links.repository)
-            : null,
+          repoUrl:
+            item.links?.repository && typeof item.links.repository === 'string'
+              ? cleanRepoUrl(item.links.repository)
+              : null,
           path: item.name,
-          version: item.version,
+          version: item.version ?? 'unknown',
           mainEntry: null,
           typeDefinitions: null,
         } as NpmPackageResult;

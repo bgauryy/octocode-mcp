@@ -50,19 +50,19 @@ export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
   files?: Array<{
     /** File path within the repository */
     path: string;
-    /** Repository in owner/repo format - use this for githubGetFileContent */
+    /** Repository owner (e.g. "facebook") - use with repo for githubGetFileContent */
+    owner?: string;
+    /** Repository name (e.g. "react") - use with owner for githubGetFileContent */
     repo?: string;
     /** Matched code snippets (only for match="file") */
     text_matches?: string[];
     /** File last modified timestamp */
     lastModifiedAt?: string;
   }>;
-  /** When all files are from the same repo, this provides the owner, repo, and branch separately */
+  /** When all files are from the same repo, provides the branch for follow-up calls */
   repositoryContext?: {
-    owner: string;
-    repo: string;
     /** Default branch of the repository (for use with githubGetFileContent) */
-    branch?: string;
+    branch: string;
   };
   /** Pagination info for navigating through results */
   pagination?: {

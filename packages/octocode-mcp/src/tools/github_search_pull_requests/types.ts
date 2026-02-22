@@ -75,11 +75,9 @@ interface BaseToolResult<TQuery = object> {
 
 /** Detailed pull request information */
 export interface PullRequestInfo {
-  id?: number;
   number: number;
   title: string;
   url: string;
-  html_url?: string;
   state: 'open' | 'closed';
   draft: boolean;
   merged: boolean;
@@ -88,34 +86,19 @@ export interface PullRequestInfo {
   closed_at?: string;
   merged_at?: string;
   author: string;
-  assignees?: Array<{
-    login: string;
-    id: number;
-    avatar_url: string;
-    html_url: string;
-  }>;
+  assignees?: string[];
   labels?: Array<{
     id: number;
     name: string;
     color: string;
     description?: string;
   }>;
-  milestone?: {
-    id: number;
-    title: string;
-    description?: string;
-    state: 'open' | 'closed';
-    created_at: string;
-    updated_at: string;
-    due_on?: string;
-  };
   head_ref: string;
-  head_sha: string;
+  head_sha?: string;
   base_ref: string;
-  base_sha: string;
-  body?: string;
+  base_sha?: string;
+  body?: string | null;
   comments?: number;
-  review_comments?: number;
   commits?: number;
   additions?: number;
   deletions?: number;

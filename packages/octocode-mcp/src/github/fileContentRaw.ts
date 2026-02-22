@@ -6,13 +6,16 @@ import { RequestError } from 'octokit';
 import type { GetContentParameters, GitHubAPIResponse } from './githubAPI';
 import type { FileContentQuery } from '../tools/github_fetch_content/types.js';
 import type { GitHubApiFileItem } from '../tools/github_view_repo_structure/scheme.js';
-import { getOctokit, OctokitWithThrottling } from './client';
+import {
+  getOctokit,
+  OctokitWithThrottling,
+  resolveDefaultBranch,
+} from './client';
 import { handleGitHubAPIError } from './errors';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { TOOL_NAMES } from '../tools/toolMetadata.js';
+import { TOOL_NAMES } from '../tools/toolMetadata/index.js';
 import { FILE_OPERATION_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
-import NodeCache from 'node-cache';
 
 /** Raw content result for caching (before line/match processing) */
 export interface RawContentResult {
@@ -21,32 +24,14 @@ export interface RawContentResult {
   resolvedRef: string;
 }
 
-const defaultBranchCache = new NodeCache({
-  stdTTL: 3600,
-  checkperiod: 600,
-  useClones: false,
-});
-
+/**
+ * No-op kept for backward compatibility.
+ * Branch cache is now managed centrally in client.ts via resolveDefaultBranch.
+ * Use clearOctokitInstances() from client.ts for full cleanup.
+ */
 export function clearDefaultBranchCache(): void {
-  defaultBranchCache.flushAll();
-}
-
-async function getDefaultBranch(
-  octokit: InstanceType<typeof OctokitWithThrottling>,
-  owner: string,
-  repo: string
-): Promise<string> {
-  const cacheKey = `${owner}/${repo}`;
-  const cached = defaultBranchCache.get<string>(cacheKey);
-  if (cached !== undefined) return cached;
-  try {
-    const repoInfo = await octokit.rest.repos.get({ owner, repo });
-    const branch = repoInfo.data.default_branch || 'main';
-    defaultBranchCache.set(cacheKey, branch);
-    return branch;
-  } catch {
-    return 'main';
-  }
+  // Branch resolution is now cached in client.ts (resolveDefaultBranch).
+  // This function is kept as a no-op for backward compatibility with tests.
 }
 
 /**
@@ -74,8 +59,8 @@ export async function fetchRawGitHubFileContent(
       result = await octokit.rest.repos.getContent(contentParams);
     } catch (error: unknown) {
       if (error instanceof RequestError && error.status === 404 && branch) {
-        // Smart Fallback Logic
-        const defaultBranch = await getDefaultBranch(octokit, owner, repo);
+        // Smart Fallback Logic — uses the centralized resolver (cached, API-backed)
+        const defaultBranch = await resolveDefaultBranch(owner, repo, authInfo);
 
         const isCommonDefaultGuess = branch === 'main' || branch === 'master';
 
@@ -105,8 +90,10 @@ export async function fetchRawGitHubFileContent(
           );
 
           if (pathSuggestions.length > 0) {
-            const hint = `Did you mean: ${pathSuggestions.join(', ')}?`;
-            apiError.hints = [...(apiError.hints || []), hint];
+            apiError.hints = [
+              ...(apiError.hints || []),
+              ...buildPathSuggestionHints(filePath, pathSuggestions),
+            ];
           }
 
           return {
@@ -125,8 +112,10 @@ export async function fetchRawGitHubFileContent(
             branch || 'main'
           );
           if (pathSuggestions.length > 0) {
-            const hint = `Did you mean: ${pathSuggestions.join(', ')}?`;
-            apiError.hints = [...(apiError.hints || []), hint];
+            apiError.hints = [
+              ...(apiError.hints || []),
+              ...buildPathSuggestionHints(filePath, pathSuggestions),
+            ];
           }
           return apiError;
         }
@@ -254,6 +243,29 @@ export async function fetchRawGitHubFileContent(
     const apiError = handleGitHubAPIError(error);
     return apiError;
   }
+}
+
+function buildPathSuggestionHints(
+  requestedPath: string,
+  suggestions: string[]
+): string[] {
+  const targetName = requestedPath.split('/').pop() || '';
+  const isCaseMismatch = suggestions.some(s => {
+    const suggestedName = s.split('/').pop() || '';
+    return (
+      suggestedName.toLowerCase() === targetName.toLowerCase() &&
+      suggestedName !== targetName
+    );
+  });
+
+  const hints: string[] = [];
+  if (isCaseMismatch) {
+    hints.push(
+      'GitHub Contents API paths are case-sensitive. Verify exact file casing with githubViewRepoStructure.'
+    );
+  }
+  hints.push(`Did you mean: ${suggestions.join(', ')}?`);
+  return hints;
 }
 
 async function findPathSuggestions(

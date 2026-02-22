@@ -44,25 +44,13 @@ describe('Local Tools Hints', () => {
         expect(hints?.filter(Boolean).length).toBe(0);
       });
 
-      it('should include parallel tip when fileCount > 5', () => {
+      it('should return empty for any fileCount (no API keys available)', () => {
         const hints = HINTS[STATIC_TOOL_NAMES.LOCAL_RIPGREP]?.hasResults({
           fileCount: 10,
         });
 
-        // With fileCount > 5, includes parallelTip and multipleFiles hints
-        expect(hints?.filter(Boolean).length).toBeGreaterThan(0);
-      });
-
-      it('should not include parallel tip when fileCount <= 5', () => {
-        const hints = HINTS[STATIC_TOOL_NAMES.LOCAL_RIPGREP]?.hasResults({
-          fileCount: 3,
-        });
-
-        // fileCount 3 only triggers multipleFiles hint, not parallelTip
-        const parallelHints = hints?.filter(h =>
-          h?.toLowerCase().includes('parallel')
-        );
-        expect(parallelHints?.length).toBe(0);
+        // hasResults dynamic hints are all empty — static hints come from HOST
+        expect(hints?.filter(Boolean).length).toBe(0);
       });
     });
 
@@ -311,16 +299,16 @@ describe('Local Tools Hints', () => {
         expect(hints?.filter(Boolean).length).toBe(0);
       });
 
-      it('should include parallel tip when fileCount > 3', () => {
+      it('should return empty when fileCount <= 20 (manyResults threshold)', () => {
         const hints = HINTS[STATIC_TOOL_NAMES.LOCAL_FIND_FILES]?.hasResults({
           fileCount: 5,
         });
 
-        // With fileCount > 3, includes batchParallel hints
-        expect(hints?.filter(Boolean).length).toBeGreaterThan(0);
+        // batchParallel key removed (not in API); manyResults only fires at > 20
+        expect(hints?.filter(Boolean).length).toBe(0);
       });
 
-      it('should not include parallel tip when fileCount <= 3', () => {
+      it('should return empty when fileCount <= 3', () => {
         const hints = HINTS[STATIC_TOOL_NAMES.LOCAL_FIND_FILES]?.hasResults({
           fileCount: 2,
         });

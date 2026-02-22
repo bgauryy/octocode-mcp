@@ -1,20 +1,6 @@
 # Flow Analysis Protocol
 
-## The Funnel: Search → Locate → Trace → Read
-
-```
-SEARCH (text)  →  LOCATE (LSP)  →  TRACE (LSP)  →  READ (content)
-localSearchCode    lspGotoDefinition   lspCallHierarchy    localGetFileContent
-githubSearchCode                       lspFindReferences   githubGetFileContent
-      │                   │                   │                    │
-      ▼                   ▼                   ▼                    ▼
-  Get lineHint      Jump to def         Map callers/usages   Read implementation
-  + file path       (confirms symbol)   (impact radius)      (LAST step only)
-```
-
-**CRITICAL LSP Rule:** `lspGotoDefinition`, `lspFindReferences`, and `lspCallHierarchy` ALL require a `lineHint` from `localSearchCode`. NEVER guess lineHint — ALWAYS search first.
-
----
+> Tool descriptions and the funnel method (`SEARCH → LOCATE → TRACE → READ`) are available in the MCP server context. This file contains **review-specific tracing recipes** only.
 
 ## Flow Tracing Recipes (Local Repo)
 

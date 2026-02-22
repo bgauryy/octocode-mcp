@@ -118,7 +118,6 @@ export async function getGitlab(config?: ClientConfig): Promise<GitLabClient> {
     );
   }
 
-  // Create new client
   const gitlab = new Gitlab({
     host,
     token,

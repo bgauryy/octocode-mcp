@@ -11,7 +11,7 @@ import {
   LOCAL_FETCH_CONTENT,
   TOOL_NAMES,
   DESCRIPTIONS,
-} from '../toolMetadata.js';
+} from '../toolMetadata/index.js';
 
 /**
  * Tool description for localGetFileContent

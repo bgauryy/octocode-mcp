@@ -58,22 +58,11 @@ export interface RipgrepSearchQuery {
 // ============================================================================
 
 /**
- * Location information for a match
- */
-export interface RipgrepMatchLocation {
-  byteOffset: number;
-  byteLength: number;
-  charOffset: number;
-  charLength: number;
-}
-
-/**
  * Single match within a file
  */
 export interface RipgrepMatch {
   value: string;
-  location: RipgrepMatchLocation;
-  line?: number;
+  line: number;
   column?: number;
 }
 
@@ -128,15 +117,11 @@ export interface SearchStats {
 export interface SearchContentResult {
   status: 'hasResults' | 'empty' | 'error';
   path?: string;
-  cwd?: string;
   errorCode?: ErrorCode;
   hints?: readonly string[];
   warnings?: string[];
   files?: RipgrepFileMatches[];
-  totalMatches?: number;
-  totalFiles?: number;
   pagination?: SearchContentPagination;
-  searchEngine?: 'rg' | 'grep';
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;

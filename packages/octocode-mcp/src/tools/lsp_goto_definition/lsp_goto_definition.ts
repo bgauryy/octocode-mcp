@@ -11,19 +11,20 @@ import {
   BulkLSPGotoDefinitionSchema,
   LSP_GOTO_DEFINITION_DESCRIPTION,
 } from './scheme.js';
-import { executeGotoDefinition } from './execution.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import { executeGotoDefinition, TOOL_NAME } from './execution.js';
 import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
+import { LspGotoDefinitionOutputSchema } from '../../scheme/outputSchemas.js';
 
 /**
  * Register the LSP Go To Definition tool with the MCP server.
  */
 export function registerLSPGotoDefinitionTool(server: McpServer) {
   return server.registerTool(
-    STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION,
+    TOOL_NAME,
     {
       description: LSP_GOTO_DEFINITION_DESCRIPTION,
       inputSchema: BulkLSPGotoDefinitionSchema as unknown as AnySchema,
+      outputSchema: LspGotoDefinitionOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'Go To Definition',
         readOnlyHint: true,
@@ -32,10 +33,7 @@ export function registerLSPGotoDefinitionTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    withBasicSecurityValidation(
-      executeGotoDefinition,
-      STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION
-    )
+    withBasicSecurityValidation(executeGotoDefinition, TOOL_NAME)
   );
 }
 

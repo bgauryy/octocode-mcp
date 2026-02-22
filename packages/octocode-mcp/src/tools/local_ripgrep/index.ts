@@ -8,7 +8,6 @@ export { executeRipgrepSearch } from './execution.js';
 // Types
 export type {
   RipgrepSearchQuery,
-  RipgrepMatchLocation,
   RipgrepMatch,
   RipgrepMatchPagination,
   RipgrepFileMatches,

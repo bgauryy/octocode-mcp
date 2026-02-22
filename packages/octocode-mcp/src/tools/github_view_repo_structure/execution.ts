@@ -4,7 +4,7 @@ import type {
   RepoStructureResult,
   DirectoryEntry,
 } from './types.js';
-import { TOOL_NAMES } from '../toolMetadata.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { shouldIgnoreFile, shouldIgnoreDir } from '../../utils/file/filters.js';
@@ -12,6 +12,7 @@ import { handleCatchError, createSuccessResult } from '../utils.js';
 import { getProvider } from '../../providers/factory.js';
 import { getActiveProviderConfig } from '../../serverConfig.js';
 import { isProviderSuccess } from '../../providers/types.js';
+import { resolveDefaultBranch } from '../../github/client.js';
 
 function filterStructure(
   structure: Record<string, DirectoryEntry>
@@ -39,9 +40,7 @@ function filterStructure(
 
 function createEmptyStructureResult(
   query: GitHubViewRepoStructureQuery,
-  error: NonNullable<
-    ReturnType<typeof handleCatchError | typeof handleCatchError>
-  >
+  error: NonNullable<ReturnType<typeof handleCatchError>>
 ): Record<string, unknown> & {
   status: 'error';
   path: string;
@@ -75,10 +74,14 @@ export async function exploreMultipleRepositoryStructures(
           authInfo,
         });
 
+        const resolvedBranch =
+          query.branch ??
+          (await resolveDefaultBranch(query.owner, query.repo, authInfo));
+
         // Convert query to provider format
         const providerQuery = {
           projectId: `${query.owner}/${query.repo}`,
-          ref: String(query.branch),
+          ref: resolvedBranch,
           path: query.path ? String(query.path) : undefined,
           depth: typeof query.depth === 'number' ? query.depth : undefined,
           entriesPerPage:
@@ -111,8 +114,8 @@ export async function exploreMultipleRepositoryStructures(
 
         // Detect branch fallback: if the returned branch differs from
         // what was requested, the user-specified branch likely doesn't exist
-        const requestedBranch = query.branch;
-        const actualBranch = apiResult.data.branch ?? query.branch;
+        const requestedBranch = resolvedBranch;
+        const actualBranch = apiResult.data.branch ?? resolvedBranch;
         const branchFellBack =
           requestedBranch &&
           actualBranch &&

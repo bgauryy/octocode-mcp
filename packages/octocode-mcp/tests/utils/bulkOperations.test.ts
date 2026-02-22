@@ -1,19 +1,11 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeAll,
-  beforeEach,
-  afterEach,
-} from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { executeBulkOperation } from '../../src/utils/response/bulk.js';
 import type { QueryStatus } from '../../src/types';
 import {
   ToolName,
   TOOL_NAMES,
   initializeToolMetadata,
-} from '../../src/tools/toolMetadata';
+} from '../../src/tools/toolMetadata/index.js';
 import { getTextContent } from './testHelpers.js';
 
 beforeAll(async () => {
@@ -40,11 +32,10 @@ describe('executeBulkOperation', () => {
       expect(processor).toHaveBeenCalledWith(queries[0], 0);
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 1 results');
-      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('1 result.');
       expect(responseText).toContain('status: "hasResults"');
       expect(responseText).toContain('path: "test.ts"');
-      expect(responseText).toContain('hasResultsStatusHints:');
+      expect(responseText).toContain('Test hint for hasResults');
     });
 
     it('should process single query with empty status', async () => {
@@ -61,10 +52,9 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 1 results');
-      expect(responseText).toContain('1 empty');
+      expect(responseText).toContain('1 result: 1 empty.');
       expect(responseText).toContain('status: "empty"');
-      expect(responseText).toContain('emptyStatusHints:');
+      expect(responseText).toContain('Test hint for empty');
     });
 
     it('should process single query with error status', async () => {
@@ -81,10 +71,10 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('1 error');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "Rate limit exceeded"');
-      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain('Test hint for error');
     });
 
     it('should handle processor throwing error', async () => {
@@ -97,7 +87,7 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('1 error');
       expect(responseText).toContain('status: "error"');
       expect(responseText).toContain('error: "API error"');
       // Note: Thrown errors don't have hints - only errors returned with status: 'error' have hints
@@ -126,8 +116,7 @@ describe('executeBulkOperation', () => {
       expect(processor).toHaveBeenCalledTimes(3);
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('3 hasResults');
+      expect(responseText).toContain('3 results: 3 data.');
       expect(responseText).not.toContain('empty');
       expect(responseText).not.toContain('failed');
       expect(responseText).toContain('name: "react-repo"');
@@ -152,11 +141,9 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 2 results');
-      expect(responseText).toContain('2 empty');
-      expect(responseText).not.toContain('hasResults');
+      expect(responseText).toContain('2 results: 2 empty.');
       expect(responseText).not.toContain('failed');
-      expect(responseText).toContain('emptyStatusHints:');
+      expect(responseText).toContain('Test hint for empty');
     });
 
     it('should process multiple queries all with error status', async () => {
@@ -173,11 +160,9 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('3 failed');
-      expect(responseText).not.toContain('hasResults');
+      expect(responseText).toContain('3 results: 3 error.');
       expect(responseText).not.toContain('empty');
-      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain('Test hint for error');
     });
 
     it('should process multiple queries all throwing errors', async () => {
@@ -190,8 +175,7 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 2 results');
-      expect(responseText).toContain('2 failed');
+      expect(responseText).toContain('2 results: 2 error.');
       expect(responseText).toContain('error: "Network timeout"');
     });
   });
@@ -220,12 +204,9 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('2 hasResults');
-      expect(responseText).toContain('1 empty');
+      expect(responseText).toContain('3 results: 2 data, 1 empty.');
       expect(responseText).not.toContain('failed');
-      expect(responseText).toContain('hasResultsStatusHints:');
-      expect(responseText).toContain('emptyStatusHints:');
+      expect(responseText).toContain('Test hint');
     });
 
     it('should handle hasResults + error mix', async () => {
@@ -257,12 +238,10 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 3 results');
-      expect(responseText).toContain('2 hasResults');
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('3 results: 2 data, 1 error.');
       expect(responseText).not.toContain(': 0 empty');
-      expect(responseText).toContain('hasResultsStatusHints:');
-      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain('Test hint for success');
+      expect(responseText).toContain('Test hint for error');
     });
 
     it('should handle empty + error mix', async () => {
@@ -291,11 +270,8 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 4 results');
-      expect(responseText).toContain('2 empty');
-      expect(responseText).toContain('2 failed');
-      expect(responseText).not.toContain('hasResults');
-      expect(responseText).toContain('emptyStatusHints:');
+      expect(responseText).toContain('4 results: 2 empty, 2 error.');
+      expect(responseText).toContain('Test hint for empty');
       // Note: Thrown errors don't have hints - only errors returned with status: 'error' have hints
     });
   });
@@ -334,13 +310,8 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 4 results');
-      expect(responseText).toContain('1 hasResults');
-      expect(responseText).toContain('1 empty');
-      expect(responseText).toContain('2 failed');
-      expect(responseText).toContain('hasResultsStatusHints:');
-      expect(responseText).toContain('emptyStatusHints:');
-      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain('4 results: 1 data, 1 empty, 2 error.');
+      expect(responseText).toContain('Test hint');
     });
 
     it('should handle balanced mix of all statuses', async () => {
@@ -370,10 +341,7 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 6 results');
-      expect(responseText).toContain('2 hasResults');
-      expect(responseText).toContain('2 empty');
-      expect(responseText).toContain('2 failed');
+      expect(responseText).toContain('6 results: 2 data, 2 empty, 2 error.');
     });
   });
 
@@ -517,7 +485,6 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('hasResultsStatusHints:');
       expect(responseText).toContain('Custom hint 1');
       expect(responseText).toContain('Custom hint 2');
     });
@@ -535,7 +502,6 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('emptyStatusHints:');
       expect(responseText).toContain('Try broadening search');
       expect(responseText).toContain('Check spelling');
     });
@@ -553,7 +519,6 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain('Wait before retrying');
       expect(responseText).toContain('Use authentication');
     });
@@ -573,7 +538,7 @@ describe('executeBulkOperation', () => {
       const responseText = getTextContent(result.content);
       const hintMatches = (responseText.match(/Same hint for all/g) || [])
         .length;
-      expect(hintMatches).toBe(1);
+      expect(hintMatches).toBe(3);
     });
 
     it('should collect and deduplicate hints from mixed statuses', async () => {
@@ -605,13 +570,13 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('hasResultsStatusHints:');
-      expect(responseText).toContain('emptyStatusHints:');
+      expect(responseText).toContain('Success hint');
+      expect(responseText).toContain('Empty hint');
       const successHintMatches = (responseText.match(/Success hint/g) || [])
         .length;
       const emptyHintMatches = (responseText.match(/Empty hint/g) || []).length;
-      expect(successHintMatches).toBe(1);
-      expect(emptyHintMatches).toBe(1);
+      expect(successHintMatches).toBe(2);
+      expect(emptyHintMatches).toBe(2);
     });
   });
 
@@ -742,7 +707,7 @@ describe('executeBulkOperation', () => {
 
         expect(result.isError).toBe(false);
         const responseText = getTextContent(result.content);
-        expect(responseText).toContain('Bulk response with 1 results');
+        expect(responseText).toContain('1 result.');
       }
     });
 
@@ -777,7 +742,7 @@ describe('executeBulkOperation', () => {
       expect(processor).not.toHaveBeenCalled();
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Bulk response with 0 results');
+      expect(responseText).toContain('0 results.');
     });
   });
 
@@ -1140,10 +1105,9 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('errorStatusHints:');
       expect(responseText).toContain('Wait 60 seconds');
       expect(responseText).toContain('Use authentication token');
-      expect(responseText).toContain('2 failed');
+      expect(responseText).toContain('2 error');
     });
 
     it('should collect unique error hints from multiple error results', async () => {
@@ -1171,12 +1135,12 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('3 failed');
-      // Verify hints are deduplicated - each hint should appear only once
+      expect(responseText).toContain('3 error');
+      // Hints are per-result - each result has its own hints
       const hintAMatches = (responseText.match(/Hint A/g) || []).length;
       const hintBMatches = (responseText.match(/Hint B/g) || []).length;
-      expect(hintAMatches).toBe(1);
-      expect(hintBMatches).toBe(1);
+      expect(hintAMatches).toBe(2);
+      expect(hintBMatches).toBe(2);
     });
 
     it('should handle error status without hints array', async () => {
@@ -1193,8 +1157,8 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('1 failed');
-      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain('1 error');
+      expect(responseText).toContain('Simple error without hints');
     });
 
     it('should handle mixed hasResults, empty, and error with hints from all', async () => {
@@ -1232,9 +1196,9 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('1 hasResults');
+      expect(responseText).toContain('1 data');
       expect(responseText).toContain('1 empty');
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('1 error');
       expect(responseText).toContain('Success hint from processor');
       expect(responseText).toContain('Empty hint from processor');
       expect(responseText).toContain('Error hint from processor');
@@ -1259,7 +1223,7 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('1 failed');
+      expect(responseText).toContain('1 error');
       expect(responseText).toContain('error:');
     });
 
@@ -1282,7 +1246,7 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('3 failed');
+      expect(responseText).toContain('3 error');
       expect(responseText).toContain('mainResearchGoal: "Goal 1"');
       expect(responseText).toContain('mainResearchGoal: "Goal 2"');
       expect(responseText).toContain('mainResearchGoal: "Goal 3"');
@@ -1388,10 +1352,8 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('1 hasResults');
-      expect(responseText).toContain('1 failed');
-      expect(responseText).toContain('hasResultsStatusHints:');
-      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain('1 data');
+      expect(responseText).toContain('1 error');
       expect(responseText).toContain('Success hint');
       expect(responseText).toContain('Error recovery hint');
     });
@@ -1410,8 +1372,8 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('1 failed');
-      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain('1 error');
+      expect(responseText).toContain('Generic error');
     });
 
     it('should handle error status with empty hints array', async () => {
@@ -1428,8 +1390,8 @@ describe('executeBulkOperation', () => {
 
       expect(result.isError).toBe(true);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('1 failed');
-      expect(responseText).toContain('errorStatusHints:');
+      expect(responseText).toContain('1 error');
+      expect(responseText).toContain('Error with empty hints');
     });
   });
 });

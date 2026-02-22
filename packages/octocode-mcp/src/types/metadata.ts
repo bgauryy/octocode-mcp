@@ -124,6 +124,7 @@ export interface ToolMetadata {
   name: string;
   description: string;
   schema: Record<string, string>;
+  outputSchema?: Record<string, unknown>;
   hints: {
     hasResults: readonly string[];
     empty: readonly string[];

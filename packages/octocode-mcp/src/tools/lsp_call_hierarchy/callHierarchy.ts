@@ -10,7 +10,7 @@ import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
 import {
   SymbolResolver,
   SymbolResolutionError,
@@ -25,8 +25,7 @@ import {
   applyOutputSizeLimit,
   serializeForPagination,
 } from '../../utils/pagination/index.js';
-
-const TOOL_NAME = STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY;
+import { TOOL_NAME } from './execution.js';
 
 /**
  * Process a single call hierarchy query
@@ -90,7 +89,7 @@ export async function processCallHierarchy(
     }
 
     // Try LSP first for semantic call hierarchy
-    const workspaceRoot = process.env.WORKSPACE_ROOT || process.cwd();
+    const workspaceRoot = resolveWorkspaceRoot();
 
     if (await isLanguageServerAvailable(absolutePath)) {
       try {

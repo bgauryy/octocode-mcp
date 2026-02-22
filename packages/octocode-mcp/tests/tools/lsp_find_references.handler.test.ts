@@ -53,8 +53,10 @@ describe('LSP Find References Handler Tests', () => {
       registerLSPFindReferencesTool(mockServer as any);
 
       expect(mockServer.registerTool).toHaveBeenCalled();
+      const { STATIC_TOOL_NAMES } =
+        await import('../../src/tools/toolNames.js');
       expect(mockServer.registerTool.mock.calls[0]![0]).toBe(
-        'lspFindReferences'
+        STATIC_TOOL_NAMES.LSP_FIND_REFERENCES
       );
     });
 

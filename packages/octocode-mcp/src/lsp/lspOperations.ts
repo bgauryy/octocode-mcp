@@ -399,16 +399,27 @@ export class LSPOperations {
         },
         end: { line: item.range.end.line, character: item.range.end.character },
       },
-      selectionRange: {
-        start: {
-          line: item.selectionRange.start.line,
-          character: item.selectionRange.start.character,
-        },
-        end: {
-          line: item.selectionRange.end.line,
-          character: item.selectionRange.end.character,
-        },
-      },
+      selectionRange: item.selectionRange
+        ? {
+            start: {
+              line: item.selectionRange.start.line,
+              character: item.selectionRange.start.character,
+            },
+            end: {
+              line: item.selectionRange.end.line,
+              character: item.selectionRange.end.character,
+            },
+          }
+        : {
+            start: {
+              line: item.range.start.line,
+              character: item.range.start.character,
+            },
+            end: {
+              line: item.range.end.line,
+              character: item.range.end.character,
+            },
+          },
     };
   }
 }

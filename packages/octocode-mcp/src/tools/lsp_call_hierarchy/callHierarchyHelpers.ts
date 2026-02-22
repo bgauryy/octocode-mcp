@@ -175,7 +175,6 @@ export function createCallHierarchyItem(
 
   const contextContent = lines.slice(startLine, endLine + 1).join('\n');
   const line = lines[lineNumber - 1] || '';
-  const column = line.indexOf(name);
 
   return {
     name,
@@ -185,18 +184,7 @@ export function createCallHierarchyItem(
       start: { line: startLine, character: 0 },
       end: { line: endLine, character: lines[endLine]?.length || 0 },
     },
-    selectionRange: {
-      start: { line: lineNumber - 1, character: Math.max(0, column) },
-      end: {
-        line: lineNumber - 1,
-        character: Math.max(0, column) + name.length,
-      },
-    },
     content: contextContent,
-    displayRange: {
-      startLine: startLine + 1,
-      endLine: endLine + 1,
-    },
   };
 }
 
@@ -262,16 +250,7 @@ export async function createCallHierarchyItemFromSite(
     kind: 'function' as SymbolKind,
     uri: site.filePath,
     range: createRange(site.lineNumber - 1, 0, site.lineContent.length),
-    selectionRange: createRange(
-      site.lineNumber - 1,
-      site.column,
-      enclosingFunctionName.length
-    ),
     content,
-    displayRange: {
-      startLine: site.lineNumber,
-      endLine: site.lineNumber,
-    },
   };
 }
 

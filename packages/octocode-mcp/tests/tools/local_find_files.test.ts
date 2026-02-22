@@ -777,7 +777,6 @@ describe('localFindFiles', () => {
 
       // Should paginate large result sets
       expect(result.status).toBe('hasResults');
-      expect(result.totalFiles).toBe(50);
       const files2 = expectDefinedFiles(result);
       expect(files2.length).toBeLessThanOrEqual(10);
     });
@@ -883,7 +882,6 @@ describe('localFindFiles', () => {
       expect(result.status).toBe('hasResults');
       const filesDefaultPage = expectDefinedFiles(result);
       expect(filesDefaultPage.length).toBeLessThanOrEqual(20);
-      expect(result.totalFiles).toBe(50);
       expect(result.pagination?.totalPages).toBe(3);
       expect(result.pagination?.hasMore).toBe(true);
     });
@@ -998,7 +996,6 @@ describe('localFindFiles', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.totalFiles).toBe(30);
     });
 
     it('should sort with time-based filters', async () => {

@@ -8,7 +8,7 @@ import {
   createPaginationInfo,
 } from '../../utils/pagination/index.js';
 import { RESOURCE_LIMITS, DEFAULTS } from '../../utils/core/constants.js';
-import { TOOL_NAMES } from '../toolMetadata.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import {
   validateToolPath,
   createErrorResult,
@@ -188,9 +188,7 @@ export async function fetchContent(
         return {
           status: 'hasResults',
           path: query.path,
-          cwd: process.cwd(),
           content: resultContent,
-          contentLength: resultContent.length,
           isPartial: true,
           totalLines,
           ...(actualStartLine !== undefined && {
@@ -224,9 +222,7 @@ export async function fetchContent(
         return {
           status: 'hasResults',
           path: query.path,
-          cwd: process.cwd(),
           content: autoPagination.paginatedContent,
-          contentLength: autoPagination.paginatedContent.length,
           isPartial: true,
           totalLines,
           ...(actualStartLine !== undefined && {
@@ -337,9 +333,7 @@ export async function fetchContent(
     return {
       status: 'hasResults',
       path: query.path,
-      cwd: process.cwd(),
       content: pagination.paginatedContent,
-      contentLength: pagination.paginatedContent.length,
       isPartial,
       totalLines,
       // Line extraction info (when startLine/endLine or matchString used)
@@ -347,9 +341,6 @@ export async function fetchContent(
         actualEndLine !== undefined && {
           startLine: actualStartLine,
           endLine: actualEndLine,
-          ...(matchRanges === undefined && {
-            extractedLines: actualEndLine - actualStartLine + 1,
-          }),
           ...(matchRanges !== undefined && { matchRanges }),
         }),
       // Include pagination info when explicitly requested OR auto-paginated

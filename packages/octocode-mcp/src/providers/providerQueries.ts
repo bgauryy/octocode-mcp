@@ -89,6 +89,14 @@ export interface RepoSearchQuery extends BaseProviderQuery {
   minStars?: number;
   /** Raw stars filter string for GitHub (e.g. '>1000', '100..500', '>=500') */
   stars?: string;
+  /** Size filter (e.g. '>1000', '100..500') */
+  size?: string;
+  /** Created date filter (e.g. '>2024-01-01') */
+  created?: string;
+  /** Updated/pushed date filter (e.g. '>2024-06-01') */
+  updated?: string;
+  /** Match scope: name, description, readme */
+  match?: Array<'name' | 'description' | 'readme'>;
   /** Visibility filter */
   visibility?: 'public' | 'private' | 'internal';
   /** Sort by field */
@@ -123,8 +131,26 @@ export interface PullRequestQuery extends BaseProviderQuery {
   author?: string;
   /** Assignee username */
   assignee?: string;
+  /** Commenter username */
+  commenter?: string;
+  /** Involves username */
+  involves?: string;
+  /** Mentions username */
+  mentions?: string;
+  /** Review requested username */
+  reviewRequested?: string;
+  /** Reviewed by username */
+  reviewedBy?: string;
   /** Label filter */
   labels?: string[];
+  /** No label filter */
+  noLabel?: boolean;
+  /** No milestone filter */
+  noMilestone?: boolean;
+  /** No project filter */
+  noProject?: boolean;
+  /** No assignee filter */
+  noAssignee?: boolean;
   /** Base branch filter */
   baseBranch?: string;
   /** Head branch filter */
@@ -133,12 +159,34 @@ export interface PullRequestQuery extends BaseProviderQuery {
   created?: string;
   /** Updated date filter */
   updated?: string;
+  /** Closed date filter */
+  closed?: string;
+  /** Merged at date filter */
+  mergedAt?: string;
+  /** Comments count filter */
+  comments?: number | string;
+  /** Reactions count filter */
+  reactions?: number | string;
+  /** Interactions count filter */
+  interactions?: number | string;
+  /** Merged filter */
+  merged?: boolean;
+  /** Draft filter */
+  draft?: boolean;
+  /** Match scope: title, body, comments */
+  match?: Array<'title' | 'body' | 'comments'>;
   /** Include PR comments */
   withComments?: boolean;
   /** Include commit details */
   withCommits?: boolean;
   /** Content type */
   type?: 'metadata' | 'fullContent' | 'partialContent';
+  /** Partial content metadata for file filtering */
+  partialContentMetadata?: {
+    file: string;
+    additions?: number[];
+    deletions?: number[];
+  }[];
   /** Sort field */
   sort?: 'created' | 'updated' | 'best-match';
   /** Sort order */

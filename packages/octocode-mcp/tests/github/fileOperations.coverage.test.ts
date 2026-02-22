@@ -4,7 +4,7 @@ import {
   viewGitHubRepositoryStructureAPI,
   clearDefaultBranchCache,
 } from '../../src/github/fileOperations.js';
-import { getOctokit } from '../../src/github/client.js';
+import { getOctokit, resolveDefaultBranch } from '../../src/github/client.js';
 import { clearAllCache } from '../../src/utils/http/cache.js';
 import { RequestError } from 'octokit';
 import * as minifierModule from '../../src/utils/minifier/index.js';
@@ -38,6 +38,7 @@ describe('File Operations - Additional Coverage Tests', () => {
     vi.clearAllMocks();
     clearAllCache();
     clearDefaultBranchCache();
+    vi.mocked(resolveDefaultBranch).mockResolvedValue('main');
   });
 
   describe('fetchFileTimestamp coverage', () => {
@@ -429,6 +430,8 @@ describe('File Operations - Additional Coverage Tests', () => {
 
   describe('Branch fallback with path suggestions', () => {
     it('should suggest default branch when requested branch not found', async () => {
+      vi.mocked(resolveDefaultBranch).mockResolvedValue('develop');
+
       const mockOctokit = {
         rest: {
           repos: {
@@ -468,6 +471,8 @@ describe('File Operations - Additional Coverage Tests', () => {
 
   describe('viewGitHubRepositoryStructureAPI error paths', () => {
     it('should return error when path not found on any branch', async () => {
+      vi.mocked(resolveDefaultBranch).mockResolvedValue('custom-default');
+
       const mockOctokit = {
         rest: {
           repos: {
@@ -475,7 +480,7 @@ describe('File Operations - Additional Coverage Tests', () => {
               .fn()
               // Original branch - 404
               .mockRejectedValueOnce(createRequestError('Not Found', 404))
-              // Default branch - 404
+              // Default branch (custom-default) - 404
               .mockRejectedValueOnce(createRequestError('Not Found', 404))
               // main - 404
               .mockRejectedValueOnce(createRequestError('Not Found', 404))
@@ -483,9 +488,6 @@ describe('File Operations - Additional Coverage Tests', () => {
               .mockRejectedValueOnce(createRequestError('Not Found', 404))
               // develop - 404
               .mockRejectedValueOnce(createRequestError('Not Found', 404)),
-            get: vi.fn().mockResolvedValue({
-              data: { default_branch: 'custom-default' },
-            }),
           },
         },
       };

@@ -3,7 +3,7 @@ import { executeBulkOperation } from '../../src/utils/response/bulk.js';
 import {
   TOOL_NAMES,
   initializeToolMetadata,
-} from '../../src/tools/toolMetadata';
+} from '../../src/tools/toolMetadata/index.js';
 import { getTextContent } from './testHelpers.js';
 
 beforeAll(async () => {
@@ -24,8 +24,7 @@ describe('Bulk Instructions Generation', () => {
     const text = getTextContent(result.content);
 
     // Optimized: Short instruction format
-    expect(text).toContain('1 results:');
-    expect(text).toContain('1 hasResults');
+    expect(text).toContain('1 result.');
     expect(text).not.toContain('original query');
   });
 
@@ -51,14 +50,11 @@ describe('Bulk Instructions Generation', () => {
     const text = getTextContent(result.content);
 
     // Optimized format
-    expect(text).toContain('3 results:');
-    expect(text).toContain('1 hasResults');
-    expect(text).toContain('1 empty');
-    expect(text).toContain('1 failed');
+    expect(text).toContain('3 results: 1 data, 1 empty, 1 error.');
   });
 
-  it('should include hints sections only for present statuses with custom hints', async () => {
-    // Case 1: Only hasResults with custom hints - should have hasResultsStatusHints
+  it('should include hints inside each result for present statuses with custom hints', async () => {
+    // Case 1: Only hasResults with custom hints - hints in result data
     const q1 = [{ id: '1' }];
     const p1 = vi.fn().mockResolvedValue({
       status: 'hasResults',
@@ -68,12 +64,12 @@ describe('Bulk Instructions Generation', () => {
     const r1 = await executeBulkOperation(q1, p1, { toolName });
     const t1 = getTextContent(r1.content);
 
-    expect(t1).toContain('hasResultsStatusHints');
     expect(t1).toContain('Custom success hint');
+    expect(t1).not.toContain('hasResultsStatusHints');
     expect(t1).not.toContain('emptyStatusHints');
     expect(t1).not.toContain('errorStatusHints');
 
-    // Case 2: Only empty with custom hints - should have emptyStatusHints
+    // Case 2: Only empty with custom hints - hints in result data
     const q2 = [{ id: '2' }];
     const p2 = vi.fn().mockResolvedValue({
       status: 'empty',
@@ -83,12 +79,12 @@ describe('Bulk Instructions Generation', () => {
     const r2 = await executeBulkOperation(q2, p2, { toolName });
     const t2 = getTextContent(r2.content);
 
-    expect(t2).not.toContain('hasResultsStatusHints');
-    expect(t2).toContain('emptyStatusHints');
     expect(t2).toContain('Custom empty hint');
+    expect(t2).not.toContain('hasResultsStatusHints');
+    expect(t2).not.toContain('emptyStatusHints');
     expect(t2).not.toContain('errorStatusHints');
 
-    // Case 3: Only error with custom hints - should have errorStatusHints
+    // Case 3: Only error with custom hints - hints in result data
     const q3 = [{ id: '3' }];
     const p3 = vi.fn().mockResolvedValue({
       status: 'error',
@@ -98,9 +94,9 @@ describe('Bulk Instructions Generation', () => {
     const r3 = await executeBulkOperation(q3, p3, { toolName });
     const t3 = getTextContent(r3.content);
 
+    expect(t3).toContain('Custom error hint');
     expect(t3).not.toContain('hasResultsStatusHints');
     expect(t3).not.toContain('emptyStatusHints');
-    expect(t3).toContain('errorStatusHints');
-    expect(t3).toContain('Custom error hint');
+    expect(t3).not.toContain('errorStatusHints');
   });
 });

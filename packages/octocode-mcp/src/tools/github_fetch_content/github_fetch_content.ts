@@ -4,10 +4,11 @@ import type { AnySchema } from '../../types/toolTypes.js';
 import { withSecurityValidation } from '../../security/withSecurityValidation.js';
 import type { ToolInvocationCallback } from '../../types.js';
 import type { FileContentQuery } from './types.js';
-import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata.js';
+import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/index.js';
 import { FileContentBulkQuerySchema } from './scheme.js';
 import { invokeCallbackSafely } from '../utils.js';
 import { fetchMultipleGitHubFileContents } from './execution.js';
+import { GitHubFetchContentOutputSchema } from '../../scheme/outputSchemas.js';
 
 export function registerFetchGitHubFileContentTool(
   server: McpServer,
@@ -18,9 +19,10 @@ export function registerFetchGitHubFileContentTool(
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_FETCH_CONTENT],
       inputSchema: FileContentBulkQuerySchema as unknown as AnySchema,
+      outputSchema: GitHubFetchContentOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'GitHub File Content Fetch',
-        readOnlyHint: true,
+        readOnlyHint: false, // may write files to disk in directory mode
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: true,

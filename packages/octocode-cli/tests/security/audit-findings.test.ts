@@ -1,183 +1,194 @@
 /**
- * Security Audit Validation Tests — CLI Package
- * GitHub Issue #321 — AgentAudit Report #112
+ * Security Audit Regression Tests — CLI Package
+ * Issue #321 (AgentAudit Report #112)
  *
- * These tests validate the findings from the security audit and
- * serve as regression tests once fixes are applied.
+ * Each test calls REAL code. No source-code string matching.
+ *
+ * Mocking strategy:
+ *   - global.fetch: mocked (external HTTP) — Finding 5 only
+ *   - Everything else: REAL imports, REAL execution
  *
  * Findings covered:
- *   Finding 3 — MEDIUM: CLI writes MCP config files with default permissions
- *   Finding 4 — MEDIUM: Predictable temp file path enables symlink/race attack
- *   Finding 5 — LOW: Skills marketplace downloads without integrity verification
+ *   Finding 3 — writeFileContent/writeJsonFile file permissions (real fs)
+ *   Finding 4 — getOctocodeServerConfig temp directory safety (pure function)
+ *   Finding 5 — fetchRawContent size guardrails (mocked fetch)
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
+import { statSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { writeFileContent, writeJsonFile } from '../../src/utils/fs.js';
+import {
+  getOctocodeServerConfig,
+  getOctocodeServerConfigWindows,
+} from '../../src/utils/mcp-config.js';
+import { fetchRawContent } from '../../src/utils/skills-fetch.js';
 
 // =============================================================================
-// Finding 3 — MEDIUM: CLI writes config files with default (world-readable) permissions
-// File: packages/octocode-cli/src/utils/fs.ts
+// Finding 3 — MEDIUM: CLI config files written with world-readable perms
+//
+// Real fs: writes temp files, checks permissions with statSync
+// No mocks.
 // =============================================================================
 
-describe('Finding 3 — Config files written with default permissions in fs.ts', () => {
-  const sourceFile = resolve(__dirname, '../../src/utils/fs.ts');
-  let sourceCode: string;
+describe('Finding 3 — writeFileContent uses restrictive permissions', () => {
+  const testDir = join(tmpdir(), `octocode-audit-f3-${Date.now()}`);
 
-  beforeEach(() => {
-    sourceCode = readFileSync(sourceFile, 'utf-8');
+  afterEach(() => {
+    if (existsSync(testDir)) {
+      rmSync(testDir, { recursive: true, force: true });
+    }
   });
 
-  it('writeFileContent should specify restrictive file permissions (mode 0o600)', () => {
-    // writeFileSync should use { mode: 0o600 } for config files
-    // that may contain tokens or sensitive configuration.
-    const hasRestrictiveMode =
-      sourceCode.includes('0o600') || sourceCode.includes('0600');
+  it('files created with mode 0o600 (owner read/write only)', () => {
+    mkdirSync(testDir, { recursive: true });
+    const testFile = join(testDir, 'config.json');
 
-    expect(hasRestrictiveMode).toBe(true);
+    expect(writeFileContent(testFile, '{"token":"secret"}')).toBe(true);
+
+    const mode = statSync(testFile).mode & 0o777;
+    expect(mode).toBe(0o600);
   });
 
-  it('writeFileContent should NOT use default permissions from writeFileSync', () => {
-    // Current: fs.writeFileSync(filePath, content, 'utf8')
-    // The third arg is just encoding — no mode is set.
-    // Expected: fs.writeFileSync(filePath, content, { encoding: 'utf8', mode: 0o600 })
-    const usesStringEncoding =
-      /writeFileSync\s*\([^)]*,\s*[^)]*,\s*'utf8'\s*\)/.test(sourceCode);
+  it('no group/other bits set (not world-readable)', () => {
+    mkdirSync(testDir, { recursive: true });
+    const testFile = join(testDir, 'sensitive.json');
+    writeFileContent(testFile, 'sensitive data');
 
-    expect(usesStringEncoding).toBe(false);
+    const mode = statSync(testFile).mode & 0o777;
+    expect(mode & 0o077).toBe(0);
+  });
+
+  it('writeJsonFile also uses 0o600', () => {
+    mkdirSync(testDir, { recursive: true });
+    const testFile = join(testDir, 'data.json');
+
+    expect(writeJsonFile(testFile, { key: 'value' })).toBe(true);
+    expect(statSync(testFile).mode & 0o777).toBe(0o600);
+  });
+
+  it('parent directories created with mode 0o700', () => {
+    const nestedFile = join(testDir, 'subdir', 'nested', 'file.txt');
+    writeFileContent(nestedFile, 'data');
+
+    const parentMode = statSync(join(testDir, 'subdir')).mode & 0o777;
+    expect(parentMode).toBe(0o700);
   });
 });
 
 // =============================================================================
-// Finding 4 — MEDIUM: Predictable temp file path enables symlink/race attack
-// File: packages/octocode-cli/src/utils/mcp-config.ts
+// Finding 4 — MEDIUM: Predictable temp file path (/tmp/index.js)
+//
+// Pure functions: getOctocodeServerConfig, getOctocodeServerConfigWindows
+// No mocks.
 // =============================================================================
 
-describe('Finding 4 — Predictable temp file path in mcp-config.ts', () => {
-  const sourceFile = resolve(__dirname, '../../src/utils/mcp-config.ts');
-  let sourceCode: string;
+describe('Finding 4 — Direct installer uses unique temp directory', () => {
+  it('Linux direct install: mktemp, trap, strict mode, no hardcoded /tmp', () => {
+    const config = getOctocodeServerConfig('direct');
+    const cmd = config.args!.join(' ');
 
-  beforeEach(() => {
-    sourceCode = readFileSync(sourceFile, 'utf-8');
+    expect(cmd).toContain('mktemp -d');
+    expect(cmd).toContain('set -euo pipefail');
+    expect(cmd).toContain('trap');
+    expect(cmd).toContain('rm -rf');
+    expect(cmd).toContain('curl -fsSL');
+    expect(cmd).not.toContain('/tmp/index.js');
   });
 
-  it('should NOT use hardcoded /tmp/index.js path', () => {
-    // /tmp is world-writable. An attacker can pre-create or replace
-    // /tmp/index.js between download and execution.
-    const usesHardcodedTmpPath = sourceCode.includes('/tmp/index.js');
+  it('Windows direct install: GetRandomFileName, cleanup, no hardcoded path', () => {
+    const config = getOctocodeServerConfigWindows('direct');
+    const cmd = config.args!.join(' ');
 
-    expect(usesHardcodedTmpPath).toBe(false);
+    expect(cmd).toContain('GetRandomFileName');
+    expect(cmd).toContain('Remove-Item');
+    expect(cmd).not.toContain('/tmp/index.js');
   });
 
-  it('should NOT use predictable temp file names for code execution', () => {
-    // Even $env:TEMP\index.js (Windows) is predictable.
-    // Must use mktemp or a unique directory name.
-    const usesPredictableWindows =
-      sourceCode.includes('$env:TEMP\\index.js') ||
-      sourceCode.includes('$env:TEMP\\\\index.js');
-
-    expect(usesPredictableWindows).toBe(false);
-  });
-
-  it('should use npx or a unique temp directory instead of curl-pipe-node', () => {
-    // The direct install method uses: curl -o /tmp/index.js && node /tmp/index.js
-    // This is a TOCTOU (time-of-check-time-of-use) vulnerability.
-    const usesCurlPipeNode =
-      sourceCode.includes('curl') && sourceCode.includes('node /tmp');
-
-    expect(usesCurlPipeNode).toBe(false);
+  it('npx method has no temp files at all', () => {
+    const config = getOctocodeServerConfig('npx');
+    expect(config.command).toBe('npx');
+    expect(config.args).toEqual(['octocode-mcp@latest']);
   });
 });
 
 // =============================================================================
 // Finding 5 — LOW: Skills marketplace downloads without integrity verification
-// File: packages/octocode-cli/src/utils/skills-fetch.ts
+//
+// Mock: global.fetch (external HTTP)
+// Real: fetchRawContent (size checks, error handling)
 // =============================================================================
 
-describe('Finding 5 — No integrity verification in skills-fetch.ts', () => {
-  const sourceFile = resolve(__dirname, '../../src/utils/skills-fetch.ts');
-  let sourceCode: string;
+describe('Finding 5 — Skills download guardrails', () => {
+  const source = {
+    id: 'test',
+    name: 'Test',
+    type: 'github' as const,
+    owner: 'test',
+    repo: 'test',
+    branch: 'main',
+    skillsPath: '',
+    skillPattern: 'flat-md' as const,
+    description: 'test',
+    url: 'https://github.com/test/test',
+  };
+
+  const originalFetch = global.fetch;
 
   beforeEach(() => {
-    sourceCode = readFileSync(sourceFile, 'utf-8');
+    vi.restoreAllMocks();
   });
 
-  it('should enforce a maximum content size for downloaded files', () => {
-    // Downloaded content should be limited in size to prevent
-    // downloading unexpectedly large or malicious files.
-    const hasMaxContentSize = sourceCode.includes('MAX_CONTENT_SIZE');
-
-    expect(hasMaxContentSize).toBe(true);
+  afterEach(() => {
+    global.fetch = originalFetch;
   });
 
-  it('fetchRawContent should validate content size before returning', () => {
-    // The function should check Content-Length header and actual content size.
-    const hasContentValidation =
-      sourceCode.includes('Content-Length') &&
-      sourceCode.includes('MAX_CONTENT_SIZE');
+  it('rejects body exceeding MAX_CONTENT_SIZE (2MB > 1MB limit)', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: { get: () => null },
+      text: () => Promise.resolve('x'.repeat(2 * 1024 * 1024)),
+    });
 
-    expect(hasContentValidation).toBe(true);
-  });
-});
-
-describe('Finding 8 — Skills install path traversal and permission hardening', () => {
-  const skillsFetchFile = resolve(__dirname, '../../src/utils/skills-fetch.ts');
-  const skillsFile = resolve(__dirname, '../../src/utils/skills.ts');
-  const mcpIoFile = resolve(__dirname, '../../src/utils/mcp-io.ts');
-  let skillsFetchCode: string;
-  let skillsCode: string;
-  let mcpIoCode: string;
-
-  beforeEach(() => {
-    skillsFetchCode = readFileSync(skillsFetchFile, 'utf-8');
-    skillsCode = readFileSync(skillsFile, 'utf-8');
-    mcpIoCode = readFileSync(mcpIoFile, 'utf-8');
-  });
-
-  it('should validate destination paths stay inside skill directory', () => {
-    const hasBoundaryCheck =
-      skillsFetchCode.includes('isPathInside(') &&
-      skillsFetchCode.includes('Invalid skill file path traversal');
-
-    expect(hasBoundaryCheck).toBe(true);
-  });
-
-  it('should create cache/install directories with restrictive mode', () => {
-    const hasRestrictiveDirMode = skillsFetchCode.includes('mode: 0o700');
-    expect(hasRestrictiveDirMode).toBe(true);
-  });
-
-  it('should persist CLI config with restrictive file permissions', () => {
-    const hasRestrictiveConfigWrite =
-      skillsCode.includes('mode: 0o600') && skillsCode.includes('mode: 0o700');
-
-    expect(hasRestrictiveConfigWrite).toBe(true);
-  });
-
-  it('should create MCP config parent directory with restrictive mode', () => {
-    expect(mcpIoCode.includes('mode: 0o700')).toBe(true);
-  });
-});
-
-describe('Finding 9 — Linux direct installer shell hardening in mcp-config.ts', () => {
-  const sourceFile = resolve(__dirname, '../../src/utils/mcp-config.ts');
-  let sourceCode: string;
-
-  beforeEach(() => {
-    sourceCode = readFileSync(sourceFile, 'utf-8');
-  });
-
-  it('should enable strict shell mode for direct installer', () => {
-    expect(sourceCode.includes('set -euo pipefail')).toBe(true);
-  });
-
-  it('should use trap cleanup for temporary directory', () => {
-    expect(sourceCode.includes('trap \\\'rm -rf "$TMPDIR"\\\' EXIT')).toBe(
-      true
+    await expect(fetchRawContent(source, 'SKILL.md')).rejects.toThrow(
+      /Content too large/
     );
   });
 
-  it('should fail fast on curl HTTP errors', () => {
-    expect(sourceCode.includes('curl -fsSL')).toBe(true);
+  it('rejects when Content-Length header exceeds limit', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: {
+        get: (h: string) => (h === 'Content-Length' ? '5000000' : null),
+      },
+      text: () => Promise.resolve('small'),
+    });
+
+    await expect(fetchRawContent(source, 'SKILL.md')).rejects.toThrow(
+      /Content too large/
+    );
+  });
+
+  it('throws on non-OK HTTP response', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      statusText: 'Not Found',
+    });
+
+    await expect(fetchRawContent(source, 'SKILL.md')).rejects.toThrow(
+      /Failed to fetch/
+    );
+  });
+
+  it('returns content when within size limits', async () => {
+    const content = '# My Skill\nValid content.';
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: { get: () => null },
+      text: () => Promise.resolve(content),
+    });
+
+    expect(await fetchRawContent(source, 'SKILL.md')).toBe(content);
   });
 });

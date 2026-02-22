@@ -62,14 +62,6 @@ export interface PaginationInfo {
   /** More pages available - REQUIRED */
   hasMore: boolean;
 
-  // Byte-based pagination (for GitHub API compatibility)
-  /** Current byte offset */
-  byteOffset?: number;
-  /** Page size in bytes */
-  byteLength?: number;
-  /** Total size in bytes */
-  totalBytes?: number;
-
   // Character-based pagination (for JavaScript string operations)
   /** Current character offset (for use with string.substring) */
   charOffset?: number;
@@ -99,15 +91,12 @@ export interface PaginationInfo {
 export interface SearchContentResult extends BaseQuery {
   status: 'hasResults' | 'empty' | 'error';
   path?: string;
-  cwd?: string;
   errorCode?: ErrorCode;
   hints?: readonly string[];
   warnings?: string[]; // Validation warnings
 
   // NEW: Structured matches grouped by file
   files?: RipgrepFileMatches[]; // Array of files with their matches (paginated)
-  totalMatches?: number; // Total number of matches across all files
-  totalFiles?: number; // Total number of files with matches (across all pages)
 
   // File-level pagination (NEW)
   pagination?: {
@@ -117,9 +106,6 @@ export interface SearchContentResult extends BaseQuery {
     totalFiles: number; // Total files with matches
     hasMore: boolean; // More file pages available
   };
-
-  // Optional metadata
-  searchEngine?: 'rg' | 'grep'; // Which search engine was used
 
   // Index signature for ProcessedBulkResult compatibility
   [key: string]: unknown;
@@ -142,32 +128,7 @@ export interface SearchStats {
  */
 export interface RipgrepMatch {
   value: string; // Match + context, max 200 chars
-  location: {
-    /**
-     * Byte offset in the file (from ripgrep).
-     * Use this for byte-level operations or with localGetFileContent.
-     */
-    byteOffset: number;
-
-    /**
-     * Byte length of the match (from ripgrep).
-     */
-    byteLength: number;
-
-    /**
-     * Character offset (UTF-16 code unit index) - for use with JavaScript strings.
-     * Computed from byteOffset using UTF-8 to UTF-16 conversion.
-     */
-    charOffset: number;
-
-    /**
-     * Character length (number of UTF-16 code units) - for use with JavaScript strings.
-     * Note: Emoji and other surrogate pairs count as 2.
-     */
-    charLength: number;
-  };
-  // Optional metadata for reference
-  line?: number; // Line number (1-indexed) for human reference
+  line: number; // Line number (1-indexed) — use as lineHint for LSP tools
   column?: number; // Column number (0-indexed) for human reference
 }
 
@@ -225,17 +186,21 @@ export interface ViewStructureQuery extends BaseQuery {
 export interface ViewStructureResult extends BaseQuery {
   status: 'hasResults' | 'empty' | 'error';
   path?: string;
-  cwd?: string;
-  structuredOutput?: string; // Compact indented string format
-  totalFiles?: number;
-  totalDirectories?: number;
-  totalSize?: number;
+  entries?: Array<{
+    name: string;
+    type: 'file' | 'dir' | 'link';
+    depth?: number;
+    size?: string;
+    modified?: string;
+    permissions?: string;
+  }>;
+  summary?: string;
   errorCode?: ErrorCode;
   hints?: readonly string[];
 
   // Pagination metadata (only present when pagination is active)
   pagination?: PaginationInfo;
-  charPagination?: PaginationInfo; // Character-based pagination metadata
+  charPagination?: PaginationInfo;
 
   // Index signature for ProcessedBulkResult compatibility
   [key: string]: unknown;
@@ -298,8 +263,6 @@ export interface FoundFile {
 export interface FindFilesResult extends BaseQuery {
   status: 'hasResults' | 'empty' | 'error';
   files?: FoundFile[];
-  cwd?: string;
-  totalFiles?: number;
   errorCode?: ErrorCode;
   hints?: readonly string[];
 
@@ -337,12 +300,9 @@ export interface FetchContentQuery extends BaseQuery {
 export interface FetchContentResult extends BaseQuery {
   status: 'hasResults' | 'empty' | 'error';
   path?: string;
-  cwd?: string;
   content?: string;
-  contentLength?: number;
   isPartial?: boolean;
   totalLines?: number;
-  minificationFailed?: boolean;
   errorCode?: ErrorCode;
   hints?: readonly string[];
   warnings?: string[];
@@ -350,7 +310,6 @@ export interface FetchContentResult extends BaseQuery {
   // Line extraction info (when startLine/endLine or matchString used)
   startLine?: number;
   endLine?: number;
-  extractedLines?: number;
   // Match ranges (only present when matchString is used)
   matchRanges?: Array<{ start: number; end: number }>;
 

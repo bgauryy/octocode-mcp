@@ -122,7 +122,6 @@ export function getOrCreateSession(options?: SessionOptions): PersistedSession {
     return updatedSession;
   }
 
-  // Create new session
   const newSession = createNewSession();
   writeSessionToCache(newSession);
   // Flush immediately for new sessions to ensure ID is persisted

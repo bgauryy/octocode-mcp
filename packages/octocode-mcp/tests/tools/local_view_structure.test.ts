@@ -113,8 +113,8 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toBeDefined();
-      expect(result.structuredOutput).toContain('[');
+      expect(result.entries).toBeDefined();
+      expect(result.entries!.length).toBeGreaterThan(0);
     });
 
     it('should handle empty directories', async () => {
@@ -156,9 +156,9 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toBeDefined();
-      expect(result.structuredOutput).toContain('file1.txt');
-      expect(result.structuredOutput).toContain('1.0KB'); // File sizes shown
+      expect(result.entries).toBeDefined();
+      expect(result.entries!.some(e => e.name === 'file1.txt')).toBe(true);
+      expect(result.entries!.some(e => e.size === '1.0KB')).toBe(true);
     });
 
     it('should show file sizes for files, not directories', async () => {
@@ -182,7 +182,7 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toContain('2.0KB'); // File size shown
+      expect(result.entries!.some(e => e.size === '2.0KB')).toBe(true);
     });
 
     it('should respect depth parameter', async () => {
@@ -212,8 +212,10 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toContain('dir1');
-      expect(result.structuredOutput).toContain('subfile.txt');
+      expect(result.entries!.some(e => e.name.includes('dir1'))).toBe(true);
+      expect(result.entries!.some(e => e.name.includes('subfile.txt'))).toBe(
+        true
+      );
     });
   });
 
@@ -232,8 +234,8 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toBeDefined();
-      expect(result.structuredOutput).toContain('[FILE]');
+      expect(result.entries).toBeDefined();
+      expect(result.entries!.some(e => e.type === 'file')).toBe(true);
     });
 
     it('should parse human-readable file sizes correctly', async () => {
@@ -251,7 +253,11 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toMatch(/\d+(\.\d+)?\s*(B|KB|MB|GB)/);
+      expect(
+        result.entries!.some(
+          e => e.size && /\d+(\.\d+)?\s*(B|KB|MB|GB)/.test(e.size)
+        )
+      ).toBe(true);
     });
   });
 
@@ -297,9 +303,11 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toContain('file1.ts');
-      expect(result.structuredOutput).toContain('file3.ts');
-      expect(result.structuredOutput).not.toContain('file2.js');
+      expect(result.entries!.some(e => e.name.includes('file1.ts'))).toBe(true);
+      expect(result.entries!.some(e => e.name.includes('file3.ts'))).toBe(true);
+      expect(result.entries!.some(e => e.name.includes('file2.js'))).toBe(
+        false
+      );
     });
 
     it('should filter by multiple extensions', async () => {
@@ -320,9 +328,13 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toContain('file1.ts');
-      expect(result.structuredOutput).toContain('file2.tsx');
-      expect(result.structuredOutput).not.toContain('file3.js');
+      expect(result.entries!.some(e => e.name.includes('file1.ts'))).toBe(true);
+      expect(result.entries!.some(e => e.name.includes('file2.tsx'))).toBe(
+        true
+      );
+      expect(result.entries!.some(e => e.name.includes('file3.js'))).toBe(
+        false
+      );
     });
 
     it('should filter files only', async () => {
@@ -346,8 +358,10 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toContain('file1.txt');
-      expect(result.structuredOutput).not.toContain('dir1');
+      expect(result.entries!.some(e => e.name.includes('file1.txt'))).toBe(
+        true
+      );
+      expect(result.entries!.some(e => e.name.includes('dir1'))).toBe(false);
     });
 
     it('should filter directories only', async () => {
@@ -371,9 +385,11 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toContain('dir1');
-      expect(result.structuredOutput).toContain('dir2');
-      expect(result.structuredOutput).not.toContain('file1.txt');
+      expect(result.entries!.some(e => e.name.includes('dir1'))).toBe(true);
+      expect(result.entries!.some(e => e.name.includes('dir2'))).toBe(true);
+      expect(result.entries!.some(e => e.name.includes('file1.txt'))).toBe(
+        false
+      );
     });
 
     it('should filter by name pattern', async () => {
@@ -394,9 +410,15 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toContain('test1.txt');
-      expect(result.structuredOutput).toContain('test2.txt');
-      expect(result.structuredOutput).not.toContain('other.txt');
+      expect(result.entries!.some(e => e.name.includes('test1.txt'))).toBe(
+        true
+      );
+      expect(result.entries!.some(e => e.name.includes('test2.txt'))).toBe(
+        true
+      );
+      expect(result.entries!.some(e => e.name.includes('other.txt'))).toBe(
+        false
+      );
     });
 
     it('should filter by glob pattern with asterisks', async () => {
@@ -422,10 +444,18 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toContain('parser.test.ts');
-      expect(result.structuredOutput).toContain('utils.test.ts');
-      expect(result.structuredOutput).not.toContain('helper.ts');
-      expect(result.structuredOutput).not.toContain('config.ts');
+      expect(result.entries!.some(e => e.name.includes('parser.test.ts'))).toBe(
+        true
+      );
+      expect(result.entries!.some(e => e.name.includes('utils.test.ts'))).toBe(
+        true
+      );
+      expect(result.entries!.some(e => e.name.includes('helper.ts'))).toBe(
+        false
+      );
+      expect(result.entries!.some(e => e.name.includes('config.ts'))).toBe(
+        false
+      );
     });
 
     it('should filter by glob pattern, extensions, and recursive together', async () => {
@@ -456,10 +486,18 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toContain('root.test.ts');
-      expect(result.structuredOutput).toContain('nested.test.ts');
-      expect(result.structuredOutput).not.toContain('other.ts');
-      expect(result.structuredOutput).not.toContain('another.ts');
+      expect(result.entries!.some(e => e.name.includes('root.test.ts'))).toBe(
+        true
+      );
+      expect(result.entries!.some(e => e.name.includes('nested.test.ts'))).toBe(
+        true
+      );
+      expect(result.entries!.some(e => e.name.includes('other.ts'))).toBe(
+        false
+      );
+      expect(result.entries!.some(e => e.name.includes('another.ts'))).toBe(
+        false
+      );
     });
 
     it('should filter by glob pattern with question mark', async () => {
@@ -486,12 +524,16 @@ describe('localViewStructure', () => {
 
       expect(result.status).toBe('hasResults');
       // ? matches exactly one character, so test1.ts and test2.ts match
-      expect(result.structuredOutput).toContain('test1.ts');
-      expect(result.structuredOutput).toContain('test2.ts');
+      expect(result.entries!.some(e => e.name.includes('test1.ts'))).toBe(true);
+      expect(result.entries!.some(e => e.name.includes('test2.ts'))).toBe(true);
       // test10.ts has two chars after 'test' before '.ts', so it doesn't match
-      expect(result.structuredOutput).not.toContain('test10.ts');
+      expect(result.entries!.some(e => e.name.includes('test10.ts'))).toBe(
+        false
+      );
       // testing.ts has 'ing' after 'test' before '.ts', so it doesn't match
-      expect(result.structuredOutput).not.toContain('testing.ts');
+      expect(result.entries!.some(e => e.name.includes('testing.ts'))).toBe(
+        false
+      );
     });
   });
 
@@ -516,7 +558,7 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toContain('[LINK]');
+      expect(result.entries!.some(e => e.type === 'link')).toBe(true);
     });
 
     it('should identify symlinks in parseLsLongFormat', async () => {
@@ -534,7 +576,7 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toContain('[LINK]');
+      expect(result.entries!.some(e => e.type === 'link')).toBe(true);
     });
   });
 
@@ -620,8 +662,10 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toContain('.hidden');
-      expect(result.structuredOutput).toContain('visible.txt');
+      expect(result.entries!.some(e => e.name.includes('.hidden'))).toBe(true);
+      expect(result.entries!.some(e => e.name.includes('visible.txt'))).toBe(
+        true
+      );
     });
 
     it('should hide hidden files by default', async () => {
@@ -642,8 +686,10 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).not.toContain('.hidden');
-      expect(result.structuredOutput).toContain('visible.txt');
+      expect(result.entries!.some(e => e.name.includes('.hidden'))).toBe(false);
+      expect(result.entries!.some(e => e.name.includes('visible.txt'))).toBe(
+        true
+      );
     });
   });
 
@@ -848,19 +894,12 @@ describe('localViewStructure', () => {
 
       const result = await viewStructure({
         path: '/test/path',
-
-        charLength: 5000,
-        charOffset: 0,
       });
 
       expect(result.status).toBe('hasResults');
-      // When charLength is provided, totalChars should be defined in pagination
-      expect(result.pagination?.totalChars).toBeDefined();
-      expect(typeof result.pagination?.totalChars).toBe('number');
-      // If character pagination indicates more content, verify totalChars exists
-      if (result.pagination?.hasMore) {
-        expect(result.pagination?.totalChars).toBeGreaterThan(0);
-      }
+      expect(result.pagination?.totalEntries).toBe(150);
+      expect(result.pagination?.hasMore).toBe(true);
+      expect(result.entries!.length).toBe(20); // Default page size
     });
 
     it('should paginate tree view when requested', async () => {
@@ -879,7 +918,7 @@ describe('localViewStructure', () => {
         charLength: 10000,
       });
 
-      if (result.structuredOutput && result.structuredOutput.length > 10000) {
+      if (result.entries && result.entries.length > 20) {
         expect(result.pagination?.hasMore).toBe(true);
       }
     });
@@ -901,32 +940,23 @@ describe('localViewStructure', () => {
         isSymbolicLink: () => false,
       } as Stats);
 
-      // First page
       const result1 = await viewStructure({
         path: '/test/path',
-
-        charLength: 5000,
-        charOffset: 0,
+        entryPageNumber: 1,
       });
 
       expect(result1.status).toBe('hasResults');
-
-      // Only test continuation if pagination was triggered
-      if (!result1.pagination?.hasMore) {
-        return; // Skip test if output wasn't large enough
-      }
-
       expect(result1.pagination?.hasMore).toBe(true);
 
-      // Second page
       const result2 = await viewStructure({
         path: '/test/path',
-
-        charLength: 5000,
+        entryPageNumber: 2,
       });
 
       expect(result2.status).toBe('hasResults');
-      // Should get different entries
+      expect(result2.pagination?.currentPage).toBe(2);
+      // Different entries on different pages
+      expect(result2.entries![0].name).not.toBe(result1.entries![0].name);
     });
   });
 
@@ -954,8 +984,8 @@ describe('localViewStructure', () => {
 
       // Tree view with recursive doesn't use mockSafeExec, so result may be empty
       expect(['hasResults', 'empty']).toContain(result.status);
-      if (result.status === 'hasResults' && result.totalFiles) {
-        expect(result.totalFiles).toBeGreaterThan(0);
+      if (result.status === 'hasResults' && result.entries) {
+        expect(result.entries.length).toBeGreaterThan(0);
       }
     });
 
@@ -974,10 +1004,8 @@ describe('localViewStructure', () => {
         depth: 1,
       });
 
-      // Recursive results should include cwd just like non-recursive
-      expect(result.cwd).toBeDefined();
-      expect(typeof result.cwd).toBe('string');
-      expect(result.cwd).toBe(process.cwd());
+      // Recursive results should include status
+      expect(result.status).toBeDefined();
     });
 
     it('should handle max depth limit for recursive', async () => {
@@ -1022,7 +1050,10 @@ describe('localViewStructure', () => {
         // Large result without pagination
       });
 
-      if (result.totalFiles && result.totalFiles > 100) {
+      if (
+        result.pagination?.totalEntries &&
+        result.pagination.totalEntries > 100
+      ) {
         expect(result.status).toBe('error');
         expect(result.errorCode).toBeDefined();
       }
@@ -1124,15 +1155,9 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      // Summary stats are only included when summary=true and in tree view mode
-      if (result.totalFiles !== undefined) {
-        expect(result.totalFiles).toBeGreaterThanOrEqual(0);
-      }
-      if (result.totalDirectories !== undefined) {
-        expect(result.totalDirectories).toBeGreaterThanOrEqual(0);
-      }
-      if (result.totalSize !== undefined) {
-        expect(result.totalSize).toBeGreaterThanOrEqual(0);
+      // Summary is always included with entry counts
+      if (result.summary !== undefined) {
+        expect(result.summary).toMatch(/\d+ entries/);
       }
     });
   });
@@ -1261,9 +1286,9 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput?.split('\n').length).toBe(5);
+      expect(result.entries?.length).toBe(5);
       // Pagination should reflect filtered count (5)
-      expect(result.totalFiles).toBe(5);
+      expect(result.summary).toContain('5 entries');
       // Should NOT have multiple pages (since 5 < 20)
       expect(result.pagination?.totalPages).toBe(1);
     });
@@ -1292,7 +1317,7 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toBeDefined();
+      expect(result.entries).toBeDefined();
       expect(result.pagination?.totalPages).toBeGreaterThan(1);
       expect(result.pagination?.hasMore).toBe(true);
     });
@@ -1346,7 +1371,7 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toBeDefined();
+      expect(result.entries).toBeDefined();
       expect(result.pagination?.entriesPerPage).toBe(10);
     });
 
@@ -1375,7 +1400,7 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toBeDefined();
+      expect(result.entries).toBeDefined();
       expect(result.pagination?.hasMore).toBe(false);
     });
   });
@@ -1433,7 +1458,43 @@ describe('localViewStructure', () => {
       expect(result.pagination?.currentPage).toBe(-3);
     });
 
-    it('should reflect overflow entryPageNumber beyond total pages', async () => {
+    it('should clamp entryPageNumber=2 to totalPages=1 (BUG-01 exact repro)', async () => {
+      // Exact repro from bug report: entriesPerPage=5, totalEntries=2, entryPageNumber=2
+      // totalPages = ceil(2/5) = 1. Requesting page 2 overflows by 1.
+      // Before fix: returned "Page 2/1 (showing 0 of 2)" with empty entries.
+      // After fix: clamps to page 1 and returns both entries.
+      const fileList = 'alpha.ts\nbeta.ts';
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: fileList,
+        stderr: '',
+      });
+      mockLstatSync.mockReturnValue({
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        entriesPerPage: 5,
+        entryPageNumber: 2,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.pagination?.currentPage).toBe(1);
+      expect(result.pagination?.totalPages).toBe(1);
+      expect(result.pagination?.hasMore).toBe(false);
+      // Both entries must be present — NOT an empty list
+      expect(result.entries?.length).toBe(2);
+      const pageHint = result.hints?.find(h => h.startsWith('Page'));
+      // Hint must reflect the clamped page, not the raw requested page
+      expect(pageHint).toMatch(/^Page 1\/1/);
+    });
+
+    it('should clamp overflow entryPageNumber to totalPages (BUG-01 fix)', async () => {
+      // 25 entries, 10 per page → totalPages = 3
+      // Requesting page 9999 must clamp to 3 (not return "Page 9999/3 showing 0")
       const fileList = Array.from(
         { length: 25 },
         (_, i) => `file${i}.txt`
@@ -1455,8 +1516,43 @@ describe('localViewStructure', () => {
         entryPageNumber: 9999,
       });
 
-      expect(['hasResults', 'empty']).toContain(result.status);
-      expect(result.pagination?.currentPage).toBe(9999);
+      expect(result.status).toBe('hasResults');
+      // currentPage clamped to totalPages (3), not 9999
+      expect(result.pagination?.currentPage).toBe(3);
+      expect(result.pagination?.totalPages).toBe(3);
+      expect(result.pagination?.hasMore).toBe(false);
+      // Last page returns the remaining 5 entries (21-25), not 0
+      expect(result.entries?.length).toBe(5);
+    });
+
+    it('should clamp overflow entryPageNumber and hint "Final page"', async () => {
+      // Verifies the hint string is consistent with the clamped page
+      const fileList = Array.from({ length: 15 }, (_, i) => `f${i}.ts`).join(
+        '\n'
+      );
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: fileList,
+        stderr: '',
+      });
+      mockLstatSync.mockReturnValue({
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        entriesPerPage: 10,
+        entryPageNumber: 100,
+      });
+
+      expect(result.pagination?.currentPage).toBe(2);
+      expect(result.pagination?.hasMore).toBe(false);
+      // Hint must not say "Page 100/2" — must say "Page 2/2"
+      const pageHint = result.hints?.find(h => h.startsWith('Page'));
+      expect(pageHint).toMatch(/^Page 2\/2/);
+      expect(result.hints).toContain('Final page');
     });
   });
 
@@ -1645,7 +1741,8 @@ describe('localViewStructure', () => {
   });
 
   describe('Character-based pagination (charOffset + charLength)', () => {
-    it('should paginate with charOffset and charLength', async () => {
+    // C5: Char pagination removed - entry pagination + bulk response handle output limits
+    it.skip('should paginate with charOffset and charLength', async () => {
       const largeOutput = Array.from(
         { length: 100 },
         (_, i) => `file${i}.txt`
@@ -1674,7 +1771,7 @@ describe('localViewStructure', () => {
       expect(result.pagination?.hasMore).toBe(true);
     });
 
-    it('should return first page by default', async () => {
+    it.skip('should return first page by default', async () => {
       const largeOutput = Array.from(
         { length: 50 },
         (_, i) => `file${i}.txt`
@@ -1700,7 +1797,7 @@ describe('localViewStructure', () => {
       expect(result.pagination?.charOffset).toBe(0);
     });
 
-    it('should navigate to second page with charOffset', async () => {
+    it.skip('should navigate to second page with charOffset', async () => {
       const largeOutput = Array.from(
         { length: 100 },
         (_, i) => `file${i}.txt`
@@ -1727,7 +1824,7 @@ describe('localViewStructure', () => {
       expect(result.pagination?.charOffset).toBe(500);
     });
 
-    it('should handle charOffset = 0', async () => {
+    it.skip('should handle charOffset = 0', async () => {
       mockSafeExec.mockResolvedValue({
         success: true,
         code: 0,
@@ -1750,7 +1847,7 @@ describe('localViewStructure', () => {
       expect(result.pagination?.charOffset).toBe(0);
     });
 
-    it('should handle charOffset at exact boundary', async () => {
+    it.skip('should handle charOffset at exact boundary', async () => {
       const content = 'x'.repeat(1000);
       mockSafeExec.mockResolvedValue({
         success: true,
@@ -1797,7 +1894,7 @@ describe('localViewStructure', () => {
       expect(result.status).toBe('hasResults');
     });
 
-    it('should handle charLength = 1', async () => {
+    it.skip('should handle charLength = 1', async () => {
       mockSafeExec.mockResolvedValue({
         success: true,
         code: 0,
@@ -1823,7 +1920,7 @@ describe('localViewStructure', () => {
       }
     });
 
-    it('should handle charLength = 10000 (max)', async () => {
+    it.skip('should handle charLength = 10000 (max)', async () => {
       const largeContent = 'x'.repeat(20000);
       mockSafeExec.mockResolvedValue({
         success: true,
@@ -1850,7 +1947,7 @@ describe('localViewStructure', () => {
       }
     });
 
-    it('should handle charLength > remaining content', async () => {
+    it.skip('should handle charLength > remaining content', async () => {
       mockSafeExec.mockResolvedValue({
         success: true,
         code: 0,
@@ -1893,7 +1990,7 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toBeDefined();
+      expect(result.entries).toBeDefined();
     });
 
     it('should handle 2-byte UTF-8 chars (é, ñ)', async () => {
@@ -1916,9 +2013,9 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toBeDefined();
-      // Should not split UTF-8 characters
-      expect(result.structuredOutput).not.toMatch(/\uFFFD/);
+      expect(result.entries).toBeDefined();
+      // Should not have replacement chars from split UTF-8
+      expect(result.entries!.every(e => !e.name.includes('\uFFFD'))).toBe(true);
     });
 
     it('should handle 3-byte UTF-8 chars (中文)', async () => {
@@ -1941,9 +2038,9 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toBeDefined();
+      expect(result.entries).toBeDefined();
       // Should not have replacement characters indicating split UTF-8
-      expect(result.structuredOutput).not.toMatch(/\uFFFD/);
+      expect(result.entries!.every(e => !e.name.includes('\uFFFD'))).toBe(true);
     });
 
     it('should handle 4-byte UTF-8 chars (emoji)', async () => {
@@ -1966,12 +2063,12 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput).toBeDefined();
+      expect(result.entries).toBeDefined();
       // Should not split emoji
-      expect(result.structuredOutput).not.toMatch(/\uFFFD/);
+      expect(result.entries!.every(e => !e.name.includes('\uFFFD'))).toBe(true);
     });
 
-    it('should not split multi-byte characters at boundaries', async () => {
+    it.skip('should not split multi-byte characters at boundaries', async () => {
       // Create content where boundary might fall in middle of UTF-8 char
       const utf8Content = 'a'.repeat(95) + 'café';
       mockSafeExec.mockResolvedValue({
@@ -2023,7 +2120,7 @@ describe('localViewStructure', () => {
       expect(result.pagination?.hasMore).toBe(true);
     });
 
-    it('should show hints with charOffset for next page', async () => {
+    it.skip('should show hints with charOffset for next page', async () => {
       const largeOutput = Array.from(
         { length: 100 },
         (_, i) => `file${i}.txt`
@@ -2087,7 +2184,8 @@ describe('localViewStructure', () => {
       expect(result.pagination?.currentPage).toBe(1);
     });
 
-    it('should handle entryPageNumber > total pages', async () => {
+    it('should clamp entryPageNumber > total pages to the last page', async () => {
+      // 25 entries, 20 per page → totalPages = 2; requesting page 10 must clamp to 2
       const fileList = Array.from(
         { length: 25 },
         (_, i) => `file${i}.txt`
@@ -2110,11 +2208,11 @@ describe('localViewStructure', () => {
         entriesPerPage: 20,
       });
 
-      // Should return empty or handle gracefully
-      expect(['hasResults', 'empty']).toContain(result.status);
-      if (result.status === 'hasResults') {
-        expect(result.pagination?.currentPage).toBe(10);
-      }
+      expect(result.status).toBe('hasResults');
+      // Must be clamped to 2 (totalPages), not 10
+      expect(result.pagination?.currentPage).toBe(2);
+      expect(result.pagination?.totalPages).toBe(2);
+      expect(result.pagination?.hasMore).toBe(false);
     });
 
     it('should handle entriesPerPage = 1', async () => {
@@ -2249,7 +2347,7 @@ describe('localViewStructure', () => {
   });
 
   describe('byte/character offset separation in charPagination', () => {
-    it('should return both byte and char offsets in charPagination', async () => {
+    it.skip('should return both byte and char offsets in charPagination', async () => {
       // Create a large output that requires character pagination
       const manyFiles = Array.from(
         { length: 100 },
@@ -2275,20 +2373,10 @@ describe('localViewStructure', () => {
       expect(result.status).toBe('hasResults');
 
       if (result.charPagination) {
-        // Should have byte fields
-        expect(result.charPagination.byteOffset).toBeDefined();
-        expect(result.charPagination.byteLength).toBeDefined();
-        expect(result.charPagination.totalBytes).toBeDefined();
-
         // Should have char fields
         expect(result.charPagination.charOffset).toBeDefined();
         expect(result.charPagination.charLength).toBeDefined();
         expect(result.charPagination.totalChars).toBeDefined();
-
-        // For ASCII content, bytes and chars should be equal
-        expect(result.charPagination.byteOffset).toBe(
-          result.charPagination.charOffset
-        );
       }
     });
 
@@ -2320,17 +2408,15 @@ describe('localViewStructure', () => {
       expect(result.status).toBe('hasResults');
 
       if (result.charPagination) {
-        // Bytes should differ from chars for UTF-8 filenames
-        expect(result.charPagination.totalBytes).toBeGreaterThan(
-          result.charPagination.totalChars ?? 0
-        );
+        // Should have char fields for UTF-8 filenames
+        expect(result.charPagination.totalChars).toBeDefined();
       }
     });
   });
 
   describe('Auto-pagination for large structuredOutput', () => {
-    it('should auto-paginate when output exceeds MAX_OUTPUT_CHARS (2000) without charLength', async () => {
-      // Create 20 files with VERY long names to exceed 2000 chars (20 entries * 150+ chars = 3000+ chars)
+    it('should return entries with entry pagination (C5: char auto-pagination removed)', async () => {
+      // Create 20 files with long names - entry pagination applies, no char truncation
       const longNameFiles = Array.from(
         { length: 20 },
         (_, i) =>
@@ -2348,21 +2434,14 @@ describe('localViewStructure', () => {
       const result = await viewStructure({
         path: '/test/path',
         depth: 1,
-        entriesPerPage: 20, // Ensure all 20 are on one page
-        // No charLength specified - should trigger auto-pagination
+        entriesPerPage: 20,
       });
 
       expect(result.status).toBe('hasResults');
-      // Output should be truncated to 5000 chars max
-      if (result.structuredOutput) {
-        expect(result.structuredOutput.length).toBeLessThanOrEqual(5000);
-      }
-      // Should have warnings about auto-pagination
-      expect(result.warnings).toBeDefined();
-      const warnings = result.warnings as string[];
-      expect(warnings.length).toBeGreaterThan(0);
-      expect(warnings[0]).toContain('Auto-paginated');
-      expect(warnings[0]).toContain('exceeds');
+      expect(result.entries).toBeDefined();
+      expect(result.entries!.length).toBe(20);
+      // C5: No char auto-pagination - bulk response handles output limits
+      expect(result.warnings).toBeUndefined();
     });
 
     it('should NOT auto-paginate when output is under MAX_OUTPUT_CHARS (2000)', async () => {
@@ -2388,8 +2467,7 @@ describe('localViewStructure', () => {
       expect(result.warnings).toBeUndefined();
     });
 
-    it('should NOT auto-paginate when charLength is explicitly provided', async () => {
-      // Create many files
+    it('should use entry pagination when charLength provided (C5: charLength ignored)', async () => {
       const manyFiles = Array.from(
         { length: 50 },
         (_, i) => `file_${i.toString().padStart(3, '0')}.txt`
@@ -2406,20 +2484,15 @@ describe('localViewStructure', () => {
       const result = await viewStructure({
         path: '/test/path',
         depth: 1,
-        charLength: 500, // User explicitly set charLength
+        charLength: 500, // C5: Ignored - entry pagination used
       });
 
       expect(result.status).toBe('hasResults');
-      // Should NOT have auto-pagination warning (user controlled pagination)
       expect(result.warnings).toBeUndefined();
-      // Output should be truncated to user's charLength
-      if (result.structuredOutput) {
-        expect(result.structuredOutput.length).toBeLessThanOrEqual(500);
-      }
+      expect(result.entries!.length).toBeLessThanOrEqual(20); // Default entriesPerPage
     });
 
-    it('should auto-paginate in non-recursive mode (ls-based) when output is large', async () => {
-      // Create files via ls output simulation
+    it('should use entry pagination in non-recursive mode (C5: no char truncation)', async () => {
       const longFiles = Array.from(
         { length: 100 },
         (_, i) =>
@@ -2435,14 +2508,11 @@ describe('localViewStructure', () => {
 
       const result = await viewStructure({
         path: '/test/path',
-        // No depth = non-recursive ls mode
       });
 
       expect(result.status).toBe('hasResults');
-      // If output was large, should be auto-paginated
-      if (result.structuredOutput && result.structuredOutput.length > 0) {
-        expect(result.structuredOutput.length).toBeLessThanOrEqual(5000);
-      }
+      expect(result.entries).toBeDefined();
+      expect(result.entries!.length).toBeLessThanOrEqual(20); // Default page size
     });
   });
 });

@@ -194,6 +194,10 @@ export async function searchRepos(
     topicsToSearch: query.topics,
     owner: query.owner,
     stars: query.stars ?? (query.minStars ? `>=${query.minStars}` : undefined),
+    size: query.size,
+    created: query.created,
+    updated: query.updated,
+    match: query.match,
     sort:
       query.sort === 'best-match'
         ? undefined

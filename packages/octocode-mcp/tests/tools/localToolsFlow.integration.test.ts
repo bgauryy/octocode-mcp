@@ -7,10 +7,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 // Only mock external dependencies, NOT the config flow
-vi.mock('../../src/tools/toolMetadata.js', async () => {
+vi.mock('../../src/tools/toolMetadata/index.js', async () => {
   const actual = await vi.importActual<
-    typeof import('../../src/tools/toolMetadata.js')
-  >('../../src/tools/toolMetadata.js');
+    typeof import('../../src/tools/toolMetadata/index.js')
+  >('../../src/tools/toolMetadata/index.js');
   return {
     ...actual,
     // Mock metadata to return true for all tools (simulating API response)
@@ -256,7 +256,7 @@ describe('Local Tools Flow Integration', () => {
   describe('Tool names verification', () => {
     it('should use correct tool names from STATIC_TOOL_NAMES', async () => {
       const { STATIC_TOOL_NAMES } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Verify the expected tool names
       expect(STATIC_TOOL_NAMES.LOCAL_RIPGREP).toBe('localSearchCode');
