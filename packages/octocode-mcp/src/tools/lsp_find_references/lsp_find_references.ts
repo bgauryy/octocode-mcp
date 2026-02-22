@@ -37,6 +37,7 @@ import { executeFindReferences } from './execution.js';
 import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
 import { findReferencesWithLSP } from './lspReferencesCore.js';
 import { findReferencesWithPatternMatching } from './lspReferencesPatterns.js';
+import { LspFindReferencesOutputSchema } from '../../scheme/outputSchemas.js';
 
 const TOOL_NAME = STATIC_TOOL_NAMES.LSP_FIND_REFERENCES;
 
@@ -49,6 +50,7 @@ export function registerLSPFindReferencesTool(server: McpServer) {
     {
       description: LSP_FIND_REFERENCES_DESCRIPTION,
       inputSchema: BulkLSPFindReferencesSchema as unknown as AnySchema,
+      outputSchema: LspFindReferencesOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'Find References',
         readOnlyHint: true,

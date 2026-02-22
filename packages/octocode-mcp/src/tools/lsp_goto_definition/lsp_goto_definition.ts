@@ -14,6 +14,7 @@ import {
 import { executeGotoDefinition } from './execution.js';
 import { STATIC_TOOL_NAMES } from '../toolNames.js';
 import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
+import { LspGotoDefinitionOutputSchema } from '../../scheme/outputSchemas.js';
 
 /**
  * Register the LSP Go To Definition tool with the MCP server.
@@ -24,6 +25,7 @@ export function registerLSPGotoDefinitionTool(server: McpServer) {
     {
       description: LSP_GOTO_DEFINITION_DESCRIPTION,
       inputSchema: BulkLSPGotoDefinitionSchema as unknown as AnySchema,
+      outputSchema: LspGotoDefinitionOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'Go To Definition',
         readOnlyHint: true,

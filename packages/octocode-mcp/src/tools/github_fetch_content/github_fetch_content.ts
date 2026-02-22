@@ -8,6 +8,7 @@ import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata.js';
 import { FileContentBulkQuerySchema } from './scheme.js';
 import { invokeCallbackSafely } from '../utils.js';
 import { fetchMultipleGitHubFileContents } from './execution.js';
+import { GitHubFetchContentOutputSchema } from '../../scheme/outputSchemas.js';
 
 export function registerFetchGitHubFileContentTool(
   server: McpServer,
@@ -18,6 +19,7 @@ export function registerFetchGitHubFileContentTool(
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_FETCH_CONTENT],
       inputSchema: FileContentBulkQuerySchema as unknown as AnySchema,
+      outputSchema: GitHubFetchContentOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'GitHub File Content Fetch',
         readOnlyHint: true,

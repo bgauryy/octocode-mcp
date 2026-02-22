@@ -8,6 +8,7 @@ import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata.js';
 import { GitHubPullRequestSearchBulkQuerySchema } from './scheme.js';
 import { invokeCallbackSafely } from '../utils.js';
 import { searchMultipleGitHubPullRequests } from './execution.js';
+import { GitHubSearchPullRequestsOutputSchema } from '../../scheme/outputSchemas.js';
 
 const VALIDATION_MESSAGES = {
   QUERY_TOO_LONG: 'Query too long. Maximum 256 characters allowed.',
@@ -50,6 +51,7 @@ export function registerSearchGitHubPullRequestsTool(
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS],
       inputSchema:
         GitHubPullRequestSearchBulkQuerySchema as unknown as AnySchema,
+      outputSchema: GitHubSearchPullRequestsOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'GitHub Pull Request Search',
         readOnlyHint: true,

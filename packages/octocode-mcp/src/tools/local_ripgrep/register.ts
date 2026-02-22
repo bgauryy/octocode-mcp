@@ -4,6 +4,7 @@ import { TOOL_NAMES } from '../toolMetadata.js';
 import { BulkRipgrepQuerySchema, LOCAL_RIPGREP_DESCRIPTION } from './scheme.js';
 import { executeRipgrepSearch } from './execution.js';
 import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
+import { LocalSearchCodeOutputSchema } from '../../scheme/outputSchemas.js';
 
 /**
  * Register the local ripgrep search tool with the MCP server.
@@ -15,6 +16,7 @@ export function registerLocalRipgrepTool(server: McpServer) {
     {
       description: LOCAL_RIPGREP_DESCRIPTION,
       inputSchema: BulkRipgrepQuerySchema as unknown as AnySchema,
+      outputSchema: LocalSearchCodeOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'Local Ripgrep Search',
         readOnlyHint: true,

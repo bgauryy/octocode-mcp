@@ -13,6 +13,7 @@ import { invokeCallbackSafely } from '../utils.js';
 import { checkNpmAvailability } from '../../utils/exec/index.js';
 import { checkNpmRegistryReachable } from '../../utils/package/npm.js';
 import { searchPackages } from './execution.js';
+import { PackageSearchOutputSchema } from '../../scheme/outputSchemas.js';
 
 export async function registerPackageSearchTool(
   server: McpServer,
@@ -33,6 +34,7 @@ export async function registerPackageSearchTool(
     {
       description: DESCRIPTIONS[TOOL_NAMES.PACKAGE_SEARCH],
       inputSchema: PackageSearchBulkQuerySchema as unknown as AnySchema,
+      outputSchema: PackageSearchOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'Package Search',
         readOnlyHint: true,

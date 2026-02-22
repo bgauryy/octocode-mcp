@@ -8,6 +8,7 @@ import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata.js';
 import { GitHubReposSearchQuerySchema } from './scheme.js';
 import { invokeCallbackSafely } from '../utils.js';
 import { searchMultipleGitHubRepos } from './execution.js';
+import { GitHubSearchRepositoriesOutputSchema } from '../../scheme/outputSchemas.js';
 
 export function registerSearchGitHubReposTool(
   server: McpServer,
@@ -18,6 +19,7 @@ export function registerSearchGitHubReposTool(
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES],
       inputSchema: GitHubReposSearchQuerySchema as unknown as AnySchema,
+      outputSchema: GitHubSearchRepositoriesOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'GitHub Repository Search',
         readOnlyHint: true,

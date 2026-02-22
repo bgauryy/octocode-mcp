@@ -26,6 +26,7 @@ import {
   BulkViewStructureSchema,
   LOCAL_VIEW_STRUCTURE_DESCRIPTION,
 } from './scheme.js';
+import { LocalViewStructureOutputSchema } from '../../scheme/outputSchemas.js';
 import {
   applyEntryFilters,
   toEntryObject,
@@ -44,6 +45,7 @@ export function registerLocalViewStructureTool(server: McpServer) {
     {
       description: LOCAL_VIEW_STRUCTURE_DESCRIPTION,
       inputSchema: BulkViewStructureSchema as unknown as AnySchema,
+      outputSchema: LocalViewStructureOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'Local View Structure',
         readOnlyHint: true,

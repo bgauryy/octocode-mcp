@@ -15,6 +15,7 @@ import {
 } from './scheme.js';
 import { executeCloneRepo } from './execution.js';
 import { withSecurityValidation } from '../../security/withSecurityValidation.js';
+import { GitHubCloneRepoOutputSchema } from '../../scheme/outputSchemas.js';
 
 export function registerGitHubCloneRepoTool(server: McpServer) {
   return server.registerTool(
@@ -22,6 +23,7 @@ export function registerGitHubCloneRepoTool(server: McpServer) {
     {
       description: GITHUB_CLONE_REPO_DESCRIPTION,
       inputSchema: BulkCloneRepoSchema as unknown as AnySchema,
+      outputSchema: GitHubCloneRepoOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'Clone / Fetch GitHub Repository Locally',
         readOnlyHint: false, // writes cloned files to disk

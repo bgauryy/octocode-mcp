@@ -8,6 +8,7 @@ import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata.js';
 import { GitHubCodeSearchBulkQuerySchema } from './scheme.js';
 import { invokeCallbackSafely } from '../utils.js';
 import { searchMultipleGitHubCode } from './execution.js';
+import { GitHubSearchCodeOutputSchema } from '../../scheme/outputSchemas.js';
 
 export function registerGitHubSearchCodeTool(
   server: McpServer,
@@ -18,6 +19,7 @@ export function registerGitHubSearchCodeTool(
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_CODE],
       inputSchema: GitHubCodeSearchBulkQuerySchema as unknown as AnySchema,
+      outputSchema: GitHubSearchCodeOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'GitHub Code Search',
         readOnlyHint: true,

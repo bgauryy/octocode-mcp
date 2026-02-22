@@ -146,6 +146,7 @@ function createBulkResponse<TQuery extends object>(
         text,
       },
     ],
+    structuredContent: responseData as Record<string, unknown>,
     isError: errorCount > 0 && hasResultsCount === 0 && emptyCount === 0,
   };
 }
