@@ -22,7 +22,7 @@ export function registerFetchGitHubFileContentTool(
       outputSchema: GitHubFetchContentOutputSchema as unknown as AnySchema,
       annotations: {
         title: 'GitHub File Content Fetch',
-        readOnlyHint: true,
+        readOnlyHint: false, // may write files to disk in directory mode
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: true,
