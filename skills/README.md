@@ -11,7 +11,7 @@ Specialized AI agent skills that extend OctoCode's capabilities.
 | Local code search, structure, definitions | **Local Search** | "Find X in codebase", "Where is Y?", "Explore this dir" |
 | Full research (local + GitHub, PRs, packages) | **Research** | "How does X work?", "Who calls Z?", "Trace flow", "Review PR" |
 | Plan work before implementing | **Plan** | "Plan this feature", "Research & plan refactor" |
-| Review a pull request | **PR Reviewer** | "Review PR #123", "Is this PR safe to merge?" |
+| Review a pull request or local changes | **PR Reviewer** | "Review PR #123", "Review my changes", "Is this PR safe to merge?" |
 | Brutal code criticism with fixes | **Roast** | "Roast my code", "Find code sins", "What's wrong with this?" |
 | Strengthen prompts / agent instructions | **Prompt Optimizer** | "Optimize this SKILL.md", "Agent skips steps" |
 | Generate repo documentation | **Documentation Writer** | "Document this project", "Create developer docs" |
@@ -94,14 +94,17 @@ Brutal code critique with file:line citations. Severity: gentle → nuclear. Sin
 
 ---
 
-### 7. OctoCode Pull Request Reviewer
+### 7. OctoCode Pull Request & Code Reviewer
 **Location:** `octocode-pull-request-reviewer/`
 
-Holistic PR review via Octocode MCP: bugs, security, architecture, flow impact. 7 domains, evidence-backed, user checkpoint before deep dive.
+Holistic code review via Octocode MCP: bugs, security, architecture, flow impact. Supports both **remote PRs** and **local changes** (staged/unstaged). 7 domains, LSP-powered flow tracing, evidence-backed, user checkpoint before deep dive.
+
+> **Local Mode** requires `ENABLE_LOCAL=true` — see [README](https://github.com/bgauryy/octocode-mcp/blob/main/skills/octocode-pull-request-reviewer/README.md)
 
 | When | Example |
 |------|---------|
 | PR review | "Review PR #456", "Check this PR" |
+| Local changes | "Review my changes", "Review staged changes" |
 | Security/impact | "Is this safe to merge?" |
 
 ---
