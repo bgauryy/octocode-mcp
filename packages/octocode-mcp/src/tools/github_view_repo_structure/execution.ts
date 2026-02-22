@@ -39,9 +39,7 @@ function filterStructure(
 
 function createEmptyStructureResult(
   query: GitHubViewRepoStructureQuery,
-  error: NonNullable<
-    ReturnType<typeof handleCatchError | typeof handleCatchError>
-  >
+  error: NonNullable<ReturnType<typeof handleCatchError>>
 ): Record<string, unknown> & {
   status: 'error';
   path: string;

@@ -14,7 +14,7 @@ import { LspCallHierarchyOutputSchema } from '../../scheme/outputSchemas.js';
  */
 export function registerLSPCallHierarchyTool(server: McpServer) {
   return server.registerTool(
-    'lspCallHierarchy',
+    STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
     {
       description: LSP_CALL_HIERARCHY_DESCRIPTION,
       inputSchema: BulkLSPCallHierarchySchema as unknown as AnySchema,

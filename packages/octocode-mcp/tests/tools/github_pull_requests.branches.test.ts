@@ -89,198 +89,74 @@ describe('GitHub Pull Requests Tool - Branch Coverage', () => {
     vi.resetAllMocks();
   });
 
-  describe('Validation Error Handling', () => {
-    describe('Query length validation (lines 80-81)', () => {
-      it('should add validation error when query exceeds 256 characters', async () => {
-        const longQuery = 'a'.repeat(257); // 257 characters, exceeds limit
+  describe('Per-query validation in execution', () => {
+    it('should return error for query exceeding 256 characters', async () => {
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'test',
+              repo: 'repo',
+              query: 'a'.repeat(257),
+            },
+          ],
+        }
+      );
 
-        const result = await mockServer.callTool(
-          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-          {
-            queries: [
-              {
-                owner: 'test',
-                repo: 'repo',
-                query: longQuery,
-              },
-            ],
-          }
-        );
-
-        expect(result.isError).toBe(true);
-        const responseText = getTextContent(result.content);
-        expect(responseText).toContain('Query too long');
-        expect(responseText).toContain('Maximum 256 characters allowed');
-        // Verify provider was not called due to validation error
-        expect(mockProvider.searchPullRequests).not.toHaveBeenCalled();
-      });
-
-      it('should add validation error to correct query when multiple queries provided', async () => {
-        const longQuery = 'b'.repeat(300); // Exceeds limit
-        mockProvider.searchPullRequests.mockResolvedValue({
-          data: {
-            items: [],
-            totalCount: 0,
-            pagination: { currentPage: 1, totalPages: 0, hasMore: false },
-          },
-          status: 200,
-          provider: 'github',
-        });
-
-        const result = await mockServer.callTool(
-          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-          {
-            queries: [
-              {
-                owner: 'test',
-                repo: 'repo',
-                query: 'valid query',
-              },
-              {
-                owner: 'test2',
-                repo: 'repo2',
-                query: longQuery, // This one exceeds limit
-              },
-            ],
-          }
-        );
-
-        expect(result.isError).toBe(false);
-        const responseText = getTextContent(result.content);
-        // Should contain validation error for the long query
-        expect(responseText).toContain('Query too long');
-      });
+      expect(result.isError).toBe(true);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('Query too long');
+      expect(mockProvider.searchPullRequests).not.toHaveBeenCalled();
     });
 
-    describe('Missing search params validation (lines 88-89)', () => {
-      it('should add validation error when no queries have valid search params', async () => {
-        const result = await mockServer.callTool(
-          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-          {
-            queries: [
-              {
-                // No owner, repo, author, assignee, prNumber, or query
-                state: 'open', // State alone is not enough
-              },
-            ],
-          }
-        );
+    it('should return error when no valid search params provided', async () => {
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              state: 'open',
+            },
+          ],
+        }
+      );
 
-        expect(result.isError).toBe(true);
-        const responseText = getTextContent(result.content);
-        expect(responseText).toContain('At least one valid search parameter');
-        expect(responseText).toContain('is required');
-        // Verify provider was not called due to validation error
-        expect(mockProvider.searchPullRequests).not.toHaveBeenCalled();
-      });
-
-      it('should add validation error to first query when multiple queries lack valid params', async () => {
-        const result = await mockServer.callTool(
-          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-          {
-            queries: [
-              {
-                // No valid params
-                state: 'open',
-              },
-              {
-                // Also no valid params
-                merged: false,
-              },
-            ],
-          }
-        );
-
-        expect(result.isError).toBe(true);
-        const responseText = getTextContent(result.content);
-        expect(responseText).toContain('At least one valid search parameter');
-      });
-
-      it('should not add validation error when query has valid search params', async () => {
-        mockProvider.searchPullRequests.mockResolvedValue({
-          data: {
-            items: [],
-            totalCount: 0,
-            pagination: { currentPage: 1, totalPages: 0, hasMore: false },
-          },
-          status: 200,
-          provider: 'github',
-        });
-
-        const result = await mockServer.callTool(
-          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-          {
-            queries: [
-              {
-                owner: 'test',
-                repo: 'repo',
-              },
-            ],
-          }
-        );
-
-        expect(result.isError).toBe(false);
-        const responseText = getTextContent(result.content);
-        expect(responseText).not.toContain(
-          'At least one valid search parameter'
-        );
-        expect(mockProvider.searchPullRequests).toHaveBeenCalled();
-      });
+      expect(result.isError).toBe(true);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('At least one valid search parameter');
+      expect(mockProvider.searchPullRequests).not.toHaveBeenCalled();
     });
 
-    describe('addValidationError function (line 37)', () => {
-      it('should add _validationError property to query object', async () => {
-        const longQuery = 'c'.repeat(300);
-
-        const result = await mockServer.callTool(
-          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-          {
-            queries: [
-              {
-                owner: 'test',
-                repo: 'repo',
-                query: longQuery,
-              },
-            ],
-          }
-        );
-
-        expect(result.isError).toBe(true);
-        // The validation error should be in the response
-        const responseText = getTextContent(result.content);
-        expect(responseText).toContain('Query too long');
+    it('should gracefully degrade: valid query succeeds while invalid fails', async () => {
+      mockProvider.searchPullRequests.mockResolvedValue({
+        data: {
+          items: [],
+          totalCount: 0,
+          pagination: { currentPage: 1, totalPages: 0, hasMore: false },
+        },
+        status: 200,
+        provider: 'github',
       });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            { owner: 'test', repo: 'repo', query: 'valid' },
+            { owner: 'test', repo: 'repo', query: 'x'.repeat(300) },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('Query too long');
+      expect(mockProvider.searchPullRequests).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('Execution Error Handling', () => {
-    describe('_validationError check in execution (line 31)', () => {
-      it('should return error result when query has _validationError', async () => {
-        // This test verifies that execution.ts line 31 is hit
-        // We need to trigger the validation error path which adds _validationError
-        const longQuery = 'd'.repeat(300);
-
-        const result = await mockServer.callTool(
-          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-          {
-            queries: [
-              {
-                owner: 'test',
-                repo: 'repo',
-                query: longQuery,
-              },
-            ],
-          }
-        );
-
-        expect(result.isError).toBe(true);
-        const responseText = getTextContent(result.content);
-        // Should return error result (not call provider)
-        expect(responseText).toContain('Query too long');
-        expect(mockProvider.searchPullRequests).not.toHaveBeenCalled();
-      });
-    });
-
     describe('Try/catch error handling (line 131)', () => {
       it('should catch and handle errors thrown during execution', async () => {
         // Mock provider to throw an error

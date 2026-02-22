@@ -29,10 +29,26 @@ export async function searchMultipleGitHubPullRequests(
     queries,
     async (query: GitHubPullRequestSearchQuery, _index: number) => {
       try {
-        const validationError = (query as unknown as Record<string, unknown>)
-          ?._validationError;
-        if (validationError && typeof validationError === 'string') {
-          return createErrorResult(validationError, query);
+        if (query.query && String(query.query).length > 256) {
+          return createErrorResult(
+            'Query too long. Maximum 256 characters allowed.',
+            query
+          );
+        }
+
+        const hasValidParams =
+          query.query?.trim() ||
+          query.owner ||
+          query.repo ||
+          query.author ||
+          query.assignee ||
+          (query.prNumber && query.owner && query.repo);
+
+        if (!hasValidParams) {
+          return createErrorResult(
+            'At least one valid search parameter, filter, or PR number is required.',
+            query
+          );
         }
 
         const provider = getProvider(providerType, {

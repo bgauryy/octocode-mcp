@@ -21,7 +21,13 @@ const DateRangeSchema = z.object({
     .describe(GITHUB_SEARCH_PULL_REQUESTS.filters.updated),
 });
 
-export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
+const PR_VALIDATION_MESSAGES = {
+  QUERY_TOO_LONG: 'Query too long. Maximum 256 characters allowed.',
+  MISSING_PARAMS:
+    'At least one valid search parameter, filter, or PR number is required.',
+} as const;
+
+const GitHubPullRequestSearchBaseSchema = BaseQuerySchema.extend({
   query: z
     .string()
     .optional()
@@ -204,6 +210,33 @@ export const GitHubPullRequestSearchQuerySchema = BaseQuerySchema.extend({
     .optional()
     .describe(GITHUB_SEARCH_PULL_REQUESTS.outputLimit.charLength),
 });
+
+export const GitHubPullRequestSearchQuerySchema =
+  GitHubPullRequestSearchBaseSchema.superRefine((data, ctx) => {
+    if (data.query && String(data.query).length > 256) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: PR_VALIDATION_MESSAGES.QUERY_TOO_LONG,
+        path: ['query'],
+      });
+    }
+
+    const hasValidParams =
+      data.query?.trim() ||
+      data.owner ||
+      data.repo ||
+      data.author ||
+      data.assignee ||
+      (data.prNumber && data.owner && data.repo);
+
+    if (!hasValidParams) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: PR_VALIDATION_MESSAGES.MISSING_PARAMS,
+        path: [],
+      });
+    }
+  });
 
 export const GitHubPullRequestSearchBulkQuerySchema = createBulkQuerySchema(
   TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,

@@ -54,9 +54,16 @@ export async function searchMultipleGitHubCode(
 
         // Transform provider response to tool result format
         const files = apiResult.data.items.map(item => {
+          const repoFullName = item.repository.name || '';
+          const slashIdx = repoFullName.indexOf('/');
+          const owner = slashIdx > 0 ? repoFullName.substring(0, slashIdx) : '';
+          const repoName =
+            slashIdx > 0 ? repoFullName.substring(slashIdx + 1) : repoFullName;
+
           const baseFile = {
             path: item.path,
-            repo: item.repository.name,
+            owner,
+            repo: repoName,
             ...(item.lastModifiedAt && { lastModifiedAt: item.lastModifiedAt }),
           };
 

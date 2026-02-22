@@ -32,7 +32,13 @@ function createBulkOutputSchema(successDataSchema: z.ZodTypeAny) {
 
   return z.object({
     instructions: z.string(),
-    results: z.array(z.discriminatedUnion('status', [hasResultsSchema, emptySchema, errorSchema])),
+    results: z.array(
+      z.discriminatedUnion('status', [
+        hasResultsSchema,
+        emptySchema,
+        errorSchema,
+      ])
+    ),
   });
 }
 
@@ -45,8 +51,14 @@ const CommonPaginationSchema = z
   .passthrough();
 
 const LspRangeSchema = z.object({
-  start: z.object({ line: z.number().int().nonnegative(), character: z.number().int().nonnegative() }),
-  end: z.object({ line: z.number().int().nonnegative(), character: z.number().int().nonnegative() }),
+  start: z.object({
+    line: z.number().int().nonnegative(),
+    character: z.number().int().nonnegative(),
+  }),
+  end: z.object({
+    line: z.number().int().nonnegative(),
+    character: z.number().int().nonnegative(),
+  }),
 });
 
 const LspCodeSnippetSchema = z
@@ -61,7 +73,9 @@ const LspCodeSnippetSchema = z
 /**
  * Shared fallback output schema.
  */
-export const BulkToolOutputSchema = createBulkOutputSchema(z.record(z.unknown()));
+export const BulkToolOutputSchema = createBulkOutputSchema(
+  z.record(z.unknown())
+);
 
 export const GitHubFetchContentOutputSchema = createBulkOutputSchema(
   z
@@ -121,12 +135,14 @@ export const GitHubViewRepoStructureOutputSchema = createBulkOutputSchema(
       repo: z.string().optional(),
       branch: z.string().optional(),
       path: z.string().optional(),
-      structure: z.record(
-        z.object({
-          files: z.array(z.string()),
-          folders: z.array(z.string()),
-        })
-      ).optional(),
+      structure: z
+        .record(
+          z.object({
+            files: z.array(z.string()),
+            folders: z.array(z.string()),
+          })
+        )
+        .optional(),
       summary: z.record(z.unknown()).optional(),
       pagination: CommonPaginationSchema.optional(),
     })
@@ -180,7 +196,9 @@ export const LocalGetFileContentOutputSchema = createBulkOutputSchema(
       totalLines: z.number().optional(),
       startLine: z.number().optional(),
       endLine: z.number().optional(),
-      matchRanges: z.array(z.object({ start: z.number(), end: z.number() })).optional(),
+      matchRanges: z
+        .array(z.object({ start: z.number(), end: z.number() }))
+        .optional(),
       pagination: CommonPaginationSchema.optional(),
     })
     .passthrough()
@@ -212,7 +230,10 @@ export const LspGotoDefinitionOutputSchema = createBulkOutputSchema(
     .object({
       locations: z.array(LspCodeSnippetSchema).optional(),
       resolvedPosition: z
-        .object({ line: z.number().int().nonnegative(), character: z.number().int().nonnegative() })
+        .object({
+          line: z.number().int().nonnegative(),
+          character: z.number().int().nonnegative(),
+        })
         .optional(),
       searchRadius: z.number().int().optional(),
       outputPagination: CommonPaginationSchema.optional(),
@@ -223,7 +244,11 @@ export const LspGotoDefinitionOutputSchema = createBulkOutputSchema(
 export const LspFindReferencesOutputSchema = createBulkOutputSchema(
   z
     .object({
-      locations: z.array(LspCodeSnippetSchema.extend({ isDefinition: z.boolean().optional() })).optional(),
+      locations: z
+        .array(
+          LspCodeSnippetSchema.extend({ isDefinition: z.boolean().optional() })
+        )
+        .optional(),
       pagination: CommonPaginationSchema.optional(),
       totalReferences: z.number().optional(),
       hasMultipleFiles: z.boolean().optional(),
@@ -236,10 +261,20 @@ export const LspCallHierarchyOutputSchema = createBulkOutputSchema(
     .object({
       item: z.record(z.unknown()).optional(),
       incomingCalls: z
-        .array(z.object({ from: z.record(z.unknown()), fromRanges: z.array(LspRangeSchema) }))
+        .array(
+          z.object({
+            from: z.record(z.unknown()),
+            fromRanges: z.array(LspRangeSchema),
+          })
+        )
         .optional(),
       outgoingCalls: z
-        .array(z.object({ to: z.record(z.unknown()), fromRanges: z.array(LspRangeSchema) }))
+        .array(
+          z.object({
+            to: z.record(z.unknown()),
+            fromRanges: z.array(LspRangeSchema),
+          })
+        )
         .optional(),
       pagination: CommonPaginationSchema.optional(),
       outputPagination: CommonPaginationSchema.optional(),
