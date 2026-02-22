@@ -16,7 +16,6 @@ describe('Environment Detection', () => {
 
   beforeEach(() => {
     // Clear environment variables
-    delete process.env.ENABLE_LSP_TOOL;
     delete process.env.VSCODE_PID;
     delete process.env.VSCODE_IPC_HOOK;
     delete process.env.CURSOR_CHANNEL;
@@ -30,11 +29,6 @@ describe('Environment Detection', () => {
   });
 
   describe('detectEnvironment', () => {
-    it('should detect Claude Code with native LSP', () => {
-      process.env.ENABLE_LSP_TOOL = '1';
-      expect(detectEnvironment()).toBe('claude-code-native');
-    });
-
     it('should detect VSCode via VSCODE_PID', () => {
       process.env.VSCODE_PID = '12345';
       expect(detectEnvironment()).toBe('vscode');
@@ -57,12 +51,6 @@ describe('Environment Detection', () => {
 
     it('should return standalone as default', () => {
       expect(detectEnvironment()).toBe('standalone');
-    });
-
-    it('should prioritize Claude Code over VSCode', () => {
-      process.env.ENABLE_LSP_TOOL = '1';
-      process.env.VSCODE_PID = '12345';
-      expect(detectEnvironment()).toBe('claude-code-native');
     });
 
     it('should prioritize VSCode over Cursor', () => {
