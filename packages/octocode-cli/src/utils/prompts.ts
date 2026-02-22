@@ -151,7 +151,6 @@ export function isInquirerLoaded(): boolean {
  * // Use value directly
  */
 export async function selectWithCancel<T>(config: SelectConfig<T>): Promise<T> {
-  // Import inquirer functions dynamically
   const inquirer = await import('@inquirer/prompts');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (await inquirer.select(config as any)) as T;

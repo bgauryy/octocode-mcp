@@ -23,7 +23,6 @@ import type {
   RepoStructureResult,
 } from '../types.js';
 
-// Import extracted modules
 import * as gitlabSearch from './gitlabSearch.js';
 import * as gitlabContent from './gitlabContent.js';
 import * as gitlabPullRequests from './gitlabPullRequests.js';

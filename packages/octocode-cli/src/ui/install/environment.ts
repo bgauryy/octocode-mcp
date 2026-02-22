@@ -71,7 +71,6 @@ function printRegistryStatus(
  * Results are cached to avoid repeated network calls that can slow down menus
  */
 export async function checkAndPrintEnvironmentWithLoader(): Promise<NodeEnvironmentStatus> {
-  // Return cached result if available (only check once per session)
   if (cachedEnvStatus) {
     printNodeStatus(cachedEnvStatus.nodeInstalled, cachedEnvStatus.nodeVersion);
     printNpmStatus(cachedEnvStatus.npmInstalled, cachedEnvStatus.npmVersion);

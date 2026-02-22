@@ -645,7 +645,6 @@ export async function activate(
       `Octocode MCP extension activated in ${editorInfo.name}`
     );
 
-    // Create status bar item
     statusBarItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Right,
       100

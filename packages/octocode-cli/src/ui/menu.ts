@@ -1043,7 +1043,6 @@ async function runAuthFlow(): Promise<void> {
         const success = await runLoginFlow();
         console.log();
         if (success) {
-          // Return to main menu after successful auth
           inAuthMenu = false;
         }
         break;

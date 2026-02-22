@@ -112,7 +112,6 @@ export function stopFlushTimer(): void {
  * @returns The persisted session or null if not found/invalid
  */
 export function readSession(): PersistedSession | null {
-  // Return from cache if available
   if (cachedSession) {
     return cachedSession;
   }

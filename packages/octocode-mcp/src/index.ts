@@ -58,7 +58,6 @@ function createShutdownHandler(
     try {
       const logger = getLogger();
 
-      // Log while transport is still connected
       await logger?.info('Shutting down', { signal });
 
       if (state.timeout) {

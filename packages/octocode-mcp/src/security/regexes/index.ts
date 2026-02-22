@@ -8,7 +8,6 @@ import type { SensitiveDataPattern } from './types.js';
 // Re-export types
 export type { SensitiveDataPattern } from './types.js';
 
-// Import all pattern categories
 export { aiProviderPatterns } from './ai-providers.js';
 export {
   awsPatterns,
@@ -38,7 +37,6 @@ export {
   shippingLogisticsPatterns,
 } from './communications.js';
 
-// Import for combined array
 import { aiProviderPatterns } from './ai-providers.js';
 import {
   awsPatterns,

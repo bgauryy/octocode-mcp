@@ -170,7 +170,6 @@ export async function login(options: LoginOptions = {}): Promise<LoginResult> {
   } = options;
 
   try {
-    // Create OAuth device auth
     const auth = createOAuthDeviceAuth({
       clientType: 'oauth-app',
       clientId,
@@ -206,7 +205,6 @@ export async function login(options: LoginOptions = {}): Promise<LoginResult> {
     // Get the authenticated user's login
     const username = await getCurrentUser(tokenAuth.token, hostname);
 
-    // Create token object
     const token: OAuthToken = {
       token: tokenAuth.token,
       tokenType: 'oauth',

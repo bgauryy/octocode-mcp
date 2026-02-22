@@ -23,7 +23,6 @@ import type {
 } from './types.js';
 import { createLogger } from '../logger/index.js';
 
-// Import from focused modules
 import {
   invalidateCredentialsCache,
   _getCacheStats,
