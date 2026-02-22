@@ -527,7 +527,7 @@ yarn test:ui
 | Path validation | `src/security/pathValidator.ts` |
 | GitHub client | `src/github/client.ts` |
 | GitLab client | `src/gitlab/client.ts` |
-| Provider factory | `src/providers/factory.ts`, `src/providers/execute.ts` |
+| Provider factory | `src/providers/factory.ts` |
 | LSP client | `src/lsp/client.ts` |
 | LSP config | `src/lsp/config.ts`, `src/lsp/manager.ts` |
 | Bulk operations | `src/utils/response/bulk.ts` |

@@ -15,7 +15,7 @@ import { validateToolPath } from '../../src/utils/file/toolHelpers.js';
 import {
   TOOL_NAMES,
   initializeToolMetadata,
-} from '../../src/tools/toolMetadata';
+} from '../../src/tools/toolMetadata/index.js';
 import { getTextContent } from '../utils/testHelpers.js';
 
 beforeAll(async () => {

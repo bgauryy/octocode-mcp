@@ -13,7 +13,7 @@
 export interface GitHubViewRepoStructureQuery {
   owner: string;
   repo: string;
-  branch: string;
+  branch?: string;
   path?: string;
   depth?: number;
   entriesPerPage?: number;

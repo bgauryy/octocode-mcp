@@ -232,11 +232,14 @@ const defaultBranchCache = new Map<string, string>();
 /**
  * Fetch the default branch name for a GitHub repository.
  * Results are cached in-memory to avoid redundant API calls within a session.
- * Falls back to "main" on error (e.g. network failure, private repo without token).
  *
- * Shared utility used by:
- * - githubCloneRepo (when branch is omitted)
- * - githubGetFileContent directory mode (when branch is omitted)
+ * Resolution strategy:
+ *   1. repos.get API → definitive default_branch from GitHub
+ *   2. Smart fallback: verify 'main' branch exists → verify 'master' exists
+ *   3. Throw if all attempts fail (repo may not exist or be inaccessible)
+ *
+ * Shared utility — all GitHub tools that accept an optional `branch` must
+ * use this function when the caller omits the branch parameter.
  */
 export async function resolveDefaultBranch(
   owner: string,
@@ -247,22 +250,42 @@ export async function resolveDefaultBranch(
   const cached = defaultBranchCache.get(cacheKey);
   if (cached) return cached;
 
+  const octokit = await getOctokit(authInfo);
+
+  // Primary: repos.get returns the canonical default branch
   try {
-    const octokit = await getOctokit(authInfo);
     const { data } = await octokit.rest.repos.get({ owner, repo });
     const branch = data.default_branch;
-    if (defaultBranchCache.size >= MAX_BRANCH_CACHE_SIZE) {
-      // FIFO eviction — Map.keys() returns insertion order
-      const oldest = defaultBranchCache.keys().next().value;
-      if (oldest !== undefined) defaultBranchCache.delete(oldest);
-    }
-    defaultBranchCache.set(cacheKey, branch);
+    cacheDefaultBranch(cacheKey, branch);
     return branch;
   } catch {
-    // Return "main" as fallback but do NOT cache it — the error may be
-    // transient and the actual default branch could be master/develop/etc.
-    return 'main';
+    // Fall through to smart fallback
   }
+
+  // Smart fallback: verify common branch names exist (main → master)
+  const candidates = ['main', 'master'] as const;
+  for (const candidate of candidates) {
+    try {
+      await octokit.rest.repos.getBranch({ owner, repo, branch: candidate });
+      cacheDefaultBranch(cacheKey, candidate);
+      return candidate;
+    } catch {
+      // Branch not found — try next candidate
+    }
+  }
+
+  throw new Error(
+    `Could not determine default branch for ${owner}/${repo}. ` +
+      `The repository may not exist, require authentication, or be inaccessible.`
+  );
+}
+
+function cacheDefaultBranch(cacheKey: string, branch: string): void {
+  if (defaultBranchCache.size >= MAX_BRANCH_CACHE_SIZE) {
+    const oldest = defaultBranchCache.keys().next().value;
+    if (oldest !== undefined) defaultBranchCache.delete(oldest);
+  }
+  defaultBranchCache.set(cacheKey, branch);
 }
 
 /**

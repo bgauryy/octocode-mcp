@@ -6,9 +6,14 @@ import {
 import { getTextContent } from '../utils/testHelpers.js';
 
 const mockGetProvider = vi.hoisted(() => vi.fn());
+const mockResolveDefaultBranch = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/providers/factory.js', () => ({
   getProvider: mockGetProvider,
+}));
+
+vi.mock('../../src/github/client.js', () => ({
+  resolveDefaultBranch: mockResolveDefaultBranch,
 }));
 
 vi.mock('../../src/serverConfig.js', () => ({
@@ -26,7 +31,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 }));
 
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure/github_view_repo_structure.js';
-import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata/index.js';
 
 describe('GitHub View Repository Structure Tool', () => {
   let mockServer: MockMcpServer;
@@ -52,6 +57,7 @@ describe('GitHub View Repository Structure Tool', () => {
 
     vi.clearAllMocks();
     mockGetProvider.mockReturnValue(mockProvider);
+    mockResolveDefaultBranch.mockResolvedValue('main');
     registerViewGitHubRepoStructureTool(mockServer.server);
 
     // Default mock response - uses structure format
@@ -100,6 +106,55 @@ describe('GitHub View Repository Structure Tool', () => {
     const responseText = getTextContent(result.content);
     expect(responseText).toContain('README.md');
     expect(responseText).toContain('package.json');
+  });
+
+  it('should resolve default branch when branch is omitted', async () => {
+    mockResolveDefaultBranch.mockResolvedValue('master');
+
+    mockProvider.getRepoStructure.mockResolvedValue({
+      data: {
+        projectPath: 'expressjs/express',
+        branch: 'master',
+        path: '',
+        structure: {
+          '.': {
+            files: ['Readme.md', 'package.json'],
+            folders: ['lib', 'test'],
+          },
+        },
+        summary: {
+          totalFiles: 2,
+          totalFolders: 2,
+          truncated: false,
+        },
+      },
+      status: 200,
+      provider: 'github',
+    });
+
+    const result = await mockServer.callTool(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      {
+        queries: [
+          {
+            owner: 'expressjs',
+            repo: 'express',
+          },
+        ],
+      }
+    );
+
+    expect(result.isError).toBe(false);
+    expect(mockResolveDefaultBranch).toHaveBeenCalledWith(
+      'expressjs',
+      'express',
+      undefined
+    );
+    expect(mockProvider.getRepoStructure).toHaveBeenCalledWith(
+      expect.objectContaining({ ref: 'master' })
+    );
+    const responseText = getTextContent(result.content);
+    expect(responseText).toContain('Readme.md');
   });
 
   it('should handle custom path', async () => {

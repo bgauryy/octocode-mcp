@@ -6,7 +6,7 @@ import {
 } from './scheme.js';
 import { executeCallHierarchy } from './execution.js';
 import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { LspCallHierarchyOutputSchema } from '../../scheme/outputSchemas.js';
 
 /**
@@ -14,7 +14,7 @@ import { LspCallHierarchyOutputSchema } from '../../scheme/outputSchemas.js';
  */
 export function registerLSPCallHierarchyTool(server: McpServer) {
   return server.registerTool(
-    STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY,
+    TOOL_NAMES.LSP_CALL_HIERARCHY,
     {
       description: LSP_CALL_HIERARCHY_DESCRIPTION,
       inputSchema: BulkLSPCallHierarchySchema as unknown as AnySchema,
@@ -29,7 +29,7 @@ export function registerLSPCallHierarchyTool(server: McpServer) {
     },
     withBasicSecurityValidation(
       executeCallHierarchy,
-      STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY
+      TOOL_NAMES.LSP_CALL_HIERARCHY
     )
   );
 }

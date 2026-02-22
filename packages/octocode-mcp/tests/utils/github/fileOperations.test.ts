@@ -2,6 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Create hoisted mocks
 const mockGetOctokit = vi.hoisted(() => vi.fn());
+const mockResolveDefaultBranch = vi.hoisted(() =>
+  vi.fn().mockResolvedValue('main')
+);
 const mockContentSanitizer = vi.hoisted(() => ({
   sanitizeContent: vi.fn().mockImplementation((content: string) => ({
     content: content, // Pass through content unchanged for testing
@@ -27,6 +30,7 @@ const mockCreateResult = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/github/client.js', () => ({
   getOctokit: mockGetOctokit,
   OctokitWithThrottling: class MockOctokit {},
+  resolveDefaultBranch: mockResolveDefaultBranch,
 }));
 
 vi.mock('../../../src/security/contentSanitizer.js', () => ({
@@ -104,6 +108,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearDefaultBranchCache();
+    mockResolveDefaultBranch.mockResolvedValue('main');
 
     // Setup default mock Octokit instance
     mockOctokit = {
@@ -993,10 +998,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         },
       });
 
-      // Mock getRepo to return 'master' as default branch
-      mockOctokit.rest.repos.get.mockResolvedValue({
-        data: { default_branch: 'master' },
-      });
+      mockResolveDefaultBranch.mockResolvedValue('master');
 
       // First call fails (main branch)
       // Second call succeeds (master branch)
@@ -1048,10 +1050,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         },
       });
 
-      // Mock getRepo to return 'main' as default branch
-      mockOctokit.rest.repos.get.mockResolvedValue({
-        data: { default_branch: 'main' },
-      });
+      mockResolveDefaultBranch.mockResolvedValue('main');
 
       // First call fails (master branch)
       // Second call succeeds (main branch)
@@ -1140,10 +1139,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
         },
       });
 
-      // Mock getRepo to return 'master'
-      mockOctokit.rest.repos.get.mockResolvedValue({
-        data: { default_branch: 'master' },
-      });
+      mockResolveDefaultBranch.mockResolvedValue('master');
 
       // Both calls fail
       mockOctokit.rest.repos.getContent

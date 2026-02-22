@@ -21,6 +21,7 @@ vi.mock('octokit', () => {
     rest: {
       repos: {
         get: vi.fn(function () {}),
+        getBranch: vi.fn(function () {}),
       },
     },
   };
@@ -256,24 +257,66 @@ describe('GitHub Client', () => {
       expect(mockReposGet).toHaveBeenCalledWith({ owner: 'org', repo: 'repo' });
     });
 
-    it('should fall back to "main" when API call fails', async () => {
+    it('should fall back to "main" via getBranch when repos.get fails', async () => {
       mockGetGitHubToken.mockResolvedValue('test-token');
       const mockReposGet = vi.fn().mockRejectedValue(new Error('Not found'));
+      const mockGetBranch = vi
+        .fn()
+        .mockResolvedValueOnce({ data: { name: 'main' } });
       mockOctokit.mockImplementation(function () {
-        return { rest: { repos: { get: mockReposGet } } };
+        return {
+          rest: { repos: { get: mockReposGet, getBranch: mockGetBranch } },
+        };
       });
 
       const branch = await resolveDefaultBranch('org', 'repo');
 
       expect(branch).toBe('main');
+      expect(mockGetBranch).toHaveBeenCalledWith({
+        owner: 'org',
+        repo: 'repo',
+        branch: 'main',
+      });
     });
 
-    it('should fall back to "main" when getOctokit fails', async () => {
-      mockGetGitHubToken.mockRejectedValue(new Error('No token'));
+    it('should fall back to "master" when repos.get and "main" both fail', async () => {
+      mockGetGitHubToken.mockResolvedValue('test-token');
+      const mockReposGet = vi.fn().mockRejectedValue(new Error('Not found'));
+      const mockGetBranch = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('main not found'))
+        .mockResolvedValueOnce({ data: { name: 'master' } });
+      mockOctokit.mockImplementation(function () {
+        return {
+          rest: { repos: { get: mockReposGet, getBranch: mockGetBranch } },
+        };
+      });
 
       const branch = await resolveDefaultBranch('org', 'repo');
 
-      expect(branch).toBe('main');
+      expect(branch).toBe('master');
+      expect(mockGetBranch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should throw when all resolution attempts fail', async () => {
+      mockGetGitHubToken.mockResolvedValue('test-token');
+      const mockReposGet = vi.fn().mockRejectedValue(new Error('Not found'));
+      const mockGetBranch = vi.fn().mockRejectedValue(new Error('Not found'));
+      mockOctokit.mockImplementation(function () {
+        return {
+          rest: { repos: { get: mockReposGet, getBranch: mockGetBranch } },
+        };
+      });
+
+      await expect(resolveDefaultBranch('org', 'repo')).rejects.toThrow(
+        'Could not determine default branch'
+      );
+    });
+
+    it('should throw when getOctokit fails', async () => {
+      mockGetGitHubToken.mockRejectedValue(new Error('No token'));
+
+      await expect(resolveDefaultBranch('org', 'repo')).rejects.toThrow();
     });
 
     it('should forward authInfo to getOctokit', async () => {

@@ -5,7 +5,7 @@ import {
   TOOL_HINTS,
   GENERIC_ERROR_HINTS,
   TOOL_NAMES,
-} from '../../src/tools/toolMetadata';
+} from '../../src/tools/toolMetadata/index.js';
 
 describe('Hints Module', () => {
   describe('TOOL_HINTS', () => {

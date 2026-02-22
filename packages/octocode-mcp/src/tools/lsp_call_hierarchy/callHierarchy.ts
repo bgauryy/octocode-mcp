@@ -10,7 +10,6 @@ import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
 import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
 import {
   SymbolResolver,
@@ -26,8 +25,7 @@ import {
   applyOutputSizeLimit,
   serializeForPagination,
 } from '../../utils/pagination/index.js';
-
-const TOOL_NAME = STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY;
+import { TOOL_NAME } from './execution.js';
 
 /**
  * Process a single call hierarchy query

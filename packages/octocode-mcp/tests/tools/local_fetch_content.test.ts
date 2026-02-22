@@ -1365,6 +1365,8 @@ describe('localGetFileContent', () => {
   describe('Schema validation for startLine/endLine', () => {
     it('should require both startLine and endLine together', () => {
       const result = FetchContentQuerySchema.safeParse({
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
         path: 'test.txt',
         startLine: 1,
         // Missing endLine
@@ -1381,6 +1383,8 @@ describe('localGetFileContent', () => {
 
     it('should reject endLine without startLine', () => {
       const result = FetchContentQuerySchema.safeParse({
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
         path: 'test.txt',
         endLine: 10,
         // Missing startLine
@@ -1397,6 +1401,8 @@ describe('localGetFileContent', () => {
 
     it('should reject startLine > endLine', () => {
       const result = FetchContentQuerySchema.safeParse({
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
         path: 'test.txt',
         startLine: 10,
         endLine: 5,
@@ -1413,6 +1419,8 @@ describe('localGetFileContent', () => {
 
     it('should reject combining startLine/endLine with matchString', () => {
       const result = FetchContentQuerySchema.safeParse({
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
         path: 'test.txt',
         startLine: 1,
         endLine: 10,
@@ -1430,6 +1438,8 @@ describe('localGetFileContent', () => {
 
     it('should reject combining startLine/endLine with fullContent=true', () => {
       const result = FetchContentQuerySchema.safeParse({
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
         path: 'test.txt',
         startLine: 1,
         endLine: 10,
@@ -1447,6 +1457,8 @@ describe('localGetFileContent', () => {
 
     it('should accept valid startLine/endLine range', () => {
       const result = FetchContentQuerySchema.safeParse({
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
         path: 'test.txt',
         startLine: 1,
         endLine: 10,
@@ -1457,6 +1469,8 @@ describe('localGetFileContent', () => {
 
     it('should accept startLine/endLine with charLength pagination', () => {
       const result = FetchContentQuerySchema.safeParse({
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
         path: 'test.txt',
         startLine: 1,
         endLine: 100,
@@ -1468,6 +1482,8 @@ describe('localGetFileContent', () => {
 
     it('should reject startLine < 1', () => {
       const result = FetchContentQuerySchema.safeParse({
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
         path: 'test.txt',
         startLine: 0,
         endLine: 10,
@@ -1478,6 +1494,8 @@ describe('localGetFileContent', () => {
 
     it('should accept startLine equal to endLine (single line)', () => {
       const result = FetchContentQuerySchema.safeParse({
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
         path: 'test.txt',
         startLine: 5,
         endLine: 5,
@@ -1488,6 +1506,8 @@ describe('localGetFileContent', () => {
 
     it('should reject fullContent with matchString (TC-12: mutually exclusive)', () => {
       const result = FetchContentQuerySchema.safeParse({
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
         path: 'test.txt',
         fullContent: true,
         matchString: 'export',
@@ -1506,6 +1526,8 @@ describe('localGetFileContent', () => {
 
     it('should reject fullContent with matchString and startLine/endLine (all conflicts)', () => {
       const result = FetchContentQuerySchema.safeParse({
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
         path: 'test.txt',
         fullContent: true,
         matchString: 'export',

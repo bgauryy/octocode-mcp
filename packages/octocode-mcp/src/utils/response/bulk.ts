@@ -14,7 +14,17 @@ import type {
 /** Default concurrency for bulk operations */
 const DEFAULT_BULK_CONCURRENCY = 3;
 
-/** Timeout for bulk query execution, configurable via environment variable */
+/**
+ * Timeout per query in bulk operations (default 60s).
+ * Configurable via OCTOCODE_BULK_QUERY_TIMEOUT_MS.
+ *
+ * Timeout interaction: This is the INNER timeout — each query in a bulk operation
+ * gets this limit. The security wrapper (withSecurityValidation) applies an OUTER
+ * 60s timeout to the entire tool call. For N queries, the outer timeout fires at 60s
+ * regardless of per-query limits. Example: 3 queries × 55s = 165s total, but the
+ * outer timeout aborts at 60s. Tune this for single-query tools; for multi-query,
+ * consider: min(TOOL_TIMEOUT_MS / maxQueries, BULK_QUERY_TIMEOUT_MS).
+ */
 const BULK_QUERY_TIMEOUT_MS =
   parseInt(process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS || '60000', 10) || 60000;
 

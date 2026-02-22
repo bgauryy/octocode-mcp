@@ -3,7 +3,10 @@ import {
   BaseQuerySchema,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import { GITHUB_SEARCH_PULL_REQUESTS, TOOL_NAMES } from '../toolMetadata.js';
+import {
+  GITHUB_SEARCH_PULL_REQUESTS,
+  TOOL_NAMES,
+} from '../toolMetadata/index.js';
 
 const PRMatchScopeSchema = z
   .array(z.enum(['title', 'body', 'comments']))

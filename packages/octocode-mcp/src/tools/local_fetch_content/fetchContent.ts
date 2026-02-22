@@ -8,7 +8,7 @@ import {
   createPaginationInfo,
 } from '../../utils/pagination/index.js';
 import { RESOURCE_LIMITS, DEFAULTS } from '../../utils/core/constants.js';
-import { TOOL_NAMES } from '../toolMetadata.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import {
   validateToolPath,
   createErrorResult,

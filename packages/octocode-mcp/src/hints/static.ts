@@ -7,7 +7,7 @@
 import {
   getToolHintsSync,
   getDynamicHints as getStaticDynamicHints,
-} from '../tools/toolMetadata.js';
+} from '../tools/toolMetadata/index.js';
 import type { HintStatus } from './types.js';
 
 /**

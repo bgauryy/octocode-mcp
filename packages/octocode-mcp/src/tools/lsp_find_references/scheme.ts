@@ -7,14 +7,14 @@ import {
   BaseQuerySchemaLocal,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
-import { LSP_FIND_REFERENCES, DESCRIPTIONS } from '../toolMetadata.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
+import { LSP_FIND_REFERENCES, DESCRIPTIONS } from '../toolMetadata/index.js';
 
 /**
  * Tool description for lspFindReferences
  */
 export const LSP_FIND_REFERENCES_DESCRIPTION =
-  DESCRIPTIONS[STATIC_TOOL_NAMES.LSP_FIND_REFERENCES];
+  DESCRIPTIONS[TOOL_NAMES.LSP_FIND_REFERENCES];
 
 /**
  * Base schema for LSP find references query
@@ -100,7 +100,7 @@ export const LSPFindReferencesQuerySchema = LSPFindReferencesBaseSchema;
  * Bulk query schema for finding references across multiple symbols
  */
 export const BulkLSPFindReferencesSchema = createBulkQuerySchema(
-  STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
+  TOOL_NAMES.LSP_FIND_REFERENCES,
   LSPFindReferencesQuerySchema,
   { maxQueries: 5 }
 );

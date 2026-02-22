@@ -3,7 +3,7 @@ import {
   BaseQuerySchema,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import { PACKAGE_SEARCH, TOOL_NAMES } from '../toolMetadata.js';
+import { PACKAGE_SEARCH, TOOL_NAMES } from '../toolMetadata/index.js';
 
 const PackageBaseFields = {
   name: z.string().min(1).describe(PACKAGE_SEARCH.search.name),

@@ -11,7 +11,7 @@ import {
   LOCAL_VIEW_STRUCTURE,
   TOOL_NAMES,
   DESCRIPTIONS,
-} from '../toolMetadata.js';
+} from '../toolMetadata/index.js';
 
 /**
  * Tool description for localViewStructure

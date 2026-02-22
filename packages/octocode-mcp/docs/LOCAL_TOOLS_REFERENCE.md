@@ -91,16 +91,16 @@ lspGotoDefinition(uri=localPath+"/src/file.ts") → semantic navigation
 
 > **Full workflow guide:** [Clone & Local Tools Workflow](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md)
 
-### Research Context (Optional)
+### Research Context (Required)
 
-All local and LSP tools accept optional research context fields:
+All local and LSP tools require research context fields (same as GitHub/GitLab tools):
 
 | Field | Description |
 |-------|-------------|
 | `researchGoal` | Specific goal for this query |
 | `reasoning` | Why this tool/query was chosen |
 
-These are optional (unlike GitHub/GitLab tools where they are required), but recommended for tracking research sessions.
+These are **required** on every query for all local and LSP tools. They help track research intent and improve result quality.
 
 ## Tools at a Glance
 
@@ -163,7 +163,7 @@ Fast, text-based exploration tools that work on any codebase without IDE require
 - `excludeDir`: Directories to exclude (e.g., `node_modules`)
 - `hidden`: Search hidden files (default: false)
 - `smartCase`: Smart case sensitivity (default: true)
-- `filesPerPage`: Files per page (default: 10)
+- `filesPerPage`: Files per page (default: 10, max: 50)
 - `matchesPerPage`: Matches per page (default: 10)
 - `filePageNumber`: Page number (default: 1)
 - `multiline`: Enable multiline matching (memory intensive)

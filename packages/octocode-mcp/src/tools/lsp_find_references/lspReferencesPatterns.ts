@@ -19,12 +19,10 @@ import type {
 } from '../../lsp/types.js';
 import type { LSPFindReferencesQuery } from './scheme.js';
 import { getHints } from '../../hints/index.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
 import { RipgrepMatchOnlySchema } from '../../utils/parsers/schemas.js';
 import { matchesFilePatterns } from './lspReferencesCore.js';
 import { validateCommand } from '../../security/commandValidator.js';
-
-const TOOL_NAME = STATIC_TOOL_NAMES.LSP_FIND_REFERENCES;
+import { TOOL_NAME } from './execution.js';
 const DEFAULT_GREP_EXTENSIONS = [
   'ts',
   'tsx',

@@ -7,10 +7,24 @@ const QueryMetaSchema = z.object({
   reasoning: z.string().optional(),
 });
 
-const GenericErrorDataSchema = z
+const HintsSchema = z.array(z.string()).optional();
+
+const ErrorDataSchema = z
   .object({
-    error: z.unknown(),
-    hints: z.array(z.string()).optional(),
+    error: z
+      .union([z.string(), z.record(z.unknown())])
+      .describe('Error message or API error object'),
+    hints: z.array(z.string()).optional().describe('Recovery hints'),
+    errorType: z
+      .string()
+      .optional()
+      .describe('Tool-specific error type (e.g. symbol_not_found, size_limit)'),
+    errorCode: z.string().optional().describe('Tool error code'),
+    path: z.string().optional().describe('Path involved in error'),
+    searchRadius: z
+      .number()
+      .optional()
+      .describe('LSP search radius when symbol not found'),
   })
   .passthrough();
 
@@ -27,7 +41,7 @@ function createBulkOutputSchema(successDataSchema: z.ZodTypeAny) {
 
   const errorSchema = QueryMetaSchema.extend({
     status: z.literal('error'),
-    data: GenericErrorDataSchema,
+    data: ErrorDataSchema,
   });
 
   return z.object({
@@ -91,6 +105,7 @@ export const GitHubFetchContentOutputSchema = createBulkOutputSchema(
       totalSize: z.number().optional(),
       pagination: CommonPaginationSchema.optional(),
       outputPagination: CommonPaginationSchema.optional(),
+      hints: HintsSchema,
     })
     .passthrough()
 );
@@ -101,6 +116,7 @@ export const GitHubSearchCodeOutputSchema = createBulkOutputSchema(
       files: z.array(z.record(z.unknown())).optional(),
       repositoryContext: z.object({ branch: z.string() }).optional(),
       pagination: CommonPaginationSchema.optional(),
+      hints: HintsSchema,
     })
     .passthrough()
 );
@@ -115,6 +131,7 @@ export const GitHubSearchPullRequestsOutputSchema = createBulkOutputSchema(
       incomplete_results: z.boolean().optional(),
       pagination: CommonPaginationSchema.optional(),
       outputPagination: CommonPaginationSchema.optional(),
+      hints: HintsSchema,
     })
     .passthrough()
 );
@@ -124,6 +141,7 @@ export const GitHubSearchRepositoriesOutputSchema = createBulkOutputSchema(
     .object({
       repositories: z.array(z.record(z.unknown())),
       pagination: CommonPaginationSchema.optional(),
+      hints: HintsSchema,
     })
     .passthrough()
 );
@@ -145,6 +163,7 @@ export const GitHubViewRepoStructureOutputSchema = createBulkOutputSchema(
         .optional(),
       summary: z.record(z.unknown()).optional(),
       pagination: CommonPaginationSchema.optional(),
+      hints: HintsSchema,
     })
     .passthrough()
 );
@@ -161,6 +180,7 @@ export const GitHubCloneRepoOutputSchema = createBulkOutputSchema(
       files: z.array(z.record(z.unknown())).optional(),
       fileCount: z.number().optional(),
       totalSize: z.number().optional(),
+      hints: HintsSchema,
     })
     .passthrough()
 );
@@ -170,6 +190,7 @@ export const PackageSearchOutputSchema = createBulkOutputSchema(
     .object({
       packages: z.array(z.record(z.unknown())),
       totalFound: z.number().optional(),
+      hints: HintsSchema,
     })
     .passthrough()
 );
@@ -183,6 +204,7 @@ export const LocalSearchCodeOutputSchema = createBulkOutputSchema(
       stats: z.record(z.unknown()).optional(),
       distribution: z.record(z.unknown()).optional(),
       warnings: z.array(z.string()).optional(),
+      hints: HintsSchema,
     })
     .passthrough()
 );
@@ -200,6 +222,7 @@ export const LocalGetFileContentOutputSchema = createBulkOutputSchema(
         .array(z.object({ start: z.number(), end: z.number() }))
         .optional(),
       pagination: CommonPaginationSchema.optional(),
+      hints: HintsSchema,
     })
     .passthrough()
 );
@@ -210,6 +233,7 @@ export const LocalFindFilesOutputSchema = createBulkOutputSchema(
       files: z.array(z.record(z.unknown())).optional(),
       totalFiles: z.number().optional(),
       pagination: CommonPaginationSchema.optional(),
+      hints: HintsSchema,
     })
     .passthrough()
 );
@@ -221,6 +245,7 @@ export const LocalViewStructureOutputSchema = createBulkOutputSchema(
       entries: z.array(z.record(z.unknown())).optional(),
       summary: z.string().optional(),
       pagination: CommonPaginationSchema.optional(),
+      hints: HintsSchema,
     })
     .passthrough()
 );
@@ -237,6 +262,7 @@ export const LspGotoDefinitionOutputSchema = createBulkOutputSchema(
         .optional(),
       searchRadius: z.number().int().optional(),
       outputPagination: CommonPaginationSchema.optional(),
+      hints: HintsSchema,
     })
     .passthrough()
 );
@@ -252,6 +278,7 @@ export const LspFindReferencesOutputSchema = createBulkOutputSchema(
       pagination: CommonPaginationSchema.optional(),
       totalReferences: z.number().optional(),
       hasMultipleFiles: z.boolean().optional(),
+      hints: HintsSchema,
     })
     .passthrough()
 );
@@ -280,6 +307,7 @@ export const LspCallHierarchyOutputSchema = createBulkOutputSchema(
       outputPagination: CommonPaginationSchema.optional(),
       direction: z.enum(['incoming', 'outgoing']).optional(),
       depth: z.number().int().positive().optional(),
+      hints: HintsSchema,
     })
     .passthrough()
 );

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BASE_SCHEMA } from '../tools/toolMetadata.js';
+import { BASE_SCHEMA } from '../tools/toolMetadata/index.js';
 
 export const BaseQuerySchema = z.object({
   mainResearchGoal: z.string().describe(BASE_SCHEMA.mainResearchGoal),
@@ -8,14 +8,11 @@ export const BaseQuerySchema = z.object({
 });
 
 /**
- * Base query schema for local tools with optional research context
+ * Base query schema for local tools with required research context
  */
 export const BaseQuerySchemaLocal = z.object({
-  researchGoal: z.string().optional().describe('Goal of the search'),
-  reasoning: z
-    .string()
-    .optional()
-    .describe('Why this approach helps reach the goal'),
+  researchGoal: z.string().describe(BASE_SCHEMA.researchGoal),
+  reasoning: z.string().describe(BASE_SCHEMA.reasoning),
 });
 
 /**

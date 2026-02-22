@@ -5,7 +5,7 @@ import {
 import { applyWorkflowMode, type RipgrepQuery } from './scheme.js';
 import { createErrorResult } from '../../utils/file/toolHelpers.js';
 import { LOCAL_TOOL_ERROR_CODES } from '../../errorCodes.js';
-import { TOOL_NAMES } from '../toolMetadata.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import type { SearchContentResult } from '../../utils/core/types.js';
 import { ToolErrors } from '../../errorCodes.js';
 import {

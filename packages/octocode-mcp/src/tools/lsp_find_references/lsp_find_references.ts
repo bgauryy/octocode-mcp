@@ -30,23 +30,20 @@ import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
 import { ToolErrors } from '../../errorCodes.js';
 import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
-import { executeFindReferences } from './execution.js';
+import { executeFindReferences, TOOL_NAME } from './execution.js';
 import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
 import { findReferencesWithLSP } from './lspReferencesCore.js';
 import { findReferencesWithPatternMatching } from './lspReferencesPatterns.js';
 import { LspFindReferencesOutputSchema } from '../../scheme/outputSchemas.js';
-
-const TOOL_NAME = STATIC_TOOL_NAMES.LSP_FIND_REFERENCES;
 
 /**
  * Register the LSP find references tool with the MCP server.
  */
 export function registerLSPFindReferencesTool(server: McpServer) {
   return server.registerTool(
-    STATIC_TOOL_NAMES.LSP_FIND_REFERENCES,
+    TOOL_NAME,
     {
       description: LSP_FIND_REFERENCES_DESCRIPTION,
       inputSchema: BulkLSPFindReferencesSchema as unknown as AnySchema,
@@ -59,10 +56,7 @@ export function registerLSPFindReferencesTool(server: McpServer) {
         openWorldHint: false,
       },
     },
-    withBasicSecurityValidation(
-      executeFindReferences,
-      STATIC_TOOL_NAMES.LSP_FIND_REFERENCES
-    )
+    withBasicSecurityValidation(executeFindReferences, TOOL_NAME)
   );
 }
 

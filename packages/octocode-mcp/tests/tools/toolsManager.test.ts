@@ -49,10 +49,10 @@ vi.mock('../../src/tools/toolConfig.js', () => {
   };
 });
 
-vi.mock('../../src/tools/toolMetadata.js', async () => {
+vi.mock('../../src/tools/toolMetadata/index.js', async () => {
   const actual = await vi.importActual<
-    typeof import('../../src/tools/toolMetadata.js')
-  >('../../src/tools/toolMetadata.js');
+    typeof import('../../src/tools/toolMetadata/index.js')
+  >('../../src/tools/toolMetadata/index.js');
   return {
     ...actual,
     isToolInMetadata: vi.fn(),
@@ -87,7 +87,10 @@ import {
   isLocalEnabled,
   isCloneEnabled,
 } from '../../src/serverConfig.js';
-import { TOOL_NAMES, isToolInMetadata } from '../../src/tools/toolMetadata.js';
+import {
+  TOOL_NAMES,
+  isToolInMetadata,
+} from '../../src/tools/toolMetadata/index.js';
 import { logSessionError } from '../../src/session.js';
 
 const mockGetServerConfig = vi.mocked(getServerConfig);

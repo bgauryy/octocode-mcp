@@ -13,13 +13,13 @@ import type {
   GitHubRepositoryStructureError,
 } from '../tools/github_view_repo_structure/scheme.js';
 import { GITHUB_STRUCTURE_DEFAULTS as STRUCTURE_DEFAULTS } from '../tools/github_view_repo_structure/scheme.js';
-import { getOctokit } from './client';
+import { getOctokit, resolveDefaultBranch } from './client';
 import { handleGitHubAPIError } from './errors';
 import { generateCacheKey, withDataCache } from '../utils/http/cache';
 import { generateStructurePaginationHints } from '../utils/pagination/index.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/file/filters';
-import { TOOL_NAMES } from '../tools/toolMetadata.js';
+import { TOOL_NAMES } from '../tools/toolMetadata/index.js';
 import { REPOSITORY_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 
@@ -87,10 +87,9 @@ async function viewGitHubRepositoryStructureAPIInternal(
       });
     } catch (error: unknown) {
       if (error instanceof RequestError && error.status === 404) {
-        let defaultBranch = 'main';
+        let defaultBranch: string;
         try {
-          const repoInfo = await octokit.rest.repos.get({ owner, repo });
-          defaultBranch = repoInfo.data.default_branch || 'main';
+          defaultBranch = await resolveDefaultBranch(owner, repo, authInfo);
           repoDefaultBranch = defaultBranch;
         } catch (repoError) {
           const apiError = handleGitHubAPIError(repoError);

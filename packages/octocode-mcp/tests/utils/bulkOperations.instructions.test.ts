@@ -3,7 +3,7 @@ import { executeBulkOperation } from '../../src/utils/response/bulk.js';
 import {
   TOOL_NAMES,
   initializeToolMetadata,
-} from '../../src/tools/toolMetadata';
+} from '../../src/tools/toolMetadata/index.js';
 import { getTextContent } from './testHelpers.js';
 
 beforeAll(async () => {

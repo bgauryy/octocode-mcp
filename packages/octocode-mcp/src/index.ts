@@ -22,7 +22,10 @@ import {
   logSessionInit,
   logSessionError,
 } from './session.js';
-import { loadToolContent, CompleteMetadata } from './tools/toolMetadata.js';
+import {
+  loadToolContent,
+  CompleteMetadata,
+} from './tools/toolMetadata/index.js';
 import { registerTools } from './tools/toolsManager.js';
 import { version, name } from '../package.json';
 import { STARTUP_ERRORS } from './errorCodes.js';

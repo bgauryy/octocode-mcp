@@ -1,6 +1,6 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { FetchContentQuery } from '../../utils/core/types.js';
-import { TOOL_NAMES } from '../toolMetadata.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import { fetchContent } from './fetchContent.js';
 import { FetchContentQuerySchema } from './scheme.js';

@@ -34,7 +34,13 @@ vi.mock('fs', () => ({
 }));
 
 const runRipgrep = (query: Parameters<typeof RipgrepQuerySchema.parse>[0]) =>
-  searchContentRipgrep(RipgrepQuerySchema.parse(query));
+  searchContentRipgrep(
+    RipgrepQuerySchema.parse({
+      researchGoal: 'Test',
+      reasoning: 'Schema validation',
+      ...query,
+    })
+  );
 
 const mockFsReaddir = vi.mocked((fs as any).readdir);
 
@@ -1054,7 +1060,7 @@ describe('localSearchCode', () => {
       expect(result.pagination?.totalPages).toBe(5);
     });
 
-    it('should handle filesPerPage = 20 (max)', async () => {
+    it('should handle filesPerPage = 50 (max)', async () => {
       const files = Array.from({ length: 75 }, (_, i) => ({
         type: 'match',
         data: {
@@ -1077,13 +1083,13 @@ describe('localSearchCode', () => {
       const result = await runRipgrep({
         pattern: 'test',
         path: '/test/path',
-        filesPerPage: 20,
+        filesPerPage: 50,
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.files?.length).toBeLessThanOrEqual(20);
-      expect(result.pagination?.filesPerPage).toBe(20);
-      expect(result.pagination?.totalPages).toBe(4);
+      expect(result.files?.length).toBeLessThanOrEqual(50);
+      expect(result.pagination?.filesPerPage).toBe(50);
+      expect(result.pagination?.totalPages).toBe(2);
     });
 
     it('should handle single file result', async () => {

@@ -42,7 +42,7 @@ import {
   arePromptsEnabled,
 } from '../src/serverConfig.js';
 import { registerTools } from '../src/tools/toolsManager.js';
-import { TOOL_NAMES } from '../src/tools/toolMetadata.js';
+import { TOOL_NAMES } from '../src/tools/toolMetadata/index.js';
 
 // Mock implementations
 const mockMcpServer = {

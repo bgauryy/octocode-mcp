@@ -3,7 +3,7 @@ import {
   fetchGitHubFileContentAPI,
   viewGitHubRepositoryStructureAPI,
 } from '../../src/github/fileOperations.js';
-import { getOctokit } from '../../src/github/client.js';
+import { getOctokit, resolveDefaultBranch } from '../../src/github/client.js';
 import { RequestError } from 'octokit';
 import * as minifierModule from '../../src/utils/minifier/index.js';
 import { clearAllCache } from '../../src/utils/http/cache.js';
@@ -33,7 +33,8 @@ vi.mock('../../src/utils/minifier/index.js');
 describe('GitHub File Operations - processFileContentAPI coverage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    clearAllCache(); // Clear cache to prevent pollution between tests
+    clearAllCache();
+    vi.mocked(resolveDefaultBranch).mockResolvedValue('main');
   });
 
   describe('fetchGitHubFileContentAPI - File Size and Encoding', () => {

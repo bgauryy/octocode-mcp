@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { TOOL_NAMES } from '../../src/tools/toolMetadata.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata/index.js';
 
 // Mock the session logging
 const mockLogToolCall = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));

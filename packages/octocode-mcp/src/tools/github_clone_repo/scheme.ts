@@ -13,7 +13,7 @@ import {
   BaseQuerySchema,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Validators
@@ -102,7 +102,7 @@ const CloneRepoQuerySchema = BaseQuerySchema.extend({
 });
 
 export const BulkCloneRepoSchema = createBulkQuerySchema(
-  STATIC_TOOL_NAMES.GITHUB_CLONE_REPO,
+  TOOL_NAMES.GITHUB_CLONE_REPO,
   CloneRepoQuerySchema,
   { maxQueries: 3 }
 );
@@ -135,7 +135,7 @@ export const GITHUB_CLONE_REPO_DESCRIPTION = [
   '### Branch resolution',
   '',
   '- If `branch` is provided, that branch is cloned.',
-  '- If `branch` is omitted, the **default branch** is auto-detected via the GitHub API (falls back to `main`).',
+  '- If `branch` is omitted, the **default branch** is auto-detected via the GitHub API (falls back to `main`, then `master`).',
   '- The resolved branch name is always included in the result and the cache path.',
   '',
   '### Cache path format',

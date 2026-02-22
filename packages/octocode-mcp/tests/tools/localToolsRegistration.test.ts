@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerTools } from '../../src/tools/toolsManager.js';
-import { STATIC_TOOL_NAMES } from '../../src/tools/toolMetadata.js';
+import { STATIC_TOOL_NAMES } from '../../src/tools/toolMetadata/index.js';
 
 // Mock toolConfig with ALL_TOOLS containing only local tools for this test
 // The fn functions call server.registerTool to simulate real registration
@@ -66,10 +66,10 @@ vi.mock('../../src/tools/toolConfig.js', () => ({
   ],
 }));
 
-vi.mock('../../src/tools/toolMetadata.js', async () => {
+vi.mock('../../src/tools/toolMetadata/index.js', async () => {
   const actual = await vi.importActual<
-    typeof import('../../src/tools/toolMetadata.js')
-  >('../../src/tools/toolMetadata.js');
+    typeof import('../../src/tools/toolMetadata/index.js')
+  >('../../src/tools/toolMetadata/index.js');
   return {
     ...actual,
     isToolInMetadata: vi.fn().mockReturnValue(true),

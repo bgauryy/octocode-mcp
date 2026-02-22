@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 
 // Import the actual modules without mocking
-import { TOOL_NAMES, STATIC_TOOL_NAMES } from '../../src/tools/toolMetadata.js';
+import {
+  TOOL_NAMES,
+  STATIC_TOOL_NAMES,
+} from '../../src/tools/toolMetadata/index.js';
 import { isLocalTool } from '../../src/tools/toolNames.js';
 
 describe('TOOL_NAMES proxy (TDD for local tools registration)', () => {

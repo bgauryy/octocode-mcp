@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, afterAll, vi } from 'vitest';
-import { initializeToolMetadata } from '../src/tools/toolMetadata';
+import { initializeToolMetadata } from '../src/tools/toolMetadata/index.js';
 
 // Increase max listeners to avoid warnings in test environments
 // Tests may legitimately register many listeners due to module isolation

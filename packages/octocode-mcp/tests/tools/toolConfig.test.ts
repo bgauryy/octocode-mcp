@@ -13,7 +13,10 @@ import {
   LOCAL_FIND_FILES,
   LOCAL_FETCH_CONTENT,
 } from '../../src/tools/toolConfig.js';
-import { TOOL_NAMES, DESCRIPTIONS } from '../../src/tools/toolMetadata.js';
+import {
+  TOOL_NAMES,
+  DESCRIPTIONS,
+} from '../../src/tools/toolMetadata/index.js';
 
 describe('Tool Configuration', () => {
   describe('ALL_TOOLS', () => {

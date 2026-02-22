@@ -22,7 +22,7 @@ import type { LSPFindReferencesQuery } from './scheme.js';
 import type { SymbolKind } from '../../lsp/types.js';
 import { createClient } from '../../lsp/index.js';
 import { getHints } from '../../hints/index.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import { TOOL_NAME } from './execution.js';
 
 /**
  * Infer symbol kind from the definition line content.
@@ -48,8 +48,6 @@ export function inferSymbolKindFromContent(lineContent: string): SymbolKind {
     return 'property';
   return 'function';
 }
-
-const TOOL_NAME = STATIC_TOOL_NAMES.LSP_FIND_REFERENCES;
 
 /**
  * Check if a relative file path matches include/exclude glob patterns.

@@ -6,7 +6,7 @@ import {
   isCloneEnabled,
 } from '../serverConfig.js';
 import { ToolInvocationCallback } from '../types.js';
-import { isToolInMetadata } from './toolMetadata.js';
+import { isToolInMetadata } from './toolMetadata/index.js';
 import { logSessionError } from '../session.js';
 import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
 

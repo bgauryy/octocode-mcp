@@ -1,11 +1,11 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { LSPCallHierarchyQuery } from './scheme.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import { processCallHierarchy } from './callHierarchy.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 
-const TOOL_NAME = STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY;
+export const TOOL_NAME = TOOL_NAMES.LSP_CALL_HIERARCHY;
 
 /**
  * Execute bulk LSP call hierarchy operation.

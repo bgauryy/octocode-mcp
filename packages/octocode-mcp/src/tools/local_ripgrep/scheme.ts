@@ -8,7 +8,11 @@ import {
   BaseQuerySchemaLocal,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import { LOCAL_RIPGREP, TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata.js';
+import {
+  LOCAL_RIPGREP,
+  TOOL_NAMES,
+  DESCRIPTIONS,
+} from '../toolMetadata/index.js';
 
 /**
  * Tool description for localSearchCode
@@ -162,7 +166,7 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .number()
     .int()
     .min(1)
-    .max(20)
+    .max(50)
     .optional()
     .default(10)
     .describe(LOCAL_RIPGREP.pagination.filesPerPage),

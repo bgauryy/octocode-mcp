@@ -154,7 +154,7 @@ describe('toolMetadata', () => {
   describe('initializeToolMetadata', () => {
     it('should initialize metadata from API', async () => {
       const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
 
       await initializeToolMetadata();
@@ -165,7 +165,7 @@ describe('toolMetadata', () => {
 
     it('should only initialize once', async () => {
       const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValue(mockMetadata);
 
       await initializeToolMetadata();
@@ -178,7 +178,7 @@ describe('toolMetadata', () => {
 
     it('should handle concurrent initialization', async () => {
       const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValue(mockMetadata);
 
       const promises = [
@@ -197,7 +197,7 @@ describe('toolMetadata', () => {
   describe('loadToolContent', () => {
     it('should initialize and return metadata', async () => {
       const { loadToolContent } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
 
       const result = await loadToolContent();
@@ -209,7 +209,7 @@ describe('toolMetadata', () => {
 
     it('should return cached metadata on subsequent calls', async () => {
       const { loadToolContent } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
 
       const result1 = await loadToolContent();
@@ -223,7 +223,7 @@ describe('toolMetadata', () => {
   describe('TOOL_NAMES proxy', () => {
     it('should return tool names', async () => {
       const { initializeToolMetadata, TOOL_NAMES } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -232,14 +232,15 @@ describe('toolMetadata', () => {
     });
 
     it('should return tool names consistently', async () => {
-      const { TOOL_NAMES } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_NAMES } =
+        await import('../../src/tools/toolMetadata/index.js');
       expect(typeof TOOL_NAMES.GITHUB_SEARCH_CODE).toBe('string');
       expect(typeof TOOL_NAMES.GITHUB_FETCH_CONTENT).toBe('string');
     });
 
     it('should support ownKeys trap', async () => {
       const { initializeToolMetadata, TOOL_NAMES } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -250,7 +251,7 @@ describe('toolMetadata', () => {
 
     it('should support getOwnPropertyDescriptor trap', async () => {
       const { initializeToolMetadata, TOOL_NAMES } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -265,7 +266,7 @@ describe('toolMetadata', () => {
 
     it('should return undefined for non-existent tool', async () => {
       const { initializeToolMetadata, TOOL_NAMES } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -280,7 +281,7 @@ describe('toolMetadata', () => {
   describe('BASE_SCHEMA proxy', () => {
     it('should return schema fields after initialization', async () => {
       const { initializeToolMetadata, BASE_SCHEMA } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -290,7 +291,7 @@ describe('toolMetadata', () => {
 
     it('should support bulkQuery function', async () => {
       const { initializeToolMetadata, BASE_SCHEMA } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -299,7 +300,8 @@ describe('toolMetadata', () => {
     });
 
     it('should return bulkQuery with tool name', async () => {
-      const { BASE_SCHEMA } = await import('../../src/tools/toolMetadata.js');
+      const { BASE_SCHEMA } =
+        await import('../../src/tools/toolMetadata/index.js');
       const result = BASE_SCHEMA.bulkQuery('testTool');
       expect(typeof result).toBe('string');
     });
@@ -308,7 +310,7 @@ describe('toolMetadata', () => {
   describe('GENERIC_ERROR_HINTS proxy', () => {
     it('should return hints after initialization', async () => {
       const { initializeToolMetadata, GENERIC_ERROR_HINTS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -319,7 +321,7 @@ describe('toolMetadata', () => {
   describe('Async accessors', () => {
     it('should access tools via loadToolContent', async () => {
       const { initializeToolMetadata, loadToolContent } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValue(mockMetadata);
       await initializeToolMetadata();
 
@@ -329,7 +331,7 @@ describe('toolMetadata', () => {
 
     it('should access tool description via DESCRIPTIONS proxy', async () => {
       const { initializeToolMetadata, DESCRIPTIONS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValue(mockMetadata);
       await initializeToolMetadata();
 
@@ -339,7 +341,7 @@ describe('toolMetadata', () => {
 
     it('should return empty string for non-existent tool via DESCRIPTIONS', async () => {
       const { initializeToolMetadata, DESCRIPTIONS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValue(mockMetadata);
       await initializeToolMetadata();
 
@@ -349,7 +351,7 @@ describe('toolMetadata', () => {
 
     it('should get tool hints via getToolHintsSync', async () => {
       const { initializeToolMetadata, getToolHintsSync } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValue(mockMetadata);
       await initializeToolMetadata();
 
@@ -359,7 +361,7 @@ describe('toolMetadata', () => {
 
     it('should get empty hints for non-existent tool', async () => {
       const { initializeToolMetadata, getToolHintsSync } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValue(mockMetadata);
       await initializeToolMetadata();
 
@@ -369,7 +371,7 @@ describe('toolMetadata', () => {
 
     it('should get generic error hints', async () => {
       const { initializeToolMetadata, getGenericErrorHintsSync } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValue(mockMetadata);
       await initializeToolMetadata();
 
@@ -379,7 +381,7 @@ describe('toolMetadata', () => {
 
     it('should access base hints via TOOL_HINTS proxy', async () => {
       const { initializeToolMetadata, TOOL_HINTS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValue(mockMetadata);
       await initializeToolMetadata();
 
@@ -392,14 +394,14 @@ describe('toolMetadata', () => {
   describe('getToolHintsSync', () => {
     it('should return hints array', async () => {
       const { getToolHintsSync } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       const hints = getToolHintsSync('githubSearchCode', 'hasResults');
       expect(Array.isArray(hints)).toBe(true);
     });
 
     it('should return tool hints (base hints moved to server.instructions)', async () => {
       const { initializeToolMetadata, getToolHintsSync } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -411,7 +413,7 @@ describe('toolMetadata', () => {
 
     it('should return empty array for non-existent tool', async () => {
       const { initializeToolMetadata, getToolHintsSync } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -423,7 +425,7 @@ describe('toolMetadata', () => {
   describe('isToolInMetadata', () => {
     it('should check tool availability', async () => {
       const { isToolInMetadata } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       // Tool may be available if metadata was loaded in previous tests
       const result = isToolInMetadata('githubSearchCode');
       expect(typeof result).toBe('boolean');
@@ -431,7 +433,7 @@ describe('toolMetadata', () => {
 
     it('should return true for existing tool', async () => {
       const { initializeToolMetadata, isToolInMetadata } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -440,7 +442,7 @@ describe('toolMetadata', () => {
 
     it('should return false for non-existent tool', async () => {
       const { initializeToolMetadata, isToolInMetadata } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -451,7 +453,7 @@ describe('toolMetadata', () => {
   describe('getDynamicHints', () => {
     it('should return dynamic hints when available', async () => {
       const { initializeToolMetadata, getDynamicHints } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       const metadataWithDynamic = {
         ...mockMetadata,
         tools: {
@@ -479,7 +481,7 @@ describe('toolMetadata', () => {
 
     it('should return empty array for missing dynamic hints', async () => {
       const { initializeToolMetadata, getDynamicHints } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -489,7 +491,7 @@ describe('toolMetadata', () => {
 
     it('should return empty array for non-existent tool', async () => {
       const { initializeToolMetadata, getDynamicHints } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -501,7 +503,7 @@ describe('toolMetadata', () => {
   describe('DESCRIPTIONS proxy', () => {
     it('should return description for existing tool', async () => {
       const { initializeToolMetadata, DESCRIPTIONS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -510,7 +512,7 @@ describe('toolMetadata', () => {
 
     it('should return empty string for non-existent tool', async () => {
       const { initializeToolMetadata, DESCRIPTIONS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -521,7 +523,7 @@ describe('toolMetadata', () => {
   describe('TOOL_HINTS proxy', () => {
     it('should return hints structure for existing tool', async () => {
       const { initializeToolMetadata, TOOL_HINTS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -533,7 +535,7 @@ describe('toolMetadata', () => {
 
     it('should return base hints structure', async () => {
       const { initializeToolMetadata, TOOL_HINTS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -545,7 +547,7 @@ describe('toolMetadata', () => {
 
     it('should return empty hints for non-existent tool', async () => {
       const { initializeToolMetadata, TOOL_HINTS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -556,7 +558,7 @@ describe('toolMetadata', () => {
 
     it('should support ownKeys trap', async () => {
       const { initializeToolMetadata, TOOL_HINTS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -567,7 +569,7 @@ describe('toolMetadata', () => {
 
     it('should support getOwnPropertyDescriptor trap', async () => {
       const { initializeToolMetadata, TOOL_HINTS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -583,7 +585,7 @@ describe('toolMetadata', () => {
   describe('Schema helpers', () => {
     it('should return schema fields for GITHUB_FETCH_CONTENT', async () => {
       const { initializeToolMetadata, GITHUB_FETCH_CONTENT } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -594,7 +596,7 @@ describe('toolMetadata', () => {
 
     it('should support GITHUB_SEARCH_CODE schema', async () => {
       const { initializeToolMetadata, GITHUB_SEARCH_CODE } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -603,7 +605,7 @@ describe('toolMetadata', () => {
 
     it('should support GITHUB_SEARCH_REPOS schema', async () => {
       const { initializeToolMetadata, GITHUB_SEARCH_REPOS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -614,7 +616,7 @@ describe('toolMetadata', () => {
 
     it('should support GITHUB_SEARCH_PULL_REQUESTS schema', async () => {
       const { initializeToolMetadata, GITHUB_SEARCH_PULL_REQUESTS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -624,7 +626,7 @@ describe('toolMetadata', () => {
 
     it('should support GITHUB_VIEW_REPO_STRUCTURE schema', async () => {
       const { initializeToolMetadata, GITHUB_VIEW_REPO_STRUCTURE } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -636,7 +638,7 @@ describe('toolMetadata', () => {
   describe('Error Scenarios', () => {
     it('should handle TOOL_HINTS proxy for non-existent tool', async () => {
       const { initializeToolMetadata, TOOL_HINTS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -646,7 +648,7 @@ describe('toolMetadata', () => {
 
     it('should handle TOOL_HINTS base property', async () => {
       const { initializeToolMetadata, TOOL_HINTS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -658,7 +660,7 @@ describe('toolMetadata', () => {
 
     it('should handle getDynamicHints for tool without dynamic hints', async () => {
       const { initializeToolMetadata, getDynamicHints } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -670,7 +672,7 @@ describe('toolMetadata', () => {
   describe('Proxy edge cases', () => {
     it('should handle DESCRIPTIONS proxy for tool', async () => {
       const { initializeToolMetadata, DESCRIPTIONS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -681,7 +683,7 @@ describe('toolMetadata', () => {
 
     it('should handle DESCRIPTIONS proxy for non-existent tool', async () => {
       const { initializeToolMetadata, DESCRIPTIONS } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
@@ -693,7 +695,7 @@ describe('toolMetadata', () => {
   describe('getToolHintsSync (base hints in server.instructions)', () => {
     it('should return only tool-specific hints for local tools', async () => {
       const { initializeToolMetadata, getToolHintsSync } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadataWithGitHubHints);
       await initializeToolMetadata();
 
@@ -705,7 +707,7 @@ describe('toolMetadata', () => {
 
     it('should return only tool-specific hints for localGetFileContent', async () => {
       const { initializeToolMetadata, getToolHintsSync } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadataWithGitHubHints);
       await initializeToolMetadata();
 
@@ -716,7 +718,7 @@ describe('toolMetadata', () => {
 
     it('should return only tool-specific hints for GitHub tools', async () => {
       const { initializeToolMetadata, getToolHintsSync } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadataWithGitHubHints);
       await initializeToolMetadata();
 
@@ -727,7 +729,7 @@ describe('toolMetadata', () => {
 
     it('should return only tool-specific empty hints for local tools', async () => {
       const { initializeToolMetadata, getToolHintsSync } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
       mockFetchWithRetries.mockResolvedValueOnce(mockMetadataWithGitHubHints);
       await initializeToolMetadata();
 

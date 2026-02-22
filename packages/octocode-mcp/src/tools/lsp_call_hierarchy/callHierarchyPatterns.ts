@@ -3,7 +3,6 @@
  */
 
 import { getHints } from '../../hints/index.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
 import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
 import { SymbolResolver } from '../../lsp/index.js';
 import { RipgrepMatchOnlySchema } from '../../utils/parsers/schemas.js';
@@ -25,8 +24,7 @@ import {
   createRange,
   escapeRegex,
 } from './callHierarchyHelpers.js';
-
-const TOOL_NAME = STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY;
+import { TOOL_NAME } from './execution.js';
 
 /**
  * Fallback: Use pattern matching when LSP is unavailable

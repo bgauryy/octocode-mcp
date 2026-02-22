@@ -9,10 +9,10 @@ vi.mock('../../src/serverConfig.js', () => ({
   isCloneEnabled: vi.fn(),
 }));
 
-vi.mock('../../src/tools/toolMetadata.js', async () => {
+vi.mock('../../src/tools/toolMetadata/index.js', async () => {
   const actual = await vi.importActual<
-    typeof import('../../src/tools/toolMetadata.js')
-  >('../../src/tools/toolMetadata.js');
+    typeof import('../../src/tools/toolMetadata/index.js')
+  >('../../src/tools/toolMetadata/index.js');
   return {
     ...actual,
     isToolInMetadata: vi.fn().mockReturnValue(true),

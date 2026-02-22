@@ -2,8 +2,8 @@
  * LSP call hierarchy implementation - core LSP protocol calls
  */
 
+import { readFile } from 'node:fs/promises';
 import { getHints } from '../../hints/index.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
 import { createClient } from '../../lsp/index.js';
 import type {
   CallHierarchyResult,
@@ -11,6 +11,7 @@ import type {
   IncomingCall,
   OutgoingCall,
   ExactPosition,
+  CodeSnippet,
 } from '../../lsp/types.js';
 import type { LSPCallHierarchyQuery } from './scheme.js';
 import {
@@ -20,8 +21,7 @@ import {
   enhanceOutgoingCalls,
   paginateResults,
 } from './callHierarchyHelpers.js';
-
-const TOOL_NAME = STATIC_TOOL_NAMES.LSP_CALL_HIERARCHY;
+import { TOOL_NAME } from './execution.js';
 
 /**
  * Use LSP client for semantic call hierarchy
@@ -38,7 +38,18 @@ export async function callHierarchyWithLSP(
 
   try {
     // Prepare call hierarchy to get the item at position
-    const items = await client.prepareCallHierarchy(filePath, position);
+    let items = await client.prepareCallHierarchy(filePath, position);
+    let effectiveContent = content;
+
+    // Auto-follow: if no callable symbol at position (e.g. import line),
+    // try gotoDefinition to follow to the actual declaration and retry
+    if (!items || items.length === 0) {
+      const followed = await tryFollowToDefinition(client, filePath, position);
+      if (followed) {
+        items = followed.items;
+        if (followed.content) effectiveContent = followed.content;
+      }
+    }
 
     if (!items || items.length === 0) {
       return {
@@ -54,6 +65,7 @@ export async function callHierarchyWithLSP(
           'Language server could not identify a callable symbol',
           'Ensure the position is on a function/method name',
           'Try adjusting lineHint to the exact function declaration line',
+          'If pointing at an import, run lspGotoDefinition first and use the definition lineHint',
         ],
       };
     }
@@ -65,7 +77,7 @@ export async function callHierarchyWithLSP(
     // Add content snippet to target item
     const enhancedTargetItem = await enhanceCallHierarchyItem(
       targetItem,
-      content,
+      effectiveContent,
       query.contextLines ?? 2
     );
 
@@ -285,6 +297,52 @@ export async function gatherOutgoingCallsRecursive(
   }
 
   return allCalls;
+}
+
+/**
+ * When prepareCallHierarchy returns empty (e.g. position is on an import),
+ * try gotoDefinition to follow to the actual declaration and retry.
+ */
+async function tryFollowToDefinition(
+  client: NonNullable<Awaited<ReturnType<typeof createClient>>>,
+  filePath: string,
+  position: ExactPosition
+): Promise<{
+  items: CallHierarchyItem[];
+  content?: string;
+} | null> {
+  try {
+    const definitions: CodeSnippet[] = await client.gotoDefinition(
+      filePath,
+      position
+    );
+    if (!definitions || definitions.length === 0) return null;
+
+    const def = definitions[0]!;
+    if (!def.uri || !def.range) return null;
+
+    const defPosition: ExactPosition = {
+      line: def.range.start.line,
+      character: def.range.start.character,
+    };
+
+    const defItems = await client.prepareCallHierarchy(def.uri, defPosition);
+    if (!defItems || defItems.length === 0) return null;
+
+    // If definition is in a different file, read its content for snippet enhancement
+    let content: string | undefined;
+    if (def.uri !== filePath) {
+      try {
+        content = await readFile(def.uri, 'utf-8');
+      } catch {
+        // Non-critical: snippet enhancement will just use original content
+      }
+    }
+
+    return { items: defItems, content };
+  } catch {
+    return null;
+  }
 }
 
 /**

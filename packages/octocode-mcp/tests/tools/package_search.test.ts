@@ -308,8 +308,8 @@ function makeErrorFetchResponse(status: number, statusText: string) {
 }
 
 // Mock toolMetadata
-vi.mock('../../src/tools/toolMetadata.js', async () => {
-  const actual = await vi.importActual('../../src/tools/toolMetadata.js');
+vi.mock('../../src/tools/toolMetadata/index.js', async () => {
+  const actual = await vi.importActual('../../src/tools/toolMetadata/index.js');
   return {
     ...actual,
     TOOL_NAMES: {

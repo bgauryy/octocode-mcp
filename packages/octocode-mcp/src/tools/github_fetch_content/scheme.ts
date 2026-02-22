@@ -3,7 +3,7 @@ import {
   BaseQuerySchema,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import { GITHUB_FETCH_CONTENT, TOOL_NAMES } from '../toolMetadata.js';
+import { GITHUB_FETCH_CONTENT, TOOL_NAMES } from '../toolMetadata/index.js';
 
 const FileContentBaseSchema = BaseQuerySchema.extend({
   owner: z.string().min(1).max(200).describe(GITHUB_FETCH_CONTENT.scope.owner),

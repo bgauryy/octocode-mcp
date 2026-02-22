@@ -7,7 +7,7 @@
 
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { CloneRepoQuery } from './types.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { handleCatchError, createSuccessResult } from '../utils.js';
@@ -68,10 +68,10 @@ export async function executeCloneRepo(
           ),
           query,
           'Provider not supported',
-          STATIC_TOOL_NAMES.GITHUB_CLONE_REPO
+          TOOL_NAMES.GITHUB_CLONE_REPO
         ),
       {
-        toolName: STATIC_TOOL_NAMES.GITHUB_CLONE_REPO,
+        toolName: TOOL_NAMES.GITHUB_CLONE_REPO,
         keysPriority: ['error'],
       }
     );
@@ -107,7 +107,7 @@ export async function executeCloneRepo(
           query,
           resultData,
           true, // always hasResults on success
-          STATIC_TOOL_NAMES.GITHUB_CLONE_REPO,
+          TOOL_NAMES.GITHUB_CLONE_REPO,
           { extraHints: baseHints }
         );
       } catch (error) {
@@ -115,12 +115,12 @@ export async function executeCloneRepo(
           error,
           query,
           `Clone failed for ${query.owner}/${query.repo}`,
-          STATIC_TOOL_NAMES.GITHUB_CLONE_REPO
+          TOOL_NAMES.GITHUB_CLONE_REPO
         );
       }
     },
     {
-      toolName: STATIC_TOOL_NAMES.GITHUB_CLONE_REPO,
+      toolName: TOOL_NAMES.GITHUB_CLONE_REPO,
       keysPriority: [
         'owner',
         'repo',

@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AnySchema } from '../../types/toolTypes.js';
-import { TOOL_NAMES } from '../toolMetadata.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import {
   BulkFetchContentSchema,
   LOCAL_FETCH_CONTENT_DESCRIPTION,

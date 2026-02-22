@@ -37,7 +37,7 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
       });
 
       const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Should throw and log error (lines 172-176)
       await expect(initializeToolMetadata()).rejects.toThrow();
@@ -62,7 +62,7 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
       });
 
       const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       await expect(initializeToolMetadata()).rejects.toThrow();
     });
@@ -84,7 +84,7 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
       });
 
       const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       await expect(initializeToolMetadata()).rejects.toThrow();
     });
@@ -106,7 +106,7 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
       });
 
       const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       await expect(initializeToolMetadata()).rejects.toThrow();
     });
@@ -128,7 +128,7 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
       });
 
       const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata.js');
+        await import('../../src/tools/toolMetadata/index.js');
 
       await expect(initializeToolMetadata()).rejects.toThrow();
     });
@@ -143,7 +143,8 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
         await import('../../src/utils/http/fetch.js');
       vi.mocked(fetchWithRetries).mockRejectedValue(new Error('No init'));
 
-      const { TOOL_NAMES } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_NAMES } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Access getOwnPropertyDescriptor early before initialization
       // This should hit lines 236-243 (STATIC_TOOL_NAMES fallback)
@@ -187,7 +188,8 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
         await import('../../src/utils/http/fetch.js');
       vi.mocked(fetchWithRetries).mockRejectedValue(new Error('No init'));
 
-      const { TOOL_NAMES } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_NAMES } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Access non-existent tool name
       const desc = Object.getOwnPropertyDescriptor(
@@ -206,7 +208,8 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
         await import('../../src/utils/http/fetch.js');
       vi.mocked(fetchWithRetries).mockRejectedValue(new Error('No init'));
 
-      const { TOOL_NAMES } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_NAMES } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Object.keys triggers ownKeys and getOwnPropertyDescriptor
       const keys = Object.keys(TOOL_NAMES);
@@ -224,7 +227,8 @@ describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
         await import('../../src/utils/http/fetch.js');
       vi.mocked(fetchWithRetries).mockRejectedValue(new Error('No init'));
 
-      const { TOOL_NAMES } = await import('../../src/tools/toolMetadata.js');
+      const { TOOL_NAMES } =
+        await import('../../src/tools/toolMetadata/index.js');
 
       // Object.entries also triggers getOwnPropertyDescriptor
       const entries = Object.entries(TOOL_NAMES);

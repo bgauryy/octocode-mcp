@@ -25,7 +25,7 @@ import {
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { getHints } from '../../hints/index.js';
-import { STATIC_TOOL_NAMES } from '../toolNames.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import {
@@ -34,7 +34,7 @@ import {
 } from '../../utils/pagination/index.js';
 import { safeReadFile } from '../../lsp/validation.js';
 
-const TOOL_NAME = STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION;
+export const TOOL_NAME = TOOL_NAMES.LSP_GOTO_DEFINITION;
 
 /**
  * Execute bulk goto definition operation.

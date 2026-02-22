@@ -1,8 +1,3 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-import { executeViewStructure } from './execution.js';
-import type { AnySchema } from '../../types/toolTypes.js';
-import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
 import { LsCommandBuilder } from '../../commands/LsCommandBuilder.js';
 import {
   safeExec,
@@ -10,7 +5,7 @@ import {
   getMissingCommandError,
 } from '../../utils/exec/index.js';
 import { getHints } from '../../hints/index.js';
-import { STATIC_TOOL_NAMES, TOOL_NAMES } from '../toolMetadata.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import {
   validateToolPath,
   createErrorResult,
@@ -23,43 +18,12 @@ import type {
 } from '../../utils/core/types.js';
 import { ToolErrors } from '../../errorCodes.js';
 import {
-  BulkViewStructureSchema,
-  LOCAL_VIEW_STRUCTURE_DESCRIPTION,
-} from './scheme.js';
-import { LocalViewStructureOutputSchema } from '../../scheme/outputSchemas.js';
-import {
   applyEntryFilters,
   toEntryObject,
   type DirectoryEntry,
 } from './structureFilters.js';
 import { parseLsSimple, parseLsLongFormat } from './structureParser.js';
 import { walkDirectory, type WalkStats } from './structureWalker.js';
-
-/**
- * Register the local view structure tool with the MCP server.
- * Follows the same pattern as GitHub tools for consistency.
- */
-export function registerLocalViewStructureTool(server: McpServer) {
-  return server.registerTool(
-    TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
-    {
-      description: LOCAL_VIEW_STRUCTURE_DESCRIPTION,
-      inputSchema: BulkViewStructureSchema as unknown as AnySchema,
-      outputSchema: LocalViewStructureOutputSchema as unknown as AnySchema,
-      annotations: {
-        title: 'Local View Structure',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    withBasicSecurityValidation(
-      executeViewStructure,
-      TOOL_NAMES.LOCAL_VIEW_STRUCTURE
-    )
-  );
-}
 
 export async function viewStructure(
   query: ViewStructureQuery
@@ -114,7 +78,7 @@ export async function viewStructure(
         reasoning: query.reasoning,
         hints: [
           stderrMsg ? `Error: ${stderrMsg}` : 'ls command failed',
-          ...getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
+          ...getHints(TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
         ],
       };
     }
@@ -193,7 +157,7 @@ export async function viewStructure(
       ...(warnings.length > 0 && { warnings }),
       hints: [
         ...entryPaginationHints,
-        ...getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, status),
+        ...getHints(TOOL_NAMES.LOCAL_VIEW_STRUCTURE, status),
       ],
     };
   } catch (error) {
@@ -206,7 +170,7 @@ export async function viewStructure(
       errorCode: toolError.errorCode,
       researchGoal: query.researchGoal,
       reasoning: query.reasoning,
-      hints: getHints(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
+      hints: getHints(TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
     };
   }
 }
@@ -315,10 +279,7 @@ async function viewStructureRecursive(
   }
 
   const status = totalEntries > 0 ? 'hasResults' : 'empty';
-  const baseHints = getHints(
-    STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE as 'localViewStructure',
-    status
-  );
+  const baseHints = getHints(TOOL_NAMES.LOCAL_VIEW_STRUCTURE, status);
 
   const entryPaginationHints = [
     `Page ${entryPageNumber}/${totalPages} (showing ${paginatedEntries.length} of ${totalEntries})`,

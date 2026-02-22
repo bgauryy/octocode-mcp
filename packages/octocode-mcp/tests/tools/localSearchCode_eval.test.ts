@@ -28,10 +28,15 @@ import {
   type RipgrepQuery,
 } from '../../src/tools/local_ripgrep/scheme.js';
 
-// Helper to create valid queries
+// Helper to create valid queries (includes required researchGoal/reasoning)
 const createQuery = (
   overrides: Partial<RipgrepQuery> & { pattern: string; path: string }
-): RipgrepQuery => RipgrepQuerySchema.parse(overrides);
+): RipgrepQuery =>
+  RipgrepQuerySchema.parse({
+    researchGoal: 'Eval test',
+    reasoning: 'Schema validation',
+    ...overrides,
+  });
 
 describe('localSearchCode Eval Tests - All Schema Parameters', () => {
   /**
@@ -1234,7 +1239,7 @@ describe('localSearchCode Eval Tests - All Schema Parameters', () => {
         createQuery({
           pattern: 'test',
           path: '/src',
-          filesPerPage: 50,
+          filesPerPage: 51,
         })
       ).toThrow();
     });

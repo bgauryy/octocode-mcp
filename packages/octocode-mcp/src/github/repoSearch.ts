@@ -14,7 +14,7 @@ import { generateCacheKey, withDataCache } from '../utils/http/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
-import { TOOL_NAMES } from '../tools/toolMetadata.js';
+import { TOOL_NAMES } from '../tools/toolMetadata/index.js';
 
 /** Pagination info for repository search results */
 interface RepoSearchPagination {

@@ -6,7 +6,7 @@ import type {
   RipgrepFileMatches,
 } from '../../utils/core/types.js';
 import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
-import { TOOL_NAMES } from '../toolMetadata.js';
+import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { promises as fs } from 'fs';
 
 /**
