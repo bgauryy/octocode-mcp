@@ -1,10 +1,6 @@
 import { getConfigSync } from 'octocode-shared';
 
-type Environment =
-  | 'vscode'
-  | 'claude-code-mcp'
-  | 'cursor'
-  | 'standalone';
+type Environment = 'vscode' | 'claude-code-mcp' | 'cursor' | 'standalone';
 
 export function detectEnvironment(): Environment {
   if (process.env.VSCODE_PID || process.env.VSCODE_IPC_HOOK) {

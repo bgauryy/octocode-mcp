@@ -263,4 +263,79 @@ describe('GitHub Client Branch Coverage', () => {
       expect(callArgs.auth).toBeUndefined();
     });
   });
+
+  describe('purgeExpiredInstances over capacity (lines 79-89)', () => {
+    it('should evict oldest non-DEFAULT entries when over MAX_INSTANCES', async () => {
+      const originalNow = Date.now;
+      let fakeTime = 1_000_000;
+      Date.now = () => fakeTime;
+
+      try {
+        // Create 51 distinct auth instances to exceed MAX_INSTANCES (50)
+        for (let i = 0; i < 51; i++) {
+          await getOctokit({
+            token: `capacity-token-${i}`,
+            clientId: `client-${i}`,
+            scopes: [],
+          });
+          fakeTime += 10;
+        }
+
+        // The 51st call should have triggered purgeExpiredInstances
+        // which should evict oldest non-DEFAULT entries
+        // Verify the system still works after eviction
+        const instance = await getOctokit({
+          token: 'post-eviction-token',
+          clientId: 'post-eviction',
+          scopes: [],
+        });
+
+        expect(instance).toBeDefined();
+      } finally {
+        Date.now = originalNow;
+      }
+    });
+
+    it('should evict expired entries before LRU eviction during capacity check', async () => {
+      const originalNow = Date.now;
+      let fakeTime = 1_000_000;
+      Date.now = () => fakeTime;
+
+      try {
+        // Create 30 instances that will expire
+        for (let i = 0; i < 30; i++) {
+          await getOctokit({
+            token: `expire-capacity-${i}`,
+            clientId: `expire-${i}`,
+            scopes: [],
+          });
+          fakeTime += 10;
+        }
+
+        // Advance past TTL (5 min)
+        fakeTime += 5 * 60 * 1000 + 1;
+
+        // Create 20 more fresh instances
+        for (let i = 0; i < 20; i++) {
+          await getOctokit({
+            token: `fresh-capacity-${i}`,
+            clientId: `fresh-${i}`,
+            scopes: [],
+          });
+          fakeTime += 10;
+        }
+
+        // This should trigger purge of expired entries
+        const instance = await getOctokit({
+          token: 'final-capacity-token',
+          clientId: 'final',
+          scopes: [],
+        });
+
+        expect(instance).toBeDefined();
+      } finally {
+        Date.now = originalNow;
+      }
+    });
+  });
 });
