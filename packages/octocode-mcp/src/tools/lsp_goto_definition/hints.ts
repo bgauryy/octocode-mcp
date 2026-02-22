@@ -1,6 +1,9 @@
 /**
  * Dynamic hints for lspGotoDefinition tool
  * @module tools/lsp_goto_definition/hints
+ *
+ * API dynamic keys available: multipleDefinitions, externalPackage, symbolNotFound,
+ * timeout, functionSymbol, typeOrVariable
  */
 
 import { getMetadataDynamicHints } from '../../hints/static.js';
@@ -10,7 +13,6 @@ export const TOOL_NAME = 'lspGotoDefinition';
 
 export const hints: ToolHintGenerators = {
   hasResults: (ctx: HintContext = {}) => {
-    // Only context-aware hints - base hints come from HOST static hints
     const hints: (string | undefined)[] = [];
     const locationCount = (ctx as Record<string, unknown>).locationCount as
       | number
@@ -22,14 +24,10 @@ export const hints: ToolHintGenerators = {
     if ((ctx as Record<string, unknown>).hasExternalPackage) {
       hints.push(...getMetadataDynamicHints(TOOL_NAME, 'externalPackage'));
     }
-    if ((ctx as Record<string, unknown>).isFallback) {
-      hints.push(...getMetadataDynamicHints(TOOL_NAME, 'fallbackMode'));
-    }
     return hints;
   },
 
   empty: (ctx: HintContext = {}) => {
-    // Only context-aware hints - base hints come from HOST static hints
     const hints: (string | undefined)[] = [];
     const searchRadius = (ctx as Record<string, unknown>).searchRadius;
     const lineHint = (ctx as Record<string, unknown>).lineHint;
@@ -56,10 +54,7 @@ export const hints: ToolHintGenerators = {
       ];
     }
     if ((ctx as Record<string, unknown>).errorType === 'file_not_found') {
-      return [
-        `File not found: ${uri}`,
-        ...getMetadataDynamicHints(TOOL_NAME, 'fileNotFound'),
-      ];
+      return [`File not found: ${uri}`];
     }
     if ((ctx as Record<string, unknown>).errorType === 'timeout') {
       return [...getMetadataDynamicHints(TOOL_NAME, 'timeout')];

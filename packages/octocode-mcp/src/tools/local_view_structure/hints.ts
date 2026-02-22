@@ -12,7 +12,7 @@ export const hints: ToolHintGenerators = {
   hasResults: (ctx: HintContext = {}) => {
     const hints: (string | undefined)[] = [];
     if (ctx.entryCount && ctx.entryCount > 10) {
-      hints.push(...getMetadataDynamicHints(TOOL_NAME, 'parallelize'));
+      hints.push(...getMetadataDynamicHints(TOOL_NAME, 'largeDirectory'));
     }
     return hints;
   },

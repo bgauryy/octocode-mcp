@@ -108,7 +108,10 @@ export async function callHierarchyWithLSP(
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           hints: [
-            ...getHints(TOOL_NAME, 'empty'),
+            ...getHints(TOOL_NAME, 'empty', { direction: 'incoming' } as Record<
+              string,
+              unknown
+            >),
             `No callers found for '${query.symbolName}' via Language Server`,
             'The function may not be called directly in the workspace',
             'Check if it is called via alias or dynamic invocation',
@@ -140,7 +143,14 @@ export async function callHierarchyWithLSP(
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
         hints: [
-          ...getHints(TOOL_NAME, 'hasResults'),
+          ...getHints(TOOL_NAME, 'hasResults', {
+            direction: 'incoming',
+            callCount: allIncomingCalls.length,
+            depth,
+            hasMorePages: pagination ? pagination.totalPages > 1 : false,
+            currentPage: pagination?.currentPage,
+            totalPages: pagination?.totalPages,
+          } as Record<string, unknown>),
           `Found ${allIncomingCalls.length} caller(s) via Language Server (depth ${depth})`,
           'Each incomingCall.from = a function that calls this symbol; fromRanges = exact call sites',
           'Use lspGotoDefinition to navigate to each caller',
@@ -168,7 +178,10 @@ export async function callHierarchyWithLSP(
           researchGoal: query.researchGoal,
           reasoning: query.reasoning,
           hints: [
-            ...getHints(TOOL_NAME, 'empty'),
+            ...getHints(TOOL_NAME, 'empty', { direction: 'outgoing' } as Record<
+              string,
+              unknown
+            >),
             `No callees found in '${query.symbolName}' via Language Server`,
             'The function may only contain primitive operations',
             'Check if calls use dynamic invocation patterns',
@@ -199,7 +212,14 @@ export async function callHierarchyWithLSP(
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
         hints: [
-          ...getHints(TOOL_NAME, 'hasResults'),
+          ...getHints(TOOL_NAME, 'hasResults', {
+            direction: 'outgoing',
+            callCount: allOutgoingCalls.length,
+            depth,
+            hasMorePages: pagination ? pagination.totalPages > 1 : false,
+            currentPage: pagination?.currentPage,
+            totalPages: pagination?.totalPages,
+          } as Record<string, unknown>),
           `Found ${allOutgoingCalls.length} callee(s) via Language Server (depth ${depth})`,
           'Each outgoingCall.to = a function called by this symbol; fromRanges = exact call sites',
           'Use lspGotoDefinition to navigate to each callee',

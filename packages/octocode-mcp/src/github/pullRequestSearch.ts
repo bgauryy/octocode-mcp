@@ -183,14 +183,15 @@ async function searchGitHubPullRequestsAPIInternal(
 
     const totalMatches = Math.min(searchResult.data.total_count, 1000);
     const totalPages = Math.min(Math.ceil(totalMatches / perPage), 10);
-    const hasMore = currentPage < totalPages;
+    const clampedPage = Math.min(currentPage, Math.max(1, totalPages));
+    const hasMore = clampedPage < totalPages;
 
     return {
       pull_requests: formattedPRs,
       total_count: searchResult.data.total_count,
       ...(searchResult.data.incomplete_results && { incomplete_results: true }),
       pagination: {
-        currentPage,
+        currentPage: clampedPage,
         totalPages,
         perPage,
         totalMatches,

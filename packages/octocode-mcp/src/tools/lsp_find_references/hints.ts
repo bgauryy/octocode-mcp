@@ -2,9 +2,8 @@
  * Dynamic hints for lspFindReferences tool
  * @module tools/lsp_find_references/hints
  *
- * NOTE: lspReferencesCore.ts and lspReferencesPatterns.ts build hints inline
- * and do not pass hintContext to getHints(). Dynamic branches here only fire
- * if a future caller wires up the context. Static hints come from the API.
+ * API dynamic keys available: manyReferences, multipleFiles, pagination,
+ * functionSymbol, impactAnalysis, deadCode
  */
 
 import { getMetadataDynamicHints } from '../../hints/static.js';
@@ -28,17 +27,11 @@ export const hints: ToolHintGenerators = {
       hints.push(`References span ${fileCount || 'multiple'} files.`);
       hints.push(...getMetadataDynamicHints(TOOL_NAME, 'multipleFiles'));
     }
-    if ((ctx as Record<string, unknown>).isFallback) {
-      hints.push(...getMetadataDynamicHints(TOOL_NAME, 'fallbackMode'));
-    }
     return hints;
   },
 
   empty: (ctx: HintContext = {}) => {
     const hints: (string | undefined)[] = [];
-    if ((ctx as Record<string, unknown>).symbolName) {
-      hints.push(...getMetadataDynamicHints(TOOL_NAME, 'symbolNotFound'));
-    }
     if ((ctx as Record<string, unknown>).filteredAll) {
       hints.push(
         'All references were excluded by file patterns. Try broader patterns or remove filtering.'
@@ -47,13 +40,5 @@ export const hints: ToolHintGenerators = {
     return hints;
   },
 
-  error: (ctx: HintContext = {}) => {
-    if ((ctx as Record<string, unknown>).errorType === 'symbol_not_found') {
-      return [...getMetadataDynamicHints(TOOL_NAME, 'symbolNotFound')];
-    }
-    if ((ctx as Record<string, unknown>).errorType === 'timeout') {
-      return [...getMetadataDynamicHints(TOOL_NAME, 'timeout')];
-    }
-    return [];
-  },
+  error: (_ctx: HintContext = {}) => [],
 };

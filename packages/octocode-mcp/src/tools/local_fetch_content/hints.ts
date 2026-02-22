@@ -1,6 +1,8 @@
 /**
  * Dynamic hints for localGetFileContent tool
  * @module tools/local_fetch_content/hints
+ *
+ * API dynamic keys available: largeFile, sourceCode, configOrDocs, needAnalysis
  */
 
 import { getMetadataDynamicHints } from '../../hints/static.js';
@@ -15,9 +17,7 @@ export const hints: ToolHintGenerators = {
       : undefined,
   ],
 
-  empty: (_ctx: HintContext = {}) => [
-    // Base hints come from HOST
-  ],
+  empty: (_ctx: HintContext = {}) => [],
 
   error: (ctx: HintContext = {}) => {
     if (ctx.errorType === 'size_limit' && ctx.isLarge) {
@@ -34,7 +34,6 @@ export const hints: ToolHintGenerators = {
         ctx.tokenEstimate
           ? `Pattern too broad (~${ctx.tokenEstimate.toLocaleString()} tokens).`
           : undefined,
-        ...getMetadataDynamicHints(TOOL_NAME, 'patternTooBroad'),
       ];
     }
 

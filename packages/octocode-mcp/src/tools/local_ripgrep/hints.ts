@@ -1,6 +1,9 @@
 /**
  * Dynamic hints for localSearchCode (ripgrep) tool
  * @module tools/local_ripgrep/hints
+ *
+ * API dynamic keys available: largeResult, functionFound, typeOrVariableFound,
+ * multipleMatches, noLineNumbers
  */
 
 import { getMetadataDynamicHints } from '../../hints/static.js';
@@ -22,35 +25,14 @@ function filterValidHints(hints: (string | undefined)[]): string[] {
 }
 
 export const hints: ToolHintGenerators = {
-  hasResults: (ctx: HintContext = {}) => {
-    const hints: (string | undefined)[] = [];
-    if (ctx.searchEngine === 'grep') {
-      hints.push(...getMetadataDynamicHints(TOOL_NAME, 'grepFallback'));
-    }
-    if (ctx.fileCount && ctx.fileCount > 5) {
-      hints.push(...getMetadataDynamicHints(TOOL_NAME, 'parallelTip'));
-    }
-    if (ctx.fileCount && ctx.fileCount > 1) {
-      hints.push(...getMetadataDynamicHints(TOOL_NAME, 'multipleFiles'));
-    }
-    return filterValidHints(hints);
-  },
+  hasResults: (_ctx: HintContext = {}) => [],
 
-  empty: (ctx: HintContext = {}) => {
-    const hints: (string | undefined)[] = [];
-    if (ctx.searchEngine === 'grep') {
-      hints.push(...getMetadataDynamicHints(TOOL_NAME, 'grepFallbackEmpty'));
-    }
-    return filterValidHints(hints);
-  },
+  empty: (_ctx: HintContext = {}) => [],
 
   error: (ctx: HintContext = {}) => {
     if (ctx.errorType === 'size_limit') {
       const hints = [
         `Too many results${ctx.matchCount ? ` (${ctx.matchCount} matches)` : ''}. Narrow pattern/scope.`,
-        ...(ctx.path?.includes('node_modules')
-          ? getMetadataDynamicHints(TOOL_NAME, 'nodeModulesSearch')
-          : []),
         ...getMetadataDynamicHints(TOOL_NAME, 'largeResult'),
       ];
       return filterValidHints(hints);

@@ -150,13 +150,14 @@ async function searchGitHubReposAPIInternal(
     // GitHub caps at 1000 total results
     const totalMatches = Math.min(result.data.total_count, 1000);
     const totalPages = Math.min(Math.ceil(totalMatches / perPage), 10);
-    const hasMore = currentPage < totalPages;
+    const clampedPage = Math.min(currentPage, Math.max(1, totalPages));
+    const hasMore = clampedPage < totalPages;
 
     return {
       data: {
         repositories,
         pagination: {
-          currentPage,
+          currentPage: clampedPage,
           totalPages,
           perPage,
           totalMatches,

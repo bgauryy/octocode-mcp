@@ -112,8 +112,8 @@ export async function viewStructure(
 
     const entriesPerPage =
       query.entriesPerPage || RESOURCE_LIMITS.DEFAULT_ENTRIES_PER_PAGE;
-    const entryPageNumber = query.entryPageNumber || 1;
-    const totalPages = Math.ceil(totalEntries / entriesPerPage);
+    const totalPages = Math.max(1, Math.ceil(totalEntries / entriesPerPage));
+    const entryPageNumber = Math.min(query.entryPageNumber || 1, totalPages);
     const startIdx = (entryPageNumber - 1) * entriesPerPage;
     const endIdx = Math.min(startIdx + entriesPerPage, totalEntries);
 
@@ -157,7 +157,9 @@ export async function viewStructure(
       ...(warnings.length > 0 && { warnings }),
       hints: [
         ...entryPaginationHints,
-        ...getHints(TOOL_NAMES.LOCAL_VIEW_STRUCTURE, status),
+        ...getHints(TOOL_NAMES.LOCAL_VIEW_STRUCTURE, status, {
+          entryCount: totalEntries,
+        }),
       ],
     };
   } catch (error) {
@@ -254,8 +256,8 @@ async function viewStructureRecursive(
   // Apply entry-based pagination
   const entriesPerPage =
     query.entriesPerPage || RESOURCE_LIMITS.DEFAULT_ENTRIES_PER_PAGE;
-  const entryPageNumber = query.entryPageNumber || 1;
-  const totalPages = Math.ceil(totalEntries / entriesPerPage);
+  const totalPages = Math.max(1, Math.ceil(totalEntries / entriesPerPage));
+  const entryPageNumber = Math.min(query.entryPageNumber || 1, totalPages);
   const startIdx = (entryPageNumber - 1) * entriesPerPage;
   const endIdx = Math.min(startIdx + entriesPerPage, totalEntries);
 

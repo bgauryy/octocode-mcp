@@ -764,6 +764,263 @@ describe('searchPackage - NPM (CLI)', () => {
       expect(result.totalFound).toBe(0);
     }
   });
+
+  it('should succeed with exact package name + searchLimit=3 (BUG-02 exact repro)', async () => {
+    // Exact repro: name='typescript', searchLimit=3.
+    // With limit > 1, even an exact name routes to searchNpmPackageViaSearch (not npm view).
+    // Before fix: Zod schema rejected extra score/searchScore fields → "Invalid npm registry search response format".
+    // After fix: schema uses .passthrough() and version is optional → returns packages.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          objects: [
+            {
+              package: {
+                name: 'typescript',
+                version: '5.7.3',
+                description:
+                  'TypeScript is a language for application scale JavaScript development',
+                links: { npm: 'https://www.npmjs.com/package/typescript' },
+              },
+              score: {
+                final: 0.9999,
+                detail: { quality: 1, popularity: 1, maintenance: 1 },
+              },
+              searchScore: 100000.123,
+            },
+            {
+              package: {
+                name: '@types/typescript',
+                version: '1.0.0',
+                description: 'TypeScript type definitions',
+                links: {
+                  npm: 'https://www.npmjs.com/package/@types/typescript',
+                },
+              },
+              score: { final: 0.7 },
+              searchScore: 30000,
+            },
+            {
+              package: {
+                name: 'typescript-eslint',
+                version: '8.0.0',
+                description: 'TypeScript ESLint tooling',
+                links: {
+                  npm: 'https://www.npmjs.com/package/typescript-eslint',
+                },
+              },
+              score: { final: 0.85 },
+              searchScore: 60000,
+            },
+          ],
+          total: 100,
+          time: 'Thu Jan 09 2025 00:00:00 GMT+0000',
+        }),
+      body: null,
+    });
+
+    const query: PackageSearchInput = {
+      ecosystem: 'npm',
+      name: 'typescript',
+      searchLimit: 3,
+      mainResearchGoal: 'Test',
+      researchGoal: 'Test',
+      reasoning: 'Test',
+    };
+
+    const result = await searchPackage(query);
+
+    // Must NOT be an error — this was the exact failing case
+    expect('packages' in result).toBe(true);
+    if ('packages' in result) {
+      expect(result.packages.length).toBe(3);
+      const first = result.packages[0] as NpmPackageResult;
+      expect(first.path).toBe('typescript');
+      expect(first.version).toBe('5.7.3');
+    }
+  });
+
+  it('should filter out null-name items and accept null version (BUG-02 null fields)', async () => {
+    // Real npm registry returns null for name/version on some ghost/deprecated packages.
+    // Before fix: z.string() rejected null → "Expected string, received null" validation error.
+    // After fix: nullish() accepts null; null-name items are filtered; null version falls back to 'unknown'.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          objects: [
+            {
+              package: {
+                name: 'typescript',
+                version: '5.7.3',
+                description: 'TypeScript compiler',
+                links: { npm: 'https://www.npmjs.com/package/typescript' },
+              },
+              score: { final: 0.9999 },
+              searchScore: 100000,
+            },
+            {
+              // Ghost package: name is null — must be silently filtered out
+              package: {
+                name: null,
+                version: null,
+                description: null,
+                links: null,
+              },
+              score: { final: 0 },
+              searchScore: 0,
+            },
+            {
+              package: {
+                name: 'ts-node',
+                version: null, // null version — must fall back to 'unknown'
+                description: 'TypeScript execution environment',
+                links: {
+                  npm: 'https://www.npmjs.com/package/ts-node',
+                  repository: null,
+                },
+              },
+              score: { final: 0.85 },
+              searchScore: 50000,
+            },
+          ],
+          total: 3,
+        }),
+      body: null,
+    });
+
+    const query: PackageSearchInput = {
+      ecosystem: 'npm',
+      name: 'typescript',
+      searchLimit: 3,
+      mainResearchGoal: 'Test',
+      researchGoal: 'Test',
+      reasoning: 'Test',
+    };
+
+    const result = await searchPackage(query);
+
+    expect('packages' in result).toBe(true);
+    if ('packages' in result) {
+      // null-name ghost package is filtered; only 2 valid packages remain
+      expect(result.packages.length).toBe(2);
+      const first = result.packages[0] as NpmPackageResult;
+      expect(first.path).toBe('typescript');
+      expect(first.version).toBe('5.7.3');
+      const second = result.packages[1] as NpmPackageResult;
+      expect(second.path).toBe('ts-node');
+      // null version falls back to 'unknown'
+      expect(second.version).toBe('unknown');
+      // null repository URL → repoUrl is null, not a crash
+      expect(second.repoUrl).toBeNull();
+    }
+  });
+
+  it('should succeed with searchLimit > 1 when registry items have extra fields (BUG-02 fix)', async () => {
+    // Regression: searchLimit > 1 used to fail with "Invalid npm registry search response format"
+    // because NpmRegistrySearchItemSchema rejected the extra score/searchScore fields
+    // from the real npm registry search API response.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          objects: [
+            {
+              package: {
+                name: 'typescript',
+                version: '5.7.3',
+                description:
+                  'TypeScript is a language for application scale JS development',
+                links: { npm: 'https://www.npmjs.com/package/typescript' },
+              },
+              // Extra fields present in real API response — must not cause parse failure
+              score: {
+                final: 0.9999,
+                detail: { quality: 1, popularity: 1, maintenance: 1 },
+              },
+              searchScore: 100000,
+            },
+            {
+              package: {
+                name: 'ts-node',
+                // version intentionally missing — must fall back to 'unknown'
+                description: 'TypeScript execution environment',
+                links: { npm: 'https://www.npmjs.com/package/ts-node' },
+              },
+              score: { final: 0.85 },
+              searchScore: 50000,
+            },
+          ],
+          total: 2,
+          // 'time' field present in real API responses — must not cause parse failure
+          time: 'Thu Jan 09 2025 00:00:00 GMT+0000',
+        }),
+      body: null,
+    });
+
+    const query: PackageSearchInput = {
+      ecosystem: 'npm',
+      name: 'typescript types',
+      searchLimit: 3,
+      mainResearchGoal: 'Test',
+      researchGoal: 'Test',
+      reasoning: 'Test',
+    };
+
+    const result = await searchPackage(query);
+
+    expect('packages' in result).toBe(true);
+    if ('packages' in result) {
+      expect(result.packages.length).toBe(2);
+      const first = result.packages[0] as NpmPackageResult;
+      expect(first.path).toBe('typescript');
+      expect(first.version).toBe('5.7.3');
+      const second = result.packages[1] as NpmPackageResult;
+      expect(second.path).toBe('ts-node');
+      // Missing version falls back to 'unknown' rather than crashing
+      expect(second.version).toBe('unknown');
+    }
+  });
+
+  it('should handle registry response with string total (BUG-02 fix)', async () => {
+    // Some registry implementations return total as a string
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          objects: [
+            {
+              package: { name: 'lodash', version: '4.17.21' },
+            },
+          ],
+          total: '1000', // string instead of number
+        }),
+      body: null,
+    });
+
+    const query: PackageSearchInput = {
+      ecosystem: 'npm',
+      name: 'lodash utility helpers',
+      searchLimit: 2,
+      mainResearchGoal: 'Test',
+      researchGoal: 'Test',
+      reasoning: 'Test',
+    };
+
+    const result = await searchPackage(query);
+
+    expect('packages' in result).toBe(true);
+    if ('packages' in result) {
+      expect(result.packages.length).toBe(1);
+      const pkg = result.packages[0] as NpmPackageResult;
+      expect(pkg.path).toBe('lodash');
+    }
+  });
 });
 
 describe('searchPackage - Python', () => {
