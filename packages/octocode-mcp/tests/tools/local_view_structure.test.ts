@@ -956,7 +956,7 @@ describe('localViewStructure', () => {
       expect(result2.status).toBe('hasResults');
       expect(result2.pagination?.currentPage).toBe(2);
       // Different entries on different pages
-      expect(result2.entries![0].name).not.toBe(result1.entries![0].name);
+      expect(result2.entries![0]!.name).not.toBe(result1.entries![0]!.name);
     });
   });
 
@@ -1766,7 +1766,9 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput?.length).toBeLessThanOrEqual(500);
+      expect(
+        (result.structuredOutput as string | undefined)?.length
+      ).toBeLessThanOrEqual(500);
       expect(result.pagination?.totalChars).toBeGreaterThan(500);
       expect(result.pagination?.hasMore).toBe(true);
     });
@@ -1913,7 +1915,7 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput?.length).toBe(1);
+      expect((result.structuredOutput as string | undefined)?.length).toBe(1);
       // hasMore is only set when there's actually more content
       if (result.pagination) {
         expect(typeof result.pagination.hasMore).toBe('boolean');
@@ -1940,7 +1942,9 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.structuredOutput?.length).toBeLessThanOrEqual(10000);
+      expect(
+        (result.structuredOutput as string | undefined)?.length
+      ).toBeLessThanOrEqual(10000);
       // hasMore is only set when there's actually more content
       if (result.pagination) {
         expect(typeof result.pagination.hasMore).toBe('boolean');

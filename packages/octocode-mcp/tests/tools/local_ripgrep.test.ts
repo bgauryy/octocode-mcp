@@ -33,7 +33,7 @@ vi.mock('fs', () => ({
   },
 }));
 
-const runRipgrep = (query: Parameters<typeof RipgrepQuerySchema.parse>[0]) =>
+const runRipgrep = (query: Record<string, unknown>) =>
   searchContentRipgrep(
     RipgrepQuerySchema.parse({
       researchGoal: 'Test',

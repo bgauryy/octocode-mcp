@@ -48,7 +48,7 @@ describe('createErrorResult - branch coverage', () => {
       const apiError = { error: 'Forbidden', type: 'FORBIDDEN' };
       const hintSourceError = {
         error: 'Rate limit exceeded',
-        type: 'RATE_LIMIT',
+        type: 'http' as const,
         rateLimitRemaining: 0,
         rateLimitReset: Date.now() + 60000,
       };
@@ -111,7 +111,7 @@ describe('createErrorResult - branch coverage', () => {
     it('should extract hints from hintSourceError with retryAfter', () => {
       const hintSourceError = {
         error: 'Secondary Rate limit',
-        type: 'SECONDARY_RATE_LIMIT',
+        type: 'http' as const,
         retryAfter: 60,
       };
       const result = createErrorResult('main error', baseQuery, {

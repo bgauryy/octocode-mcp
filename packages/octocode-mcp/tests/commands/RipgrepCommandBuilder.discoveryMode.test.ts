@@ -14,7 +14,7 @@ import {
   applyWorkflowMode,
 } from '../../src/tools/local_ripgrep/scheme.js';
 
-const createQuery = (query: Parameters<typeof RipgrepQuerySchema.parse>[0]) =>
+const createQuery = (query: Record<string, unknown>) =>
   RipgrepQuerySchema.parse({
     researchGoal: 'Test',
     reasoning: 'Schema validation',

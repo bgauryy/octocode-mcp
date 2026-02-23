@@ -76,7 +76,7 @@ async function viewGitHubRepositoryStructureAPIInternal(
     const cleanPath = path.replace(/^\/+|\/+$/g, '');
 
     let result;
-    let workingBranch = branch;
+    let workingBranch: string = branch ?? 'main';
     let repoDefaultBranch: string | undefined;
     try {
       result = await octokit.rest.repos.getContent({
@@ -151,7 +151,11 @@ async function viewGitHubRepositoryStructureAPIInternal(
                   repo
                 ),
                 status: apiError.status,
-                triedBranches: [branch, defaultBranch, ...commonBranches],
+                triedBranches: [
+                  branch,
+                  defaultBranch,
+                  ...commonBranches,
+                ].filter((b): b is string => b !== undefined),
                 defaultBranch,
               };
             }

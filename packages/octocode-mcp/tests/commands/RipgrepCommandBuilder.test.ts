@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { RipgrepCommandBuilder } from '../../src/commands/RipgrepCommandBuilder.js';
 import { RipgrepQuerySchema } from '../../src/tools/local_ripgrep/scheme.js';
 
-const createQuery = (query: Parameters<typeof RipgrepQuerySchema.parse>[0]) =>
+const createQuery = (query: Record<string, unknown>) =>
   RipgrepQuerySchema.parse({
     researchGoal: 'Test',
     reasoning: 'Schema validation',
