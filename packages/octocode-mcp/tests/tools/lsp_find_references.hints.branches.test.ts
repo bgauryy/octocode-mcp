@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import type { HintContext } from '../../src/types/metadata.js';
 
 vi.mock('../../src/hints/static.js', () => ({
   getMetadataDynamicHints: vi.fn((_tool: string, key: string) => [
@@ -21,7 +22,7 @@ describe('lspFindReferences hints - branch coverage', () => {
         isFiltered: true,
         filteredCount: 5,
         totalUnfiltered: 20,
-      });
+      } as Record<string, unknown> as HintContext);
       expect(result.some(h => h?.includes('Filtered: 5 of 20'))).toBe(false);
       expect(
         result.some(h => h?.includes('includePattern/excludePattern'))
@@ -40,7 +41,7 @@ describe('lspFindReferences hints - branch coverage', () => {
     it('should add filteredAll hint when all refs filtered', () => {
       const result = hints.empty!({
         filteredAll: true,
-      });
+      } as Record<string, unknown> as HintContext);
       expect(
         result.some(h => h?.includes('All references were excluded'))
       ).toBe(true);
@@ -53,7 +54,7 @@ describe('lspFindReferences hints - branch coverage', () => {
       // TIP hints for non-filteredAll were removed — dead dynamic context
       const result = hints.empty!({
         filteredAll: false,
-      });
+      } as Record<string, unknown> as HintContext);
       expect(result.some(h => h?.includes('TIP: Use includePattern'))).toBe(
         false
       );
@@ -86,7 +87,7 @@ describe('lspFindReferences hints - branch coverage', () => {
     });
 
     it('should return empty for unknown error type', () => {
-      const result = hints.error!({ errorType: 'other' });
+      const result = hints.error!({ errorType: 'other' } as Record<string, unknown> as HintContext);
       expect(result).toHaveLength(0);
     });
   });

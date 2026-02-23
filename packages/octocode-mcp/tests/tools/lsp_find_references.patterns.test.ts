@@ -52,10 +52,6 @@ import { safeReadFile } from '../../src/lsp/validation.js';
 import { validateCommand } from '../../src/security/commandValidator.js';
 
 import {
-  escapeForRegex,
-  buildRipgrepGlobArgs,
-  buildRipgrepSearchArgs,
-  buildGrepFilterArgs,
   buildGrepFilterArgsArray,
   buildGrepSearchArgs,
   findWorkspaceRoot,
@@ -183,17 +179,6 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
       );
     };
 
-    const setupSpawnFailure = (code: number) => {
-      mockStdoutOn.mockImplementation(() => {});
-      mockSpawnOn.mockImplementation(
-        (event: string, cb: (...args: any[]) => void) => {
-          if (event === 'close') {
-            setTimeout(() => cb(code), 0);
-          }
-        }
-      );
-    };
-
     it('should return empty when no references found', async () => {
       setupSpawnSuccess('');
 
@@ -206,6 +191,11 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
           lineHint: 1,
           researchGoal: 'test',
           reasoning: 'test',
+          page: 1,
+          contextLines: 0,
+          orderHint: 0,
+          includeDeclaration: true,
+          referencesPerPage: 20,
         }
       );
 
@@ -245,6 +235,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
           referencesPerPage: 20,
           page: 1,
           contextLines: 0,
+          orderHint: 0,
           researchGoal: 'test',
           reasoning: 'test',
         }
@@ -275,6 +266,9 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
           lineHint: 5,
           includeDeclaration: false,
           contextLines: 0,
+          orderHint: 0,
+          page: 1,
+          referencesPerPage: 20,
           researchGoal: 'test',
           reasoning: 'test',
         }
@@ -316,6 +310,9 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
           includeDeclaration: true,
           excludePattern: ['**/node_modules/**'],
           contextLines: 0,
+          orderHint: 0,
+          page: 1,
+          referencesPerPage: 20,
           researchGoal: 'test',
           reasoning: 'test',
         }
@@ -347,6 +344,9 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
           includeDeclaration: true,
           excludePattern: ['**/node_modules/**'],
           contextLines: 0,
+          orderHint: 0,
+          page: 1,
+          referencesPerPage: 20,
           researchGoal: 'test',
           reasoning: 'test',
         }
@@ -383,6 +383,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
           referencesPerPage: 10,
           page: 1,
           contextLines: 0,
+          orderHint: 0,
           researchGoal: 'test',
           reasoning: 'test',
         }
@@ -418,6 +419,9 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
           lineHint: 3,
           includeDeclaration: true,
           contextLines: 2,
+          orderHint: 0,
+          page: 1,
+          referencesPerPage: 20,
           researchGoal: 'test',
           reasoning: 'test',
         }
@@ -451,6 +455,9 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
           lineHint: 3,
           includeDeclaration: true,
           contextLines: 2,
+          orderHint: 0,
+          page: 1,
+          referencesPerPage: 20,
           researchGoal: 'test',
           reasoning: 'test',
         }

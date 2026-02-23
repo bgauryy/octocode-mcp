@@ -66,8 +66,11 @@ export function transformPullRequestResult(
       draft: pr.draft || false,
       author: pr.author,
       assignees:
-        pr.assignees?.map(a => (typeof a === 'string' ? a : (a.login ?? ''))) ||
-        [],
+        pr.assignees?.map(a =>
+          typeof a === 'string'
+            ? a
+            : String((a as Record<string, unknown>).login ?? '')
+        ) || [],
       labels:
         pr.labels?.map(l => (typeof l === 'string' ? l : (l.name ?? ''))) || [],
       sourceBranch: pr.head_ref || '',

@@ -318,6 +318,8 @@ describe('LSP Find References - Filtering and Lazy Enhancement', () => {
       Pick<LSPFindReferencesQuery, 'uri' | 'symbolName' | 'lineHint'>
   ): LSPFindReferencesQuery {
     return {
+      researchGoal: 'test',
+      reasoning: 'test',
       orderHint: 0,
       includeDeclaration: true,
       contextLines: 0,

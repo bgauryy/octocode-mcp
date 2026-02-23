@@ -37,7 +37,7 @@ import type { PathValidationResult } from '../utils/core/types.js';
 import { shouldIgnore } from './ignoredPathFilter.js';
 import { redactPath } from '../errors/pathUtils.js';
 import { resolveWorkspaceRoot } from './workspaceRoot.js';
-import { getOctocodeDir } from 'octocode-shared';
+import { getOctocodeDir, getConfigSync } from 'octocode-shared';
 
 /**
  * PathValidator configuration options
