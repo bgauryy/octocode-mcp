@@ -29,6 +29,10 @@ CROSS-CUTTING (apply during all phases):
 └── Global Constraints - ALWAYS apply
 ```
 
+### MCP Direct Mode
+
+If you already have `octocode-mcp` installed as an MCP server, use the octocode MCP tools directly for research execution (Phase 4) instead of calling tools via HTTP. The server initialization and context loading phases (1-2) still apply — the server provides essential research context and intent.
+
 ### Phase Transitions
 
 | From | To | Trigger |
@@ -311,7 +315,7 @@ Proceed? (yes/no)
 - Any research tools
 
 #### ALLOWED During Planning
-- `TaskCreate`/`TaskUpdate` (to draft plan)
+- `TaskCreate`/`TaskUpdate` (or runtime equivalent, e.g., `TodoWrite`)
 - `AskUserQuestion` (to confirm)
 - Text output (to present plan)
 
@@ -539,7 +543,7 @@ If `session.json` exists with state ≠ DONE → Ask user: "Resume from last che
 - [ ] Completion trigger identified?
 - [ ] Key findings have file:line references?
 - [ ] Checkpoints saved if research was extensive?
-- [ ] Tasks marked complete via `TaskUpdate`?
+- [ ] Tasks marked complete via `TaskUpdate` (or `TodoWrite`)?
 
 **IF ALL checked → PROCEED to Phase 5 (OUTPUT)**
 **IF ANY unchecked → Complete missing items first**
@@ -556,7 +560,7 @@ If `session.json` exists with state ≠ DONE → Ask user: "Resume from last che
 
 - [ ] Completion trigger met? (goal achieved / stuck / user satisfied / scope complete)
 - [ ] Key findings documented with file:line refs?
-- [ ] Tasks updated via `TaskUpdate`?
+- [ ] Tasks updated via `TaskUpdate` (or `TodoWrite`)?
 
 **IF parallel agents were spawned:**
 - [ ] All domain-*.md files read and incorporated?
@@ -627,7 +631,7 @@ You **MUST** end the session by asking ONE of these:
 
 <agent_self_check>
 **After each tool call:** Hints followed? On track?
-**Periodically:** Task progress updated via `TaskUpdate`? User informed of progress?
+**Periodically:** Task progress updated via `TaskUpdate` (or `TodoWrite`)? User informed of progress?
 **If stuck:** STOP and ask user.
 
 **Phase gates:** Server "ok" → Context + prompt stated → Fast-path evaluated → Plan approved → Research (follow hints) → Checkpoint when needed → Output (TL;DR + refs + question)
