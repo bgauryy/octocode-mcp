@@ -151,7 +151,11 @@ async function viewGitHubRepositoryStructureAPIInternal(
                   repo
                 ),
                 status: apiError.status,
-                triedBranches: [branch, defaultBranch, ...commonBranches].filter((b): b is string => b !== undefined),
+                triedBranches: [
+                  branch,
+                  defaultBranch,
+                  ...commonBranches,
+                ].filter((b): b is string => b !== undefined),
                 defaultBranch,
               };
             }

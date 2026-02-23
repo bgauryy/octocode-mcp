@@ -87,7 +87,10 @@ describe('lspFindReferences hints - branch coverage', () => {
     });
 
     it('should return empty for unknown error type', () => {
-      const result = hints.error!({ errorType: 'other' } as Record<string, unknown> as HintContext);
+      const result = hints.error!({ errorType: 'other' } as Record<
+        string,
+        unknown
+      > as HintContext);
       expect(result).toHaveLength(0);
     });
   });

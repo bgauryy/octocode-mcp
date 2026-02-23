@@ -1766,7 +1766,9 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect((result.structuredOutput as string | undefined)?.length).toBeLessThanOrEqual(500);
+      expect(
+        (result.structuredOutput as string | undefined)?.length
+      ).toBeLessThanOrEqual(500);
       expect(result.pagination?.totalChars).toBeGreaterThan(500);
       expect(result.pagination?.hasMore).toBe(true);
     });
@@ -1940,7 +1942,9 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect((result.structuredOutput as string | undefined)?.length).toBeLessThanOrEqual(10000);
+      expect(
+        (result.structuredOutput as string | undefined)?.length
+      ).toBeLessThanOrEqual(10000);
       // hasMore is only set when there's actually more content
       if (result.pagination) {
         expect(typeof result.pagination.hasMore).toBe('boolean');
