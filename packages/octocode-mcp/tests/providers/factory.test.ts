@@ -51,6 +51,19 @@ vi.mock('../../src/providers/gitlab/GitLabProvider.js', () => ({
   })),
 }));
 
+vi.mock('../../src/providers/bitbucket/BitbucketProvider.js', () => ({
+  BitbucketProvider: vi.fn().mockImplementation((config?: ProviderConfig) => ({
+    type: 'bitbucket' as ProviderType,
+    config,
+    searchCode: vi.fn(),
+    getFileContent: vi.fn(),
+    searchRepos: vi.fn(),
+    searchPullRequests: vi.fn(),
+    getRepoStructure: vi.fn(),
+    resolveDefaultBranch: vi.fn(),
+  })),
+}));
+
 // Import the module under test after mocks are set up
 import {
   getProvider,
@@ -60,7 +73,6 @@ import {
   clearProviderCache,
   clearProviderInstance,
   initializeProviders,
-  extractProviderFromQuery,
   DEFAULT_PROVIDER,
 } from '../../src/providers/factory.js';
 
@@ -164,6 +176,10 @@ function createMockProviderClass(type: ProviderType) {
           },
         },
       };
+    }
+
+    async resolveDefaultBranch(_projectId: string): Promise<string> {
+      return 'main';
     }
   };
 }
@@ -525,6 +541,12 @@ describe('Provider Factory', () => {
       expect(isProviderRegistered('gitlab')).toBe(true);
     });
 
+    it('should initialize and register Bitbucket provider', async () => {
+      await initializeProviders();
+
+      expect(isProviderRegistered('bitbucket')).toBe(true);
+    });
+
     it('should handle GitHub provider initialization failure', async () => {
       // Mock the import to fail
       vi.doMock('../../src/providers/github/GitHubProvider.js', () => {
@@ -541,40 +563,6 @@ describe('Provider Factory', () => {
       // GitLab is optional, so failures should be warnings
       // This test documents the expected behavior
       expect(consoleWarnSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('extractProviderFromQuery', () => {
-    it('should return provider from query when specified', () => {
-      const query = { provider: 'gitlab' as ProviderType };
-
-      const result = extractProviderFromQuery(query);
-
-      expect(result).toBe('gitlab');
-    });
-
-    it('should return default provider when query has no provider', () => {
-      const query = {};
-
-      const result = extractProviderFromQuery(query);
-
-      expect(result).toBe('github');
-    });
-
-    it('should return default provider for undefined provider field', () => {
-      const query = { provider: undefined };
-
-      const result = extractProviderFromQuery(query);
-
-      expect(result).toBe('github');
-    });
-
-    it('should return github for github provider', () => {
-      const query = { provider: 'github' as ProviderType };
-
-      const result = extractProviderFromQuery(query);
-
-      expect(result).toBe('github');
     });
   });
 

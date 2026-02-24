@@ -8,11 +8,14 @@ import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { shouldIgnoreFile, shouldIgnoreDir } from '../../utils/file/filters.js';
-import { handleCatchError, createSuccessResult } from '../utils.js';
+import {
+  handleCatchError,
+  handleProviderError,
+  createSuccessResult,
+} from '../utils.js';
 import { getProvider } from '../../providers/factory.js';
 import { getActiveProviderConfig } from '../../serverConfig.js';
 import { isProviderSuccess } from '../../providers/types.js';
-import { resolveDefaultBranch } from '../../github/client.js';
 
 function filterStructure(
   structure: Record<string, DirectoryEntry>
@@ -74,9 +77,9 @@ export async function exploreMultipleRepositoryStructures(
           authInfo,
         });
 
+        const projectId = `${query.owner}/${query.repo}`;
         const resolvedBranch =
-          query.branch ??
-          (await resolveDefaultBranch(query.owner, query.repo, authInfo));
+          query.branch ?? (await provider.resolveDefaultBranch(projectId));
 
         // Convert query to provider format
         const providerQuery = {
@@ -102,10 +105,7 @@ export async function exploreMultipleRepositoryStructures(
         if (!isProviderSuccess(apiResult)) {
           return createEmptyStructureResult(
             query,
-            handleCatchError(
-              new Error(apiResult.error || 'Provider error'),
-              query
-            )!
+            handleProviderError(apiResult, query)
           );
         }
 

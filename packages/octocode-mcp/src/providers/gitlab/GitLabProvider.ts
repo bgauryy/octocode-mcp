@@ -30,6 +30,8 @@ import * as gitlabStructure from './gitlabStructure.js';
 
 import { handleGitLabAPIError } from '../../gitlab/errors.js';
 import type { GitLabAPIError } from '../../gitlab/types.js';
+import { getGitlab } from '../../gitlab/client.js';
+import { logRateLimit } from '../../session.js';
 
 /**
  * GitLab Provider implementation.
@@ -38,9 +40,10 @@ import type { GitLabAPIError } from '../../gitlab/types.js';
  */
 export class GitLabProvider implements ICodeHostProvider {
   readonly type = 'gitlab' as const;
+  private config?: ProviderConfig;
 
-  constructor(_config?: ProviderConfig) {
-    // Config may be used in the future for token/host customization
+  constructor(config?: ProviderConfig) {
+    this.config = config;
   }
 
   // ============================================================================
@@ -130,6 +133,27 @@ export class GitLabProvider implements ICodeHostProvider {
   }
 
   // ============================================================================
+  // DEFAULT BRANCH RESOLUTION
+  // ============================================================================
+
+  async resolveDefaultBranch(projectId: string): Promise<string> {
+    try {
+      const gitlab = await getGitlab(
+        this.config?.baseUrl || this.config?.token
+          ? { host: this.config.baseUrl, token: this.config.token }
+          : undefined
+      );
+      const parsedId = this.parseProjectId(projectId);
+      const project = (await gitlab.Projects.show(
+        parsedId
+      )) as unknown as Record<string, unknown>;
+      return String(project.default_branch || 'main');
+    } catch {
+      return 'main';
+    }
+  }
+
+  // ============================================================================
   // HELPER METHODS
   // ============================================================================
 
@@ -207,13 +231,24 @@ export class GitLabProvider implements ICodeHostProvider {
    */
   private handleError(error: unknown): ProviderResponse<never> {
     const apiError = handleGitLabAPIError(error);
+    const rateLimit = this.extractRateLimit(apiError);
+
+    if (rateLimit) {
+      void logRateLimit({
+        limit_type: 'primary',
+        retry_after_seconds: rateLimit.retryAfter,
+        rate_limit_remaining: rateLimit.remaining,
+        rate_limit_reset_ms: rateLimit.reset * 1000,
+        provider: 'gitlab',
+      });
+    }
 
     return {
       error: apiError.error,
       status: apiError.status || 500,
       provider: 'gitlab',
       hints: apiError.hints,
-      rateLimit: this.extractRateLimit(apiError),
+      rateLimit,
     };
   }
 

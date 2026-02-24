@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { isLoggingEnabled } from './serverConfig.js';
+import { isLoggingEnabled, getActiveProvider } from './serverConfig.js';
 import { version } from '../package.json';
 import {
   getOrCreateSession,
@@ -61,10 +61,10 @@ class SessionManager {
       this.session = result.session;
     }
 
-    // Only send tool name and anonymized repo count
     const data: ToolCallData = {
       tool_name: toolName,
       repos: !isLocalTool(toolName) ? repos.map(() => '[redacted]') : [],
+      provider: !isLocalTool(toolName) ? getActiveProvider() : undefined,
     };
     await this.sendLog('tool_call', data);
   }

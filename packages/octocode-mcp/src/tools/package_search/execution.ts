@@ -43,8 +43,10 @@ function parseRepoInfo(repoUrl: string | null | undefined): {
   owner?: string;
   repo?: string;
 } {
-  if (!repoUrl || !repoUrl.includes('github.com')) return {};
-  const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+  if (!repoUrl) return {};
+  const match = repoUrl.match(
+    /(?:github\.com|gitlab\.com|bitbucket\.org)\/([^/]+)\/([^/]+)/
+  );
   if (match && match[1] && match[2]) {
     const owner = match[1];
     const repoName = match[2];
@@ -146,11 +148,13 @@ function generateSuccessHints(
     hints.push(`DEPRECATED: ${name} - ${msg}`);
   }
 
-  if (repo?.includes('github.com')) {
-    const match = repo.match(/github\.com\/([^/]+)\/([^/]+)/);
-    if (match && match[1] && match[2]) {
-      const owner = match[1];
-      const repoName = match[2];
+  if (repo) {
+    const repoMatch = repo.match(
+      /(?:github\.com|gitlab\.com|bitbucket\.org)\/([^/]+)\/([^/]+)/
+    );
+    if (repoMatch && repoMatch[1] && repoMatch[2]) {
+      const owner = repoMatch[1];
+      const repoName = repoMatch[2];
       const cleanRepo = repoName.replace(/\.git$/, '').replace(/\/$/, '');
       hints.push(
         `Explore: githubViewRepoStructure(owner="${owner}", repo="${cleanRepo}")`

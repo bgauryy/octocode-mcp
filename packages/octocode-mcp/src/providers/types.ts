@@ -56,7 +56,7 @@ import type {
  * Supported code hosting providers.
  * Default is 'github' .
  */
-export type ProviderType = 'github' | 'gitlab';
+export type ProviderType = 'github' | 'gitlab' | 'bitbucket';
 
 /**
  * Configuration for provider initialization.
@@ -128,6 +128,15 @@ export interface ICodeHostProvider {
   getRepoStructure(
     query: RepoStructureQuery
   ): Promise<ProviderResponse<RepoStructureResult>>;
+
+  /**
+   * Resolve the default branch for a repository.
+   * Each provider uses its own API to determine the default branch.
+   *
+   * @param projectId - Provider-specific project identifier (e.g., 'owner/repo')
+   * @returns Default branch name (e.g., 'main', 'master')
+   */
+  resolveDefaultBranch(projectId: string): Promise<string>;
 }
 
 // ============================================================================

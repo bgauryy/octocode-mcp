@@ -134,5 +134,8 @@
     "test:watch": "vitest --watch",
     "typecheck": "tsc --noEmit --skipLibCheck"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@coderabbitai/bitbucket": "^1.1.4"
+  }
 }

@@ -8,6 +8,7 @@ import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import {
   handleCatchError,
+  handleProviderError,
   createSuccessResult,
   createErrorResult,
 } from '../utils.js';
@@ -121,10 +122,7 @@ export async function searchMultipleGitHubPullRequests(
         const apiResult = await provider.searchPullRequests(providerQuery);
 
         if (!isProviderSuccess(apiResult)) {
-          return handleCatchError(
-            new Error(apiResult.error || 'Provider error'),
-            query
-          );
+          return handleProviderError(apiResult, query);
         }
 
         // Transform provider response to tool result format

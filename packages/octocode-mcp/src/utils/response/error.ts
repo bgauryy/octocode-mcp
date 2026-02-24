@@ -51,12 +51,12 @@ interface CreateErrorResultOptions {
 }
 
 /**
- * Extract hints from GitHub API errors
+ * Extract hints from provider API errors (works for GitHub, GitLab, Bitbucket).
  */
-function extractGitHubApiHints(apiError: GitHubAPIError): string[] {
+function extractProviderApiHints(apiError: GitHubAPIError): string[] {
   const hints: string[] = [];
 
-  hints.push(`GitHub Octokit API Error: ${apiError.error}`);
+  hints.push(`API Error: ${apiError.error}`);
 
   if (apiError.scopesSuggestion) {
     hints.push(apiError.scopesSuggestion);
@@ -66,10 +66,13 @@ function extractGitHubApiHints(apiError: GitHubAPIError): string[] {
     apiError.rateLimitRemaining !== undefined &&
     apiError.rateLimitReset !== undefined
   ) {
-    const resetDate = new Date(apiError.rateLimitReset);
-    hints.push(
-      `Rate limit: ${apiError.rateLimitRemaining} remaining, resets at ${resetDate.toLocaleTimeString()}`
-    );
+    const resetMs = apiError.rateLimitReset;
+    if (!isNaN(resetMs)) {
+      const resetDate = new Date(resetMs);
+      hints.push(
+        `Rate limit: ${apiError.rateLimitRemaining} remaining, resets at ${resetDate.toISOString()}`
+      );
+    }
   }
 
   if (apiError.retryAfter !== undefined) {
@@ -135,7 +138,7 @@ export function createErrorResult(
   const hints: string[] = [];
 
   if (hintSourceError) {
-    hints.push(...extractGitHubApiHints(hintSourceError));
+    hints.push(...extractProviderApiHints(hintSourceError));
   }
 
   // Handle different error types
@@ -144,7 +147,7 @@ export function createErrorResult(
     result.error = error;
     // Only extract hints from error if no separate hint source provided
     if (!hintSourceError) {
-      hints.push(...extractGitHubApiHints(error));
+      hints.push(...extractProviderApiHints(error));
     }
   } else if (isToolError(error)) {
     // Local ToolError with error code

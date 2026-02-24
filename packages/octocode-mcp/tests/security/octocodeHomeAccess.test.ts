@@ -125,6 +125,7 @@ describe('octocode home directory access', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: false,
           enableClone: false,
@@ -154,6 +155,7 @@ describe('octocode home directory access', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: true,
           enableClone: false,
@@ -183,6 +185,7 @@ describe('octocode home directory access', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: false,
           enableClone: true,
@@ -212,6 +215,7 @@ describe('octocode home directory access', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: true,
           enableClone: true,

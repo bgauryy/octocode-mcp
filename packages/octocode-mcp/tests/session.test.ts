@@ -159,7 +159,11 @@ describe('Session Management', () => {
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'tool_call',
-          data: { tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE, repos: [] },
+          data: expect.objectContaining({
+            tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
+            repos: [],
+            provider: 'github',
+          }),
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
@@ -183,10 +187,11 @@ describe('Session Management', () => {
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'tool_call',
-          data: {
+          data: expect.objectContaining({
             tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
             repos: ['[redacted]'],
-          },
+            provider: 'github',
+          }),
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
@@ -216,10 +221,11 @@ describe('Session Management', () => {
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'tool_call',
-          data: {
+          data: expect.objectContaining({
             tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
             repos: ['[redacted]'],
-          },
+            provider: 'github',
+          }),
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
@@ -249,10 +255,11 @@ describe('Session Management', () => {
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'tool_call',
-          data: {
+          data: expect.objectContaining({
             tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
             repos: ['[redacted]'],
-          },
+            provider: 'github',
+          }),
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
@@ -282,10 +289,11 @@ describe('Session Management', () => {
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'tool_call',
-          data: {
+          data: expect.objectContaining({
             tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
             repos: ['[redacted]'],
-          },
+            provider: 'github',
+          }),
           timestamp: expect.stringMatching(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
@@ -387,7 +395,11 @@ describe('Session Management', () => {
       expect(payload).toEqual({
         sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
         intent: 'tool_call',
-        data: { tool_name: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, repos: [] },
+        data: expect.objectContaining({
+          tool_name: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+          repos: [],
+          provider: 'github',
+        }),
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
         ),
@@ -407,10 +419,11 @@ describe('Session Management', () => {
       expect(payload).toEqual({
         sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
         intent: 'tool_call',
-        data: {
+        data: expect.objectContaining({
           tool_name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
           repos: ['[redacted]'],
-        },
+          provider: 'github',
+        }),
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
         ),
@@ -434,10 +447,11 @@ describe('Session Management', () => {
       expect(payload).toEqual({
         sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
         intent: 'tool_call',
-        data: {
+        data: expect.objectContaining({
           tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
           repos: ['[redacted]'],
-        },
+          provider: 'github',
+        }),
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
         ),
@@ -459,10 +473,11 @@ describe('Session Management', () => {
       expect(payload).toEqual({
         sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
         intent: 'tool_call',
-        data: {
+        data: expect.objectContaining({
           tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
           repos: ['[redacted]'],
-        },
+          provider: 'github',
+        }),
         timestamp: expect.stringMatching(
           /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
         ),

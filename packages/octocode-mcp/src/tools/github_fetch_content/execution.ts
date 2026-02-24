@@ -4,7 +4,11 @@ import type { FileContentQuery } from './types.js';
 import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
-import { handleCatchError, createSuccessResult } from '../utils.js';
+import {
+  handleCatchError,
+  handleProviderError,
+  createSuccessResult,
+} from '../utils.js';
 import { getProvider } from '../../providers/factory.js';
 import {
   getActiveProvider,
@@ -134,7 +138,7 @@ async function handleDirectoryFetch(
     return handleCatchError(
       new Error(
         'Directory fetch (type: "directory") is only available with the GitHub provider. ' +
-          'GitLab does not support directory fetch yet. Use file mode (type: "file") instead.'
+          'Use file mode (type: "file") instead.'
       ),
       query,
       'Provider not supported',
@@ -222,10 +226,7 @@ async function handleFileFetch(
   const apiResult = await provider.getFileContent(providerQuery);
 
   if (!isProviderSuccess(apiResult)) {
-    return handleCatchError(
-      new Error(apiResult.error || 'Provider error'),
-      query
-    );
+    return handleProviderError(apiResult, query);
   }
 
   // Transform provider response to tool result format

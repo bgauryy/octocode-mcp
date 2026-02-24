@@ -235,6 +235,30 @@ export interface GitLabConfig {
   isConfigured: boolean;
 }
 
+/**
+ * Bitbucket token source types for tracking where the Bitbucket token came from.
+ */
+export type BitbucketTokenSourceType =
+  | 'env:BITBUCKET_TOKEN'
+  | 'env:BB_TOKEN'
+  | 'none';
+
+/**
+ * Bitbucket configuration for connecting to Bitbucket Cloud instances.
+ */
+export interface BitbucketConfig {
+  /** Bitbucket API base URL (default: https://api.bitbucket.org/2.0) */
+  host: string;
+  /** Bitbucket API token (app password or OAuth token) */
+  token: string | null;
+  /** Bitbucket username (required for Basic auth with app passwords) */
+  username: string | null;
+  /** Source of the Bitbucket token */
+  tokenSource: BitbucketTokenSourceType;
+  /** Whether Bitbucket is configured (has valid token) */
+  isConfigured: boolean;
+}
+
 /** Server configuration and feature flags */
 export interface ServerConfig {
   version: string;
@@ -253,6 +277,8 @@ export interface ServerConfig {
   tokenSource: TokenSourceType;
   /** GitLab configuration (optional) */
   gitlab?: GitLabConfig;
+  /** Bitbucket configuration (optional) */
+  bitbucket?: BitbucketConfig;
 }
 
 // ============================================================================
@@ -277,6 +303,7 @@ export interface SessionData {
 export interface ToolCallData {
   tool_name: string;
   repos: string[];
+  provider?: string;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -289,6 +316,7 @@ export interface PromptCallData {
 /** Error tracking data */
 export interface ErrorData {
   error: string;
+  provider?: string;
 }
 
 /** Rate limit tracking data */
@@ -300,4 +328,5 @@ export interface RateLimitData {
   api_method?: string;
   api_url?: string;
   details?: string;
+  provider?: string;
 }

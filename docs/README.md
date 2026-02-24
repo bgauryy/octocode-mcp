@@ -14,7 +14,7 @@
 
 | Package | Location | Key Docs |
 |---------|----------|----------|
-| **octocode-mcp** | `packages/octocode-mcp/docs/` | GITHUB_GITLAB_TOOLS_REFERENCE, LOCAL_TOOLS_REFERENCE, AUTHENTICATION_SETUP |
+| **octocode-mcp** | `packages/octocode-mcp/docs/` | GITHUB_GITLAB_TOOLS_REFERENCE, LOCAL_TOOLS_REFERENCE, CLONE_AND_LOCAL_TOOLS_WORKFLOW, AUTHENTICATION_SETUP, GITHUB_SETUP_GUIDE, GITLAB_SETUP_GUIDE, BITBUCKET_SETUP_GUIDE |
 | **octocode-cli** | `packages/octocode-cli/docs/` | SKILLS_GUIDE, CLI_REFERENCE, MENU_FLOW, ARCHITECTURE |
 | **octocode-shared** | `packages/octocode-shared/docs/` | API_REFERENCE, CREDENTIALS_ARCHITECTURE, SESSION_PERSISTENCE |
 | **octocode-vscode** | `packages/octocode-vscode/docs/` | [README](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-vscode/docs/README.md), AGENTS.md |

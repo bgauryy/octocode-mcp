@@ -20,6 +20,7 @@ export const OctocodeConfigSchema = z
     version: z.number().int().optional(),
     github: z.record(z.unknown()).optional(),
     gitlab: z.record(z.unknown()).optional(),
+    bitbucket: z.record(z.unknown()).optional(),
     local: z.record(z.unknown()).optional(),
     tools: z.record(z.unknown()).optional(),
     network: z.record(z.unknown()).optional(),

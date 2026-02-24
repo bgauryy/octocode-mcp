@@ -248,6 +248,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@coderabbitai/bitbucket@npm:^1.1.4":
+  version: 1.1.4
+  resolution: "@coderabbitai/bitbucket@npm:1.1.4"
+  dependencies:
+    openapi-fetch: "npm:~0.14.0"
+  bin:
+    coderabbitai-bitbucket: dist/main.js
+  checksum: 10c0/46d47e192ca51463ed024f5751bad0c371154582d2b4356de7ff7ebd2e2a58e58bda5f4321571c06902e2c81f5d90452c9d8d0b9d3d1df2c6b33c829475bc115
+  languageName: node
+  linkType: hard
+
 "@emnapi/core@npm:^1.7.1":
   version: 1.7.1
   resolution: "@emnapi/core@npm:1.7.1"
@@ -6030,6 +6041,7 @@ __metadata:
   resolution: "octocode-mcp@workspace:packages/octocode-mcp"
   dependencies:
     "@anthropic-ai/claude-agent-sdk": "npm:^0.2.6"
+    "@coderabbitai/bitbucket": "npm:^1.1.4"
     "@gitbeaker/rest": "npm:^43.8.0"
     "@modelcontextprotocol/sdk": "npm:^1.25.2"
     "@octokit/core": "npm:^7.0.6"
@@ -6186,6 +6198,22 @@ __metadata:
     powershell-utils: "npm:^0.1.0"
     wsl-utils: "npm:^0.3.0"
   checksum: 10c0/7aeeda4131268ed90f90e7728dda5c46bb0c6205b27a4be3e86ea33593e30dd393423e20e31c00802a8e635ef59becaee33ef9749a8ceb027567cd253e9e7b1e
+  languageName: node
+  linkType: hard
+
+"openapi-fetch@npm:~0.14.0":
+  version: 0.14.1
+  resolution: "openapi-fetch@npm:0.14.1"
+  dependencies:
+    openapi-typescript-helpers: "npm:^0.0.15"
+  checksum: 10c0/e1b5375f0461969ff08e951b6308a115a582cca84ed3e0ecc2e41919d44a86038144a7a0b2e217ddb1bb7160a6779f459a2ca0224ff7634a9e89f19afe2a83db
+  languageName: node
+  linkType: hard
+
+"openapi-typescript-helpers@npm:^0.0.15":
+  version: 0.0.15
+  resolution: "openapi-typescript-helpers@npm:0.0.15"
+  checksum: 10c0/5eb68d487b787e3e31266470b1a310726549dd45a1079655ab18066ab291b0b3c343fdf629991013706a2329b86964f8798d56ef0272b94b931fe6c19abd7a88
   languageName: node
   linkType: hard
 

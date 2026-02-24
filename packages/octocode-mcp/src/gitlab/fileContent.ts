@@ -12,7 +12,11 @@ import type {
   GitLabFileContentQuery,
   GitLabFileContent,
 } from './types.js';
-import { getGitlab } from './client.js';
+import {
+  getGitlab,
+  getCachedDefaultBranch,
+  cacheDefaultBranch,
+} from './client.js';
 import { handleGitLabAPIError, createGitLabError } from './errors.js';
 import { generateCacheKey, withDataCache } from '../utils/http/cache.js';
 
@@ -131,12 +135,18 @@ async function fetchGitLabFileContentAPIInternal(
 export async function getGitLabDefaultBranch(
   projectId: number | string
 ): Promise<string> {
+  const cacheKey = String(projectId);
+  const cached = getCachedDefaultBranch(cacheKey);
+  if (cached) return cached;
+
   try {
     const gitlab = await getGitlab();
     const project = (await gitlab.Projects.show(
       projectId
     )) as unknown as Record<string, unknown>;
-    return String(project.default_branch || 'main');
+    const branch = String(project.default_branch || 'main');
+    cacheDefaultBranch(cacheKey, branch);
+    return branch;
   } catch {
     return 'main';
   }

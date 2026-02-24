@@ -5,6 +5,7 @@ import type {
   ToolInvocationCallback,
 } from '../types.js';
 import type { HintContext } from '../types/metadata.js';
+import type { ProviderResponse } from '../providers/types.js';
 import { getHints } from '../hints/index.js';
 import { logSessionError } from '../session.js';
 import { TOOL_ERRORS } from '../errorCodes.js';
@@ -110,46 +111,31 @@ export function createSuccessResult<T extends Record<string, unknown>>(
   return result as ToolSuccessResult<T> & T;
 }
 
-interface ErrorObject {
-  error: string;
-  type?: 'http' | 'graphql' | 'network' | 'unknown';
-  status?: number;
-  scopesSuggestion?: string;
-  rateLimitRemaining?: number;
-  rateLimitReset?: number;
-  retryAfter?: number;
-  hints?: string[];
-}
-
-function hasError(value: unknown): value is ErrorObject {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'error' in value &&
-    typeof (value as ErrorObject).error === 'string'
-  );
-}
-
-export function handleApiError(
-  apiResult: unknown,
+/**
+ * Handle a failed ProviderResponse by converting it into a ToolErrorResult.
+ * Preserves rate limit data, status, and provider hints that would otherwise
+ * be lost if the error were wrapped in `new Error(string)`.
+ */
+export function handleProviderError(
+  apiResult: ProviderResponse<unknown>,
   query: {
     mainResearchGoal?: string;
     researchGoal?: string;
     reasoning?: string;
   }
-): ToolErrorResult | null {
-  if (!hasError(apiResult)) {
-    return null;
-  }
-
+): ToolErrorResult {
+  // Map ProviderResponse fields to GitHubAPIError shape
+  // (which createErrorResult already knows how to format)
   const apiError: GitHubAPIError = {
-    error: apiResult.error,
-    type: apiResult.type || 'unknown',
+    error: apiResult.error || 'Provider error',
+    type: 'http',
     status: apiResult.status,
-    scopesSuggestion: apiResult.scopesSuggestion,
-    rateLimitRemaining: apiResult.rateLimitRemaining,
-    rateLimitReset: apiResult.rateLimitReset,
-    retryAfter: apiResult.retryAfter,
+    rateLimitRemaining: apiResult.rateLimit?.remaining,
+    // Convert reset from seconds to ms (GitHubAPIError uses ms)
+    rateLimitReset: apiResult.rateLimit?.reset
+      ? apiResult.rateLimit.reset * 1000
+      : undefined,
+    retryAfter: apiResult.rateLimit?.retryAfter,
   };
 
   const externalHints = Array.isArray(apiResult.hints) ? apiResult.hints : [];

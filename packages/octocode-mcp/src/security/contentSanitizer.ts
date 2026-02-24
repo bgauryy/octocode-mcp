@@ -1,4 +1,4 @@
-import { allRegexPatterns } from './regexes.js';
+import { allRegexPatterns } from './regexes/index.js';
 import type { SanitizationResult, ValidationResult } from '../types.js';
 
 export class ContentSanitizer {

@@ -101,6 +101,10 @@ New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.octocode"
     "host": "https://gitlab.com"             // GitLab instance URL
   },
 
+  "bitbucket": {
+    "host": "https://api.bitbucket.org/2.0"  // Bitbucket API endpoint
+  },
+
   "local": {
     "enabled": false,                        // Enable local filesystem + LSP tools
     "enableClone": false,                    // Enable repo cloning (requires enabled=true)
@@ -149,63 +153,19 @@ This means you can set sensible defaults in `.octocoderc` and override specific 
 
 Auth tokens are **environment-variable only** — never store tokens in `.octocoderc`.
 
-### GitHub Token Resolution
+Octocode supports three providers. The active provider is selected based on which tokens are set:
 
-Octocode checks these sources in order and uses the **first one found**:
-
-| Priority | Source | How to set |
-|----------|--------|------------|
-| 1 | `OCTOCODE_TOKEN` env var | Octocode-specific token. Set in MCP client `"env"` block. |
-| 2 | `GH_TOKEN` env var | Compatible with GitHub CLI. Set in MCP client `"env"` block. |
-| 3 | `GITHUB_TOKEN` env var | Compatible with GitHub Actions. Set in MCP client `"env"` block. |
-| 4 | `~/.octocode/credentials.json` | Stored by `npx octocode-cli` during interactive auth (OAuth device flow). |
-| 5 | `gh auth token` | Reads from GitHub CLI if installed and authenticated. |
-
-**Minimum required scopes:** `repo`, `read:user`, `read:org`.
-
-### GitLab Token Resolution
-
-| Priority | Source | How to set |
-|----------|--------|------------|
-| 1 | `GITLAB_TOKEN` env var | GitLab personal access token. Set in MCP client `"env"` block. |
-| 2 | `GL_TOKEN` env var | Fallback GitLab token. Set in MCP client `"env"` block. |
-
-Setting either GitLab token **activates GitLab mode** — Octocode will use GitLab APIs instead of GitHub.
-
-### Example — GitHub Auth
-
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["-y", "octocode-mcp@latest"],
-      "env": {
-        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx"
-      }
-    }
-  }
-}
+```
+GitLab (highest priority) → Bitbucket → GitHub (default)
 ```
 
-### Example — GitLab Auth
+| Provider | Setup Guide | Key Variables |
+|----------|-------------|---------------|
+| **GitHub** | [GitHub Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_SETUP_GUIDE.md) | `GITHUB_TOKEN`, `GH_TOKEN`, `OCTOCODE_TOKEN` |
+| **GitLab** | [GitLab Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITLAB_SETUP_GUIDE.md) | `GITLAB_TOKEN`, `GL_TOKEN`, `GITLAB_HOST` |
+| **Bitbucket** | [Bitbucket Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/BITBUCKET_SETUP_GUIDE.md) | `BITBUCKET_TOKEN`, `BB_TOKEN`, `BITBUCKET_USERNAME` |
 
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["-y", "octocode-mcp@latest"],
-      "env": {
-        "GITLAB_TOKEN": "glpat-xxxxxxxxxxxx",
-        "GITLAB_HOST": "https://gitlab.mycompany.com"
-      }
-    }
-  }
-}
-```
-
-For the full authentication guide, see [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md).
+For full authentication details (token creation, auth modes, troubleshooting), see the [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) overview or the individual provider guides above.
 
 ---
 
@@ -213,37 +173,40 @@ For the full authentication guide, see [Authentication Setup](https://github.com
 
 | # | Env Variable | `.octocoderc` Field | Type | Default | Description |
 |---|---|---|---|---|---|
-| | **GitHub** | | | | |
+| | **Provider API Endpoints** | | | | |
 | 1 | `GITHUB_API_URL` | `github.apiUrl` | string | `https://api.github.com` | GitHub API endpoint. Change for GitHub Enterprise. |
-| | **GitLab** | | | | |
-| 2 | `GITLAB_HOST` | `gitlab.host` | string | `https://gitlab.com` | GitLab instance URL. Change for self-hosted GitLab. Use env var for reliability (see note below). |
+| 2 | `GITLAB_HOST` | `gitlab.host` | string | `https://gitlab.com` | GitLab instance URL. Use env var for reliability. |
+| 3 | `BITBUCKET_HOST` | `bitbucket.host` | string | `https://api.bitbucket.org/2.0` | Bitbucket Cloud API endpoint. |
 | | **Local Tools** | | | | |
-| 3 | `ENABLE_LOCAL` | `local.enabled` | boolean | `false` | Enable local filesystem + LSP tools. **Off by default — you must opt in.** |
-| 4 | `ENABLE_CLONE` | `local.enableClone` | boolean | `false` | Enable repo cloning (`githubCloneRepo`) and directory fetch. **Requires `ENABLE_LOCAL=true`.** |
-| 5 | `WORKSPACE_ROOT` | `local.workspaceRoot` | string | `process.cwd()` | Root directory for local tool operations. |
-| 6 | `ALLOWED_PATHS` | `local.allowedPaths` | list | `[]` (all) | Restrict local tools to these directory paths. Empty = unrestricted. |
+| 4 | `ENABLE_LOCAL` | `local.enabled` | boolean | `false` | Enable local filesystem + LSP tools. **Off by default — you must opt in.** |
+| 5 | `ENABLE_CLONE` | `local.enableClone` | boolean | `false` | Enable repo cloning (`githubCloneRepo`) and directory fetch. **Requires `ENABLE_LOCAL=true`.** |
+| 6 | `WORKSPACE_ROOT` | `local.workspaceRoot` | string | `process.cwd()` | Root directory for local tool operations. |
+| 7 | `ALLOWED_PATHS` | `local.allowedPaths` | list | `[]` (all) | Restrict local tools to these directory paths. Empty = unrestricted. |
 | | **Tool Filtering** | | | | |
-| 7 | `TOOLS_TO_RUN` | `tools.enabled` | list | `null` (all) | **Strict whitelist.** When set, only these tools are available. Overrides #8 and #9. |
-| 8 | `ENABLE_TOOLS` | `tools.enableAdditional` | list | `null` | Add extra tools to the default set. Ignored when #7 is set. |
-| 9 | `DISABLE_TOOLS` | `tools.disabled` | list | `null` | Remove tools from the default set. Ignored when #7 is set. |
-| 10 | `DISABLE_PROMPTS` | `tools.disablePrompts` | boolean | `false` | Disable MCP prompts registration (slash commands / agent instructions). Does not affect tool descriptions. |
+| 8 | `TOOLS_TO_RUN` | `tools.enabled` | list | `null` (all) | **Strict whitelist.** When set, only these tools are available. Overrides #9 and #10. |
+| 9 | `ENABLE_TOOLS` | `tools.enableAdditional` | list | `null` | Add extra tools to the default set. Ignored when #8 is set. |
+| 10 | `DISABLE_TOOLS` | `tools.disabled` | list | `null` | Remove tools from the default set. Ignored when #8 is set. |
+| 11 | `DISABLE_PROMPTS` | `tools.disablePrompts` | boolean | `false` | Disable MCP prompts registration (slash commands / agent instructions). |
 | | **Network** | | | | |
-| 11 | `REQUEST_TIMEOUT` | `network.timeout` | number | `30000` | Request timeout in ms. Range: 5,000–300,000. Values outside range are clamped. |
-| 12 | `MAX_RETRIES` | `network.maxRetries` | number | `3` | Max retry attempts. Range: 0–10. Clamped. **Note:** Currently parsed but not wired to HTTP clients (retry logic uses hardcoded values). Reserved for future use. |
+| 12 | `REQUEST_TIMEOUT` | `network.timeout` | number | `30000` | Request timeout in ms. Range: 5,000–300,000. Values outside range are clamped. |
+| 13 | `MAX_RETRIES` | `network.maxRetries` | number | `3` | Max retry attempts. Range: 0–10. Clamped. |
 | | **Telemetry** | | | | |
-| 13 | `LOG` | `telemetry.logging` | logging | `true` | telemetry. disabled with `false`/`0`   |
+| 14 | `LOG` | `telemetry.logging` | logging | `true` | Telemetry. Disabled with `false`/`0`. |
 | | **LSP** | | | | |
-| 14 | `OCTOCODE_LSP_CONFIG` | `lsp.configPath` | string | `null` | Custom LSP config file path. Auto-detects `.octocode/lsp-servers.json` when unset. Requires `ENABLE_LOCAL=true`. |
+| 15 | `OCTOCODE_LSP_CONFIG` | `lsp.configPath` | string | `null` | Custom LSP config file path. Auto-detects `.octocode/lsp-servers.json` when unset. Requires `ENABLE_LOCAL=true`. |
 | | **Authentication** (env only) | | | | |
-| 15 | `OCTOCODE_TOKEN` | — | string | — | GitHub token (priority 1). |
-| 16 | `GH_TOKEN` | — | string | — | GitHub CLI token (priority 2). |
-| 17 | `GITHUB_TOKEN` | — | string | — | GitHub Actions token (priority 3). |
-| 18 | `GITLAB_TOKEN` | — | string | — | GitLab personal access token (priority 1). Setting this activates GitLab mode. |
-| 19 | `GL_TOKEN` | — | string | — | GitLab token fallback (priority 2). Setting this activates GitLab mode. |
+| 16 | `OCTOCODE_TOKEN` | — | string | — | GitHub token (priority 1). |
+| 17 | `GH_TOKEN` | — | string | — | GitHub CLI token (priority 2). |
+| 18 | `GITHUB_TOKEN` | — | string | — | GitHub Actions token (priority 3). |
+| 19 | `GITLAB_TOKEN` | — | string | — | GitLab personal access token (priority 1). Setting this activates GitLab mode. |
+| 20 | `GL_TOKEN` | — | string | — | GitLab token fallback (priority 2). Setting this activates GitLab mode. |
+| 21 | `BITBUCKET_TOKEN` | — | string | — | Bitbucket app password or OAuth token (priority 1). Setting this activates Bitbucket mode (when no GitLab token is set). |
+| 22 | `BB_TOKEN` | — | string | — | Bitbucket token fallback (priority 2). |
+| 23 | `BITBUCKET_USERNAME` | — | string | — | Bitbucket username. Set for Basic auth (app passwords); omit for Bearer auth (OAuth). |
 | | **Advanced** (env only) | | | | |
-| 20 | `OCTOCODE_BULK_QUERY_TIMEOUT_MS` | — | number | `60000` | Timeout for bulk/multi-query tool calls (ms). |
-| 21 | `OCTOCODE_COMMAND_CHECK_TIMEOUT_MS` | — | number | `5000` | Timeout for checking system command availability (ms). |
-| 22 | `OCTOCODE_CACHE_TTL_MS` | — | number | `86400000` | Cache TTL for cloned repos (ms). Default is 24 hours. Must be a positive integer. |
+| 24 | `OCTOCODE_BULK_QUERY_TIMEOUT_MS` | — | number | `60000` | Timeout for bulk/multi-query tool calls (ms). |
+| 25 | `OCTOCODE_COMMAND_CHECK_TIMEOUT_MS` | — | number | `5000` | Timeout for checking system command availability (ms). |
+| 26 | `OCTOCODE_CACHE_TTL_MS` | — | number | `86400000` | Cache TTL for cloned repos (ms). Default is 24 hours. Must be a positive integer. |
 
 **Type parsing (all values are case-insensitive, whitespace is trimmed):**
 
@@ -257,7 +220,6 @@ For the full authentication guide, see [Authentication Setup](https://github.com
 
 ### Notes
 
-- **GitLab host:** The GitLab client reads `GITLAB_HOST` from environment only. Setting `gitlab.host` in `.octocoderc` is accepted but may not take effect for all operations. Use the env variable.
 - **Tool filtering:** `TOOLS_TO_RUN` is a strict whitelist that overrides both `ENABLE_TOOLS` and `DISABLE_TOOLS`. When `TOOLS_TO_RUN` is not set, start with all tools, remove `DISABLE_TOOLS`, then add `ENABLE_TOOLS`.
 - **Clone:** Requires both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
 - **LSP:** Requires `ENABLE_LOCAL=true`. When `OCTOCODE_LSP_CONFIG` is unset, Octocode checks `<workspace>/.octocode/lsp-servers.json` then `~/.octocode/lsp-servers.json`.
@@ -268,7 +230,7 @@ For the full authentication guide, see [Authentication Setup](https://github.com
 
 ## How to Set Each Option
 
-Every option from the table above (except auth-only and advanced-only) can be set in **two places**. Here is each option shown in both formats.
+Every option (except auth-only and advanced-only) can be set in **two places**.
 
 ### In MCP Client Settings (`mcp.json` / `claude_desktop_config.json`)
 
@@ -283,7 +245,6 @@ All values are strings in the `"env"` block:
       "env": {
         "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx",
         "GITHUB_API_URL": "https://api.github.com",
-        "GITLAB_HOST": "https://gitlab.com",
         "ENABLE_LOCAL": "true",
         "ENABLE_CLONE": "true",
         "WORKSPACE_ROOT": "/Users/me/projects",
@@ -316,6 +277,10 @@ Values use native JSON types (booleans, numbers, arrays — not strings):
 
   "gitlab": {
     "host": "https://gitlab.com"
+  },
+
+  "bitbucket": {
+    "host": "https://api.bitbucket.org/2.0"
   },
 
   "local": {
@@ -431,6 +396,23 @@ Values use native JSON types (booleans, numbers, arrays — not strings):
 }
 ```
 
+### Bitbucket Cloud
+
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["-y", "octocode-mcp@latest"],
+      "env": {
+        "BITBUCKET_TOKEN": "your-app-password",
+        "BITBUCKET_USERNAME": "your-username"
+      }
+    }
+  }
+}
+```
+
 ### Production Hardening
 
 ```json
@@ -506,10 +488,10 @@ The env values override `.octocoderc` where they overlap; `.octocoderc` fills in
 
 | Problem | Solution |
 |---------|----------|
-| Token not found | Set `GITHUB_TOKEN` or `GH_TOKEN` in MCP `"env"`, or run `npx octocode-cli` for interactive auth |
+| Token not found | See your provider's setup guide: [GitHub](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_SETUP_GUIDE.md), [GitLab](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITLAB_SETUP_GUIDE.md), [Bitbucket](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/BITBUCKET_SETUP_GUIDE.md) |
 | Local tools not showing | Set `ENABLE_LOCAL=true` in MCP `"env"` |
 | Clone/directory tools disabled | Set both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true` |
-| GitLab not working | Set `GITLAB_TOKEN` and `GITLAB_HOST` in MCP `"env"` (not `.octocoderc`) |
+| Wrong provider active | Check which tokens are set — GitLab > Bitbucket > GitHub |
 | Timeout errors | Increase `REQUEST_TIMEOUT` (max `300000`) |
 | Tool not available | Check if `TOOLS_TO_RUN` or `DISABLE_TOOLS` is filtering it out |
 | Config file ignored | Env variables always override `.octocoderc` — check your MCP `"env"` block |
@@ -520,6 +502,7 @@ The env values override `.octocoderc` where they overlap; `.octocoderc` fills in
 ```bash
 echo "GITHUB_TOKEN: ${GITHUB_TOKEN:+set}"
 echo "GITLAB_TOKEN: ${GITLAB_TOKEN:+set}"
+echo "BITBUCKET_TOKEN: ${BITBUCKET_TOKEN:+set}"
 echo "ENABLE_LOCAL: ${ENABLE_LOCAL:-not set}"
 echo "LOG: ${LOG:-not set}"
 
@@ -531,7 +514,10 @@ cat ~/.octocode/.octocoderc | python3 -c "import sys,json; json.load(sys.stdin)"
 
 ## See Also
 
-- [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) — GitHub and GitLab auth guide
+- [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) — Provider authentication overview
+- [GitHub Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_SETUP_GUIDE.md) — GitHub auth, Enterprise, clone tools
+- [GitLab Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITLAB_SETUP_GUIDE.md) — GitLab auth, self-hosted, tier limits
+- [Bitbucket Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/BITBUCKET_SETUP_GUIDE.md) — Bitbucket auth, app passwords, OAuth
+- [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) — Remote code research tools
 - [Local & LSP Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) — Local tools (requires `ENABLE_LOCAL=true`)
-- [GitHub & GitLab Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) — Remote code research tools
 - [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) — Node.js, npm, and connection issues

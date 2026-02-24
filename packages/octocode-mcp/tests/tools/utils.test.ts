@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   createSuccessResult,
   createErrorResult,
-  handleApiError,
+  handleProviderError,
   handleCatchError,
   invokeCallbackSafely,
 } from '../../src/tools/utils.js';
@@ -418,141 +418,94 @@ describe('Tools Utils', () => {
     });
   });
 
-  describe('handleApiError', () => {
-    it('should return null for non-error responses', () => {
-      const query = {
-        researchGoal: 'Find files',
-        reasoning: 'Searching',
-      };
-      const apiResult = {
-        data: { items: [] },
-        status: 200,
-      };
-
-      const result = handleApiError(apiResult, query);
-
-      expect(result).toBeNull();
-    });
-
-    it('should return null for null values', () => {
-      const query = { researchGoal: 'Test', reasoning: 'Test' };
-      expect(handleApiError(null, query)).toBeNull();
-    });
-
-    it('should return null for undefined values', () => {
-      const query = { researchGoal: 'Test', reasoning: 'Test' };
-      expect(handleApiError(undefined, query)).toBeNull();
-    });
-
-    it('should return null when error field is not a string', () => {
-      const query = { researchGoal: 'Test', reasoning: 'Test' };
-      expect(handleApiError({ error: 123 }, query)).toBeNull();
-      expect(handleApiError({ error: null }, query)).toBeNull();
-      expect(handleApiError({ error: {} }, query)).toBeNull();
-    });
-
-    it('should return null for objects without error field', () => {
-      const query = { researchGoal: 'Test', reasoning: 'Test' };
-      expect(handleApiError({ status: 200 }, query)).toBeNull();
-      expect(handleApiError({ message: 'OK' }, query)).toBeNull();
-    });
-
-    it('should return null for primitive values', () => {
-      const query = { researchGoal: 'Test', reasoning: 'Test' };
-      expect(handleApiError('string', query)).toBeNull();
-      expect(handleApiError(42, query)).toBeNull();
-      expect(handleApiError(true, query)).toBeNull();
-    });
-
-    it('should return error result for error responses', () => {
+  describe('handleProviderError', () => {
+    it('should return error result for provider error responses', () => {
       const query = {
         researchGoal: 'Find files',
         reasoning: 'Searching',
       };
       const apiResult = {
         error: 'API error',
-        type: 'http' as const,
         status: 500,
+        provider: 'github' as const,
       };
 
-      const result = handleApiError(apiResult, query);
+      const result = handleProviderError(apiResult, query);
 
-      expect(result).not.toBeNull();
-      expect(result?.status).toBe('error');
-      // The error property is the entire GitHubAPIError object
-      expect(result?.error).toEqual({
-        error: 'API error',
-        type: 'http',
-        status: 500,
-        rateLimitRemaining: undefined,
-        rateLimitReset: undefined,
-        retryAfter: undefined,
-        scopesSuggestion: undefined,
-      });
+      expect(result.status).toBe('error');
+      // The error property is a GitHubAPIError object
+      expect(result.error).toEqual(
+        expect.objectContaining({
+          error: 'API error',
+          type: 'http',
+          status: 500,
+        })
+      );
     });
 
-    it('should propagate hints from API error response', () => {
+    it('should propagate hints from provider error response', () => {
       const query = {
         researchGoal: 'Find files',
         reasoning: 'Searching',
       };
       const apiResult = {
         error: 'Authentication failed',
-        type: 'http' as const,
         status: 401,
+        provider: 'github' as const,
         hints: ['Check your GitHub token', 'Verify token permissions'],
       };
 
-      const result = handleApiError(apiResult, query);
+      const result = handleProviderError(apiResult, query);
 
-      expect(result).not.toBeNull();
-      expect(result?.status).toBe('error');
-      expect(result?.hints).toBeDefined();
-      expect(result?.hints).toContain('Check your GitHub token');
-      expect(result?.hints).toContain('Verify token permissions');
+      expect(result.status).toBe('error');
+      expect(result.hints).toBeDefined();
+      expect(result.hints).toContain('Check your GitHub token');
+      expect(result.hints).toContain('Verify token permissions');
     });
 
-    it('should handle non-array hints in API result without crashing', () => {
+    it('should handle non-array hints without crashing', () => {
       const query = {
         researchGoal: 'Find files',
         reasoning: 'Searching',
       };
       const apiResult = {
         error: 'Bad response',
-        type: 'http' as const,
         status: 500,
+        provider: 'github' as const,
         hints: 'not-an-array' as unknown as string[],
       };
 
-      const result = handleApiError(apiResult, query);
+      const result = handleProviderError(apiResult, query);
 
-      expect(result).not.toBeNull();
-      expect(result?.status).toBe('error');
-      // Should not crash and should not include the non-array hints
-      expect(!result?.hints || Array.isArray(result?.hints)).toBe(true);
+      expect(result.status).toBe('error');
+      expect(!result.hints || Array.isArray(result.hints)).toBe(true);
     });
 
-    it('should combine API hints with extracted error hints', () => {
+    it('should preserve rate limit data from provider response', () => {
       const query = {
         researchGoal: 'Find files',
         reasoning: 'Searching',
       };
+      const resetSeconds = Math.floor(Date.now() / 1000) + 3600;
       const apiResult = {
         error: 'Rate limit exceeded',
-        type: 'http' as const,
         status: 429,
-        rateLimitRemaining: 0,
-        rateLimitReset: Date.now() + 3600000,
+        provider: 'github' as const,
         hints: ['Custom API hint'],
+        rateLimit: {
+          remaining: 0,
+          reset: resetSeconds,
+          retryAfter: 60,
+        },
       };
 
-      const result = handleApiError(apiResult, query);
+      const result = handleProviderError(apiResult, query);
 
-      expect(result).not.toBeNull();
-      expect(result?.status).toBe('error');
-      expect(result?.hints).toBeDefined();
-      expect(result?.hints).toContain('Custom API hint');
-      expect(result?.hints!.some(h => h.includes('Rate limit'))).toBe(true);
+      expect(result.status).toBe('error');
+      expect(result.hints).toBeDefined();
+      expect(result.hints).toContain('Custom API hint');
+      expect(result.hints!.some(h => h.includes('Rate limit'))).toBe(true);
+      expect(result.hints!.some(h => h.includes('Retry after 60'))).toBe(true);
     });
 
     it('should NOT produce duplicate hints for rate limit errors', () => {
@@ -560,26 +513,26 @@ describe('Tools Utils', () => {
         researchGoal: 'Find files',
         reasoning: 'Searching',
       };
+      const resetSeconds = Math.floor(Date.now() / 1000) + 3600;
       const apiResult = {
         error: 'Rate limit exceeded',
-        type: 'http' as const,
         status: 429,
-        rateLimitRemaining: 0,
-        rateLimitReset: Date.now() + 3600000,
+        provider: 'github' as const,
+        rateLimit: {
+          remaining: 0,
+          reset: resetSeconds,
+        },
       };
 
-      const result = handleApiError(apiResult, query);
+      const result = handleProviderError(apiResult, query);
 
-      expect(result).not.toBeNull();
-      expect(result?.hints).toBeDefined();
+      expect(result.hints).toBeDefined();
 
-      // Count how many times each EXACT hint appears (looking for true duplicates)
       const hintCounts = new Map<string, number>();
-      for (const hint of result?.hints || []) {
+      for (const hint of result.hints || []) {
         hintCounts.set(hint, (hintCounts.get(hint) || 0) + 1);
       }
 
-      // No hint should appear more than once
       for (const [hint, count] of hintCounts) {
         expect(count).toBe(1);
         if (count > 1) {
@@ -589,12 +542,9 @@ describe('Tools Utils', () => {
         }
       }
 
-      // Verify expected hints are present
+      expect(result.hints!.some(h => h.includes('API Error'))).toBe(true);
       expect(
-        result?.hints!.some(h => h.includes('GitHub Octokit API Error'))
-      ).toBe(true);
-      expect(
-        result?.hints!.some(
+        result.hints!.some(
           h => h.startsWith('Rate limit:') && h.includes('remaining')
         )
       ).toBe(true);
@@ -607,23 +557,24 @@ describe('Tools Utils', () => {
       };
       const apiResult = {
         error: 'Too many requests',
-        type: 'http' as const,
         status: 429,
-        retryAfter: 60,
+        provider: 'github' as const,
+        rateLimit: {
+          remaining: 0,
+          reset: Math.floor(Date.now() / 1000) + 3600,
+          retryAfter: 60,
+        },
       };
 
-      const result = handleApiError(apiResult, query);
+      const result = handleProviderError(apiResult, query);
 
-      expect(result).not.toBeNull();
-      expect(result?.hints).toBeDefined();
+      expect(result.hints).toBeDefined();
 
-      // Count how many times each EXACT hint appears (looking for true duplicates)
       const hintCounts = new Map<string, number>();
-      for (const hint of result?.hints || []) {
+      for (const hint of result.hints || []) {
         hintCounts.set(hint, (hintCounts.get(hint) || 0) + 1);
       }
 
-      // No hint should appear more than once
       for (const [hint, count] of hintCounts) {
         expect(count).toBe(1);
         if (count > 1) {
@@ -633,47 +584,26 @@ describe('Tools Utils', () => {
         }
       }
 
-      // Verify retry hint is present
-      expect(result?.hints!.some(h => h.includes('Retry after 60'))).toBe(true);
+      expect(result.hints!.some(h => h.includes('Retry after 60'))).toBe(true);
     });
 
-    it('should NOT produce duplicate hints for scopes suggestion', () => {
+    it('should use default error message when error is undefined', () => {
       const query = {
         researchGoal: 'Find files',
         reasoning: 'Searching',
       };
       const apiResult = {
-        error: 'Insufficient permissions',
-        type: 'http' as const,
-        status: 403,
-        scopesSuggestion: 'Required scopes: repo, read:org',
+        error: undefined as unknown as string,
+        status: 500,
+        provider: 'github' as const,
       };
 
-      const result = handleApiError(apiResult, query);
+      const result = handleProviderError(apiResult, query);
 
-      expect(result).not.toBeNull();
-      expect(result?.hints).toBeDefined();
-
-      // Count how many times each EXACT hint appears (looking for true duplicates)
-      const hintCounts = new Map<string, number>();
-      for (const hint of result?.hints || []) {
-        hintCounts.set(hint, (hintCounts.get(hint) || 0) + 1);
-      }
-
-      // No hint should appear more than once
-      for (const [hint, count] of hintCounts) {
-        expect(count).toBe(1);
-        if (count > 1) {
-          throw new Error(
-            `Duplicate hint found: "${hint}" appears ${count} times`
-          );
-        }
-      }
-
-      // Verify scopes hint is present
-      expect(
-        result?.hints!.some(h => h.includes('Required scopes: repo, read:org'))
-      ).toBe(true);
+      expect(result.status).toBe('error');
+      expect(result.error).toEqual(
+        expect.objectContaining({ error: 'Provider error' })
+      );
     });
   });
 

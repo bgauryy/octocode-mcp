@@ -5,6 +5,7 @@
 
 import { getMetadataDynamicHints } from '../../hints/static.js';
 import type { HintContext, ToolHintGenerators } from '../../types/metadata.js';
+import { getActiveProvider } from '../../serverConfig.js';
 
 export const TOOL_NAME = 'githubSearchCode';
 
@@ -49,7 +50,13 @@ export const hints: ToolHintGenerators = {
 
     // Authentication hints
     if (ctx.status === 401) {
-      hints.push('Check GITHUB_TOKEN is valid and not expired.');
+      const provider = getActiveProvider();
+      const tokenVarMap: Record<string, string> = {
+        gitlab: 'GITLAB_TOKEN',
+        bitbucket: 'BITBUCKET_TOKEN',
+      };
+      const tokenVar = tokenVarMap[provider] ?? 'GITHUB_TOKEN';
+      hints.push(`Check ${tokenVar} is valid and not expired.`);
     }
 
     // Permission hints

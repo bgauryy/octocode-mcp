@@ -6,6 +6,7 @@ import type {
   OctocodeConfig,
   RequiredGitHubConfig,
   RequiredGitLabConfig,
+  RequiredBitbucketConfig,
   RequiredLocalConfig,
   RequiredToolsConfig,
   RequiredNetworkConfig,
@@ -15,6 +16,7 @@ import type {
 import {
   DEFAULT_GITHUB_CONFIG,
   DEFAULT_GITLAB_CONFIG,
+  DEFAULT_BITBUCKET_CONFIG,
   DEFAULT_LOCAL_CONFIG,
   DEFAULT_TOOLS_CONFIG,
   DEFAULT_NETWORK_CONFIG,
@@ -129,6 +131,19 @@ export function resolveGitLab(
 
   return {
     host: envHost || fileConfig?.host || DEFAULT_GITLAB_CONFIG.host,
+  };
+}
+
+/**
+ * Resolve Bitbucket configuration.
+ */
+export function resolveBitbucket(
+  fileConfig?: OctocodeConfig['bitbucket']
+): RequiredBitbucketConfig {
+  const envHost = process.env.BITBUCKET_HOST?.trim();
+
+  return {
+    host: envHost || fileConfig?.host || DEFAULT_BITBUCKET_CONFIG.host,
   };
 }
 

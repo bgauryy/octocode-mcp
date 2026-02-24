@@ -140,6 +140,10 @@ function createMockProviderClass(type: ProviderType) {
         },
       };
     }
+
+    async resolveDefaultBranch(_projectId: string): Promise<string> {
+      return 'main';
+    }
   };
 }
 

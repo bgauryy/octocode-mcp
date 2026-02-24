@@ -1,146 +1,142 @@
 # Authentication Setup
 
-> How to authenticate Octocode MCP with GitHub or GitLab.
+> How to authenticate Octocode MCP with GitHub, GitLab, or Bitbucket.
 
 ## Overview
 
-Octocode MCP needs a token to access code repositories. You can authenticate with **GitHub** or **GitLab** (one at a time).
+Octocode MCP needs a token to access code repositories. You can authenticate with **GitHub**, **GitLab**, or **Bitbucket** (one provider active at a time).
 
-### Token Priority
+### Provider Priority
 
-When multiple tokens are available, Octocode uses the **highest-priority** one:
+When multiple provider tokens are set, Octocode selects the active provider in this order:
 
-| Priority | Token | Source |
-|----------|-------|--------|
-| 1 (highest) | `OCTOCODE_TOKEN` | Octocode CLI login (stored in keychain) |
-| 2 | `GH_TOKEN` | GitHub CLI (`gh auth login`) |
-| 3 | `GITHUB_TOKEN` | Manual environment variable |
-| Fallback | `~/.octocode/credentials.json` | Cached credentials file |
-| Fallback | `gh auth token` | GitHub CLI token command |
+```
+GitLab (highest) → Bitbucket → GitHub (default)
+```
 
-For **GitLab**, tokens are checked in this order: `GITLAB_TOKEN` → `GL_TOKEN`.
+- If `GITLAB_TOKEN` is set → **GitLab** is active (regardless of other tokens).
+- If `BITBUCKET_TOKEN` is set (and no GitLab token) → **Bitbucket** is active.
+- Otherwise → **GitHub** is the default.
 
-> Setting any GitLab token automatically switches Octocode to **GitLab mode**.
+To switch providers, change which token environment variables are set and restart the MCP server.
 
 ---
 
-## GitHub Authentication
+## Provider Setup Guides
 
-Choose **one** of the following methods (listed from easiest to most manual):
+Each provider has a dedicated setup guide with authentication methods, configuration, available tools, and troubleshooting:
 
-### Option 1: Octocode CLI (Recommended)
+| Provider | Guide | Quick Auth |
+|----------|-------|------------|
+| **GitHub** | [GitHub Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_SETUP_GUIDE.md) | `npx octocode-cli` or set `GITHUB_TOKEN` |
+| **GitLab** | [GitLab Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITLAB_SETUP_GUIDE.md) | Set `GITLAB_TOKEN` (+ `GITLAB_HOST` for self-hosted) |
+| **Bitbucket** | [Bitbucket Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/BITBUCKET_SETUP_GUIDE.md) | Set `BITBUCKET_TOKEN` (+ `BITBUCKET_USERNAME` for app passwords) |
 
-The easiest way is to use our installer, which handles the secure OAuth login for you.
+---
 
-```bash
-# Run the installer
-npx octocode-cli
+## Token Summary
 
-# Select "Login to GitHub" from the menu
-```
-This will open a browser window to authorize Octocode safely. The token is stored securely in your system keychain.
+### GitHub
 
-### Option 2: GitHub CLI (`gh`)
+| Priority | Source | Notes |
+|----------|--------|-------|
+| 1 | `OCTOCODE_TOKEN` | Octocode-specific token |
+| 2 | `GH_TOKEN` | GitHub CLI compatible |
+| 3 | `GITHUB_TOKEN` | GitHub Actions compatible |
+| 4 | `~/.octocode/credentials.json` | Stored by `npx octocode-cli` |
+| 5 | `gh auth token` | GitHub CLI fallback |
 
-If you already use the [GitHub CLI](https://cli.github.com/), Octocode will automatically use your existing credentials!
+### GitLab
 
-```bash
-# If you are already logged in here:
-gh auth login
-```
-**That's it!** Octocode will automatically detect your `gh` credentials.
+| Priority | Source | Notes |
+|----------|--------|-------|
+| 1 | `GITLAB_TOKEN` | Primary GitLab token |
+| 2 | `GL_TOKEN` | CI/CD fallback |
 
-### Option 3: Manual Token (Environment Variable)
+### Bitbucket
 
-You can manually provide a Personal Access Token (PAT). This is great for CI/CD or if you prefer manual configuration.
+| Priority | Source | Notes |
+|----------|--------|-------|
+| 1 | `BITBUCKET_TOKEN` | App password or OAuth token |
+| 2 | `BB_TOKEN` | CI/CD fallback |
 
-1. Create a [GitHub Personal Access Token](https://github.com/settings/tokens) (Classic) with `repo` scopes.
-2. Set the `GITHUB_TOKEN` variable in **one** of these places:
+> **Important:** Auth tokens are **environment-variable only** — never store tokens in `.octocoderc` or commit them to version control.
 
-**A. Global Environment (Shell)**
-Add to your shell configuration (e.g., `~/.zshrc`):
-```bash
-export GITHUB_TOKEN="ghp_your_token_here"
-```
+---
 
-**B. MCP Client Configuration (e.g., Cursor/Claude)**
-Add to your MCP settings file (usually `claude_desktop_config.json` or similar):
+## Quick Examples
+
+### GitHub (simplest)
+
 ```json
 {
   "mcpServers": {
     "octocode": {
       "command": "npx",
-      "args": ["octocode-mcp"],
+      "args": ["-y", "octocode-mcp@latest"],
       "env": {
-        "GITHUB_TOKEN": "ghp_your_token_here"
+        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx"
       }
     }
   }
 }
 ```
 
----
+### GitLab (self-hosted)
 
-## GitLab Authentication
-
-To use GitLab, set a personal access token as an environment variable.
-
-### Personal Access Token
-
-1. Create a [GitLab Personal Access Token](https://gitlab.com/-/profile/personal_access_tokens) with `api` scope.
-2. Set the `GITLAB_TOKEN` variable in **one** of these places:
-
-**A. Global Environment (Shell)**
-```bash
-export GITLAB_TOKEN="glpat_your_token_here"
-```
-
-**B. MCP Client Configuration**
 ```json
 {
   "mcpServers": {
     "octocode": {
       "command": "npx",
-      "args": ["octocode-mcp"],
+      "args": ["-y", "octocode-mcp@latest"],
       "env": {
-        "GITLAB_TOKEN": "glpat_your_token_here",
-        "GITLAB_HOST": "gitlab_host"
+        "GITLAB_TOKEN": "glpat-xxxxxxxxxxxx",
+        "GITLAB_HOST": "https://gitlab.mycompany.com"
       }
     }
   }
 }
 ```
 
-**Note:** When `GITLAB_TOKEN` is detected, Octocode switches to GitLab mode automatically.
+### Bitbucket (app password)
 
-### Self-Hosted GitLab
-
-If you are using a self-hosted instance, add the host URL variable (`GITLAB_HOST`) alongside the token:
-
-```bash
-# Shell example
-export GITLAB_TOKEN="glpat_your_token_here"
-export GITLAB_HOST="https://gitlab.your-company.com"
+```json
+{
+  "mcpServers": {
+    "octocode": {
+      "command": "npx",
+      "args": ["-y", "octocode-mcp@latest"],
+      "env": {
+        "BITBUCKET_TOKEN": "your-app-password",
+        "BITBUCKET_USERNAME": "your-username"
+      }
+    }
+  }
+}
 ```
 
 ---
 
 ## Troubleshooting
 
-### "No GitHub token found"
-- Run `npx octocode-cli` and select **"Check GitHub Auth Status"**.
-- Ensure you have run `gh auth login` if using the GitHub CLI.
-- Check if your environment variables are set: `echo $GITHUB_TOKEN`.
+| Problem | Solution |
+|---------|----------|
+| "No GitHub token found" | Run `npx octocode-cli` or set `GITHUB_TOKEN` / `GH_TOKEN` |
+| "GitLab token not found" | Set `GITLAB_TOKEN` or `GL_TOKEN` in MCP `"env"` block |
+| "Bitbucket token not found" | Set `BITBUCKET_TOKEN` or `BB_TOKEN` in MCP `"env"` block |
+| Token expired | Re-run `npx octocode-cli` or regenerate your token |
+| Wrong provider active | Check which tokens are set — GitLab takes priority over Bitbucket over GitHub |
+| Bitbucket ignored when GitLab set | Remove `GITLAB_TOKEN` and `GL_TOKEN` to activate Bitbucket |
 
-### "Token expired"
-- Simply run `npx octocode-cli` and select **"Login to GitHub"** again to refresh it.
-- Or run `gh auth refresh` if using the GitHub CLI.
-
-### Switching Accounts
-- Just run `npx octocode-cli` and login with the new account. Octocode picks up the change immediately (no restart needed).
+For provider-specific troubleshooting, see the individual setup guides linked above.
 
 ---
 
-> **For other issues** (npm, Node.js, MCP connection): See the [Troubleshooting Guide](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md).
->
-> **For configuration options** (env vars, `.octocoderc`): See the [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md).
+## See Also
+
+- [GitHub Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_SETUP_GUIDE.md) — GitHub auth, Enterprise, clone tools
+- [GitLab Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITLAB_SETUP_GUIDE.md) — GitLab auth, self-hosted, tier limits
+- [Bitbucket Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/BITBUCKET_SETUP_GUIDE.md) — Bitbucket auth, app passwords, OAuth
+- [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) — All env vars and `.octocoderc` options
+- [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) — Node.js, npm, and MCP connection issues

@@ -24,7 +24,7 @@ describe('createErrorResult - branch coverage', () => {
       expect(result.error).toBe(apiError);
       expect(result.hints).toBeDefined();
       expect(
-        result.hints!.some(h => h.includes('GitHub Octokit API Error'))
+        result.hints!.some(h => h.includes('API Error'))
       ).toBe(true);
     });
 
@@ -58,7 +58,7 @@ describe('createErrorResult - branch coverage', () => {
       expect(result.error).toBe(apiError);
       expect(result.hints!.some(h => h.includes('Rate limit:'))).toBe(true);
       const githubErrors = result.hints!.filter(h =>
-        h.includes('GitHub Octokit API Error')
+        h.includes('API Error')
       );
       expect(githubErrors).toHaveLength(1);
     });

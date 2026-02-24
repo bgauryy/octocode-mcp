@@ -56,7 +56,7 @@ export {
   getDynamicHints,
 } from './proxies.js';
 
-// Re-export schema helpers
+// Re-export schema helpers (from focused modules directly)
 export {
   GITHUB_FETCH_CONTENT,
   GITHUB_SEARCH_CODE,
@@ -64,11 +64,17 @@ export {
   GITHUB_SEARCH_PULL_REQUESTS,
   GITHUB_VIEW_REPO_STRUCTURE,
   PACKAGE_SEARCH,
+} from './githubSchemaHelpers.js';
+
+export {
   LOCAL_RIPGREP,
   LOCAL_FETCH_CONTENT,
   LOCAL_FIND_FILES,
   LOCAL_VIEW_STRUCTURE,
+} from './localSchemaHelpers.js';
+
+export {
   LSP_GOTO_DEFINITION,
   LSP_FIND_REFERENCES,
   LSP_CALL_HIERARCHY,
-} from './schemaHelpers.js';
+} from './lspSchemaHelpers.js';

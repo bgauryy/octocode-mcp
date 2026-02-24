@@ -29,13 +29,19 @@ vi.mock('../../../src/github/repoStructure.js', () => ({
   viewGitHubRepositoryStructureAPI: vi.fn(),
 }));
 
+vi.mock('../../../src/github/client.js', () => ({
+  resolveDefaultBranch: vi.fn(),
+}));
+
 import { searchGitHubCodeAPI } from '../../../src/github/codeSearch.js';
 import { fetchGitHubFileContentAPI } from '../../../src/github/fileContent.js';
 import { searchGitHubReposAPI } from '../../../src/github/repoSearch.js';
 import { searchGitHubPullRequestsAPI } from '../../../src/github/pullRequestSearch.js';
 import { viewGitHubRepositoryStructureAPI } from '../../../src/github/repoStructure.js';
+import { resolveDefaultBranch as resolveGitHubDefaultBranch } from '../../../src/github/client.js';
 
 const mockSearchGitHubCodeAPI = vi.mocked(searchGitHubCodeAPI);
+const mockResolveDefaultBranch = vi.mocked(resolveGitHubDefaultBranch);
 const mockFetchGitHubFileContentAPI = vi.mocked(fetchGitHubFileContentAPI);
 const mockSearchGitHubReposAPI = vi.mocked(searchGitHubReposAPI);
 const mockSearchGitHubPullRequestsAPI = vi.mocked(searchGitHubPullRequestsAPI);
@@ -2142,6 +2148,66 @@ describe('GitHubProvider', () => {
       expect(mockViewGitHubRepositoryStructureAPI).toHaveBeenCalledWith(
         expect.any(Object),
         authInfo
+      );
+    });
+  });
+
+  // ==========================================================================
+  // RESOLVE DEFAULT BRANCH
+  // ==========================================================================
+
+  describe('resolveDefaultBranch', () => {
+    it('should resolve default branch for a valid projectId', async () => {
+      mockResolveDefaultBranch.mockResolvedValue('main');
+
+      const result = await provider.resolveDefaultBranch('owner/repo');
+
+      expect(result).toBe('main');
+      expect(mockResolveDefaultBranch).toHaveBeenCalledWith(
+        'owner',
+        'repo',
+        undefined
+      );
+    });
+
+    it('should pass authInfo when resolving default branch', async () => {
+      const authInfo = { token: 'test-token' };
+      const authenticatedProvider = new GitHubProvider({
+        type: 'github',
+        authInfo: authInfo as any,
+      });
+      mockResolveDefaultBranch.mockResolvedValue('develop');
+
+      const result =
+        await authenticatedProvider.resolveDefaultBranch('org/project');
+
+      expect(result).toBe('develop');
+      expect(mockResolveDefaultBranch).toHaveBeenCalledWith(
+        'org',
+        'project',
+        authInfo
+      );
+    });
+
+    it('should throw for invalid projectId format', async () => {
+      await expect(provider.resolveDefaultBranch('invalid')).rejects.toThrow(
+        "Invalid GitHub projectId format: 'invalid'. Expected 'owner/repo'."
+      );
+    });
+
+    it('should throw for empty projectId', async () => {
+      await expect(provider.resolveDefaultBranch('')).rejects.toThrow(
+        "Cannot resolve default branch: invalid projectId ''."
+      );
+    });
+
+    it('should propagate errors from underlying API', async () => {
+      mockResolveDefaultBranch.mockRejectedValue(
+        new Error('Could not determine default branch')
+      );
+
+      await expect(provider.resolveDefaultBranch('owner/repo')).rejects.toThrow(
+        'Could not determine default branch'
       );
     });
   });

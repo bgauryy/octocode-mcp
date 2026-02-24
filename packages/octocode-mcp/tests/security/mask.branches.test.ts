@@ -24,7 +24,7 @@ describe('maskSensitiveData - zero-length match branch coverage (line 38)', () =
    */
   it('should handle zero-length matches gracefully without infinite loop', async () => {
     // Mock the regexes module with a pattern that can match zero-length strings
-    vi.doMock('../../src/security/regexes.js', () => ({
+    vi.doMock('../../src/security/regexes/index.js', () => ({
       allRegexPatterns: [
         {
           // This regex can match zero-length strings (empty string before any character)
@@ -51,7 +51,7 @@ describe('maskSensitiveData - zero-length match branch coverage (line 38)', () =
 
   it('should handle optional pattern groups that can match empty', async () => {
     // Mock with a pattern using optional groups
-    vi.doMock('../../src/security/regexes.js', () => ({
+    vi.doMock('../../src/security/regexes/index.js', () => ({
       allRegexPatterns: [
         {
           // Pattern with optional groups: matches "SECRET=" optionally followed by content
@@ -75,7 +75,7 @@ describe('maskSensitiveData - zero-length match branch coverage (line 38)', () =
 
   it('should process text with multiple potential zero-length match positions', async () => {
     // Use a lookbehind pattern that matches position after 'a'
-    vi.doMock('../../src/security/regexes.js', () => ({
+    vi.doMock('../../src/security/regexes/index.js', () => ({
       allRegexPatterns: [
         {
           // This pattern matches a position, not content
@@ -104,7 +104,7 @@ describe('maskSensitiveData - patternMap accuracy fallback', () => {
   });
 
   it('should fallback to medium accuracy when pattern has undefined accuracy', async () => {
-    vi.doMock('../../src/security/regexes.js', () => ({
+    vi.doMock('../../src/security/regexes/index.js', () => ({
       allRegexPatterns: [
         {
           regex: /SECRET="([^"]{16,})"/gi,
@@ -132,7 +132,7 @@ describe('maskSensitiveData - edge cases for match array access', () => {
 
   it('should handle pattern array index bounds correctly', async () => {
     // Test with multiple patterns to verify loop iteration
-    vi.doMock('../../src/security/regexes.js', () => ({
+    vi.doMock('../../src/security/regexes/index.js', () => ({
       allRegexPatterns: [
         {
           regex: /FIRST_PATTERN="[^"]{10,}"/gi,
@@ -172,7 +172,7 @@ describe('maskSensitiveData - overlapping matches branch (lines 52-56)', () => {
     // Create two patterns that will definitely produce overlapping matches
     // Pattern 1 matches: SECRET_VALUE (longer)
     // Pattern 2 matches: VALUE (shorter, contained within pattern 1)
-    vi.doMock('../../src/security/regexes.js', () => ({
+    vi.doMock('../../src/security/regexes/index.js', () => ({
       allRegexPatterns: [
         {
           // First pattern - matches the full SECRET_VALUE="..."
@@ -207,7 +207,7 @@ describe('maskSensitiveData - overlapping matches branch (lines 52-56)', () => {
 
   it('should trigger overlapping branch when inner pattern starts inside outer match', async () => {
     // This test specifically targets the else branch of: if (match.start >= lastEnd)
-    vi.doMock('../../src/security/regexes.js', () => ({
+    vi.doMock('../../src/security/regexes/index.js', () => ({
       allRegexPatterns: [
         {
           // Outer pattern: OUTER_INNER_END
@@ -236,7 +236,7 @@ describe('maskSensitiveData - overlapping matches branch (lines 52-56)', () => {
   });
 
   it('should correctly handle adjacent non-overlapping matches', async () => {
-    vi.doMock('../../src/security/regexes.js', () => ({
+    vi.doMock('../../src/security/regexes/index.js', () => ({
       allRegexPatterns: [
         {
           regex: /TOKEN="[^"]{10,}"/gi,
@@ -259,7 +259,7 @@ describe('maskSensitiveData - overlapping matches branch (lines 52-56)', () => {
   });
 
   it('should handle matches that start at the same position', async () => {
-    vi.doMock('../../src/security/regexes.js', () => ({
+    vi.doMock('../../src/security/regexes/index.js', () => ({
       allRegexPatterns: [
         {
           regex: /SECRET_LONG="[^"]{20,}"/gi,
@@ -291,7 +291,7 @@ describe('maskSensitiveData - nonOverlapping array iteration (lines 60-69)', () 
   });
 
   it('should correctly process multiple non-overlapping matches in reverse', async () => {
-    vi.doMock('../../src/security/regexes.js', () => ({
+    vi.doMock('../../src/security/regexes/index.js', () => ({
       allRegexPatterns: [
         {
           regex: /KEY\d="[^"]{10,}"/gi,

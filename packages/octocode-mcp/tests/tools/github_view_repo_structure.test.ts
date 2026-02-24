@@ -6,14 +6,9 @@ import {
 import { getTextContent } from '../utils/testHelpers.js';
 
 const mockGetProvider = vi.hoisted(() => vi.fn());
-const mockResolveDefaultBranch = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/providers/factory.js', () => ({
   getProvider: mockGetProvider,
-}));
-
-vi.mock('../../src/github/client.js', () => ({
-  resolveDefaultBranch: mockResolveDefaultBranch,
 }));
 
 vi.mock('../../src/serverConfig.js', () => ({
@@ -41,6 +36,7 @@ describe('GitHub View Repository Structure Tool', () => {
     searchRepos: ReturnType<typeof vi.fn>;
     searchPullRequests: ReturnType<typeof vi.fn>;
     getRepoStructure: ReturnType<typeof vi.fn>;
+    resolveDefaultBranch: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -52,12 +48,13 @@ describe('GitHub View Repository Structure Tool', () => {
       searchRepos: vi.fn(),
       searchPullRequests: vi.fn(),
       getRepoStructure: vi.fn(),
+      resolveDefaultBranch: vi.fn().mockResolvedValue('main'),
     };
     mockGetProvider.mockReturnValue(mockProvider);
 
     vi.clearAllMocks();
     mockGetProvider.mockReturnValue(mockProvider);
-    mockResolveDefaultBranch.mockResolvedValue('main');
+    mockProvider.resolveDefaultBranch.mockResolvedValue('main');
     registerViewGitHubRepoStructureTool(mockServer.server);
 
     // Default mock response - uses structure format
@@ -109,7 +106,7 @@ describe('GitHub View Repository Structure Tool', () => {
   });
 
   it('should resolve default branch when branch is omitted', async () => {
-    mockResolveDefaultBranch.mockResolvedValue('master');
+    mockProvider.resolveDefaultBranch.mockResolvedValue('master');
 
     mockProvider.getRepoStructure.mockResolvedValue({
       data: {
@@ -145,10 +142,8 @@ describe('GitHub View Repository Structure Tool', () => {
     );
 
     expect(result.isError).toBe(false);
-    expect(mockResolveDefaultBranch).toHaveBeenCalledWith(
-      'expressjs',
-      'express',
-      undefined
+    expect(mockProvider.resolveDefaultBranch).toHaveBeenCalledWith(
+      'expressjs/express'
     );
     expect(mockProvider.getRepoStructure).toHaveBeenCalledWith(
       expect.objectContaining({ ref: 'master' })
