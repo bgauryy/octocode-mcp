@@ -44,6 +44,9 @@ export {
   type FullTokenResolution,
   type GhCliTokenGetter,
 
+  // Convenience: just the token string (recommended for raw HTTP calls)
+  resolveTokenString,
+
   // List/check operations
   listStoredHosts,
   listStoredHostsSync,
