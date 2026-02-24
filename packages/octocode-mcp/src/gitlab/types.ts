@@ -18,6 +18,7 @@ export interface GitLabAPIError {
   status?: number;
   type: 'http' | 'network' | 'unknown';
   rateLimitRemaining?: number;
+  /** Rate limit reset time in **seconds** (Unix timestamp from `ratelimit-reset` header). */
   rateLimitReset?: number;
   retryAfter?: number;
   hints?: string[];

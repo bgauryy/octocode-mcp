@@ -1,8 +1,8 @@
 /**
- * Unified error result creation for all tools (GitHub API and local)
+ * Unified error result creation for all tools (provider API and local)
  *
  * This module provides a single source of truth for creating error results,
- * handling both GitHub API errors (with rate limits, scopes) and local tool
+ * handling both provider API errors (with rate limits, scopes) and local tool
  * errors (with error codes, tool-specific hints).
  */
 
@@ -11,10 +11,6 @@ import { toToolError, isToolError, type ToolError } from '../../errorCodes.js';
 import { getHints } from '../../hints/index.js';
 import type { BaseQuery } from '../core/types.js';
 
-/**
- * Unified error result structure
- * Compatible with both ToolErrorResult (GitHub) and local tool error results
- */
 export interface UnifiedErrorResult {
   status: 'error';
   mainResearchGoal?: string;
@@ -30,9 +26,6 @@ export interface UnifiedErrorResult {
   [key: string]: unknown;
 }
 
-/**
- * Options for creating an error result
- */
 interface CreateErrorResultOptions {
   /** Tool name for hint generation */
   toolName?: string;
@@ -50,9 +43,6 @@ interface CreateErrorResultOptions {
   hintSourceError?: GitHubAPIError;
 }
 
-/**
- * Extract hints from provider API errors (works for GitHub, GitLab, Bitbucket).
- */
 function extractProviderApiHints(apiError: GitHubAPIError): string[] {
   const hints: string[] = [];
 
@@ -82,9 +72,6 @@ function extractProviderApiHints(apiError: GitHubAPIError): string[] {
   return hints;
 }
 
-/**
- * Check if an error is a GitHub API error object
- */
 function isGitHubApiError(error: unknown): error is GitHubAPIError {
   return (
     typeof error === 'object' &&
@@ -95,29 +82,6 @@ function isGitHubApiError(error: unknown): error is GitHubAPIError {
   );
 }
 
-/**
- * Create a unified error result for any tool type
- *
- * @param error - The error (string, Error, ToolError, or GitHubAPIError)
- * @param query - Query object with research context
- * @param options - Additional options for error result creation
- * @returns Unified error result compatible with all tools
- *
- * @example
- * // GitHub API tool usage
- * createErrorResult(apiError, query);
- *
- * @example
- * // Local tool usage
- * createErrorResult(error, query, { toolName: 'LOCAL_FETCH_CONTENT' });
- *
- * @example
- * // With extra fields
- * createErrorResult(error, query, {
- *   toolName: 'LOCAL_RIPGREP',
- *   extra: { path: '/some/path', warnings: ['Something happened'] }
- * });
- */
 export function createErrorResult(
   error: unknown,
   query: BaseQuery,
@@ -126,7 +90,6 @@ export function createErrorResult(
   const { toolName, hintContext, extra, customHints, hintSourceError } =
     options;
 
-  // Base result with query context
   const result: UnifiedErrorResult = {
     status: 'error',
     mainResearchGoal: query.mainResearchGoal,
@@ -134,23 +97,18 @@ export function createErrorResult(
     reasoning: query.reasoning,
   };
 
-  // Collect hints from various sources
   const hints: string[] = [];
 
   if (hintSourceError) {
     hints.push(...extractProviderApiHints(hintSourceError));
   }
 
-  // Handle different error types
   if (isGitHubApiError(error)) {
-    // GitHub API error - include full error object
     result.error = error;
-    // Only extract hints from error if no separate hint source provided
     if (!hintSourceError) {
       hints.push(...extractProviderApiHints(error));
     }
   } else if (isToolError(error)) {
-    // Local ToolError with error code
     result.error = error.message;
     result.errorCode = error.errorCode;
 
@@ -197,16 +155,13 @@ export function createErrorResult(
 
   if (extra) {
     const { hints: _hints, ...restExtra } = extra;
-    void _hints; // Intentionally ignoring hints from extra
+    void _hints;
     Object.assign(result, restExtra);
   }
 
   return result;
 }
 
-/**
- * Map ToolError to hint context error type
- */
 function getErrorTypeFromToolError(
   error: ToolError
 ): 'size_limit' | 'not_found' | 'permission' | undefined {

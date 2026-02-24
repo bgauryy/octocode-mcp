@@ -84,6 +84,7 @@ export interface GitHubAPIError {
   type: 'http' | 'graphql' | 'network' | 'unknown';
   scopesSuggestion?: string;
   rateLimitRemaining?: number;
+  /** Rate limit reset time in **milliseconds** (from `resetTime.getTime()`). */
   rateLimitReset?: number;
   retryAfter?: number;
   hints?: string[];

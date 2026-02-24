@@ -23,28 +23,36 @@ export function parseGitLabProjectId(projectId?: string): number | string {
   return encodeURIComponent(projectId);
 }
 
-/**
- * Extract rate limit info from a GitLab error result and return it
- * in the ProviderResponse rateLimit format.
- */
-export function extractGitLabRateLimit(
-  result: {
-    rateLimitRemaining?: number;
-    rateLimitReset?: number;
-    retryAfter?: number;
-  }
-): ProviderResponse<never>['rateLimit'] {
+export function extractGitLabRateLimit(result: {
+  rateLimitRemaining?: number;
+  rateLimitReset?: number;
+  retryAfter?: number;
+}): ProviderResponse<never>['rateLimit'] {
   const remaining = result.rateLimitRemaining;
   const reset = result.rateLimitReset;
   const retryAfter = result.retryAfter;
 
-  if (remaining === undefined && reset === undefined && retryAfter === undefined) {
+  if (
+    remaining === undefined &&
+    reset === undefined &&
+    retryAfter === undefined
+  ) {
+    return undefined;
+  }
+
+  const computedReset =
+    reset ??
+    (retryAfter !== undefined
+      ? Math.floor(Date.now() / 1000) + retryAfter
+      : undefined);
+
+  if (computedReset === undefined) {
     return undefined;
   }
 
   return {
     remaining: remaining ?? 0,
-    reset: reset ?? Math.floor(Date.now() / 1000) + (retryAfter ?? 3600),
+    reset: computedReset,
     retryAfter,
   };
 }

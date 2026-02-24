@@ -15,6 +15,7 @@ export interface BitbucketAPIError {
   status: number;
   type: 'http' | 'network' | 'unknown';
   rateLimitRemaining?: number;
+  /** Rate limit reset time in **seconds** (Unix timestamp from `x-ratelimit-reset` header). */
   rateLimitReset?: number;
   retryAfter?: number;
   hints?: string[];

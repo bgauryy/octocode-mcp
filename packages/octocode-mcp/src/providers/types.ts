@@ -93,6 +93,7 @@ export interface ProviderResponse<T> {
   /** Rate limit info */
   rateLimit?: {
     remaining: number;
+    /** Reset time in **seconds** (Unix timestamp). All providers normalize to this unit. */
     reset: number;
     retryAfter?: number;
   };

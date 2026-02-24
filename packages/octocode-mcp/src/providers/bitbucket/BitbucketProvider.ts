@@ -38,6 +38,7 @@ import { viewBitbucketRepoStructureAPI } from '../../bitbucket/repoStructure.js'
 import { handleBitbucketAPIError } from '../../bitbucket/errors.js';
 import type {
   BitbucketAPIError,
+  BitbucketAPIResponse,
   BitbucketCodeSearchItem,
   BitbucketRepository,
   BitbucketPullRequest,
@@ -295,17 +296,48 @@ function buildStructureFromEntries(
 // API RESPONSE HANDLING
 // ============================================================================
 
+function extractRateLimitFromError(
+  apiError: BitbucketAPIError
+): ProviderResponse<never>['rateLimit'] {
+  if (
+    apiError.rateLimitRemaining === undefined &&
+    apiError.retryAfter === undefined &&
+    apiError.rateLimitReset === undefined
+  ) {
+    return undefined;
+  }
+
+  const reset =
+    apiError.rateLimitReset ??
+    (apiError.retryAfter !== undefined
+      ? Math.floor(Date.now() / 1000) + apiError.retryAfter
+      : undefined);
+
+  if (reset === undefined) {
+    return undefined;
+  }
+
+  return {
+    remaining: apiError.rateLimitRemaining ?? 0,
+    reset,
+    retryAfter: apiError.retryAfter,
+  };
+}
+
 function handleAPIResponse<TData, TRaw>(
-  result: { error?: string; status?: number; hints?: string[]; data?: TRaw },
+  result: BitbucketAPIResponse<TRaw>,
   transform: (data: TRaw) => TData
 ): ProviderResponse<TData> {
   if ('error' in result && result.error) {
+    const rateLimit = extractRateLimitFromError(result as BitbucketAPIError);
     return {
       error:
         typeof result.error === 'string' ? result.error : String(result.error),
       status: result.status || 500,
       provider: 'bitbucket',
-      hints: 'hints' in result ? result.hints : undefined,
+      hints:
+        'hints' in result ? (result as BitbucketAPIError).hints : undefined,
+      rateLimit,
     };
   }
 
@@ -534,7 +566,7 @@ export class BitbucketProvider implements ICodeHostProvider {
 
   private handleError(error: unknown): ProviderResponse<never> {
     const apiError = handleBitbucketAPIError(error);
-    const rateLimit = this.extractRateLimit(apiError);
+    const rateLimit = extractRateLimitFromError(apiError);
 
     if (rateLimit) {
       void logRateLimit({
@@ -552,26 +584,6 @@ export class BitbucketProvider implements ICodeHostProvider {
       provider: 'bitbucket',
       hints: apiError.hints,
       rateLimit,
-    };
-  }
-
-  private extractRateLimit(
-    apiError: BitbucketAPIError
-  ): ProviderResponse<never>['rateLimit'] {
-    if (
-      apiError.rateLimitRemaining === undefined &&
-      apiError.retryAfter === undefined &&
-      apiError.rateLimitReset === undefined
-    ) {
-      return undefined;
-    }
-
-    return {
-      remaining: apiError.rateLimitRemaining ?? 0,
-      reset:
-        apiError.rateLimitReset ??
-        Math.floor(Date.now() / 1000) + (apiError.retryAfter ?? 60),
-      retryAfter: apiError.retryAfter,
     };
   }
 }
