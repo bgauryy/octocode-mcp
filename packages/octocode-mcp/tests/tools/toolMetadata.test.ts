@@ -159,8 +159,7 @@ describe('toolMetadata', () => {
 
       await initializeToolMetadata();
 
-      // Just verify it completes without error
-      expect(true).toBe(true);
+      expect(mockFetchWithRetries).toHaveBeenCalledTimes(1);
     });
 
     it('should only initialize once', async () => {
@@ -172,8 +171,7 @@ describe('toolMetadata', () => {
       await initializeToolMetadata();
       await initializeToolMetadata();
 
-      // Multiple calls complete successfully
-      expect(true).toBe(true);
+      expect(mockFetchWithRetries).toHaveBeenCalledTimes(1);
     });
 
     it('should handle concurrent initialization', async () => {
@@ -189,8 +187,7 @@ describe('toolMetadata', () => {
 
       await Promise.all(promises);
 
-      // Concurrent calls complete successfully
-      expect(true).toBe(true);
+      expect(mockFetchWithRetries).toHaveBeenCalledTimes(1);
     });
   });
 

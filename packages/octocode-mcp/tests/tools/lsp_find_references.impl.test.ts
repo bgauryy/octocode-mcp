@@ -349,7 +349,7 @@ export function anotherFunction() {
   describe('LSP Integration', () => {
     it('should check LSP availability', async () => {
       const handler = createHandler();
-      await handler({
+      const result = await handler({
         queries: [
           {
             uri: '/workspace/test.ts',
@@ -361,7 +361,8 @@ export function anotherFunction() {
         ],
       });
 
-      expect(true).toBe(true);
+      expect(result).toBeDefined();
+      expect(result.content?.length).toBeGreaterThan(0);
     });
 
     it('should attempt LSP when available', async () => {

@@ -166,12 +166,13 @@ describe('session - Edge Cases', () => {
       } as Response);
 
       // Logging is best-effort
-      await logSessionError('github', 'API_ERROR');
-      await logSessionError('toolMetadata', 'FETCH_FAILED');
-      await logSessionError('promiseUtils', 'TIMEOUT');
-
-      // Verify they all complete without errors
-      expect(true).toBe(true);
+      await expect(
+        Promise.all([
+          logSessionError('github', 'API_ERROR'),
+          logSessionError('toolMetadata', 'FETCH_FAILED'),
+          logSessionError('promiseUtils', 'TIMEOUT'),
+        ])
+      ).resolves.toEqual([undefined, undefined, undefined]);
     });
   });
 

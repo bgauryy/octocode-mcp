@@ -1741,8 +1741,8 @@ describe('localViewStructure', () => {
   });
 
   describe('Character-based pagination (charOffset + charLength)', () => {
-    // C5: Char pagination removed - entry pagination + bulk response handle output limits
-    it.skip('should paginate with charOffset and charLength', async () => {
+    // C5: Char pagination was removed; these tests verify legacy char fields are safely ignored.
+    it('should paginate entries even when charOffset/charLength are provided', async () => {
       const largeOutput = Array.from(
         { length: 100 },
         (_, i) => `file${i}.txt`
@@ -1766,14 +1766,14 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(
-        (result.structuredOutput as string | undefined)?.length
-      ).toBeLessThanOrEqual(500);
-      expect(result.pagination?.totalChars).toBeGreaterThan(500);
+      expect(result.pagination?.currentPage).toBe(1);
+      expect(result.pagination?.totalEntries).toBe(100);
       expect(result.pagination?.hasMore).toBe(true);
+      expect(result.pagination).not.toHaveProperty('charOffset');
+      expect(result.pagination).not.toHaveProperty('totalChars');
     });
 
-    it.skip('should return first page by default', async () => {
+    it('should return first entry page by default when charLength is provided', async () => {
       const largeOutput = Array.from(
         { length: 50 },
         (_, i) => `file${i}.txt`
@@ -1796,10 +1796,10 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.pagination?.charOffset).toBe(0);
+      expect(result.pagination?.currentPage).toBe(1);
     });
 
-    it.skip('should navigate to second page with charOffset', async () => {
+    it('should ignore charOffset and keep entry pagination semantics', async () => {
       const largeOutput = Array.from(
         { length: 100 },
         (_, i) => `file${i}.txt`
@@ -1823,10 +1823,11 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.pagination?.charOffset).toBe(500);
+      expect(result.pagination?.currentPage).toBe(1);
+      expect(result.pagination).not.toHaveProperty('charOffset');
     });
 
-    it.skip('should handle charOffset = 0', async () => {
+    it('should handle charOffset = 0 without changing output shape', async () => {
       mockSafeExec.mockResolvedValue({
         success: true,
         code: 0,
@@ -1846,10 +1847,11 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.pagination?.charOffset).toBe(0);
+      expect(result.pagination?.currentPage).toBe(1);
+      expect(result.pagination).not.toHaveProperty('charOffset');
     });
 
-    it.skip('should handle charOffset at exact boundary', async () => {
+    it('should handle large charOffset values without crashing', async () => {
       const content = 'x'.repeat(1000);
       mockSafeExec.mockResolvedValue({
         success: true,
@@ -1870,7 +1872,7 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.pagination?.charOffset).toBe(1000);
+      expect(result.pagination?.currentPage).toBe(1);
     });
 
     it('should handle charOffset beyond content length', async () => {
@@ -1896,7 +1898,7 @@ describe('localViewStructure', () => {
       expect(result.status).toBe('hasResults');
     });
 
-    it.skip('should handle charLength = 1', async () => {
+    it('should handle charLength = 1', async () => {
       mockSafeExec.mockResolvedValue({
         success: true,
         code: 0,
@@ -1915,14 +1917,11 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect((result.structuredOutput as string | undefined)?.length).toBe(1);
-      // hasMore is only set when there's actually more content
-      if (result.pagination) {
-        expect(typeof result.pagination.hasMore).toBe('boolean');
-      }
+      expect(result.entries).toBeDefined();
+      expect(result.pagination).not.toHaveProperty('totalChars');
     });
 
-    it.skip('should handle charLength = 10000 (max)', async () => {
+    it('should handle charLength = 10000 (max)', async () => {
       const largeContent = 'x'.repeat(20000);
       mockSafeExec.mockResolvedValue({
         success: true,
@@ -1942,16 +1941,11 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(
-        (result.structuredOutput as string | undefined)?.length
-      ).toBeLessThanOrEqual(10000);
-      // hasMore is only set when there's actually more content
-      if (result.pagination) {
-        expect(typeof result.pagination.hasMore).toBe('boolean');
-      }
+      expect(result.pagination?.hasMore).toBe(false);
+      expect(result.pagination).not.toHaveProperty('totalChars');
     });
 
-    it.skip('should handle charLength > remaining content', async () => {
+    it('should handle charLength > remaining content', async () => {
       mockSafeExec.mockResolvedValue({
         success: true,
         code: 0,
@@ -2072,7 +2066,7 @@ describe('localViewStructure', () => {
       expect(result.entries!.every(e => !e.name.includes('\uFFFD'))).toBe(true);
     });
 
-    it.skip('should not split multi-byte characters at boundaries', async () => {
+    it('should not split multi-byte characters at boundaries', async () => {
       // Create content where boundary might fall in middle of UTF-8 char
       const utf8Content = 'a'.repeat(95) + 'café';
       mockSafeExec.mockResolvedValue({
@@ -2093,8 +2087,7 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      // Should not have replacement character
-      expect(result.structuredOutput).not.toMatch(/\uFFFD/);
+      expect(result.entries!.every(e => !e.name.includes('\uFFFD'))).toBe(true);
     });
 
     it('should show character pagination hints', async () => {
@@ -2124,7 +2117,7 @@ describe('localViewStructure', () => {
       expect(result.pagination?.hasMore).toBe(true);
     });
 
-    it.skip('should show hints with charOffset for next page', async () => {
+    it('should show hints for next page using entry pagination', async () => {
       const largeOutput = Array.from(
         { length: 100 },
         (_, i) => `file${i}.txt`
@@ -2148,14 +2141,11 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      if (result.pagination?.hasMore) {
-        expect(result.hints).toBeDefined();
-        // Hints should mention charOffset for next page
-        const hasCharOffsetHint = result.hints?.some(
-          h => h.includes('charOffset') || h.includes('next chunk')
-        );
-        expect(hasCharOffsetHint).toBe(true);
-      }
+      expect(result.pagination?.hasMore).toBe(true);
+      const hasEntryPageHint = result.hints?.some(h =>
+        h.includes('entryPageNumber=2')
+      );
+      expect(hasEntryPageHint).toBe(true);
     });
   });
 
@@ -2351,8 +2341,7 @@ describe('localViewStructure', () => {
   });
 
   describe('byte/character offset separation in charPagination', () => {
-    it.skip('should return both byte and char offsets in charPagination', async () => {
-      // Create a large output that requires character pagination
+    it('should ignore char-length fields and return entry pagination only', async () => {
       const manyFiles = Array.from(
         { length: 100 },
         (_, i) => `file${i}.txt`
@@ -2371,17 +2360,14 @@ describe('localViewStructure', () => {
 
       const result = await viewStructure({
         path: '/test/path',
-        charLength: 500, // Force character pagination
+        charLength: 500,
       });
 
       expect(result.status).toBe('hasResults');
-
-      if (result.charPagination) {
-        // Should have char fields
-        expect(result.charPagination.charOffset).toBeDefined();
-        expect(result.charPagination.charLength).toBeDefined();
-        expect(result.charPagination.totalChars).toBeDefined();
-      }
+      expect(result.pagination?.totalEntries).toBe(100);
+      expect(
+        (result as { charPagination?: unknown }).charPagination
+      ).toBeUndefined();
     });
 
     it('should handle UTF-8 filenames correctly', async () => {
@@ -2410,11 +2396,10 @@ describe('localViewStructure', () => {
       });
 
       expect(result.status).toBe('hasResults');
-
-      if (result.charPagination) {
-        // Should have char fields for UTF-8 filenames
-        expect(result.charPagination.totalChars).toBeDefined();
-      }
+      expect(result.entries?.every(e => !e.name.includes('\uFFFD'))).toBe(true);
+      expect(
+        (result as { charPagination?: unknown }).charPagination
+      ).toBeUndefined();
     });
   });
 

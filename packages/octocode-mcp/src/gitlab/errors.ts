@@ -134,9 +134,7 @@ function handleGitbeakerError(error: GitbeakerError): GitLabAPIError {
     const rateLimitRemainingRaw =
       error.response?.headers?.['ratelimit-remaining'];
 
-    const parsedRetryAfter = retryAfterRaw
-      ? parseInt(retryAfterRaw, 10)
-      : NaN;
+    const parsedRetryAfter = retryAfterRaw ? parseInt(retryAfterRaw, 10) : NaN;
     const parsedReset = rateLimitResetRaw
       ? parseInt(rateLimitResetRaw, 10)
       : NaN;
@@ -150,9 +148,7 @@ function handleGitbeakerError(error: GitbeakerError): GitLabAPIError {
       type: 'http',
       retryAfter: !isNaN(parsedRetryAfter) ? parsedRetryAfter : undefined,
       rateLimitReset: !isNaN(parsedReset) ? parsedReset : undefined,
-      rateLimitRemaining: !isNaN(parsedRemaining)
-        ? parsedRemaining
-        : undefined,
+      rateLimitRemaining: !isNaN(parsedRemaining) ? parsedRemaining : undefined,
       hints: [
         `Rate limit exceeded. ${retryAfterRaw ? `Retry after ${retryAfterRaw} seconds.` : 'Please wait before retrying.'}`,
         'Consider reducing request frequency or using pagination.',
