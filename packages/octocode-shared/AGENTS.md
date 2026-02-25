@@ -46,6 +46,7 @@ Technical documentation for the shared utilities:
 
 | Document | Description |
 |----------|-------------|
+| [Contributing Guide](https://github.com/bgauryy/octocode-mcp/blob/main/CONTRIBUTING.md) | PR process, testing expectations, submit checklist |
 | [`API_REFERENCE.md`](./docs/API_REFERENCE.md) | Complete API documentation for all modules |
 | [`CREDENTIALS_ARCHITECTURE.md`](./docs/CREDENTIALS_ARCHITECTURE.md) | Token storage, encryption, file storage integration, refresh flow |
 | [`SESSION_PERSISTENCE.md`](./docs/SESSION_PERSISTENCE.md) | Deferred writes, exit handlers, statistics tracking |
@@ -379,8 +380,9 @@ startFlushTimer()
 
 ### Requirements
 
-- **Coverage**: 90% required (Statements, Branches, Functions, Lines)
+- **Coverage**: 35% statements, 20% branches, 40% functions, 35% lines
 - **Framework**: Vitest with v8 coverage
+- **Source of truth**: [CONTRIBUTING.md — Testing Requirements](https://github.com/bgauryy/octocode-mcp/blob/main/CONTRIBUTING.md#testing-requirements)
 
 ### Test Categories
 

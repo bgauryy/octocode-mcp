@@ -23,6 +23,7 @@
 ## Commands & Workflow
 
 **Use `yarn` for all package management.**
+Run commands from the repository root unless a section explicitly says otherwise.
 
 | Task | Command | Scope |
 |------|---------|-------|
@@ -38,17 +39,18 @@
 
 | Package | Key Commands |
 |---------|--------------|
-| `octocode-mcp` | `yarn debug` (MCP inspector), `yarn typecheck`, `yarn build:watch` |
+| `octocode-mcp` | `yarn debug` (MCP inspector), `yarn build:watch`, `yarn test:watch`, `yarn test:ui`, `yarn lint && yarn build && yarn test` |
 | `octocode-cli` | `yarn start`, `yarn validate:mcp`, `yarn validate:skills` |
 | `octocode-vscode` | `yarn package`, `yarn publish` |
-| `octocode-shared` | `yarn typecheck` |
+| `octocode-shared` | `yarn build` |
 
 #### Linux & File Operations
 
 - **String Replacement**: `sed -i '' 's/old/new/g' src/**/*.ts`
 - **Move/Copy**: `mv`, `cp`, `rsync` for file operations
 - **Find & Move**: `find src -name "*.test.ts" -exec mv {} tests/ \;`
-- **Content Extract**: `head`, `tail`, `cat`, `grep`
+- **Code Search**: Prefer `rg` over `grep` for speed and ignore-file awareness
+- **Content Extract**: `sed -n`, `awk`, and `rg -n` for focused inspection
 - **Bulk Actions**: Prefer Linux one-liners for simple operations
 - **Complex Tasks**: Write scripts (Node.js, Python, Shell)
 
@@ -72,16 +74,20 @@
 
 ### Dependencies
 
-- **Node.js**: >= 20.0.0
-- **VS Code**: `octocode-vscode` requires >= 1.85.0
+- **Node.js**: >= 20.12.0 (required by `octocode-cli`)
+- **VS Code**: `octocode-vscode` requires >= 1.107.0
 - **Core**: `@modelcontextprotocol/sdk`, `zod`, `vitest`, `typescript`
 - **LSP**: `typescript-language-server`, `vscode-languageserver-protocol`
 
 ## Testing Protocol
 
 ### Requirements
-- **Coverage**: 90% required for `octocode-mcp` (Statements, Branches, Functions, Lines)
+- **`octocode-mcp`**: 90% required (Statements, Branches, Functions, Lines)
+- **`octocode-shared`**: 35% statements, 20% branches, 40% functions, 35% lines
+- **`octocode-cli`**: No coverage thresholds yet (tests still required)
+- **`octocode-vscode`**: Manual testing only (see [packages/octocode-vscode/AGENTS.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-vscode/AGENTS.md))
 - **Framework**: Vitest with V8 coverage provider
+- **Source of truth**: [Testing Requirements](https://github.com/bgauryy/octocode-mcp/blob/main/CONTRIBUTING.md#testing-requirements)
 
 ### Structure
 ```
@@ -90,6 +96,7 @@ packages/<name>/tests/
 ├── integration/           # Integration tests
 ├── security/              # Security-focused tests
 ├── github/                # GitHub API tests
+├── gitlab/                # GitLab API tests
 ├── lsp/                   # LSP tool tests
 └── helpers/               # Test utilities
 ```
@@ -128,3 +135,4 @@ For the complete package documentation index, see the [Key References](https://g
 - [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) — All env vars and `.octocoderc` options
 - [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) — Common issues and solutions
 - [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) — GitHub/GitLab auth
+- [Contributing Guide](https://github.com/bgauryy/octocode-mcp/blob/main/CONTRIBUTING.md) — PR process, testing expectations, and submit checklist

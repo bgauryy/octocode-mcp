@@ -445,6 +445,7 @@ Schema (Zod) → Security Wrapper → Bulk Handler → Implementation → Saniti
 
 - **Coverage**: 90% required (Statements, Branches, Functions, Lines)
 - **Framework**: Vitest with v8 coverage
+- **Source of truth**: [CONTRIBUTING.md — Testing Requirements](https://github.com/bgauryy/octocode-mcp/blob/main/CONTRIBUTING.md#testing-requirements)
 
 ### Test Categories
 
@@ -454,6 +455,7 @@ Schema (Zod) → Security Wrapper → Bulk Handler → Implementation → Saniti
 | Integration | `tests/integration/` | End-to-end tool tests |
 | Security | `tests/security/` | Penetration & bypass tests |
 | GitHub API | `tests/github/` | API mocking & validation |
+| GitLab API | `tests/gitlab/` | GitLab API tests |
 | LSP | `tests/lsp/` | LSP client & tool tests |
 | Hints | `tests/hints/` | Hints system tests |
 
@@ -508,6 +510,7 @@ yarn test:ui
 | [`CLONE_AND_LOCAL_TOOLS_WORKFLOW.md`](./docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md) | Clone repos → use local + LSP tools for deep analysis |
 | [`AUTHENTICATION_SETUP.md`](./docs/AUTHENTICATION_SETUP.md) | GitHub/GitLab authentication setup |
 | [`README.md`](./README.md) | Installation, usage, configuration |
+| [Contributing Guide](https://github.com/bgauryy/octocode-mcp/blob/main/CONTRIBUTING.md) | PR process, testing expectations, submit checklist |
 | [MCP Spec](https://modelcontextprotocol.io/) | Model Context Protocol specification |
 | [GitHub REST API](https://docs.github.com/en/rest) | GitHub API reference |
 | [LSP Spec](https://microsoft.github.io/language-server-protocol/) | Language Server Protocol specification |

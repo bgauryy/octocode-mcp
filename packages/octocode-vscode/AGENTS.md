@@ -28,6 +28,7 @@ Octocode VS Code Extension is the management hub for Octocode MCP:
 | [`docs/README.md`](./docs/README.md) | VS Code package docs index and quick reference |
 | [`README.md`](./README.md) | Extension overview, installation, and usage |
 | [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) | Shared authentication setup details |
+| [Contributing Guide](https://github.com/bgauryy/octocode-mcp/blob/main/CONTRIBUTING.md) | PR process, testing expectations, submit checklist |
 
 ---
 
@@ -199,6 +200,8 @@ tests/
 - [ ] Token syncs to all detected MCP configs
 - [ ] MCP server starts and responds
 - [ ] Works in Cursor, Windsurf, and VS Code
+
+> **PR requirement**: Document your manual validation steps in the PR description. See [CONTRIBUTING.md — VS Code Extension Exception](https://github.com/bgauryy/octocode-mcp/blob/main/CONTRIBUTING.md#vs-code-extension-exception).
 
 ---
 

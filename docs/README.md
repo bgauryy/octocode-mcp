@@ -2,13 +2,15 @@
 
 > Central index for Octocode monorepo documentation. **Primary entry**: [AGENTS.md](https://github.com/bgauryy/octocode-mcp/blob/main/AGENTS.md)
 
-## Root Docs (`docs/`)
+## Root Docs
 
 | Doc | Purpose |
 |-----|---------|
+| [CONTRIBUTING.md](https://github.com/bgauryy/octocode-mcp/blob/main/CONTRIBUTING.md) | PR process, testing requirements, commit conventions, configuration gates |
 | [DEVELOPMENT_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md) | Monorepo setup, TDD, commands, agent guidelines |
 | [CONFIGURATION_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) | Env vars, `.octocoderc`, config examples |
 | [TROUBLESHOOTING.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) | Common issues, auth, MCP connection |
+| [.github/PULL_REQUEST_TEMPLATE.md](https://github.com/bgauryy/octocode-mcp/blob/main/.github/PULL_REQUEST_TEMPLATE.md) | PR checklist and submission template |
 
 ## Package Docs
 

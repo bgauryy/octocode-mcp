@@ -19,7 +19,7 @@ All links in documentation files (`docs/`, `packages/*/docs/`) **MUST** use abso
 
 1. **Task Management**: Review → Plan (use `todo` tool) → Track progress
 2. **Research**: Prefer `octocode-local` MCP tools. LSP first, then local search, then GitHub
-3. **TDD**: Write failing test → Run (`yarn test`) → Fix → Verify coverage (90%)
+3. **TDD**: Write failing test → Run (`yarn test`) → Fix → Verify coverage (per-package thresholds — see [CONTRIBUTING.md](https://github.com/bgauryy/octocode-mcp/blob/main/CONTRIBUTING.md#testing-requirements))
 4. **ReAct Loop**: Reason → Act → Observe → Loop
 5. **Quality**: Clean Code, run `yarn lint` + `yarn test`, use `npx knip` for dead code
 6. **Efficiency**: Use Linux commands (`mv`, `cp`, `sed`) for file operations
@@ -70,6 +70,8 @@ Each package has specific guidelines that **override** this root file:
 ### Core
 - **Docs Index**: [docs/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/README.md)
 - **Development Guide**: [docs/DEVELOPMENT_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md)
+- **Contributing**: [CONTRIBUTING.md](https://github.com/bgauryy/octocode-mcp/blob/main/CONTRIBUTING.md) — PR process, testing, commit conventions, configuration gates
+- **PR Template**: [.github/PULL_REQUEST_TEMPLATE.md](https://github.com/bgauryy/octocode-mcp/blob/main/.github/PULL_REQUEST_TEMPLATE.md)
 - **Configuration**: [docs/CONFIGURATION_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md)
 - **Troubleshooting**: [docs/TROUBLESHOOTING.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md)
 

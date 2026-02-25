@@ -28,6 +28,7 @@ Octocode CLI is the unified installer and management hub for AI-assisted develop
 | [`MENU_FLOW.md`](./docs/MENU_FLOW.md) | Interactive menu system documentation with flow diagrams |
 | [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Technical architecture and design patterns |
 | [`SKILLS_GUIDE.md`](./docs/SKILLS_GUIDE.md) | Comprehensive guide to Octocode Skills system |
+| [Contributing Guide](https://github.com/bgauryy/octocode-mcp/blob/main/CONTRIBUTING.md) | PR process, testing expectations, submit checklist |
 
 ---
 
@@ -304,8 +305,9 @@ main() → initializeSecureStorage() → runCLI() → [command handler] OR runIn
 
 ### Requirements
 
-- **Coverage**: 90% required (Statements, Branches, Functions, Lines)
+- **Coverage**: No enforced thresholds — tests are still required for all changes
 - **Framework**: Vitest with v8 coverage
+- **Source of truth**: [CONTRIBUTING.md — Testing Requirements](https://github.com/bgauryy/octocode-mcp/blob/main/CONTRIBUTING.md#testing-requirements)
 
 ### Test Categories
 
