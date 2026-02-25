@@ -351,11 +351,11 @@ async function fetchDownloadUrl(url: string, token?: string): Promise<string> {
         `Blocked fetch to unexpected host: ${parsed.hostname}. Only GitHub download URLs are allowed.`
       );
     }
-  } catch (e) {
-    if (e instanceof TypeError) {
+  } catch (error: unknown) {
+    if (error instanceof TypeError) {
       throw new Error(`Invalid download URL: ${url}`);
     }
-    throw e;
+    throw error;
   }
 
   const controller = new AbortController();

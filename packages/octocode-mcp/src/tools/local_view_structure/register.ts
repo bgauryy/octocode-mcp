@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { AnySchema } from '../../types/toolTypes.js';
+import { toMCPSchema } from '../../types/toolTypes.js';
 import { TOOL_NAMES } from '../toolMetadata/index.js';
 import {
   BulkViewStructureSchema,
@@ -18,8 +18,8 @@ export function registerLocalViewStructureTool(server: McpServer) {
     TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
     {
       description: LOCAL_VIEW_STRUCTURE_DESCRIPTION,
-      inputSchema: BulkViewStructureSchema as unknown as AnySchema,
-      outputSchema: LocalViewStructureOutputSchema as unknown as AnySchema,
+      inputSchema: toMCPSchema(BulkViewStructureSchema),
+      outputSchema: toMCPSchema(LocalViewStructureOutputSchema),
       annotations: {
         title: 'Local View Structure',
         readOnlyHint: true,

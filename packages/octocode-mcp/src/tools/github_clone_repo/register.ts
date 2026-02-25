@@ -7,7 +7,7 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { AnySchema } from '../../types/toolTypes.js';
+import { toMCPSchema } from '../../types/toolTypes.js';
 import { TOOL_NAMES } from '../toolMetadata/index.js';
 import type { ToolInvocationCallback } from '../../types.js';
 import {
@@ -27,8 +27,8 @@ export function registerGitHubCloneRepoTool(
     TOOL_NAMES.GITHUB_CLONE_REPO,
     {
       description: GITHUB_CLONE_REPO_DESCRIPTION,
-      inputSchema: BulkCloneRepoSchema as unknown as AnySchema,
-      outputSchema: GitHubCloneRepoOutputSchema as unknown as AnySchema,
+      inputSchema: toMCPSchema(BulkCloneRepoSchema),
+      outputSchema: toMCPSchema(GitHubCloneRepoOutputSchema),
       annotations: {
         title: 'Clone / Fetch GitHub Repository Locally',
         readOnlyHint: false,

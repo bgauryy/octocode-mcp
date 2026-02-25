@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { AnySchema } from '../../types/toolTypes.js';
+import { toMCPSchema } from '../../types/toolTypes.js';
 import { TOOL_NAMES } from '../toolMetadata/index.js';
 import {
   BulkFetchContentSchema,
@@ -18,8 +18,8 @@ export function registerLocalFetchContentTool(server: McpServer) {
     TOOL_NAMES.LOCAL_FETCH_CONTENT,
     {
       description: LOCAL_FETCH_CONTENT_DESCRIPTION,
-      inputSchema: BulkFetchContentSchema as unknown as AnySchema,
-      outputSchema: LocalGetFileContentOutputSchema as unknown as AnySchema,
+      inputSchema: toMCPSchema(BulkFetchContentSchema),
+      outputSchema: toMCPSchema(LocalGetFileContentOutputSchema),
       annotations: {
         title: 'Local Fetch Content',
         readOnlyHint: true,

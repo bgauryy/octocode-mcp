@@ -154,7 +154,7 @@ describe('fetchBitbucketFileContentAPI', () => {
       ref: 'main',
     });
 
-    const calledUrl = mockFetch.mock.calls[0][0] as string;
+    const calledUrl = mockFetch.mock.calls[0]![0] as string;
     expect(calledUrl).toContain('my%20file.ts');
   });
 });

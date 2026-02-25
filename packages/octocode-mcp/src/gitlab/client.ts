@@ -128,7 +128,7 @@ export async function getGitlab(config?: ClientConfig): Promise<GitLabClient> {
   const gitlab = new Gitlab({
     host,
     token,
-    requestTimeout: DEFAULT_REQUEST_TIMEOUT_MS,
+    queryTimeout: DEFAULT_REQUEST_TIMEOUT_MS,
   });
 
   // Cache and return

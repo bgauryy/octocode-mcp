@@ -1358,8 +1358,7 @@ describe('GitLab Merge Requests', () => {
 
       it('should handle undefined assignees', () => {
         const mr = createMockMR();
-        // @ts-expect-error - Testing undefined assignees case
-        mr.assignees = undefined;
+        (mr as { assignees?: unknown }).assignees = undefined;
         const result = transformGitLabMergeRequest(mr);
 
         expect(result.assignees).toEqual([]);
@@ -1389,8 +1388,7 @@ describe('GitLab Merge Requests', () => {
 
       it('should handle undefined labels', () => {
         const mr = createMockMR();
-        // @ts-expect-error - Testing undefined labels case
-        mr.labels = undefined;
+        (mr as { labels?: unknown }).labels = undefined;
         const result = transformGitLabMergeRequest(mr);
 
         expect(result.labels).toEqual([]);

@@ -38,6 +38,17 @@ const DEFAULT_GREP_EXTENSIONS = [
 ] as const;
 
 /**
+ * Safely extract exit code from exec/spawn errors (Node.js adds `code` to process errors).
+ */
+function getExecErrorCode(err: unknown): number | undefined {
+  if (err && typeof err === 'object' && 'code' in err) {
+    const c = (err as { code: unknown }).code;
+    return typeof c === 'number' ? c : undefined;
+  }
+  return undefined;
+}
+
+/**
  * Escape regex metacharacters for safe interpolation into RegExp.
  * @internal Exported for testing
  */
@@ -518,9 +529,9 @@ async function searchReferencesInWorkspace(
         // Skip malformed JSON
       }
     }
-  } catch (error) {
-    const execError = error as { code?: number };
-    if (execError.code !== 1) {
+  } catch (error: unknown) {
+    const execCode = getExecErrorCode(error);
+    if (execCode !== 1) {
       return await searchReferencesWithGrep(
         workspaceRoot,
         symbolName,

@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { AnySchema } from '../../types/toolTypes.js';
+import { toMCPSchema } from '../../types/toolTypes.js';
 import { withSecurityValidation } from '../../security/withSecurityValidation.js';
 import type { ToolInvocationCallback } from '../../types.js';
 import type { FileContentQuery } from './types.js';
@@ -18,8 +18,8 @@ export function registerFetchGitHubFileContentTool(
     TOOL_NAMES.GITHUB_FETCH_CONTENT,
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_FETCH_CONTENT],
-      inputSchema: FileContentBulkQuerySchema as unknown as AnySchema,
-      outputSchema: GitHubFetchContentOutputSchema as unknown as AnySchema,
+      inputSchema: toMCPSchema(FileContentBulkQuerySchema),
+      outputSchema: toMCPSchema(GitHubFetchContentOutputSchema),
       annotations: {
         title: 'GitHub File Content Fetch',
         readOnlyHint: false, // may write files to disk in directory mode

@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { AnySchema } from '../../types/toolTypes.js';
+import { toMCPSchema } from '../../types/toolTypes.js';
 import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { BulkRipgrepQuerySchema, LOCAL_RIPGREP_DESCRIPTION } from './scheme.js';
 import { executeRipgrepSearch } from './execution.js';
@@ -15,8 +15,8 @@ export function registerLocalRipgrepTool(server: McpServer) {
     TOOL_NAMES.LOCAL_RIPGREP,
     {
       description: LOCAL_RIPGREP_DESCRIPTION,
-      inputSchema: BulkRipgrepQuerySchema as unknown as AnySchema,
-      outputSchema: LocalSearchCodeOutputSchema as unknown as AnySchema,
+      inputSchema: toMCPSchema(BulkRipgrepQuerySchema),
+      outputSchema: toMCPSchema(LocalSearchCodeOutputSchema),
       annotations: {
         title: 'Local Ripgrep Search',
         readOnlyHint: true,

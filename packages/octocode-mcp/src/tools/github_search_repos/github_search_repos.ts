@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { AnySchema } from '../../types/toolTypes.js';
+import { toMCPSchema } from '../../types/toolTypes.js';
 import { withSecurityValidation } from '../../security/withSecurityValidation.js';
 import type { ToolInvocationCallback } from '../../types.js';
 import type { GitHubReposSearchQuery } from './types.js';
@@ -18,9 +18,8 @@ export function registerSearchGitHubReposTool(
     TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES],
-      inputSchema: GitHubReposSearchQuerySchema as unknown as AnySchema,
-      outputSchema:
-        GitHubSearchRepositoriesOutputSchema as unknown as AnySchema,
+      inputSchema: toMCPSchema(GitHubReposSearchQuerySchema),
+      outputSchema: toMCPSchema(GitHubSearchRepositoriesOutputSchema),
       annotations: {
         title: 'GitHub Repository Search',
         readOnlyHint: true,

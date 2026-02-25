@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { AnySchema } from '../../types/toolTypes.js';
+import { toMCPSchema } from '../../types/toolTypes.js';
 import {
   BulkLSPCallHierarchySchema,
   LSP_CALL_HIERARCHY_DESCRIPTION,
@@ -17,8 +17,8 @@ export function registerLSPCallHierarchyTool(server: McpServer) {
     TOOL_NAMES.LSP_CALL_HIERARCHY,
     {
       description: LSP_CALL_HIERARCHY_DESCRIPTION,
-      inputSchema: BulkLSPCallHierarchySchema as unknown as AnySchema,
-      outputSchema: LspCallHierarchyOutputSchema as unknown as AnySchema,
+      inputSchema: toMCPSchema(BulkLSPCallHierarchySchema),
+      outputSchema: toMCPSchema(LspCallHierarchyOutputSchema),
       annotations: {
         title: 'Call Hierarchy',
         readOnlyHint: true,

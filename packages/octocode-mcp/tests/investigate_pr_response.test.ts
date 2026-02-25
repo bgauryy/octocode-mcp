@@ -23,8 +23,7 @@ describe('GitHub PR Search Tool Refactor (Mocked)', () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
-    // @ts-ignore
-    client.getOctokit.mockResolvedValue(mockOctokit);
+    vi.mocked(client.getOctokit).mockResolvedValue(mockOctokit);
   });
 
   const mockPRData = {

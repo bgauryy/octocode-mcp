@@ -8,7 +8,7 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { AnySchema } from '../../types/toolTypes.js';
+import { toMCPSchema } from '../../types/toolTypes.js';
 import { readFile, stat } from 'fs/promises';
 
 import {
@@ -46,8 +46,8 @@ export function registerLSPFindReferencesTool(server: McpServer) {
     TOOL_NAME,
     {
       description: LSP_FIND_REFERENCES_DESCRIPTION,
-      inputSchema: BulkLSPFindReferencesSchema as unknown as AnySchema,
-      outputSchema: LspFindReferencesOutputSchema as unknown as AnySchema,
+      inputSchema: toMCPSchema(BulkLSPFindReferencesSchema),
+      outputSchema: toMCPSchema(LspFindReferencesOutputSchema),
       annotations: {
         title: 'Find References',
         readOnlyHint: true,

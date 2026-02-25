@@ -236,7 +236,7 @@ describe('searchBitbucketCodeAPI', () => {
         };
       }
     ).data;
-    expect(data.items[0].content_matches).toEqual([]);
-    expect(data.items[0].path_matches).toBeUndefined();
+    expect(data.items[0]!.content_matches).toEqual([]);
+    expect(data.items[0]!.path_matches).toBeUndefined();
   });
 });

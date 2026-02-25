@@ -95,7 +95,7 @@ describe('viewBitbucketRepoStructureAPI', () => {
       depth: 2,
     });
 
-    const callArgs = mockGET.mock.calls[0][1];
+    const callArgs = mockGET.mock.calls[0]![1];
     expect(callArgs.params.query.max_depth).toBe('2');
   });
 
@@ -110,7 +110,7 @@ describe('viewBitbucketRepoStructureAPI', () => {
       ref: 'main',
     });
 
-    const callArgs = mockGET.mock.calls[0][1];
+    const callArgs = mockGET.mock.calls[0]![1];
     expect(callArgs.params.query.max_depth).toBeUndefined();
   });
 
@@ -127,7 +127,7 @@ describe('viewBitbucketRepoStructureAPI', () => {
       entryPageNumber: 2,
     });
 
-    const callArgs = mockGET.mock.calls[0][1];
+    const callArgs = mockGET.mock.calls[0]![1];
     expect(callArgs.params.query.pagelen).toBe('25');
     expect(callArgs.params.query.page).toBe('2');
   });
@@ -189,7 +189,7 @@ describe('viewBitbucketRepoStructureAPI', () => {
 
     const data = (result as { data: { path: string } }).data;
     expect(data.path).toBe('src');
-    const callArgs = mockGET.mock.calls[0][1];
+    const callArgs = mockGET.mock.calls[0]![1];
     expect(callArgs.params.path.path).toBe('src');
   });
 });

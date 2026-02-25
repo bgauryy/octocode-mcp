@@ -113,8 +113,9 @@ describe('Local Tools Execution', () => {
       const { executeBulkOperation } =
         await import('../../src/utils/response/bulk.js');
 
-      // @ts-expect-error Testing undefined queries
-      await executeFetchContent({ queries: undefined });
+      await executeFetchContent({ queries: undefined } as unknown as Parameters<
+        typeof executeFetchContent
+      >[0]);
 
       expect(executeBulkOperation).toHaveBeenCalledWith(
         [],
@@ -176,8 +177,9 @@ describe('Local Tools Execution', () => {
       const { executeBulkOperation } =
         await import('../../src/utils/response/bulk.js');
 
-      // @ts-expect-error Testing undefined queries
-      await executeFindFiles({ queries: undefined });
+      await executeFindFiles({ queries: undefined } as unknown as Parameters<
+        typeof executeFindFiles
+      >[0]);
 
       expect(executeBulkOperation).toHaveBeenCalledWith(
         [],
@@ -250,8 +252,9 @@ describe('Local Tools Execution', () => {
       const { executeBulkOperation } =
         await import('../../src/utils/response/bulk.js');
 
-      // @ts-expect-error Testing undefined queries
-      await executeRipgrepSearch({ queries: undefined });
+      await executeRipgrepSearch({
+        queries: undefined,
+      } as unknown as Parameters<typeof executeRipgrepSearch>[0]);
 
       expect(executeBulkOperation).toHaveBeenCalledWith(
         [],
@@ -313,8 +316,9 @@ describe('Local Tools Execution', () => {
       const { executeBulkOperation } =
         await import('../../src/utils/response/bulk.js');
 
-      // @ts-expect-error Testing undefined queries
-      await executeViewStructure({ queries: undefined });
+      await executeViewStructure({
+        queries: undefined,
+      } as unknown as Parameters<typeof executeViewStructure>[0]);
 
       expect(executeBulkOperation).toHaveBeenCalledWith(
         [],

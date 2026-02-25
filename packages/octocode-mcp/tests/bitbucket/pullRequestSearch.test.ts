@@ -69,8 +69,8 @@ describe('searchBitbucketPRsAPI', () => {
         }
       ).data;
       expect(data.pullRequests).toHaveLength(1);
-      expect(data.pullRequests[0].id).toBe(42);
-      expect(data.pullRequests[0].title).toBe('Fix bug');
+      expect(data.pullRequests[0]!.id).toBe(42);
+      expect(data.pullRequests[0]!.title).toBe('Fix bug');
     });
 
     it('should fetch PR with comments when withComments=true', async () => {
@@ -112,7 +112,7 @@ describe('searchBitbucketPRsAPI', () => {
       const data = (result as { data: { comments: Array<{ id: number }> } })
         .data;
       expect(data.comments).toHaveLength(1);
-      expect(data.comments[0].id).toBe(100);
+      expect(data.comments[0]!.id).toBe(100);
     });
 
     it('should fetch PR with diff when withDiff=true', async () => {
@@ -186,7 +186,7 @@ describe('searchBitbucketPRsAPI', () => {
       const data = (result as { data: { diffstat: Array<{ status: string }> } })
         .data;
       expect(data.diffstat).toHaveLength(1);
-      expect(data.diffstat[0].status).toBe('modified');
+      expect(data.diffstat[0]!.status).toBe('modified');
     });
 
     it('should handle comments fetch failure gracefully', async () => {
@@ -366,7 +366,7 @@ describe('searchBitbucketPRsAPI', () => {
         author: 'john',
       });
 
-      const callArgs = mockGET.mock.calls[0][1];
+      const callArgs = mockGET.mock.calls[0]![1];
       expect(callArgs.params.query.q).toContain('author.display_name ~ "john"');
     });
 
@@ -379,7 +379,7 @@ describe('searchBitbucketPRsAPI', () => {
         baseBranch: 'main',
       });
 
-      const callArgs = mockGET.mock.calls[0][1];
+      const callArgs = mockGET.mock.calls[0]![1];
       expect(callArgs.params.query.q).toContain(
         'destination.branch.name = "main"'
       );
@@ -394,7 +394,7 @@ describe('searchBitbucketPRsAPI', () => {
         headBranch: 'feature-x',
       });
 
-      const callArgs = mockGET.mock.calls[0][1];
+      const callArgs = mockGET.mock.calls[0]![1];
       expect(callArgs.params.query.q).toContain(
         'source.branch.name = "feature-x"'
       );
@@ -409,7 +409,7 @@ describe('searchBitbucketPRsAPI', () => {
         sort: 'updated',
       });
 
-      const callArgs = mockGET.mock.calls[0][1];
+      const callArgs = mockGET.mock.calls[0]![1];
       expect(callArgs.params.query.sort).toBe('-updated_on');
     });
 
@@ -422,7 +422,7 @@ describe('searchBitbucketPRsAPI', () => {
         sort: 'created',
       });
 
-      const callArgs = mockGET.mock.calls[0][1];
+      const callArgs = mockGET.mock.calls[0]![1];
       expect(callArgs.params.query.sort).toBe('-created_on');
     });
 

@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 /**
  * Tests for execution context validation
  */
@@ -177,9 +176,8 @@ describe('executionContextValidator', () => {
 
           // Clean up
           fs.rmSync(tmpDir, { recursive: true, force: true });
-        } catch (error) {
+        } catch {
           // Skip test if symlink creation fails (e.g., permissions)
-          console.warn('Skipping symlink test:', error);
         }
       });
 
@@ -207,9 +205,8 @@ describe('executionContextValidator', () => {
           // Clean up
           fs.rmSync(tmpDir, { recursive: true, force: true });
           fs.rmSync(externalTarget, { recursive: true, force: true });
-        } catch (error) {
+        } catch {
           // Skip test if setup fails
-          console.warn('Skipping external symlink test:', error);
         }
       });
     });

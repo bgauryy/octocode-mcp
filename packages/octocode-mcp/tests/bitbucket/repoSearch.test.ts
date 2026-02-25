@@ -65,7 +65,7 @@ describe('searchBitbucketReposAPI', () => {
       keywords: ['api', 'service'],
     });
 
-    const callArgs = mockGET.mock.calls[0][1];
+    const callArgs = mockGET.mock.calls[0]![1];
     expect(callArgs.params.query.q).toContain('name ~ "api"');
     expect(callArgs.params.query.q).toContain('name ~ "service"');
   });
@@ -78,7 +78,7 @@ describe('searchBitbucketReposAPI', () => {
       topics: ['typescript'],
     });
 
-    const callArgs = mockGET.mock.calls[0][1];
+    const callArgs = mockGET.mock.calls[0]![1];
     expect(callArgs.params.query.q).toContain('topic = "typescript"');
   });
 
@@ -90,7 +90,7 @@ describe('searchBitbucketReposAPI', () => {
       visibility: 'public',
     });
 
-    const callArgs = mockGET.mock.calls[0][1];
+    const callArgs = mockGET.mock.calls[0]![1];
     expect(callArgs.params.query.q).toContain('is_private = false');
   });
 
@@ -102,7 +102,7 @@ describe('searchBitbucketReposAPI', () => {
       visibility: 'private',
     });
 
-    const callArgs = mockGET.mock.calls[0][1];
+    const callArgs = mockGET.mock.calls[0]![1];
     expect(callArgs.params.query.q).toContain('is_private = true');
   });
 
@@ -114,7 +114,7 @@ describe('searchBitbucketReposAPI', () => {
       sort: 'updated',
     });
 
-    const callArgs = mockGET.mock.calls[0][1];
+    const callArgs = mockGET.mock.calls[0]![1];
     expect(callArgs.params.query.sort).toBe('-updated_on');
   });
 
@@ -126,7 +126,7 @@ describe('searchBitbucketReposAPI', () => {
       sort: 'name',
     });
 
-    const callArgs = mockGET.mock.calls[0][1];
+    const callArgs = mockGET.mock.calls[0]![1];
     expect(callArgs.params.query.sort).toBe('name');
   });
 
@@ -135,7 +135,7 @@ describe('searchBitbucketReposAPI', () => {
 
     await searchBitbucketReposAPI({ workspace: 'ws' });
 
-    const callArgs = mockGET.mock.calls[0][1];
+    const callArgs = mockGET.mock.calls[0]![1];
     expect(callArgs.params.query.sort).toBeUndefined();
   });
 
@@ -198,7 +198,7 @@ describe('searchBitbucketReposAPI', () => {
 
     await searchBitbucketReposAPI({ workspace: 'ws' });
 
-    const callArgs = mockGET.mock.calls[0][1];
+    const callArgs = mockGET.mock.calls[0]![1];
     expect(callArgs.params.query.pagelen).toBe('10');
     expect(callArgs.params.query.page).toBe('1');
   });

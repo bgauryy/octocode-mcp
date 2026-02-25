@@ -317,8 +317,10 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
       await initializeToolMetadata();
 
       // Should return empty array via ?? fallback when resultType doesn't exist
-      // @ts-expect-error - testing fallback for non-existent resultType
-      const hints = getToolHintsSync('githubSearchCode', 'nonExistentType');
+      const hints = getToolHintsSync(
+        'githubSearchCode',
+        'nonExistentType' as 'hasResults' | 'empty'
+      );
       expect(hints).toEqual([]);
     });
   });

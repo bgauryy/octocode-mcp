@@ -107,7 +107,7 @@ describe('BitbucketProvider', () => {
       });
       expect(result.status).toBe(200);
       expect(result.data?.items).toHaveLength(1);
-      expect(result.data?.items[0].path).toBe('src/index.ts');
+      expect(result.data?.items[0]!.path).toBe('src/index.ts');
     });
 
     it('should forward API errors', async () => {
@@ -293,8 +293,8 @@ describe('BitbucketProvider', () => {
       });
       expect(result.status).toBe(200);
       expect(result.data?.repositories).toHaveLength(1);
-      expect(result.data?.repositories[0].name).toBe('my-repo');
-      expect(result.data?.repositories[0].cloneUrl).toContain('https');
+      expect(result.data?.repositories[0]!.name).toBe('my-repo');
+      expect(result.data?.repositories[0]!.cloneUrl).toContain('https');
     });
 
     it('should forward API errors', async () => {
@@ -377,8 +377,8 @@ describe('BitbucketProvider', () => {
 
       expect(result.status).toBe(200);
       expect(result.data?.items).toHaveLength(1);
-      expect(result.data?.items[0].state).toBe('merged');
-      expect(result.data?.items[0].mergedAt).toBeDefined();
+      expect(result.data?.items[0]!.state).toBe('merged');
+      expect(result.data?.items[0]!.mergedAt).toBeDefined();
     });
 
     it('should forward API errors', async () => {
@@ -533,7 +533,7 @@ describe('BitbucketProvider', () => {
 
       const result = await provider.getRepoStructure({ projectId: 'ws/repo' });
       expect(result.data?.structure['.']).toBeDefined();
-      expect(result.data?.structure['.'].folders).toContain('src');
+      expect(result.data?.structure['.']!.folders).toContain('src');
     });
 
     it('should handle thrown errors via handleError', async () => {
@@ -665,7 +665,7 @@ describe('transformCodeSearchResult', () => {
     );
 
     expect(result.items).toHaveLength(1);
-    expect(result.items[0].matches[0].context).toBe('hello world');
+    expect(result.items[0]!.matches[0]!.context).toBe('hello world');
     expect(result.pagination.currentPage).toBe(2);
   });
 
@@ -681,7 +681,7 @@ describe('transformCodeSearchResult', () => {
       { keywords: ['x'] }
     );
 
-    expect(result.items[0].matches[0].context).toBe('');
+    expect(result.items[0]!.matches[0]!.context).toBe('');
   });
 });
 
@@ -701,9 +701,9 @@ describe('transformRepoSearchResult', () => {
       },
     ]);
 
-    expect(result.repositories[0].visibility).toBe('private');
-    expect(result.repositories[0].defaultBranch).toBe('main');
-    expect(result.repositories[0].forks).toBe(0);
+    expect(result.repositories[0]!.visibility).toBe('private');
+    expect(result.repositories[0]!.defaultBranch).toBe('main');
+    expect(result.repositories[0]!.forks).toBe(0);
   });
 
   it('should use pagination when provided', () => {
@@ -789,7 +789,7 @@ describe('transformPullRequestResult', () => {
       { currentPage: 1, totalPages: 1, hasMore: false, totalMatches: 1 }
     );
 
-    expect(result.items[0].state).toBe('closed');
+    expect(result.items[0]!.state).toBe('closed');
   });
 
   it('should map SUPERSEDED state to "closed"', () => {
@@ -810,7 +810,7 @@ describe('transformPullRequestResult', () => {
       { currentPage: 1, totalPages: 1, hasMore: false }
     );
 
-    expect(result.items[0].state).toBe('closed');
+    expect(result.items[0]!.state).toBe('closed');
   });
 
   it('should include comments when provided', () => {
@@ -840,8 +840,8 @@ describe('transformPullRequestResult', () => {
       ]
     );
 
-    expect(result.items[0].comments).toHaveLength(1);
-    expect(result.items[0].comments![0].body).toBe('Nice!');
+    expect(result.items[0]!.comments).toHaveLength(1);
+    expect(result.items[0]!.comments![0]!.body).toBe('Nice!');
   });
 
   it('should handle PR with null description', () => {
@@ -862,7 +862,7 @@ describe('transformPullRequestResult', () => {
       { currentPage: 1, totalPages: 1, hasMore: false }
     );
 
-    expect(result.items[0].body).toBeNull();
+    expect(result.items[0]!.body).toBeNull();
   });
 
   it('should use username when available for author', () => {
@@ -887,7 +887,7 @@ describe('transformPullRequestResult', () => {
       { currentPage: 1, totalPages: 1, hasMore: false }
     );
 
-    expect(result.items[0].author).toBe('johnd');
+    expect(result.items[0]!.author).toBe('johnd');
   });
 });
 

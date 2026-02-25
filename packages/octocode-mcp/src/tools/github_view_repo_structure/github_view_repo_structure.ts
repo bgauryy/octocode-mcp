@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { AnySchema } from '../../types/toolTypes.js';
+import { toMCPSchema } from '../../types/toolTypes.js';
 import { withSecurityValidation } from '../../security/withSecurityValidation.js';
 import type { ToolInvocationCallback } from '../../types.js';
 import type { GitHubViewRepoStructureQuery } from './types.js';
@@ -18,9 +18,8 @@ export function registerViewGitHubRepoStructureTool(
     TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
     {
       description: DESCRIPTIONS[TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE],
-      inputSchema:
-        GitHubViewRepoStructureBulkQuerySchema as unknown as AnySchema,
-      outputSchema: GitHubViewRepoStructureOutputSchema as unknown as AnySchema,
+      inputSchema: toMCPSchema(GitHubViewRepoStructureBulkQuerySchema),
+      outputSchema: toMCPSchema(GitHubViewRepoStructureOutputSchema),
       annotations: {
         title: 'GitHub Repository Structure Explorer',
         readOnlyHint: true,

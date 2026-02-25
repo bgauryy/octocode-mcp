@@ -621,8 +621,7 @@ test:
   describe('Error Handling', () => {
     it('should handle non-string content gracefully', async () => {
       // Force an error by passing invalid content type
-      // @ts-expect-error - Testing error handling with invalid input
-      const result = await minifyContent(null, 'test.txt');
+      const result = await minifyContent(null as unknown as string, 'test.txt');
 
       expect(result.failed).toBe(true);
       expect(result.type).toBe('failed');
@@ -630,8 +629,10 @@ test:
     });
 
     it('should handle undefined content gracefully', async () => {
-      // @ts-expect-error - Testing error handling with invalid input
-      const result = await minifyContent(undefined, 'test.txt');
+      const result = await minifyContent(
+        undefined as unknown as string,
+        'test.txt'
+      );
 
       expect(result.failed).toBe(true);
       expect(result.type).toBe('failed');
@@ -646,8 +647,10 @@ test:
         },
       };
 
-      // @ts-expect-error - Testing error handling with problematic input
-      const result = await minifyContent(problematicContent, 'test.txt');
+      const result = await minifyContent(
+        problematicContent as unknown as string,
+        'test.txt'
+      );
 
       expect(result.failed).toBe(true);
       expect(result.type).toBe('failed');

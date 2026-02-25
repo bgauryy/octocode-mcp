@@ -110,11 +110,11 @@ export async function transformPullRequestItemFromSearch(
           }
         }
       }
-    } catch (e) {
-      logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(e));
+    } catch (error: unknown) {
+      logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(error));
       result._sanitization_warnings = [
         ...(result._sanitization_warnings || []),
-        `Partial Data: Failed to fetch details (files): ${e instanceof Error ? e.message : String(e)}`,
+        `Partial Data: Failed to fetch details (files): ${error instanceof Error ? error.message : String(error)}`,
       ];
     }
   }
@@ -145,11 +145,11 @@ export async function transformPullRequestItemFromSearch(
           result.commits = commits;
         }
       }
-    } catch (e) {
-      logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(e));
+    } catch (error: unknown) {
+      logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(error));
       result._sanitization_warnings = [
         ...(result._sanitization_warnings || []),
-        `Partial Data: Failed to fetch details (commits): ${e instanceof Error ? e.message : String(e)}`,
+        `Partial Data: Failed to fetch details (commits): ${error instanceof Error ? error.message : String(error)}`,
       ];
     }
   }
@@ -322,11 +322,11 @@ export async function transformPullRequestItemFromREST(
         ) as DiffEntry[];
         result.file_changes = fileChanges;
       }
-    } catch (e) {
-      logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(e));
+    } catch (error: unknown) {
+      logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(error));
       result._sanitization_warnings = [
         ...(result._sanitization_warnings || []),
-        `Partial Data: Failed to fetch details (files): ${e instanceof Error ? e.message : String(e)}`,
+        `Partial Data: Failed to fetch details (files): ${error instanceof Error ? error.message : String(error)}`,
       ];
     }
   }
@@ -347,11 +347,11 @@ export async function transformPullRequestItemFromREST(
       if (commits) {
         result.commits = commits;
       }
-    } catch (e) {
-      logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(e));
+    } catch (error: unknown) {
+      logSessionError(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, String(error));
       result._sanitization_warnings = [
         ...(result._sanitization_warnings || []),
-        `Partial Data: Failed to fetch details (commits): ${e instanceof Error ? e.message : String(e)}`,
+        `Partial Data: Failed to fetch details (commits): ${error instanceof Error ? error.message : String(error)}`,
       ];
     }
   }
