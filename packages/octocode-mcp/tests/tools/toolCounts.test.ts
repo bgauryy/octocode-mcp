@@ -103,6 +103,7 @@ describe('Tool Count Verification', () => {
       enableLocal: false,
       enableClone: false,
       disablePrompts: false,
+      outputFormat: 'yaml',
       tokenSource: 'env:GITHUB_TOKEN',
     });
     vi.mocked(isLocalEnabled).mockReturnValue(false);
@@ -125,6 +126,7 @@ describe('Tool Count Verification', () => {
       enableLocal: true,
       enableClone: false,
       disablePrompts: false,
+      outputFormat: 'yaml',
       tokenSource: 'env:GITHUB_TOKEN',
     });
     vi.mocked(isLocalEnabled).mockReturnValue(true);
@@ -151,6 +153,7 @@ describe('Tool Count Verification', () => {
       enableLocal: true,
       enableClone: true,
       disablePrompts: false,
+      outputFormat: 'yaml',
       tokenSource: 'env:GITHUB_TOKEN',
     });
     vi.mocked(isLocalEnabled).mockReturnValue(true);

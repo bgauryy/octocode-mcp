@@ -130,6 +130,10 @@ New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.octocode"
 
   "lsp": {
     "configPath": null                       // Custom LSP config file path
+  },
+
+  "output": {
+    "format": "yaml"                         // Response format: "yaml" (default) or "json"
   }
 }
 ```
@@ -194,19 +198,21 @@ For full authentication details (token creation, auth modes, troubleshooting), s
 | 14 | `LOG` | `telemetry.logging` | logging | `true` | Telemetry. Disabled with `false`/`0`. |
 | | **LSP** | | | | |
 | 15 | `OCTOCODE_LSP_CONFIG` | `lsp.configPath` | string | `null` | Custom LSP config file path. Auto-detects `.octocode/lsp-servers.json` when unset. Requires `ENABLE_LOCAL=true`. |
+| | **Output** | | | | |
+| 16 | `OCTOCODE_OUTPUT_FORMAT` | `output.format` | string | `yaml` | Response serialization format. `yaml` (default, token-efficient) or `json` (raw JSON). |
 | | **Authentication** (env only) | | | | |
-| 16 | `OCTOCODE_TOKEN` | — | string | — | GitHub token (priority 1). |
-| 17 | `GH_TOKEN` | — | string | — | GitHub CLI token (priority 2). |
-| 18 | `GITHUB_TOKEN` | — | string | — | GitHub Actions token (priority 3). |
-| 19 | `GITLAB_TOKEN` | — | string | — | GitLab personal access token (priority 1). Setting this activates GitLab mode. |
-| 20 | `GL_TOKEN` | — | string | — | GitLab token fallback (priority 2). Setting this activates GitLab mode. |
-| 21 | `BITBUCKET_TOKEN` | — | string | — | Bitbucket app password or OAuth token (priority 1). Setting this activates Bitbucket mode (when no GitLab token is set). |
-| 22 | `BB_TOKEN` | — | string | — | Bitbucket token fallback (priority 2). |
-| 23 | `BITBUCKET_USERNAME` | — | string | — | Bitbucket username. Set for Basic auth (app passwords); omit for Bearer auth (OAuth). |
+| 17 | `OCTOCODE_TOKEN` | — | string | — | GitHub token (priority 1). |
+| 18 | `GH_TOKEN` | — | string | — | GitHub CLI token (priority 2). |
+| 19 | `GITHUB_TOKEN` | — | string | — | GitHub Actions token (priority 3). |
+| 20 | `GITLAB_TOKEN` | — | string | — | GitLab personal access token (priority 1). Setting this activates GitLab mode. |
+| 21 | `GL_TOKEN` | — | string | — | GitLab token fallback (priority 2). Setting this activates GitLab mode. |
+| 22 | `BITBUCKET_TOKEN` | — | string | — | Bitbucket app password or OAuth token (priority 1). Setting this activates Bitbucket mode (when no GitLab token is set). |
+| 23 | `BB_TOKEN` | — | string | — | Bitbucket token fallback (priority 2). |
+| 24 | `BITBUCKET_USERNAME` | — | string | — | Bitbucket username. Set for Basic auth (app passwords); omit for Bearer auth (OAuth). |
 | | **Advanced** (env only) | | | | |
-| 24 | `OCTOCODE_BULK_QUERY_TIMEOUT_MS` | — | number | `60000` | Timeout for bulk/multi-query tool calls (ms). |
-| 25 | `OCTOCODE_COMMAND_CHECK_TIMEOUT_MS` | — | number | `5000` | Timeout for checking system command availability (ms). |
-| 26 | `OCTOCODE_CACHE_TTL_MS` | — | number | `86400000` | Cache TTL for cloned repos (ms). Default is 24 hours. Must be a positive integer. |
+| 25 | `OCTOCODE_BULK_QUERY_TIMEOUT_MS` | — | number | `60000` | Timeout for bulk/multi-query tool calls (ms). |
+| 26 | `OCTOCODE_COMMAND_CHECK_TIMEOUT_MS` | — | number | `5000` | Timeout for checking system command availability (ms). |
+| 27 | `OCTOCODE_CACHE_TTL_MS` | — | number | `86400000` | Cache TTL for cloned repos (ms). Default is 24 hours. Must be a positive integer. |
 
 **Type parsing (all values are case-insensitive, whitespace is trimmed):**
 
@@ -256,7 +262,8 @@ All values are strings in the `"env"` block:
         "REQUEST_TIMEOUT": "30000",
         "MAX_RETRIES": "3",
         "LOG": "true",
-        "OCTOCODE_LSP_CONFIG": "/Users/me/.octocode/lsp-servers.json"
+        "OCTOCODE_LSP_CONFIG": "/Users/me/.octocode/lsp-servers.json",
+        "OCTOCODE_OUTPUT_FORMAT": "yaml"
       }
     }
   }
@@ -308,6 +315,10 @@ Values use native JSON types (booleans, numbers, arrays — not strings):
 
   "lsp": {
     "configPath": "/Users/me/.octocode/lsp-servers.json"
+  },
+
+  "output": {
+    "format": "yaml"
   }
 }
 ```

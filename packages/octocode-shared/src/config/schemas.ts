@@ -26,5 +26,6 @@ export const OctocodeConfigSchema = z
     network: z.record(z.unknown()).optional(),
     telemetry: z.record(z.unknown()).optional(),
     lsp: z.record(z.unknown()).optional(),
+    output: z.record(z.unknown()).optional(),
   })
   .passthrough();

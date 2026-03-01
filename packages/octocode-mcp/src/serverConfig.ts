@@ -161,6 +161,7 @@ export async function initialize(): Promise<void> {
       enableLocal: resolved.local.enabled,
       enableClone: resolved.local.enableClone,
       disablePrompts: resolved.tools.disablePrompts,
+      outputFormat: resolved.output.format,
       tokenSource: tokenResult.source,
       gitlab: resolveGitLabConfig(),
       bitbucket: resolveBitbucketConfig(),

@@ -139,6 +139,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -166,31 +167,45 @@ describe('ToolsManager', () => {
 
   describe('TOOLS_TO_RUN Configuration', () => {
     it('should register only specified tools when TOOLS_TO_RUN is set', async () => {
+      const allowedTools = [
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+      ];
+
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
-        toolsToRun: [
-          TOOL_NAMES.GITHUB_SEARCH_CODE,
-          TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
-        ],
+        toolsToRun: allowedTools,
         timeout: 30000,
         maxRetries: 3,
         loggingEnabled: true,
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
 
-      expect(typeof result.successCount).toBe('number');
-      expect(result.successCount).toBeGreaterThanOrEqual(0);
-      expect(result.failedTools).toBeDefined();
-      expect(Array.isArray(result.failedTools)).toBe(true);
+      expect(result.successCount).toBe(allowedTools.length);
+      expect(result.failedTools).toHaveLength(0);
+
+      ALL_TOOLS.forEach(tool => {
+        if (allowedTools.includes(tool.name)) {
+          expect(tool.fn).toHaveBeenCalled();
+        } else {
+          expect(tool.fn).not.toHaveBeenCalled();
+        }
+      });
     });
 
     it('should handle non-existent tools in TOOLS_TO_RUN gracefully', async () => {
+      const validTools = [
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+      ];
+
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -205,16 +220,22 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
       const result = await registerTools(mockServer);
 
-      // Should register existing tools, ignore non-existent one
-      expect(typeof result.successCount).toBe('number');
-      expect(result.successCount).toBeGreaterThanOrEqual(0);
-      expect(result.failedTools).toBeDefined();
-      expect(Array.isArray(result.failedTools)).toBe(true);
+      expect(result.successCount).toBe(validTools.length);
+      expect(result.failedTools).toHaveLength(0);
+
+      ALL_TOOLS.forEach(tool => {
+        if (validTools.includes(tool.name)) {
+          expect(tool.fn).toHaveBeenCalled();
+        } else {
+          expect(tool.fn).not.toHaveBeenCalled();
+        }
+      });
     });
 
     it('should register no tools if TOOLS_TO_RUN contains only non-existent tools', async () => {
@@ -228,6 +249,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -244,7 +266,7 @@ describe('ToolsManager', () => {
   });
 
   describe('TOOLS_TO_RUN conflicts with ENABLE_TOOLS/DISABLE_TOOLS', () => {
-    it('should warn when TOOLS_TO_RUN is used with ENABLE_TOOLS', async () => {
+    it('should warn when TOOLS_TO_RUN is used with ENABLE_TOOLS and only register TOOLS_TO_RUN', async () => {
       mockGetServerConfig.mockReturnValue({
         version: '1.0.0',
         githubApiUrl: 'https://api.github.com',
@@ -256,14 +278,25 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
-      await registerTools(mockServer);
+      const result = await registerTools(mockServer);
 
       expect(process.stderr.write).toHaveBeenCalledWith(
         'Warning: TOOLS_TO_RUN cannot be used together with ENABLE_TOOLS/DISABLE_TOOLS. Using TOOLS_TO_RUN exclusively.\n'
       );
+
+      expect(result.successCount).toBe(1);
+      const searchCodeTool = ALL_TOOLS.find(
+        t => t.name === TOOL_NAMES.GITHUB_SEARCH_CODE
+      );
+      const prTool = ALL_TOOLS.find(
+        t => t.name === TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS
+      );
+      expect(searchCodeTool!.fn).toHaveBeenCalled();
+      expect(prTool!.fn).not.toHaveBeenCalled();
     });
 
     it('should warn when TOOLS_TO_RUN is used with DISABLE_TOOLS', async () => {
@@ -278,6 +311,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -301,6 +335,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -324,6 +359,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -354,6 +390,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -378,6 +415,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -402,6 +440,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -426,6 +465,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -455,6 +495,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -490,6 +531,7 @@ describe('ToolsManager', () => {
         enableLocal: true,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -516,6 +558,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -542,6 +585,7 @@ describe('ToolsManager', () => {
         enableLocal: true,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -572,6 +616,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -599,6 +644,7 @@ describe('ToolsManager', () => {
         enableLocal: true,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -629,6 +675,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -670,6 +717,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -727,6 +775,7 @@ describe('ToolsManager', () => {
         enableLocal: true,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 
@@ -754,6 +803,7 @@ describe('ToolsManager', () => {
         enableLocal: false,
         enableClone: false,
         disablePrompts: false,
+        outputFormat: 'yaml',
         tokenSource: 'env:GITHUB_TOKEN',
       });
 

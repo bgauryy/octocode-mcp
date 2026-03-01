@@ -141,6 +141,7 @@ describe('octocode home directory access', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'defaults',
         configPath: undefined,
       });
@@ -171,6 +172,7 @@ describe('octocode home directory access', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'defaults',
         configPath: undefined,
       });
@@ -201,6 +203,7 @@ describe('octocode home directory access', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'defaults',
         configPath: undefined,
       });
@@ -231,6 +234,7 @@ describe('octocode home directory access', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'defaults',
         configPath: undefined,
       });

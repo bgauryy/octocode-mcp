@@ -7,6 +7,7 @@ import type {
   RequiredNetworkConfig,
   RequiredTelemetryConfig,
   RequiredLspConfig,
+  RequiredOutputConfig,
   ResolvedConfig,
 } from './types.js';
 
@@ -77,6 +78,13 @@ export const DEFAULT_LSP_CONFIG: RequiredLspConfig = {
   configPath: undefined,
 };
 
+/**
+ * Default output configuration
+ */
+export const DEFAULT_OUTPUT_CONFIG: RequiredOutputConfig = {
+  format: 'yaml',
+};
+
 // ============================================================================
 // COMPLETE DEFAULT CONFIG
 // ============================================================================
@@ -95,6 +103,7 @@ export const DEFAULT_CONFIG: Omit<ResolvedConfig, 'source' | 'configPath'> = {
   network: DEFAULT_NETWORK_CONFIG,
   telemetry: DEFAULT_TELEMETRY_CONFIG,
   lsp: DEFAULT_LSP_CONFIG,
+  output: DEFAULT_OUTPUT_CONFIG,
 };
 
 // ============================================================================

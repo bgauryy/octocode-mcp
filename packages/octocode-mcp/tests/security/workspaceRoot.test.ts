@@ -45,6 +45,7 @@ describe('resolveWorkspaceRoot', () => {
       network: { timeout: 30000, maxRetries: 3 },
       telemetry: { logging: true },
       lsp: { configPath: undefined },
+      output: { format: 'yaml' },
       source: 'defaults',
       configPath: undefined,
     });
@@ -83,6 +84,7 @@ describe('resolveWorkspaceRoot', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'defaults',
         configPath: undefined,
       });
@@ -114,6 +116,7 @@ describe('resolveWorkspaceRoot', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'defaults',
         configPath: undefined,
       });
@@ -144,6 +147,7 @@ describe('resolveWorkspaceRoot', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'defaults',
         configPath: undefined,
       });
@@ -243,6 +247,7 @@ describe('resolveWorkspaceRoot', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'file',
         configPath: '/home/user/.octocode/.octocoderc',
       });
@@ -272,6 +277,7 @@ describe('resolveWorkspaceRoot', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'file',
         configPath: '/home/user/.octocode/.octocoderc',
       });
@@ -360,6 +366,7 @@ describe('resolveWorkspaceRoot', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'file',
         configPath: undefined,
       });
@@ -392,6 +399,7 @@ describe('resolveWorkspaceRoot', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'file',
         configPath: undefined,
       });

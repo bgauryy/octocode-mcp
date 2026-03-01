@@ -274,6 +274,8 @@ export interface ServerConfig {
   enableClone: boolean;
   /** Whether prompts/slash commands are disabled */
   disablePrompts: boolean;
+  /** Response serialization format: 'yaml' (default, token-efficient) or 'json' */
+  outputFormat: 'yaml' | 'json';
   tokenSource: TokenSourceType;
   /** GitLab configuration (optional) */
   gitlab?: GitLabConfig;

@@ -63,6 +63,9 @@ const mockDefaultConfig = {
   lsp: {
     configPath: undefined,
   },
+  output: {
+    format: 'yaml',
+  },
   source: 'defaults',
   configPath: undefined,
 };

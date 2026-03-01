@@ -883,6 +883,7 @@ interface OctocodeConfig {
   network?: { timeout?: number; maxRetries?: number };
   telemetry?: { logging?: boolean };
   lsp?: { configPath?: string };
+  output?: { format?: 'yaml' | 'json' };
 }
 ```
 
@@ -902,6 +903,7 @@ interface ResolvedConfig {
   network: { timeout: number; maxRetries: number };
   telemetry: { logging: boolean };
   lsp: { configPath: string | undefined };
+  output: { format: 'yaml' | 'json' };
   source: 'file' | 'defaults' | 'mixed';
   configPath?: string;
 }

@@ -97,6 +97,14 @@ export interface LspConfigOptions {
   configPath?: string;
 }
 
+/**
+ * Output format configuration
+ */
+export interface OutputConfigOptions {
+  /** Response serialization format: 'yaml' (token-efficient) or 'json' (raw) */
+  format?: 'yaml' | 'json';
+}
+
 // ============================================================================
 // MAIN CONFIGURATION TYPES
 // ============================================================================
@@ -125,6 +133,8 @@ export interface OctocodeConfig {
   telemetry?: TelemetryConfigOptions;
   /** LSP settings */
   lsp?: LspConfigOptions;
+  /** Output format settings */
+  output?: OutputConfigOptions;
 }
 
 /**
@@ -169,6 +179,10 @@ export interface RequiredLspConfig {
   configPath: string | undefined;
 }
 
+export interface RequiredOutputConfig {
+  format: 'yaml' | 'json';
+}
+
 /**
  * Resolved configuration with all defaults applied
  */
@@ -191,6 +205,8 @@ export interface ResolvedConfig {
   telemetry: RequiredTelemetryConfig;
   /** LSP settings */
   lsp: RequiredLspConfig;
+  /** Output format settings */
+  output: RequiredOutputConfig;
   /** Source of this configuration */
   source: 'file' | 'defaults' | 'mixed';
   /** Path to config file (if loaded from file) */

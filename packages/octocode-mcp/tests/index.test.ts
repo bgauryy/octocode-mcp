@@ -194,6 +194,7 @@ describe('Index Module', () => {
       enableLocal: false,
       enableClone: false,
       disablePrompts: false,
+      outputFormat: 'yaml',
       tokenSource: 'env:GITHUB_TOKEN',
     });
 

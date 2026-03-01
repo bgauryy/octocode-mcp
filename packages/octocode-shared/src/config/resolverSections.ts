@@ -12,6 +12,7 @@ import type {
   RequiredNetworkConfig,
   RequiredTelemetryConfig,
   RequiredLspConfig,
+  RequiredOutputConfig,
 } from './types.js';
 import {
   DEFAULT_GITHUB_CONFIG,
@@ -22,6 +23,7 @@ import {
   DEFAULT_NETWORK_CONFIG,
   DEFAULT_TELEMETRY_CONFIG,
   DEFAULT_LSP_CONFIG,
+  DEFAULT_OUTPUT_CONFIG,
   MIN_TIMEOUT,
   MAX_TIMEOUT,
   MIN_RETRIES,
@@ -255,5 +257,24 @@ export function resolveLsp(
   return {
     configPath:
       envConfigPath ?? fileConfig?.configPath ?? DEFAULT_LSP_CONFIG.configPath,
+  };
+}
+
+const VALID_OUTPUT_FORMATS = new Set(['yaml', 'json']);
+
+/**
+ * Resolve output format configuration.
+ */
+export function resolveOutput(
+  fileConfig?: OctocodeConfig['output']
+): RequiredOutputConfig {
+  const envFormat = process.env.OCTOCODE_OUTPUT_FORMAT?.trim().toLowerCase();
+  const resolved =
+    envFormat || fileConfig?.format || DEFAULT_OUTPUT_CONFIG.format;
+
+  return {
+    format: VALID_OUTPUT_FORMATS.has(resolved)
+      ? (resolved as 'yaml' | 'json')
+      : DEFAULT_OUTPUT_CONFIG.format,
   };
 }
