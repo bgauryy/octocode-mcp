@@ -19,6 +19,7 @@ import { hints as githubFetchContentHints } from '../tools/github_fetch_content/
 import { hints as githubViewRepoStructureHints } from '../tools/github_view_repo_structure/hints.js';
 import { hints as githubSearchPullRequestsHints } from '../tools/github_search_pull_requests/hints.js';
 import { hints as githubSearchReposHints } from '../tools/github_search_repos/hints.js';
+import { hints as githubCloneRepoHints } from '../tools/github_clone_repo/hints.js';
 import { hints as packageSearchHints } from '../tools/package_search/hints.js';
 import { hints as lspGotoDefinitionHints } from '../tools/lsp_goto_definition/hints.js';
 import { hints as lspFindReferencesHints } from '../tools/lsp_find_references/hints.js';
@@ -42,6 +43,7 @@ export const HINTS: Record<string, ToolHintGenerators> = {
   [STATIC_TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS]:
     githubSearchPullRequestsHints,
   [STATIC_TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES]: githubSearchReposHints,
+  [STATIC_TOOL_NAMES.GITHUB_CLONE_REPO]: githubCloneRepoHints,
   [STATIC_TOOL_NAMES.PACKAGE_SEARCH]: packageSearchHints,
   [STATIC_TOOL_NAMES.LSP_GOTO_DEFINITION]: lspGotoDefinitionHints,
   [STATIC_TOOL_NAMES.LSP_FIND_REFERENCES]: lspFindReferencesHints,

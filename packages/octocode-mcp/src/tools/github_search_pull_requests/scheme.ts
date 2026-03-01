@@ -190,9 +190,19 @@ const GitHubPullRequestSearchBaseSchema = BaseQuerySchema.extend({
   partialContentMetadata: z
     .array(
       z.object({
-        file: z.string(),
-        additions: z.array(z.number()).optional(),
-        deletions: z.array(z.number()).optional(),
+        file: z
+          .string()
+          .describe(
+            'File path within the PR diff to fetch partial content for'
+          ),
+        additions: z
+          .array(z.number())
+          .optional()
+          .describe('Specific addition line numbers to include from the diff'),
+        deletions: z
+          .array(z.number())
+          .optional()
+          .describe('Specific deletion line numbers to include from the diff'),
       })
     )
     .optional()
