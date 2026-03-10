@@ -14,6 +14,7 @@ import {
   enhanceIncomingCalls,
   enhanceOutgoingCalls,
   createCallHierarchyItemFromSite,
+  createCallItemKey,
 } from '../../src/tools/lsp_call_hierarchy/callHierarchyHelpers.js';
 
 const makeRange = (line: number) => ({
@@ -204,6 +205,35 @@ describe('callHierarchyHelpers - branch coverage', () => {
       const result = await createCallHierarchyItemFromSite(site, 1);
       expect(result.name).toBe('unknown');
       expect(result.content).toBe('someLine();');
+    });
+
+    it('should skip lines with continue when line is empty in function search loop', async () => {
+      vi.mocked(safeReadFile).mockResolvedValue(
+        'function foo() {\n\n  bar();\n}'
+      );
+      const site = {
+        filePath: '/test/file.ts',
+        lineNumber: 3,
+        column: 2,
+        lineContent: '  bar();',
+      };
+      const result = await createCallHierarchyItemFromSite(site, 1);
+      expect(result.name).toBe('foo');
+    });
+  });
+
+  describe('createCallItemKey', () => {
+    it('should create unique key from uri, line, and name', () => {
+      const item = {
+        name: 'myFunc',
+        kind: 'function' as const,
+        uri: '/path/to/file.ts',
+        range: {
+          start: { line: 10, character: 0 },
+          end: { line: 10, character: 6 },
+        },
+      };
+      expect(createCallItemKey(item)).toBe('/path/to/file.ts:10:myFunc');
     });
   });
 });

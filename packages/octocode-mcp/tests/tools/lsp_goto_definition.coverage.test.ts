@@ -835,5 +835,32 @@ describe('LSP Goto Definition Coverage Tests', () => {
       const text = result.content?.[0]?.text ?? '';
       expect(text).toContain('empty');
     });
+
+    it('should fallback to text resolution when createClient returns null', async () => {
+      // gotoDefinitionWithLSP returns null when client is null (line 218)
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+
+      vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(lspModule.createClient).mockResolvedValue(null);
+
+      const handler = await createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'test',
+            lineHint: 1,
+            researchGoal: 'Find def',
+            reasoning: 'Test createClient null fallback',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain('hasResults');
+    });
   });
 });

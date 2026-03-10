@@ -13,8 +13,6 @@ import { dirname, join } from 'path';
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 
-// child_process is mocked in setup.ts
-
 import {
   executeNpmCommand,
   checkNpmAvailability,

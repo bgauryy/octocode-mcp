@@ -21,14 +21,12 @@ vi.mock('../../src/tools/utils/tokenManager.js', () => ({
   getGitHubToken: mockGetGitHubToken,
 }));
 
+const mockGetActiveProviderConfig = vi.hoisted(() => vi.fn());
+
 vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
   getGitHubToken: mockGetGitHubToken,
-  getActiveProviderConfig: vi.fn(() => ({
-    provider: 'github',
-    baseUrl: undefined,
-    token: 'mock-token',
-  })),
+  getActiveProviderConfig: mockGetActiveProviderConfig,
   getServerConfig: vi.fn(() => ({
     version: '1.0.0',
     timeout: 30000,
@@ -91,6 +89,11 @@ describe('GitHub Search Pull Requests Tool', () => {
   };
 
   beforeEach(() => {
+    mockGetActiveProviderConfig.mockReturnValue({
+      provider: 'github',
+      baseUrl: undefined,
+      token: 'mock-token',
+    });
     mockServer = createMockMcpServer();
 
     mockProvider = {
@@ -111,6 +114,29 @@ describe('GitHub Search Pull Requests Tool', () => {
   afterEach(() => {
     mockServer.cleanup();
     vi.resetAllMocks();
+  });
+
+  describe('Callback invocation', () => {
+    it('should invoke callback when registered with callback', async () => {
+      const callback = vi.fn().mockResolvedValue(undefined);
+      mockServer.cleanup();
+      registerSearchGitHubPullRequestsTool(mockServer.server, callback);
+      mockGetProvider.mockReturnValue(mockProvider);
+      mockProvider.searchPullRequests.mockResolvedValue(
+        createMockPRProviderResponse()
+      );
+
+      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, {
+        queries: [{ owner: 'test', repo: 'repo', state: 'open' }],
+      });
+
+      expect(callback).toHaveBeenCalledWith(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        expect.arrayContaining([
+          expect.objectContaining({ owner: 'test', repo: 'repo' }),
+        ])
+      );
+    });
   });
 
   describe('Basic Search', () => {
@@ -543,6 +569,67 @@ describe('GitHub Search Pull Requests Tool', () => {
       const secondQuery = mockProvider.searchPullRequests.mock.calls[1]?.[0];
       expect(firstQuery.page).toBe(1);
       expect(secondQuery.page).toBe(2);
+    });
+  });
+
+  describe('No valid params (execution branch)', () => {
+    it('should return error when query has no valid search params', async () => {
+      const { searchMultipleGitHubPullRequests } =
+        await import('../../src/tools/github_search_pull_requests/execution.js');
+
+      const result = await searchMultipleGitHubPullRequests({
+        queries: [
+          {
+            mainResearchGoal: 'test',
+            researchGoal: 'test',
+            reasoning: 'test',
+            state: 'open',
+            merged: false,
+            draft: false,
+          },
+        ],
+        authInfo: undefined,
+        sessionId: undefined,
+      });
+
+      const text = getTextContent(result.content);
+      expect(text).toContain('At least one valid search parameter');
+    });
+  });
+
+  describe('Large file change PRs', () => {
+    it('should include file change hints when PR has >30 file changes', async () => {
+      const largeFileChanges = Array.from({ length: 35 }, (_, i) => ({
+        path: `src/file${i}.ts`,
+        additions: 1,
+        deletions: 0,
+      }));
+      mockProvider.searchPullRequests.mockResolvedValue({
+        data: {
+          items: [
+            {
+              ...createMockPRProviderResponse().data.items[0],
+              fileChanges: largeFileChanges,
+            },
+          ],
+          totalCount: 1,
+          pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+        },
+        status: 200,
+        provider: 'github',
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [{ owner: 'test', repo: 'repo', state: 'open' }],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('35+ file changes');
+      expect(responseText).toContain('charOffset/charLength');
     });
   });
 

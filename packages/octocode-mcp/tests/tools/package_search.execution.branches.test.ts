@@ -1,0 +1,116 @@
+/**
+ * Branch coverage tests for package_search/execution.ts
+ * Targets: missing ecosystem/name validation, parseRepoInfo when repoUrl doesn't match
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { searchPackages } from '../../src/tools/package_search/execution.js';
+import * as packageCommon from '../../src/utils/package/common.js';
+
+vi.mock('../../src/utils/package/common.js', () => ({
+  searchPackage: vi.fn(),
+  checkNpmDeprecation: vi.fn().mockResolvedValue(null),
+}));
+
+const mockSearchPackage = vi.mocked(packageCommon.searchPackage);
+
+describe('package_search execution branches', () => {
+  const baseQuery = {
+    mainResearchGoal: 'Test',
+    researchGoal: 'Find package',
+    reasoning: 'Testing',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('missing ecosystem or name validation', () => {
+    it('should return error when name is missing', async () => {
+      const result = await searchPackages({
+        queries: [{ ...baseQuery, ecosystem: 'npm' } as never],
+      });
+
+      expect(result.content).toBeDefined();
+      const content = Array.isArray(result.content)
+        ? result.content
+        : [{ type: 'text', text: JSON.stringify(result.content) }];
+      const text = content
+        .map((c: { text?: string }) => c.text)
+        .join('')
+        .toLowerCase();
+      expect(text).toContain('required');
+      expect(mockSearchPackage).not.toHaveBeenCalled();
+    });
+
+    it('should return error when ecosystem is missing', async () => {
+      const result = await searchPackages({
+        queries: [{ ...baseQuery, name: 'axios' } as never],
+      });
+
+      expect(result.content).toBeDefined();
+      const content = Array.isArray(result.content)
+        ? result.content
+        : [{ type: 'text', text: JSON.stringify(result.content) }];
+      const text = content
+        .map((c: { text?: string }) => c.text)
+        .join('')
+        .toLowerCase();
+      expect(text).toContain('required');
+      expect(mockSearchPackage).not.toHaveBeenCalled();
+    });
+
+    it('should return error when both ecosystem and name are empty', async () => {
+      const result = await searchPackages({
+        queries: [
+          {
+            ...baseQuery,
+            ecosystem: '',
+            name: '',
+          } as never,
+        ],
+      });
+
+      expect(result.content).toBeDefined();
+      expect(mockSearchPackage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('parseRepoInfo - repoUrl does not match github/gitlab/bitbucket', () => {
+    it('should return package without owner/repo when repository URL is not from supported hosts', async () => {
+      mockSearchPackage.mockResolvedValue({
+        packages: [
+          {
+            path: 'some-pkg',
+            version: '1.0.0',
+            repoUrl: 'https://example.com/owner/repo',
+            mainEntry: null,
+            typeDefinitions: null,
+          },
+        ],
+        ecosystem: 'npm',
+        totalFound: 1,
+      });
+
+      const result = await searchPackages({
+        queries: [
+          {
+            ...baseQuery,
+            id: 'test:1',
+            ecosystem: 'npm',
+            name: 'some-pkg',
+          } as never,
+        ],
+      });
+
+      expect(result.content).toBeDefined();
+      const content = Array.isArray(result.content)
+        ? result.content
+        : [{ type: 'text', text: String(result.content) }];
+      const text = content.map((c: { text?: string }) => c.text ?? '').join('');
+      expect(text).toContain('some-pkg');
+      expect(text).toContain('1.0.0');
+      expect(result.isError).not.toBe(true);
+    });
+  });
+});

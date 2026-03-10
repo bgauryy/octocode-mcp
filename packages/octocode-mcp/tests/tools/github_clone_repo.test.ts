@@ -1505,6 +1505,30 @@ describe('executeCloneRepo', () => {
     expect(text).toContain('fb');
   });
 
+  it('includes resolvedBranch when clone resolves to different branch than requested', async () => {
+    mockResolveDefaultBranch.mockResolvedValue('develop');
+
+    const result = await executeCloneRepo({
+      queries: [
+        {
+          mainResearchGoal: 'test',
+          researchGoal: 'test',
+          reasoning: 'test',
+          owner: 'fb',
+          repo: 'react',
+          // no branch - will resolve to 'develop' from API
+        },
+      ],
+    });
+
+    const text = result.content
+      .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+      .map(c => c.text)
+      .join('\n');
+    expect(text).toContain('resolvedBranch');
+    expect(text).toContain('develop');
+  });
+
   it('includes sparse hints for sparse clone', async () => {
     const result = await executeCloneRepo({
       queries: [

@@ -1,10 +1,11 @@
 /**
  * Branch coverage tests for ripgrepExecutor.ts
- * Targeting uncovered branches: lines 166, 182, 195-198
+ * Targeting uncovered branches: 32, 44, 75-78, 86-89, 116, 152, 166, 182, 195-198
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  executeRipgrepSearchInternal,
   executeGrepSearch,
   estimateDirectoryStats,
 } from '../../src/tools/local_ripgrep/ripgrepExecutor.js';
@@ -14,6 +15,7 @@ import { validateToolPath } from '../../src/utils/file/toolHelpers.js';
 import { promises as fs } from 'fs';
 import { RESOURCE_LIMITS } from '../../src/utils/core/constants.js';
 import { getGrepFeatureWarnings } from '../../src/commands/GrepCommandBuilder.js';
+import { LOCAL_TOOL_ERROR_CODES } from '../../src/errorCodes.js';
 
 // Mock dependencies
 vi.mock('../../src/utils/exec/index.js', () => ({
@@ -49,6 +51,7 @@ vi.mock('fs', () => ({
 }));
 
 vi.mock('../../src/tools/local_ripgrep/ripgrepParser.js', () => ({
+  parseRipgrepOutput: vi.fn((_stdout, _query) => ({ files: [], stats: {} })),
   parseGrepOutputWrapper: vi.fn((_stdout, _query) => []),
 }));
 
@@ -75,6 +78,17 @@ vi.mock('../../src/commands/GrepCommandBuilder.js', () => {
     GrepCommandBuilder: MockGrepCommandBuilder,
     getGrepFeatureWarnings: vi.fn(() => []),
   };
+});
+
+vi.mock('../../src/commands/RipgrepCommandBuilder.js', () => {
+  const MockRipgrepCommandBuilder = class {
+    fromQuery = vi.fn().mockReturnThis();
+    build = vi.fn().mockReturnValue({
+      command: 'rg',
+      args: ['-e', 'pattern'],
+    });
+  };
+  return { RipgrepCommandBuilder: MockRipgrepCommandBuilder };
 });
 
 describe('ripgrepExecutor - Branch Coverage', () => {
@@ -106,6 +120,184 @@ describe('ripgrepExecutor - Branch Coverage', () => {
     } as any);
 
     mockGetGrepFeatureWarnings.mockReturnValue([]);
+  });
+
+  describe('executeRipgrepSearchInternal - Line 32: validation fails', () => {
+    it('should return createErrorResult when validateRipgrepQuery returns isValid: false', async () => {
+      const query = {
+        pattern: 'test',
+        path: '/test/path',
+        researchGoal: 'test goal',
+        reasoning: 'test reasoning',
+        mainResearchGoal: 'main goal',
+        filesOnly: true,
+        filesWithoutMatch: true, // Mutually exclusive - causes validation error
+      } as any as RipgrepQuery;
+
+      const result = await executeRipgrepSearchInternal(query);
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe('VALIDATION_ERROR');
+      expect(mockValidateToolPath).not.toHaveBeenCalled();
+      expect(mockSafeExec).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('executeRipgrepSearchInternal - Line 44: path missing', () => {
+    it('should return error when path is undefined', async () => {
+      const query = {
+        pattern: 'test',
+        path: undefined as any,
+        researchGoal: 'test goal',
+        reasoning: 'test reasoning',
+        mainResearchGoal: 'main goal',
+      } as any as RipgrepQuery;
+
+      const result = await executeRipgrepSearchInternal(query);
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe('VALIDATION_ERROR');
+      expect(mockValidateToolPath).not.toHaveBeenCalled();
+      expect(mockSafeExec).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('executeRipgrepSearchInternal - Lines 75-78: large directory warning', () => {
+    it('should add chunking warnings when directory is large and filesOnly is false', async () => {
+      const query = {
+        pattern: 'test',
+        path: '/large/path',
+        researchGoal: 'test goal',
+        reasoning: 'test reasoning',
+        mainResearchGoal: 'main goal',
+        filesOnly: false,
+      } as any as RipgrepQuery;
+
+      const largeFileCount = RESOURCE_LIMITS.MAX_FILE_COUNT_FOR_SEARCH + 100;
+      const rootFiles = Array.from({ length: largeFileCount }, (_, i) => ({
+        name: `file${i}.ts`,
+        isFile: () => true,
+        isDirectory: () => false,
+      }));
+
+      mockFsReaddir.mockResolvedValue(rootFiles as any);
+      mockFsStat.mockResolvedValue({
+        size: RESOURCE_LIMITS.ESTIMATED_AVG_FILE_SIZE_BYTES,
+      } as any);
+
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/large/path/file0.ts' },
+            lines: { text: 'test' },
+            line_number: 1,
+            absolute_offset: 0,
+            submatches: [{ start: 0, end: 4, match: { text: 'test' } }],
+          },
+        }),
+        stderr: '',
+      });
+
+      const result = await executeRipgrepSearchInternal(query);
+
+      expect(result.warnings).toBeDefined();
+      if (result.warnings) {
+        const warningsStr = result.warnings.join(' ');
+        expect(warningsStr).toContain('Large directory detected');
+      }
+    });
+  });
+
+  describe('executeRipgrepSearchInternal - Lines 86-89: timeout detection', () => {
+    const baseQuery = {
+      pattern: 'test',
+      path: '/test/path',
+      researchGoal: 'test goal',
+      reasoning: 'test reasoning',
+      mainResearchGoal: 'main goal',
+    } as any as RipgrepQuery;
+
+    it('should return timeout error when stderr includes "timeout"', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: false,
+        code: null,
+        stdout: '',
+        stderr: 'Command timed out after 30 seconds',
+      });
+
+      const result = await executeRipgrepSearchInternal(baseQuery);
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT);
+      expect(result.searchEngine).toBe('rg');
+      expect(result.error).toContain('timed out');
+    });
+
+    it('should return timeout error when code is null', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: false,
+        code: null,
+        stdout: '',
+        stderr: 'Process killed',
+      });
+
+      const result = await executeRipgrepSearchInternal(baseQuery);
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT);
+      expect(result.searchEngine).toBe('rg');
+    });
+  });
+
+  describe('executeRipgrepSearchInternal - Line 116: ripgrep failure (exit code > 1)', () => {
+    it('should return createErrorResult when ripgrep fails with exit code > 1', async () => {
+      const query = {
+        pattern: 'test',
+        path: '/test/path',
+        researchGoal: 'test goal',
+        reasoning: 'test reasoning',
+        mainResearchGoal: 'main goal',
+      } as any as RipgrepQuery;
+
+      mockSafeExec.mockResolvedValue({
+        success: false,
+        code: 2,
+        stdout: '',
+        stderr: 'Invalid regex pattern',
+      });
+
+      const result = await executeRipgrepSearchInternal(query);
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe('VALIDATION_ERROR');
+    });
+  });
+
+  describe('executeGrepSearch - Line 152: grep failure (exit code > 1)', () => {
+    it('should return createErrorResult when grep fails with exit code > 1', async () => {
+      const query = {
+        pattern: 'test',
+        path: '/test/path',
+        researchGoal: 'test goal',
+        reasoning: 'test reasoning',
+        mainResearchGoal: 'main goal',
+      } as any as RipgrepQuery;
+
+      mockSafeExec.mockResolvedValue({
+        success: false,
+        code: 2,
+        stdout: '',
+        stderr: 'grep: invalid option',
+      });
+
+      const result = await executeGrepSearch(query);
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe('VALIDATION_ERROR');
+    });
   });
 
   describe('executeGrepSearch - Line 166: missing path', () => {

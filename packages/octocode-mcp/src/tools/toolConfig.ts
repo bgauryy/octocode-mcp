@@ -41,7 +41,8 @@ export interface ToolConfig {
   ) => RegisteredTool | Promise<RegisteredTool | null>;
 }
 
-const getDescription = (toolName: string): string => {
+/** Exported for branch coverage testing: fallback when tool not in DESCRIPTIONS */
+export const getDescription = (toolName: string): string => {
   // DESCRIPTIONS Proxy already returns '' for unknown keys
   return DESCRIPTIONS[toolName] ?? '';
 };

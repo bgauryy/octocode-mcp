@@ -16,6 +16,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import path from 'path';
+
 import { getConfigSync } from 'octocode-shared';
 import { resolveWorkspaceRoot } from '../../src/security/workspaceRoot.js';
 

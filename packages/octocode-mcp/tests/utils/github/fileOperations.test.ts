@@ -76,6 +76,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       // Test minimal valid input (only required fields)
       const minimalInput = {
+        id: 'test:file-ops',
         owner: 'test',
         repo: 'repo',
         path: 'test.js',

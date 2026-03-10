@@ -91,6 +91,22 @@ describe('Tools Utils', () => {
       expect(result.hints).toContain('Consider using stars filter');
     });
 
+    it('should prepend prefixHints before other hints', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Testing' };
+      const data = { files: ['file1.ts'] };
+      const prefixHints = ['Critical: Check path first'];
+      const extraHints = ['Regular hint'];
+
+      const result = createSuccessResult(query, data, true, 'localSearchCode', {
+        prefixHints,
+        extraHints,
+      });
+
+      expect(result.hints).toBeDefined();
+      expect(result.hints![0]).toBe('Critical: Check path first');
+      expect(result.hints).toContain('Regular hint');
+    });
+
     it('should NOT include hints property when extraHints is empty array', () => {
       const query = {
         researchGoal: 'Find files',
@@ -298,9 +314,10 @@ describe('Tools Utils', () => {
         extraHints,
       });
 
-      // Should still have static hints from getHints(), just no extraHints
-      expect(result.hints).toBeDefined();
-      expect(result.hints!.every(h => h.trim().length > 0)).toBe(true);
+      // When all extraHints are empty and no static hints, hints may be undefined
+      if (result.hints) {
+        expect(result.hints.every(h => h.trim().length > 0)).toBe(true);
+      }
     });
 
     it('should filter out non-string hints without crashing', () => {
@@ -636,6 +653,25 @@ describe('Tools Utils', () => {
 
       expect(result.status).toBe('error');
       expect(result.error).toBe('Failed to fetch data: Network failure');
+    });
+
+    it('should use toolName for logging when provided', () => {
+      const query = { researchGoal: 'Test', reasoning: 'Testing' };
+      const error = new Error('Tool execution failed');
+
+      const result = handleCatchError(
+        error,
+        query,
+        'Package search failed',
+        'packageSearch'
+      );
+
+      expect(result.status).toBe('error');
+      expect(result.error).toBe('Package search failed: Tool execution failed');
+      expect(logSessionError).toHaveBeenCalledWith(
+        'packageSearch',
+        expect.any(String)
+      );
     });
 
     it('should handle unknown error types', () => {

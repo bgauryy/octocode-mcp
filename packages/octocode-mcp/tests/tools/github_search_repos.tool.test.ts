@@ -167,6 +167,35 @@ describe('GitHub Search Repos Tool - Comprehensive Status Tests', () => {
     });
   });
 
+  describe('Keywords-only empty hint (hasKeywords && !hasResults && !hasTopics)', () => {
+    it('should include keywordsEmpty hint when keywords search returns no results', async () => {
+      mockProvider.searchRepos.mockResolvedValue({
+        data: {
+          repositories: [],
+          totalCount: 0,
+          pagination: { currentPage: 1, totalPages: 0, hasMore: false },
+        },
+        status: 200,
+        provider: 'github',
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['veryobscurekeyword123'],
+            },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('empty');
+    });
+  });
+
   describe('Status: empty', () => {
     it('should return empty status when no repositories found', async () => {
       mockProvider.searchRepos.mockResolvedValue({

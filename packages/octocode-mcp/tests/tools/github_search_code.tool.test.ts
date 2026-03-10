@@ -363,6 +363,84 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('file.ts');
     });
+
+    it('should include repositoryContext.branch when API returns it', async () => {
+      mockProvider.searchCode.mockResolvedValue({
+        data: {
+          items: [
+            {
+              path: 'src/file.ts',
+              repository: { id: '1', name: 'test/repo', url: '' },
+              matches: [],
+              url: '',
+            },
+          ],
+          totalCount: 1,
+          pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+          repositoryContext: { branch: 'feature/xyz' },
+        },
+        status: 200,
+        provider: 'github',
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [
+          {
+            keywordsToSearch: ['test'],
+            owner: 'test',
+            repo: 'repo',
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('repositoryContext');
+      expect(responseText).toContain('feature/xyz');
+    });
+
+    it('should include jump-to-first/last hint when totalPages > 2', async () => {
+      mockProvider.searchCode.mockResolvedValue({
+        data: {
+          items: [
+            {
+              path: 'src/file.ts',
+              repository: { id: '1', name: 'test/repo', url: '' },
+              matches: [],
+              url: '',
+            },
+          ],
+          totalCount: 50,
+          pagination: {
+            currentPage: 2,
+            totalPages: 5,
+            hasMore: true,
+            entriesPerPage: 10,
+            totalMatches: 50,
+          },
+        },
+        status: 200,
+        provider: 'github',
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [
+          {
+            keywordsToSearch: ['test'],
+            owner: 'test',
+            repo: 'repo',
+            page: 2,
+            limit: 10,
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('page=1');
+      expect(responseText).toContain('page=5');
+      expect(responseText).toContain('Jump to');
+    });
   });
 
   describe('Search filters', () => {

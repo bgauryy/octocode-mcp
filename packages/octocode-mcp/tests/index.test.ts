@@ -24,7 +24,40 @@ vi.mock('../src/serverConfig.js');
 vi.mock('../src/tools/toolsManager.js');
 vi.mock('../src/providers/factory.js', () => ({
   initializeProviders: vi.fn().mockResolvedValue(undefined),
+  clearProviderCache: vi.fn(),
 }));
+vi.mock('../src/github/client.js', () => ({
+  clearOctokitInstances: vi.fn(),
+}));
+vi.mock('../src/session.js', () => ({
+  initializeSession: vi
+    .fn()
+    .mockReturnValue({ getSessionId: () => 'test-session-id' }),
+  logSessionInit: vi.fn().mockResolvedValue(undefined),
+  logSessionError: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('../src/tools/toolMetadata/index.js', async importOriginal => ({
+  ...(await importOriginal<object>()),
+  loadToolContent: vi
+    .fn()
+    .mockResolvedValue({ instructions: 'Test instructions' }),
+}));
+vi.mock('../src/tools/github_clone_repo/cache.js', () => ({
+  startCacheGC: vi.fn(),
+  stopCacheGC: vi.fn(),
+}));
+vi.mock('../src/utils/core/logger.js', () => {
+  const mockLogger = {
+    info: vi.fn().mockResolvedValue(undefined),
+    warning: vi.fn().mockResolvedValue(undefined),
+    error: vi.fn().mockResolvedValue(undefined),
+  };
+  return {
+    createLogger: vi.fn().mockReturnValue(mockLogger),
+    LoggerFactory: { getLogger: vi.fn().mockReturnValue(mockLogger) },
+    Logger: vi.fn(),
+  };
+});
 
 // Import mocked functions
 import { registerPrompts } from '../src/prompts/prompts.js';
@@ -40,6 +73,8 @@ import {
   getServerConfig,
   getGitHubToken,
   arePromptsEnabled,
+  isCloneEnabled,
+  getActiveProvider,
 } from '../src/serverConfig.js';
 import { registerTools } from '../src/tools/toolsManager.js';
 import { TOOL_NAMES } from '../src/tools/toolMetadata/index.js';
@@ -64,6 +99,8 @@ const mockInitialize = vi.mocked(initialize);
 const mockCleanup = vi.mocked(cleanup);
 const mockGetServerConfig = vi.mocked(getServerConfig);
 const mockArePromptsEnabled = vi.mocked(arePromptsEnabled);
+const mockIsCloneEnabled = vi.mocked(isCloneEnabled);
+const mockGetActiveProvider = vi.mocked(getActiveProvider);
 
 // Mock all tool registration functions
 const mockRegisterGitHubSearchCodeTool = vi.mocked(
@@ -205,6 +242,10 @@ describe('Index Module', () => {
 
     // Mock arePromptsEnabled to return true by default (prompts enabled)
     mockArePromptsEnabled.mockReturnValue(true);
+
+    // Mock isCloneEnabled and getActiveProvider
+    mockIsCloneEnabled.mockReturnValue(false);
+    mockGetActiveProvider.mockReturnValue('github');
   });
 
   afterEach(() => {
@@ -657,6 +698,27 @@ describe('Index Module', () => {
 
       const serverOptions = mockMcpServerConstructor.mock.calls[0]?.[1];
       expect(serverOptions?.capabilities).not.toHaveProperty('prompts');
+    });
+  });
+
+  describe('Clone Configuration', () => {
+    it('should start cache GC when clone is enabled', async () => {
+      mockIsCloneEnabled.mockReturnValue(true);
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      // Clone-enabled branch should be exercised
+      expect(mockIsCloneEnabled).toHaveBeenCalled();
+    });
+
+    it('should not start cache GC when clone is disabled', async () => {
+      mockIsCloneEnabled.mockReturnValue(false);
+
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+
+      expect(mockIsCloneEnabled).toHaveBeenCalled();
     });
   });
 

@@ -474,6 +474,56 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
       expect(result.status).toBe('hasResults');
       expect(result.locations![0]!.content).toBe('const x = myFunc();');
     });
+
+    it('should fallback to grep when ripgrep fails with non-1 exit code and skip malformed grep lines', async () => {
+      let spawnCallCount = 0;
+      mockStdoutOn.mockImplementation(
+        (event: string, cb: (data: Buffer) => void) => {
+          if (event === 'data' && spawnCallCount > 0) {
+            // Grep output: valid line + malformed lines (no second colon, no colon)
+            cb(
+              Buffer.from(
+                [
+                  '/workspace/src/valid.ts:5:const x = myFunc();',
+                  'malformed-no-colon',
+                  'path:onlyonecolon',
+                ].join('\n')
+              )
+            );
+          }
+        }
+      );
+      mockSpawnOn.mockImplementation(
+        (event: string, cb: (code: number) => void) => {
+          if (event === 'close') {
+            spawnCallCount++;
+            setTimeout(() => cb(spawnCallCount === 1 ? 2 : 0), 0);
+          }
+        }
+      );
+
+      const result = await findReferencesWithPatternMatching(
+        '/workspace/src/file.ts',
+        '/workspace',
+        {
+          id: 'pattern_query_grep',
+          uri: '/workspace/src/file.ts',
+          symbolName: 'myFunc',
+          lineHint: 5,
+          includeDeclaration: true,
+          contextLines: 0,
+          orderHint: 0,
+          page: 1,
+          referencesPerPage: 20,
+          researchGoal: 'test',
+          reasoning: 'test',
+        }
+      );
+
+      expect(result.status).toBe('hasResults');
+      expect(result.locations!.length).toBe(1);
+      expect(result.locations![0]!.uri).toContain('valid');
+    });
   });
 
   // ========================================================================

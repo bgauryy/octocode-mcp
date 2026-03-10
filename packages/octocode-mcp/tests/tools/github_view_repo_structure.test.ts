@@ -261,6 +261,53 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(responseText).toContain('error');
   });
 
+  it('should filter out directories with only ignored files and folders', async () => {
+    mockProvider.getRepoStructure.mockResolvedValue({
+      data: {
+        projectPath: 'test/repo',
+        branch: 'main',
+        path: '',
+        structure: {
+          '.': {
+            files: ['README.md', 'package.json'],
+            folders: ['src', 'tests'],
+          },
+          'ignored-only': {
+            files: ['.DS_Store', 'Thumbs.db'],
+            folders: ['node_modules', '.git'],
+          },
+        },
+        summary: {
+          totalFiles: 4,
+          totalFolders: 4,
+          truncated: false,
+        },
+      },
+      status: 200,
+      provider: 'github',
+    });
+
+    const result = await mockServer.callTool(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+          },
+        ],
+      }
+    );
+
+    expect(result.isError).toBe(false);
+    const responseText = getTextContent(result.content);
+    expect(responseText).toContain('README.md');
+    expect(responseText).toContain('src');
+    expect(responseText).not.toContain('.DS_Store');
+    expect(responseText).not.toContain('node_modules');
+  });
+
   it('should handle empty directory', async () => {
     mockProvider.getRepoStructure.mockResolvedValue({
       data: {
@@ -411,6 +458,51 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(result.isError).toBe(true);
     const responseText = getTextContent(result.content);
     expect(responseText).toContain('error');
+  });
+
+  describe('Branch fallback with defaultBranch', () => {
+    it('should include defaultBranch in branchFallback when API returns it', async () => {
+      mockProvider.getRepoStructure.mockResolvedValue({
+        data: {
+          projectPath: 'facebook/react',
+          branch: 'main',
+          defaultBranch: 'main',
+          path: '',
+          structure: {
+            '.': {
+              files: ['README.md'],
+              folders: ['src'],
+            },
+          },
+          summary: {
+            totalFiles: 1,
+            totalFolders: 1,
+            truncated: false,
+          },
+        },
+        status: 200,
+        provider: 'github',
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'facebook',
+              repo: 'react',
+              branch: 'nonexistent-branch',
+            },
+          ],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('branchFallback');
+      expect(responseText).toContain('nonexistent-branch');
+      expect(responseText).toContain('main');
+      expect(responseText).toContain('defaultBranch');
+    });
   });
 
   describe('Invalid branch handling (TC-9, TC-17)', () => {

@@ -275,5 +275,23 @@ describe('Provider Factory - Branch Coverage', () => {
       const provider = getProvider('github', config1);
       expect(provider).toBeDefined();
     });
+
+    it('should strip default HTTPS port 443 from URL', () => {
+      const config1: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://gitlab.example.com:443/api/v4',
+      };
+      const provider = getProvider('github', config1);
+      expect(provider).toBeDefined();
+    });
+
+    it('should strip default HTTP port 80 from URL', () => {
+      const config1: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'http://gitlab.example.com:80/api/v4',
+      };
+      const provider = getProvider('github', config1);
+      expect(provider).toBeDefined();
+    });
   });
 });

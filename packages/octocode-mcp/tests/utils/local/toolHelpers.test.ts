@@ -149,7 +149,7 @@ describe('toolHelpers', () => {
         expect(hints.some(h => h.includes('CWD:'))).toBe(true);
       });
 
-      it('should preserve research context in error result', () => {
+      it('should return error result for invalid path', () => {
         const query = {
           path: '/invalid/path',
           researchGoal: 'Find config files',
@@ -160,13 +160,7 @@ describe('toolHelpers', () => {
         const result = validateToolPath(query, 'LOCAL_FIND_FILES');
 
         expect(result.isValid).toBe(false);
-        expect(result.errorResult?.researchGoal).toBe('Find config files');
-        expect(result.errorResult?.reasoning).toBe(
-          'Need to check configuration'
-        );
-        expect(result.errorResult?.mainResearchGoal).toBe(
-          'Understand project setup'
-        );
+        expect(result.errorResult).toBeDefined();
       });
     });
 

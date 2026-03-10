@@ -336,6 +336,7 @@ import { _resetNpmRegistryUrlCache } from '../../src/utils/package/npm.js';
 
 describe('PackageSearchQuerySchema', () => {
   const withResearchFields = <T extends object>(query: T) => ({
+    id: 'test:pkg-search',
     ...query,
     mainResearchGoal: 'Test research goal',
     researchGoal: 'Testing package search',
@@ -3158,6 +3159,7 @@ describe('Task 3: Deprecation Detection', () => {
 // NEW TESTS: Task 4 - pythonFetchMetadata Parameter
 describe('Task 4: pythonFetchMetadata Parameter', () => {
   const withResearchFields = <T extends object>(query: T) => ({
+    id: 'test:pkg-search',
     ...query,
     mainResearchGoal: 'Test research goal',
     researchGoal: 'Testing package search',

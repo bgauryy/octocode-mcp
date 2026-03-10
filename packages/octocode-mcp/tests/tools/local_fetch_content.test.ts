@@ -320,6 +320,17 @@ describe('localGetFileContent', () => {
       expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.FILE_READ_FAILED);
     });
 
+    it('should handle file read errors when error is not Error instance', async () => {
+      mockReadFile.mockRejectedValue('String error message');
+
+      const result = await fetchContent({
+        path: 'broken.txt',
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe(LOCAL_TOOL_ERROR_CODES.FILE_READ_FAILED);
+    });
+
     it('should handle stat errors (file access failed)', async () => {
       mockStat.mockRejectedValue(new Error('Cannot access file'));
 
@@ -366,6 +377,18 @@ describe('localGetFileContent', () => {
       });
 
       expect(result.status).toBe('empty');
+    });
+
+    it('should return empty when content is whitespace-only after extraction (lines 275-282)', async () => {
+      mockReadFile.mockResolvedValue('   \n  \n   ');
+
+      const result = await fetchContent({
+        path: 'whitespace.txt',
+        fullContent: true,
+      });
+
+      expect(result.status).toBe('empty');
+      expect(result.hints).toBeDefined();
     });
   });
 
@@ -829,6 +852,34 @@ describe('localGetFileContent', () => {
       expect(result.warnings).toBeDefined();
       expect(result.warnings?.[0]).toContain('2000');
       expect(result.warnings?.[0]).toContain('Truncated to first 50 matches');
+    });
+
+    it('should auto-paginate when matchString result exceeds MAX_OUTPUT_CHARS without charLength (lines 206-212)', async () => {
+      // ~30 matches, each line ~100 chars = ~3000 chars > 2000 (MAX_OUTPUT_CHARS)
+      const lineContent = 'x'.repeat(100);
+      const lines = Array.from({ length: 50 }, (_, i) =>
+        i % 2 === 0 ? lineContent : 'MATCH'
+      );
+      const testContent = lines.join('\n');
+      mockStat.mockResolvedValue({
+        size: testContent.length,
+      } as unknown as Awaited<ReturnType<typeof fs.stat>>);
+      mockReadFile.mockResolvedValue(testContent);
+
+      const result = await fetchContent({
+        path: 'large-matches.txt',
+        matchString: 'MATCH',
+        matchStringContextLines: 2,
+        // No charLength - triggers auto-pagination when content > 2000
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.isPartial).toBe(true);
+      expect(result.pagination).toBeDefined();
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings?.some(w => w.includes('Auto-paginated'))).toBe(
+        true
+      );
     });
 
     it('should return line numbers for matchString extraction', async () => {
@@ -1549,6 +1600,24 @@ describe('localGetFileContent', () => {
       });
 
       expect(result.success).toBe(false);
+    });
+
+    it('should reject charLength > 10000 (scheme max constraint)', () => {
+      const result = FetchContentQuerySchema.safeParse({
+        id: 'fetch_schema_charLength',
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
+        path: 'test.txt',
+        charLength: 10001,
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const charLengthIssue = result.error.issues.find(
+          i => i.path?.includes('charLength') || i.message?.includes('10000')
+        );
+        expect(charLengthIssue).toBeDefined();
+      }
     });
   });
 });

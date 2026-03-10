@@ -4,10 +4,13 @@ import {
   FileContentBulkQuerySchema,
 } from '../../src/tools/github_fetch_content/scheme.js';
 
+const TEST_ID = 'test:fetch-content';
+
 describe('FileContentQuerySchema', () => {
   describe('Valid parameters', () => {
     it('should validate basic required parameters', () => {
       const validQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -22,6 +25,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should apply defaults for optional parameters', () => {
       const validQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -37,6 +41,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should validate with optional branch parameter', () => {
       const validQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -52,6 +57,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should validate with matchString parameter', () => {
       const validQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -68,6 +74,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should validate with line range parameters', () => {
       const validQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -84,6 +91,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should validate with fullContent flag', () => {
       const validQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -101,6 +109,7 @@ describe('FileContentQuerySchema', () => {
   describe('Owner validation', () => {
     it('should reject empty owner', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: '',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -115,6 +124,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should reject owner exceeding max length (200)', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: 'a'.repeat(201),
         repo: 'vscode',
         path: 'src/index.ts',
@@ -129,6 +139,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should accept owner at max length (200)', () => {
       const validQuery = {
+        id: TEST_ID,
         owner: 'a'.repeat(200),
         repo: 'vscode',
         path: 'src/index.ts',
@@ -145,6 +156,7 @@ describe('FileContentQuerySchema', () => {
   describe('Repo validation', () => {
     it('should reject empty repo', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: '',
         path: 'src/index.ts',
@@ -159,6 +171,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should reject repo exceeding max length (150)', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'a'.repeat(151),
         path: 'src/index.ts',
@@ -175,6 +188,7 @@ describe('FileContentQuerySchema', () => {
   describe('Branch validation', () => {
     it('should reject empty branch when provided', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -190,6 +204,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should reject branch exceeding max length (255)', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -207,6 +222,7 @@ describe('FileContentQuerySchema', () => {
   describe('Line range validation', () => {
     it('should reject startLine without endLine via schema validation', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -223,6 +239,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should reject endLine without startLine via schema validation', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -239,6 +256,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should reject startLine less than 1', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -255,6 +273,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should reject endLine less than 1', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -289,6 +308,7 @@ describe('FileContentQuerySchema', () => {
   describe('Parameter conflict validation', () => {
     it('should reject fullContent with startLine via schema validation', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -307,6 +327,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should reject fullContent with matchString via schema validation', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -324,6 +345,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should reject fullContent with both startLine and matchString via schema validation', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -345,6 +367,7 @@ describe('FileContentQuerySchema', () => {
   describe('MatchString validation', () => {
     it('should validate matchStringContextLines range', () => {
       const validQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -361,6 +384,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should reject matchStringContextLines less than 1', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -377,6 +401,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should reject matchStringContextLines greater than 50', () => {
       const invalidQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -393,6 +418,7 @@ describe('FileContentQuerySchema', () => {
 
     it('should accept matchStringContextLines at maximum (50)', () => {
       const validQuery = {
+        id: TEST_ID,
         owner: 'microsoft',
         repo: 'vscode',
         path: 'src/index.ts',
@@ -414,6 +440,7 @@ describe('FileContentBulkQuerySchema', () => {
     const validBulkQuery = {
       queries: [
         {
+          id: TEST_ID,
           owner: 'microsoft',
           repo: 'vscode',
           path: 'src/index.ts',
@@ -432,6 +459,7 @@ describe('FileContentBulkQuerySchema', () => {
     const validBulkQuery = {
       queries: [
         {
+          id: 'test:fetch-content-1',
           owner: 'microsoft',
           repo: 'vscode',
           path: 'src/index.ts',
@@ -440,6 +468,7 @@ describe('FileContentBulkQuerySchema', () => {
           reasoning: 'To understand the codebase structure',
         },
         {
+          id: 'test:fetch-content-2',
           owner: 'facebook',
           repo: 'react',
           path: 'packages/react/index.js',
@@ -459,6 +488,7 @@ describe('FileContentBulkQuerySchema', () => {
     const invalidBulkQuery = {
       queries: [
         {
+          id: TEST_ID,
           owner: 'microsoft',
           repo: 'vscode',
           path: 'src/index.ts',
@@ -467,6 +497,7 @@ describe('FileContentBulkQuerySchema', () => {
           reasoning: 'To understand the codebase structure',
         },
         {
+          id: TEST_ID,
           owner: 'facebook',
           repo: 'react',
           path: 'index.js',
@@ -475,6 +506,7 @@ describe('FileContentBulkQuerySchema', () => {
           reasoning: 'Test',
         },
         {
+          id: TEST_ID,
           owner: 'google',
           repo: 'angular',
           path: 'index.js',
@@ -483,6 +515,7 @@ describe('FileContentBulkQuerySchema', () => {
           reasoning: 'Test',
         },
         {
+          id: TEST_ID,
           owner: 'vuejs',
           repo: 'vue',
           path: 'index.js',
@@ -510,6 +543,7 @@ describe('FileContentBulkQuerySchema', () => {
     const invalidBulkQuery = {
       queries: [
         {
+          id: TEST_ID,
           owner: 'microsoft',
           repo: 'vscode',
           path: 'src/index.ts',
@@ -518,6 +552,7 @@ describe('FileContentBulkQuerySchema', () => {
           reasoning: 'To understand the codebase structure',
         },
         {
+          id: TEST_ID,
           owner: '', // Invalid
           repo: 'react',
           path: 'index.js',

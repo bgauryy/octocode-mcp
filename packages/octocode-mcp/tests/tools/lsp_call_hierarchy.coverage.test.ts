@@ -477,6 +477,22 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
       const results = parseGrepOutput('invalid line');
       expect(results).toHaveLength(0);
     });
+
+    it('should skip lines with no colon separator', () => {
+      const results = parseGrepOutput('nocolonheredigit');
+      expect(results).toHaveLength(0);
+    });
+
+    it('should skip lines where match.index is 0 (no file path before colon)', () => {
+      // ":5:content" - match exists but index is 0, so we skip (match.index > 0 fails)
+      const results = parseGrepOutput(':5:content');
+      expect(results).toHaveLength(0);
+    });
+
+    it('should skip lines with only one colon (no line:content pattern)', () => {
+      const results = parseGrepOutput('file:onlyonecolon');
+      expect(results).toHaveLength(0);
+    });
   });
 
   describe('extractFunctionBody', () => {

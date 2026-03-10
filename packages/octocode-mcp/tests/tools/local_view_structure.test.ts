@@ -60,6 +60,11 @@ describe('localViewStructure', () => {
     // Clear all mocks but then immediately set defaults
     vi.clearAllMocks();
 
+    vi.mocked(exec.checkCommandAvailability).mockResolvedValue({
+      available: true,
+      command: 'ls',
+    });
+
     mockValidate.mockReturnValue({
       isValid: true,
       sanitizedPath: '/test/path',
@@ -84,6 +89,26 @@ describe('localViewStructure', () => {
       code: 0,
       stdout: '',
       stderr: '',
+    });
+  });
+
+  describe('ls command not available (lines 52-56)', () => {
+    it('should return ToolErrors.commandNotAvailable when ls is not available in non-recursive mode', async () => {
+      vi.mocked(exec.checkCommandAvailability).mockResolvedValue({
+        available: false,
+        command: 'ls',
+      });
+
+      const result = await viewStructure({
+        path: '/test/path',
+        // No depth/recursive - uses ls path
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe(
+        LOCAL_TOOL_ERROR_CODES.COMMAND_NOT_AVAILABLE
+      );
+      expect(mockSafeExec).not.toHaveBeenCalled();
     });
   });
 
@@ -716,23 +741,40 @@ describe('localViewStructure', () => {
       // Entries should be sorted alphabetically
     });
 
-    it('should sort by size', async () => {
-      mockSafeExec.mockResolvedValue({
-        success: true,
-        code: 0,
-        stdout:
-          '-rw-r--r-- 1 user group 1024 Jan 1 12:00 small.txt\n-rw-r--r-- 1 user group 2048 Jan 1 12:00 large.txt',
-        stderr: '',
-      });
+    it('should sort by size in recursive mode', async () => {
+      mockReaddir.mockResolvedValue(['small.txt', 'large.txt', 'medium.txt']);
+
+      mockLstat.mockImplementation(
+        async (pathArg: string | Buffer | URL): Promise<Stats> => {
+          const p = pathArg.toString();
+          const sizes: Record<string, number> = {
+            small: 512,
+            medium: 2048,
+            large: 4096,
+          };
+          const size =
+            sizes[Object.keys(sizes).find(k => p.includes(k)) || 'small'] ??
+            1024;
+          return {
+            isDirectory: () => false,
+            isFile: () => true,
+            isSymbolicLink: () => false,
+            size,
+            mtime: new Date(),
+          } as Stats;
+        }
+      );
 
       const result = await viewStructure({
         path: '/test/path',
+        depth: 1,
         sortBy: 'size',
-        details: true,
       });
 
       expect(result.status).toBe('hasResults');
-      // Should be sorted by size
+      const names = result.entries!.map(e => e.name);
+      expect(names[0]).toContain('small');
+      expect(names[names.length - 1]).toContain('large');
     });
 
     it('should sort by extension in recursive mode', async () => {
@@ -776,8 +818,8 @@ describe('localViewStructure', () => {
       expect(result.status).toBe('hasResults');
     });
 
-    it('should sort by time falling back to name when modified not available', async () => {
-      mockReaddir.mockResolvedValue(['file1.txt', 'file2.txt']);
+    it('should sort by time falling back to name when modified not available (lines 208-211)', async () => {
+      mockReaddir.mockResolvedValue(['zebra.txt', 'alpha.txt', 'beta.txt']);
 
       mockLstat.mockResolvedValue({
         isDirectory: () => false,
@@ -791,10 +833,15 @@ describe('localViewStructure', () => {
         path: '/test/path',
         depth: 1,
         sortBy: 'time',
-        showFileLastModified: false, // Modified not shown, should fallback
+        showFileLastModified: false, // Modified not shown, fallback to name sort
       });
 
       expect(result.status).toBe('hasResults');
+      // Fallback uses name sort: alpha, beta, zebra
+      const names = result.entries!.map(e => e.name);
+      expect(names[0]).toContain('alpha');
+      expect(names[1]).toContain('beta');
+      expect(names[2]).toContain('zebra');
     });
 
     it('should support reverse sorting in recursive mode', async () => {

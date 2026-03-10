@@ -1,9 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ChildProcess } from 'child_process';
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
-
-// child_process is mocked in setup.ts
 
 import {
   getGithubCLIToken,
@@ -80,7 +77,6 @@ describe('exec utilities', () => {
 
     beforeEach(() => {
       vi.clearAllMocks();
-      vi.resetModules();
       mockProcess = new MockChildProcess();
       vi.mocked(spawn).mockReturnValue(mockProcess as unknown as ChildProcess);
     });
@@ -204,7 +200,6 @@ describe('exec utilities', () => {
 
     beforeEach(() => {
       vi.clearAllMocks();
-      vi.resetModules();
       mockProcess = new MockChildProcess();
       vi.mocked(spawn).mockReturnValue(mockProcess as unknown as ChildProcess);
     });
@@ -360,7 +355,6 @@ describe('exec utilities', () => {
 
     beforeEach(() => {
       vi.clearAllMocks();
-      vi.resetModules();
       mockProcess = new MockChildProcess();
       vi.mocked(spawn).mockReturnValue(mockProcess as unknown as ChildProcess);
     });

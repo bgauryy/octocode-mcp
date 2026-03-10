@@ -22,6 +22,7 @@ const NODE_MODULES_PATH = path.resolve(process.cwd(), 'node_modules');
 const runRipgrep = (query: Record<string, unknown>) =>
   searchContentRipgrep(
     RipgrepQuerySchema.parse({
+      id: 'test:ripgrep-integration',
       researchGoal: 'Test',
       reasoning: 'Integration test',
       ...query,
