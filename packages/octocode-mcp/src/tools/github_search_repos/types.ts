@@ -11,6 +11,7 @@
  * Query parameters for searching GitHub repositories
  */
 export interface GitHubReposSearchQuery {
+  id?: string;
   keywordsToSearch?: string[];
   topicsToSearch?: string[];
   owner?: string;
@@ -32,13 +33,9 @@ export interface GitHubReposSearchQuery {
 // ============================================================================
 
 /** Base result interface */
-interface BaseToolResult<TQuery = object> {
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
+interface BaseToolResult {
   error?: string;
   hints?: string[];
-  query?: TQuery;
 }
 
 /** Simplified repository metadata */
@@ -63,7 +60,7 @@ export interface SimplifiedRepository {
 }
 
 /** Repository search result */
-export interface RepoSearchResult extends BaseToolResult<GitHubReposSearchQuery> {
+export interface RepoSearchResult extends BaseToolResult {
   repositories: SimplifiedRepository[];
   /** Pagination info for navigating through results */
   pagination?: {

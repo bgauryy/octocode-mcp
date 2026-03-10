@@ -11,6 +11,8 @@ import type { ProviderType } from './types.js';
 export interface BaseProviderQuery {
   /** Provider to use (default: 'github') */
   provider?: ProviderType;
+  /** Stable query identifier for matching input queries to response results */
+  id?: string;
   /** Research context fields */
   mainResearchGoal?: string;
   researchGoal?: string;

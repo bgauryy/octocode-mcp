@@ -74,8 +74,6 @@ export async function viewStructure(
       return {
         status: 'error',
         errorCode: toolError.errorCode,
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
         hints: [
           stderrMsg ? `Error: ${stderrMsg}` : 'ls command failed',
           ...getHints(TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
@@ -148,12 +146,9 @@ export async function viewStructure(
 
     return {
       status,
-      path: query.path,
       entries: outputEntries,
       summary: `${totalEntries} entries (${totalFiles} files, ${totalDirectories} dirs, ${formatFileSize(totalSizeBytes)})`,
       pagination,
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
       ...(warnings.length > 0 && { warnings }),
       hints: [
         ...entryPaginationHints,
@@ -170,8 +165,6 @@ export async function viewStructure(
     return {
       status: 'error',
       errorCode: toolError.errorCode,
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
       hints: getHints(TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
     };
   }
@@ -300,12 +293,9 @@ async function viewStructureRecursive(
 
   return {
     status,
-    path: query.path,
     entries: outputEntries,
     summary: `${totalEntries} entries (${totalFiles} files, ${totalDirectories} dirs, ${formatFileSize(totalSizeBytes)})`,
     pagination,
-    researchGoal: query.researchGoal,
-    reasoning: query.reasoning,
     ...(warnings.length > 0 && { warnings }),
     hints: [...baseHints, ...entryPaginationHints],
   };

@@ -76,7 +76,7 @@ async function gotoDefinition(
     } catch (error) {
       return createErrorResult(error, query, {
         toolName: TOOL_NAME,
-        extra: { uri: query.uri, resolvedPath: absolutePath },
+        extra: { resolvedPath: absolutePath },
         customHints: [
           `Could not read file: ${query.uri}`,
           'Verify the file exists and is accessible',
@@ -100,8 +100,6 @@ async function gotoDefinition(
           error: error.message,
           errorType: 'symbol_not_found',
           searchRadius: error.searchRadius,
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
           hints: [
             ...getHints(TOOL_NAME, 'empty'),
             `Symbol "${query.symbolName}" not found at or near line ${query.lineHint}`,
@@ -156,11 +154,6 @@ async function gotoDefinition(
   } catch (error) {
     return createErrorResult(error, query, {
       toolName: TOOL_NAME,
-      extra: {
-        uri: query.uri,
-        symbolName: query.symbolName,
-        lineHint: query.lineHint,
-      },
     }) as GotoDefinitionResult;
   }
 }
@@ -234,8 +227,6 @@ async function gotoDefinitionWithLSP(
         status: 'empty',
         error: 'No definition found by language server',
         errorType: 'symbol_not_found',
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
         hints: [
           ...getHints(TOOL_NAME, 'empty'),
           'Language server could not find definition',
@@ -362,8 +353,6 @@ async function gotoDefinitionWithLSP(
       locations: strippedLocations,
       resolvedPosition: _position,
       searchRadius: 5,
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
       hints: [
         ...getHints(TOOL_NAME, 'hasResults'),
         `Found ${locations.length} definition(s) via Language Server`,
@@ -480,8 +469,6 @@ function createFallbackResult(
     locations: [codeSnippet],
     resolvedPosition: resolvedSymbol.position,
     searchRadius: 5,
-    researchGoal: query.researchGoal,
-    reasoning: query.reasoning,
     hints: [
       ...getHints(TOOL_NAME, 'hasResults'),
       'Each location = a definition site; use range.start.line+1 as lineHint for follow-up LSP calls',

@@ -94,6 +94,7 @@ import { findReferences } from '../../src/tools/lsp_find_references/lsp_find_ref
 
 describe('LSP Find References - Branch Coverage Tests', () => {
   const baseQuery: LSPFindReferencesQuery = {
+    id: 'find_references_branch_query',
     uri: '/workspace/src/file.ts',
     symbolName: 'testFunction',
     lineHint: 5,

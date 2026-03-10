@@ -13,6 +13,7 @@ import type { LocalToolErrorCode as ErrorCode } from '../../errorCodes.js';
  * Query parameters for local code search via ripgrep
  */
 export interface RipgrepSearchQuery {
+  id?: string;
   pattern: string;
   path: string;
   mode?: 'discovery' | 'paginated' | 'detailed';
@@ -122,8 +123,5 @@ export interface SearchContentResult {
   warnings?: string[];
   files?: RipgrepFileMatches[];
   pagination?: SearchContentPagination;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
   [key: string]: unknown;
 }

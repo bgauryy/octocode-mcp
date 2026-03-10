@@ -89,10 +89,7 @@ export async function executeRipgrepSearchInternal(
     return {
       status: 'error',
       errorCode: LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT,
-      path: queryForExec.path,
       searchEngine: 'rg',
-      researchGoal: configuredQuery.researchGoal,
-      reasoning: configuredQuery.reasoning,
       hints: [
         `Search timed out after ${timeoutMs / 1000} seconds.`,
         'Try a more specific path or add type/include filters to narrow the search.',
@@ -107,11 +104,8 @@ export async function executeRipgrepSearchInternal(
   if (result.code === 1 || (result.success && !result.stdout.trim())) {
     return {
       status: 'empty',
-      path: queryForExec.path,
       searchEngine: 'rg',
       warnings: [...validation.warnings, ...chunkingWarnings],
-      researchGoal: configuredQuery.researchGoal,
-      reasoning: configuredQuery.reasoning,
       hints: getHints(TOOL_NAMES.LOCAL_RIPGREP, 'empty'),
     };
   }
@@ -215,10 +209,7 @@ export async function executeGrepSearch(
     return {
       status: 'error',
       errorCode: LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT,
-      path: queryForExec.path,
       searchEngine: 'grep',
-      researchGoal: configuredQuery.researchGoal,
-      reasoning: configuredQuery.reasoning,
       hints: [
         `Search timed out after ${timeoutMs / 1000} seconds.`,
         'Try a more specific path or add type/include filters to narrow the search.',
@@ -233,11 +224,8 @@ export async function executeGrepSearch(
   if (result.code === 1 || (result.success && !result.stdout.trim())) {
     return {
       status: 'empty',
-      path: queryForExec.path,
       searchEngine: 'grep',
       warnings: [...grepWarnings, ...validation.warnings, ...chunkingWarnings],
-      researchGoal: configuredQuery.researchGoal,
-      reasoning: configuredQuery.reasoning,
       hints: getHints(TOOL_NAMES.LOCAL_RIPGREP, 'empty'),
     };
   }

@@ -90,8 +90,19 @@ describe('LSP Find References Tool', () => {
         await import('../../src/tools/lsp_find_references/scheme.js');
 
       expect(BulkLSPFindReferencesSchema).toBeDefined();
-      // Zod schemas have a shape property for objects
-      expect(BulkLSPFindReferencesSchema.shape).toBeDefined();
+      const parsed = BulkLSPFindReferencesSchema.safeParse({
+        queries: [
+          {
+            id: 'find_references_query',
+            researchGoal: 'Find usages',
+            reasoning: 'Trace references',
+            uri: 'file:///test.ts',
+            symbolName: 'testFn',
+            lineHint: 1,
+          },
+        ],
+      });
+      expect(parsed.success).toBe(true);
     });
 
     it('should have queries property in schema', async () => {
@@ -100,7 +111,19 @@ describe('LSP Find References Tool', () => {
       const { BulkLSPFindReferencesSchema } =
         await import('../../src/tools/lsp_find_references/scheme.js');
 
-      expect(BulkLSPFindReferencesSchema.shape.queries).toBeDefined();
+      const parsed = BulkLSPFindReferencesSchema.safeParse({
+        queries: [
+          {
+            id: 'find_references_queries',
+            researchGoal: 'Find usages',
+            reasoning: 'Trace references',
+            uri: 'file:///test.ts',
+            symbolName: 'testFn',
+            lineHint: 1,
+          },
+        ],
+      });
+      expect(parsed.success).toBe(true);
     });
   });
 

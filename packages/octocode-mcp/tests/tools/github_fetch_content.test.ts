@@ -193,8 +193,10 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('file1.js');
-      expect(responseText).toContain('file2.js');
+      expect(responseText).toContain('content1');
+      expect(responseText).toContain('content2');
+      expect(responseText).not.toContain('file1.js');
+      expect(responseText).not.toContain('file2.js');
     });
   });
 
@@ -600,7 +602,8 @@ describe('GitHub Fetch Content Tool', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('good.js');
+      expect(responseText).toContain('content: "good"');
+      expect(responseText).not.toContain('good.js');
     });
   });
 
@@ -702,6 +705,7 @@ describe('GitHub Fetch Content Tool', () => {
       const result = FileContentBulkQuerySchema.safeParse({
         queries: [
           {
+            id: 'file_query',
             mainResearchGoal: 'test',
             researchGoal: 'test',
             reasoning: 'test',
@@ -719,6 +723,7 @@ describe('GitHub Fetch Content Tool', () => {
       const result = FileContentBulkQuerySchema.safeParse({
         queries: [
           {
+            id: 'directory_query',
             mainResearchGoal: 'test',
             researchGoal: 'test',
             reasoning: 'test',
@@ -736,6 +741,7 @@ describe('GitHub Fetch Content Tool', () => {
       const result = FileContentBulkQuerySchema.safeParse({
         queries: [
           {
+            id: 'default_file_query',
             mainResearchGoal: 'test',
             researchGoal: 'test',
             reasoning: 'test',
@@ -753,6 +759,7 @@ describe('GitHub Fetch Content Tool', () => {
       const result = FileContentBulkQuerySchema.safeParse({
         queries: [
           {
+            id: 'implicit_file_query',
             mainResearchGoal: 'test',
             researchGoal: 'test',
             reasoning: 'test',

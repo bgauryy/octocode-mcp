@@ -86,11 +86,11 @@ export async function executeCloneRepo(
 
         // ── Build result data ──────────────────────────────────
         const resultData: Record<string, unknown> = {
-          owner: result.owner,
-          repo: result.repo,
-          branch: result.branch,
           localPath: result.localPath,
-          ...(result.sparse_path ? { sparse_path: result.sparse_path } : {}),
+          ...(result.cached ? { cached: true } : {}),
+          ...(query.branch !== result.branch
+            ? { resolvedBranch: result.branch }
+            : {}),
         };
 
         // ── Pick contextual hints ──────────────────────────────
@@ -121,11 +121,9 @@ export async function executeCloneRepo(
     {
       toolName: TOOL_NAMES.GITHUB_CLONE_REPO,
       keysPriority: [
-        'owner',
-        'repo',
-        'branch',
-        'sparse_path',
+        'resolvedBranch',
         'localPath',
+        'cached',
         'error',
       ],
     }

@@ -13,8 +13,23 @@ import {
 
 describe('localSearchCode schema', () => {
   describe('RipgrepQuerySchema', () => {
+    it('should accept a meaningful query id', () => {
+      const query = {
+        id: 'local_hooks_search',
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
+        pattern: 'test',
+        path: '/src',
+      };
+
+      const result = RipgrepQuerySchema.parse(query);
+
+      expect(result.id).toBe('local_hooks_search');
+    });
+
     it('should validate basic query', () => {
       const query = {
+        id: 'basic_search',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         pattern: 'test',
@@ -29,6 +44,7 @@ describe('localSearchCode schema', () => {
 
     it('should apply default values', () => {
       const query = {
+        id: 'default_search',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         pattern: 'test',
@@ -63,6 +79,7 @@ describe('localSearchCode schema', () => {
 
     it('should accept all optional fields', () => {
       const query = {
+        id: 'all_optional_search',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         pattern: 'test',
@@ -115,12 +132,14 @@ describe('localSearchCode schema', () => {
       const bulk = {
         queries: [
           {
+            id: 'bulk_search_1',
             researchGoal: 'Test1',
             reasoning: 'R1',
             pattern: 'test1',
             path: '/src',
           },
           {
+            id: 'bulk_search_2',
             researchGoal: 'Test2',
             reasoning: 'R2',
             pattern: 'test2',

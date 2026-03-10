@@ -74,7 +74,7 @@ interface SuccessResultOptions {
  * });
  */
 export function createSuccessResult<T extends Record<string, unknown>>(
-  query: {
+  _query: {
     mainResearchGoal?: string;
     researchGoal?: string;
     reasoning?: string;
@@ -83,14 +83,11 @@ export function createSuccessResult<T extends Record<string, unknown>>(
   hasContent: boolean,
   toolName: string,
   options?: SuccessResultOptions
-): ToolSuccessResult<T> & T {
+): ToolSuccessResult & T {
   const status = hasContent ? ('hasResults' as const) : ('empty' as const);
 
   const result: Record<string, unknown> = {
     status,
-    mainResearchGoal: query.mainResearchGoal,
-    researchGoal: query.researchGoal,
-    reasoning: query.reasoning,
     ...data,
   };
 
@@ -108,7 +105,7 @@ export function createSuccessResult<T extends Record<string, unknown>>(
     result.hints = allHints;
   }
 
-  return result as ToolSuccessResult<T> & T;
+  return result as ToolSuccessResult & T;
 }
 
 /**

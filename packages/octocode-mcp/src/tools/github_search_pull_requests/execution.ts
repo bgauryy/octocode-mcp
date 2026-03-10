@@ -194,8 +194,6 @@ export async function searchMultipleGitHubPullRequests(
           : undefined;
 
         const resultData: Record<string, unknown> = {
-          owner: query.owner,
-          repo: query.repo,
           pull_requests: pullRequests,
           total_count: apiResult.data.totalCount || pullRequests.length,
           ...(resultPagination && { pagination: resultPagination }),
@@ -276,8 +274,6 @@ export async function searchMultipleGitHubPullRequests(
     {
       toolName: TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
       keysPriority: [
-        'owner',
-        'repo',
         'pull_requests',
         'pagination',
         'outputPagination',

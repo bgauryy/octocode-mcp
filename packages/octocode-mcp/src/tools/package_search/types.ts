@@ -11,6 +11,7 @@
  * Base query for package search
  */
 interface PackageSearchBaseQuery {
+  id?: string;
   name: string;
   searchLimit?: number;
   mainResearchGoal?: string;

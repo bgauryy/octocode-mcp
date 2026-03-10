@@ -173,6 +173,7 @@ describe('Public Schema Exports', () => {
   describe('Schema Content Verification - GitHub Tools', () => {
     it('GitHubCodeSearchQuerySchema should have required fields', () => {
       const validQuery = {
+        id: 'github_code_query',
         mainResearchGoal: 'Find authentication code',
         researchGoal: 'Locate login implementations',
         reasoning: 'Need to understand auth flow',
@@ -187,6 +188,7 @@ describe('Public Schema Exports', () => {
       const validBulk = {
         queries: [
           {
+            id: 'github_code_bulk_query',
             mainResearchGoal: 'Find code patterns',
             researchGoal: 'Locate implementations',
             reasoning: 'Research',
@@ -201,6 +203,7 @@ describe('Public Schema Exports', () => {
 
     it('FileContentQuerySchema should have required GitHub fields', () => {
       const validQuery = {
+        id: 'github_file_query',
         mainResearchGoal: 'Read file content',
         researchGoal: 'Get source code',
         reasoning: 'Need implementation details',
@@ -217,6 +220,7 @@ describe('Public Schema Exports', () => {
   describe('Schema Content Verification - Local Tools', () => {
     it('RipgrepQuerySchema should have required fields', () => {
       const validQuery = {
+        id: 'ripgrep_query',
         researchGoal: 'Find exports',
         reasoning: 'Pattern matches export statements',
         pattern: 'export function',
@@ -231,12 +235,14 @@ describe('Public Schema Exports', () => {
       const validBulk = {
         queries: [
           {
+            id: 'ripgrep_bulk_query_1',
             researchGoal: 'Find imports',
             reasoning: 'Pattern matches import statements',
             pattern: 'import',
             path: '/src',
           },
           {
+            id: 'ripgrep_bulk_query_2',
             researchGoal: 'Find exports',
             reasoning: 'Pattern matches export statements',
             pattern: 'export',
@@ -251,6 +257,7 @@ describe('Public Schema Exports', () => {
 
     it('FetchContentQuerySchema should have required path field', () => {
       const validQuery = {
+        id: 'fetch_content_query',
         researchGoal: 'Read file',
         reasoning: 'Need file content',
         path: '/path/to/file.ts',
@@ -262,6 +269,7 @@ describe('Public Schema Exports', () => {
 
     it('FindFilesQuerySchema should have required path field', () => {
       const validQuery = {
+        id: 'find_files_query',
         researchGoal: 'Find files',
         reasoning: 'Browse project structure',
         path: '/project',
@@ -273,6 +281,7 @@ describe('Public Schema Exports', () => {
 
     it('ViewStructureQuerySchema should have required path field', () => {
       const validQuery = {
+        id: 'view_structure_query',
         researchGoal: 'Browse structure',
         reasoning: 'View project layout',
         path: '/project',
@@ -286,6 +295,7 @@ describe('Public Schema Exports', () => {
   describe('Schema Content Verification - LSP Tools', () => {
     it('LSPGotoDefinitionQuerySchema should have required LSP fields', () => {
       const validQuery = {
+        id: 'lsp_definition_query',
         researchGoal: 'Find definition',
         reasoning: 'Navigate to symbol',
         uri: 'file:///path/to/file.ts',
@@ -299,6 +309,7 @@ describe('Public Schema Exports', () => {
 
     it('LSPFindReferencesQuerySchema should have required LSP fields', () => {
       const validQuery = {
+        id: 'lsp_references_query',
         researchGoal: 'Find usages',
         reasoning: 'Trace symbol references',
         uri: 'file:///path/to/file.ts',
@@ -312,6 +323,7 @@ describe('Public Schema Exports', () => {
 
     it('LSPCallHierarchyQuerySchema should have required fields including direction', () => {
       const validQuery = {
+        id: 'lsp_call_hierarchy_query',
         researchGoal: 'Trace calls',
         reasoning: 'Analyze call flow',
         uri: 'file:///path/to/file.ts',
@@ -328,6 +340,7 @@ describe('Public Schema Exports', () => {
       const validBulk = {
         queries: [
           {
+            id: 'lsp_call_hierarchy_bulk_1',
             researchGoal: 'Trace func1',
             reasoning: 'Find callers',
             uri: 'file:///path/to/file.ts',
@@ -336,6 +349,7 @@ describe('Public Schema Exports', () => {
             direction: 'incoming',
           },
           {
+            id: 'lsp_call_hierarchy_bulk_2',
             researchGoal: 'Trace func2',
             reasoning: 'Find callees',
             uri: 'file:///path/to/file.ts',
@@ -354,6 +368,7 @@ describe('Public Schema Exports', () => {
   describe('Schema Content Verification - Package Search', () => {
     it('NpmPackageQuerySchema should accept npm ecosystem', () => {
       const validQuery = {
+        id: 'npm_package_query',
         mainResearchGoal: 'Find npm package',
         researchGoal: 'Get package info',
         reasoning: 'Need to check package',
@@ -367,6 +382,7 @@ describe('Public Schema Exports', () => {
 
     it('PythonPackageQuerySchema should accept python ecosystem', () => {
       const validQuery = {
+        id: 'python_package_query',
         mainResearchGoal: 'Find python package',
         researchGoal: 'Get package info',
         reasoning: 'Need to check package',
@@ -382,6 +398,7 @@ describe('Public Schema Exports', () => {
       const validBulk = {
         queries: [
           {
+            id: 'package_bulk_query',
             mainResearchGoal: 'Find packages',
             researchGoal: 'Get package info',
             reasoning: 'Research',
@@ -399,6 +416,7 @@ describe('Public Schema Exports', () => {
   describe('Base Schema Verification', () => {
     it('BaseQuerySchema should have research fields', () => {
       const validQuery = {
+        id: 'base_query',
         mainResearchGoal: 'Main goal',
         researchGoal: 'Specific goal',
         reasoning: 'Why this approach',
@@ -410,7 +428,19 @@ describe('Public Schema Exports', () => {
 
     it('BaseQuerySchema should reject missing required fields', () => {
       const invalidQuery = {
+        id: 'missing_fields',
         mainResearchGoal: 'Only main goal',
+      };
+
+      const result = BaseQuerySchema.safeParse(invalidQuery);
+      expect(result.success).toBe(false);
+    });
+
+    it('BaseQuerySchema should reject missing id', () => {
+      const invalidQuery = {
+        mainResearchGoal: 'Main goal',
+        researchGoal: 'Specific goal',
+        reasoning: 'Why this approach',
       };
 
       const result = BaseQuerySchema.safeParse(invalidQuery);
@@ -424,6 +454,7 @@ describe('Public Schema Exports', () => {
 
     it('BaseQuerySchemaLocal should accept valid research fields', () => {
       const result = BaseQuerySchemaLocal.safeParse({
+        id: 'local_query',
         researchGoal: 'Find X',
         reasoning: 'Search pattern helps',
       });
@@ -510,6 +541,31 @@ describe('Public Schema Exports', () => {
       });
       expect(invalid6.success).toBe(false);
     });
+
+    it('should reject duplicate query ids within the same bulk call', () => {
+      const singleSchema = z.object({
+        id: z.string().optional(),
+        query: z.string(),
+      });
+
+      const bulkSchema = createBulkQuerySchema('testTool', singleSchema);
+
+      const duplicateIds = bulkSchema.safeParse({
+        queries: [
+          { id: 'shared_id', query: 'a' },
+          { id: 'shared_id', query: 'b' },
+        ],
+      });
+
+      expect(duplicateIds.success).toBe(false);
+      if (!duplicateIds.success) {
+        expect(
+          duplicateIds.error.issues.some(issue =>
+            String(issue.message).includes('Duplicate query id "shared_id"')
+          )
+        ).toBe(true);
+      }
+    });
   });
 
   describe('Schema Validation Behavior', () => {
@@ -546,6 +602,7 @@ describe('Public Schema Exports', () => {
   describe('Schema Default Values', () => {
     it('RipgrepQuerySchema should apply default values', () => {
       const query = {
+        id: 'ripgrep_defaults_query',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         pattern: 'test',
@@ -570,6 +627,7 @@ describe('Public Schema Exports', () => {
 
     it('ViewStructureQuerySchema should apply default values', () => {
       const query = {
+        id: 'view_structure_defaults_query',
         researchGoal: 'Browse',
         reasoning: 'View structure',
         path: '/project',
@@ -589,6 +647,7 @@ describe('Public Schema Exports', () => {
 
     it('LSPCallHierarchyQuerySchema should apply default values', () => {
       const query = {
+        id: 'lsp_call_hierarchy_defaults_query',
         researchGoal: 'Trace calls',
         reasoning: 'Find callers',
         uri: 'file:///test.ts',

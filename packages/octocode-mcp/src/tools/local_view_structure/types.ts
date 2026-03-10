@@ -13,6 +13,7 @@ import type { LocalToolErrorCode as ErrorCode } from '../../errorCodes.js';
  * Query parameters for viewing local directory structure
  */
 export interface ViewStructureQuery {
+  id?: string;
   path: string;
   details?: boolean;
   hidden?: boolean;
@@ -73,8 +74,5 @@ export interface ViewStructureResult {
   hints?: readonly string[];
   warnings?: string[];
   pagination?: ViewStructurePagination;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
   [key: string]: unknown;
 }

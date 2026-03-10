@@ -3,7 +3,7 @@ import { maskSensitiveData } from './security/mask.js';
 import { ContentSanitizer } from './security/contentSanitizer.js';
 import { jsonToYamlString } from './utils/minifier/index.js';
 import { getConfigSync } from 'octocode-shared';
-import type { ToolResponse } from './types.js';
+import type { BulkToolResponse, StructuredToolResponse } from './types.js';
 import type {
   RoleContentBlock,
   RoleBasedResultOptions,
@@ -40,7 +40,7 @@ export function createResult(options: {
     };
   }
   const { data, instructions, isError } = options;
-  const response: ToolResponse = {
+  const response: StructuredToolResponse = {
     data,
     instructions,
   };
@@ -355,41 +355,25 @@ function sanitizeText(text: string): string {
 }
 
 export function createResponseFormat(
-  responseData: ToolResponse,
+  responseData: StructuredToolResponse | BulkToolResponse,
   keysPriority?: string[]
 ): string {
-  const cleanedData = cleanJsonObject(responseData) as ToolResponse;
+  const cleanedData = (cleanJsonObject(responseData) ?? {}) as
+    | StructuredToolResponse
+    | BulkToolResponse;
   const outputFormat = getOutputFormat();
+  const defaultPriority =
+    'results' in cleanedData
+      ? ['results', 'id', 'status', 'data']
+      : ['instructions', 'status', 'data'];
 
   let serialized: string;
   if (outputFormat === 'json') {
-    const priority = keysPriority || [
-      'instructions',
-      'results',
-      'hasResultsStatusHints',
-      'emptyStatusHints',
-      'errorStatusHints',
-      'mainResearchGoal',
-      'researchGoal',
-      'reasoning',
-      'status',
-      'data',
-    ];
+    const priority = keysPriority || defaultPriority;
     serialized = JSON.stringify(sortObjectKeys(cleanedData, priority), null, 2);
   } else {
     serialized = jsonToYamlString(cleanedData, {
-      keysPriority: keysPriority || [
-        'instructions',
-        'results',
-        'hasResultsStatusHints',
-        'emptyStatusHints',
-        'errorStatusHints',
-        'mainResearchGoal',
-        'researchGoal',
-        'reasoning',
-        'status',
-        'data',
-      ],
+      keysPriority: keysPriority || defaultPriority,
     });
   }
 
@@ -440,6 +424,17 @@ function cleanJsonObject(
     let hasValidProperties = false;
 
     for (const [key, value] of Object.entries(obj)) {
+      if (
+        key === 'results' &&
+        depth === 0 &&
+        Array.isArray(value) &&
+        value.length === 0
+      ) {
+        cleaned[key] = [];
+        hasValidProperties = true;
+        continue;
+      }
+
       const enteringFilesObject =
         (key === 'files' || key === 'repositories') && !inFilesObject;
       const cleanedValue = cleanJsonObject(value, {

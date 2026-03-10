@@ -214,7 +214,19 @@ describe('LSP Goto Definition Coverage Tests', () => {
       const { BulkLSPGotoDefinitionSchema } =
         await import('../../src/tools/lsp_goto_definition/scheme.js');
       expect(BulkLSPGotoDefinitionSchema).toBeDefined();
-      expect(BulkLSPGotoDefinitionSchema.shape.queries).toBeDefined();
+      const parsed = BulkLSPGotoDefinitionSchema.safeParse({
+        queries: [
+          {
+            id: 'goto_definition_coverage',
+            researchGoal: 'Find definition',
+            reasoning: 'Validate schema',
+            uri: 'file:///test.ts',
+            symbolName: 'testFn',
+            lineHint: 1,
+          },
+        ],
+      });
+      expect(parsed.success).toBe(true);
     });
 
     it('should export description', async () => {

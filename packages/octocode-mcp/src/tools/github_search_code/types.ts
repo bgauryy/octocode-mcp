@@ -11,6 +11,7 @@
  * Query parameters for GitHub code search
  */
 export interface GitHubCodeSearchQuery {
+  id?: string;
   keywordsToSearch: string[];
   owner?: string;
   repo?: string;
@@ -30,13 +31,9 @@ export interface GitHubCodeSearchQuery {
 // ============================================================================
 
 /** Base result interface */
-interface BaseToolResult<TQuery = object> {
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
+interface BaseToolResult {
   error?: string;
   hints?: string[];
-  query?: TQuery;
 }
 
 /**
@@ -45,7 +42,7 @@ interface BaseToolResult<TQuery = object> {
  * - For path-only matches: only includes path (no text_matches)
  * - Each file includes repo (owner/repo) for direct use with githubGetFileContent
  */
-export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
+export interface SearchResult extends BaseToolResult {
   /** Array of matched files with their paths and optional text matches */
   files?: Array<{
     /** File path within the repository */

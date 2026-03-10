@@ -11,6 +11,7 @@
  * Query parameters for LSP call hierarchy
  */
 export interface LSPCallHierarchyQuery {
+  id?: string;
   uri: string;
   symbolName: string;
   lineHint: number;
@@ -129,8 +130,6 @@ export interface CallHierarchyResult {
   error?: string;
   errorType?: LSPErrorType;
   hints?: string[];
-  researchGoal?: string;
-  reasoning?: string;
   item?: CallHierarchyItem;
   incomingCalls?: IncomingCall[];
   outgoingCalls?: OutgoingCall[];

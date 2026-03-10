@@ -17,6 +17,8 @@
  * Single query for cloning / fetching a repository.
  */
 export interface CloneRepoQuery {
+  /** Stable query identifier for mapping this query to its response result */
+  id?: string;
   /** High-level research goal driving the clone */
   mainResearchGoal: string;
   /** Specific research goal for this query */

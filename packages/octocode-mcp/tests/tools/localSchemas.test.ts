@@ -8,15 +8,18 @@ import { BulkFetchContentSchema } from '../../src/tools/local_fetch_content/sche
 import { STATIC_TOOL_NAMES } from '../../src/tools/toolMetadata/index.js';
 
 describe('Local tool schemas (TDD for local tools registration)', () => {
+  const bulkQueriesShape = (schema: unknown) =>
+    (schema as { _def: { schema: { shape: { queries: { description?: string } } } } })
+      ._def.schema.shape.queries;
+
   describe('BulkRipgrepQuerySchema', () => {
     it('should be defined and valid', () => {
       expect(BulkRipgrepQuerySchema).toBeDefined();
-      expect(BulkRipgrepQuerySchema.shape.queries).toBeDefined();
+      expect(bulkQueriesShape(BulkRipgrepQuerySchema)).toBeDefined();
     });
 
     it('should have correct description containing tool name', () => {
-      const description =
-        BulkRipgrepQuerySchema.shape.queries.description || '';
+      const description = bulkQueriesShape(BulkRipgrepQuerySchema).description || '';
       // Should contain the actual tool name, not 'undefined'
       expect(description).not.toContain('undefined');
       expect(description).toContain(STATIC_TOOL_NAMES.LOCAL_RIPGREP);
@@ -26,12 +29,12 @@ describe('Local tool schemas (TDD for local tools registration)', () => {
   describe('BulkViewStructureSchema', () => {
     it('should be defined and valid', () => {
       expect(BulkViewStructureSchema).toBeDefined();
-      expect(BulkViewStructureSchema.shape.queries).toBeDefined();
+      expect(bulkQueriesShape(BulkViewStructureSchema)).toBeDefined();
     });
 
     it('should have correct description containing tool name', () => {
       const description =
-        BulkViewStructureSchema.shape.queries.description || '';
+        bulkQueriesShape(BulkViewStructureSchema).description || '';
       expect(description).not.toContain('undefined');
       expect(description).toContain(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE);
     });
@@ -40,11 +43,11 @@ describe('Local tool schemas (TDD for local tools registration)', () => {
   describe('BulkFindFilesSchema', () => {
     it('should be defined and valid', () => {
       expect(BulkFindFilesSchema).toBeDefined();
-      expect(BulkFindFilesSchema.shape.queries).toBeDefined();
+      expect(bulkQueriesShape(BulkFindFilesSchema)).toBeDefined();
     });
 
     it('should have correct description containing tool name', () => {
-      const description = BulkFindFilesSchema.shape.queries.description || '';
+      const description = bulkQueriesShape(BulkFindFilesSchema).description || '';
       expect(description).not.toContain('undefined');
       expect(description).toContain(STATIC_TOOL_NAMES.LOCAL_FIND_FILES);
     });
@@ -53,12 +56,12 @@ describe('Local tool schemas (TDD for local tools registration)', () => {
   describe('BulkFetchContentSchema', () => {
     it('should be defined and valid', () => {
       expect(BulkFetchContentSchema).toBeDefined();
-      expect(BulkFetchContentSchema.shape.queries).toBeDefined();
+      expect(bulkQueriesShape(BulkFetchContentSchema)).toBeDefined();
     });
 
     it('should have correct description containing tool name', () => {
       const description =
-        BulkFetchContentSchema.shape.queries.description || '';
+        bulkQueriesShape(BulkFetchContentSchema).description || '';
       expect(description).not.toContain('undefined');
       expect(description).toContain(STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT);
     });

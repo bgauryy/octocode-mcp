@@ -186,6 +186,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/file.ts',
         '/workspace',
         {
+          id: 'pattern_query_1',
           uri: '/workspace/src/file.ts',
           symbolName: 'nonExistentSymbol',
           lineHint: 1,
@@ -228,6 +229,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/file.ts',
         '/workspace',
         {
+          id: 'pattern_query_2',
           uri: '/workspace/src/file.ts',
           symbolName: 'myFunc',
           lineHint: 5,
@@ -261,6 +263,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/file.ts',
         '/workspace',
         {
+          id: 'pattern_query_3',
           uri: '/workspace/src/file.ts',
           symbolName: 'myFunc',
           lineHint: 5,
@@ -304,6 +307,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/file.ts',
         '/workspace',
         {
+          id: 'pattern_query_4',
           uri: '/workspace/src/file.ts',
           symbolName: 'myFunc',
           lineHint: 1,
@@ -338,6 +342,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/file.ts',
         '/workspace',
         {
+          id: 'pattern_query_5',
           uri: '/workspace/src/file.ts',
           symbolName: 'myFunc',
           lineHint: 1,
@@ -376,6 +381,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/source.ts',
         '/workspace',
         {
+          id: 'pattern_query_6',
           uri: '/workspace/src/source.ts',
           symbolName: 'myFunc',
           lineHint: 1,
@@ -414,6 +420,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/file.ts',
         '/workspace',
         {
+          id: 'pattern_query_7',
           uri: '/workspace/src/file.ts',
           symbolName: 'myFunc',
           lineHint: 3,
@@ -450,6 +457,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/file.ts',
         '/workspace',
         {
+          id: 'pattern_query_8',
           uri: '/workspace/src/file.ts',
           symbolName: 'myFunc',
           lineHint: 3,

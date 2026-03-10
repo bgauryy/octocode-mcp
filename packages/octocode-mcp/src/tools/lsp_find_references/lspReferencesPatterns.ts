@@ -223,8 +223,6 @@ export async function findReferencesWithPatternMatching(
 
     return {
       status: 'empty',
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
       hints: emptyHints,
     };
   }
@@ -270,8 +268,6 @@ export async function findReferencesWithPatternMatching(
     locations: paginatedReferences,
     pagination,
     hasMultipleFiles,
-    researchGoal: query.researchGoal,
-    reasoning: query.reasoning,
     hints,
   };
 }

@@ -39,6 +39,7 @@ export interface PathValidationResult {
  * Base query schema fields (inherited from octocode-mcp)
  */
 export interface BaseQuery {
+  id?: string;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -88,12 +89,12 @@ export interface PaginationInfo {
 /**
  * Search content result (used by ripgrep) - NEW STRUCTURED FORMAT
  */
-export interface SearchContentResult extends BaseQuery {
+export interface SearchContentResult {
   status: 'hasResults' | 'empty' | 'error';
-  path?: string;
   errorCode?: ErrorCode;
   hints?: readonly string[];
   warnings?: string[]; // Validation warnings
+  searchEngine?: 'rg' | 'grep';
 
   // NEW: Structured matches grouped by file
   files?: RipgrepFileMatches[]; // Array of files with their matches (paginated)
@@ -183,9 +184,8 @@ export interface ViewStructureQuery extends BaseQuery {
 /**
  * View structure result
  */
-export interface ViewStructureResult extends BaseQuery {
+export interface ViewStructureResult {
   status: 'hasResults' | 'empty' | 'error';
-  path?: string;
   entries?: Array<{
     name: string;
     type: 'file' | 'dir' | 'link';
@@ -260,7 +260,7 @@ export interface FoundFile {
 /**
  * Find files result
  */
-export interface FindFilesResult extends BaseQuery {
+export interface FindFilesResult {
   status: 'hasResults' | 'empty' | 'error';
   files?: FoundFile[];
   errorCode?: ErrorCode;
@@ -297,9 +297,8 @@ export interface FetchContentQuery extends BaseQuery {
 /**
  * Fetch content result
  */
-export interface FetchContentResult extends BaseQuery {
+export interface FetchContentResult {
   status: 'hasResults' | 'empty' | 'error';
-  path?: string;
   content?: string;
   isPartial?: boolean;
   totalLines?: number;

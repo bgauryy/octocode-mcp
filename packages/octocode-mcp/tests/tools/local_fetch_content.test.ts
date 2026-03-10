@@ -469,7 +469,7 @@ describe('localGetFileContent', () => {
   });
 
   describe('Research context', () => {
-    it('should preserve research goal and reasoning', async () => {
+    it('should not echo research goal and reasoning', async () => {
       const testContent = 'test content';
       mockReadFile.mockResolvedValue(testContent);
 
@@ -480,8 +480,9 @@ describe('localGetFileContent', () => {
         reasoning: 'Testing feature X',
       });
 
-      expect(result.researchGoal).toBe('Find implementation');
-      expect(result.reasoning).toBe('Testing feature X');
+      expect(result).not.toHaveProperty('mainResearchGoal');
+      expect(result).not.toHaveProperty('researchGoal');
+      expect(result).not.toHaveProperty('reasoning');
     });
   });
 
@@ -1113,7 +1114,7 @@ describe('localGetFileContent', () => {
       expect(result.totalLines).toBe(5);
     });
 
-    it('should preserve research context in response', async () => {
+    it('should not echo research context in response', async () => {
       const testContent = 'line 1\nline 2\nline 3';
       mockReadFile.mockResolvedValue(testContent);
 
@@ -1126,8 +1127,9 @@ describe('localGetFileContent', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.researchGoal).toBe('Extract header');
-      expect(result.reasoning).toBe('Checking file header');
+      expect(result).not.toHaveProperty('mainResearchGoal');
+      expect(result).not.toHaveProperty('researchGoal');
+      expect(result).not.toHaveProperty('reasoning');
     });
   });
 
@@ -1365,6 +1367,7 @@ describe('localGetFileContent', () => {
   describe('Schema validation for startLine/endLine', () => {
     it('should require both startLine and endLine together', () => {
       const result = FetchContentQuerySchema.safeParse({
+        id: 'fetch_schema_1',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         path: 'test.txt',
@@ -1383,6 +1386,7 @@ describe('localGetFileContent', () => {
 
     it('should reject endLine without startLine', () => {
       const result = FetchContentQuerySchema.safeParse({
+        id: 'fetch_schema_2',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         path: 'test.txt',
@@ -1401,6 +1405,7 @@ describe('localGetFileContent', () => {
 
     it('should reject startLine > endLine', () => {
       const result = FetchContentQuerySchema.safeParse({
+        id: 'fetch_schema_3',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         path: 'test.txt',
@@ -1419,6 +1424,7 @@ describe('localGetFileContent', () => {
 
     it('should reject combining startLine/endLine with matchString', () => {
       const result = FetchContentQuerySchema.safeParse({
+        id: 'fetch_schema_4',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         path: 'test.txt',
@@ -1438,6 +1444,7 @@ describe('localGetFileContent', () => {
 
     it('should reject combining startLine/endLine with fullContent=true', () => {
       const result = FetchContentQuerySchema.safeParse({
+        id: 'fetch_schema_5',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         path: 'test.txt',
@@ -1457,6 +1464,7 @@ describe('localGetFileContent', () => {
 
     it('should accept valid startLine/endLine range', () => {
       const result = FetchContentQuerySchema.safeParse({
+        id: 'fetch_schema_6',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         path: 'test.txt',
@@ -1469,6 +1477,7 @@ describe('localGetFileContent', () => {
 
     it('should accept startLine/endLine with charLength pagination', () => {
       const result = FetchContentQuerySchema.safeParse({
+        id: 'fetch_schema_7',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         path: 'test.txt',
@@ -1482,6 +1491,7 @@ describe('localGetFileContent', () => {
 
     it('should reject startLine < 1', () => {
       const result = FetchContentQuerySchema.safeParse({
+        id: 'fetch_schema_8',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         path: 'test.txt',
@@ -1494,6 +1504,7 @@ describe('localGetFileContent', () => {
 
     it('should accept startLine equal to endLine (single line)', () => {
       const result = FetchContentQuerySchema.safeParse({
+        id: 'fetch_schema_9',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         path: 'test.txt',
@@ -1506,6 +1517,7 @@ describe('localGetFileContent', () => {
 
     it('should reject fullContent with matchString (TC-12: mutually exclusive)', () => {
       const result = FetchContentQuerySchema.safeParse({
+        id: 'fetch_schema_10',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         path: 'test.txt',
@@ -1526,6 +1538,7 @@ describe('localGetFileContent', () => {
 
     it('should reject fullContent with matchString and startLine/endLine (all conflicts)', () => {
       const result = FetchContentQuerySchema.safeParse({
+        id: 'fetch_schema_11',
         researchGoal: 'Test',
         reasoning: 'Schema validation',
         path: 'test.txt',

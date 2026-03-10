@@ -77,6 +77,7 @@ describe('GitHub Search Repositories Query Splitting', () => {
       registerSearchGitHubReposTool(mockServer.server);
 
       const originalQuery: GitHubReposSearchQuery = {
+        id: 'split_topics_keywords',
         reasoning: 'Test query with both search types',
         topicsToSearch: ['computer-vision', 'deep-learning'],
         keywordsToSearch: ['whale', 'detection'],
@@ -97,6 +98,7 @@ describe('GitHub Search Repositories Query Splitting', () => {
       registerSearchGitHubReposTool(mockServer.server);
 
       const originalQuery: GitHubReposSearchQuery = {
+        id: 'topics_only',
         reasoning: 'Test query with only topics',
         topicsToSearch: ['computer-vision', 'deep-learning'],
         limit: 10,
@@ -114,6 +116,7 @@ describe('GitHub Search Repositories Query Splitting', () => {
       registerSearchGitHubReposTool(mockServer.server);
 
       const originalQuery: GitHubReposSearchQuery = {
+        id: 'keywords_only',
         reasoning: 'Test query with only keywords',
         keywordsToSearch: ['whale', 'detection'],
         limit: 10,
@@ -165,6 +168,7 @@ describe('GitHub Search Repositories Query Splitting', () => {
         {
           queries: [
             {
+              id: 'dedup_merged_result',
               reasoning: 'Test dedup',
               topicsToSearch: ['computer-vision'],
               keywordsToSearch: ['whale'],
@@ -176,6 +180,8 @@ describe('GitHub Search Repositories Query Splitting', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
+      expect(responseText).toContain('id: "dedup_merged_result"');
+      expect((responseText.match(/id: "dedup_merged_result"/g) || []).length).toBe(1);
       expect(responseText).toContain('duplicate/repo');
     });
   });
@@ -223,6 +229,7 @@ describe('GitHub Search Repositories Query Splitting', () => {
         {
           queries: [
             {
+              id: 'partial_failure_query',
               reasoning: 'Test partial failure',
               topicsToSearch: ['topic1'],
               keywordsToSearch: ['keyword1'],
@@ -234,7 +241,10 @@ describe('GitHub Search Repositories Query Splitting', () => {
 
       expect(result.isError).toBe(false);
       const responseText = getTextContent(result.content);
+      expect(responseText).toContain('id: "partial_failure_query"');
+      expect((responseText.match(/id: "partial_failure_query"/g) || []).length).toBe(1);
       expect(responseText).toContain('success/repo');
+      expect(responseText).toContain('Keyword search failed: Rate limit exceeded');
     });
   });
 
@@ -246,6 +256,7 @@ describe('GitHub Search Repositories Query Splitting', () => {
       await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, {
         queries: [
           {
+            id: 'filter_preservation_query',
             reasoning: 'Test filter preservation',
             topicsToSearch: ['topic1'],
             keywordsToSearch: ['keyword1'],

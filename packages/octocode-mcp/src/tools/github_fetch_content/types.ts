@@ -20,6 +20,7 @@ export type ContentFetchType = 'file' | 'directory';
  * Query parameters for fetching GitHub file content
  */
 export interface FileContentQuery {
+  id?: string;
   owner: string;
   repo: string;
   path: string;
@@ -52,6 +53,7 @@ export interface ContentResultData {
   path?: string;
   content?: string;
   branch?: string;
+  resolvedBranch?: string;
   startLine?: number;
   endLine?: number;
   isPartial?: boolean;
@@ -59,6 +61,7 @@ export interface ContentResultData {
   lastModified?: string;
   lastModifiedBy?: string;
   pagination?: PaginationInfo;
+  cached?: boolean;
   /** True when matchString was provided but not found in file (not an error, just no match) */
   matchNotFound?: boolean;
   /** The matchString that was searched for (when matchNotFound is true) */
@@ -66,18 +69,14 @@ export interface ContentResultData {
 }
 
 /** Base result interface */
-interface BaseToolResult<TQuery = object> {
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
+interface BaseToolResult {
   error?: string;
   hints?: string[];
-  query?: TQuery;
 }
 
 /** Complete file content result */
 export interface ContentResult
-  extends BaseToolResult<FileContentQuery>, ContentResultData {}
+  extends BaseToolResult, ContentResultData {}
 
 // ============================================================================
 // DIRECTORY FETCH TYPES
@@ -111,7 +110,7 @@ export interface DirectoryFetchResult {
   owner: string;
   /** Repository name */
   repo: string;
-  /** Branch fetched from */
+  /** Branch fetched from (may be different from input when default branch is resolved) */
   branch: string;
   /** Directory path fetched */
   directoryPath: string;

@@ -141,7 +141,7 @@ export async function buildSearchResult(
   return {
     status: 'hasResults',
     files: finalFiles,
-    path: configuredQuery.path,
+    searchEngine: _searchEngine,
     pagination: {
       currentPage: filePageNumber,
       totalPages: totalFilePages,
@@ -150,8 +150,6 @@ export async function buildSearchResult(
       hasMore: filePageNumber < totalFilePages,
     },
     warnings,
-    researchGoal: configuredQuery.researchGoal,
-    reasoning: configuredQuery.reasoning,
     hints: [
       ...paginationHints,
       ...refinementHints,

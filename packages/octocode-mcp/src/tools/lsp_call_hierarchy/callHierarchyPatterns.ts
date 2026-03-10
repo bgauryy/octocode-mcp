@@ -117,8 +117,6 @@ async function findIncomingCallsWithPatternMatching(
       item: targetItem,
       direction: 'incoming',
       depth,
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
       hints: [
         'Search for callers failed',
         'Try using localSearchCode to find calls manually',
@@ -143,8 +141,6 @@ async function findIncomingCallsWithPatternMatching(
       direction: 'incoming',
       depth,
       incomingCalls: [],
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
       hints: [
         ...getHints(TOOL_NAME, 'empty'),
         `No callers found for '${symbolName}'`,
@@ -197,8 +193,6 @@ async function findIncomingCallsWithPatternMatching(
     depth,
     incomingCalls,
     pagination,
-    researchGoal: query.researchGoal,
-    reasoning: query.reasoning,
     hints: [...getHints(TOOL_NAME, 'hasResults')],
   };
 }
@@ -228,8 +222,6 @@ async function findOutgoingCallsWithPatternMatching(
       direction: 'outgoing',
       depth,
       outgoingCalls: [],
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
       hints: [
         'Could not extract function body',
         'The function may have unusual syntax',
@@ -329,8 +321,6 @@ async function findOutgoingCallsWithPatternMatching(
       direction: 'outgoing',
       depth,
       outgoingCalls: [],
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
       hints: [
         ...getHints(TOOL_NAME, 'empty'),
         `No function calls found in '${query.symbolName}'`,
@@ -385,8 +375,6 @@ async function findOutgoingCallsWithPatternMatching(
     depth,
     outgoingCalls,
     pagination,
-    researchGoal: query.researchGoal,
-    reasoning: query.reasoning,
     hints: [
       ...getHints(TOOL_NAME, 'hasResults'),
       'Use lspGotoDefinition to find where each callee is defined',

@@ -19,6 +19,7 @@ function parseSchema(overrides: Record<string, unknown>) {
   const base = {
     queries: [
       {
+        id: 'clone_repo_query',
         mainResearchGoal: 'test',
         researchGoal: 'test',
         reasoning: 'test',

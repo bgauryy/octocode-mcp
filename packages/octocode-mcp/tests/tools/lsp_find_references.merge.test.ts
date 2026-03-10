@@ -13,6 +13,7 @@ vi.mock('../../src/hints/index.js', () => ({
 import { mergeReferenceResults } from '../../src/tools/lsp_find_references/lsp_find_references.js';
 
 const baseQuery = {
+  id: 'find_references_merge_query',
   uri: '/workspace/src/file.ts',
   symbolName: 'testFn',
   lineHint: 5,

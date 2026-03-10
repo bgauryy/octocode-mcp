@@ -11,6 +11,7 @@
  * Query parameters for LSP goto definition
  */
 export interface LSPGotoDefinitionQuery {
+  id?: string;
   uri: string;
   symbolName: string;
   lineHint: number;
@@ -96,8 +97,6 @@ export interface GotoDefinitionResult {
   error?: string;
   errorType?: LSPErrorType;
   hints?: string[];
-  researchGoal?: string;
-  reasoning?: string;
   locations?: CodeSnippet[];
   resolvedPosition?: ExactPosition;
   searchRadius?: number;

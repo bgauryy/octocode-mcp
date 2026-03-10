@@ -107,8 +107,6 @@ export async function findReferencesWithLSP(
     if (!locations || locations.length === 0) {
       return {
         status: 'empty',
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
         hints: [
           ...getHints(TOOL_NAME, 'empty'),
           'Language server found no references',
@@ -159,8 +157,6 @@ export async function findReferencesWithLSP(
     if (filteredLocations.length === 0) {
       return {
         status: 'empty',
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
         hints: [
           ...getHints(TOOL_NAME, 'empty'),
           `Found ${totalUnfiltered} reference(s) but none matched the file patterns`,
@@ -232,8 +228,6 @@ export async function findReferencesWithLSP(
       locations: paginatedReferences,
       pagination,
       hasMultipleFiles,
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
       hints,
     };
   } finally {

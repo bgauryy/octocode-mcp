@@ -205,9 +205,6 @@ interface LSPToolResultBase {
   errorType?: LSPErrorType;
   /** Hints for next steps */
   hints?: string[];
-  /** Research context passed through */
-  researchGoal?: string;
-  reasoning?: string;
   /** Index signature for ProcessedBulkResult compatibility */
   [key: string]: unknown;
 }

@@ -11,6 +11,7 @@
  * Query parameters for viewing repository structure
  */
 export interface GitHubViewRepoStructureQuery {
+  id?: string;
   owner: string;
   repo: string;
   branch?: string;
@@ -28,13 +29,9 @@ export interface GitHubViewRepoStructureQuery {
 // ============================================================================
 
 /** Base result interface */
-interface BaseToolResult<TQuery = object> {
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
+interface BaseToolResult {
   error?: string;
   hints?: string[];
-  query?: TQuery;
 }
 
 /** Directory entry with files and folders grouped together */
@@ -49,17 +46,21 @@ export interface DirectoryEntry {
  * Keys are relative directory paths (e.g., ".", "src", "src/utils").
  */
 export interface RepoStructureResultData {
-  owner?: string;
-  repo?: string;
-  branch?: string;
-  /** Base path that was queried */
-  path?: string;
+  /** Resolved branch when the input omitted a branch and the provider filled one in */
+  resolvedBranch?: string;
+  branchFallback?: {
+    requestedBranch: string;
+    actualBranch: string;
+    defaultBranch?: string;
+    warning: string;
+  };
   /** Structure grouped by directory - keys are relative paths */
   structure?: Record<string, DirectoryEntry>;
+  summary?: Record<string, unknown>;
 }
 
 /** Complete repository structure result */
 export interface RepoStructureResult
   extends
-    BaseToolResult<GitHubViewRepoStructureQuery>,
+    BaseToolResult,
     RepoStructureResultData {}

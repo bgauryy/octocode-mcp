@@ -11,6 +11,7 @@
  * Query parameters for LSP find references
  */
 export interface LSPFindReferencesQuery {
+  id?: string;
   uri: string;
   symbolName: string;
   lineHint: number;
@@ -117,8 +118,6 @@ export interface FindReferencesResult {
   error?: string;
   errorType?: LSPErrorType;
   hints?: string[];
-  researchGoal?: string;
-  reasoning?: string;
   locations?: ReferenceLocation[];
   pagination?: LSPPaginationInfo;
   totalReferences?: number;

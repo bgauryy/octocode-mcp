@@ -20,6 +20,12 @@ vi.mock('../../src/session.js', () => ({
   logSessionError: vi.fn().mockResolvedValue(undefined),
 }));
 
+function expectNoResearchContext(result: Record<string, unknown>): void {
+  expect(result).not.toHaveProperty('mainResearchGoal');
+  expect(result).not.toHaveProperty('researchGoal');
+  expect(result).not.toHaveProperty('reasoning');
+}
+
 describe('Tools Utils', () => {
   describe('createSuccessResult', () => {
     it('should create success result with hasResults status', () => {
@@ -37,8 +43,7 @@ describe('Tools Utils', () => {
       );
 
       expect(result.status).toBe('hasResults');
-      expect(result.researchGoal).toBe('Find test files');
-      expect(result.reasoning).toBe('Looking for tests');
+      expectNoResearchContext(result);
       expect(result.files).toEqual(['test1.ts', 'test2.ts']);
     });
 
@@ -57,8 +62,7 @@ describe('Tools Utils', () => {
       );
 
       expect(result.status).toBe('empty');
-      expect(result.researchGoal).toBe('Find test files');
-      expect(result.reasoning).toBe('Looking for tests');
+      expectNoResearchContext(result);
       expect(result.files).toEqual([]);
     });
 
@@ -217,8 +221,7 @@ describe('Tools Utils', () => {
       );
 
       expect(result.status).toBe('hasResults');
-      expect(result.researchGoal).toBe('Complex search');
-      expect(result.reasoning).toBe('Testing');
+      expectNoResearchContext(result);
       expect(result.repositories).toEqual(['repo1']);
       expect(result.total).toBe(1);
       expect(result.metadata).toEqual({ page: 1 });
@@ -341,8 +344,7 @@ describe('Tools Utils', () => {
 
       expect(result.status).toBe('error');
       expect(result.error).toBe('API error occurred');
-      expect(result.researchGoal).toBe('Find files');
-      expect(result.reasoning).toBe('Searching');
+      expectNoResearchContext(result);
       expect(result.hints).toBeUndefined();
     });
 
@@ -619,8 +621,7 @@ describe('Tools Utils', () => {
 
       expect(result.status).toBe('error');
       expect(result.error).toBe('Something went wrong');
-      expect(result.researchGoal).toBe('Find files');
-      expect(result.reasoning).toBe('Searching');
+      expectNoResearchContext(result);
     });
 
     it('should handle Error objects with context message', () => {

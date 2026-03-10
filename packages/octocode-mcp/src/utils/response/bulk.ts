@@ -7,7 +7,7 @@ import type {
   FlatQueryResult,
   QueryError,
   BulkResponseConfig,
-  ToolResponse,
+  BulkToolResponse,
   PromiseResult,
 } from '../../types.js';
 
@@ -51,59 +51,29 @@ function createBulkResponse<TQuery extends object>(
   errors: QueryError[],
   queries: Array<TQuery>
 ): CallToolResult {
-  const topLevelFields = ['instructions', 'results'];
-  const resultFields = [
-    'id',
-    'status',
-    'data',
-    'mainResearchGoal',
-    'researchGoal',
-    'reasoning',
-    'hints',
-  ];
-  const standardFields = [...topLevelFields, ...resultFields, 'owner', 'repo'];
+  const topLevelFields = ['results'];
+  const resultFields = ['id', 'status', 'data', 'hints'];
   const fullKeysPriority = [
-    ...new Set([...standardFields, ...(config.keysPriority || [])]),
+    ...new Set([
+      ...topLevelFields,
+      ...resultFields,
+      ...(config.keysPriority || []),
+    ]),
   ];
 
   const flatQueries: FlatQueryResult[] = [];
-
-  let hasResultsCount = 0;
-  let emptyCount = 0;
-  let errorCount = 0;
 
   results.forEach(r => {
     const status = r.result.status;
     const toolData = extractToolData(r.result);
 
     const flatQuery: FlatQueryResult = {
-      id: r.queryIndex + 1, // 1-based ID for LLM readability
+      id: resolveQueryId(r.originalQuery, r.queryIndex),
       status,
-      data:
-        status === 'error' && r.result.error
-          ? (() => {
-              const filtered = filterHints(r.result.hints);
-              return {
-                error: r.result.error,
-                ...(filtered ? { hints: filtered } : {}),
-              };
-            })()
-          : toolData,
-      mainResearchGoal:
-        r.result.mainResearchGoal ||
-        safeExtractString(r.originalQuery, 'mainResearchGoal'),
-      researchGoal:
-        r.result.researchGoal ||
-        safeExtractString(r.originalQuery, 'researchGoal'),
-      reasoning:
-        r.result.reasoning || safeExtractString(r.originalQuery, 'reasoning'),
+      data: toolData,
     };
 
     flatQueries.push(flatQuery);
-
-    if (status === 'hasResults') hasResultsCount++;
-    else if (status === 'empty') emptyCount++;
-    else errorCount++;
   });
 
   errors.forEach(err => {
@@ -111,26 +81,13 @@ function createBulkResponse<TQuery extends object>(
     if (!originalQuery) return;
 
     flatQueries.push({
-      id: err.queryIndex + 1, // 1-based ID for LLM readability
+      id: resolveQueryId(originalQuery, err.queryIndex),
       status: 'error',
       data: { error: err.error },
-      mainResearchGoal: safeExtractString(originalQuery, 'mainResearchGoal'),
-      researchGoal: safeExtractString(originalQuery, 'researchGoal'),
-      reasoning: safeExtractString(originalQuery, 'reasoning'),
     });
-
-    errorCount++;
   });
 
-  const instructions = generateBulkInstructions(
-    flatQueries.length,
-    hasResultsCount,
-    emptyCount,
-    errorCount
-  );
-
-  const responseData: ToolResponse = {
-    instructions,
+  const responseData: BulkToolResponse = {
     results: flatQueries,
   };
 
@@ -156,8 +113,10 @@ function createBulkResponse<TQuery extends object>(
         text,
       },
     ],
-    structuredContent: responseData as Record<string, unknown>,
-    isError: errorCount > 0 && hasResultsCount === 0 && emptyCount === 0,
+    structuredContent: responseData as unknown as Record<string, unknown>,
+    isError:
+      flatQueries.length > 0 &&
+      flatQueries.every(queryResult => queryResult.status === 'error'),
   };
 }
 
@@ -245,13 +204,17 @@ function filterHints(hints: unknown): string[] | undefined {
 
 function extractToolData(result: ProcessedBulkResult): Record<string, unknown> {
   const excludedKeys = new Set([
+    'status',
     'mainResearchGoal',
     'researchGoal',
     'reasoning',
-    'error',
-    'status',
+    'researchSuggestions',
     'query',
   ]);
+
+  if (result.status !== 'error') {
+    excludedKeys.add('error');
+  }
 
   const toolData: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(result)) {
@@ -268,29 +231,17 @@ function extractToolData(result: ProcessedBulkResult): Record<string, unknown> {
   return toolData;
 }
 
-function safeExtractString<T extends object>(
-  obj: T,
-  key: string
-): string | undefined {
-  const value = (obj as Record<string, unknown>)[key];
-  return typeof value === 'string' ? value : undefined;
-}
-
-function generateBulkInstructions(
-  total: number,
-  hasResultsCount: number,
-  emptyCount: number,
-  errorCount: number
+function resolveQueryId<TQuery extends object>(
+  originalQuery: TQuery,
+  queryIndex: number
 ): string {
-  if (total === 0) return '0 results.';
-  const parts = [];
-  if (hasResultsCount > 0) parts.push(`${hasResultsCount} data`);
-  if (emptyCount > 0) parts.push(`${emptyCount} empty`);
-  if (errorCount > 0) parts.push(`${errorCount} error`);
-  if (total === 1) {
-    return parts.length === 1 && hasResultsCount === 1
-      ? '1 result.'
-      : `1 result: ${parts.join(', ')}.`;
+  const queryRecord = originalQuery as Record<string, unknown>;
+  const rawId = queryRecord.id;
+  if (typeof rawId === 'string' && rawId.trim().length > 0) {
+    return rawId;
   }
-  return `${total} results: ${parts.join(', ')}.`;
+  if (typeof rawId === 'number' && Number.isFinite(rawId)) {
+    return String(rawId);
+  }
+  return `q${queryIndex + 1}`;
 }

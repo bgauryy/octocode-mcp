@@ -13,6 +13,7 @@ import type { LocalToolErrorCode as ErrorCode } from '../../errorCodes.js';
  * Query parameters for finding local files
  */
 export interface FindFilesQuery {
+  id?: string;
   path: string;
   maxDepth?: number;
   minDepth?: number;
@@ -83,8 +84,5 @@ export interface FindFilesResult {
   errorCode?: ErrorCode;
   hints?: readonly string[];
   pagination?: FindFilesPagination;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
   [key: string]: unknown;
 }

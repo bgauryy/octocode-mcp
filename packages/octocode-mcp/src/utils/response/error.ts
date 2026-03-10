@@ -13,9 +13,6 @@ import type { BaseQuery } from '../core/types.js';
 
 export interface UnifiedErrorResult {
   status: 'error';
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
   /** Error message or GitHubAPIError object (for GitHub tools) */
   error?: string | GitHubAPIError;
   /** Error code (for local tools) */
@@ -84,7 +81,7 @@ function isGitHubApiError(error: unknown): error is GitHubAPIError {
 
 export function createErrorResult(
   error: unknown,
-  query: BaseQuery,
+  _query: BaseQuery,
   options: CreateErrorResultOptions = {}
 ): UnifiedErrorResult {
   const { toolName, hintContext, extra, customHints, hintSourceError } =
@@ -92,9 +89,6 @@ export function createErrorResult(
 
   const result: UnifiedErrorResult = {
     status: 'error',
-    mainResearchGoal: query.mainResearchGoal,
-    researchGoal: query.researchGoal,
-    reasoning: query.reasoning,
   };
 
   const hints: string[] = [];

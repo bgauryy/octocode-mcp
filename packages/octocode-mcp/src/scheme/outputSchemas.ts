@@ -2,22 +2,9 @@ import { z } from 'zod';
 
 const QueryMetaSchema = z.object({
   id: z
-    .number()
-    .int()
-    .positive()
-    .describe('Unique query identifier matching the input query index'),
-  mainResearchGoal: z
     .string()
-    .optional()
-    .describe('The main research goal echoed from the input query'),
-  researchGoal: z
-    .string()
-    .optional()
-    .describe('The specific research goal echoed from the input query'),
-  reasoning: z
-    .string()
-    .optional()
-    .describe('The reasoning echoed from the input query'),
+    .min(1)
+    .describe('Stable query identifier matching the input query id'),
 });
 
 const HintsSchema = z
@@ -38,7 +25,14 @@ const ErrorDataSchema = z
       .optional()
       .describe('Tool-specific error type (e.g. symbol_not_found, size_limit)'),
     errorCode: z.string().optional().describe('Tool error code'),
-    path: z.string().optional().describe('Path involved in error'),
+    resolvedPath: z
+      .string()
+      .optional()
+      .describe('Resolved filesystem path involved in the error'),
+    cwd: z
+      .string()
+      .optional()
+      .describe('Working directory relevant to the error'),
     searchRadius: z
       .number()
       .optional()
@@ -52,7 +46,7 @@ function createBulkOutputSchema(successDataSchema: z.ZodTypeAny) {
       .literal('hasResults')
       .describe('Indicates the query returned results successfully'),
     data: successDataSchema.describe('The tool-specific result data'),
-  });
+  }).strict();
 
   const emptySchema = QueryMetaSchema.extend({
     status: z
@@ -61,7 +55,7 @@ function createBulkOutputSchema(successDataSchema: z.ZodTypeAny) {
     data: z
       .record(z.unknown())
       .describe('Empty result metadata (may contain hints)'),
-  });
+  }).strict();
 
   const errorSchema = QueryMetaSchema.extend({
     status: z
@@ -70,12 +64,9 @@ function createBulkOutputSchema(successDataSchema: z.ZodTypeAny) {
     data: ErrorDataSchema.describe(
       'Error details including message, type, and recovery hints'
     ),
-  });
+  }).strict();
 
   return z.object({
-    instructions: z
-      .string()
-      .describe('Guidance on how to interpret and use the results'),
     results: z
       .array(
         z.discriminatedUnion('status', [
@@ -87,7 +78,7 @@ function createBulkOutputSchema(successDataSchema: z.ZodTypeAny) {
       .describe(
         'Array of results, one per input query, discriminated by status'
       ),
-  });
+  }).strict();
 }
 
 const CommonPaginationSchema = z
@@ -165,16 +156,12 @@ export const BulkToolOutputSchema = createBulkOutputSchema(
 export const GitHubFetchContentOutputSchema = createBulkOutputSchema(
   z
     .object({
-      owner: z
+      resolvedBranch: z
         .string()
         .optional()
-        .describe('Repository owner (user or organization)'),
-      repo: z.string().optional().describe('Repository name'),
-      path: z.string().optional().describe('File path within the repository'),
-      branch: z
-        .string()
-        .optional()
-        .describe('Git branch the content was fetched from'),
+        .describe(
+          'Resolved branch used to fetch the content when it adds new information beyond the input query'
+        ),
       content: z
         .string()
         .optional()
@@ -195,6 +182,10 @@ export const GitHubFetchContentOutputSchema = createBulkOutputSchema(
         .number()
         .optional()
         .describe('Total size of all files in bytes'),
+      cached: z
+        .boolean()
+        .optional()
+        .describe('Whether a cached local directory fetch was reused'),
       pagination: CommonPaginationSchema.optional().describe(
         'Pagination for input results (API-level paging)'
       ),
@@ -203,7 +194,6 @@ export const GitHubFetchContentOutputSchema = createBulkOutputSchema(
       ),
       hints: HintsSchema,
     })
-    .passthrough()
 );
 
 export const GitHubSearchCodeOutputSchema = createBulkOutputSchema(
@@ -226,17 +216,11 @@ export const GitHubSearchCodeOutputSchema = createBulkOutputSchema(
       ),
       hints: HintsSchema,
     })
-    .passthrough()
 );
 
 export const GitHubSearchPullRequestsOutputSchema = createBulkOutputSchema(
   z
     .object({
-      owner: z
-        .string()
-        .optional()
-        .describe('Repository owner (user or organization)'),
-      repo: z.string().optional().describe('Repository name'),
       pull_requests: z
         .array(z.record(z.unknown()))
         .optional()
@@ -261,7 +245,6 @@ export const GitHubSearchPullRequestsOutputSchema = createBulkOutputSchema(
       ),
       hints: HintsSchema,
     })
-    .passthrough()
 );
 
 export const GitHubSearchRepositoriesOutputSchema = createBulkOutputSchema(
@@ -277,25 +260,33 @@ export const GitHubSearchRepositoriesOutputSchema = createBulkOutputSchema(
       ),
       hints: HintsSchema,
     })
-    .passthrough()
 );
 
 export const GitHubViewRepoStructureOutputSchema = createBulkOutputSchema(
   z
     .object({
-      owner: z
+      resolvedBranch: z
         .string()
         .optional()
-        .describe('Repository owner (user or organization)'),
-      repo: z.string().optional().describe('Repository name'),
-      branch: z
-        .string()
+        .describe(
+          'Resolved branch used when the input query omitted a branch'
+        ),
+      branchFallback: z
+        .object({
+          requestedBranch: z.string().describe('Branch requested in the query'),
+          actualBranch: z
+            .string()
+            .describe('Branch actually used in the result'),
+          defaultBranch: z
+            .string()
+            .optional()
+            .describe('Repository default branch when known'),
+          warning: z
+            .string()
+            .describe('Human-readable explanation of the fallback'),
+        })
         .optional()
-        .describe('Git branch the structure was read from'),
-      path: z
-        .string()
-        .optional()
-        .describe('Root path within the repository that was explored'),
+        .describe('Branch fallback details when the requested branch was not used'),
       structure: z
         .record(
           z
@@ -324,7 +315,6 @@ export const GitHubViewRepoStructureOutputSchema = createBulkOutputSchema(
       ),
       hints: HintsSchema,
     })
-    .passthrough()
 );
 
 export const GitHubCloneRepoOutputSchema = createBulkOutputSchema(
@@ -333,31 +323,20 @@ export const GitHubCloneRepoOutputSchema = createBulkOutputSchema(
       localPath: z
         .string()
         .describe('Local filesystem path where the repository was cloned to'),
-      owner: z.string().describe('Repository owner (user or organization)'),
-      repo: z.string().describe('Repository name'),
-      branch: z.string().describe('Git branch that was cloned'),
-      sparse_path: z
+      resolvedBranch: z
         .string()
         .optional()
-        .describe('Sparse checkout path if only a subdirectory was cloned'),
+        .describe(
+          'Resolved branch used for the clone when it adds new information beyond the input query'
+        ),
       cached: z
         .boolean()
         .optional()
         .describe(
           'Whether the clone was served from cache instead of a fresh clone'
         ),
-      files: z
-        .array(z.record(z.unknown()))
-        .optional()
-        .describe('Array of file objects in the cloned directory'),
-      fileCount: z.number().optional().describe('Total number of files cloned'),
-      totalSize: z
-        .number()
-        .optional()
-        .describe('Total size of all cloned files in bytes'),
       hints: HintsSchema,
     })
-    .passthrough()
 );
 
 export const PackageSearchOutputSchema = createBulkOutputSchema(
@@ -374,53 +353,37 @@ export const PackageSearchOutputSchema = createBulkOutputSchema(
         .describe('Total number of packages matching the search query'),
       hints: HintsSchema,
     })
-    .passthrough()
 );
 
 export const LocalSearchCodeOutputSchema = createBulkOutputSchema(
   z
     .object({
-      path: z
-        .string()
-        .optional()
-        .describe('Base search path that was searched'),
       files: z
         .array(z.record(z.unknown()))
         .optional()
         .describe(
           'Array of matching files with path, line numbers, match content, and context'
         ),
+      searchEngine: z
+        .enum(['rg', 'grep'])
+        .optional()
+        .describe('Search engine that produced the result'),
       pagination: CommonPaginationSchema.optional().describe(
         'Pagination info for navigating through search results'
       ),
-      stats: z
-        .record(z.unknown())
-        .optional()
-        .describe(
-          'Search statistics including total matches, files searched, and timing'
-        ),
-      distribution: z
-        .record(z.unknown())
-        .optional()
-        .describe('Distribution of matches across file types or directories'),
       warnings: z
         .array(z.string())
         .optional()
         .describe(
           'Warnings about skipped files, permission errors, or truncated results'
-        ),
+      ),
       hints: HintsSchema,
     })
-    .passthrough()
 );
 
 export const LocalGetFileContentOutputSchema = createBulkOutputSchema(
   z
     .object({
-      path: z
-        .string()
-        .optional()
-        .describe('Absolute path of the file that was read'),
       content: z
         .string()
         .optional()
@@ -463,9 +426,12 @@ export const LocalGetFileContentOutputSchema = createBulkOutputSchema(
       pagination: CommonPaginationSchema.optional().describe(
         'Pagination info for large files or matchString results'
       ),
+      warnings: z
+        .array(z.string())
+        .optional()
+        .describe('Warnings about truncation or auto-pagination'),
       hints: HintsSchema,
     })
-    .passthrough()
 );
 
 export const LocalFindFilesOutputSchema = createBulkOutputSchema(
@@ -477,25 +443,19 @@ export const LocalFindFilesOutputSchema = createBulkOutputSchema(
         .describe(
           'Array of file objects with path, name, size, permissions, and modification time'
         ),
-      totalFiles: z
-        .number()
-        .optional()
-        .describe('Total number of files matching the search criteria'),
       pagination: CommonPaginationSchema.optional().describe(
         'Pagination info for navigating through file results'
       ),
+      charPagination: CommonPaginationSchema.optional().describe(
+        'Character-based pagination info when file results are paginated by output size'
+      ),
       hints: HintsSchema,
     })
-    .passthrough()
 );
 
 export const LocalViewStructureOutputSchema = createBulkOutputSchema(
   z
     .object({
-      path: z
-        .string()
-        .optional()
-        .describe('Root directory path that was explored'),
       entries: z
         .array(z.record(z.unknown()))
         .optional()
@@ -509,9 +469,12 @@ export const LocalViewStructureOutputSchema = createBulkOutputSchema(
       pagination: CommonPaginationSchema.optional().describe(
         'Pagination info for large directory listings'
       ),
+      warnings: z
+        .array(z.string())
+        .optional()
+        .describe('Warnings about skipped or inaccessible entries'),
       hints: HintsSchema,
     })
-    .passthrough()
 );
 
 export const LspGotoDefinitionOutputSchema = createBulkOutputSchema(
@@ -552,7 +515,6 @@ export const LspGotoDefinitionOutputSchema = createBulkOutputSchema(
       ),
       hints: HintsSchema,
     })
-    .passthrough()
 );
 
 export const LspFindReferencesOutputSchema = createBulkOutputSchema(
@@ -586,7 +548,6 @@ export const LspFindReferencesOutputSchema = createBulkOutputSchema(
         .describe('Whether references span multiple files'),
       hints: HintsSchema,
     })
-    .passthrough()
 );
 
 export const LspCallHierarchyOutputSchema = createBulkOutputSchema(
@@ -654,5 +615,4 @@ export const LspCallHierarchyOutputSchema = createBulkOutputSchema(
         .describe('Depth of the call hierarchy traversal that was performed'),
       hints: HintsSchema,
     })
-    .passthrough()
 );

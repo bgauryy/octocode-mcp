@@ -243,7 +243,9 @@ describe('Example: Using Unified Test Helpers', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.researchGoal).toBe('Test directory listing');
+      expect(result).not.toHaveProperty('mainResearchGoal');
+      expect(result).not.toHaveProperty('researchGoal');
+      expect(result).not.toHaveProperty('reasoning');
     });
 
     it('should handle empty directories', async () => {
@@ -337,7 +339,7 @@ describe('Example: Using Unified Test Helpers', () => {
   });
 
   describe('Research Goals Passthrough', () => {
-    it('should preserve researchGoal and reasoning in results', async () => {
+    it('should not echo researchGoal and reasoning in results', async () => {
       helpers.setupExecSuccess('');
 
       const result = await viewStructure({
@@ -346,8 +348,9 @@ describe('Example: Using Unified Test Helpers', () => {
         reasoning: 'Need to understand project setup',
       });
 
-      expect(result.researchGoal).toBe('Find configuration files');
-      expect(result.reasoning).toBe('Need to understand project setup');
+      expect(result).not.toHaveProperty('mainResearchGoal');
+      expect(result).not.toHaveProperty('researchGoal');
+      expect(result).not.toHaveProperty('reasoning');
     });
   });
 });

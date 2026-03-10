@@ -11,6 +11,7 @@
  * Query parameters for searching pull requests
  */
 export interface GitHubPullRequestSearchQuery {
+  id?: string;
   query?: string;
   owner?: string;
   repo?: string;
@@ -64,13 +65,9 @@ export interface GitHubPullRequestSearchQuery {
 // ============================================================================
 
 /** Base result interface */
-interface BaseToolResult<TQuery = object> {
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
+interface BaseToolResult {
   error?: string;
   hints?: string[];
-  query?: TQuery;
 }
 
 /** Detailed pull request information */
@@ -165,5 +162,5 @@ export interface PullRequestSearchResultData {
 /** Complete pull request search result */
 export interface PullRequestSearchResult
   extends
-    BaseToolResult<GitHubPullRequestSearchQuery>,
+    BaseToolResult,
     PullRequestSearchResultData {}

@@ -1064,7 +1064,7 @@ describe('localFindFiles', () => {
   });
 
   describe('Research context fields', () => {
-    it('should return researchGoal and reasoning in hasResults', async () => {
+    it('should not echo researchGoal and reasoning in hasResults', async () => {
       mockSafeExec.mockResolvedValue({
         success: true,
         code: 0,
@@ -1080,11 +1080,12 @@ describe('localFindFiles', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.researchGoal).toBe('Find text files');
-      expect(result.reasoning).toBe('Need to locate documentation');
+      expect(result).not.toHaveProperty('mainResearchGoal');
+      expect(result).not.toHaveProperty('researchGoal');
+      expect(result).not.toHaveProperty('reasoning');
     });
 
-    it('should return researchGoal and reasoning in empty results', async () => {
+    it('should not echo researchGoal and reasoning in empty results', async () => {
       mockSafeExec.mockResolvedValue({
         success: true,
         code: 0,
@@ -1100,11 +1101,12 @@ describe('localFindFiles', () => {
       });
 
       expect(result.status).toBe('empty');
-      expect(result.researchGoal).toBe('Search for missing files');
-      expect(result.reasoning).toBe('Verify files do not exist');
+      expect(result).not.toHaveProperty('mainResearchGoal');
+      expect(result).not.toHaveProperty('researchGoal');
+      expect(result).not.toHaveProperty('reasoning');
     });
 
-    it('should return researchGoal and reasoning in error results', async () => {
+    it('should not echo researchGoal and reasoning in error results', async () => {
       mockValidate.mockReturnValue({
         isValid: false,
         error: 'Invalid path',
@@ -1117,8 +1119,9 @@ describe('localFindFiles', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.researchGoal).toBe('Test invalid path');
-      expect(result.reasoning).toBe('Testing error handling');
+      expect(result).not.toHaveProperty('mainResearchGoal');
+      expect(result).not.toHaveProperty('researchGoal');
+      expect(result).not.toHaveProperty('reasoning');
     });
   });
 
