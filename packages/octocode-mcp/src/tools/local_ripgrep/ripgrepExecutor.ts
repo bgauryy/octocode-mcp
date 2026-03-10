@@ -56,10 +56,7 @@ export async function executeRipgrepSearchInternal(
     TOOL_NAMES.LOCAL_RIPGREP
   );
   if (!pathValidation.isValid) {
-    return {
-      ...pathValidation.errorResult,
-      warnings: validation.warnings,
-    } as SearchContentResult;
+    return pathValidation.errorResult as SearchContentResult;
   }
 
   // Use sanitized path (includes tilde expansion) — avoid mutating input query
@@ -177,10 +174,7 @@ export async function executeGrepSearch(
     TOOL_NAMES.LOCAL_RIPGREP
   );
   if (!pathValidation.isValid) {
-    return {
-      ...pathValidation.errorResult,
-      warnings: [...grepWarnings, ...validation.warnings],
-    } as SearchContentResult;
+    return pathValidation.errorResult as SearchContentResult;
   }
 
   // Use sanitized path (includes tilde expansion) — avoid mutating input query

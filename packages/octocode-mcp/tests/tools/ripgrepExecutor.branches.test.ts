@@ -162,6 +162,35 @@ describe('ripgrepExecutor - Branch Coverage', () => {
     });
   });
 
+  describe('executeRipgrepSearchInternal - path validation error schema compliance', () => {
+    it('should NOT include warnings on path validation error (ErrorDataSchema is strict)', async () => {
+      const query = {
+        pattern: 'test',
+        path: '/invalid/path',
+        researchGoal: 'test goal',
+        reasoning: 'test reasoning',
+        mainResearchGoal: 'main goal',
+      } as any as RipgrepQuery;
+
+      const errorResult = {
+        status: 'error' as const,
+        errorCode: 'INVALID_PATH',
+        hints: ['Path validation failed'],
+      };
+
+      mockValidateToolPath.mockReturnValue({
+        isValid: false,
+        errorResult,
+      });
+
+      const result = await executeRipgrepSearchInternal(query);
+
+      expect(result.status).toBe('error');
+      expect(result).not.toHaveProperty('warnings');
+      expect(mockSafeExec).not.toHaveBeenCalled();
+    });
+  });
+
   describe('executeRipgrepSearchInternal - Lines 75-78: large directory warning', () => {
     it('should add chunking warnings when directory is large and filesOnly is false', async () => {
       const query = {
@@ -366,7 +395,7 @@ describe('ripgrepExecutor - Branch Coverage', () => {
       expect(mockSafeExec).not.toHaveBeenCalled();
     });
 
-    it('should include warnings when path validation fails', async () => {
+    it('should NOT include warnings on path validation error (ErrorDataSchema is strict)', async () => {
       const query = {
         pattern: 'test',
         path: '/invalid/path',
@@ -381,7 +410,7 @@ describe('ripgrepExecutor - Branch Coverage', () => {
         path: '/invalid/path',
         researchGoal: query.researchGoal,
         reasoning: query.reasoning,
-        hints: [],
+        hints: ['Path validation failed'],
       };
 
       mockValidateToolPath.mockReturnValue({
@@ -394,10 +423,8 @@ describe('ripgrepExecutor - Branch Coverage', () => {
       const result = await executeGrepSearch(query);
 
       expect(result.status).toBe('error');
-      expect(result.warnings).toBeDefined();
-      if (result.warnings) {
-        expect(result.warnings).toContain('Grep warning');
-      }
+      expect(result).not.toHaveProperty('warnings');
+      expect(mockSafeExec).not.toHaveBeenCalled();
     });
   });
 

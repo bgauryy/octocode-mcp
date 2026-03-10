@@ -85,10 +85,8 @@ export async function searchPackages(
         const packages = (apiResult.packages as PackageResult[]).map(pkg => {
           const repoUrl = getPackageRepo(pkg);
           const { owner, repo } = parseRepoInfo(repoUrl);
-          if (owner && repo) {
-            return { ...pkg, owner, repo };
-          }
-          return pkg;
+          const name = getPackageName(pkg);
+          return { ...pkg, name, ...(owner && repo ? { owner, repo } : {}) };
         });
 
         const result = {
