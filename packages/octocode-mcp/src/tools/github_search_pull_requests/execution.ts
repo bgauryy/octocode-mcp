@@ -8,28 +8,39 @@ import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import {
   handleCatchError,
-  handleProviderError,
   createSuccessResult,
   createErrorResult,
 } from '../utils.js';
-import { getProvider } from '../../providers/factory.js';
-import { getActiveProviderConfig } from '../../serverConfig.js';
-import { isProviderSuccess } from '../../providers/types.js';
 import {
   applyOutputSizeLimit,
   serializeForPagination,
 } from '../../utils/pagination/index.js';
+import {
+  buildPaginationHints,
+  mapPullRequestProviderResultData,
+  mapPullRequestToolQuery,
+} from '../providerMappers.js';
+import {
+  createProviderExecutionContext,
+  executeProviderOperation,
+} from '../providerExecution.js';
 
 export async function searchMultipleGitHubPullRequests(
   args: ToolExecutionArgs<GitHubPullRequestSearchQuery>
 ): Promise<CallToolResult> {
   const { queries, authInfo } = args;
-  const { provider: providerType, baseUrl, token } = getActiveProviderConfig();
+  let providerContext:
+    | ReturnType<typeof createProviderExecutionContext>
+    | undefined;
+  const getProviderContext = () =>
+    (providerContext ??= createProviderExecutionContext(authInfo));
 
   return executeBulkOperation(
     queries,
     async (query: GitHubPullRequestSearchQuery, _index: number) => {
       try {
+        const currentProviderContext = getProviderContext();
+
         if (query.query && String(query.query).length > 256) {
           return createErrorResult(
             'Query too long. Maximum 256 characters allowed.',
@@ -52,152 +63,33 @@ export async function searchMultipleGitHubPullRequests(
           );
         }
 
-        const provider = getProvider(providerType, {
-          type: providerType,
-          baseUrl,
-          token,
-          authInfo,
-        });
+        const providerResult = await executeProviderOperation(query, () =>
+          currentProviderContext.provider.searchPullRequests(
+            mapPullRequestToolQuery(query)
+          )
+        );
 
-        // Convert query to provider format
-        const providerQuery = {
-          projectId:
-            query.owner && query.repo
-              ? `${query.owner}/${query.repo}`
-              : undefined,
-          number: query.prNumber,
-          state: query.state as
-            | 'open'
-            | 'closed'
-            | 'merged'
-            | 'all'
-            | undefined,
-          author: query.author,
-          assignee: query.assignee,
-          commenter: query.commenter,
-          involves: query.involves,
-          mentions: query.mentions,
-          reviewRequested: query['review-requested'],
-          reviewedBy: query['reviewed-by'],
-          labels: query.label
-            ? Array.isArray(query.label)
-              ? query.label
-              : [query.label]
-            : undefined,
-          noLabel: query['no-label'],
-          noMilestone: query['no-milestone'],
-          noProject: query['no-project'],
-          noAssignee: query['no-assignee'],
-          baseBranch: query.base,
-          headBranch: query.head,
-          created: query.created,
-          updated: query.updated,
-          closed: query.closed,
-          mergedAt: query['merged-at'],
-          comments: query.comments,
-          reactions: query.reactions,
-          interactions: query.interactions,
-          merged: query.merged,
-          draft: query.draft,
-          match: query.match as
-            | Array<'title' | 'body' | 'comments'>
-            | undefined,
-          withComments: query.withComments,
-          withCommits: query.withCommits,
-          type: query.type as
-            | 'metadata'
-            | 'fullContent'
-            | 'partialContent'
-            | undefined,
-          partialContentMetadata: query.partialContentMetadata,
-          sort: query.sort as 'created' | 'updated' | 'best-match' | undefined,
-          order: query.order as 'asc' | 'desc' | undefined,
-          limit: query.limit,
-          page: query.page,
-          mainResearchGoal: query.mainResearchGoal,
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
-        };
-
-        const apiResult = await provider.searchPullRequests(providerQuery);
-
-        if (!isProviderSuccess(apiResult)) {
-          return handleProviderError(apiResult, query);
+        if (!providerResult.ok) {
+          return providerResult.result;
         }
 
-        // Transform provider response to tool result format
-        const pullRequests = apiResult.data.items.map(pr => ({
-          number: pr.number,
-          title: pr.title,
-          body: pr.body,
-          url: pr.url,
-          state: pr.state,
-          draft: pr.draft,
-          author: pr.author,
-          assignees: pr.assignees,
-          labels: pr.labels,
-          sourceBranch: pr.sourceBranch,
-          targetBranch: pr.targetBranch,
-          createdAt: pr.createdAt,
-          updatedAt: pr.updatedAt,
-          closedAt: pr.closedAt,
-          mergedAt: pr.mergedAt,
-          commentsCount: pr.commentsCount,
-          changedFilesCount: pr.changedFilesCount,
-          additions: pr.additions,
-          deletions: pr.deletions,
-          ...(pr.comments && { comments: pr.comments }),
-          ...(pr.fileChanges && { fileChanges: pr.fileChanges }),
-        }));
+        const { pullRequests, resultData, pagination } =
+          mapPullRequestProviderResultData(providerResult.response.data);
 
         const hasContent = pullRequests.length > 0;
 
-        const paginationHints: string[] = [];
-        if (apiResult.data.pagination) {
-          const {
-            currentPage,
-            totalPages,
-            totalMatches: totalMatchCount,
-            hasMore,
-          } = apiResult.data.pagination;
-          const totalMatches = totalMatchCount || 0;
-
-          paginationHints.push(
-            `Page ${currentPage}/${totalPages} (showing ${pullRequests.length} of ${totalMatches} PRs)`
-          );
-
-          if (hasMore) {
-            paginationHints.push(`Next: page=${currentPage + 1}`);
-          }
-          if (currentPage > 1) {
-            paginationHints.push(`Previous: page=${currentPage - 1}`);
-          }
-          if (!hasMore) {
-            paginationHints.push('Final page');
-          }
-          if (totalPages > 2) {
-            paginationHints.push(
-              `Jump to: page=1 (first) or page=${totalPages} (last)`
-            );
-          }
-        }
-
-        // Transform pagination to expected format
-        const resultPagination = apiResult.data.pagination
-          ? {
-              currentPage: apiResult.data.pagination.currentPage,
-              totalPages: apiResult.data.pagination.totalPages,
-              perPage: apiResult.data.pagination.entriesPerPage || 10,
-              totalMatches: apiResult.data.pagination.totalMatches || 0,
-              hasMore: apiResult.data.pagination.hasMore,
-            }
-          : undefined;
-
-        const resultData: Record<string, unknown> = {
-          pull_requests: pullRequests,
-          total_count: apiResult.data.totalCount || pullRequests.length,
-          ...(resultPagination && { pagination: resultPagination }),
-        };
+        const paginationHints = pagination
+          ? buildPaginationHints(
+              {
+                currentPage: pagination.currentPage,
+                totalPages: pagination.totalPages,
+                hasMore: pagination.hasMore,
+                totalMatches: pagination.totalMatches,
+                entriesPerPage: pagination.perPage,
+              },
+              'PRs'
+            )
+          : [];
 
         // Apply output size limits for large responses
         const serialized = serializeForPagination(resultData, true);

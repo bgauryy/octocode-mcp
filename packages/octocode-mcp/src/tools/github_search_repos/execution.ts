@@ -11,13 +11,17 @@ import {
   handleProviderError,
   createSuccessResult,
 } from '../utils.js';
-import { getProvider } from '../../providers/factory.js';
-import { getActiveProviderConfig } from '../../serverConfig.js';
-import type {
-  ProviderResponse,
-  RepoSearchResult as ProviderRepoSearchResult,
-} from '../../providers/types.js';
-import { isProviderSuccess } from '../../providers/types.js';
+import type { RepoSearchResult as ProviderRepoSearchResult } from '../../providers/types.js';
+import {
+  buildPaginationHints,
+  mapRepoSearchProviderRepositories,
+  mapRepoSearchToolQuery,
+} from '../providerMappers.js';
+import {
+  createProviderExecutionContext,
+  executeProviderOperations,
+  type ProviderOperationResult,
+} from '../providerExecution.js';
 
 type RepoSearchVariantLabel = 'combined' | 'topics' | 'keywords';
 
@@ -29,11 +33,17 @@ interface RepoSearchVariant {
 interface RepoSearchVariantExecution {
   label: RepoSearchVariantLabel;
   query: GitHubReposSearchQuery;
-  apiResult: ProviderResponse<ProviderRepoSearchResult>;
+  response: ProviderOperationResult<
+    RepoSearchVariant,
+    ProviderRepoSearchResult
+  >['response'];
 }
 
 type SuccessfulRepoSearchVariant = RepoSearchVariantExecution & {
-  apiResult: ProviderResponse<ProviderRepoSearchResult> & {
+  response: Extract<
+    ProviderOperationResult<RepoSearchVariant, ProviderRepoSearchResult>,
+    { response: { data: ProviderRepoSearchResult } }
+  >['response'] & {
     data: ProviderRepoSearchResult;
   };
 };
@@ -93,54 +103,6 @@ function createSearchVariants(
   return [{ label: 'combined', query }];
 }
 
-function createProviderQuery(query: GitHubReposSearchQuery) {
-  return {
-    keywords: query.keywordsToSearch,
-    topics: query.topicsToSearch,
-    owner: query.owner,
-    stars: query.stars,
-    size: query.size,
-    created: query.created,
-    updated: query.updated,
-    match: query.match,
-    sort: query.sort as
-      | 'stars'
-      | 'forks'
-      | 'updated'
-      | 'created'
-      | 'best-match'
-      | undefined,
-    limit: query.limit,
-    page: query.page,
-    mainResearchGoal: query.mainResearchGoal,
-    researchGoal: query.researchGoal,
-    reasoning: query.reasoning,
-  };
-}
-
-function toSimplifiedRepositories(
-  repositories: ProviderRepoSearchResult['repositories']
-): SimplifiedRepository[] {
-  return repositories.map(repo => {
-    const [owner, repoName] = repo.fullPath.split('/');
-    return {
-      owner: owner || '',
-      repo: repoName || repo.name,
-      defaultBranch: repo.defaultBranch,
-      stars: repo.stars,
-      description: repo.description || '',
-      url: repo.url,
-      createdAt: repo.createdAt,
-      updatedAt: repo.updatedAt,
-      pushedAt: repo.lastActivityAt,
-      visibility: repo.visibility,
-      topics: repo.topics,
-      forksCount: repo.forks,
-      openIssuesCount: repo.openIssuesCount,
-    };
-  });
-}
-
 function deduplicateRepositories(
   repositories: SimplifiedRepository[]
 ): SimplifiedRepository[] {
@@ -154,51 +116,6 @@ function deduplicateRepositories(
   }
 
   return [...uniqueRepositories.values()];
-}
-
-function isSuccessfulVariant(
-  variant: RepoSearchVariantExecution
-): variant is SuccessfulRepoSearchVariant {
-  return isProviderSuccess(variant.apiResult);
-}
-
-function buildPaginationHints(pagination: {
-  currentPage: number;
-  totalPages: number;
-  hasMore: boolean;
-  entriesPerPage?: number;
-  totalMatches?: number;
-}): string[] {
-  const hints: string[] = [];
-  const {
-    currentPage,
-    totalPages,
-    totalMatches: totalMatchCount,
-    hasMore,
-  } = pagination;
-  const perPage = pagination.entriesPerPage || 10;
-  const totalMatches = totalMatchCount || 0;
-  const startItem = (currentPage - 1) * perPage + 1;
-  const endItem = Math.min(currentPage * perPage, totalMatches);
-
-  hints.push(
-    `Page ${currentPage}/${totalPages} (showing ${startItem}-${endItem} of ${totalMatches} repos)`
-  );
-
-  if (hasMore) {
-    hints.push(`Next: page=${currentPage + 1}`);
-  }
-  if (currentPage > 1) {
-    hints.push(`Previous: page=${currentPage - 1}`);
-  }
-  if (!hasMore) {
-    hints.push('Final page');
-  }
-  if (totalPages > 2) {
-    hints.push(`Jump to: page=1 (first) or page=${totalPages} (last)`);
-  }
-
-  return hints;
 }
 
 function buildResultPagination(pagination: {
@@ -227,7 +144,7 @@ function createVariantFailureHints(
         : failure.label === 'keywords'
           ? 'Keyword search'
           : 'Search';
-    const error = failure.apiResult.error || 'Provider error';
+    const error = failure.response.error || 'Provider error';
     return `${label} failed: ${error}`;
   });
 }
@@ -270,33 +187,41 @@ export async function searchMultipleGitHubRepos(
   args: ToolExecutionArgs<GitHubReposSearchQuery>
 ): Promise<CallToolResult> {
   const { queries, authInfo } = args;
-  const { provider: providerType, baseUrl, token } = getActiveProviderConfig();
+  let providerContext:
+    | ReturnType<typeof createProviderExecutionContext>
+    | undefined;
+  const getProviderContext = () =>
+    (providerContext ??= createProviderExecutionContext(authInfo));
 
   return executeBulkOperation(
     queries,
     async (query: GitHubReposSearchQuery, _index: number) => {
       try {
-        const provider = getProvider(providerType, {
-          type: providerType,
-          baseUrl,
-          token,
-          authInfo,
-        });
+        const currentProviderContext = getProviderContext();
         const variants = createSearchVariants(query);
-        const variantExecutions = await Promise.all(
-          variants.map(async variant => ({
-            label: variant.label,
-            query: variant.query,
-            apiResult: await provider.searchRepos(
-              createProviderQuery(variant.query)
-            ),
+        const { successes, failures } = await executeProviderOperations(
+          variants.map(variant => ({
+            meta: { label: variant.label, query: variant.query },
+            operation: () =>
+              currentProviderContext.provider.searchRepos(
+                mapRepoSearchToolQuery(variant.query)
+              ),
           }))
         );
 
-        const successfulVariants =
-          variantExecutions.filter(isSuccessfulVariant);
-        const failedVariants = variantExecutions.filter(
-          variant => !isSuccessfulVariant(variant)
+        const successfulVariants: SuccessfulRepoSearchVariant[] = successes.map(
+          success => ({
+            label: success.meta.label,
+            query: success.meta.query,
+            response: success.response,
+          })
+        );
+        const failedVariants: RepoSearchVariantExecution[] = failures.map(
+          failure => ({
+            label: failure.meta.label,
+            query: failure.meta.query,
+            response: failure.response,
+          })
         );
 
         if (successfulVariants.length === 0) {
@@ -307,12 +232,14 @@ export async function searchMultipleGitHubRepos(
               query
             );
           }
-          return handleProviderError(firstFailedVariant.apiResult, query);
+          return handleProviderError(firstFailedVariant.response, query);
         }
 
         const repositories = deduplicateRepositories(
           successfulVariants.flatMap(variant =>
-            toSimplifiedRepositories(variant.apiResult.data.repositories)
+            mapRepoSearchProviderRepositories(
+              variant.response.data.repositories
+            )
           )
         );
 
@@ -323,9 +250,9 @@ export async function searchMultipleGitHubRepos(
         const onlySuccessfulVariant =
           successfulVariants.length === 1 ? successfulVariants[0] : undefined;
         const successfulPagination =
-          onlySuccessfulVariant?.apiResult.data.pagination;
+          onlySuccessfulVariant?.response.data.pagination;
         const paginationHints = successfulPagination
-          ? buildPaginationHints(successfulPagination)
+          ? buildPaginationHints(successfulPagination, 'repos')
           : [];
         const resultPagination = successfulPagination
           ? buildResultPagination(successfulPagination)

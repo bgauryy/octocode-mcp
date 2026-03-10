@@ -72,6 +72,18 @@ export interface ProviderConfig {
   authInfo?: AuthInfo;
 }
 
+/**
+ * Declares provider-specific capabilities so tools can make behavior decisions
+ * without hardcoding provider names.
+ */
+export interface ProviderCapabilities {
+  cloneRepo: boolean;
+  fetchDirectoryToDisk: boolean;
+  requiresScopedCodeSearch: boolean;
+  supportsMergedState: boolean;
+  supportsMultiTopicSearch: boolean;
+}
+
 // ============================================================================
 // PROVIDER RESPONSE TYPE
 // ============================================================================
@@ -109,6 +121,8 @@ export interface ProviderResponse<T> {
 export interface ICodeHostProvider {
   /** Provider type identifier */
   readonly type: ProviderType;
+  /** Capability descriptor for tool-level flow decisions */
+  readonly capabilities: ProviderCapabilities;
 
   searchCode(
     query: CodeSearchQuery

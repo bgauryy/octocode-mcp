@@ -12,7 +12,7 @@ This file **overrides** the root [`AGENTS.md`](https://github.com/bgauryy/octoco
 
 Octocode MCP is an MCP server providing AI agents with code exploration tools:
 
-- **GitHub & GitLab**: Search code, repositories, PRs/MRs, view structure, fetch content
+- **GitHub, GitLab & Bitbucket**: Search code, repositories, PRs/MRs, view structure, fetch content
 - **Local Research**: Search code with ripgrep, browse directories, find files, read content
 - **LSP Intelligence**: Semantic code navigation with goto definition, find references, call hierarchy
 - **Package Discovery**: Search NPM/PyPI for packages and repository URLs
@@ -204,12 +204,16 @@ src/
 ├── providers/               # 🔌 Multi-provider abstraction
 │   ├── index.ts             # Provider module exports
 │   ├── factory.ts           # Provider factory & registry
-│   ├── execute.ts           # Provider execution helpers
 │   ├── types.ts             # Provider type definitions
 │   ├── github/              # GitHub provider
-│   │   └── GitHubProvider.ts
-│   └── gitlab/              # GitLab provider
-│       └── GitLabProvider.ts
+│   │   ├── GitHubProvider.ts
+│   │   └── github*.ts       # GitHub provider delegates
+│   ├── gitlab/              # GitLab provider
+│   │   ├── GitLabProvider.ts
+│   │   └── gitlab*.ts       # GitLab provider delegates
+│   └── bitbucket/           # Bitbucket provider
+│       ├── BitbucketProvider.ts
+│       └── bitbucket*.ts    # Bitbucket provider delegates
 │
 ├── lsp/                     # 🔤 Language Server Protocol
 │   ├── index.ts             # LSP module exports
