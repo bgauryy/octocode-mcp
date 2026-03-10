@@ -58,8 +58,6 @@ export async function callHierarchyWithLSP(
         errorType: 'symbol_not_found',
         direction: query.direction,
         depth: query.depth ?? 1,
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
         hints: [
           ...getHints(TOOL_NAME, 'empty'),
           'Language server could not identify a callable symbol',
@@ -105,8 +103,6 @@ export async function callHierarchyWithLSP(
           direction: 'incoming',
           depth,
           incomingCalls: [],
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
           hints: [
             ...getHints(TOOL_NAME, 'empty', { direction: 'incoming' } as Record<
               string,
@@ -140,8 +136,6 @@ export async function callHierarchyWithLSP(
         depth,
         incomingCalls: enhancedItems,
         pagination,
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
         hints: [
           ...getHints(TOOL_NAME, 'hasResults', {
             direction: 'incoming',
@@ -175,8 +169,6 @@ export async function callHierarchyWithLSP(
           direction: 'outgoing',
           depth,
           outgoingCalls: [],
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
           hints: [
             ...getHints(TOOL_NAME, 'empty', { direction: 'outgoing' } as Record<
               string,
@@ -209,8 +201,6 @@ export async function callHierarchyWithLSP(
         depth,
         outgoingCalls: enhancedItems,
         pagination,
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
         hints: [
           ...getHints(TOOL_NAME, 'hasResults', {
             direction: 'outgoing',

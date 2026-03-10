@@ -16,6 +16,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import path from 'path';
+
 import { getConfigSync } from 'octocode-shared';
 import { resolveWorkspaceRoot } from '../../src/security/workspaceRoot.js';
 
@@ -29,6 +30,7 @@ describe('resolveWorkspaceRoot', () => {
       version: 1,
       github: { apiUrl: 'https://api.github.com' },
       gitlab: { host: 'https://gitlab.com' },
+      bitbucket: { host: 'https://api.bitbucket.org/2.0' },
       local: {
         enabled: false,
         enableClone: false,
@@ -44,6 +46,7 @@ describe('resolveWorkspaceRoot', () => {
       network: { timeout: 30000, maxRetries: 3 },
       telemetry: { logging: true },
       lsp: { configPath: undefined },
+      output: { format: 'yaml' },
       source: 'defaults',
       configPath: undefined,
     });
@@ -66,6 +69,7 @@ describe('resolveWorkspaceRoot', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: false,
           enableClone: false,
@@ -81,6 +85,7 @@ describe('resolveWorkspaceRoot', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'defaults',
         configPath: undefined,
       });
@@ -96,6 +101,7 @@ describe('resolveWorkspaceRoot', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: false,
           enableClone: false,
@@ -111,6 +117,7 @@ describe('resolveWorkspaceRoot', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'defaults',
         configPath: undefined,
       });
@@ -125,6 +132,7 @@ describe('resolveWorkspaceRoot', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: false,
           enableClone: false,
@@ -140,6 +148,7 @@ describe('resolveWorkspaceRoot', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'defaults',
         configPath: undefined,
       });
@@ -223,6 +232,7 @@ describe('resolveWorkspaceRoot', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: true,
           enableClone: false,
@@ -238,6 +248,7 @@ describe('resolveWorkspaceRoot', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'file',
         configPath: '/home/user/.octocode/.octocoderc',
       });
@@ -251,6 +262,7 @@ describe('resolveWorkspaceRoot', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: true,
           enableClone: false,
@@ -266,6 +278,7 @@ describe('resolveWorkspaceRoot', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'file',
         configPath: '/home/user/.octocode/.octocoderc',
       });
@@ -338,6 +351,7 @@ describe('resolveWorkspaceRoot', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: true,
           enableClone: false,
@@ -353,6 +367,7 @@ describe('resolveWorkspaceRoot', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'file',
         configPath: undefined,
       });
@@ -369,6 +384,7 @@ describe('resolveWorkspaceRoot', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: true,
           enableClone: false,
@@ -384,6 +400,7 @@ describe('resolveWorkspaceRoot', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'file',
         configPath: undefined,
       });

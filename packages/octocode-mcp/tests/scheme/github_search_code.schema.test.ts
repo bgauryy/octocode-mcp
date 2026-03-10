@@ -4,6 +4,7 @@ import { GitHubCodeSearchQuerySchema } from '../../src/tools/github_search_code/
 describe('GitHubCodeSearchQuerySchema - Pagination', () => {
   // Base required fields for all tests
   const baseQuery = {
+    id: 'github_code_search',
     mainResearchGoal: 'Test pagination',
     researchGoal: 'Verify page parameter works',
     reasoning: 'Testing schema validation',
@@ -11,6 +12,18 @@ describe('GitHubCodeSearchQuerySchema - Pagination', () => {
   };
 
   describe('page parameter', () => {
+    it('should accept a meaningful query id', () => {
+      const result = GitHubCodeSearchQuerySchema.safeParse({
+        ...baseQuery,
+        id: 'react_hooks_search',
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.id).toBe('react_hooks_search');
+      }
+    });
+
     it('should accept valid page number', () => {
       const result = GitHubCodeSearchQuerySchema.safeParse({
         ...baseQuery,

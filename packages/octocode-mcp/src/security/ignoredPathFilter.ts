@@ -1,7 +1,5 @@
-import {
-  IGNORED_FILE_PATTERNS,
-  IGNORED_PATH_PATTERNS,
-} from './patternsConstants.js';
+import { IGNORED_PATH_PATTERNS } from './pathPatterns.js';
+import { IGNORED_FILE_PATTERNS } from './filePatterns.js';
 
 /**
  * Checks if a path should be ignored

@@ -3,7 +3,10 @@
  * @module tools/local_fetch_content/types
  */
 
-import type { LocalToolErrorCode as ErrorCode } from '../../errorCodes.js';
+import type {
+  LocalGetFileContentPagination,
+  LocalGetFileContentToolResult,
+} from '../../scheme/outputTypes.js';
 
 // ============================================================================
 // INPUT TYPES
@@ -13,6 +16,7 @@ import type { LocalToolErrorCode as ErrorCode } from '../../errorCodes.js';
  * Query parameters for fetching local file content
  */
 export interface FetchContentQuery {
+  id?: string;
   path: string;
   fullContent?: boolean;
   matchString?: string;
@@ -32,36 +36,6 @@ export interface FetchContentQuery {
 // OUTPUT TYPES
 // ============================================================================
 
-/**
- * Pagination information for content results
- */
-export interface FetchContentPagination {
-  currentPage: number;
-  totalPages: number;
-  hasMore: boolean;
-  charOffset?: number;
-  charLength?: number;
-  totalChars?: number;
-}
+export type FetchContentPagination = LocalGetFileContentPagination;
 
-/**
- * Result of fetching local file content
- */
-export interface FetchContentResult {
-  status: 'hasResults' | 'empty' | 'error';
-  path?: string;
-  content?: string;
-  isPartial?: boolean;
-  totalLines?: number;
-  errorCode?: ErrorCode;
-  hints?: readonly string[];
-  warnings?: string[];
-  startLine?: number;
-  endLine?: number;
-  matchRanges?: Array<{ start: number; end: number }>;
-  pagination?: FetchContentPagination;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-  [key: string]: unknown;
-}
+export type FetchContentResult = LocalGetFileContentToolResult;

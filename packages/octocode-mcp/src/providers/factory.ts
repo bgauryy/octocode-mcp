@@ -296,6 +296,14 @@ export async function initializeProviders(): Promise<void> {
   } catch {
     // GitLab provider is optional - don't fail if not available
   }
+
+  try {
+    const { BitbucketProvider } =
+      await import('./bitbucket/BitbucketProvider.js');
+    registerProvider('bitbucket', BitbucketProvider);
+  } catch {
+    // Bitbucket provider is optional - don't fail if not available
+  }
 }
 
 // ============================================================================
@@ -306,12 +314,3 @@ export async function initializeProviders(): Promise<void> {
  * Default provider type.
  */
 export const DEFAULT_PROVIDER: ProviderType = 'github';
-
-/**
- * Extract provider type from a query, with default fallback.
- */
-export function extractProviderFromQuery(query: {
-  provider?: ProviderType;
-}): ProviderType {
-  return query.provider || DEFAULT_PROVIDER;
-}

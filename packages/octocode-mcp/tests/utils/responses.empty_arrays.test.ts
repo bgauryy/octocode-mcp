@@ -95,7 +95,9 @@ describe('Empty Arrays Removal in Responses', () => {
         {
           queries: [
             {
+              id: 'search_empty_query',
               keywordsToSearch: ['nonexistent'],
+              researchGoal: 'Verify empty search responses stay clean',
               reasoning: 'Test empty array removal',
             },
           ],
@@ -142,7 +144,10 @@ describe('Empty Arrays Removal in Responses', () => {
         {
           queries: [
             {
+              id: 'search_empty_matches_query',
               keywordsToSearch: ['test'],
+              researchGoal:
+                'Verify files remain even when match arrays are empty',
               reasoning: 'Test file presence with empty matches',
             },
           ],
@@ -200,8 +205,18 @@ describe('Empty Arrays Removal in Responses', () => {
         TOOL_NAMES.GITHUB_SEARCH_CODE,
         {
           queries: [
-            { keywordsToSearch: ['empty'], reasoning: 'Will be empty' },
-            { keywordsToSearch: ['found'], reasoning: 'Will find results' },
+            {
+              id: 'mixed_empty_query',
+              keywordsToSearch: ['empty'],
+              researchGoal: 'Verify empty result rendering',
+              reasoning: 'Will be empty',
+            },
+            {
+              id: 'mixed_found_query',
+              keywordsToSearch: ['found'],
+              researchGoal: 'Verify successful result rendering',
+              reasoning: 'Will find results',
+            },
           ],
         },
         { authInfo: { token: 'mock-token' } }
@@ -250,7 +265,9 @@ describe('Empty Arrays Removal in Responses', () => {
         {
           queries: [
             {
+              id: 'nested_empty_arrays_query',
               keywordsToSearch: ['test'],
+              researchGoal: 'Verify nested empty arrays are removed',
               reasoning: 'Test nested empty array removal',
             },
           ],
@@ -302,7 +319,9 @@ describe('Empty Arrays Removal in Responses', () => {
         {
           queries: [
             {
+              id: 'empty_hints_query',
               keywordsToSearch: ['test'],
+              researchGoal: 'Verify empty hints do not appear',
               reasoning: 'Test empty hints removal',
             },
           ],
@@ -312,8 +331,8 @@ describe('Empty Arrays Removal in Responses', () => {
 
       const responseText = getTextContent(result.content);
 
-      expect(responseText).toContain('instructions:');
       expect(responseText).toContain('results:');
+      expect(responseText).toContain('id: "empty_hints_query"');
       expect(responseText).toContain('status: "hasResults"');
     });
   });

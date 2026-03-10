@@ -37,11 +37,8 @@ export async function fetchContent(
     if (query.fullContent === true && query.matchString !== undefined) {
       return {
         status: 'error',
-        path: query.path,
         error:
           'Cannot use fullContent with matchString — these are mutually exclusive extraction methods. Choose ONE: fullContent=true to read the entire file, OR matchString to extract matching sections.',
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
         hints: [
           'fullContent and matchString are mutually exclusive — pick one extraction method',
           'Use fullContent=true to read the entire file (small files only)',
@@ -62,7 +59,6 @@ export async function fetchContent(
       return createErrorResult(toolError, query, {
         toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
         extra: {
-          path: query.path,
           resolvedPath: absolutePath,
         },
       }) as FetchContentResult;
@@ -83,7 +79,7 @@ export async function fetchContent(
       );
       return createErrorResult(toolError, query, {
         toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
-        extra: { path: query.path },
+        extra: { resolvedPath: absolutePath },
         customHints: [
           'Best approach: Use matchString to extract specific functions/classes you actually need',
           'Alternative: Use charLength for pagination if you need to browse through the file systematically',
@@ -103,7 +99,7 @@ export async function fetchContent(
       );
       return createErrorResult(toolError, query, {
         toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
-        extra: { path: query.path },
+        extra: { resolvedPath: absolutePath },
       }) as FetchContentResult;
     }
 
@@ -156,11 +152,8 @@ export async function fetchContent(
 
         return {
           status: 'empty',
-          path: query.path,
           errorCode: LOCAL_TOOL_ERROR_CODES.NO_MATCHES,
           totalLines,
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
           hints: [
             ...getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'empty'),
             '',
@@ -187,7 +180,6 @@ export async function fetchContent(
       if (result.matchCount > 50) {
         return {
           status: 'hasResults',
-          path: query.path,
           content: resultContent,
           isPartial: true,
           totalLines,
@@ -196,8 +188,6 @@ export async function fetchContent(
             endLine: actualEndLine,
             matchRanges,
           }),
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
           warnings: [
             `Pattern matched ${result.matchCount} lines. Truncated to first 50 matches.`,
           ],
@@ -221,7 +211,6 @@ export async function fetchContent(
 
         return {
           status: 'hasResults',
-          path: query.path,
           content: autoPagination.paginatedContent,
           isPartial: true,
           totalLines,
@@ -231,8 +220,6 @@ export async function fetchContent(
             matchRanges,
           }),
           pagination: createPaginationInfo(autoPagination),
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
           warnings: [
             `Auto-paginated: ${result.matchCount} matches exceeded display limit`,
           ],
@@ -254,11 +241,8 @@ export async function fetchContent(
       if (effectiveStartLine > totalLines) {
         return {
           status: 'empty',
-          path: query.path,
           totalLines,
           errorCode: LOCAL_TOOL_ERROR_CODES.NO_MATCHES,
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
           hints: [
             ...getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'empty'),
             `Requested startLine ${query.startLine} exceeds file length (${totalLines} lines)`,
@@ -294,10 +278,7 @@ export async function fetchContent(
     if (!resultContent || resultContent.trim().length === 0) {
       return {
         status: 'empty',
-        path: query.path,
         totalLines,
-        researchGoal: query.researchGoal,
-        reasoning: query.reasoning,
         hints: getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'empty'),
       };
     }
@@ -332,7 +313,6 @@ export async function fetchContent(
 
     return {
       status: 'hasResults',
-      path: query.path,
       content: pagination.paginatedContent,
       isPartial,
       totalLines,
@@ -347,15 +327,12 @@ export async function fetchContent(
       ...((effectiveCharLength || autoPaginated) && {
         pagination: createPaginationInfo(pagination),
       }),
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
       ...(warnings.length > 0 && { warnings }),
       hints: [...baseHints, ...paginationHints],
     };
   } catch (error) {
     return createErrorResult(error, query, {
       toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
-      extra: { path: query.path },
     }) as FetchContentResult;
   }
 }

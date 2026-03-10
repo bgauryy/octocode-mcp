@@ -31,6 +31,7 @@ import * as githubStructure from './githubStructure.js';
 
 import type { GitHubAPIError } from '../../github/githubAPI.js';
 import { handleGitHubAPIError } from '../../github/errors.js';
+import { resolveDefaultBranch as resolveGitHubDefaultBranch } from '../../github/client.js';
 
 /**
  * GitHub Provider implementation.
@@ -139,6 +140,20 @@ export class GitHubProvider implements ICodeHostProvider {
   }
 
   // ============================================================================
+  // DEFAULT BRANCH RESOLUTION
+  // ============================================================================
+
+  async resolveDefaultBranch(projectId: string): Promise<string> {
+    const { owner, repo } = this.parseProjectId(projectId);
+    if (!owner || !repo) {
+      throw new Error(
+        `Cannot resolve default branch: invalid projectId '${projectId}'.`
+      );
+    }
+    return resolveGitHubDefaultBranch(owner, repo, this.authInfo);
+  }
+
+  // ============================================================================
   // HELPER METHODS
   // ============================================================================
 
@@ -197,12 +212,15 @@ export class GitHubProvider implements ICodeHostProvider {
       return undefined;
     }
 
+    const resetMs = apiError.rateLimitReset;
+    const reset =
+      resetMs && !isNaN(resetMs)
+        ? Math.floor(resetMs / 1000)
+        : Math.floor(Date.now() / 1000) + (apiError.retryAfter ?? 3600);
+
     return {
       remaining: apiError.rateLimitRemaining ?? 0,
-      // Convert ms timestamp to seconds, or calculate from retryAfter
-      reset: apiError.rateLimitReset
-        ? Math.floor(apiError.rateLimitReset / 1000)
-        : Math.floor(Date.now() / 1000) + (apiError.retryAfter ?? 3600),
+      reset,
       retryAfter: apiError.retryAfter,
     };
   }

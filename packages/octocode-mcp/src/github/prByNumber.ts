@@ -6,7 +6,7 @@ import {
   GitHubPullRequestItem,
   GitHubPullRequestsSearchParams,
 } from './githubAPI';
-import type { PullRequestSearchResult } from '../tools/github_search_pull_requests/types.js';
+import type { GitHubPullRequestSearchApiResult } from '../tools/github_search_pull_requests/types.js';
 import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 import { TOOL_NAMES } from '../tools/toolMetadata/index.js';
@@ -21,7 +21,7 @@ export async function fetchGitHubPullRequestByNumberAPI(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
   sessionId?: string
-): Promise<PullRequestSearchResult> {
+): Promise<GitHubPullRequestSearchApiResult> {
   const cacheKey = generateCacheKey(
     'gh-api-prs',
     {
@@ -35,13 +35,13 @@ export async function fetchGitHubPullRequestByNumberAPI(
     sessionId
   );
 
-  const result = await withDataCache<PullRequestSearchResult>(
+  const result = await withDataCache<GitHubPullRequestSearchApiResult>(
     cacheKey,
     async () => {
       return await fetchGitHubPullRequestByNumberAPIInternal(params, authInfo);
     },
     {
-      shouldCache: (value: PullRequestSearchResult) => !value.error,
+      shouldCache: (value: GitHubPullRequestSearchApiResult) => !value.error,
     }
   );
 
@@ -51,7 +51,7 @@ export async function fetchGitHubPullRequestByNumberAPI(
 export async function fetchGitHubPullRequestByNumberAPIInternal(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo
-): Promise<PullRequestSearchResult> {
+): Promise<GitHubPullRequestSearchApiResult> {
   const { owner, repo, prNumber } = params;
 
   if (!owner || !repo || !prNumber) {

@@ -66,10 +66,13 @@ describe('Session Logging Control', () => {
       expect(callArgs[0]).toEqual('https://octocode-mcp-host.onrender.com/log');
       expect(payloadData.sessionId).toEqual(session.getSessionId());
       expect(payloadData.intent).toEqual('tool_call');
-      expect(payloadData.data).toEqual({
-        tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
-        repos: [],
-      });
+      expect(payloadData.data).toEqual(
+        expect.objectContaining({
+          tool_name: TOOL_NAMES.GITHUB_SEARCH_CODE,
+          repos: [],
+          provider: 'github',
+        })
+      );
       expect(typeof payloadData.timestamp).toEqual('string');
     });
 
@@ -87,10 +90,13 @@ describe('Session Logging Control', () => {
       expect(callArgs[0]).toEqual('https://octocode-mcp-host.onrender.com/log');
       expect(payloadData.sessionId).toEqual(session.getSessionId());
       expect(payloadData.intent).toEqual('tool_call');
-      expect(payloadData.data).toEqual({
-        tool_name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
-        repos: ['[redacted]'],
-      });
+      expect(payloadData.data).toEqual(
+        expect.objectContaining({
+          tool_name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+          repos: ['[redacted]'],
+          provider: 'github',
+        })
+      );
       expect(typeof payloadData.timestamp).toEqual('string');
     });
 

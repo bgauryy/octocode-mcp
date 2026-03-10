@@ -63,8 +63,7 @@ describe('pullRequestSearch coverage', () => {
 
     await searchGitHubPullRequestsAPI({
       query: 'test',
-      // @ts-ignore - Testing invalid sort
-      sort: 'invalid-sort',
+      sort: 'invalid-sort' as 'created',
     });
 
     expect(mockOctokit.rest.search.issuesAndPullRequests).toHaveBeenCalledWith(

@@ -38,9 +38,6 @@ export type QueryStatus = 'hasResults' | 'empty' | 'error';
 
 interface ToolResult {
   status: QueryStatus;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
   hints?: string[];
   [key: string]: unknown;
 }
@@ -50,11 +47,8 @@ export interface ToolErrorResult extends ToolResult {
   error: string | GitHubAPIError;
 }
 
-export interface ToolSuccessResult<
-  T = Record<string, unknown>,
-> extends ToolResult {
+export interface ToolSuccessResult extends ToolResult {
   status: 'hasResults' | 'empty';
-  data?: T;
 }
 
 // ============================================================================
@@ -96,25 +90,18 @@ export type ToolInvocationCallback = (
 
 /** Processed result from bulk query execution */
 export interface ProcessedBulkResult {
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
   data?: Record<string, unknown>;
   error?: string | GitHubAPIError;
   status: QueryStatus;
-  query?: object;
   hints?: readonly string[] | string[];
   [key: string]: unknown;
 }
 
 /** Flattened query result for bulk operations */
 export interface FlatQueryResult {
-  id: number;
+  id: string;
   status: QueryStatus;
   data: Record<string, unknown>;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
 }
 
 /** Error information for failed queries */
@@ -151,22 +138,17 @@ export interface PromiseExecutionOptions {
   onError?: (error: Error, index: number) => void;
 }
 
-/** Standardized tool response format */
-export interface ToolResponse {
+/** Single-result structured response format */
+export interface StructuredToolResponse {
   data?: unknown;
   hints?: string[];
   instructions?: string;
-  results?: unknown[];
-  summary?: {
-    total: number;
-    hasResults: number;
-    empty: number;
-    errors: number;
-  };
-  hasResultsStatusHints?: string[];
-  emptyStatusHints?: string[];
-  errorStatusHints?: string[];
   [key: string]: unknown;
+}
+
+/** Bulk response format */
+export interface BulkToolResponse {
+  results: FlatQueryResult[];
 }
 
 // ============================================================================
@@ -235,6 +217,30 @@ export interface GitLabConfig {
   isConfigured: boolean;
 }
 
+/**
+ * Bitbucket token source types for tracking where the Bitbucket token came from.
+ */
+export type BitbucketTokenSourceType =
+  | 'env:BITBUCKET_TOKEN'
+  | 'env:BB_TOKEN'
+  | 'none';
+
+/**
+ * Bitbucket configuration for connecting to Bitbucket Cloud instances.
+ */
+export interface BitbucketConfig {
+  /** Bitbucket API base URL (default: https://api.bitbucket.org/2.0) */
+  host: string;
+  /** Bitbucket API token (app password or OAuth token) */
+  token: string | null;
+  /** Bitbucket username (required for Basic auth with app passwords) */
+  username: string | null;
+  /** Source of the Bitbucket token */
+  tokenSource: BitbucketTokenSourceType;
+  /** Whether Bitbucket is configured (has valid token) */
+  isConfigured: boolean;
+}
+
 /** Server configuration and feature flags */
 export interface ServerConfig {
   version: string;
@@ -250,9 +256,13 @@ export interface ServerConfig {
   enableClone: boolean;
   /** Whether prompts/slash commands are disabled */
   disablePrompts: boolean;
+  /** Response serialization format: 'yaml' (default, token-efficient) or 'json' */
+  outputFormat: 'yaml' | 'json';
   tokenSource: TokenSourceType;
   /** GitLab configuration (optional) */
   gitlab?: GitLabConfig;
+  /** Bitbucket configuration (optional) */
+  bitbucket?: BitbucketConfig;
 }
 
 // ============================================================================
@@ -277,6 +287,7 @@ export interface SessionData {
 export interface ToolCallData {
   tool_name: string;
   repos: string[];
+  provider?: string;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -289,6 +300,7 @@ export interface PromptCallData {
 /** Error tracking data */
 export interface ErrorData {
   error: string;
+  provider?: string;
 }
 
 /** Rate limit tracking data */
@@ -300,4 +312,5 @@ export interface RateLimitData {
   api_method?: string;
   api_url?: string;
   details?: string;
+  provider?: string;
 }

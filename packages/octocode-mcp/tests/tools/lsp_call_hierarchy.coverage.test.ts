@@ -293,6 +293,33 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
         expect(results[0].outgoingCalls[0].to.name).toBe('callee');
       });
 
+      it('should return empty status when LSP outgoing calls returns empty (line 166)', async () => {
+        const outgoingQuery = { ...baseQuery, direction: 'outgoing' };
+
+        mockLSPClient.prepareCallHierarchy.mockResolvedValue([
+          {
+            name: 'myFunc',
+            uri: 'file:///workspace/file.ts',
+            range: {
+              start: { line: 0, character: 0 },
+              end: { line: 0, character: 10 },
+            },
+            selectionRange: {
+              start: { line: 0, character: 0 },
+              end: { line: 0, character: 10 },
+            },
+          },
+        ]);
+        mockLSPClient.getOutgoingCalls.mockResolvedValue([]);
+
+        const result = await toolHandler({ queries: [outgoingQuery] });
+        const results = JSON.parse(result.content[0].text);
+
+        expect(results[0].status).toBe('empty');
+        expect(results[0].outgoingCalls).toEqual([]);
+        expect(results[0].direction).toBe('outgoing');
+      });
+
       it('should handle LSP prepareCallHierarchy returning empty', async () => {
         mockLSPClient.prepareCallHierarchy.mockResolvedValue([]);
 
@@ -439,6 +466,42 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
         expect(results[0].status).toBe('empty');
         expect(results[0].hints).toContain('Could not extract function body');
       });
+
+      it('should return empty when function body has no outgoing calls (uniqueCalls.length === 0)', async () => {
+        const outgoingQuery = { ...baseQuery, direction: 'outgoing' };
+        const content = `function myFunc() {
+  return 1 + 2;
+}`;
+        (fsPromises.readFile as Mock).mockResolvedValue(content);
+        mockSymbolResolver.resolvePositionFromContent.mockReturnValue({
+          position: { line: 1, character: 16 },
+          foundAtLine: 2,
+        });
+
+        const result = await toolHandler({ queries: [outgoingQuery] });
+        const results = JSON.parse(result.content[0].text);
+
+        expect(results[0].status).toBe('empty');
+        expect(results[0].outgoingCalls).toEqual([]);
+        expect(results[0].hints?.length).toBeGreaterThan(0);
+      });
+
+      it('should handle grep failure when rg unavailable (searchWithGrep code !== 1)', async () => {
+        (execIndex.checkCommandAvailability as Mock).mockResolvedValue({
+          available: false,
+        });
+        (execIndex.safeExec as Mock).mockResolvedValue({
+          success: false,
+          code: 2,
+          stderr: 'grep: invalid option',
+        });
+
+        const result = await toolHandler({ queries: [baseQuery] });
+        const results = JSON.parse(result.content[0].text);
+
+        expect(results[0].status).toBe('error');
+        expect(results[0].error).toBeDefined();
+      });
     });
   });
 
@@ -475,6 +538,22 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
 
     it('should skip invalid lines', () => {
       const results = parseGrepOutput('invalid line');
+      expect(results).toHaveLength(0);
+    });
+
+    it('should skip lines with no colon separator', () => {
+      const results = parseGrepOutput('nocolonheredigit');
+      expect(results).toHaveLength(0);
+    });
+
+    it('should skip lines where match.index is 0 (no file path before colon)', () => {
+      // ":5:content" - match exists but index is 0, so we skip (match.index > 0 fails)
+      const results = parseGrepOutput(':5:content');
+      expect(results).toHaveLength(0);
+    });
+
+    it('should skip lines with only one colon (no line:content pattern)', () => {
+      const results = parseGrepOutput('file:onlyonecolon');
       expect(results).toHaveLength(0);
     });
   });

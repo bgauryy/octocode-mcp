@@ -47,9 +47,21 @@ vi.mock('node-cache', async () => {
   };
 });
 
+// Mock octocode-shared config
+vi.mock('octocode-shared', () => ({
+  getConfigSync: vi.fn(() => ({
+    gitlab: {
+      host: process.env.GITLAB_HOST || 'https://gitlab.com',
+    },
+    bitbucket: { host: 'https://api.bitbucket.org/2.0' },
+  })),
+}));
+
 // Import mocked dependencies
 import { Gitlab } from '@gitbeaker/rest';
 import * as nodeCacheMock from 'node-cache';
+import { getConfigSync } from 'octocode-shared';
+const mockGetConfigSync = vi.mocked(getConfigSync);
 
 // Import module under test after mocks are set up
 import {
@@ -58,6 +70,10 @@ import {
   getConfiguredGitLabHost,
   clearGitLabClients,
   clearGitLabClient,
+  getCachedDefaultBranch,
+  cacheDefaultBranch,
+  clearDefaultBranchCache,
+  withRetry,
 } from '../../src/gitlab/client.js';
 
 const mockGitlab = vi.mocked(Gitlab);
@@ -111,10 +127,12 @@ describe('GitLab Client', () => {
 
         await getGitlab();
 
-        expect(mockGitlab).toHaveBeenCalledWith({
-          host: 'https://gitlab.com',
-          token: 'glpat-test-token',
-        });
+        expect(mockGitlab).toHaveBeenCalledWith(
+          expect.objectContaining({
+            host: 'https://gitlab.com',
+            token: 'glpat-test-token',
+          })
+        );
       });
 
       it('should create GitLab client with GL_TOKEN from env when GITLAB_TOKEN not set', async () => {
@@ -123,10 +141,12 @@ describe('GitLab Client', () => {
 
         await getGitlab();
 
-        expect(mockGitlab).toHaveBeenCalledWith({
-          host: 'https://gitlab.com',
-          token: 'glpat-gl-token',
-        });
+        expect(mockGitlab).toHaveBeenCalledWith(
+          expect.objectContaining({
+            host: 'https://gitlab.com',
+            token: 'glpat-gl-token',
+          })
+        );
       });
 
       it('should prefer GITLAB_TOKEN over GL_TOKEN', async () => {
@@ -136,10 +156,12 @@ describe('GitLab Client', () => {
 
         await getGitlab();
 
-        expect(mockGitlab).toHaveBeenCalledWith({
-          host: 'https://gitlab.com',
-          token: 'glpat-gitlab-token',
-        });
+        expect(mockGitlab).toHaveBeenCalledWith(
+          expect.objectContaining({
+            host: 'https://gitlab.com',
+            token: 'glpat-gitlab-token',
+          })
+        );
       });
 
       it('should use GITLAB_HOST from environment', async () => {
@@ -149,10 +171,52 @@ describe('GitLab Client', () => {
 
         await getGitlab();
 
-        expect(mockGitlab).toHaveBeenCalledWith({
-          host: 'https://gitlab.mycompany.com',
-          token: 'glpat-test-token',
-        });
+        expect(mockGitlab).toHaveBeenCalledWith(
+          expect.objectContaining({
+            host: 'https://gitlab.mycompany.com',
+            token: 'glpat-test-token',
+          })
+        );
+      });
+
+      it('should use host from config file when GITLAB_HOST env is not set', async () => {
+        delete process.env.GITLAB_HOST;
+        process.env.GITLAB_TOKEN = 'glpat-test-token';
+        const configFileHost = 'https://gitlab.internal.corp';
+        const originalImpl = mockGetConfigSync.getMockImplementation();
+        try {
+          mockGetConfigSync.mockImplementation(
+            () =>
+              ({
+                gitlab: { host: configFileHost },
+                bitbucket: { host: 'https://api.bitbucket.org/2.0' },
+              }) as any
+          );
+          getMockCacheMethods().get.mockReturnValue(undefined);
+
+          await getGitlab();
+
+          expect(mockGitlab).toHaveBeenCalledWith(
+            expect.objectContaining({
+              host: configFileHost,
+              token: 'glpat-test-token',
+            })
+          );
+        } finally {
+          if (originalImpl) {
+            mockGetConfigSync.mockImplementation(originalImpl);
+          } else {
+            mockGetConfigSync.mockImplementation(
+              () =>
+                ({
+                  gitlab: {
+                    host: process.env.GITLAB_HOST || 'https://gitlab.com',
+                  },
+                  bitbucket: { host: 'https://api.bitbucket.org/2.0' },
+                }) as any
+            );
+          }
+        }
       });
     });
 
@@ -162,10 +226,12 @@ describe('GitLab Client', () => {
 
         await getGitlab({ token: 'glpat-config-token' });
 
-        expect(mockGitlab).toHaveBeenCalledWith({
-          host: 'https://gitlab.com',
-          token: 'glpat-config-token',
-        });
+        expect(mockGitlab).toHaveBeenCalledWith(
+          expect.objectContaining({
+            host: 'https://gitlab.com',
+            token: 'glpat-config-token',
+          })
+        );
       });
 
       it('should use host from config', async () => {
@@ -176,10 +242,12 @@ describe('GitLab Client', () => {
           host: 'https://gitlab.enterprise.com',
         });
 
-        expect(mockGitlab).toHaveBeenCalledWith({
-          host: 'https://gitlab.enterprise.com',
-          token: 'glpat-config-token',
-        });
+        expect(mockGitlab).toHaveBeenCalledWith(
+          expect.objectContaining({
+            host: 'https://gitlab.enterprise.com',
+            token: 'glpat-config-token',
+          })
+        );
       });
 
       it('should prefer config token over environment token', async () => {
@@ -188,10 +256,12 @@ describe('GitLab Client', () => {
 
         await getGitlab({ token: 'glpat-config-token' });
 
-        expect(mockGitlab).toHaveBeenCalledWith({
-          host: 'https://gitlab.com',
-          token: 'glpat-config-token',
-        });
+        expect(mockGitlab).toHaveBeenCalledWith(
+          expect.objectContaining({
+            host: 'https://gitlab.com',
+            token: 'glpat-config-token',
+          })
+        );
       });
 
       it('should prefer config host over environment host', async () => {
@@ -201,10 +271,12 @@ describe('GitLab Client', () => {
 
         await getGitlab({ host: 'https://gitlab.config.com' });
 
-        expect(mockGitlab).toHaveBeenCalledWith({
-          host: 'https://gitlab.config.com',
-          token: 'glpat-test-token',
-        });
+        expect(mockGitlab).toHaveBeenCalledWith(
+          expect.objectContaining({
+            host: 'https://gitlab.config.com',
+            token: 'glpat-test-token',
+          })
+        );
       });
     });
 
@@ -485,10 +557,12 @@ describe('GitLab Client', () => {
 
       await getGitlab({});
 
-      expect(mockGitlab).toHaveBeenCalledWith({
-        host: 'https://gitlab.com',
-        token: 'glpat-test-token',
-      });
+      expect(mockGitlab).toHaveBeenCalledWith(
+        expect.objectContaining({
+          host: 'https://gitlab.com',
+          token: 'glpat-test-token',
+        })
+      );
     });
 
     it('should handle config with only host', async () => {
@@ -497,10 +571,12 @@ describe('GitLab Client', () => {
 
       await getGitlab({ host: 'https://custom.gitlab.com' });
 
-      expect(mockGitlab).toHaveBeenCalledWith({
-        host: 'https://custom.gitlab.com',
-        token: 'glpat-test-token',
-      });
+      expect(mockGitlab).toHaveBeenCalledWith(
+        expect.objectContaining({
+          host: 'https://custom.gitlab.com',
+          token: 'glpat-test-token',
+        })
+      );
     });
 
     it('should handle config with only token', async () => {
@@ -508,10 +584,12 @@ describe('GitLab Client', () => {
 
       await getGitlab({ token: 'glpat-config-only-token' });
 
-      expect(mockGitlab).toHaveBeenCalledWith({
-        host: 'https://gitlab.com',
-        token: 'glpat-config-only-token',
-      });
+      expect(mockGitlab).toHaveBeenCalledWith(
+        expect.objectContaining({
+          host: 'https://gitlab.com',
+          token: 'glpat-config-only-token',
+        })
+      );
     });
 
     it('should handle undefined config', async () => {
@@ -520,10 +598,12 @@ describe('GitLab Client', () => {
 
       await getGitlab(undefined);
 
-      expect(mockGitlab).toHaveBeenCalledWith({
-        host: 'https://gitlab.com',
-        token: 'glpat-test-token',
-      });
+      expect(mockGitlab).toHaveBeenCalledWith(
+        expect.objectContaining({
+          host: 'https://gitlab.com',
+          token: 'glpat-test-token',
+        })
+      );
     });
   });
 
@@ -557,6 +637,128 @@ describe('GitLab Client', () => {
 
       expect(results).toHaveLength(3);
       expect(mockGitlab).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  // ==========================================================================
+  // DEFAULT BRANCH CACHE
+  // ==========================================================================
+
+  describe('default branch cache', () => {
+    beforeEach(() => {
+      clearDefaultBranchCache();
+    });
+
+    it('should return undefined for uncached projectId', () => {
+      expect(getCachedDefaultBranch('owner/repo')).toBeUndefined();
+    });
+
+    it('should cache and retrieve a default branch', () => {
+      cacheDefaultBranch('owner/repo', 'develop');
+      expect(getCachedDefaultBranch('owner/repo')).toBe('develop');
+    });
+
+    it('should overwrite existing cache entry', () => {
+      cacheDefaultBranch('owner/repo', 'main');
+      cacheDefaultBranch('owner/repo', 'develop');
+      expect(getCachedDefaultBranch('owner/repo')).toBe('develop');
+    });
+
+    it('should clear all cached branches', () => {
+      cacheDefaultBranch('owner/repo1', 'main');
+      cacheDefaultBranch('owner/repo2', 'develop');
+      clearDefaultBranchCache();
+      expect(getCachedDefaultBranch('owner/repo1')).toBeUndefined();
+      expect(getCachedDefaultBranch('owner/repo2')).toBeUndefined();
+    });
+
+    it('should evict oldest entry when cache exceeds max size', () => {
+      for (let i = 0; i < 201; i++) {
+        cacheDefaultBranch(`project-${i}`, `branch-${i}`);
+      }
+      expect(getCachedDefaultBranch('project-0')).toBeUndefined();
+      expect(getCachedDefaultBranch('project-200')).toBe('branch-200');
+    });
+  });
+
+  // ==========================================================================
+  // RETRY LOGIC
+  // ==========================================================================
+
+  describe('withRetry', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('should return result on success', async () => {
+      const result = await withRetry(() => Promise.resolve('ok'));
+      expect(result).toBe('ok');
+    });
+
+    it('should retry on 429 and eventually succeed', async () => {
+      let calls = 0;
+      const fn = async () => {
+        calls++;
+        if (calls < 3) {
+          throw Object.assign(new Error('rate limited'), { status: 429 });
+        }
+        return 'success';
+      };
+
+      const promise = withRetry(fn);
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await promise;
+      expect(result).toBe('success');
+      expect(calls).toBe(3);
+    });
+
+    it('should retry on 5xx and eventually succeed', async () => {
+      let calls = 0;
+      const fn = async () => {
+        calls++;
+        if (calls < 2) {
+          throw Object.assign(new Error('server error'), { status: 502 });
+        }
+        return 'recovered';
+      };
+
+      const promise = withRetry(fn);
+      await vi.advanceTimersByTimeAsync(5_000);
+      const result = await promise;
+      expect(result).toBe('recovered');
+      expect(calls).toBe(2);
+    });
+
+    it('should not retry on 4xx (non-429)', async () => {
+      const fn = async () => {
+        throw Object.assign(new Error('not found'), { status: 404 });
+      };
+
+      await expect(withRetry(fn)).rejects.toThrow('not found');
+    });
+
+    it('should throw after max retries exhausted', async () => {
+      const fn = async () => {
+        throw Object.assign(new Error('rate limited'), { status: 429 });
+      };
+
+      const promise = withRetry(fn).catch((e: Error) => e);
+      await vi.advanceTimersByTimeAsync(120_000);
+      const error = await promise;
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe('rate limited');
+    });
+
+    it('should not retry non-error exceptions', async () => {
+      const fn = async () => {
+        throw new Error('plain error');
+      };
+
+      await expect(withRetry(fn)).rejects.toThrow('plain error');
     });
   });
 });

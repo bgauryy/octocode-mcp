@@ -129,17 +129,28 @@ function handleGitbeakerError(error: GitbeakerError): GitLabAPIError {
 
   // Rate limit (HTTP 429)
   if (status === 429) {
-    const retryAfter = error.response?.headers?.['retry-after'];
-    const rateLimitReset = error.response?.headers?.['ratelimit-reset'];
+    const retryAfterRaw = error.response?.headers?.['retry-after'];
+    const rateLimitResetRaw = error.response?.headers?.['ratelimit-reset'];
+    const rateLimitRemainingRaw =
+      error.response?.headers?.['ratelimit-remaining'];
+
+    const parsedRetryAfter = retryAfterRaw ? parseInt(retryAfterRaw, 10) : NaN;
+    const parsedReset = rateLimitResetRaw
+      ? parseInt(rateLimitResetRaw, 10)
+      : NaN;
+    const parsedRemaining = rateLimitRemainingRaw
+      ? parseInt(rateLimitRemainingRaw, 10)
+      : NaN;
 
     return {
       error: GITLAB_ERROR_CODES.RATE_LIMITED.message,
       status: 429,
       type: 'http',
-      retryAfter: retryAfter ? parseInt(retryAfter, 10) : undefined,
-      rateLimitReset: rateLimitReset ? parseInt(rateLimitReset, 10) : undefined,
+      retryAfter: !isNaN(parsedRetryAfter) ? parsedRetryAfter : undefined,
+      rateLimitReset: !isNaN(parsedReset) ? parsedReset : undefined,
+      rateLimitRemaining: !isNaN(parsedRemaining) ? parsedRemaining : undefined,
       hints: [
-        `Rate limit exceeded. ${retryAfter ? `Retry after ${retryAfter} seconds.` : 'Please wait before retrying.'}`,
+        `Rate limit exceeded. ${retryAfterRaw ? `Retry after ${retryAfterRaw} seconds.` : 'Please wait before retrying.'}`,
         'Consider reducing request frequency or using pagination.',
       ],
     };

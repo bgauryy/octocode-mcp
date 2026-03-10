@@ -878,6 +878,7 @@ function parseCloneSchema(overrides: Record<string, unknown>) {
   return BulkCloneRepoSchema.safeParse({
     queries: [
       {
+        id: 'test:security',
         mainResearchGoal: 'test',
         researchGoal: 'test',
         reasoning: 'test',

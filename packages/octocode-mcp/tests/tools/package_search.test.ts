@@ -336,6 +336,7 @@ import { _resetNpmRegistryUrlCache } from '../../src/utils/package/npm.js';
 
 describe('PackageSearchQuerySchema', () => {
   const withResearchFields = <T extends object>(query: T) => ({
+    id: 'test:pkg-search',
     ...query,
     mainResearchGoal: 'Test research goal',
     researchGoal: 'Testing package search',
@@ -1874,21 +1875,23 @@ describe('registerPackageSearchTool', () => {
 
       await registerPackageSearchTool(mockServer.server, mockCallback);
 
+      const queries = [
+        {
+          ecosystem: 'npm' as const,
+          name: 'axios',
+          mainResearchGoal: 'Test',
+          researchGoal: 'Test',
+          reasoning: 'Test',
+        },
+      ];
       const result = await mockServer.callTool('packageSearch', {
-        queries: [
-          {
-            ecosystem: 'npm',
-            name: 'axios',
-            mainResearchGoal: 'Test',
-            researchGoal: 'Test',
-            reasoning: 'Test',
-          },
-        ],
+        queries,
       });
 
       expect(result.isError).toBeFalsy();
       expect(result.content).toBeDefined();
       expect(result.content[0]).toHaveProperty('text');
+      expect(mockCallback).toHaveBeenCalledWith('packageSearch', queries);
     });
 
     it('should include actionable GitHub hint for packages with repo links', async () => {
@@ -3158,6 +3161,7 @@ describe('Task 3: Deprecation Detection', () => {
 // NEW TESTS: Task 4 - pythonFetchMetadata Parameter
 describe('Task 4: pythonFetchMetadata Parameter', () => {
   const withResearchFields = <T extends object>(query: T) => ({
+    id: 'test:pkg-search',
     ...query,
     mainResearchGoal: 'Test research goal',
     researchGoal: 'Testing package search',

@@ -6,14 +6,9 @@ import {
 import { getTextContent } from '../utils/testHelpers.js';
 
 const mockGetProvider = vi.hoisted(() => vi.fn());
-const mockResolveDefaultBranch = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/providers/factory.js', () => ({
   getProvider: mockGetProvider,
-}));
-
-vi.mock('../../src/github/client.js', () => ({
-  resolveDefaultBranch: mockResolveDefaultBranch,
 }));
 
 vi.mock('../../src/serverConfig.js', () => ({
@@ -41,6 +36,7 @@ describe('GitHub View Repository Structure Tool', () => {
     searchRepos: ReturnType<typeof vi.fn>;
     searchPullRequests: ReturnType<typeof vi.fn>;
     getRepoStructure: ReturnType<typeof vi.fn>;
+    resolveDefaultBranch: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -52,12 +48,13 @@ describe('GitHub View Repository Structure Tool', () => {
       searchRepos: vi.fn(),
       searchPullRequests: vi.fn(),
       getRepoStructure: vi.fn(),
+      resolveDefaultBranch: vi.fn().mockResolvedValue('main'),
     };
     mockGetProvider.mockReturnValue(mockProvider);
 
     vi.clearAllMocks();
     mockGetProvider.mockReturnValue(mockProvider);
-    mockResolveDefaultBranch.mockResolvedValue('main');
+    mockProvider.resolveDefaultBranch.mockResolvedValue('main');
     registerViewGitHubRepoStructureTool(mockServer.server);
 
     // Default mock response - uses structure format
@@ -109,7 +106,7 @@ describe('GitHub View Repository Structure Tool', () => {
   });
 
   it('should resolve default branch when branch is omitted', async () => {
-    mockResolveDefaultBranch.mockResolvedValue('master');
+    mockProvider.resolveDefaultBranch.mockResolvedValue('master');
 
     mockProvider.getRepoStructure.mockResolvedValue({
       data: {
@@ -145,10 +142,8 @@ describe('GitHub View Repository Structure Tool', () => {
     );
 
     expect(result.isError).toBe(false);
-    expect(mockResolveDefaultBranch).toHaveBeenCalledWith(
-      'expressjs',
-      'express',
-      undefined
+    expect(mockProvider.resolveDefaultBranch).toHaveBeenCalledWith(
+      'expressjs/express'
     );
     expect(mockProvider.getRepoStructure).toHaveBeenCalledWith(
       expect.objectContaining({ ref: 'master' })
@@ -264,6 +259,53 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(result.isError).toBe(true);
     const responseText = getTextContent(result.content);
     expect(responseText).toContain('error');
+  });
+
+  it('should filter out directories with only ignored files and folders', async () => {
+    mockProvider.getRepoStructure.mockResolvedValue({
+      data: {
+        projectPath: 'test/repo',
+        branch: 'main',
+        path: '',
+        structure: {
+          '.': {
+            files: ['README.md', 'package.json'],
+            folders: ['src', 'tests'],
+          },
+          'ignored-only': {
+            files: ['.DS_Store', 'Thumbs.db'],
+            folders: ['node_modules', '.git'],
+          },
+        },
+        summary: {
+          totalFiles: 4,
+          totalFolders: 4,
+          truncated: false,
+        },
+      },
+      status: 200,
+      provider: 'github',
+    });
+
+    const result = await mockServer.callTool(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+          },
+        ],
+      }
+    );
+
+    expect(result.isError).toBe(false);
+    const responseText = getTextContent(result.content);
+    expect(responseText).toContain('README.md');
+    expect(responseText).toContain('src');
+    expect(responseText).not.toContain('.DS_Store');
+    expect(responseText).not.toContain('node_modules');
   });
 
   it('should handle empty directory', async () => {
@@ -416,6 +458,51 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(result.isError).toBe(true);
     const responseText = getTextContent(result.content);
     expect(responseText).toContain('error');
+  });
+
+  describe('Branch fallback with defaultBranch', () => {
+    it('should include defaultBranch in branchFallback when API returns it', async () => {
+      mockProvider.getRepoStructure.mockResolvedValue({
+        data: {
+          projectPath: 'facebook/react',
+          branch: 'main',
+          defaultBranch: 'main',
+          path: '',
+          structure: {
+            '.': {
+              files: ['README.md'],
+              folders: ['src'],
+            },
+          },
+          summary: {
+            totalFiles: 1,
+            totalFolders: 1,
+            truncated: false,
+          },
+        },
+        status: 200,
+        provider: 'github',
+      });
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+        {
+          queries: [
+            {
+              owner: 'facebook',
+              repo: 'react',
+              branch: 'nonexistent-branch',
+            },
+          ],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('branchFallback');
+      expect(responseText).toContain('nonexistent-branch');
+      expect(responseText).toContain('main');
+      expect(responseText).toContain('defaultBranch');
+    });
   });
 
   describe('Invalid branch handling (TC-9, TC-17)', () => {

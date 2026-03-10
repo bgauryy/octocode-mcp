@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Import the mocked function from octocode-shared (mocked in setup.ts)
+vi.mock('octocode-shared', () => ({
+  getToken: vi.fn().mockResolvedValue(null),
+  getConfigSync: vi.fn(() => ({})),
+  getOctocodeDir: vi.fn(() => '/mock/.octocode'),
+  OCTOCODE_DIR: '/mock/.octocode',
+}));
+
 import { getToken as getOctocodeToken } from 'octocode-shared';
 
 describe('octocodeCredentials (via shared package)', () => {

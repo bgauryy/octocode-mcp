@@ -62,10 +62,8 @@ export async function searchContentRipgrep(
     if (errorMessage.includes('Output size limit exceeded')) {
       return {
         status: 'error',
+        error: errorMessage,
         errorCode: LOCAL_TOOL_ERROR_CODES.OUTPUT_TOO_LARGE,
-        path: configuredQuery.path,
-        researchGoal: configuredQuery.researchGoal,
-        reasoning: configuredQuery.reasoning,
         hints: [
           'Output exceeded 10MB - your pattern matched too broadly. Think about why results exploded:',
           'Is the pattern too generic? Make it specific to target what you actually need',

@@ -4,6 +4,7 @@ import { RipgrepQuerySchema } from '../../src/tools/local_ripgrep/scheme.js';
 
 const createQuery = (query: Record<string, unknown>) =>
   RipgrepQuerySchema.parse({
+    id: 'test:rg',
     researchGoal: 'Test',
     reasoning: 'Schema validation',
     ...query,

@@ -8,7 +8,7 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { AnySchema } from '../../types/toolTypes.js';
+import { toMCPSchema } from '../../types/toolTypes.js';
 import { readFile, stat } from 'fs/promises';
 
 import {
@@ -46,8 +46,8 @@ export function registerLSPFindReferencesTool(server: McpServer) {
     TOOL_NAME,
     {
       description: LSP_FIND_REFERENCES_DESCRIPTION,
-      inputSchema: BulkLSPFindReferencesSchema as unknown as AnySchema,
-      outputSchema: LspFindReferencesOutputSchema as unknown as AnySchema,
+      inputSchema: toMCPSchema(BulkLSPFindReferencesSchema),
+      outputSchema: toMCPSchema(LspFindReferencesOutputSchema),
       annotations: {
         title: 'Find References',
         readOnlyHint: true,
@@ -87,7 +87,7 @@ export async function findReferences(
       );
       return createErrorResult(toolError, query, {
         toolName: TOOL_NAME,
-        extra: { uri: query.uri, resolvedPath: absolutePath },
+        extra: { resolvedPath: absolutePath },
       }) as FindReferencesResult;
     }
 
@@ -102,7 +102,7 @@ export async function findReferences(
       );
       return createErrorResult(toolError, query, {
         toolName: TOOL_NAME,
-        extra: { uri: query.uri },
+        extra: { resolvedPath: absolutePath },
       }) as FindReferencesResult;
     }
 
@@ -121,8 +121,6 @@ export async function findReferences(
           status: 'empty',
           error: error.message,
           errorType: 'symbol_not_found',
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
           hints: [
             `Symbol '${query.symbolName}' not found at or near line ${query.lineHint}`,
             `Searched +/-${error.searchRadius} lines from line ${query.lineHint}`,
@@ -164,7 +162,6 @@ export async function findReferences(
   } catch (error) {
     return createErrorResult(error, query, {
       toolName: TOOL_NAME,
-      extra: { uri: query.uri, symbolName: query.symbolName },
     }) as FindReferencesResult;
   }
 }
@@ -257,8 +254,6 @@ export function mergeReferenceResults(
       resultsPerPage: referencesPerPage,
     },
     hasMultipleFiles: uniqueFiles.size > 1,
-    researchGoal: query.researchGoal,
-    reasoning: query.reasoning,
     hints,
   };
 }

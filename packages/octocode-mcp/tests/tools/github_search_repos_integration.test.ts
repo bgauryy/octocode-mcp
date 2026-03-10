@@ -91,6 +91,9 @@ describe('GitHub Search Repositories Response Structure Test', () => {
       {
         queries: [
           {
+            id: 'repos_response_structure',
+            mainResearchGoal: 'Inspect repository search output shape',
+            researchGoal: 'Verify returned repository search results',
             reasoning: 'Testing response structure',
             keywordsToSearch: ['react', 'hooks'],
             limit: 2,
@@ -102,8 +105,8 @@ describe('GitHub Search Repositories Response Structure Test', () => {
     const responseText = getTextContent(result.content);
 
     expect(result.isError).toBe(false);
-    expect(responseText).toContain('instructions:');
     expect(responseText).toContain('results:');
+    expect(responseText).toContain('id: "repos_response_structure"');
     expect(responseText).toContain('status: "hasResults"');
     expect(responseText).toContain('repositories:');
     expect(responseText).toContain('facebook/react');

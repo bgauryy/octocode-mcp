@@ -143,4 +143,85 @@ describe('findFiles sortBy branches', () => {
     expect(files[1]!.path).toContain('/m/');
     expect(files[2]!.path).toContain('/z/');
   });
+
+  it('should return error when safeExec returns success: false (find command fails)', async () => {
+    mockSafeExec.mockResolvedValue({
+      success: false,
+      code: 1,
+      stdout: '',
+      stderr: 'find: /nonexistent: No such file or directory',
+    });
+
+    const result = await findFiles({
+      path: '/test',
+    });
+
+    expect(result.status).toBe('error');
+    expect(result.error).toBeDefined();
+  });
+
+  it('should sort by modified when showLastModified and both files have modified (line 158)', async () => {
+    mockSafeExec.mockResolvedValue({
+      success: true,
+      code: 0,
+      stdout: '/test/old.ts\0/test/new.ts\0',
+      stderr: '',
+    });
+
+    mockFs.promises.lstat.mockImplementation(async (p: unknown) => {
+      const path = String(p);
+      const mtimes: Record<string, Date> = {
+        '/test/old.ts': new Date('2020-01-01'),
+        '/test/new.ts': new Date('2024-06-01'),
+      };
+      return {
+        isFile: () => true,
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+        size: 100,
+        mode: parseInt('100644', 8),
+        mtime: mtimes[path] ?? new Date(),
+      } as unknown as import('fs').Stats;
+    });
+
+    const result = await findFiles({
+      path: '/test',
+      sortBy: 'modified',
+      showFileLastModified: true,
+      details: true,
+    });
+
+    expect(result.status).toBe('hasResults');
+    const files = result.files!;
+    expect(files[0]!.path).toContain('new.ts');
+    expect(files[1]!.path).toContain('old.ts');
+  });
+
+  it('should return empty files when charOffset >= totalChars (line 262)', async () => {
+    mockSafeExec.mockResolvedValue({
+      success: true,
+      code: 0,
+      stdout: '/test/a.txt\0/test/b.txt\0',
+      stderr: '',
+    });
+
+    mockFs.promises.lstat.mockResolvedValue({
+      isFile: () => true,
+      isDirectory: () => false,
+      isSymbolicLink: () => false,
+      size: 10,
+      mode: parseInt('100644', 8),
+      mtime: new Date(),
+    } as unknown as import('fs').Stats);
+
+    const result = await findFiles({
+      path: '/test',
+      charLength: 100,
+      charOffset: 10000,
+    });
+
+    expect(result.status).toBe('hasResults');
+    expect(result.files).toEqual([]);
+    expect(result.charPagination?.hasMore).toBe(false);
+  });
 });

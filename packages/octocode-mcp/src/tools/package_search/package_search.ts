@@ -3,7 +3,7 @@ import {
   RegisteredTool,
 } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { AnySchema } from '../../types/toolTypes.js';
+import { toMCPSchema } from '../../types/toolTypes.js';
 import { withSecurityValidation } from '../../security/withSecurityValidation.js';
 import type { ToolInvocationCallback } from '../../types.js';
 import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/index.js';
@@ -33,8 +33,8 @@ export async function registerPackageSearchTool(
     TOOL_NAMES.PACKAGE_SEARCH,
     {
       description: DESCRIPTIONS[TOOL_NAMES.PACKAGE_SEARCH],
-      inputSchema: PackageSearchBulkQuerySchema as unknown as AnySchema,
-      outputSchema: PackageSearchOutputSchema as unknown as AnySchema,
+      inputSchema: toMCPSchema(PackageSearchBulkQuerySchema),
+      outputSchema: toMCPSchema(PackageSearchOutputSchema),
       annotations: {
         title: 'Package Search',
         readOnlyHint: true,

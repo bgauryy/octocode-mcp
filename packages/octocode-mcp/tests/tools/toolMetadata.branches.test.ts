@@ -232,6 +232,41 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
       expect(TOOL_NAMES.PACKAGE_SEARCH).toBe('packageSearch');
     });
 
+    it('should fall back to STATIC_TOOL_NAMES when key not in metadata (lines 35-38)', async () => {
+      const mockMetadata = {
+        instructions: 'Test',
+        prompts: {},
+        toolNames: {
+          GITHUB_SEARCH_CODE: 'githubSearchCode',
+          GITHUB_FETCH_CONTENT: 'githubGetFileContent',
+        },
+        baseSchema: {
+          mainResearchGoal: 'Goal',
+          researchGoal: 'Research',
+          reasoning: 'Reason',
+          bulkQueryTemplate: 'Query',
+        },
+        tools: {},
+        baseHints: { hasResults: [], empty: [] },
+        genericErrorHints: [],
+      };
+
+      const { fetchWithRetries } =
+        await import('../../src/utils/http/fetch.js');
+      vi.mocked(fetchWithRetries).mockResolvedValueOnce(mockMetadata);
+
+      const { initializeToolMetadata, TOOL_NAMES, _resetMetadataState } =
+        await import('../../src/tools/toolMetadata/index.js');
+
+      await initializeToolMetadata();
+
+      // Access key in STATIC_TOOL_NAMES but not in metadata.toolNames
+      expect(TOOL_NAMES.LOCAL_FIND_FILES).toBe('localFindFiles');
+      expect(TOOL_NAMES.PACKAGE_SEARCH).toBe('packageSearch');
+
+      _resetMetadataState();
+    });
+
     it('should support ownKeys when uninitialized', async () => {
       const { TOOL_NAMES } =
         await import('../../src/tools/toolMetadata/index.js');
@@ -317,8 +352,10 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
       await initializeToolMetadata();
 
       // Should return empty array via ?? fallback when resultType doesn't exist
-      // @ts-expect-error - testing fallback for non-existent resultType
-      const hints = getToolHintsSync('githubSearchCode', 'nonExistentType');
+      const hints = getToolHintsSync(
+        'githubSearchCode',
+        'nonExistentType' as 'hasResults' | 'empty'
+      );
       expect(hints).toEqual([]);
     });
   });

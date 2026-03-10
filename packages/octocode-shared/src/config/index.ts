@@ -39,20 +39,24 @@ export type {
   // Section types (raw)
   GitHubConfigOptions,
   GitLabConfigOptions,
+  BitbucketConfigOptions,
   LocalConfigOptions,
   ToolsConfigOptions,
   NetworkConfigOptions,
   TelemetryConfigOptions,
   LspConfigOptions,
+  OutputConfigOptions,
 
   // Section types (resolved)
   RequiredGitHubConfig,
   RequiredGitLabConfig,
+  RequiredBitbucketConfig,
   RequiredLocalConfig,
   RequiredToolsConfig,
   RequiredNetworkConfig,
   RequiredTelemetryConfig,
   RequiredLspConfig,
+  RequiredOutputConfig,
 } from './types.js';
 
 // ============================================================================
@@ -66,11 +70,13 @@ export {
   DEFAULT_CONFIG,
   DEFAULT_GITHUB_CONFIG,
   DEFAULT_GITLAB_CONFIG,
+  DEFAULT_BITBUCKET_CONFIG,
   DEFAULT_LOCAL_CONFIG,
   DEFAULT_TOOLS_CONFIG,
   DEFAULT_NETWORK_CONFIG,
   DEFAULT_TELEMETRY_CONFIG,
   DEFAULT_LSP_CONFIG,
+  DEFAULT_OUTPUT_CONFIG,
 
   // Limits
   MIN_TIMEOUT,

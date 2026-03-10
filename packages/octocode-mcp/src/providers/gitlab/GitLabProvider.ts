@@ -30,6 +30,8 @@ import * as gitlabStructure from './gitlabStructure.js';
 
 import { handleGitLabAPIError } from '../../gitlab/errors.js';
 import type { GitLabAPIError } from '../../gitlab/types.js';
+import { getGitlab } from '../../gitlab/client.js';
+import { logRateLimit } from '../../session.js';
 
 /**
  * GitLab Provider implementation.
@@ -38,9 +40,10 @@ import type { GitLabAPIError } from '../../gitlab/types.js';
  */
 export class GitLabProvider implements ICodeHostProvider {
   readonly type = 'gitlab' as const;
+  private config?: ProviderConfig;
 
-  constructor(_config?: ProviderConfig) {
-    // Config may be used in the future for token/host customization
+  constructor(config?: ProviderConfig) {
+    this.config = config;
   }
 
   // ============================================================================
@@ -130,31 +133,43 @@ export class GitLabProvider implements ICodeHostProvider {
   }
 
   // ============================================================================
+  // DEFAULT BRANCH RESOLUTION
+  // ============================================================================
+
+  async resolveDefaultBranch(projectId: string): Promise<string> {
+    try {
+      const gitlab = await getGitlab(
+        this.config?.baseUrl || this.config?.token
+          ? { host: this.config.baseUrl, token: this.config.token }
+          : undefined
+      );
+      const parsedId = this.parseProjectId(projectId);
+      const project = (await gitlab.Projects.show(
+        parsedId
+      )) as unknown as Record<string, unknown>;
+      return String(project.default_branch || 'main');
+    } catch {
+      return 'main';
+    }
+  }
+
+  // ============================================================================
   // HELPER METHODS
   // ============================================================================
 
-  /**
-   * Parse a unified projectId into GitLab format.
-   * GitLab accepts: numeric ID or URL-encoded path
-   */
   private parseProjectId(projectId?: string): number | string {
     if (!projectId) {
       throw new Error('Project ID is required');
     }
 
-    // Check if it's a numeric ID
     const numId = parseInt(projectId, 10);
     if (!isNaN(numId) && String(numId) === projectId) {
       return numId;
     }
 
-    // URL-encode the path for GitLab API
     return encodeURIComponent(projectId);
   }
 
-  /**
-   * Map sort field to GitLab format.
-   */
   private mapSortField(
     sort?: string
   ):
@@ -185,9 +200,6 @@ export class GitLabProvider implements ICodeHostProvider {
     return sort ? mapping[sort] : undefined;
   }
 
-  /**
-   * Map MR state to GitLab format.
-   */
   private mapMRState(
     state?: string
   ): 'opened' | 'closed' | 'merged' | 'all' | undefined {
@@ -200,31 +212,32 @@ export class GitLabProvider implements ICodeHostProvider {
     return state ? mapping[state] : undefined;
   }
 
-  /**
-   * Handle errors and convert to ProviderResponse.
-   * Uses the sophisticated error handler from gitlab/errors.ts to extract
-   * rate limit information and proper status codes.
-   */
   private handleError(error: unknown): ProviderResponse<never> {
     const apiError = handleGitLabAPIError(error);
+    const rateLimit = this.extractRateLimit(apiError);
+
+    if (rateLimit) {
+      void logRateLimit({
+        limit_type: 'primary',
+        retry_after_seconds: rateLimit.retryAfter,
+        rate_limit_remaining: rateLimit.remaining,
+        rate_limit_reset_ms: rateLimit.reset * 1000,
+        provider: 'gitlab',
+      });
+    }
 
     return {
       error: apiError.error,
       status: apiError.status || 500,
       provider: 'gitlab',
       hints: apiError.hints,
-      rateLimit: this.extractRateLimit(apiError),
+      rateLimit,
     };
   }
 
-  /**
-   * Extract rate limit information from GitLabAPIError.
-   * Converts the error's rate limit fields to the ProviderResponse format.
-   */
   private extractRateLimit(
     apiError: GitLabAPIError
   ): ProviderResponse<never>['rateLimit'] {
-    // Only return rateLimit if we have relevant information
     if (
       apiError.rateLimitRemaining === undefined &&
       apiError.retryAfter === undefined &&
@@ -233,12 +246,19 @@ export class GitLabProvider implements ICodeHostProvider {
       return undefined;
     }
 
+    const reset =
+      apiError.rateLimitReset ??
+      (apiError.retryAfter !== undefined
+        ? Math.floor(Date.now() / 1000) + apiError.retryAfter
+        : undefined);
+
+    if (reset === undefined) {
+      return undefined;
+    }
+
     return {
       remaining: apiError.rateLimitRemaining ?? 0,
-      // GitLab rateLimitReset is already in seconds (Unix timestamp)
-      reset:
-        apiError.rateLimitReset ??
-        Math.floor(Date.now() / 1000) + (apiError.retryAfter ?? 60),
+      reset,
       retryAfter: apiError.retryAfter,
     };
   }

@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { AnySchema } from '../../types/toolTypes.js';
+import { toMCPSchema } from '../../types/toolTypes.js';
 import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { BulkFindFilesSchema, LOCAL_FIND_FILES_DESCRIPTION } from './scheme.js';
 import { executeFindFiles } from './execution.js';
@@ -15,8 +15,8 @@ export function registerLocalFindFilesTool(server: McpServer) {
     TOOL_NAMES.LOCAL_FIND_FILES,
     {
       description: LOCAL_FIND_FILES_DESCRIPTION,
-      inputSchema: BulkFindFilesSchema as unknown as AnySchema,
-      outputSchema: LocalFindFilesOutputSchema as unknown as AnySchema,
+      inputSchema: toMCPSchema(BulkFindFilesSchema),
+      outputSchema: toMCPSchema(LocalFindFilesOutputSchema),
       annotations: {
         title: 'Local Find Files',
         readOnlyHint: true,

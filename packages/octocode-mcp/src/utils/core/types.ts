@@ -2,7 +2,16 @@
  * Core type definitions for local-explorer-mcp MCP server
  */
 
-import type { LocalToolErrorCode as ErrorCode } from '../../errorCodes.js';
+import type {
+  LocalFindFilesEntry,
+  LocalFindFilesToolResult,
+  LocalGetFileContentMatchRange,
+  LocalGetFileContentToolResult,
+  LocalSearchCodeFile,
+  LocalSearchCodeMatch,
+  LocalSearchCodeToolResult,
+  LocalViewStructureToolResult,
+} from '../../scheme/outputTypes.js';
 
 /**
  * Command execution result
@@ -39,6 +48,7 @@ export interface PathValidationResult {
  * Base query schema fields (inherited from octocode-mcp)
  */
 export interface BaseQuery {
+  id?: string;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -85,31 +95,7 @@ export interface PaginationInfo {
   totalMatches?: number;
 }
 
-/**
- * Search content result (used by ripgrep) - NEW STRUCTURED FORMAT
- */
-export interface SearchContentResult extends BaseQuery {
-  status: 'hasResults' | 'empty' | 'error';
-  path?: string;
-  errorCode?: ErrorCode;
-  hints?: readonly string[];
-  warnings?: string[]; // Validation warnings
-
-  // NEW: Structured matches grouped by file
-  files?: RipgrepFileMatches[]; // Array of files with their matches (paginated)
-
-  // File-level pagination (NEW)
-  pagination?: {
-    currentPage: number; // Current file page (1-based)
-    totalPages: number; // Total pages of files
-    filesPerPage: number; // Files per page
-    totalFiles: number; // Total files with matches
-    hasMore: boolean; // More file pages available
-  };
-
-  // Index signature for ProcessedBulkResult compatibility
-  [key: string]: unknown;
-}
+export type SearchContentResult = LocalSearchCodeToolResult;
 
 /**
  * Search statistics (ripgrep --stats)
@@ -123,31 +109,9 @@ export interface SearchStats {
   searchTime?: string;
 }
 
-/**
- * Structured representation of a single match (NEW FORMAT)
- */
-export interface RipgrepMatch {
-  value: string; // Match + context, max 200 chars
-  line: number; // Line number (1-indexed) — use as lineHint for LSP tools
-  column?: number; // Column number (0-indexed) for human reference
-}
+export type RipgrepMatch = LocalSearchCodeMatch;
 
-/**
- * File with its matches grouped together
- */
-export interface RipgrepFileMatches {
-  path: string; // Absolute path
-  matchCount: number; // Total matches in this file (across all pages)
-  matches: RipgrepMatch[]; // Array of matches (paginated)
-  modified?: string; // ISO timestamp of last modification
-  pagination?: {
-    currentPage: number; // Current match page for this file (1-based)
-    totalPages: number; // Total pages of matches in this file
-    matchesPerPage: number; // Matches per page
-    totalMatches: number; // Total matches in this file
-    hasMore: boolean; // More matches available in this file
-  };
-}
+export type RipgrepFileMatches = LocalSearchCodeFile;
 
 /**
  * View structure query parameters
@@ -180,31 +144,7 @@ export interface ViewStructureQuery extends BaseQuery {
   showFileLastModified?: boolean;
 }
 
-/**
- * View structure result
- */
-export interface ViewStructureResult extends BaseQuery {
-  status: 'hasResults' | 'empty' | 'error';
-  path?: string;
-  entries?: Array<{
-    name: string;
-    type: 'file' | 'dir' | 'link';
-    depth?: number;
-    size?: string;
-    modified?: string;
-    permissions?: string;
-  }>;
-  summary?: string;
-  errorCode?: ErrorCode;
-  hints?: readonly string[];
-
-  // Pagination metadata (only present when pagination is active)
-  pagination?: PaginationInfo;
-  charPagination?: PaginationInfo;
-
-  // Index signature for ProcessedBulkResult compatibility
-  [key: string]: unknown;
-}
+export type ViewStructureResult = LocalViewStructureToolResult;
 
 /**
  * Find files query parameters
@@ -246,33 +186,9 @@ export interface FindFilesQuery extends BaseQuery {
   showFileLastModified?: boolean;
 }
 
-/**
- * Found file result
- */
-export interface FoundFile {
-  path: string;
-  type: string;
-  size?: number;
-  modified?: string;
-  permissions?: string;
-}
+export type FoundFile = LocalFindFilesEntry;
 
-/**
- * Find files result
- */
-export interface FindFilesResult extends BaseQuery {
-  status: 'hasResults' | 'empty' | 'error';
-  files?: FoundFile[];
-  errorCode?: ErrorCode;
-  hints?: readonly string[];
-
-  // Pagination metadata (only present when pagination is active)
-  pagination?: PaginationInfo;
-  charPagination?: PaginationInfo;
-
-  // Index signature for ProcessedBulkResult compatibility
-  [key: string]: unknown;
-}
+export type FindFilesResult = LocalFindFilesToolResult;
 
 /**
  * Fetch content query parameters
@@ -294,31 +210,9 @@ export interface FetchContentQuery extends BaseQuery {
   charLength?: number;
 }
 
-/**
- * Fetch content result
- */
-export interface FetchContentResult extends BaseQuery {
-  status: 'hasResults' | 'empty' | 'error';
-  path?: string;
-  content?: string;
-  isPartial?: boolean;
-  totalLines?: number;
-  errorCode?: ErrorCode;
-  hints?: readonly string[];
-  warnings?: string[];
+export type FetchContentResult = LocalGetFileContentToolResult;
 
-  // Line extraction info (when startLine/endLine or matchString used)
-  startLine?: number;
-  endLine?: number;
-  // Match ranges (only present when matchString is used)
-  matchRanges?: Array<{ start: number; end: number }>;
-
-  // Pagination metadata (only present when pagination is active)
-  pagination?: PaginationInfo;
-
-  // Index signature for ProcessedBulkResult compatibility
-  [key: string]: unknown;
-}
+export type MatchRange = LocalGetFileContentMatchRange;
 
 /**
  * Cache statistics for monitoring and debugging

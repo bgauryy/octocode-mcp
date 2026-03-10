@@ -88,8 +88,19 @@ describe('LSP Goto Definition Tool', () => {
         await import('../../src/tools/lsp_goto_definition/scheme.js');
 
       expect(BulkLSPGotoDefinitionSchema).toBeDefined();
-      // Zod schemas have a shape property for objects
-      expect(BulkLSPGotoDefinitionSchema.shape).toBeDefined();
+      const parsed = BulkLSPGotoDefinitionSchema.safeParse({
+        queries: [
+          {
+            id: 'goto_definition_query',
+            researchGoal: 'Find definition',
+            reasoning: 'Navigate to symbol',
+            uri: 'file:///test.ts',
+            symbolName: 'testFn',
+            lineHint: 1,
+          },
+        ],
+      });
+      expect(parsed.success).toBe(true);
     });
 
     it('should have queries property in schema', async () => {
@@ -98,7 +109,19 @@ describe('LSP Goto Definition Tool', () => {
       const { BulkLSPGotoDefinitionSchema } =
         await import('../../src/tools/lsp_goto_definition/scheme.js');
 
-      expect(BulkLSPGotoDefinitionSchema.shape.queries).toBeDefined();
+      const parsed = BulkLSPGotoDefinitionSchema.safeParse({
+        queries: [
+          {
+            id: 'goto_definition_queries',
+            researchGoal: 'Find definition',
+            reasoning: 'Navigate to symbol',
+            uri: 'file:///test.ts',
+            symbolName: 'testFn',
+            lineHint: 1,
+          },
+        ],
+      });
+      expect(parsed.success).toBe(true);
     });
   });
 

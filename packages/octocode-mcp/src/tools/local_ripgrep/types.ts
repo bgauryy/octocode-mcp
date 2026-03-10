@@ -3,7 +3,13 @@
  * @module tools/local_ripgrep/types
  */
 
-import type { LocalToolErrorCode as ErrorCode } from '../../errorCodes.js';
+import type {
+  LocalSearchCodeFile,
+  LocalSearchCodeMatch,
+  LocalSearchCodeMatchPagination,
+  LocalSearchCodePagination,
+  LocalSearchCodeToolResult,
+} from '../../scheme/outputTypes.js';
 
 // ============================================================================
 // INPUT TYPES
@@ -13,6 +19,7 @@ import type { LocalToolErrorCode as ErrorCode } from '../../errorCodes.js';
  * Query parameters for local code search via ripgrep
  */
 export interface RipgrepSearchQuery {
+  id?: string;
   pattern: string;
   path: string;
   mode?: 'discovery' | 'paginated' | 'detailed';
@@ -57,47 +64,13 @@ export interface RipgrepSearchQuery {
 // OUTPUT TYPES
 // ============================================================================
 
-/**
- * Single match within a file
- */
-export interface RipgrepMatch {
-  value: string;
-  line: number;
-  column?: number;
-}
+export type RipgrepMatch = LocalSearchCodeMatch;
 
-/**
- * Pagination for matches within a file
- */
-export interface RipgrepMatchPagination {
-  currentPage: number;
-  totalPages: number;
-  matchesPerPage: number;
-  totalMatches: number;
-  hasMore: boolean;
-}
+export type RipgrepMatchPagination = LocalSearchCodeMatchPagination;
 
-/**
- * File with its matches grouped together
- */
-export interface RipgrepFileMatches {
-  path: string;
-  matchCount: number;
-  matches: RipgrepMatch[];
-  modified?: string;
-  pagination?: RipgrepMatchPagination;
-}
+export type RipgrepFileMatches = LocalSearchCodeFile;
 
-/**
- * File-level pagination
- */
-export interface SearchContentPagination {
-  currentPage: number;
-  totalPages: number;
-  filesPerPage: number;
-  totalFiles: number;
-  hasMore: boolean;
-}
+export type SearchContentPagination = LocalSearchCodePagination;
 
 /**
  * Search statistics
@@ -111,19 +84,4 @@ export interface SearchStats {
   searchTime?: string;
 }
 
-/**
- * Result of local code search
- */
-export interface SearchContentResult {
-  status: 'hasResults' | 'empty' | 'error';
-  path?: string;
-  errorCode?: ErrorCode;
-  hints?: readonly string[];
-  warnings?: string[];
-  files?: RipgrepFileMatches[];
-  pagination?: SearchContentPagination;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-  [key: string]: unknown;
-}
+export type SearchContentResult = LocalSearchCodeToolResult;

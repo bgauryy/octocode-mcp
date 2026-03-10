@@ -275,8 +275,6 @@ export async function findFiles(
       ...(paginationMetadata && {
         charPagination: createPaginationInfo(paginationMetadata),
       }),
-      researchGoal: query.researchGoal,
-      reasoning: query.reasoning,
       hints: [
         ...filePaginationHints,
         ...getHints(TOOL_NAMES.LOCAL_FIND_FILES, status, {

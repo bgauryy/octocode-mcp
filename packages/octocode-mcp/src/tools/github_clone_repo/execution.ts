@@ -63,8 +63,7 @@ export async function executeCloneRepo(
       async (query: CloneRepoQuery) =>
         handleCatchError(
           new Error(
-            'githubCloneRepo is only available with the GitHub provider. ' +
-              'GitLab is not supported yet.'
+            'githubCloneRepo is only available with the GitHub provider.'
           ),
           query,
           'Provider not supported',
@@ -87,11 +86,11 @@ export async function executeCloneRepo(
 
         // ── Build result data ──────────────────────────────────
         const resultData: Record<string, unknown> = {
-          owner: result.owner,
-          repo: result.repo,
-          branch: result.branch,
           localPath: result.localPath,
-          ...(result.sparse_path ? { sparse_path: result.sparse_path } : {}),
+          ...(result.cached ? { cached: true } : {}),
+          ...(query.branch !== result.branch
+            ? { resolvedBranch: result.branch }
+            : {}),
         };
 
         // ── Pick contextual hints ──────────────────────────────
@@ -121,14 +120,7 @@ export async function executeCloneRepo(
     },
     {
       toolName: TOOL_NAMES.GITHUB_CLONE_REPO,
-      keysPriority: [
-        'owner',
-        'repo',
-        'branch',
-        'sparse_path',
-        'localPath',
-        'error',
-      ],
+      keysPriority: ['resolvedBranch', 'localPath', 'cached', 'error'],
     }
   );
 }

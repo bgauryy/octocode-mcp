@@ -3,6 +3,14 @@
  * @module tools/lsp_goto_definition/types
  */
 
+import type {
+  LspCodeSnippet,
+  LspExactPosition,
+  LspGotoDefinitionToolResult,
+  LspRange,
+  LspSymbolKind,
+} from '../../scheme/outputTypes.js';
+
 // ============================================================================
 // INPUT TYPES
 // ============================================================================
@@ -11,6 +19,7 @@
  * Query parameters for LSP goto definition
  */
 export interface LSPGotoDefinitionQuery {
+  id?: string;
   uri: string;
   symbolName: string;
   lineHint: number;
@@ -26,52 +35,13 @@ export interface LSPGotoDefinitionQuery {
 // SHARED LSP TYPES
 // ============================================================================
 
-/**
- * Exact position in a file (0-indexed for LSP compatibility)
- */
-export interface ExactPosition {
-  line: number;
-  character: number;
-}
+export type ExactPosition = LspExactPosition;
 
-/**
- * Range in a file (0-indexed)
- */
-export interface LSPRange {
-  start: ExactPosition;
-  end: ExactPosition;
-}
+export type LSPRange = LspRange;
 
-/**
- * Symbol kinds for LSP
- */
-export type SymbolKind =
-  | 'function'
-  | 'method'
-  | 'class'
-  | 'interface'
-  | 'type'
-  | 'variable'
-  | 'constant'
-  | 'property'
-  | 'enum'
-  | 'module'
-  | 'namespace'
-  | 'unknown';
+export type SymbolKind = LspSymbolKind;
 
-/**
- * Code snippet with location information
- */
-export interface CodeSnippet {
-  uri: string;
-  range: LSPRange;
-  content: string;
-  symbolKind?: SymbolKind;
-  displayRange?: {
-    startLine: number;
-    endLine: number;
-  };
-}
+export type CodeSnippet = LspCodeSnippet;
 
 // ============================================================================
 // OUTPUT TYPES
@@ -88,26 +58,4 @@ export type LSPErrorType =
   | 'parse_error'
   | 'unknown';
 
-/**
- * Result of LSP goto definition
- */
-export interface GotoDefinitionResult {
-  status: 'hasResults' | 'empty' | 'error';
-  error?: string;
-  errorType?: LSPErrorType;
-  hints?: string[];
-  researchGoal?: string;
-  reasoning?: string;
-  locations?: CodeSnippet[];
-  resolvedPosition?: ExactPosition;
-  searchRadius?: number;
-  outputPagination?: {
-    charOffset: number;
-    charLength: number;
-    totalChars: number;
-    hasMore: boolean;
-    currentPage: number;
-    totalPages: number;
-  };
-  [key: string]: unknown;
-}
+export type GotoDefinitionResult = LspGotoDefinitionToolResult;

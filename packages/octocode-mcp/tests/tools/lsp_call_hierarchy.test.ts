@@ -95,8 +95,20 @@ describe('LSP Call Hierarchy Tool', () => {
         await import('../../src/tools/lsp_call_hierarchy/scheme.js');
 
       expect(BulkLSPCallHierarchySchema).toBeDefined();
-      // Zod schemas have a shape property for objects
-      expect(BulkLSPCallHierarchySchema.shape).toBeDefined();
+      const parsed = BulkLSPCallHierarchySchema.safeParse({
+        queries: [
+          {
+            id: 'call_hierarchy_schema',
+            researchGoal: 'Trace calls',
+            reasoning: 'Inspect call graph',
+            uri: 'file:///test.ts',
+            symbolName: 'testFn',
+            lineHint: 1,
+            direction: 'incoming',
+          },
+        ],
+      });
+      expect(parsed.success).toBe(true);
     });
 
     it('should have queries property in schema', async () => {
@@ -105,7 +117,20 @@ describe('LSP Call Hierarchy Tool', () => {
       const { BulkLSPCallHierarchySchema } =
         await import('../../src/tools/lsp_call_hierarchy/scheme.js');
 
-      expect(BulkLSPCallHierarchySchema.shape.queries).toBeDefined();
+      const parsed = BulkLSPCallHierarchySchema.safeParse({
+        queries: [
+          {
+            id: 'call_hierarchy_queries',
+            researchGoal: 'Trace calls',
+            reasoning: 'Inspect call graph',
+            uri: 'file:///test.ts',
+            symbolName: 'testFn',
+            lineHint: 1,
+            direction: 'incoming',
+          },
+        ],
+      });
+      expect(parsed.success).toBe(true);
     });
   });
 

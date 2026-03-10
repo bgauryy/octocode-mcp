@@ -55,7 +55,7 @@ export async function processCallHierarchy(
       );
       return createErrorResult(toolError, query, {
         toolName: TOOL_NAME,
-        extra: { path: query.uri },
+        extra: { resolvedPath: absolutePath },
       }) as CallHierarchyResult;
     }
 
@@ -74,8 +74,6 @@ export async function processCallHierarchy(
           status: 'empty',
           errorType: 'symbol_not_found',
           error: error.message,
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
           hints: [
             ...getHints(TOOL_NAME, 'empty'),
             `Symbol '${query.symbolName}' not found at line ${query.lineHint}`,
@@ -118,7 +116,6 @@ export async function processCallHierarchy(
   } catch (error) {
     return createErrorResult(error, query, {
       toolName: TOOL_NAME,
-      extra: { uri: query.uri },
     }) as CallHierarchyResult;
   }
 }

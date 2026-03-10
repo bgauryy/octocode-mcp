@@ -2,8 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChildProcess, spawn } from 'child_process';
 import { EventEmitter } from 'events';
 
-// child_process is mocked in setup.ts
-
 // Mock process for testing
 class MockChildProcess extends EventEmitter {
   stdout = new EventEmitter();
@@ -56,7 +54,6 @@ describe('safeExec', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.resetModules();
     mockProcess = new MockChildProcess();
     vi.mocked(spawn).mockReturnValue(mockProcess as unknown as ChildProcess);
     originalWorkspaceRoot = process.env.WORKSPACE_ROOT;

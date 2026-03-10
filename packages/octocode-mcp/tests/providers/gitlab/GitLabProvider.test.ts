@@ -36,6 +36,16 @@ vi.mock('../../../src/gitlab/projectsSearch.js');
 vi.mock('../../../src/gitlab/mergeRequests.js');
 vi.mock('../../../src/gitlab/repoStructure.js');
 
+const mockGetGitlab = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/gitlab/client.js', () => ({
+  getGitlab: mockGetGitlab,
+}));
+
+const mockLogRateLimit = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/session.js', () => ({
+  logRateLimit: mockLogRateLimit,
+}));
+
 describe('GitLabProvider', () => {
   let provider: GitLabProvider;
 
@@ -2268,6 +2278,117 @@ describe('GitLabProvider', () => {
         'Wait 60 seconds',
         'Consider using a token',
       ]);
+    });
+  });
+
+  // ==========================================================================
+  // RESOLVE DEFAULT BRANCH
+  // ==========================================================================
+
+  describe('resolveDefaultBranch', () => {
+    it('should resolve default branch from GitLab Projects.show', async () => {
+      const mockProjectsShow = vi
+        .fn()
+        .mockResolvedValue({ default_branch: 'develop' });
+      mockGetGitlab.mockResolvedValue({ Projects: { show: mockProjectsShow } });
+
+      const result = await provider.resolveDefaultBranch('group/project');
+
+      expect(result).toBe('develop');
+      expect(mockProjectsShow).toHaveBeenCalledWith('group%2Fproject');
+    });
+
+    it('should resolve default branch for numeric projectId', async () => {
+      const mockProjectsShow = vi
+        .fn()
+        .mockResolvedValue({ default_branch: 'main' });
+      mockGetGitlab.mockResolvedValue({ Projects: { show: mockProjectsShow } });
+
+      const result = await provider.resolveDefaultBranch('12345');
+
+      expect(result).toBe('main');
+      expect(mockProjectsShow).toHaveBeenCalledWith(12345);
+    });
+
+    it('should fallback to "main" when API call fails', async () => {
+      mockGetGitlab.mockRejectedValue(new Error('Network error'));
+
+      const result = await provider.resolveDefaultBranch('group/project');
+
+      expect(result).toBe('main');
+    });
+
+    it('should fallback to "main" when default_branch is not set', async () => {
+      const mockProjectsShow = vi.fn().mockResolvedValue({});
+      mockGetGitlab.mockResolvedValue({ Projects: { show: mockProjectsShow } });
+
+      const result = await provider.resolveDefaultBranch('group/project');
+
+      expect(result).toBe('main');
+    });
+
+    it('should pass config to getGitlab when available', async () => {
+      const configuredProvider = new GitLabProvider({
+        type: 'gitlab',
+        baseUrl: 'https://gitlab.corp.com',
+        token: 'glpat-custom',
+      });
+      const mockProjectsShow = vi
+        .fn()
+        .mockResolvedValue({ default_branch: 'trunk' });
+      mockGetGitlab.mockResolvedValue({ Projects: { show: mockProjectsShow } });
+
+      const result =
+        await configuredProvider.resolveDefaultBranch('group/project');
+
+      expect(result).toBe('trunk');
+      expect(mockGetGitlab).toHaveBeenCalledWith({
+        host: 'https://gitlab.corp.com',
+        token: 'glpat-custom',
+      });
+    });
+  });
+
+  // ==========================================================================
+  // RATE LIMIT LOGGING
+  // ==========================================================================
+
+  describe('logRateLimit on error', () => {
+    it('should call logRateLimit when error has rate limit info', async () => {
+      const rateLimitError = Object.assign(new Error('rate limited'), {
+        status: 429,
+        response: {
+          status: 429,
+          headers: {
+            'retry-after': '30',
+            'ratelimit-remaining': '0',
+            'ratelimit-reset': '1700000000',
+          },
+        },
+      });
+      vi.mocked(searchGitLabCodeAPI).mockRejectedValue(rateLimitError);
+
+      await provider.searchCode({
+        keywords: ['test'],
+        projectId: '123',
+      });
+
+      expect(mockLogRateLimit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'gitlab',
+        })
+      );
+    });
+
+    it('should not call logRateLimit when error has no rate limit info', async () => {
+      vi.mocked(searchGitLabCodeAPI).mockRejectedValue(new Error('Not found'));
+
+      await provider.searchCode({
+        keywords: ['test'],
+        projectId: '123',
+      });
+
+      expect(mockLogRateLimit).not.toHaveBeenCalled();
     });
   });
 });

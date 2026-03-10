@@ -78,14 +78,10 @@ export function registerPrompts(
       };
     };
 
-    // @ts-expect-error - TS2589: Zod's inferred type from dynamic argsShape exceeds type instantiation depth. Safe because the shape is built from z.string() only.
-    server.registerPrompt(
-      prompt.name,
-      {
-        description: prompt.description,
-        argsSchema: argsShape,
-      },
-      handler
-    );
+    const promptOptions = {
+      description: prompt.description,
+      argsSchema: argsShape,
+    };
+    server.registerPrompt(prompt.name, promptOptions as never, handler);
   }
 }

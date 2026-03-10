@@ -496,6 +496,7 @@ yarn test:ui
 | `TOOLS_TO_RUN` | Comma-separated tool whitelist | - |
 | `ENABLE_TOOLS` | Comma-separated tools to enable | - |
 | `DISABLE_TOOLS` | Comma-separated tools to disable | - |
+| `OCTOCODE_OUTPUT_FORMAT` | Response format: `yaml` (default) or `json` | `yaml` |
 
 ---
 

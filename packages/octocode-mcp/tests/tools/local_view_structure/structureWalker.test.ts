@@ -85,6 +85,35 @@ describe('walkDirectory - WalkStats error tracking', () => {
     vi.restoreAllMocks();
   });
 
+  it('should return early when depth >= maxDepth (line 35)', async () => {
+    await fs.promises.mkdir(path.join(tmpDir, 'subdir'));
+    await fs.promises.writeFile(
+      path.join(tmpDir, 'subdir', 'nested.txt'),
+      'content'
+    );
+
+    const readdirSpy = vi.spyOn(fs.promises, 'readdir');
+    const entries: DirectoryEntry[] = [];
+    const stats: WalkStats = { skipped: 0 };
+
+    // Call with depth=1, maxDepth=1 - should return immediately without reading subdir
+    await walkDirectory(
+      tmpDir,
+      path.join(tmpDir, 'subdir'),
+      1,
+      1,
+      entries,
+      100,
+      false,
+      false,
+      stats
+    );
+
+    // When depth >= maxDepth, we return before readdir - so subdir's contents are never read
+    expect(entries.length).toBe(0);
+    readdirSpy.mockRestore();
+  });
+
   it('should work without stats param (backward compat)', async () => {
     await fs.promises.writeFile(path.join(tmpDir, 'file.txt'), 'content');
 

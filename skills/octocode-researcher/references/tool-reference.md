@@ -1,8 +1,12 @@
-# Local Tools Reference
+# Tools Reference
 
-Complete parameter reference for Octocode Local tools.
+Complete parameter reference for Octocode tools (Local + External).
 
 **Required Fields (ALL queries)**: `mainResearchGoal`, `researchGoal`, `reasoning`
+
+---
+
+# Part 1: Local Tools
 
 ---
 
@@ -257,72 +261,151 @@ Parallelize independent searches (max 5 queries per call):
 
 ---
 
-## Error Recovery
+# Part 2: External Tools (GitHub & Packages)
 
-| Situation | Action |
-|-----------|--------|
-| Empty results | Try semantic variants (auth → login, security, credentials) |
-| Too many results | Add filters (path, type, include, excludeDir) |
-| File too large | Use `matchString` or `charLength` pagination |
-| Path not found | Verify with `localViewStructure` first |
-| Path is directory | Use `localViewStructure` instead |
-| .gitignore blocking | Use `noIgnore: true` (for node_modules) |
-| Special chars in pattern | Use `fixedString: true` |
+## githubSearchCode
+
+Search code across GitHub repositories.
+
+```typescript
+{
+  query: string;          // Search query (required) — GitHub code search syntax
+  owner?: string;         // Filter by repo owner
+  repo?: string;          // Filter by repo name (requires owner)
+  language?: string;      // Filter by language
+  path?: string;          // Filter by file path
+  extension?: string;     // Filter by file extension
+  filename?: string;      // Filter by filename
+  resultsPerPage?: number; // Results per page
+  pageNumber?: number;    // Page number
+}
+```
+
+**Tips:**
+- Narrow to `owner`/`repo` ASAP for faster, more relevant results
+- Use `path` to scope searches (e.g., `path:src/auth`)
+- Use `extension` to filter by file type
+- Combine with `githubGetFileContent` to read matched files
 
 ---
 
-## Common Patterns
+## githubSearchRepositories
 
-### 1. Discovery → Read Pattern
-```json
-// Step 1: Find files
-{ "pattern": "useAuth", "path": "src", "filesOnly": true }
+Find repositories by topic, language, stars.
 
-// Step 2: Read implementation (from step 1 results)
-{ "path": "src/hooks/useAuth.ts", "matchString": "export function useAuth", "matchStringContextLines": 20 }
+```typescript
+{
+  query: string;          // Search query (required)
+  language?: string;      // Filter by language
+  sort?: "stars" | "forks" | "updated"; // Sort order
+  order?: "asc" | "desc";
+  resultsPerPage?: number;
+  pageNumber?: number;
+}
 ```
 
-### 2. Trace Imports Pattern
-```json
-// Step 1: Find import
-{ "pattern": "import.*from 'axios'", "path": "src", "filesOnly": true }
-
-// Step 2: Check node_modules
-{ "pattern": "export default axios", "path": "node_modules/axios/lib", "noIgnore": true }
-```
-
-### 3. Recent Changes Pattern
-```json
-// Step 1: Find recent files
-{ "path": "src", "name": "*.ts", "modifiedWithin": "3d" }
-
-// Step 2: Search within those files
-{ "pattern": "TODO|FIXME", "path": "src/auth", "contextLines": 2 }
-```
-
-### 4. Large File Pagination
-```json
-// Window 1
-{ "path": "dist/bundle.js", "charLength": 4000, "charOffset": 0 }
-
-// Window 2
-{ "path": "dist/bundle.js", "charLength": 4000, "charOffset": 4000 }
-
-// Window 3
-{ "path": "dist/bundle.js", "charLength": 4000, "charOffset": 8000 }
-```
+**Tips:**
+- Use for discovering repos when you don't know the exact name
+- Sort by `stars` for popular/battle-tested repos
+- Sort by `updated` for actively maintained repos
 
 ---
 
-## Anti-Patterns
+## githubViewRepoStructure
 
-| Bad | Good |
-|-----|------|
-| `fullContent: true` on large files | `matchString` or `charLength` |
-| Shell `grep` command | `localSearchCode` |
-| Shell `find` command | `localFindFiles` |
-| Shell `cat` command | `localGetFileContent` |
-| Reading entire codebase | Targeted discovery then content |
-| Ignoring hints | Follow hints for next steps |
-| Hard-coded paths | Verify with `localViewStructure` |
+Explore external repo directory layout.
 
+```typescript
+{
+  owner: string;          // Repo owner (required)
+  repo: string;           // Repo name (required)
+  branch?: string;        // Branch name (default: main/master)
+  path?: string;          // Sub-path within repo
+  depth?: number;         // Directory depth (1-5)
+}
+```
+
+**Tips:**
+- Use BEFORE `githubGetFileContent` to understand layout
+- Start `depth: 1` at root, drill with `depth: 2` on specific dirs
+- Identify `src/`, `lib/`, `packages/` for entry points
+
+---
+
+## githubGetFileContent
+
+Read files from external GitHub repos.
+
+```typescript
+{
+  owner: string;          // Repo owner (required)
+  repo: string;           // Repo name (required)
+  path: string;           // File path (required)
+  branch?: string;        // Branch name
+  matchString?: string;   // Pattern to find within file
+  matchStringContextLines?: number; // Lines around match
+}
+```
+
+**Tips:**
+- Use `matchString` for large files (avoid reading entire file)
+- Use LAST in the external flow — after search/structure exploration
+- Generate full GitHub URLs for references: `https://github.com/{owner}/{repo}/blob/{branch}/{path}`
+
+---
+
+## githubSearchPullRequests
+
+Search PRs by query, state, labels.
+
+```typescript
+{
+  query: string;          // Search query (required)
+  owner?: string;         // Repo owner
+  repo?: string;          // Repo name
+  state?: "open" | "closed" | "merged";
+  sort?: "created" | "updated" | "comments";
+  order?: "asc" | "desc";
+  resultsPerPage?: number;
+  pageNumber?: number;
+}
+```
+
+**Tips:**
+- Use `state: "merged"` for understanding change history
+- Combine with `githubGetFileContent` to read files from specific commits
+- Narrow to `owner`/`repo` for relevant results
+
+---
+
+## packageSearch
+
+Search npm/PyPI packages by name or keyword.
+
+```typescript
+{
+  query: string;          // Package name or keyword (required)
+  registry?: "npm" | "pypi"; // Registry to search (default: npm)
+  resultsPerPage?: number;
+}
+```
+
+**Tips:**
+- Use to find repo URL for a package, then follow with `githubViewRepoStructure`
+- Returns package metadata: name, description, version, repo URL, downloads
+- Use FIRST when investigating an external dependency
+
+---
+
+## Query Batching (External)
+
+GitHub tools support batching (max 3 queries per call):
+
+```json
+{
+  "queries": [
+    { "query": "useState", "owner": "facebook", "repo": "react" },
+    { "query": "useEffect", "owner": "facebook", "repo": "react" }
+  ]
+}
+```

@@ -7,7 +7,6 @@
  * - No tools (baseline)
  */
 
-/* eslint-disable no-console */
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type {
   EvalTestCase,
@@ -166,27 +165,15 @@ export async function runWithProvider(
       },
     });
 
-    // Check MCP server status
     if (opts.verbose && provider !== 'none') {
       try {
-        const mcpStatus = await q.mcpServerStatus();
-        console.log(`[${provider}] MCP Status:`, JSON.stringify(mcpStatus));
-      } catch (e) {
-        console.log(`[${provider}] MCP Status error:`, e);
+        await q.mcpServerStatus();
+      } catch {
+        // MCP status check - silent in non-verbose
       }
     }
 
     for await (const message of q) {
-      if (opts.verbose) {
-        console.log(`[${provider}] Message:`, message.type);
-        if (message.type === 'system') {
-          console.log(
-            `[${provider}] Tools available:`,
-            (message as { tools?: string[] }).tools?.length || 0
-          );
-        }
-      }
-
       // Extract tool calls
       if (message.type === 'assistant') {
         const content = message.message?.content;
@@ -194,9 +181,6 @@ export async function runWithProvider(
           for (const block of content) {
             if (block.type === 'tool_use') {
               toolsCalled.push(block.name);
-              if (opts.verbose) {
-                console.log(`[${provider}] Tool call:`, block.name);
-              }
             }
             if (block.type === 'text') {
               response += block.text;
@@ -218,9 +202,6 @@ export async function runWithProvider(
       content: errorMessage,
       resultCount: 0,
     });
-    if (opts.verbose) {
-      console.error(`[${provider}] Error:`, errorMessage);
-    }
   }
 
   return { response, toolsCalled, toolResponses };
@@ -304,34 +285,13 @@ export async function runMultiProviderEval(
 ): Promise<MultiProviderEvalResult> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
-  if (opts.verbose) {
-    console.log(`\n${'='.repeat(60)}`);
-    console.log(`Running: ${testCase.name}`);
-    console.log(`Prompt: ${testCase.prompt.slice(0, 80)}...`);
-    console.log(`Providers: ${providers.join(', ')}`);
-  }
-
   const results: Record<McpProvider, ProviderResult> = {} as Record<
     McpProvider,
     ProviderResult
   >;
 
   for (const provider of providers) {
-    if (opts.verbose) {
-      console.log(`\n  [${provider}] Starting...`);
-    }
-
     results[provider] = await runAndScoreProvider(testCase, provider, opts);
-
-    if (opts.verbose) {
-      console.log(
-        `  [${provider}] Score: ${(results[provider].evalResult.overall * 100).toFixed(1)}%`
-      );
-      console.log(
-        `  [${provider}] Tools: ${results[provider].toolsCalled.length}`
-      );
-      console.log(`  [${provider}] Latency: ${results[provider].latencyMs}ms`);
-    }
   }
 
   // Rank providers by score
@@ -386,8 +346,8 @@ export async function runBatchMultiProviderEval(
     try {
       const result = await runMultiProviderEval(testCase, providers, options);
       results.push(result);
-    } catch (error) {
-      console.error(`Error running ${testCase.name}:`, error);
+    } catch {
+      // Test case failed - continue with others
     }
   }
 

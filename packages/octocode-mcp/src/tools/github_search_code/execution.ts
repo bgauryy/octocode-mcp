@@ -3,7 +3,11 @@ import type { GitHubCodeSearchQuery, SearchResult } from './types.js';
 import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
-import { handleCatchError, createSuccessResult } from '../utils.js';
+import {
+  handleCatchError,
+  handleProviderError,
+  createSuccessResult,
+} from '../utils.js';
 import { getProvider } from '../../providers/factory.js';
 import { getActiveProviderConfig } from '../../serverConfig.js';
 import { isProviderSuccess } from '../../providers/types.js';
@@ -46,10 +50,7 @@ export async function searchMultipleGitHubCode(
         const apiResult = await provider.searchCode(providerQuery);
 
         if (!isProviderSuccess(apiResult)) {
-          return handleCatchError(
-            new Error(apiResult.error || 'Provider error'),
-            query
-          );
+          return handleProviderError(apiResult, query);
         }
 
         // Transform provider response to tool result format

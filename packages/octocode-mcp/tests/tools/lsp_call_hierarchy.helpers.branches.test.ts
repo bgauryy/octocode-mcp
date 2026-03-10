@@ -14,6 +14,7 @@ import {
   enhanceIncomingCalls,
   enhanceOutgoingCalls,
   createCallHierarchyItemFromSite,
+  createCallItemKey,
 } from '../../src/tools/lsp_call_hierarchy/callHierarchyHelpers.js';
 
 const makeRange = (line: number) => ({
@@ -179,6 +180,35 @@ describe('callHierarchyHelpers - branch coverage', () => {
       expect(result.name).toBe('fetchUser');
     });
 
+    it('should detect method with return type via methodMatch when funcMatch does not match', async () => {
+      // methodMatch pattern: methodName(args): or methodName(args) {
+      // funcMatch has methodName(args) { but not methodName(args): Type {
+      vi.mocked(safeReadFile).mockResolvedValue(
+        'class Service {\n  handleData(id: number): Promise<void> {\n    this.process(id);\n  }\n}'
+      );
+      const site = {
+        filePath: '/test/file.ts',
+        lineNumber: 3,
+        column: 4,
+        lineContent: '    this.process(id);',
+      };
+      const result = await createCallHierarchyItemFromSite(site, 1);
+      expect(result.name).toBe('handleData');
+    });
+
+    it('should use default values when safeReadFile throws', async () => {
+      vi.mocked(safeReadFile).mockRejectedValue(new Error('File read failed'));
+      const site = {
+        filePath: '/test/file.ts',
+        lineNumber: 1,
+        column: 0,
+        lineContent: 'someLine();',
+      };
+      const result = await createCallHierarchyItemFromSite(site, 1);
+      expect(result.name).toBe('unknown');
+      expect(result.content).toBe('someLine();');
+    });
+
     it('should return "unknown" when no function pattern matches', async () => {
       vi.mocked(safeReadFile).mockResolvedValue(
         '// just a comment\n// another comment\ncallSomething();\n'
@@ -204,6 +234,35 @@ describe('callHierarchyHelpers - branch coverage', () => {
       const result = await createCallHierarchyItemFromSite(site, 1);
       expect(result.name).toBe('unknown');
       expect(result.content).toBe('someLine();');
+    });
+
+    it('should skip lines with continue when line is empty in function search loop', async () => {
+      vi.mocked(safeReadFile).mockResolvedValue(
+        'function foo() {\n\n  bar();\n}'
+      );
+      const site = {
+        filePath: '/test/file.ts',
+        lineNumber: 3,
+        column: 2,
+        lineContent: '  bar();',
+      };
+      const result = await createCallHierarchyItemFromSite(site, 1);
+      expect(result.name).toBe('foo');
+    });
+  });
+
+  describe('createCallItemKey', () => {
+    it('should create unique key from uri, line, and name', () => {
+      const item = {
+        name: 'myFunc',
+        kind: 'function' as const,
+        uri: '/path/to/file.ts',
+        range: {
+          start: { line: 10, character: 0 },
+          end: { line: 10, character: 6 },
+        },
+      };
+      expect(createCallItemKey(item)).toBe('/path/to/file.ts:10:myFunc');
     });
   });
 });

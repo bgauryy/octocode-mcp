@@ -11,6 +11,7 @@ import {
   getGitHubToken,
   arePromptsEnabled,
   isCloneEnabled,
+  getActiveProvider,
 } from './serverConfig.js';
 import {
   initializeProviders,
@@ -183,6 +184,7 @@ async function createServer(content: CompleteMetadata): Promise<McpServer> {
   }
 
   const genericHints = [
+    'Every query must include a unique id; match responses via results[].id',
     "Follow 'mainResearchGoal', 'researchGoal', 'reasoning', 'hints' to navigate research",
     'Do findings answer your question? If partial, identify gaps and continue',
     'Got 3+ examples? Consider stopping to avoid over-research',
@@ -241,9 +243,11 @@ async function startServer() {
 
     // Phase 5: Logger works NOW (transport connected, isConnected() = true)
     logger = createLogger(server, 'server');
+
     await logger.info('Server ready', {
       pid: process.pid,
       sessionId: session.getSessionId(),
+      provider: getActiveProvider(),
     });
 
     // Start periodic cache GC when clone support is enabled

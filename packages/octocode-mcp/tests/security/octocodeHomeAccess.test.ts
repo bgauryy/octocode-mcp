@@ -9,6 +9,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import path from 'path';
+
 import { getConfigSync, getOctocodeDir } from 'octocode-shared';
 import { PathValidator } from '../../src/security/pathValidator.js';
 import { validateExecutionContext } from '../../src/security/executionContextValidator.js';
@@ -125,6 +126,7 @@ describe('octocode home directory access', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: false,
           enableClone: false,
@@ -140,6 +142,7 @@ describe('octocode home directory access', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'defaults',
         configPath: undefined,
       });
@@ -154,6 +157,7 @@ describe('octocode home directory access', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: true,
           enableClone: false,
@@ -169,6 +173,7 @@ describe('octocode home directory access', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'defaults',
         configPath: undefined,
       });
@@ -183,6 +188,7 @@ describe('octocode home directory access', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: false,
           enableClone: true,
@@ -198,6 +204,7 @@ describe('octocode home directory access', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'defaults',
         configPath: undefined,
       });
@@ -212,6 +219,7 @@ describe('octocode home directory access', () => {
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
         gitlab: { host: 'https://gitlab.com' },
+        bitbucket: { host: 'https://api.bitbucket.org/2.0' },
         local: {
           enabled: true,
           enableClone: true,
@@ -227,6 +235,7 @@ describe('octocode home directory access', () => {
         network: { timeout: 30000, maxRetries: 3 },
         telemetry: { logging: true },
         lsp: { configPath: undefined },
+        output: { format: 'yaml' },
         source: 'defaults',
         configPath: undefined,
       });

@@ -261,13 +261,11 @@ describe('GitHub API Utils', () => {
     it('should handle GitHub API rate limit error', async () => {
       const { RequestError } = await import('octokit');
       const rateLimitError = new RequestError('Rate limit exceeded', 403, {
-        // @ts-ignore - Test mock, bypass strict typing
         request: {
           method: 'GET',
           url: 'https://api.github.com/search/code',
           headers: {},
-        } as unknown as Record<string, unknown>,
-        // @ts-ignore - Test mock, bypass strict typing
+        },
         response: {
           headers: {
             'x-ratelimit-remaining': '0',
@@ -276,8 +274,8 @@ describe('GitHub API Utils', () => {
           status: 403,
           url: 'https://api.github.com/search/code',
           data: {},
-        } as unknown as Record<string, unknown>,
-      });
+        },
+      } as never);
 
       mockOctokit.rest.search.code.mockRejectedValue(rateLimitError);
 
@@ -301,13 +299,12 @@ describe('GitHub API Utils', () => {
     it('should handle authentication error', async () => {
       const { RequestError } = await import('octokit');
       const authError = new RequestError('Bad credentials', 401, {
-        // @ts-ignore - Test mock, bypass strict typing
         request: {
           method: 'GET',
           url: 'https://api.github.com/search/code',
           headers: {},
-        } as unknown as Record<string, unknown>,
-      });
+        },
+      } as never);
 
       mockOctokit.rest.search.code.mockRejectedValue(authError);
 
@@ -331,13 +328,12 @@ describe('GitHub API Utils', () => {
     it('should handle validation error', async () => {
       const { RequestError } = await import('octokit');
       const validationError = new RequestError('Validation failed', 422, {
-        // @ts-ignore - Test mock, bypass strict typing
         request: {
           method: 'GET',
           url: 'https://api.github.com/search/code',
           headers: {},
-        } as unknown as Record<string, unknown>,
-      });
+        },
+      } as never);
 
       mockOctokit.rest.search.code.mockRejectedValue(validationError);
 
@@ -730,13 +726,11 @@ describe('GitHub API Utils', () => {
       it('should handle repository search rate limit error', async () => {
         const { RequestError } = await import('octokit');
         const rateLimitError = new RequestError('Rate limit exceeded', 403, {
-          // @ts-ignore - Test mock, bypass strict typing
           request: {
             method: 'GET',
             url: 'https://api.github.com/search/repositories',
             headers: {},
-          } as unknown as Record<string, unknown>,
-          // @ts-ignore - Test mock, bypass strict typing
+          },
           response: {
             headers: {
               'x-ratelimit-remaining': '0',
@@ -745,8 +739,8 @@ describe('GitHub API Utils', () => {
             status: 403,
             url: 'https://api.github.com/search/repositories',
             data: {},
-          } as unknown as Record<string, unknown>,
-        });
+          },
+        } as never);
 
         mockOctokit.rest.search.repos.mockRejectedValue(rateLimitError);
 

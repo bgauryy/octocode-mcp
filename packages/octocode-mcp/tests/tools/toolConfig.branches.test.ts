@@ -8,6 +8,22 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('../../src/tools/toolMetadata/index.js', async importOriginal => {
+  const mod =
+    await importOriginal<
+      typeof import('../../src/tools/toolMetadata/index.js')
+    >();
+  return {
+    ...mod,
+    DESCRIPTIONS: new Proxy(mod.DESCRIPTIONS as Record<string, string>, {
+      get(target, prop: string) {
+        if (prop === '__nonexistent_tool_for_coverage__') return undefined;
+        return Reflect.get(target, prop) ?? '';
+      },
+    }),
+  };
+});
+
 describe('toolConfig branch coverage - getDescription fallback (line 26)', () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -88,6 +104,14 @@ describe('toolConfig branch coverage - getDescription fallback (line 26)', () =>
 
       // Access with undefined-like key
       const result = DESCRIPTIONS[''];
+      expect(result).toBe('');
+    });
+
+    it('getDescription returns empty string for unknown tool (hits ?? fallback)', async () => {
+      const { getDescription } = await import('../../src/tools/toolConfig.js');
+      // DESCRIPTIONS proxy returns '' for unknown keys; getDescription's ?? ''
+      // handles the case when DESCRIPTIONS returns undefined/null
+      const result = getDescription('__nonexistent_tool_for_coverage__');
       expect(result).toBe('');
     });
   });

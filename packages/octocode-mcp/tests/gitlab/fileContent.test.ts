@@ -4,6 +4,8 @@ import type { GitLabFileContent } from '../../src/gitlab/types.js';
 // Mock the gitlab client module
 vi.mock('../../src/gitlab/client.js', () => ({
   getGitlab: vi.fn(),
+  getCachedDefaultBranch: vi.fn(() => undefined),
+  cacheDefaultBranch: vi.fn(),
 }));
 
 // Mock the cache module

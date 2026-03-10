@@ -186,6 +186,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/file.ts',
         '/workspace',
         {
+          id: 'pattern_query_1',
           uri: '/workspace/src/file.ts',
           symbolName: 'nonExistentSymbol',
           lineHint: 1,
@@ -228,6 +229,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/file.ts',
         '/workspace',
         {
+          id: 'pattern_query_2',
           uri: '/workspace/src/file.ts',
           symbolName: 'myFunc',
           lineHint: 5,
@@ -261,6 +263,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/file.ts',
         '/workspace',
         {
+          id: 'pattern_query_3',
           uri: '/workspace/src/file.ts',
           symbolName: 'myFunc',
           lineHint: 5,
@@ -304,6 +307,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/file.ts',
         '/workspace',
         {
+          id: 'pattern_query_4',
           uri: '/workspace/src/file.ts',
           symbolName: 'myFunc',
           lineHint: 1,
@@ -338,6 +342,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/file.ts',
         '/workspace',
         {
+          id: 'pattern_query_5',
           uri: '/workspace/src/file.ts',
           symbolName: 'myFunc',
           lineHint: 1,
@@ -376,6 +381,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/source.ts',
         '/workspace',
         {
+          id: 'pattern_query_6',
           uri: '/workspace/src/source.ts',
           symbolName: 'myFunc',
           lineHint: 1,
@@ -414,6 +420,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/file.ts',
         '/workspace',
         {
+          id: 'pattern_query_7',
           uri: '/workspace/src/file.ts',
           symbolName: 'myFunc',
           lineHint: 3,
@@ -450,6 +457,7 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
         '/workspace/src/file.ts',
         '/workspace',
         {
+          id: 'pattern_query_8',
           uri: '/workspace/src/file.ts',
           symbolName: 'myFunc',
           lineHint: 3,
@@ -465,6 +473,178 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
 
       expect(result.status).toBe('hasResults');
       expect(result.locations![0]!.content).toBe('const x = myFunc();');
+    });
+
+    it('should fallback to grep when ripgrep fails with non-1 exit code and skip malformed grep lines', async () => {
+      let spawnCallCount = 0;
+      mockStdoutOn.mockImplementation(
+        (event: string, cb: (data: Buffer) => void) => {
+          if (event === 'data' && spawnCallCount > 0) {
+            // Grep output: valid line + malformed lines (no second colon, no colon)
+            cb(
+              Buffer.from(
+                [
+                  '/workspace/src/valid.ts:5:const x = myFunc();',
+                  'malformed-no-colon',
+                  'path:onlyonecolon',
+                ].join('\n')
+              )
+            );
+          }
+        }
+      );
+      mockSpawnOn.mockImplementation(
+        (event: string, cb: (code: number) => void) => {
+          if (event === 'close') {
+            spawnCallCount++;
+            setTimeout(() => cb(spawnCallCount === 1 ? 2 : 0), 0);
+          }
+        }
+      );
+
+      const result = await findReferencesWithPatternMatching(
+        '/workspace/src/file.ts',
+        '/workspace',
+        {
+          id: 'pattern_query_grep',
+          uri: '/workspace/src/file.ts',
+          symbolName: 'myFunc',
+          lineHint: 5,
+          includeDeclaration: true,
+          contextLines: 0,
+          orderHint: 0,
+          page: 1,
+          referencesPerPage: 20,
+          researchGoal: 'test',
+          reasoning: 'test',
+        }
+      );
+
+      expect(result.status).toBe('hasResults');
+      expect(result.locations!.length).toBe(1);
+      expect(result.locations![0]!.uri).toContain('valid');
+    });
+
+    it('should return empty when both ripgrep and grep fail (grep catch block)', async () => {
+      let spawnCallCount = 0;
+      mockSpawnOn.mockImplementation(
+        (event: string, cb: (code: number) => void) => {
+          if (event === 'close') {
+            spawnCallCount++;
+            setTimeout(() => cb(2), 0);
+          }
+        }
+      );
+      mockStdoutOn.mockImplementation(() => {});
+
+      const result = await findReferencesWithPatternMatching(
+        '/workspace/src/file.ts',
+        '/workspace',
+        {
+          id: 'pattern_query_both_fail',
+          uri: '/workspace/src/file.ts',
+          symbolName: 'myFunc',
+          lineHint: 5,
+          includeDeclaration: true,
+          contextLines: 0,
+          orderHint: 0,
+          page: 1,
+          referencesPerPage: 20,
+          researchGoal: 'test',
+          reasoning: 'test',
+        }
+      );
+
+      expect(result.status).toBe('empty');
+      expect(result.locations ?? []).toEqual([]);
+    });
+
+    it('should use includePattern and excludePattern in search (buildRipgrepSearchArgs)', async () => {
+      const rgOutput = JSON.stringify({
+        type: 'match',
+        data: {
+          path: { text: '/workspace/src/included.ts' },
+          line_number: 1,
+          lines: { text: 'myFunc();\n' },
+        },
+      });
+      setupSpawnSuccess(rgOutput);
+
+      const result = await findReferencesWithPatternMatching(
+        '/workspace/src/file.ts',
+        '/workspace',
+        {
+          id: 'pattern_query_glob',
+          uri: '/workspace/src/file.ts',
+          symbolName: 'myFunc',
+          lineHint: 1,
+          includePattern: ['**/*.ts'],
+          excludePattern: ['**/node_modules/**'],
+          includeDeclaration: true,
+          contextLines: 0,
+          orderHint: 0,
+          page: 1,
+          referencesPerPage: 20,
+          researchGoal: 'test',
+          reasoning: 'test',
+        }
+      );
+
+      expect(result.status).toBe('hasResults');
+    });
+
+    it('should sort refs: definition first, then by uri (sort comparisons)', async () => {
+      const rgOutput = [
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/workspace/src/b.ts' },
+            line_number: 1,
+            lines: { text: 'myFunc();\n' },
+          },
+        }),
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/workspace/src/file.ts' },
+            line_number: 5,
+            lines: { text: 'export function myFunc() {}\n' },
+          },
+        }),
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/workspace/src/a.ts' },
+            line_number: 1,
+            lines: { text: 'myFunc();\n' },
+          },
+        }),
+      ].join('\n');
+      setupSpawnSuccess(rgOutput);
+
+      const result = await findReferencesWithPatternMatching(
+        '/workspace/src/file.ts',
+        '/workspace',
+        {
+          id: 'pattern_query_sort',
+          uri: '/workspace/src/file.ts',
+          symbolName: 'myFunc',
+          lineHint: 5,
+          includeDeclaration: true,
+          contextLines: 0,
+          orderHint: 0,
+          page: 1,
+          referencesPerPage: 20,
+          researchGoal: 'test',
+          reasoning: 'test',
+        }
+      );
+
+      expect(result.status).toBe('hasResults');
+      expect(result.locations!.length).toBe(3);
+      expect(result.locations![0]!.isDefinition).toBe(true);
+      expect(result.locations![1]!.uri).toBeDefined();
+      expect(result.locations![2]!.uri).toBeDefined();
     });
   });
 

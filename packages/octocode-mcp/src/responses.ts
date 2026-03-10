@@ -2,11 +2,20 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { maskSensitiveData } from './security/mask.js';
 import { ContentSanitizer } from './security/contentSanitizer.js';
 import { jsonToYamlString } from './utils/minifier/index.js';
-import type { ToolResponse } from './types.js';
+import { getConfigSync } from 'octocode-shared';
+import type { BulkToolResponse, StructuredToolResponse } from './types.js';
 import type {
   RoleContentBlock,
   RoleBasedResultOptions,
 } from './types/responseTypes.js';
+
+function getOutputFormat(): 'yaml' | 'json' {
+  try {
+    return getConfigSync().output.format;
+  } catch {
+    return 'yaml';
+  }
+}
 export { StatusEmojis } from './types/responseTypes.js';
 export type {
   ContentRole,
@@ -31,7 +40,7 @@ export function createResult(options: {
     };
   }
   const { data, instructions, isError } = options;
-  const response: ToolResponse = {
+  const response: StructuredToolResponse = {
     data,
     instructions,
   };
@@ -117,15 +126,15 @@ export const ContentBuilder = {
    * Data content: Serialized data block
    * Low priority (0.3) - detailed data for agent reference
    */
-  data(data: unknown, format: 'yaml' | 'json' = 'yaml'): RoleContentBlock {
+  data(data: unknown, format?: 'yaml' | 'json'): RoleContentBlock {
+    const resolvedFormat = format ?? getOutputFormat();
     let text: string;
     try {
       text =
-        format === 'yaml'
+        resolvedFormat === 'yaml'
           ? jsonToYamlString(cleanJsonObject(data))
-          : JSON.stringify(data, null, 2);
+          : JSON.stringify(cleanJsonObject(data), null, 2);
     } catch {
-      // Fallback for circular references or other serialization errors
       text = 'error: "Data serialization failed"\n';
     }
     return {
@@ -217,11 +226,10 @@ export function createRoleBasedResult(
   content.push(ContentBuilder.assistant(assistant.summary));
 
   if (assistant.details) {
-    // Only yaml and json are supported for data serialization
     const dataFormat =
       assistant.format === 'json' || assistant.format === 'yaml'
         ? assistant.format
-        : 'yaml';
+        : undefined;
     content.push(ContentBuilder.data(assistant.details, dataFormat));
   }
 
@@ -347,26 +355,49 @@ function sanitizeText(text: string): string {
 }
 
 export function createResponseFormat(
-  responseData: ToolResponse,
+  responseData: StructuredToolResponse | BulkToolResponse,
   keysPriority?: string[]
 ): string {
-  const cleanedData = cleanJsonObject(responseData) as ToolResponse;
-  const yamlData = jsonToYamlString(cleanedData, {
-    keysPriority: keysPriority || [
-      'instructions',
-      'results',
-      'hasResultsStatusHints',
-      'emptyStatusHints',
-      'errorStatusHints',
-      'mainResearchGoal',
-      'researchGoal',
-      'reasoning',
-      'status',
-      'data',
-    ],
-  });
-  const sanitizationResult = ContentSanitizer.sanitizeContent(yamlData);
+  const cleanedData = (cleanJsonObject(responseData) ?? {}) as
+    | StructuredToolResponse
+    | BulkToolResponse;
+  const outputFormat = getOutputFormat();
+  const defaultPriority =
+    'results' in cleanedData
+      ? ['results', 'id', 'status', 'data']
+      : ['instructions', 'status', 'data'];
+
+  let serialized: string;
+  if (outputFormat === 'json') {
+    const priority = keysPriority || defaultPriority;
+    serialized = JSON.stringify(sortObjectKeys(cleanedData, priority), null, 2);
+  } else {
+    serialized = jsonToYamlString(cleanedData, {
+      keysPriority: keysPriority || defaultPriority,
+    });
+  }
+
+  const sanitizationResult = ContentSanitizer.sanitizeContent(serialized);
   return maskSensitiveData(sanitizationResult.content);
+}
+
+function sortObjectKeys(obj: unknown, priority: string[]): unknown {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj))
+    return obj.map(item => sortObjectKeys(item, priority));
+  if (typeof obj !== 'object') return obj;
+
+  const record = obj as Record<string, unknown>;
+  const sorted: Record<string, unknown> = {};
+
+  for (const key of priority) {
+    if (key in record) sorted[key] = sortObjectKeys(record[key], priority);
+  }
+  for (const key of Object.keys(record)) {
+    if (!(key in sorted)) sorted[key] = sortObjectKeys(record[key], priority);
+  }
+
+  return sorted;
 }
 
 function cleanJsonObject(
@@ -393,6 +424,17 @@ function cleanJsonObject(
     let hasValidProperties = false;
 
     for (const [key, value] of Object.entries(obj)) {
+      if (
+        key === 'results' &&
+        depth === 0 &&
+        Array.isArray(value) &&
+        value.length === 0
+      ) {
+        cleaned[key] = [];
+        hasValidProperties = true;
+        continue;
+      }
+
       const enteringFilesObject =
         (key === 'files' || key === 'repositories') && !inFilesObject;
       const cleanedValue = cleanJsonObject(value, {

@@ -272,6 +272,17 @@ describe('toolMetadata/proxies', () => {
       expect(keys).toContain('base');
       expect(keys).toContain('githubSearchCode');
     });
+
+    it('should support Object.keys when metadata is null (ownKeys)', async () => {
+      const { _resetMetadataState } =
+        await import('../../../src/tools/toolMetadata/state.js');
+      const { TOOL_HINTS } =
+        await import('../../../src/tools/toolMetadata/proxies.js');
+      _resetMetadataState();
+
+      const keys = Object.keys(TOOL_HINTS);
+      expect(keys).toContain('base');
+    });
   });
 
   describe('isToolInMetadata', () => {

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { GitHubPullRequestSearchQuerySchema } from '../../src/tools/github_search_pull_requests/scheme.js';
 
 const BASE_RESEARCH_FIELDS = {
+  id: 'test:pr-search',
   mainResearchGoal: 'Test goal',
   researchGoal: 'Test research',
   reasoning: 'Test reasoning',

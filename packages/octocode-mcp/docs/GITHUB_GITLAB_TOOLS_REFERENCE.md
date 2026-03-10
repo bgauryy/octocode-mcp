@@ -1,6 +1,6 @@
-# GitHub & GitLab Tools Reference
+# GitHub, GitLab & Bitbucket Tools Reference
 
-> Complete reference for Octocode MCP code host tools - External research, code search, repository exploration, and package discovery across **GitHub and GitLab**.
+> Complete reference for Octocode MCP code host tools - External research, code search, repository exploration, and package discovery across **GitHub, GitLab, and Bitbucket**.
 
 ---
 
@@ -24,13 +24,22 @@
 | `GL_TOKEN` | GitLab token (fallback) |
 | `GITLAB_HOST` | GitLab instance URL (default: `https://gitlab.com`) |
 
-**Auto-detection:** If `GITLAB_TOKEN` is set, GitLab becomes the active provider. Otherwise GitHub is the default.
+### Bitbucket
+
+| Variable | Description |
+|----------|-------------|
+| `BITBUCKET_TOKEN` | Bitbucket app password or OAuth token |
+| `BB_TOKEN` | Bitbucket token (fallback) |
+| `BITBUCKET_USERNAME` | Bitbucket username (enables Basic auth; omit for Bearer) |
+| `BITBUCKET_HOST` | Bitbucket API endpoint (default: `https://api.bitbucket.org/2.0`) |
+
+**Auto-detection:** Provider priority is **GitLab → Bitbucket → GitHub**. If `GITLAB_TOKEN` is set, GitLab is active. If `BITBUCKET_TOKEN` is set (and no GitLab token), Bitbucket is active. Otherwise GitHub is the default.
 
 ---
 
 ## Overview
 
-Octocode MCP provides **7 tools** for external code research that work with **GitHub** (and most with **GitLab**):
+Octocode MCP provides **7 tools** for external code research that work with **GitHub** (and most with **GitLab** and **Bitbucket**):
 
 | Category | Tools | Purpose |
 |----------|-------|---------|
@@ -42,10 +51,11 @@ Octocode MCP provides **7 tools** for external code research that work with **Gi
 
 The active provider is determined by the **server configuration** (environment variables), not per tool call.
 
-- **GitHub** (Default): Active when `GITHUB_TOKEN` is set.
-- **GitLab**: Active when `GITLAB_TOKEN` is set (overrides GitHub).
+- **GitHub** (Default): Active when `GITHUB_TOKEN` is set and no GitLab/Bitbucket tokens exist.
+- **GitLab**: Active when `GITLAB_TOKEN` is set (highest priority).
+- **Bitbucket**: Active when `BITBUCKET_TOKEN` is set and no GitLab token exists.
 
-**To switch providers:** You must change the environment variables of the MCP server.
+**Priority:** GitLab → Bitbucket → GitHub. **To switch providers:** Change the environment variables of the MCP server.
 
 ### Research Context (All Tools)
 
@@ -65,19 +75,25 @@ These fields are required on **every query** for all GitHub/GitLab and package t
 
 Tools use unified parameters that map to provider-specific concepts:
 
-| Parameter | GitHub | GitLab |
-|-----------|--------|--------|
-| `owner` | Organization / User | Group / Namespace |
-| `repo` | Repository | Project Name |
-| `owner` + `repo` | `owner/repo` | `group/project` (Project ID) |
-| `branch` | Branch Name | Ref (Branch/Tag) |
-| `prNumber` | Pull Request # | Merge Request IID |
+| Parameter | GitHub | GitLab | Bitbucket |
+|-----------|--------|--------|-----------|
+| `owner` | Organization / User | Group / Namespace | Workspace |
+| `repo` | Repository | Project Name | Repository Slug |
+| `owner` + `repo` | `owner/repo` | `group/project` (Project ID) | `workspace/repo_slug` |
+| `branch` | Branch Name | Ref (Branch/Tag) | Branch Name |
+| `prNumber` | Pull Request # | Merge Request IID | Pull Request ID |
 
 ### GitLab-Specific Notes
 
 1.  **Scope is Required**: You must provide `owner` and `repo` to target a specific project (e.g., `owner="my-group"`, `repo="my-project"`).
-2.  **`branch` is Required**: GitLab requires a ref for file content retrieval (unlike GitHub which auto-detects default branch).
+2.  **`branch` is Recommended**: While `branch` is auto-detected for both providers, providing it explicitly is recommended for GitLab to avoid extra API calls.
 3.  **Global Search**: GitLab global code search requires authentication and potentially Enterprise/Premium features. Scope to a project for best results.
+
+### Bitbucket-Specific Notes
+
+1.  **Workspace Scope**: Code search is scoped to a Bitbucket workspace. Always provide `owner` (workspace). You can optionally add `repo` to narrow to a specific repository.
+2.  **No Star Counts**: Bitbucket does not expose star/watch counts. Repository search results will show `stars: 0`.
+3.  **PR States**: Bitbucket uses `OPEN`, `DECLINED`, `MERGED` — these are mapped automatically from the unified `open`/`closed`/`merged` states.
 
 ---
 
@@ -294,8 +310,8 @@ Tools for reading file content and browsing repository structure.
 
 | Feature | GitHub | GitLab |
 |---------|--------|--------|
-| **Branch** | Optional (auto-detects default) | **Required** (`branch` param) |
-| **Identifier** | `owner` + `repo` + `path` | `owner` + `repo` + `path` + `branch` |
+| **Branch** | Optional (auto-detects default) | Optional (auto-detects default) |
+| **Identifier** | `owner` + `repo` + `path` | `owner` + `repo` + `path` |
 | **Directory fetch** | ✅ Supported (`type: "directory"`) | ❌ Not supported (GitHub only) |
 | **Clone to disk** | ✅ `githubCloneRepo` | ❌ Not supported (GitHub only) |
 
@@ -303,7 +319,7 @@ Tools for reading file content and browsing repository structure.
 - `owner` (required): User or organization / GitLab Group
 - `repo` (required): Repository name / GitLab Project
 - `path` (required): File path or directory path in repository
-- `branch`: Branch name (**required for GitLab**, optional for GitHub)
+- `branch`: Branch name (optional — auto-detects default branch for both providers)
 - `type`: `"file"` (default) or `"directory"` — controls fetch mode
 - `fullContent`: Read entire file (use sparingly, file mode only)
 - `startLine`/`endLine`: Line range (1-indexed, file mode only)
@@ -352,7 +368,7 @@ owner="facebook", repo="react", path="packages/react/src",
 type="directory", branch="main"
 # Returns localPath — use with localSearchCode, localGetFileContent, etc.
 
-# GitLab: Read file (branch required!)
+# GitLab: Read file (branch recommended)
 owner="group", repo="project", path="src/main.ts",
 branch="main", matchString="export class"
 
@@ -390,7 +406,7 @@ path="package.json", fullContent=true, owner="org", repo="repo"
 **Key parameters:**
 - `owner` (required): User or organization / GitLab Group
 - `repo` (required): Repository name / GitLab Project
-- `branch` (required): Branch name (required for both GitHub and GitLab)
+- `branch`: Branch name (optional — auto-detects default branch for both providers)
 - `path`: Starting path (default: root `""`)
 - `depth`: Traversal depth (1-2, default: 1)
 - `entriesPerPage`: Entries per page (default: 50, max: 200)
@@ -430,7 +446,7 @@ owner="group", repo="project", branch="develop", path="src/api"
 
 **What it does:** Clone or partially fetch a GitHub repository to the local filesystem for deep analysis with local and LSP tools.
 
-> **GitHub only** — not available with GitLab. Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
+> **GitHub only** — not available with GitLab or Bitbucket. Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
 
 | Feature | Description |
 |---------|-------------|
@@ -487,7 +503,7 @@ owner="microsoft", repo="TypeScript", sparse_path="src/compiler"
 **Response format:** Returns `owner`, `repo`, `branch`, `localPath`, and optionally `sparse_path`. Internal fields like `cached` and `expiresAt` are not included in the response.
 
 **⚠️ Gotchas:**
-- **GitHub only** — returns an error if GitLab is the active provider
+- **GitHub only** — returns an error if GitLab or Bitbucket is the active provider
 - Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true` (both must be enabled)
 - Clone timeout: **2 minutes** for full clone, **30 seconds** for sparse checkout
 - Use `sparse_path` for large monorepos to avoid downloading unnecessary files
@@ -740,11 +756,13 @@ GitLab requires project scope for code search.
 
 ```
 ❌ WRONG (GitLab): githubCloneRepo(owner="g", repo="p")
+❌ WRONG (Bitbucket): githubCloneRepo(owner="ws", repo="r")
 ❌ WRONG (GitLab): githubGetFileContent(type="directory", owner="g", repo="p", path="src")
 ✅ RIGHT (GitLab): githubGetFileContent(type="file", owner="g", repo="p", path="src/main.ts", branch="main")
+✅ RIGHT (Bitbucket): githubGetFileContent(type="file", owner="ws", repo="r", path="src/main.ts")
 ```
 
-`githubCloneRepo` and `githubGetFileContent` directory mode use GitHub-specific APIs (Contents API, git clone). These features are not available when GitLab is the active provider. Use file mode for GitLab content retrieval.
+`githubCloneRepo` and `githubGetFileContent` directory mode use GitHub-specific APIs (Contents API, git clone). These features are not available when GitLab or Bitbucket is the active provider. Use file mode for GitLab/Bitbucket content retrieval.
 
 ---
 
@@ -776,7 +794,7 @@ All GitHub/GitLab tool responses are optimized for LLM token efficiency:
 | GitLab code search without scope | API error | Specify `owner` and `repo` |
 | Cloning repo just to read one file | Slow, wastes disk | Use `githubGetFileContent` instead |
 | Cloning without `sparse_path` on monorepo | Downloads everything | Set `sparse_path` to the dir you need |
-| Using clone/directory fetch with GitLab | Not supported, errors | Use `githubGetFileContent` file mode for GitLab |
+| Using clone/directory fetch with GitLab/Bitbucket | Not supported, errors | Use `githubGetFileContent` file mode for GitLab/Bitbucket |
 
 ---
 

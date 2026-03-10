@@ -4,6 +4,7 @@ import { GitHubReposSearchQuerySchema } from '../../src/tools/github_search_repo
 describe('GitHubReposSearchQuerySchema', () => {
   // Helper to add required base research fields
   const withBaseFields = <T extends object>(query: T) => ({
+    id: 'github_repos_schema_query',
     ...query,
     mainResearchGoal: 'Test research goal',
     researchGoal: 'Testing schema validation',
@@ -281,14 +282,17 @@ describe('GitHubReposSearchQuerySchema', () => {
       const validQueries = {
         queries: [
           withBaseFields({
+            id: 'bulk_keywords_owner',
             keywordsToSearch: ['react'],
             owner: 'facebook',
           }),
           withBaseFields({
+            id: 'bulk_topics_stars',
             topicsToSearch: ['typescript', 'nodejs'],
             stars: '>500',
           }),
           withBaseFields({
+            id: 'bulk_keywords_topics',
             keywordsToSearch: ['api'],
             topicsToSearch: ['rest'],
             sort: 'stars',
@@ -307,9 +311,11 @@ describe('GitHubReposSearchQuerySchema', () => {
       const mixedQueries = {
         queries: [
           withBaseFields({
+            id: 'mixed_keywords_query',
             keywordsToSearch: ['valid'],
           }),
           withBaseFields({
+            id: 'mixed_owner_query',
             owner: 'facebook',
           }),
         ],

@@ -1,4 +1,4 @@
-import { allRegexPatterns } from './regexes.js';
+import { allRegexPatterns } from './regexes/index.js';
 import type { SensitiveDataPattern } from '../types.js';
 
 interface Match {

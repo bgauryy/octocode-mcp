@@ -22,6 +22,7 @@ const NODE_MODULES_PATH = path.resolve(process.cwd(), 'node_modules');
 const runRipgrep = (query: Record<string, unknown>) =>
   searchContentRipgrep(
     RipgrepQuerySchema.parse({
+      id: 'test:ripgrep-integration',
       researchGoal: 'Test',
       reasoning: 'Integration test',
       ...query,
@@ -257,8 +258,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
 
       // Don't fail if no file found - subsequent tests will skip
       if (!testFile) {
-        // eslint-disable-next-line no-console
-        console.warn('Could not find a test file for fetch_content tests');
+        // Skip fetch_content tests when no suitable file found
       }
     });
 

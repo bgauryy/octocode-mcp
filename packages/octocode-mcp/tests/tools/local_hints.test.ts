@@ -308,12 +308,28 @@ describe('Local Tools Hints', () => {
         expect(hints?.filter(Boolean).length).toBe(0);
       });
 
+      it('should return manyResults hints when fileCount > 20 (lines 25-28)', () => {
+        const hints = HINTS[STATIC_TOOL_NAMES.LOCAL_FIND_FILES]?.hasResults({
+          fileCount: 25,
+        });
+
+        expect(hints?.filter(Boolean).length).toBeGreaterThan(0);
+      });
+
       it('should return empty when fileCount <= 3', () => {
         const hints = HINTS[STATIC_TOOL_NAMES.LOCAL_FIND_FILES]?.hasResults({
           fileCount: 2,
         });
 
         expect(hints?.filter(Boolean).length).toBe(0);
+      });
+
+      it('should return configFiles hints when hasConfigFiles is true (line 20)', () => {
+        const hints = HINTS[STATIC_TOOL_NAMES.LOCAL_FIND_FILES]?.hasResults({
+          hasConfigFiles: true,
+        });
+
+        expect(hints?.filter(Boolean).length).toBeGreaterThan(0);
       });
     });
 

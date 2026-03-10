@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createResult } from '../../src/responses';
+import { createResult, createResponseFormat } from '../../src/responses';
 import { jsonToYamlString } from '../../src/utils/minifier/index.js';
 import { getTextContent } from './testHelpers.js';
 
@@ -225,6 +225,30 @@ describe('Response Utilities', () => {
       // Empty hints array is removed
       const expectedYaml = `data:\n  level1:\n    level2:\n      level3:\n        valid: "keep"\n`;
       expect(yaml).toEqual(expectedYaml);
+    });
+  });
+
+  describe('createResponseFormat', () => {
+    it('should prioritize live bulk fields ahead of legacy status-hint fields by default', () => {
+      const serialized = createResponseFormat({
+        status: 'hasResults',
+        data: { value: 1 },
+        hasResultsStatusHints: ['legacy'],
+        emptyStatusHints: ['legacy-empty'],
+        errorStatusHints: ['legacy-error'],
+      } as unknown as Parameters<typeof createResponseFormat>[0]);
+
+      expect(serialized.indexOf('status:')).toBeGreaterThanOrEqual(0);
+      expect(serialized.indexOf('data:')).toBeGreaterThanOrEqual(0);
+      expect(serialized.indexOf('hasResultsStatusHints:')).toBeGreaterThan(
+        serialized.indexOf('data:')
+      );
+      expect(serialized.indexOf('emptyStatusHints:')).toBeGreaterThan(
+        serialized.indexOf('data:')
+      );
+      expect(serialized.indexOf('errorStatusHints:')).toBeGreaterThan(
+        serialized.indexOf('data:')
+      );
     });
   });
 

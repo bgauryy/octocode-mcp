@@ -10,10 +10,10 @@ beforeAll(async () => {
   await initializeToolMetadata();
 });
 
-describe('Bulk Instructions Generation', () => {
+describe('Bulk Response Envelope', () => {
   const toolName = TOOL_NAMES.GITHUB_SEARCH_CODE;
 
-  it('should generate optimized concise instructions', async () => {
+  it('should return only results without a bulk instructions field', async () => {
     const queries = [{ id: 'q1' }];
     const processor = vi.fn().mockResolvedValue({
       status: 'hasResults' as const,
@@ -23,12 +23,13 @@ describe('Bulk Instructions Generation', () => {
     const result = await executeBulkOperation(queries, processor, { toolName });
     const text = getTextContent(result.content);
 
-    // Optimized: Short instruction format
-    expect(text).toContain('1 result.');
+    expect(text).toContain('results:');
+    expect(text).toContain('id: "q1"');
+    expect(text).not.toContain('instructions:');
     expect(text).not.toContain('original query');
   });
 
-  it('should include correct counts for all statuses', async () => {
+  it('should keep ids stable across mixed statuses', async () => {
     const queries = [
       { id: 'q1', type: 'hasResults' },
       { id: 'q2', type: 'empty' },
@@ -49,8 +50,10 @@ describe('Bulk Instructions Generation', () => {
     const result = await executeBulkOperation(queries, processor, { toolName });
     const text = getTextContent(result.content);
 
-    // Optimized format
-    expect(text).toContain('3 results: 1 data, 1 empty, 1 error.');
+    expect(text).toContain('id: "q1"');
+    expect(text).toContain('id: "q2"');
+    expect(text).toContain('id: "q3"');
+    expect(text).not.toContain('instructions:');
   });
 
   it('should include hints inside each result for present statuses with custom hints', async () => {

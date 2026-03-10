@@ -49,6 +49,38 @@ describe('toolMetadata/state', () => {
     vi.clearAllMocks();
   });
 
+  describe('getMetadata - cache and concurrent reuse', () => {
+    it('should return from metadataCache on second call (line 55)', async () => {
+      const { getMetadata, _resetMetadataState } =
+        await import('../../../src/tools/toolMetadata/state.js');
+      _resetMetadataState();
+      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
+
+      const result1 = await getMetadata();
+      const result2 = await getMetadata();
+
+      expect(result1).toBe(result2);
+      expect(mockFetchWithRetries).toHaveBeenCalledTimes(1);
+    });
+
+    it('should reuse metadataPromise on concurrent calls (line 59)', async () => {
+      const { getMetadata, _resetMetadataState } =
+        await import('../../../src/tools/toolMetadata/state.js');
+      _resetMetadataState();
+      mockFetchWithRetries.mockResolvedValue(mockMetadata);
+
+      const [result1, result2, result3] = await Promise.all([
+        getMetadata(),
+        getMetadata(),
+        getMetadata(),
+      ]);
+
+      expect(result1).toBe(result2);
+      expect(result2).toBe(result3);
+      expect(mockFetchWithRetries).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('initializeToolMetadata', () => {
     it('should initialize metadata from API', async () => {
       const { initializeToolMetadata, _resetMetadataState } =

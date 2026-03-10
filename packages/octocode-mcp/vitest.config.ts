@@ -17,17 +17,7 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       include: ['src/**/*.ts'],
-      exclude: [
-        'src/**/*.test.ts',
-        'src/**/*.spec.ts',
-        'src/index.ts', // Main entry point with process handlers - hard to test
-        'src/types.ts', // Type definitions only
-        'src/**/*.d.ts', // Type definition files
-        'src/**/index.ts', // Barrel exports
-        'src/**/types.ts', // Type-only files
-        'src/public.ts', // Public API exports
-        'src/types/**/*.ts', // Type definition folder
-      ],
+      exclude: ['src/**/*.test.ts', 'src/**/*.spec.ts'],
       thresholds: {
         statements: 90,
         branches: 90,

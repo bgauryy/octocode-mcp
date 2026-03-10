@@ -4,7 +4,11 @@ import type { FileContentQuery } from './types.js';
 import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
-import { handleCatchError, createSuccessResult } from '../utils.js';
+import {
+  handleCatchError,
+  handleProviderError,
+  createSuccessResult,
+} from '../utils.js';
 import { getProvider } from '../../providers/factory.js';
 import {
   getActiveProvider,
@@ -35,10 +39,7 @@ const DIRECTORY_CACHE_HIT_HINT =
 // ─────────────────────────────────────────────────────────────────────
 
 const DIRECTORY_KEYS_PRIORITY = [
-  'owner',
-  'repo',
-  'directoryPath',
-  'branch',
+  'resolvedBranch',
   'localPath',
   'fileCount',
   'totalSize',
@@ -53,11 +54,8 @@ const DIRECTORY_KEYS_PRIORITY = [
 // ─────────────────────────────────────────────────────────────────────
 
 const FILE_KEYS_PRIORITY = [
-  'owner',
-  'repo',
-  'path',
-  'branch',
   'content',
+  'resolvedBranch',
   'pagination',
   'isPartial',
   'startLine',
@@ -134,7 +132,7 @@ async function handleDirectoryFetch(
     return handleCatchError(
       new Error(
         'Directory fetch (type: "directory") is only available with the GitHub provider. ' +
-          'GitLab does not support directory fetch yet. Use file mode (type: "file") instead.'
+          'Use file mode (type: "file") instead.'
       ),
       query,
       'Provider not supported',
@@ -157,14 +155,14 @@ async function handleDirectoryFetch(
   );
 
   const resultData: Record<string, unknown> = {
-    owner: result.owner,
-    repo: result.repo,
-    directoryPath: result.directoryPath,
-    branch: result.branch,
     localPath: result.localPath,
     fileCount: result.fileCount,
     totalSize: result.totalSize,
     files: result.files,
+    ...(result.cached ? { cached: true } : {}),
+    ...(query.branch !== result.branch
+      ? { resolvedBranch: result.branch }
+      : {}),
   };
 
   const hints = [...DIRECTORY_FETCH_HINTS];
@@ -222,18 +220,11 @@ async function handleFileFetch(
   const apiResult = await provider.getFileContent(providerQuery);
 
   if (!isProviderSuccess(apiResult)) {
-    return handleCatchError(
-      new Error(apiResult.error || 'Provider error'),
-      query
-    );
+    return handleProviderError(apiResult, query);
   }
 
   // Transform provider response to tool result format
   const resultData: Record<string, unknown> = {
-    owner: query.owner,
-    repo: query.repo,
-    path: apiResult.data.path,
-    branch: apiResult.data.ref,
     content: apiResult.data.content,
     ...(apiResult.data.isPartial && {
       isPartial: apiResult.data.isPartial,
@@ -251,6 +242,9 @@ async function handleFileFetch(
     ...(apiResult.data.pagination && {
       pagination: apiResult.data.pagination,
     }),
+    ...(apiResult.data.ref && query.branch !== apiResult.data.ref
+      ? { resolvedBranch: apiResult.data.ref }
+      : {}),
   };
 
   const hasContent = Boolean(

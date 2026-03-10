@@ -16,7 +16,6 @@ import {
   runSingleEval,
   compareResults,
   generateReport,
-  formatResultsTable,
   createDefaultConfig,
 } from './utils/eval-runner.js';
 import {
@@ -30,7 +29,6 @@ import type {
   ToolResponse,
 } from './scorers/types.js';
 
-/* eslint-disable no-console */
 const ENABLE_LLM_JUDGE = process.env.OPENAI_API_KEY !== undefined;
 const SAVE_BASELINE = process.env.SAVE_BASELINE === 'true';
 const COMPARE_BASELINE = process.env.COMPARE_BASELINE === 'true';
@@ -45,37 +43,19 @@ describe('Octocode Eval Suite', () => {
     scorers = createDefaultScorers();
 
     if (!ENABLE_LLM_JUDGE) {
-      console.warn('OPENAI_API_KEY not set - LLM judge scorer will return 0');
+      // LLM judge scorer will return 0 when OPENAI_API_KEY not set
     }
   });
 
   afterAll(async () => {
     if (results.length > 0) {
-      console.log('\n' + formatResultsTable(results));
-
       if (SAVE_BASELINE) {
-        const path = await saveBaseline(
-          'octocode-eval',
-          results,
-          'Automated eval run'
-        );
-        console.log(`\nBaseline saved to: ${path}`);
+        await saveBaseline('octocode-eval', results, 'Automated eval run');
       }
 
       if (COMPARE_BASELINE) {
-        const baseline = await loadLatestBaseline('octocode-eval');
-        if (baseline) {
-          const comparison = compareToBaseline(results, baseline.results);
-          console.log(
-            `\nComparison to baseline (${baseline.metadata.createdAt}):`
-          );
-          console.log(`  Improved: ${comparison.improved}`);
-          console.log(`  Degraded: ${comparison.degraded}`);
-          console.log(`  Unchanged: ${comparison.unchanged}`);
-          console.log(
-            `  Average Delta: ${(comparison.averageDelta * 100).toFixed(2)}%`
-          );
-        }
+        await loadLatestBaseline('octocode-eval');
+        // Baseline comparison runs silently in CI
       }
     }
   });

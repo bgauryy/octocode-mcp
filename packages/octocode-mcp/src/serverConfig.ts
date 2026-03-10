@@ -16,6 +16,12 @@ import {
   getGitLabHost,
   isGitLabConfigured,
 } from './gitlabConfig.js';
+import {
+  getBitbucketConfig as resolveBitbucketConfig,
+  getBitbucketToken,
+  getBitbucketHost,
+  isBitbucketConfigured,
+} from './bitbucketConfig.js';
 
 // Re-export GitLab functions for API compatibility
 export {
@@ -25,6 +31,16 @@ export {
   getGitLabTokenSource,
   isGitLabConfigured,
 } from './gitlabConfig.js';
+
+// Re-export Bitbucket functions for API compatibility
+export {
+  getBitbucketConfig,
+  getBitbucketToken,
+  getBitbucketHost,
+  getBitbucketTokenSource,
+  getBitbucketUsername,
+  isBitbucketConfigured,
+} from './bitbucketConfig.js';
 
 /** Result of token resolution with source tracking */
 interface TokenResolutionResult {
@@ -145,8 +161,10 @@ export async function initialize(): Promise<void> {
       enableLocal: resolved.local.enabled,
       enableClone: resolved.local.enableClone,
       disablePrompts: resolved.tools.disablePrompts,
+      outputFormat: resolved.output.format,
       tokenSource: tokenResult.source,
       gitlab: resolveGitLabConfig(),
+      bitbucket: resolveBitbucketConfig(),
     };
   })();
 
@@ -222,10 +240,12 @@ export async function getTokenSource(): Promise<TokenSourceType> {
 
 /**
  * Get the active provider based on environment configuration.
- * Priority: GITLAB_TOKEN set → 'gitlab', otherwise → 'github' (default)
+ * Priority: GITLAB_TOKEN → 'gitlab', BITBUCKET_TOKEN → 'bitbucket', otherwise → 'github' (default)
  */
 export function getActiveProvider(): ProviderType {
-  return isGitLabConfigured() ? 'gitlab' : 'github';
+  if (isGitLabConfigured()) return 'gitlab';
+  if (isBitbucketConfigured()) return 'bitbucket';
+  return 'github';
 }
 
 /**
@@ -245,8 +265,14 @@ export function getActiveProviderConfig(): {
       token: getGitLabToken() ?? undefined,
     };
   }
+  if (isBitbucketConfigured()) {
+    return {
+      provider: 'bitbucket',
+      baseUrl: getBitbucketHost(),
+      token: getBitbucketToken() ?? undefined,
+    };
+  }
   const githubApiUrl = getConfigSync().github.apiUrl;
-  // Only set baseUrl if it's not the default
   const baseUrl =
     githubApiUrl !== 'https://api.github.com' ? githubApiUrl : undefined;
   return {

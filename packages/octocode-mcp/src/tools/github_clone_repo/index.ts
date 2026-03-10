@@ -23,6 +23,8 @@ export {
 export type {
   CloneRepoQuery,
   CloneRepoResult,
+  CloneRepoOutputData,
+  CloneRepoToolResult,
   CloneCacheMeta,
   CacheSource,
 } from './types.js';

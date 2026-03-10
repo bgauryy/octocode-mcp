@@ -1170,6 +1170,22 @@ export function testFunction(param: string): string {
     it('should default to function for unrecognized patterns', () => {
       expect(inferSymbolKindFromContent('something()')).toBe('function');
     });
+
+    it('should detect property definitions', () => {
+      expect(inferSymbolKindFromContent('property name: string;')).toBe(
+        'property'
+      );
+      expect(inferSymbolKindFromContent('public id: number;')).toBe('property');
+      expect(inferSymbolKindFromContent('private _value: string;')).toBe(
+        'property'
+      );
+      expect(inferSymbolKindFromContent('protected data: object;')).toBe(
+        'property'
+      );
+      expect(inferSymbolKindFromContent('readonly config: Config;')).toBe(
+        'property'
+      );
+    });
   });
 
   describe('isLikelyDefinition ReDoS protection', () => {

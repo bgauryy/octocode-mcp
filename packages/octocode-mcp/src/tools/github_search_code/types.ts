@@ -3,6 +3,8 @@
  * @module tools/github_search_code/types
  */
 
+import type { GitHubSearchCodeData } from '../../scheme/outputTypes.js';
+
 // ============================================================================
 // INPUT TYPES
 // ============================================================================
@@ -11,6 +13,7 @@
  * Query parameters for GitHub code search
  */
 export interface GitHubCodeSearchQuery {
+  id?: string;
   keywordsToSearch: string[];
   owner?: string;
   repo?: string;
@@ -29,52 +32,4 @@ export interface GitHubCodeSearchQuery {
 // OUTPUT TYPES
 // ============================================================================
 
-/** Base result interface */
-interface BaseToolResult<TQuery = object> {
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-  error?: string;
-  hints?: string[];
-  query?: TQuery;
-}
-
-/**
- * Code search result with matched files.
- * - For content matches: includes text_matches with matched code snippets
- * - For path-only matches: only includes path (no text_matches)
- * - Each file includes repo (owner/repo) for direct use with githubGetFileContent
- */
-export interface SearchResult extends BaseToolResult<GitHubCodeSearchQuery> {
-  /** Array of matched files with their paths and optional text matches */
-  files?: Array<{
-    /** File path within the repository */
-    path: string;
-    /** Repository owner (e.g. "facebook") - use with repo for githubGetFileContent */
-    owner?: string;
-    /** Repository name (e.g. "react") - use with owner for githubGetFileContent */
-    repo?: string;
-    /** Matched code snippets (only for match="file") */
-    text_matches?: string[];
-    /** File last modified timestamp */
-    lastModifiedAt?: string;
-  }>;
-  /** When all files are from the same repo, provides the branch for follow-up calls */
-  repositoryContext?: {
-    /** Default branch of the repository (for use with githubGetFileContent) */
-    branch: string;
-  };
-  /** Pagination info for navigating through results */
-  pagination?: {
-    /** Current page number (1-based) */
-    currentPage: number;
-    /** Total number of available pages */
-    totalPages: number;
-    /** Number of results per page */
-    perPage: number;
-    /** Total number of matching results (capped at 1000 by GitHub) */
-    totalMatches: number;
-    /** Whether more pages are available */
-    hasMore: boolean;
-  };
-}
+export type SearchResult = GitHubSearchCodeData;

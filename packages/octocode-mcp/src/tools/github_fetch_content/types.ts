@@ -4,6 +4,11 @@
  */
 
 import type { PaginationInfo } from '../../utils/core/types.js';
+import type {
+  GitHubDirectoryFileEntry,
+  GitHubFetchContentData,
+  GitHubFetchContentToolResult,
+} from '../../scheme/outputTypes.js';
 
 // ============================================================================
 // INPUT TYPES
@@ -20,6 +25,7 @@ export type ContentFetchType = 'file' | 'directory';
  * Query parameters for fetching GitHub file content
  */
 export interface FileContentQuery {
+  id?: string;
   owner: string;
   repo: string;
   path: string;
@@ -45,13 +51,20 @@ export interface FileContentQuery {
 // OUTPUT TYPES
 // ============================================================================
 
-/** File content result data */
-export interface ContentResultData {
+/** Final user-facing success data derived from the output schema */
+export type ContentResultData = GitHubFetchContentData;
+
+/** Final user-facing flattened query result derived from the output schema */
+export type ContentResult = GitHubFetchContentToolResult;
+
+/** Internal GitHub file content data used before provider/tool flattening */
+export interface GitHubFileContentApiData {
   owner?: string;
   repo?: string;
   path?: string;
   content?: string;
   branch?: string;
+  resolvedBranch?: string;
   startLine?: number;
   endLine?: number;
   isPartial?: boolean;
@@ -59,39 +72,28 @@ export interface ContentResultData {
   lastModified?: string;
   lastModifiedBy?: string;
   pagination?: PaginationInfo;
+  cached?: boolean;
   /** True when matchString was provided but not found in file (not an error, just no match) */
   matchNotFound?: boolean;
   /** The matchString that was searched for (when matchNotFound is true) */
   searchedFor?: string;
 }
 
-/** Base result interface */
-interface BaseToolResult<TQuery = object> {
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
+/** Internal GitHub file content result used by GitHub/provider layers */
+interface GitHubFileContentApiResultBase {
   error?: string;
   hints?: string[];
-  query?: TQuery;
 }
 
-/** Complete file content result */
-export interface ContentResult
-  extends BaseToolResult<FileContentQuery>, ContentResultData {}
+export interface GitHubFileContentApiResult
+  extends GitHubFileContentApiResultBase, GitHubFileContentApiData {}
 
 // ============================================================================
 // DIRECTORY FETCH TYPES
 // ============================================================================
 
 /** Single file entry fetched from a directory */
-export interface DirectoryFileEntry {
-  /** Relative path within the directory */
-  path: string;
-  /** File size in bytes */
-  size: number;
-  /** File type (always 'file') */
-  type: 'file';
-}
+export type DirectoryFileEntry = GitHubDirectoryFileEntry;
 
 /** Result of a directory fetch operation */
 export interface DirectoryFetchResult {
@@ -111,7 +113,7 @@ export interface DirectoryFetchResult {
   owner: string;
   /** Repository name */
   repo: string;
-  /** Branch fetched from */
+  /** Branch fetched from (may be different from input when default branch is resolved) */
   branch: string;
   /** Directory path fetched */
   directoryPath: string;

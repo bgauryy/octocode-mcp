@@ -20,25 +20,8 @@ import type {
   GitLabFileContentQuery,
   GitLabFileContent,
 } from '../../gitlab/types.js';
-
-/**
- * Parse a unified projectId into GitLab format.
- * GitLab accepts: numeric ID or URL-encoded path
- */
-export function parseGitLabProjectId(projectId?: string): number | string {
-  if (!projectId) {
-    throw new Error('Project ID is required');
-  }
-
-  // Check if it's a numeric ID
-  const numId = parseInt(projectId, 10);
-  if (!isNaN(numId) && String(numId) === projectId) {
-    return numId;
-  }
-
-  // URL-encode the path for GitLab API
-  return encodeURIComponent(projectId);
-}
+import { parseGitLabProjectId, extractGitLabRateLimit } from './utils.js';
+export { parseGitLabProjectId };
 
 /**
  * Transform GitLab file content result to unified format.
@@ -96,6 +79,7 @@ export async function getFileContent(
       status: result.status || 500,
       provider: 'gitlab',
       hints: 'hints' in result ? result.hints : undefined,
+      rateLimit: extractGitLabRateLimit(result),
     };
   }
 

@@ -36,6 +36,7 @@ vi.mock('fs', () => ({
 const runRipgrep = (query: Record<string, unknown>) =>
   searchContentRipgrep(
     RipgrepQuerySchema.parse({
+      id: 'local_ripgrep_query',
       researchGoal: 'Test',
       reasoning: 'Schema validation',
       ...query,
@@ -1515,7 +1516,7 @@ describe('localSearchCode', () => {
   });
 
   describe('Research context fields', () => {
-    it('should return researchGoal and reasoning in hasResults', async () => {
+    it('should not echo researchGoal and reasoning in hasResults', async () => {
       const jsonOutput = JSON.stringify({
         type: 'match',
         data: {
@@ -1542,11 +1543,12 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('hasResults');
-      expect(result.researchGoal).toBe('Find test implementations');
-      expect(result.reasoning).toBe('Need to understand test patterns');
+      expect(result).not.toHaveProperty('mainResearchGoal');
+      expect(result).not.toHaveProperty('researchGoal');
+      expect(result).not.toHaveProperty('reasoning');
     });
 
-    it('should return researchGoal and reasoning in empty results', async () => {
+    it('should not echo researchGoal and reasoning in empty results', async () => {
       mockSafeExec.mockResolvedValue({
         success: true,
         code: 0,
@@ -1562,11 +1564,12 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('empty');
-      expect(result.researchGoal).toBe('Find missing pattern');
-      expect(result.reasoning).toBe('Verify pattern absence');
+      expect(result).not.toHaveProperty('mainResearchGoal');
+      expect(result).not.toHaveProperty('researchGoal');
+      expect(result).not.toHaveProperty('reasoning');
     });
 
-    it('should return researchGoal and reasoning in error results', async () => {
+    it('should not echo researchGoal and reasoning in error results', async () => {
       mockValidate.mockReturnValue({
         isValid: false,
         error: 'Invalid path',
@@ -1580,8 +1583,9 @@ describe('localSearchCode', () => {
       });
 
       expect(result.status).toBe('error');
-      expect(result.researchGoal).toBe('Search invalid path');
-      expect(result.reasoning).toBe('Testing error handling');
+      expect(result).not.toHaveProperty('mainResearchGoal');
+      expect(result).not.toHaveProperty('researchGoal');
+      expect(result).not.toHaveProperty('reasoning');
     });
   });
 

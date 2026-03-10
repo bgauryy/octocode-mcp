@@ -262,6 +262,13 @@ describe('SAN-02: ContentSanitizer – Secret Detection & Redaction', () => {
       const r = ContentSanitizer.sanitizeContent('glpat-abcdefghij0123456789');
       expect(r.hasSecrets).toBe(true);
     });
+
+    it('should redact GitLab tokens longer than 20 chars', () => {
+      const r = ContentSanitizer.sanitizeContent(
+        'glpat-abcdefghij0123456789ABCDE'
+      );
+      expect(r.hasSecrets).toBe(true);
+    });
   });
 
   describe('AI provider secrets', () => {

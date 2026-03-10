@@ -70,9 +70,10 @@ function handle403Error(
 function handleSecondaryRateLimit(
   headers?: Record<string, unknown>
 ): GitHubAPIError {
-  const retryAfter =
-    Number(headers?.['retry-after']) ||
-    RATE_LIMIT_CONFIG.SECONDARY_FALLBACK_SECONDS;
+  const parsed = Number(headers?.['retry-after']);
+  const retryAfter = !isNaN(parsed)
+    ? parsed
+    : RATE_LIMIT_CONFIG.SECONDARY_FALLBACK_SECONDS;
 
   void logRateLimit({
     limit_type: 'secondary',
@@ -93,7 +94,8 @@ function handlePrimaryRateLimit(
   headers?: Record<string, unknown>
 ): GitHubAPIError {
   const reset = headers?.['x-ratelimit-reset'];
-  const resetTime = reset ? new Date(parseInt(String(reset)) * 1000) : null;
+  const resetValue = reset ? parseInt(String(reset), 10) : NaN;
+  const resetTime = !isNaN(resetValue) ? new Date(resetValue * 1000) : null;
 
   const retryAfterSeconds = resetTime
     ? Math.max(

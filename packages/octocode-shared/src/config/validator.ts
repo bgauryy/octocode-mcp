@@ -204,6 +204,20 @@ function validateGitLab(gitlab: unknown, errors: string[]): void {
   if (hostError) errors.push(hostError);
 }
 
+function validateBitbucket(bitbucket: unknown, errors: string[]): void {
+  if (bitbucket === undefined || bitbucket === null) return;
+
+  if (typeof bitbucket !== 'object' || Array.isArray(bitbucket)) {
+    errors.push('bitbucket: Must be an object');
+    return;
+  }
+
+  const bb = bitbucket as Record<string, unknown>;
+
+  const hostError = validateUrl(bb.host, 'bitbucket.host');
+  if (hostError) errors.push(hostError);
+}
+
 function validateLocal(local: unknown, errors: string[]): void {
   if (local === undefined || local === null) return;
 
@@ -369,6 +383,7 @@ export function validateConfig(config: unknown): ValidationResult {
   // Validate each section
   validateGitHub(cfg.github, errors);
   validateGitLab(cfg.gitlab, errors);
+  validateBitbucket(cfg.bitbucket, errors);
   validateLocal(cfg.local, errors);
   validateTools(cfg.tools, errors);
   validateNetwork(cfg.network, errors);
@@ -381,6 +396,7 @@ export function validateConfig(config: unknown): ValidationResult {
     'version',
     'github',
     'gitlab',
+    'bitbucket',
     'local',
     'tools',
     'network',

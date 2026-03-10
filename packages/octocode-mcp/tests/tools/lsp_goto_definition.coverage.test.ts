@@ -214,7 +214,19 @@ describe('LSP Goto Definition Coverage Tests', () => {
       const { BulkLSPGotoDefinitionSchema } =
         await import('../../src/tools/lsp_goto_definition/scheme.js');
       expect(BulkLSPGotoDefinitionSchema).toBeDefined();
-      expect(BulkLSPGotoDefinitionSchema.shape.queries).toBeDefined();
+      const parsed = BulkLSPGotoDefinitionSchema.safeParse({
+        queries: [
+          {
+            id: 'goto_definition_coverage',
+            researchGoal: 'Find definition',
+            reasoning: 'Validate schema',
+            uri: 'file:///test.ts',
+            symbolName: 'testFn',
+            lineHint: 1,
+          },
+        ],
+      });
+      expect(parsed.success).toBe(true);
     });
 
     it('should export description', async () => {
@@ -822,6 +834,33 @@ describe('LSP Goto Definition Coverage Tests', () => {
       expect(result).toBeDefined();
       const text = result.content?.[0]?.text ?? '';
       expect(text).toContain('empty');
+    });
+
+    it('should fallback to text resolution when createClient returns null', async () => {
+      // gotoDefinitionWithLSP returns null when client is null (line 218)
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+
+      vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
+      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(lspModule.createClient).mockResolvedValue(null);
+
+      const handler = await createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'test',
+            lineHint: 1,
+            researchGoal: 'Find def',
+            reasoning: 'Test createClient null fallback',
+          },
+        ],
+      });
+
+      expect(result).toBeDefined();
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain('hasResults');
     });
   });
 });

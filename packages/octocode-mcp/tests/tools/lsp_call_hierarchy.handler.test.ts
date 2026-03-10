@@ -393,7 +393,20 @@ describe('LSP Call Hierarchy Handler Tests', () => {
         await import('../../src/tools/lsp_call_hierarchy/scheme.js');
 
       expect(BulkLSPCallHierarchySchema).toBeDefined();
-      expect(BulkLSPCallHierarchySchema.shape.queries).toBeDefined();
+      const parsed = BulkLSPCallHierarchySchema.safeParse({
+        queries: [
+          {
+            id: 'call_hierarchy_query',
+            researchGoal: 'Trace calls',
+            reasoning: 'Inspect call graph',
+            uri: 'file:///test.ts',
+            symbolName: 'testFn',
+            lineHint: 1,
+            direction: 'incoming',
+          },
+        ],
+      });
+      expect(parsed.success).toBe(true);
     });
 
     it('should export description', async () => {

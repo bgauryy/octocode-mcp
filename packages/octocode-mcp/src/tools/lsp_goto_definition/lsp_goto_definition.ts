@@ -5,7 +5,7 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { AnySchema } from '../../types/toolTypes.js';
+import { toMCPSchema } from '../../types/toolTypes.js';
 
 import {
   BulkLSPGotoDefinitionSchema,
@@ -23,8 +23,8 @@ export function registerLSPGotoDefinitionTool(server: McpServer) {
     TOOL_NAME,
     {
       description: LSP_GOTO_DEFINITION_DESCRIPTION,
-      inputSchema: BulkLSPGotoDefinitionSchema as unknown as AnySchema,
-      outputSchema: LspGotoDefinitionOutputSchema as unknown as AnySchema,
+      inputSchema: toMCPSchema(BulkLSPGotoDefinitionSchema),
+      outputSchema: toMCPSchema(LspGotoDefinitionOutputSchema),
       annotations: {
         title: 'Go To Definition',
         readOnlyHint: true,

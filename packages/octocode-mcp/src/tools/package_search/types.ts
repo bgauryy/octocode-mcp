@@ -3,6 +3,20 @@
  * @module tools/package_search/types
  */
 
+import type {
+  PackageSearchData,
+  PackageSearchPackage,
+} from '../../scheme/outputTypes.js';
+import type {
+  MinimalPackageResult as CommonMinimalPackageResult,
+  NpmPackageResult as CommonNpmPackageResult,
+  PythonPackageResult as CommonPythonPackageResult,
+  PackageResult as CommonPackageResult,
+  PackageSearchAPIResult as CommonPackageSearchAPIResult,
+  PackageSearchError as CommonPackageSearchError,
+  DeprecationInfo as CommonDeprecationInfo,
+} from '../../utils/package/common.js';
+
 // ============================================================================
 // INPUT TYPES
 // ============================================================================
@@ -11,6 +25,7 @@
  * Base query for package search
  */
 interface PackageSearchBaseQuery {
+  id?: string;
   name: string;
   searchLimit?: number;
   mainResearchGoal?: string;
@@ -45,94 +60,20 @@ export type PackageSearchQuery =
 // OUTPUT TYPES
 // ============================================================================
 
-/**
- * Minimal package result (common fields)
- */
-export interface MinimalPackageResult {
-  name: string;
-  version?: string;
-  description?: string;
-  homepage?: string;
-  repository?: string | null;
-}
+export type MinimalPackageResult = CommonMinimalPackageResult;
 
-/**
- * NPM package result
- */
-export interface NpmPackageResult extends MinimalPackageResult {
-  path: string;
-  repoUrl: string;
-  score?: number;
-  downloads?: number;
-  keywords?: string[];
-  license?: string;
-  publishedAt?: string;
-  updatedAt?: string;
-  maintainers?: string[];
-  dependencies?: Record<string, string>;
-  devDependencies?: Record<string, string>;
-}
+export type NpmPackageResult = CommonNpmPackageResult;
 
-/**
- * Python package result
- */
-export interface PythonPackageResult extends MinimalPackageResult {
-  author?: string;
-  authorEmail?: string;
-  maintainer?: string;
-  maintainerEmail?: string;
-  license?: string;
-  keywords?: string[];
-  classifiers?: string[];
-  requiresPython?: string;
-  projectUrls?: Record<string, string>;
-}
+export type PythonPackageResult = CommonPythonPackageResult;
 
-/**
- * Combined package result type
- */
-export type PackageResult =
-  | MinimalPackageResult
-  | NpmPackageResult
-  | PythonPackageResult;
+export type PackageResult = CommonPackageResult;
 
-/**
- * Package result with parsed repository info
- */
-export interface PackageResultWithRepo extends MinimalPackageResult {
-  repoUrl?: string;
-  owner?: string;
-  repo?: string;
-  path?: string;
-}
+export type PackageResultWithRepo = PackageSearchPackage;
 
-/**
- * Deprecation information for a package
- */
-export interface DeprecationInfo {
-  deprecated: boolean;
-  message?: string;
-}
+export type DeprecationInfo = CommonDeprecationInfo;
 
-/**
- * Successful package search API result
- */
-export interface PackageSearchAPIResult {
-  packages: PackageResult[];
-  totalFound: number;
-}
+export type PackageSearchAPIResult = CommonPackageSearchAPIResult;
 
-/**
- * Package search error
- */
-export interface PackageSearchError {
-  error: string;
-}
+export type PackageSearchError = CommonPackageSearchError;
 
-/**
- * Package search result
- */
-export interface PackageSearchResult {
-  packages: PackageResultWithRepo[];
-  totalFound: number;
-}
+export type PackageSearchResult = PackageSearchData;

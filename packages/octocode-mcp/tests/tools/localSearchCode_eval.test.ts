@@ -33,6 +33,7 @@ const createQuery = (
   overrides: Partial<RipgrepQuery> & { pattern: string; path: string }
 ): RipgrepQuery =>
   RipgrepQuerySchema.parse({
+    id: 'test:eval',
     researchGoal: 'Eval test',
     reasoning: 'Schema validation',
     ...overrides,

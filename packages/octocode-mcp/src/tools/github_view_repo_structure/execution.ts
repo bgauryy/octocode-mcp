@@ -8,11 +8,14 @@ import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { shouldIgnoreFile, shouldIgnoreDir } from '../../utils/file/filters.js';
-import { handleCatchError, createSuccessResult } from '../utils.js';
+import {
+  handleCatchError,
+  handleProviderError,
+  createSuccessResult,
+} from '../utils.js';
 import { getProvider } from '../../providers/factory.js';
 import { getActiveProviderConfig } from '../../serverConfig.js';
 import { isProviderSuccess } from '../../providers/types.js';
-import { resolveDefaultBranch } from '../../github/client.js';
 
 function filterStructure(
   structure: Record<string, DirectoryEntry>
@@ -38,25 +41,6 @@ function filterStructure(
   return filtered;
 }
 
-function createEmptyStructureResult(
-  query: GitHubViewRepoStructureQuery,
-  error: NonNullable<ReturnType<typeof handleCatchError>>
-): Record<string, unknown> & {
-  status: 'error';
-  path: string;
-  structure: Record<string, DirectoryEntry>;
-} {
-  return {
-    path: query.path || '/',
-    structure: {},
-    ...error,
-  } as Record<string, unknown> & {
-    status: 'error';
-    path: string;
-    structure: Record<string, DirectoryEntry>;
-  };
-}
-
 export async function exploreMultipleRepositoryStructures(
   args: ToolExecutionArgs<GitHubViewRepoStructureQuery>
 ): Promise<CallToolResult> {
@@ -74,9 +58,9 @@ export async function exploreMultipleRepositoryStructures(
           authInfo,
         });
 
+        const projectId = `${query.owner}/${query.repo}`;
         const resolvedBranch =
-          query.branch ??
-          (await resolveDefaultBranch(query.owner, query.repo, authInfo));
+          query.branch ?? (await provider.resolveDefaultBranch(projectId));
 
         // Convert query to provider format
         const providerQuery = {
@@ -100,13 +84,7 @@ export async function exploreMultipleRepositoryStructures(
         const apiResult = await provider.getRepoStructure(providerQuery);
 
         if (!isProviderSuccess(apiResult)) {
-          return createEmptyStructureResult(
-            query,
-            handleCatchError(
-              new Error(apiResult.error || 'Provider error'),
-              query
-            )!
-          );
+          return handleProviderError(apiResult, query);
         }
 
         const filteredStructure = filterStructure(apiResult.data.structure);
@@ -123,13 +101,13 @@ export async function exploreMultipleRepositoryStructures(
           requestedBranch !== 'HEAD';
 
         const resultData: Record<string, unknown> = {
-          owner: query.owner,
-          repo: query.repo,
-          branch: actualBranch,
-          path: query.path || '/',
           structure: filteredStructure,
           summary: apiResult.data.summary,
         };
+
+        if (!query.branch && actualBranch) {
+          resultData.resolvedBranch = actualBranch;
+        }
 
         if (branchFellBack) {
           resultData.branchFallback = {
@@ -169,21 +147,18 @@ export async function exploreMultipleRepositoryStructures(
           }
         );
       } catch (error) {
-        const catchError = handleCatchError(
+        return handleCatchError(
           error,
           query,
           'Failed to explore repository structure'
         );
-        return createEmptyStructureResult(query, catchError);
       }
     },
     {
       toolName: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
       keysPriority: [
-        'owner',
-        'repo',
-        'branch',
-        'path',
+        'resolvedBranch',
+        'branchFallback',
         'structure',
         'error',
       ] satisfies Array<keyof RepoStructureResult>,

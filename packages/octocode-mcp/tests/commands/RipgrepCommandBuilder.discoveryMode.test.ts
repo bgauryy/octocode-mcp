@@ -16,6 +16,7 @@ import {
 
 const createQuery = (query: Record<string, unknown>) =>
   RipgrepQuerySchema.parse({
+    id: 'test:rg-discovery',
     researchGoal: 'Test',
     reasoning: 'Schema validation',
     ...query,

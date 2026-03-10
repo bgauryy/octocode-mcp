@@ -26,12 +26,12 @@ Role: **Plan Agent**. Expert Evidence-Based Planner.
 <tools>
 **Research Delegation** (CRITICAL):
 > **MUST** delegate research—**FORBIDDEN**: executing search/exploration directly.
-> Local workspace → **`octocode-local-search`** | External GitHub → **`octocode-research`**
+> Local workspace → **`octocode-researcher`** | External GitHub → **`octocode-researcher`** or **`octocode-research`**
 
 | Need | Skill (REQUIRED) |
 |------|------------------|
-| Local codebase, LSP (definitions, refs, calls) | `octocode-local-search` |
-| External repos, packages, PRs | `octocode-research` |
+| Local codebase, LSP (definitions, refs, calls) | `octocode-researcher` |
+| External repos, packages, PRs | `octocode-researcher` or `octocode-research` |
 
 **Planning Tools**:
 | Tool | Purpose |
@@ -97,7 +97,7 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 **Research Flow**:
 1. **Identify Research Needs**: What questions need answers?
 2. **Delegate to Skills**:
-   - Local codebase questions → `octocode-local-search`
+   - Local codebase questions → `octocode-researcher`
    - External GitHub questions → `octocode-research`
 3. **Synthesize Results**: Combine findings into plan
 
@@ -105,12 +105,12 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 
 | Question Type | Delegate To |
 |---------------|-------------|
-| "How does our code handle X?" | `octocode-local-search` |
-| "Where is Y defined locally?" | `octocode-local-search` |
-| "What calls function Z?" | `octocode-local-search` |
-| "How does library X implement Y?" | `octocode-research` |
-| "What's the best pattern for Z?" | `octocode-research` |
-| "What changes were made in PR #N?" | `octocode-research` |
+| "How does our code handle X?" | `octocode-researcher` (local track) |
+| "Where is Y defined locally?" | `octocode-researcher` (local track) |
+| "What calls function Z?" | `octocode-researcher` (local track) |
+| "How does library X implement Y?" | `octocode-researcher` (external track) |
+| "What's the best pattern for Z?" | `octocode-researcher` (external track) |
+| "What changes were made in PR #N?" | `octocode-researcher` (external track) |
 </research_orchestration>
 
 <context_awareness>
@@ -137,7 +137,7 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 1. **Mode**: Interactive (default) or Auto?
 2. **Classify Goal**:
    - `RESEARCH_ONLY` - No code changes (delegate to research skills)
-   - `ANALYSIS` - Understand existing code (delegate to `octocode-local-search`)
+   - `ANALYSIS` - Understand existing code (delegate to `octocode-researcher`)
    - `CREATION` - New files/features
    - `FEATURE` / `BUG` / `REFACTOR` - Modify existing
 3. **Assess Complexity**: Quick | Medium | Thorough
@@ -158,8 +158,8 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 1. **Identify Questions**: What needs to be answered?
 2. **Categorize**: Local vs External research needs
 3. **Delegate**:
-   - Local questions → Call `octocode-local-search` skill
-   - External questions → Call `octocode-research` skill
+   - Local questions → Call `octocode-researcher` skill (local track)
+   - External questions → Call `octocode-researcher` skill (external track)
 4. **Synthesize**: Combine findings from both skills
 
 **Quality Bar**:
@@ -264,8 +264,8 @@ Example:
 - **No Secrets**: Never commit credentials
 
 **When Stuck During Implementation**:
-- Need to understand local code → Delegate to `octocode-local-search`
-- Need external reference → Delegate to `octocode-research`
+- Need to understand local code → Delegate to `octocode-researcher` (local track)
+- Need external reference → Delegate to `octocode-researcher` (external track)
 </phase_3_implement>
 
 <phase_4_verify>
@@ -336,8 +336,8 @@ Example:
 
 **Example - Research Parallelization**:
 - Goal: "Research auth flow across api-service and auth-lib"
-- Agent 1: `octocode-local-search` for local `api-service` auth middleware
-- Agent 2: `octocode-research` for external `auth-lib` token validation
+- Agent 1: `octocode-researcher` (local track) for local `api-service` auth middleware
+- Agent 2: `octocode-researcher` (external track) for external `auth-lib` token validation
 - Merge: Combine into unified auth understanding and plan
 - Conflict: If external docs suggest JWT but local uses sessions → Local wins
 
@@ -400,7 +400,7 @@ Ask user before writing each file:
 <key_principles>
 - **Planning Focus**: This skill synthesizes and plans, delegates research to specialized skills
 - **Quality > Quantity**: Prefer verified patterns over many options
-- **Evidence-Based**: Every decision backed by research (from `octocode-local-search` or `octocode-research`)
+- **Evidence-Based**: Every decision backed by research (from `octocode-researcher` or `octocode-research`)
 - **Cross-Reference**: Validate findings with second source
 - **Efficiency**: Delegate research efficiently, batch where possible
 - **Escalation**: Ask user when stuck or facing critical decisions
@@ -417,6 +417,6 @@ Ask user before writing each file:
 <skill_delegation>
 | Skill | Scope |
 |-------|-------|
-| `octocode-local-search` | Local structure, pattern search, LSP (defs/refs/calls), node_modules, file changes |
-| `octocode-research` | GitHub repos, external patterns, packages, PRs, open-source impl |
+| `octocode-researcher` | Local structure, pattern search, LSP (defs/refs/calls), node_modules, GitHub repos, packages, PRs |
+| `octocode-research` | HTTP server-based research: all above + session management, checkpoints, parallel agents |
 </skill_delegation>

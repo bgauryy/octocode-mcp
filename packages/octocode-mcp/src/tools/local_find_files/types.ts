@@ -3,7 +3,11 @@
  * @module tools/local_find_files/types
  */
 
-import type { LocalToolErrorCode as ErrorCode } from '../../errorCodes.js';
+import type {
+  LocalFindFilesEntry,
+  LocalFindFilesPagination,
+  LocalFindFilesToolResult,
+} from '../../scheme/outputTypes.js';
 
 // ============================================================================
 // INPUT TYPES
@@ -13,6 +17,7 @@ import type { LocalToolErrorCode as ErrorCode } from '../../errorCodes.js';
  * Query parameters for finding local files
  */
 export interface FindFilesQuery {
+  id?: string;
   path: string;
   maxDepth?: number;
   minDepth?: number;
@@ -50,41 +55,8 @@ export interface FindFilesQuery {
 // OUTPUT TYPES
 // ============================================================================
 
-/**
- * Found file entry
- */
-export interface FoundFile {
-  path: string;
-  type: string;
-  size?: number;
-  modified?: string;
-  permissions?: string;
-}
+export type FoundFile = LocalFindFilesEntry;
 
-/**
- * Pagination information for find files results
- */
-export interface FindFilesPagination {
-  currentPage: number;
-  totalPages: number;
-  hasMore: boolean;
-  filesPerPage?: number;
-  totalFiles?: number;
-}
+export type FindFilesPagination = LocalFindFilesPagination;
 
-/**
- * Result of finding local files
- */
-export interface FindFilesResult {
-  status: 'hasResults' | 'empty' | 'error';
-  files?: FoundFile[];
-  cwd?: string;
-  totalFiles?: number;
-  errorCode?: ErrorCode;
-  hints?: readonly string[];
-  pagination?: FindFilesPagination;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-  [key: string]: unknown;
-}
+export type FindFilesResult = LocalFindFilesToolResult;

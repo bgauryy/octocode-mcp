@@ -217,10 +217,13 @@ describe('promiseUtils', () => {
 
     describe('Validation Errors', () => {
       it('should throw if promises argument is not an array', async () => {
-        // @ts-expect-error - Testing runtime validation
-        await expect(executeWithErrorIsolation('not-array')).rejects.toThrow(
-          VALIDATION_ERRORS.PROMISES_NOT_ARRAY.message
-        );
+        await expect(
+          executeWithErrorIsolation(
+            'not-array' as unknown as Parameters<
+              typeof executeWithErrorIsolation
+            >[0]
+          )
+        ).rejects.toThrow(VALIDATION_ERRORS.PROMISES_NOT_ARRAY.message);
         expect(logSessionError).toHaveBeenCalledWith(
           'promiseUtils',
           VALIDATION_ERRORS.PROMISES_NOT_ARRAY.code
@@ -252,8 +255,9 @@ describe('promiseUtils', () => {
       it('should handle non-function elements in promises array', async () => {
         const promises = [() => Promise.resolve(1), 'not-a-function'];
 
-        // @ts-expect-error - Testing runtime validation
-        const results = await executeWithErrorIsolation(promises);
+        const results = await executeWithErrorIsolation(
+          promises as Parameters<typeof executeWithErrorIsolation>[0]
+        );
 
         expect(results).toHaveLength(2);
         expect(results[0]?.success).toBe(true);

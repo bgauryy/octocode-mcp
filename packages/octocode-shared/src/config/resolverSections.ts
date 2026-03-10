@@ -6,20 +6,24 @@ import type {
   OctocodeConfig,
   RequiredGitHubConfig,
   RequiredGitLabConfig,
+  RequiredBitbucketConfig,
   RequiredLocalConfig,
   RequiredToolsConfig,
   RequiredNetworkConfig,
   RequiredTelemetryConfig,
   RequiredLspConfig,
+  RequiredOutputConfig,
 } from './types.js';
 import {
   DEFAULT_GITHUB_CONFIG,
   DEFAULT_GITLAB_CONFIG,
+  DEFAULT_BITBUCKET_CONFIG,
   DEFAULT_LOCAL_CONFIG,
   DEFAULT_TOOLS_CONFIG,
   DEFAULT_NETWORK_CONFIG,
   DEFAULT_TELEMETRY_CONFIG,
   DEFAULT_LSP_CONFIG,
+  DEFAULT_OUTPUT_CONFIG,
   MIN_TIMEOUT,
   MAX_TIMEOUT,
   MIN_RETRIES,
@@ -133,6 +137,19 @@ export function resolveGitLab(
 }
 
 /**
+ * Resolve Bitbucket configuration.
+ */
+export function resolveBitbucket(
+  fileConfig?: OctocodeConfig['bitbucket']
+): RequiredBitbucketConfig {
+  const envHost = process.env.BITBUCKET_HOST?.trim();
+
+  return {
+    host: envHost || fileConfig?.host || DEFAULT_BITBUCKET_CONFIG.host,
+  };
+}
+
+/**
  * Resolve local tools configuration.
  */
 export function resolveLocal(
@@ -240,5 +257,24 @@ export function resolveLsp(
   return {
     configPath:
       envConfigPath ?? fileConfig?.configPath ?? DEFAULT_LSP_CONFIG.configPath,
+  };
+}
+
+const VALID_OUTPUT_FORMATS = new Set(['yaml', 'json']);
+
+/**
+ * Resolve output format configuration.
+ */
+export function resolveOutput(
+  fileConfig?: OctocodeConfig['output']
+): RequiredOutputConfig {
+  const envFormat = process.env.OCTOCODE_OUTPUT_FORMAT?.trim().toLowerCase();
+  const resolved =
+    envFormat || fileConfig?.format || DEFAULT_OUTPUT_CONFIG.format;
+
+  return {
+    format: VALID_OUTPUT_FORMATS.has(resolved)
+      ? (resolved as 'yaml' | 'json')
+      : DEFAULT_OUTPUT_CONFIG.format,
   };
 }

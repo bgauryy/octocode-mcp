@@ -4,7 +4,7 @@ export const versionControlPatterns: SensitiveDataPattern[] = [
   {
     name: 'gitlabPersonalAccessToken',
     description: 'GitLab personal access token',
-    regex: /\bglpat-[A-Za-z0-9_-]{20}\b/g,
+    regex: /\bglpat-[A-Za-z0-9_-]{20,}\b/g,
     matchAccuracy: 'high',
   },
   {

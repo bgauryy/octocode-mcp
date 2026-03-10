@@ -37,6 +37,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
     // Helper to add required research fields to queries
     const withResearchFields = <T extends object>(query: T) => ({
       ...query,
+      id: 'test:code-search',
       mainResearchGoal: 'Test research goal',
       researchGoal: 'Testing schema validation',
       reasoning: 'Unit test for schema',
