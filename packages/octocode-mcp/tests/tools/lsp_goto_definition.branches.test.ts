@@ -11,10 +11,16 @@ vi.mock('fs/promises', () => ({
   stat: vi.fn(),
 }));
 
-vi.mock('../../src/security/pathValidator.js', () => ({
-  pathValidator: {
-    validate: vi.fn().mockReturnValue({ isValid: true }),
-  },
+vi.mock('../../src/utils/file/toolHelpers.js', () => ({
+  validateToolPath: vi.fn().mockReturnValue({
+    isValid: true,
+    sanitizedPath: '/workspace/src/source.ts',
+  }),
+  createErrorResult: vi.fn((err: unknown) => ({
+    status: 'error',
+    error: err instanceof Error ? err.message : String(err),
+    errorCode: 'toolExecutionFailed',
+  })),
 }));
 
 vi.mock('../../src/lsp/validation.js', async importOriginal => {
@@ -58,6 +64,7 @@ vi.mock('../../src/lsp/index.js', () => {
 
 import * as lspModule from '../../src/lsp/index.js';
 import { safeReadFile } from '../../src/lsp/validation.js';
+import * as toolHelpers from '../../src/utils/file/toolHelpers.js';
 
 describe('LSP Goto Definition - Branch Coverage', () => {
   const mockClient = {
@@ -67,14 +74,28 @@ describe('LSP Goto Definition - Branch Coverage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(toolHelpers.validateToolPath).mockReturnValue({
+      isValid: true,
+      sanitizedPath: '/workspace/src/source.ts',
+    });
+    vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
+      return {
+        resolvePositionFromContent: vi.fn().mockReturnValue({
+          position: { line: 3, character: 16 },
+          foundAtLine: 4,
+        }),
+        extractContext: vi.fn().mockReturnValue({
+          content: 'test content',
+          startLine: 1,
+          endLine: 10,
+        }),
+      };
+    });
     vi.mocked(lspModule.createClient).mockResolvedValue(mockClient as any);
+    vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
     vi.mocked(fs.stat).mockResolvedValue({ isFile: () => true } as any);
     const sampleContent = 'line1\nline2\nconst myFunc = () => {};\nline4';
     vi.mocked(fs.readFile).mockResolvedValue(sampleContent);
-  });
-
-  afterEach(() => {
-    vi.resetAllMocks();
   });
 
   describe('file read catch block (line 351-353)', () => {
@@ -165,6 +186,9 @@ describe('LSP Goto Definition - Branch Coverage', () => {
       });
 
       expect(result).toBeDefined();
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain('hasResults');
+      expect(text).toMatch(/charOffset|charLength|outputPagination|hasMore/);
     });
   });
 });

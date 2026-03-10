@@ -180,6 +180,35 @@ describe('callHierarchyHelpers - branch coverage', () => {
       expect(result.name).toBe('fetchUser');
     });
 
+    it('should detect method with return type via methodMatch when funcMatch does not match', async () => {
+      // methodMatch pattern: methodName(args): or methodName(args) {
+      // funcMatch has methodName(args) { but not methodName(args): Type {
+      vi.mocked(safeReadFile).mockResolvedValue(
+        'class Service {\n  handleData(id: number): Promise<void> {\n    this.process(id);\n  }\n}'
+      );
+      const site = {
+        filePath: '/test/file.ts',
+        lineNumber: 3,
+        column: 4,
+        lineContent: '    this.process(id);',
+      };
+      const result = await createCallHierarchyItemFromSite(site, 1);
+      expect(result.name).toBe('handleData');
+    });
+
+    it('should use default values when safeReadFile throws', async () => {
+      vi.mocked(safeReadFile).mockRejectedValue(new Error('File read failed'));
+      const site = {
+        filePath: '/test/file.ts',
+        lineNumber: 1,
+        column: 0,
+        lineContent: 'someLine();',
+      };
+      const result = await createCallHierarchyItemFromSite(site, 1);
+      expect(result.name).toBe('unknown');
+      expect(result.content).toBe('someLine();');
+    });
+
     it('should return "unknown" when no function pattern matches', async () => {
       vi.mocked(safeReadFile).mockResolvedValue(
         '// just a comment\n// another comment\ncallSomething();\n'

@@ -524,6 +524,128 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
       expect(result.locations!.length).toBe(1);
       expect(result.locations![0]!.uri).toContain('valid');
     });
+
+    it('should return empty when both ripgrep and grep fail (grep catch block)', async () => {
+      let spawnCallCount = 0;
+      mockSpawnOn.mockImplementation(
+        (event: string, cb: (code: number) => void) => {
+          if (event === 'close') {
+            spawnCallCount++;
+            setTimeout(() => cb(2), 0);
+          }
+        }
+      );
+      mockStdoutOn.mockImplementation(() => {});
+
+      const result = await findReferencesWithPatternMatching(
+        '/workspace/src/file.ts',
+        '/workspace',
+        {
+          id: 'pattern_query_both_fail',
+          uri: '/workspace/src/file.ts',
+          symbolName: 'myFunc',
+          lineHint: 5,
+          includeDeclaration: true,
+          contextLines: 0,
+          orderHint: 0,
+          page: 1,
+          referencesPerPage: 20,
+          researchGoal: 'test',
+          reasoning: 'test',
+        }
+      );
+
+      expect(result.status).toBe('empty');
+      expect(result.locations ?? []).toEqual([]);
+    });
+
+    it('should use includePattern and excludePattern in search (buildRipgrepSearchArgs)', async () => {
+      const rgOutput = JSON.stringify({
+        type: 'match',
+        data: {
+          path: { text: '/workspace/src/included.ts' },
+          line_number: 1,
+          lines: { text: 'myFunc();\n' },
+        },
+      });
+      setupSpawnSuccess(rgOutput);
+
+      const result = await findReferencesWithPatternMatching(
+        '/workspace/src/file.ts',
+        '/workspace',
+        {
+          id: 'pattern_query_glob',
+          uri: '/workspace/src/file.ts',
+          symbolName: 'myFunc',
+          lineHint: 1,
+          includePattern: ['**/*.ts'],
+          excludePattern: ['**/node_modules/**'],
+          includeDeclaration: true,
+          contextLines: 0,
+          orderHint: 0,
+          page: 1,
+          referencesPerPage: 20,
+          researchGoal: 'test',
+          reasoning: 'test',
+        }
+      );
+
+      expect(result.status).toBe('hasResults');
+    });
+
+    it('should sort refs: definition first, then by uri (sort comparisons)', async () => {
+      const rgOutput = [
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/workspace/src/b.ts' },
+            line_number: 1,
+            lines: { text: 'myFunc();\n' },
+          },
+        }),
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/workspace/src/file.ts' },
+            line_number: 5,
+            lines: { text: 'export function myFunc() {}\n' },
+          },
+        }),
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/workspace/src/a.ts' },
+            line_number: 1,
+            lines: { text: 'myFunc();\n' },
+          },
+        }),
+      ].join('\n');
+      setupSpawnSuccess(rgOutput);
+
+      const result = await findReferencesWithPatternMatching(
+        '/workspace/src/file.ts',
+        '/workspace',
+        {
+          id: 'pattern_query_sort',
+          uri: '/workspace/src/file.ts',
+          symbolName: 'myFunc',
+          lineHint: 5,
+          includeDeclaration: true,
+          contextLines: 0,
+          orderHint: 0,
+          page: 1,
+          referencesPerPage: 20,
+          researchGoal: 'test',
+          reasoning: 'test',
+        }
+      );
+
+      expect(result.status).toBe('hasResults');
+      expect(result.locations!.length).toBe(3);
+      expect(result.locations![0]!.isDefinition).toBe(true);
+      expect(result.locations![1]!.uri).toBeDefined();
+      expect(result.locations![2]!.uri).toBeDefined();
+    });
   });
 
   // ========================================================================

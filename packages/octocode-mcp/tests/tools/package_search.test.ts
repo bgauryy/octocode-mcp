@@ -1875,21 +1875,23 @@ describe('registerPackageSearchTool', () => {
 
       await registerPackageSearchTool(mockServer.server, mockCallback);
 
+      const queries = [
+        {
+          ecosystem: 'npm' as const,
+          name: 'axios',
+          mainResearchGoal: 'Test',
+          researchGoal: 'Test',
+          reasoning: 'Test',
+        },
+      ];
       const result = await mockServer.callTool('packageSearch', {
-        queries: [
-          {
-            ecosystem: 'npm',
-            name: 'axios',
-            mainResearchGoal: 'Test',
-            researchGoal: 'Test',
-            reasoning: 'Test',
-          },
-        ],
+        queries,
       });
 
       expect(result.isError).toBeFalsy();
       expect(result.content).toBeDefined();
       expect(result.content[0]).toHaveProperty('text');
+      expect(mockCallback).toHaveBeenCalledWith('packageSearch', queries);
     });
 
     it('should include actionable GitHub hint for packages with repo links', async () => {

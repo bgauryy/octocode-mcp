@@ -113,4 +113,101 @@ describe('package_search execution branches', () => {
       expect(result.isError).not.toBe(true);
     });
   });
+
+  describe('generateSuccessHints branches', () => {
+    it('should add deprecated hint when package is deprecated (line 147)', async () => {
+      mockSearchPackage.mockResolvedValue({
+        packages: [
+          {
+            path: 'deprecated-pkg',
+            version: '1.0.0',
+            repository: 'https://github.com/owner/repo',
+            mainEntry: null,
+            typeDefinitions: null,
+          },
+        ],
+        ecosystem: 'npm',
+        totalFound: 1,
+      });
+      vi.mocked(packageCommon.checkNpmDeprecation).mockResolvedValue({
+        deprecated: true,
+        message: 'Use new-pkg instead',
+      });
+
+      const result = await searchPackages({
+        queries: [
+          {
+            ...baseQuery,
+            ecosystem: 'npm',
+            name: 'deprecated-pkg',
+          } as never,
+        ],
+      });
+
+      const text = (result.content as { text?: string }[])?.[0]?.text ?? '';
+      expect(text).toContain('DEPRECATED');
+      expect(text).toContain('Use new-pkg instead');
+    });
+
+    it('should add Explore hint when repo URL matches github/gitlab/bitbucket (line 181)', async () => {
+      mockSearchPackage.mockResolvedValue({
+        packages: [
+          {
+            path: 'my-pkg',
+            version: '1.0.0',
+            repository: 'https://github.com/owner/my-repo',
+            mainEntry: null,
+            typeDefinitions: null,
+          },
+        ],
+        ecosystem: 'npm',
+        totalFound: 1,
+      });
+      vi.mocked(packageCommon.checkNpmDeprecation).mockResolvedValue(null);
+
+      const result = await searchPackages({
+        queries: [
+          {
+            ...baseQuery,
+            ecosystem: 'npm',
+            name: 'my-pkg',
+          } as never,
+        ],
+      });
+
+      const text = (result.content as { text?: string }[])?.[0]?.text ?? '';
+      expect(text).toContain('githubViewRepoStructure');
+      expect(text).toContain('owner');
+      expect(text).toContain('my-repo');
+    });
+
+    it('should add pip install hint for python ecosystem (line 210)', async () => {
+      mockSearchPackage.mockResolvedValue({
+        packages: [
+          {
+            name: 'requests',
+            version: '2.28.0',
+            summary: 'Python HTTP library',
+            project_url: 'https://pypi.org/project/requests/',
+          },
+        ],
+        ecosystem: 'python',
+        totalFound: 1,
+      });
+
+      const result = await searchPackages({
+        queries: [
+          {
+            ...baseQuery,
+            ecosystem: 'python',
+            name: 'requests',
+          } as never,
+        ],
+      });
+
+      const text = (result.content as { text?: string }[])?.[0]?.text ?? '';
+      expect(text).toContain('pip install');
+      expect(text).not.toContain('npm install');
+    });
+  });
 });

@@ -191,6 +191,61 @@ describe('Tool Execution Branch Coverage Tests', () => {
       );
       expect(mockClient.stop).toHaveBeenCalled();
     });
+
+    it('should filter out definition when includeDeclaration is false (line 139)', async () => {
+      const filePath = '/workspace/src/file.ts';
+      const position = { line: 2, character: 5 };
+      const mockClient = {
+        findReferences: vi.fn().mockResolvedValue([
+          {
+            uri: filePath,
+            range: {
+              start: { line: 2, character: 5 },
+              end: { line: 2, character: 15 },
+            },
+            content: 'function testFunction() {}',
+          },
+          {
+            uri: '/workspace/src/other.ts',
+            range: {
+              start: { line: 1, character: 0 },
+              end: { line: 1, character: 10 },
+            },
+            content: 'testFunction()',
+          },
+        ]),
+        stop: vi.fn().mockResolvedValue(undefined),
+      };
+
+      vi.mocked(createClient).mockResolvedValue(mockClient as any);
+      vi.mocked(fs.readFile).mockResolvedValue('test content');
+
+      const query: LSPFindReferencesQuery = {
+        uri: filePath,
+        symbolName: 'testFunction',
+        lineHint: 3,
+        includeDeclaration: false,
+        researchGoal: 'test',
+        reasoning: 'test',
+      } as any;
+
+      const result = await findReferencesWithLSP(
+        filePath,
+        '/workspace',
+        position,
+        query
+      );
+
+      expect(result).not.toBeNull();
+      expect(result?.status).toBe('hasResults');
+      expect(result?.locations).toHaveLength(1);
+      expect(result?.locations![0]!.uri).toContain('other.ts');
+      expect(mockClient.findReferences).toHaveBeenCalledWith(
+        filePath,
+        position,
+        false
+      );
+    });
   });
 
   describe('lsp_call_hierarchy/execution.ts - executeCallHierarchy', () => {
