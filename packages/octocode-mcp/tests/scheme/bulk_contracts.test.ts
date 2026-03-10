@@ -1,20 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { BulkCloneRepoSchema } from '../../src/tools/github_clone_repo/scheme.js';
-import {
-  FileContentBulkQuerySchema,
-} from '../../src/tools/github_fetch_content/scheme.js';
-import {
-  GitHubCodeSearchBulkQuerySchema,
-} from '../../src/tools/github_search_code/scheme.js';
-import {
-  GitHubPullRequestSearchBulkQuerySchema,
-} from '../../src/tools/github_search_pull_requests/scheme.js';
-import {
-  GitHubReposSearchQuerySchema,
-} from '../../src/tools/github_search_repos/scheme.js';
-import {
-  GitHubViewRepoStructureBulkQuerySchema,
-} from '../../src/tools/github_view_repo_structure/scheme.js';
+import { FileContentBulkQuerySchema } from '../../src/tools/github_fetch_content/scheme.js';
+import { GitHubCodeSearchBulkQuerySchema } from '../../src/tools/github_search_code/scheme.js';
+import { GitHubPullRequestSearchBulkQuerySchema } from '../../src/tools/github_search_pull_requests/scheme.js';
+import { GitHubReposSearchQuerySchema } from '../../src/tools/github_search_repos/scheme.js';
+import { GitHubViewRepoStructureBulkQuerySchema } from '../../src/tools/github_view_repo_structure/scheme.js';
 import { BulkFetchContentSchema } from '../../src/tools/local_fetch_content/scheme.js';
 import { BulkFindFilesSchema } from '../../src/tools/local_find_files/scheme.js';
 import { BulkRipgrepQuerySchema } from '../../src/tools/local_ripgrep/scheme.js';
@@ -262,15 +252,18 @@ describe('Bulk Tool Contracts', () => {
       },
     ] as const;
 
-    it.each(bulkInputSchemas)('$name should reject a query without id', ({ schema, payload }) => {
-      expect(schema.safeParse(payload).success).toBe(true);
+    it.each(bulkInputSchemas)(
+      '$name should reject a query without id',
+      ({ schema, payload }) => {
+        expect(schema.safeParse(payload).success).toBe(true);
 
-      const missingIdPayload = JSON.parse(JSON.stringify(payload));
-      delete missingIdPayload.queries[0].id;
+        const missingIdPayload = JSON.parse(JSON.stringify(payload));
+        delete missingIdPayload.queries[0].id;
 
-      const result = schema.safeParse(missingIdPayload);
-      expect(result.success).toBe(false);
-    });
+        const result = schema.safeParse(missingIdPayload);
+        expect(result.success).toBe(false);
+      }
+    );
   });
 
   describe('Output schemas expose only the results envelope', () => {

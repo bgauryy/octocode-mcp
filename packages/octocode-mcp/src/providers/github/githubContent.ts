@@ -16,7 +16,7 @@ import type {
 import { fetchGitHubFileContentAPI } from '../../github/fileContent.js';
 
 import type { FileContentQuery as GHFileContentQuery } from '../../tools/github_fetch_content/types.js';
-import type { ContentResultData } from '../../tools/github_fetch_content/types.js';
+import type { GitHubFileContentApiData } from '../../tools/github_fetch_content/types.js';
 import { isGitHubAPIError } from '../../github/githubAPI.js';
 
 /**
@@ -45,7 +45,7 @@ export function parseGitHubProjectId(projectId?: string): {
  * Transform GitHub file content result to unified format.
  */
 export function transformFileContentResult(
-  data: ContentResultData,
+  data: GitHubFileContentApiData,
   query: FileContentQuery
 ): FileContentResult {
   return {

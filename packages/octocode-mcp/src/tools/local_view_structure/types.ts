@@ -3,7 +3,10 @@
  * @module tools/local_view_structure/types
  */
 
-import type { LocalToolErrorCode as ErrorCode } from '../../errorCodes.js';
+import type {
+  LocalViewStructurePagination,
+  LocalViewStructureToolResult,
+} from '../../scheme/outputTypes.js';
 
 // ============================================================================
 // INPUT TYPES
@@ -43,36 +46,6 @@ export interface ViewStructureQuery {
 // OUTPUT TYPES
 // ============================================================================
 
-/**
- * Pagination information for view structure results
- */
-export interface ViewStructurePagination {
-  currentPage: number;
-  totalPages: number;
-  hasMore: boolean;
-  entriesPerPage?: number;
-  totalEntries?: number;
-}
+export type ViewStructurePagination = LocalViewStructurePagination;
 
-/**
- * Result of viewing local directory structure
- */
-export interface ViewStructureResult {
-  status: 'hasResults' | 'empty' | 'error';
-  path?: string;
-  cwd?: string;
-  entries?: Array<{
-    name: string;
-    type: 'file' | 'dir' | 'link';
-    depth?: number;
-    size?: string;
-    modified?: string;
-    permissions?: string;
-  }>;
-  summary?: string;
-  errorCode?: ErrorCode;
-  hints?: readonly string[];
-  warnings?: string[];
-  pagination?: ViewStructurePagination;
-  [key: string]: unknown;
-}
+export type ViewStructureResult = LocalViewStructureToolResult;

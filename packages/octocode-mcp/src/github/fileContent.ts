@@ -8,7 +8,7 @@
 import type { GitHubAPIResponse } from './githubAPI';
 import type {
   FileContentQuery,
-  ContentResult,
+  GitHubFileContentApiResult,
 } from '../tools/github_fetch_content/types.js';
 import { getOctokit } from './client';
 import { generateCacheKey, withDataCache } from '../utils/http/cache';
@@ -33,7 +33,7 @@ export async function fetchGitHubFileContentAPI(
   params: FileContentQuery,
   authInfo?: AuthInfo,
   sessionId?: string
-): Promise<GitHubAPIResponse<ContentResult>> {
+): Promise<GitHubAPIResponse<GitHubFileContentApiResult>> {
   const cacheKey = generateCacheKey(
     'gh-api-file-content',
     {
@@ -57,7 +57,7 @@ export async function fetchGitHubFileContentAPI(
   );
 
   if (!('data' in rawResult) || !rawResult.data) {
-    return rawResult as GitHubAPIResponse<ContentResult>;
+    return rawResult as GitHubAPIResponse<GitHubFileContentApiResult>;
   }
 
   const branchForProcessing =

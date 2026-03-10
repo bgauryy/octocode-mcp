@@ -194,6 +194,17 @@ export interface LSPPaginationInfo {
 }
 
 /**
+ * LSP error types for dynamic hints
+ */
+export type LSPErrorType =
+  | 'symbol_not_found'
+  | 'file_not_found'
+  | 'not_a_function'
+  | 'timeout'
+  | 'parse_error'
+  | 'unknown';
+
+/**
  * Base LSP tool result
  */
 interface LSPToolResultBase {
@@ -208,17 +219,6 @@ interface LSPToolResultBase {
   /** Index signature for ProcessedBulkResult compatibility */
   [key: string]: unknown;
 }
-
-/**
- * LSP error types for dynamic hints
- */
-type LSPErrorType =
-  | 'symbol_not_found'
-  | 'file_not_found'
-  | 'not_a_function'
-  | 'timeout'
-  | 'parse_error'
-  | 'unknown';
 
 /**
  * Go to definition result

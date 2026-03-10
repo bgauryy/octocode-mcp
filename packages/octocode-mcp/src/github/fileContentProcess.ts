@@ -2,7 +2,7 @@
  * File content processing — line extraction, match search, sanitization, minification.
  * Extracted from fileContent.ts to isolate post-cache processing.
  */
-import type { ContentResult } from '../tools/github_fetch_content/types.js';
+import type { GitHubFileContentApiResult } from '../tools/github_fetch_content/types.js';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from '../utils/minifier/index.js';
 import {
@@ -28,10 +28,10 @@ interface FileTimestampInfo {
  * Apply pagination to content result (post-cache operation)
  */
 export function applyContentPagination(
-  data: ContentResult,
+  data: GitHubFileContentApiResult,
   charOffset: number,
   charLength?: number
-): ContentResult {
+): GitHubFileContentApiResult {
   const content = data.content ?? '';
   const maxChars = charLength ?? GITHUB_PAGINATION.MAX_CHARS_BEFORE_PAGINATION;
 
@@ -109,7 +109,7 @@ export async function processFileContentAPI(
   endLine?: number,
   matchStringContextLines: number = 5,
   matchString?: string
-): Promise<ContentResult> {
+): Promise<GitHubFileContentApiResult> {
   const matchLocationsSet = new Set<string>();
 
   // IMPORTANT: Search on ORIGINAL content first, sanitize OUTPUT later
@@ -149,7 +149,7 @@ export async function processFileContentAPI(
         hints: [
           `Pattern "${matchString}" not found in file. Try broader search or verify path.`,
         ],
-      } as ContentResult;
+      } as GitHubFileContentApiResult;
     }
 
     const firstMatch = matchingLines[0]!;
@@ -243,5 +243,5 @@ export async function processFileContentAPI(
     ...(matchLocations.length > 0 && {
       matchLocations,
     }),
-  } as ContentResult;
+  } as GitHubFileContentApiResult;
 }

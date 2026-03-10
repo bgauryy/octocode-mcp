@@ -88,6 +88,7 @@ export async function executeRipgrepSearchInternal(
     const timeoutMs = RESOURCE_LIMITS.DEFAULT_EXEC_TIMEOUT_MS;
     return {
       status: 'error',
+      error: `Search timed out after ${timeoutMs / 1000} seconds.`,
       errorCode: LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT,
       searchEngine: 'rg',
       hints: [
@@ -208,6 +209,7 @@ export async function executeGrepSearch(
     const timeoutMs = RESOURCE_LIMITS.DEFAULT_EXEC_TIMEOUT_MS;
     return {
       status: 'error',
+      error: `Search timed out after ${timeoutMs / 1000} seconds.`,
       errorCode: LOCAL_TOOL_ERROR_CODES.COMMAND_TIMEOUT,
       searchEngine: 'grep',
       hints: [

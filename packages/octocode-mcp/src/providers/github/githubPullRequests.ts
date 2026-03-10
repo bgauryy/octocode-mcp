@@ -19,8 +19,8 @@ import { searchGitHubPullRequestsAPI } from '../../github/pullRequestSearch.js';
 import type { GitHubPullRequestsSearchParams } from '../../github/githubAPI.js';
 
 import type {
-  PullRequestInfo,
-  PullRequestSearchResultData,
+  GitHubPullRequestApiItem,
+  GitHubPullRequestSearchApiData,
 } from '../../tools/github_search_pull_requests/types.js';
 
 /**
@@ -49,7 +49,7 @@ export function parseGitHubProjectId(projectId?: string): {
  * Transform GitHub pull request result to unified format.
  */
 export function transformPullRequestResult(
-  data: PullRequestSearchResultData,
+  data: GitHubPullRequestSearchApiData,
   query: PullRequestQuery,
   parseProjectId: (projectId?: string) => {
     owner?: string;
@@ -57,7 +57,7 @@ export function transformPullRequestResult(
   } = parseGitHubProjectId
 ): PullRequestSearchResult {
   const items: PullRequestItem[] = (data.pull_requests || []).map(
-    (pr: PullRequestInfo) => ({
+    (pr: GitHubPullRequestApiItem) => ({
       number: pr.number,
       title: pr.title,
       body: pr.body || null,

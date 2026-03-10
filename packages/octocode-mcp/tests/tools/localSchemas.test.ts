@@ -9,8 +9,11 @@ import { STATIC_TOOL_NAMES } from '../../src/tools/toolMetadata/index.js';
 
 describe('Local tool schemas (TDD for local tools registration)', () => {
   const bulkQueriesShape = (schema: unknown) =>
-    (schema as { _def: { schema: { shape: { queries: { description?: string } } } } })
-      ._def.schema.shape.queries;
+    (
+      schema as {
+        _def: { schema: { shape: { queries: { description?: string } } } };
+      }
+    )._def.schema.shape.queries;
 
   describe('BulkRipgrepQuerySchema', () => {
     it('should be defined and valid', () => {
@@ -19,7 +22,8 @@ describe('Local tool schemas (TDD for local tools registration)', () => {
     });
 
     it('should have correct description containing tool name', () => {
-      const description = bulkQueriesShape(BulkRipgrepQuerySchema).description || '';
+      const description =
+        bulkQueriesShape(BulkRipgrepQuerySchema).description || '';
       // Should contain the actual tool name, not 'undefined'
       expect(description).not.toContain('undefined');
       expect(description).toContain(STATIC_TOOL_NAMES.LOCAL_RIPGREP);
@@ -47,7 +51,8 @@ describe('Local tool schemas (TDD for local tools registration)', () => {
     });
 
     it('should have correct description containing tool name', () => {
-      const description = bulkQueriesShape(BulkFindFilesSchema).description || '';
+      const description =
+        bulkQueriesShape(BulkFindFilesSchema).description || '';
       expect(description).not.toContain('undefined');
       expect(description).toContain(STATIC_TOOL_NAMES.LOCAL_FIND_FILES);
     });

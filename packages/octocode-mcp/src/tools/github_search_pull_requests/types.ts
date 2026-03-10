@@ -3,6 +3,13 @@
  * @module tools/github_search_pull_requests/types
  */
 
+import type {
+  GitHubPullRequestOutput,
+  GitHubSearchPullRequestsData,
+  GitHubSearchPullRequestsPagination,
+  GitHubSearchPullRequestsToolResult,
+} from '../../scheme/outputTypes.js';
+
 // ============================================================================
 // INPUT TYPES
 // ============================================================================
@@ -64,14 +71,20 @@ export interface GitHubPullRequestSearchQuery {
 // OUTPUT TYPES
 // ============================================================================
 
-/** Base result interface */
-interface BaseToolResult {
-  error?: string;
-  hints?: string[];
-}
+/** Final user-facing pull request item derived from the output schema */
+export type PullRequestInfo = GitHubPullRequestOutput;
 
-/** Detailed pull request information */
-export interface PullRequestInfo {
+/** Final user-facing success data derived from the output schema */
+export type PullRequestSearchResultData = GitHubSearchPullRequestsData;
+
+/** Final user-facing flattened query result derived from the output schema */
+export type PullRequestSearchResult = GitHubSearchPullRequestsToolResult;
+
+/** Pagination info for final user-facing pull request search results */
+export type PRSearchPagination = GitHubSearchPullRequestsPagination;
+
+/** Internal GitHub API pull request item before provider normalization */
+export interface GitHubPullRequestApiItem {
   number: number;
   title: string;
   url: string;
@@ -131,20 +144,11 @@ export interface PullRequestInfo {
   }>;
 }
 
-/** Pagination info for pull request search results */
-export interface PRSearchPagination {
-  currentPage: number;
-  totalPages: number;
-  perPage: number;
-  totalMatches: number;
-  hasMore: boolean;
-}
-
-/** Pull request search result data */
-export interface PullRequestSearchResultData {
+/** Internal GitHub API pull request search result data */
+export interface GitHubPullRequestSearchApiData {
   owner?: string;
   repo?: string;
-  pull_requests?: PullRequestInfo[];
+  pull_requests?: GitHubPullRequestApiItem[];
   total_count?: number;
   incomplete_results?: boolean;
   pagination?: PRSearchPagination;
@@ -159,8 +163,8 @@ export interface PullRequestSearchResultData {
   };
 }
 
-/** Complete pull request search result */
-export interface PullRequestSearchResult
-  extends
-    BaseToolResult,
-    PullRequestSearchResultData {}
+/** Internal GitHub API pull request search result */
+export interface GitHubPullRequestSearchApiResult extends GitHubPullRequestSearchApiData {
+  error?: string;
+  hints?: string[];
+}

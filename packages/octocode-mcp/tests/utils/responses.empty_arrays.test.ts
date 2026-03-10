@@ -146,7 +146,8 @@ describe('Empty Arrays Removal in Responses', () => {
             {
               id: 'search_empty_matches_query',
               keywordsToSearch: ['test'],
-              researchGoal: 'Verify files remain even when match arrays are empty',
+              researchGoal:
+                'Verify files remain even when match arrays are empty',
               reasoning: 'Test file presence with empty matches',
             },
           ],

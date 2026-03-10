@@ -160,7 +160,9 @@ async function handleDirectoryFetch(
     totalSize: result.totalSize,
     files: result.files,
     ...(result.cached ? { cached: true } : {}),
-    ...(query.branch !== result.branch ? { resolvedBranch: result.branch } : {}),
+    ...(query.branch !== result.branch
+      ? { resolvedBranch: result.branch }
+      : {}),
   };
 
   const hints = [...DIRECTORY_FETCH_HINTS];

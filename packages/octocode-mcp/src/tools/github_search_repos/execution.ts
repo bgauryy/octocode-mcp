@@ -1,9 +1,5 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type {
-  GitHubReposSearchQuery,
-  SimplifiedRepository,
-  RepoSearchResult,
-} from './types.js';
+import type { GitHubReposSearchQuery, SimplifiedRepository } from './types.js';
 import {
   TOOL_NAMES,
   getDynamicHints as getMetadataDynamicHints,
@@ -174,8 +170,12 @@ function buildPaginationHints(pagination: {
   totalMatches?: number;
 }): string[] {
   const hints: string[] = [];
-  const { currentPage, totalPages, totalMatches: totalMatchCount, hasMore } =
-    pagination;
+  const {
+    currentPage,
+    totalPages,
+    totalMatches: totalMatchCount,
+    hasMore,
+  } = pagination;
   const perPage = pagination.entriesPerPage || 10;
   const totalMatches = totalMatchCount || 0;
   const startItem = (currentPage - 1) * perPage + 1;
@@ -287,11 +287,14 @@ export async function searchMultipleGitHubRepos(
           variants.map(async variant => ({
             label: variant.label,
             query: variant.query,
-            apiResult: await provider.searchRepos(createProviderQuery(variant.query)),
+            apiResult: await provider.searchRepos(
+              createProviderQuery(variant.query)
+            ),
           }))
         );
 
-        const successfulVariants = variantExecutions.filter(isSuccessfulVariant);
+        const successfulVariants =
+          variantExecutions.filter(isSuccessfulVariant);
         const failedVariants = variantExecutions.filter(
           variant => !isSuccessfulVariant(variant)
         );
@@ -319,7 +322,8 @@ export async function searchMultipleGitHubRepos(
         );
         const onlySuccessfulVariant =
           successfulVariants.length === 1 ? successfulVariants[0] : undefined;
-        const successfulPagination = onlySuccessfulVariant?.apiResult.data.pagination;
+        const successfulPagination =
+          onlySuccessfulVariant?.apiResult.data.pagination;
         const paginationHints = successfulPagination
           ? buildPaginationHints(successfulPagination)
           : [];
@@ -360,9 +364,7 @@ export async function searchMultipleGitHubRepos(
     },
     {
       toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-      keysPriority: ['repositories', 'pagination', 'error'] satisfies Array<
-        keyof RepoSearchResult
-      >,
+      keysPriority: ['repositories', 'pagination', 'error'] satisfies string[],
     }
   );
 }

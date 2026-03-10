@@ -1,6 +1,10 @@
 # Workflow Patterns
 
-Common research flows for local code exploration.
+Common research flows for local and external code exploration.
+
+---
+
+# Part 1: Local Patterns
 
 ---
 
@@ -355,7 +359,7 @@ localSearchCode(error message) → trace throw/catch → find root cause
 
 ---
 
-## Anti-Patterns
+## Anti-Patterns (Local)
 
 | Bad | Good |
 |-----|------|
@@ -370,14 +374,210 @@ localSearchCode(error message) → trace throw/catch → find root cause
 
 ---
 
-## Checklist
+# Part 2: External Patterns
 
-Before completing research:
+## Pattern 11: Package Discovery
+
+**Use when**: Finding the right library, comparing packages, evaluating options.
+
+```
+packageSearch(keyword) → githubViewRepoStructure → githubGetFileContent(README)
+```
+
+**Steps:**
+1. **Search**: Find packages matching use case
+2. **Evaluate**: Check stars, downloads, last update
+3. **Explore**: View repo structure of top candidates
+4. **Read**: Check README, examples, source quality
+
+**Example Flow:**
+```json
+// 1. Search packages
+{ "query": "rate-limiter express", "registry": "npm" }
+
+// 2. View top result repo
+{ "owner": "express-rate-limit", "repo": "express-rate-limit", "depth": 2 }
+
+// 3. Read README
+{ "owner": "express-rate-limit", "repo": "express-rate-limit", "path": "README.md" }
+
+// 4. Read source
+{ "owner": "express-rate-limit", "repo": "express-rate-limit", "path": "src/lib.ts", "matchString": "export" }
+```
+
+**Pitfall**: Stopping at npm metadata → always read the actual source.
+
+**Success Criteria**: Found best package with evidence (stars, maintenance, API quality).
+
+---
+
+## Pattern 12: External Repo Exploration
+
+**Use when**: Understanding how another project implements something.
+
+```
+githubSearchRepositories → githubViewRepoStructure → githubSearchCode → githubGetFileContent
+```
+
+**Steps:**
+1. **Find Repo**: Search by topic/keyword or use known repo
+2. **Map Structure**: View repo layout
+3. **Search Pattern**: Find the specific implementation
+4. **Read Source**: Get implementation details
+
+**Example Flow:**
+```json
+// 1. Find repo (skip if known)
+{ "query": "nextjs authentication", "sort": "stars" }
+
+// 2. Map structure
+{ "owner": "vercel", "repo": "next.js", "depth": 1 }
+
+// 3. Search for auth patterns
+{ "query": "getServerSession", "owner": "vercel", "repo": "next.js", "path": "packages" }
+
+// 4. Read implementation
+{ "owner": "vercel", "repo": "next.js", "path": "packages/next/src/server/auth.ts", "matchString": "getServerSession" }
+```
+
+**Pitfall**: Searching too broadly → narrow to specific owner/repo ASAP.
+
+**Success Criteria**: Found specific implementation with line references.
+
+---
+
+## Pattern 13: Dependency Source Investigation
+
+**Use when**: Need to understand how an imported library works internally.
+
+```
+packageSearch → get repo URL → githubViewRepoStructure → githubSearchCode → githubGetFileContent
+```
+
+**Steps:**
+1. **Find Package**: Get repo URL from package metadata
+2. **Map Layout**: Understand library structure
+3. **Search**: Find the exported function/class
+4. **Read**: Get the implementation
+
+**Example Flow:**
+```json
+// 1. Find package repo URL
+{ "query": "zod", "registry": "npm" }
+
+// 2. View structure
+{ "owner": "colinhacks", "repo": "zod", "depth": 2 }
+
+// 3. Search for specific feature
+{ "query": "z.object", "owner": "colinhacks", "repo": "zod", "path": "src" }
+
+// 4. Read implementation
+{ "owner": "colinhacks", "repo": "zod", "path": "src/types.ts", "matchString": "object(" }
+```
+
+**Pitfall**: Only reading installed node_modules version → canonical GitHub source shows latest intent.
+
+**Success Criteria**: Understand how the dependency works at the source level.
+
+---
+
+## Pattern 14: PR Archaeology
+
+**Use when**: Understanding why code changed, tracing regression origins, reviewing decisions.
+
+```
+githubSearchPullRequests → read PR files → trace changes
+```
+
+**Steps:**
+1. **Search PRs**: Find merged PRs matching the topic
+2. **Read Context**: Get PR description and changed files
+3. **Trace Changes**: Read specific files at that point in time
+
+**Example Flow:**
+```json
+// 1. Find relevant PRs
+{ "query": "fix auth token refresh", "owner": "myorg", "repo": "backend", "state": "merged" }
+
+// 2. Read changed files from PR
+{ "owner": "myorg", "repo": "backend", "path": "src/auth/tokenRefresh.ts", "matchString": "refreshToken" }
+```
+
+**Pitfall**: Reading only PR titles → read the actual changed files.
+
+**Success Criteria**: Understood the change motivation and implementation.
+
+---
+
+## Pattern 15: Cross-Boundary Research (Local + External)
+
+**Use when**: Local code uses external library, need to understand both sides.
+
+```
+LOCAL: localSearchCode(import) → lspGotoDefinition
+EXTERNAL: packageSearch → githubSearchCode → githubGetFileContent
+MERGE: Compare and document
+```
+
+**Steps:**
+1. **Local**: Find how the dependency is used locally
+2. **External**: Find how the dependency works at source
+3. **Merge**: Compare usage with intended API
+
+**Example Flow:**
+```json
+// LOCAL — find usage
+{ "pattern": "import.*from 'next-auth'", "path": "src", "filesOnly": true }
+// → then lspGotoDefinition on the import, lspFindReferences for all usages
+
+// EXTERNAL — find source
+{ "query": "next-auth", "registry": "npm" }
+// → then githubViewRepoStructure + githubSearchCode + githubGetFileContent
+
+// MERGE: Is local usage correct? Are there missed features? Breaking changes?
+```
+
+**Pitfall**: Researching one side only → always trace both local usage AND external implementation.
+
+**Success Criteria**: Understand both sides and their interaction.
+
+---
+
+## Anti-Patterns (External)
+
+| Bad | Good |
+|-----|------|
+| **`gh api` for GitHub** | **`githubSearchCode` / `githubGetFileContent`** |
+| **`WebFetch` for GitHub** | **Octocode GitHub tools** |
+| **`npm search` in shell** | **`packageSearch`** |
+| **Guessing owner/repo** | **`packageSearch` or `githubSearchRepositories` first** |
+| **Reading entire large files** | **`matchString` targeting** |
+| **Broad GitHub search** | **Narrow to owner/repo ASAP** |
+| **Skipping structure** | **`githubViewRepoStructure` before reading** |
+
+---
+
+# Checklists
+
+## Local Research Checklist
+
+Before completing local research:
 
 - [ ] **Goal defined?** (Atomic question)
 - [ ] **Code evidence found?** (Line numbers/paths)
 - [ ] **The Gate passed?** (Read full content)
 - [ ] **Cross-referenced?** (Imports/Usage)
+- [ ] **Gaps documented?**
+- [ ] **User checkpoint offered?** (Continue/Save)
+
+## External Research Checklist
+
+Before completing external research:
+
+- [ ] **Repo/package found via search?** (Not guessed)
+- [ ] **Structure explored first?** (`githubViewRepoStructure`)
+- [ ] **References include full GitHub URLs?** (With line numbers)
+- [ ] **Source verified?** (Read actual code, not just metadata)
 - [ ] **Gaps documented?**
 - [ ] **User checkpoint offered?** (Continue/Save)
 

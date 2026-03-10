@@ -12,7 +12,7 @@ import {
   IssueSearchResultItem,
   PullRequestSimple,
 } from './githubAPI';
-import type { PullRequestSearchResult } from '../tools/github_search_pull_requests/types.js';
+import type { GitHubPullRequestSearchApiResult } from '../tools/github_search_pull_requests/types.js';
 import { SEARCH_ERRORS } from '../errorCodes.js';
 import { logSessionError } from '../session.js';
 import { TOOL_NAMES } from '../tools/toolMetadata/index.js';
@@ -41,7 +41,7 @@ export async function searchGitHubPullRequestsAPI(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
   sessionId?: string
-): Promise<PullRequestSearchResult> {
+): Promise<GitHubPullRequestSearchApiResult> {
   const cacheKey = generateCacheKey(
     'gh-api-prs',
     {
@@ -86,7 +86,7 @@ export async function searchGitHubPullRequestsAPI(
     sessionId
   );
 
-  const result = await withDataCache<PullRequestSearchResult>(
+  const result = await withDataCache<GitHubPullRequestSearchApiResult>(
     cacheKey,
     async () => {
       return await searchGitHubPullRequestsAPIInternal(
@@ -96,7 +96,7 @@ export async function searchGitHubPullRequestsAPI(
       );
     },
     {
-      shouldCache: (value: PullRequestSearchResult) => !value.error,
+      shouldCache: (value: GitHubPullRequestSearchApiResult) => !value.error,
     }
   );
 
@@ -107,7 +107,7 @@ async function searchGitHubPullRequestsAPIInternal(
   params: GitHubPullRequestsSearchParams,
   authInfo?: AuthInfo,
   _sessionId?: string
-): Promise<PullRequestSearchResult> {
+): Promise<GitHubPullRequestSearchApiResult> {
   try {
     if (
       params.prNumber &&
@@ -216,7 +216,7 @@ async function searchGitHubPullRequestsAPIInternal(
 async function searchPullRequestsWithREST(
   octokit: InstanceType<typeof OctokitWithThrottling>,
   params: GitHubPullRequestsSearchParams
-): Promise<PullRequestSearchResult> {
+): Promise<GitHubPullRequestSearchApiResult> {
   try {
     const owner = params.owner as string;
     const repo = params.repo as string;

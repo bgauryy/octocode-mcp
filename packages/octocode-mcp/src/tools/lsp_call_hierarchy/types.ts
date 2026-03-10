@@ -3,6 +3,17 @@
  * @module tools/lsp_call_hierarchy/types
  */
 
+import type {
+  LspCallHierarchyItem,
+  LspCallHierarchyPagination,
+  LspCallHierarchyToolResult,
+  LspExactPosition,
+  LspIncomingCall,
+  LspOutgoingCall,
+  LspRange,
+  LspSymbolKind,
+} from '../../scheme/outputTypes.js';
+
 // ============================================================================
 // INPUT TYPES
 // ============================================================================
@@ -31,81 +42,19 @@ export interface LSPCallHierarchyQuery {
 // SHARED LSP TYPES
 // ============================================================================
 
-/**
- * Exact position in a file (0-indexed for LSP compatibility)
- */
-export interface ExactPosition {
-  line: number;
-  character: number;
-}
+export type ExactPosition = LspExactPosition;
 
-/**
- * Range in a file (0-indexed)
- */
-export interface LSPRange {
-  start: ExactPosition;
-  end: ExactPosition;
-}
+export type LSPRange = LspRange;
 
-/**
- * Symbol kinds for LSP
- */
-export type SymbolKind =
-  | 'function'
-  | 'method'
-  | 'class'
-  | 'interface'
-  | 'type'
-  | 'variable'
-  | 'constant'
-  | 'property'
-  | 'enum'
-  | 'module'
-  | 'namespace'
-  | 'unknown';
+export type SymbolKind = LspSymbolKind;
 
-/**
- * Call hierarchy item
- */
-export interface CallHierarchyItem {
-  name: string;
-  kind: SymbolKind;
-  uri: string;
-  range: LSPRange;
-  selectionRange: LSPRange;
-  content?: string;
-  displayRange?: {
-    startLine: number;
-    endLine: number;
-  };
-}
+export type CallHierarchyItem = LspCallHierarchyItem;
 
-/**
- * Incoming call (who calls this function)
- */
-export interface IncomingCall {
-  from: CallHierarchyItem;
-  fromRanges: LSPRange[];
-}
+export type IncomingCall = LspIncomingCall;
 
-/**
- * Outgoing call (what this function calls)
- */
-export interface OutgoingCall {
-  to: CallHierarchyItem;
-  fromRanges: LSPRange[];
-}
+export type OutgoingCall = LspOutgoingCall;
 
-/**
- * Pagination info for LSP results
- */
-export interface LSPPaginationInfo {
-  currentPage: number;
-  totalPages: number;
-  totalResults: number;
-  hasMore: boolean;
-  resultsPerPage: number;
-}
+export type LSPPaginationInfo = LspCallHierarchyPagination;
 
 // ============================================================================
 // OUTPUT TYPES
@@ -122,28 +71,4 @@ export type LSPErrorType =
   | 'parse_error'
   | 'unknown';
 
-/**
- * Result of LSP call hierarchy
- */
-export interface CallHierarchyResult {
-  status: 'hasResults' | 'empty' | 'error';
-  error?: string;
-  errorType?: LSPErrorType;
-  hints?: string[];
-  item?: CallHierarchyItem;
-  incomingCalls?: IncomingCall[];
-  outgoingCalls?: OutgoingCall[];
-  pagination?: LSPPaginationInfo;
-  /** Character-based output pagination (when output exceeds size limit) */
-  outputPagination?: {
-    charOffset: number;
-    charLength: number;
-    totalChars: number;
-    hasMore: boolean;
-    currentPage: number;
-    totalPages: number;
-  };
-  direction?: 'incoming' | 'outgoing';
-  depth?: number;
-  [key: string]: unknown;
-}
+export type CallHierarchyResult = LspCallHierarchyToolResult;

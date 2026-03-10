@@ -3,6 +3,11 @@
  * @module tools/github_search_repos/types
  */
 
+import type {
+  GitHubRepositoryOutput,
+  GitHubSearchRepositoriesData,
+} from '../../scheme/outputTypes.js';
+
 // ============================================================================
 // INPUT TYPES
 // ============================================================================
@@ -32,47 +37,6 @@ export interface GitHubReposSearchQuery {
 // OUTPUT TYPES
 // ============================================================================
 
-/** Base result interface */
-interface BaseToolResult {
-  error?: string;
-  hints?: string[];
-}
+export type SimplifiedRepository = GitHubRepositoryOutput;
 
-/** Simplified repository metadata */
-export interface SimplifiedRepository {
-  owner: string;
-  repo: string;
-  defaultBranch?: string;
-  stars: number;
-  description: string;
-  url: string;
-  createdAt: string;
-  updatedAt: string;
-  pushedAt: string;
-  /** Repository visibility: public, private, or internal */
-  visibility?: string;
-  /** Array of topic tags (only included if repository has topics) */
-  topics?: string[];
-  /** Number of forks (only included if > 0) */
-  forksCount?: number;
-  /** Number of open issues (only included if > 0) */
-  openIssuesCount?: number;
-}
-
-/** Repository search result */
-export interface RepoSearchResult extends BaseToolResult {
-  repositories: SimplifiedRepository[];
-  /** Pagination info for navigating through results */
-  pagination?: {
-    /** Current page number (1-based) */
-    currentPage: number;
-    /** Total number of available pages */
-    totalPages: number;
-    /** Number of results per page */
-    perPage: number;
-    /** Total number of matching results (capped at 1000 by GitHub) */
-    totalMatches: number;
-    /** Whether more pages are available */
-    hasMore: boolean;
-  };
-}
+export type RepoSearchResult = GitHubSearchRepositoriesData;

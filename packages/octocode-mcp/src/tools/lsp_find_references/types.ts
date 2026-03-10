@@ -3,6 +3,16 @@
  * @module tools/lsp_find_references/types
  */
 
+import type {
+  LspCodeSnippet,
+  LspExactPosition,
+  LspFindReferencesPagination,
+  LspFindReferencesToolResult,
+  LspRange,
+  LspReferenceLocation,
+  LspSymbolKind,
+} from '../../scheme/outputTypes.js';
+
 // ============================================================================
 // INPUT TYPES
 // ============================================================================
@@ -30,70 +40,17 @@ export interface LSPFindReferencesQuery {
 // SHARED LSP TYPES
 // ============================================================================
 
-/**
- * Exact position in a file (0-indexed for LSP compatibility)
- */
-export interface ExactPosition {
-  line: number;
-  character: number;
-}
+export type ExactPosition = LspExactPosition;
 
-/**
- * Range in a file (0-indexed)
- */
-export interface LSPRange {
-  start: ExactPosition;
-  end: ExactPosition;
-}
+export type LSPRange = LspRange;
 
-/**
- * Symbol kinds for LSP
- */
-export type SymbolKind =
-  | 'function'
-  | 'method'
-  | 'class'
-  | 'interface'
-  | 'type'
-  | 'variable'
-  | 'constant'
-  | 'property'
-  | 'enum'
-  | 'module'
-  | 'namespace'
-  | 'unknown';
+export type SymbolKind = LspSymbolKind;
 
-/**
- * Code snippet with location information
- */
-export interface CodeSnippet {
-  uri: string;
-  range: LSPRange;
-  content: string;
-  symbolKind?: SymbolKind;
-  displayRange?: {
-    startLine: number;
-    endLine: number;
-  };
-}
+export type CodeSnippet = LspCodeSnippet;
 
-/**
- * Reference location with context
- */
-export interface ReferenceLocation extends CodeSnippet {
-  isDefinition?: boolean;
-}
+export type ReferenceLocation = LspReferenceLocation;
 
-/**
- * Pagination info for LSP results
- */
-export interface LSPPaginationInfo {
-  currentPage: number;
-  totalPages: number;
-  totalResults: number;
-  hasMore: boolean;
-  resultsPerPage: number;
-}
+export type LSPPaginationInfo = LspFindReferencesPagination;
 
 // ============================================================================
 // OUTPUT TYPES
@@ -110,17 +67,4 @@ export type LSPErrorType =
   | 'parse_error'
   | 'unknown';
 
-/**
- * Result of LSP find references
- */
-export interface FindReferencesResult {
-  status: 'hasResults' | 'empty' | 'error';
-  error?: string;
-  errorType?: LSPErrorType;
-  hints?: string[];
-  locations?: ReferenceLocation[];
-  pagination?: LSPPaginationInfo;
-  totalReferences?: number;
-  hasMultipleFiles?: boolean;
-  [key: string]: unknown;
-}
+export type FindReferencesResult = LspFindReferencesToolResult;

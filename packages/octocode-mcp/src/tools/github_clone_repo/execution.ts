@@ -120,12 +120,7 @@ export async function executeCloneRepo(
     },
     {
       toolName: TOOL_NAMES.GITHUB_CLONE_REPO,
-      keysPriority: [
-        'resolvedBranch',
-        'localPath',
-        'cached',
-        'error',
-      ],
+      keysPriority: ['resolvedBranch', 'localPath', 'cached', 'error'],
     }
   );
 }

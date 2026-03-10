@@ -4,6 +4,11 @@
  */
 
 import type { PaginationInfo } from '../../utils/core/types.js';
+import type {
+  GitHubDirectoryFileEntry,
+  GitHubFetchContentData,
+  GitHubFetchContentToolResult,
+} from '../../scheme/outputTypes.js';
 
 // ============================================================================
 // INPUT TYPES
@@ -46,8 +51,14 @@ export interface FileContentQuery {
 // OUTPUT TYPES
 // ============================================================================
 
-/** File content result data */
-export interface ContentResultData {
+/** Final user-facing success data derived from the output schema */
+export type ContentResultData = GitHubFetchContentData;
+
+/** Final user-facing flattened query result derived from the output schema */
+export type ContentResult = GitHubFetchContentToolResult;
+
+/** Internal GitHub file content data used before provider/tool flattening */
+export interface GitHubFileContentApiData {
   owner?: string;
   repo?: string;
   path?: string;
@@ -68,29 +79,21 @@ export interface ContentResultData {
   searchedFor?: string;
 }
 
-/** Base result interface */
-interface BaseToolResult {
+/** Internal GitHub file content result used by GitHub/provider layers */
+interface GitHubFileContentApiResultBase {
   error?: string;
   hints?: string[];
 }
 
-/** Complete file content result */
-export interface ContentResult
-  extends BaseToolResult, ContentResultData {}
+export interface GitHubFileContentApiResult
+  extends GitHubFileContentApiResultBase, GitHubFileContentApiData {}
 
 // ============================================================================
 // DIRECTORY FETCH TYPES
 // ============================================================================
 
 /** Single file entry fetched from a directory */
-export interface DirectoryFileEntry {
-  /** Relative path within the directory */
-  path: string;
-  /** File size in bytes */
-  size: number;
-  /** File type (always 'file') */
-  type: 'file';
-}
+export type DirectoryFileEntry = GitHubDirectoryFileEntry;
 
 /** Result of a directory fetch operation */
 export interface DirectoryFetchResult {

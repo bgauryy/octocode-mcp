@@ -73,6 +73,7 @@ export async function viewStructure(
       );
       return {
         status: 'error',
+        error: stderrMsg || 'ls command failed',
         errorCode: toolError.errorCode,
         hints: [
           stderrMsg ? `Error: ${stderrMsg}` : 'ls command failed',
@@ -164,6 +165,7 @@ export async function viewStructure(
     );
     return {
       status: 'error',
+      error: toolError.message,
       errorCode: toolError.errorCode,
       hints: getHints(TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
     };

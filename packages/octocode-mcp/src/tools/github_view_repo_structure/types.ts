@@ -3,6 +3,12 @@
  * @module tools/github_view_repo_structure/types
  */
 
+import type {
+  GitHubRepoStructureDirectoryEntry,
+  GitHubViewRepoStructureData,
+  GitHubViewRepoStructureToolResult,
+} from '../../scheme/outputTypes.js';
+
 // ============================================================================
 // INPUT TYPES
 // ============================================================================
@@ -28,39 +34,8 @@ export interface GitHubViewRepoStructureQuery {
 // OUTPUT TYPES
 // ============================================================================
 
-/** Base result interface */
-interface BaseToolResult {
-  error?: string;
-  hints?: string[];
-}
+export type DirectoryEntry = GitHubRepoStructureDirectoryEntry;
 
-/** Directory entry with files and folders grouped together */
-export interface DirectoryEntry {
-  files: string[];
-  folders: string[];
-}
+export type RepoStructureResultData = GitHubViewRepoStructureData;
 
-/**
- * Repository structure result data - optimized format.
- * Groups files by parent directory to eliminate path repetition.
- * Keys are relative directory paths (e.g., ".", "src", "src/utils").
- */
-export interface RepoStructureResultData {
-  /** Resolved branch when the input omitted a branch and the provider filled one in */
-  resolvedBranch?: string;
-  branchFallback?: {
-    requestedBranch: string;
-    actualBranch: string;
-    defaultBranch?: string;
-    warning: string;
-  };
-  /** Structure grouped by directory - keys are relative paths */
-  structure?: Record<string, DirectoryEntry>;
-  summary?: Record<string, unknown>;
-}
-
-/** Complete repository structure result */
-export interface RepoStructureResult
-  extends
-    BaseToolResult,
-    RepoStructureResultData {}
+export type RepoStructureResult = GitHubViewRepoStructureToolResult;
