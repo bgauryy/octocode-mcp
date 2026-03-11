@@ -12,10 +12,17 @@ description: This skill should be used when the user asks to "generate documenta
 This command orchestrates specialized AI agents in 6 phases to analyze your code repository and generate comprehensive documentation:
 </what>
 
+## Runtime Compatibility
+
+- Model labels such as `Opus`, `Sonnet`, and `Haiku` are role hints, not hard requirements. Map them to the strongest available host models for the job.
+- `Task` means the host runtime's parallel subagent mechanism. **IF** the host cannot run true parallel subagents → **THEN** execute the same work sequentially and preserve exclusive file ownership.
+- Pseudocode blocks in this document are behavioral templates. Adapt helper names, file APIs, and retry helpers to the active runtime instead of treating them as literal APIs.
+- Session artifacts live under `.octocode/documentation/{session-name}/`. Short names like `analysis.json` below refer to files inside that session directory unless stated otherwise.
+
 <steps>
   <phase_1>
   **Discovery+Analysis** (Phase 1)
-  Agent: Opus
+  Agent Role: High-capability reasoning model
   Parallel: 4 parallel agents
   What: Analyze language, architecture, flows, and APIs
   Input: Repository path
@@ -24,7 +31,7 @@ This command orchestrates specialized AI agents in 6 phases to analyze your code
 
   <phase_2>
   **Engineer Questions** (Phase 2)
-  Agent: Opus
+  Agent Role: High-capability reasoning model
   What: Generates comprehensive questions based on the analysis
   Input: `analysis.json`
   Output: `questions.json`
@@ -32,7 +39,7 @@ This command orchestrates specialized AI agents in 6 phases to analyze your code
 
   <phase_3>
   **Research Agent** (Phase 3) 🆕
-  Agent: Sonnet
+  Agent Role: Fast research/execution model
   Parallel: Dynamic (based on question volume)
   What: Deep-dive code forensics to ANSWER the questions with evidence
   Input: `analysis.json` + `questions.json`
@@ -41,7 +48,7 @@ This command orchestrates specialized AI agents in 6 phases to analyze your code
 
   <phase_4>
   **Orchestrator** (Phase 4)
-  Agent: Opus
+  Agent Role: High-capability reasoning model
   What: Groups questions by file target and assigns exclusive file ownership to writers
   Input: `questions.json` + `research.json`
   Output: `work-assignments.json` (file-based assignments for parallel writers)
@@ -49,7 +56,7 @@ This command orchestrates specialized AI agents in 6 phases to analyze your code
 
   <phase_5>
   **Documentation Writers** (Phase 5)
-  Agent: Sonnet
+  Agent Role: Fast writing model
   Parallel: 1-8 parallel agents (dynamic based on workload)
   What: Synthesize research and write comprehensive documentation with exclusive file ownership
   Input: `analysis.json` + `questions.json` + `research.json` + `work-assignments.json`
@@ -58,7 +65,7 @@ This command orchestrates specialized AI agents in 6 phases to analyze your code
 
   <phase_6>
   **QA Validator** (Phase 6)
-  Agent: Sonnet
+  Agent Role: Fast validation model
   What: Validates documentation quality using LSP-powered verification
   Input: `documentation/*.md` + `analysis.json` + `questions.json` + `research.json`
   Output: `qa-results.json` + `QA-SUMMARY.md`
@@ -66,7 +73,7 @@ This command orchestrates specialized AI agents in 6 phases to analyze your code
 </steps>
 
 <subagents>
-Use spawn explore opus/sonnet/haiku subagents to explore code with MCP tools (localSearchCode, lspGotoDefinition, lspCallHierarchy, lspFindReferences)
+Use the host's subagent mechanism to explore code with MCP tools (`localSearchCode`, `lspGotoDefinition`, `lspCallHierarchy`, `lspFindReferences`). Pick model tiers by capability, not by hard-coded model names.
 </subagents>
 
 <mcp_discovery>
@@ -107,21 +114,28 @@ Proceed with whatever tools are available — do not block on setup.
 **STOP. READ THIS TWICE.**
 
 ### 1. THE RULE
-**You MUST spawn parallel agents in a SINGLE message with multiple Task tool calls.**
+**Use the strongest parallel mechanism the host supports.** Prefer single-message fan-out when the runtime supports concurrent `Task` calls.
 
 ### 2. FORBIDDEN BEHAVIOR
-**FORBIDDEN:** Calling `Task` sequentially (one per response).
-**REASON:** Sequential calls defeat parallelism and slow down execution by 4x-8x.
+**FORBIDDEN:** Claiming work ran in parallel when the host actually executed it sequentially.
+**REASON:** False concurrency claims hide runtime limits and make failures harder to reason about.
 
-### 3. REQUIRED CONFIRMATION
+### 3. REQUIRED FALLBACK
+**IF** the runtime cannot perform true parallel fan-out:
+- Run the same worker scopes sequentially
+- Preserve exclusive file ownership
+- Keep the same phase boundaries and aggregation steps
+- Tell the user that execution is in sequential fallback mode
+
+### 4. REQUIRED CONFIRMATION
 Before launching any parallel phase (1, 3, 5), you **MUST** verify:
-- [ ] All Task calls are prepared for a SINGLE response
+- [ ] The host can run the chosen fan-out pattern
 - [ ] No dependencies exist between these parallel agents
 - [ ] Each agent has exclusive scope (no file conflicts)
 
 <correct_pattern title="✅ CORRECT: Single response launches all agents concurrently">
 ```
-// In ONE assistant message, include ALL Task tool invocations:
+// In ONE assistant message, include ALL Task tool invocations when the host supports it:
 Task(description="Discovery 1A-language", subagent_type="general-purpose", prompt="...", model="opus")
 Task(description="Discovery 1B-components", subagent_type="general-purpose", prompt="...", model="opus")
 Task(description="Discovery 1C-dependencies", subagent_type="general-purpose", prompt="...", model="opus")
@@ -132,7 +146,7 @@ Task(description="Discovery 1D-flows", subagent_type="general-purpose", prompt="
 
 <wrong_pattern title="❌ WRONG: Sequential calls lose parallelism">
 ```
-// DON'T DO THIS - Each waits for previous to complete
+// DON'T DO THIS when the host supports concurrency - each waits for previous to complete
 Message 1: Task(description="Discovery 1A") → wait for result
 Message 2: Task(description="Discovery 1B") → wait for result
 Message 3: Task(description="Discovery 1C") → wait for result
@@ -165,10 +179,10 @@ flowchart TB
     P1_Parallel --> P1Agg[Aggregation:<br/>Merge into analysis.json]
     P1Agg --> P1Done[✅ analysis.json created]
 
-    P1Done -->|Reads analysis.json| P2[Phase 2: Engineer Questions<br/>Single Agent - Opus]
+    P1Done -->|Reads analysis.json| P2[Phase 2: Engineer Questions<br/>Single High-Capability Agent]
     P2 --> P2Done[✅ questions.json created]
 
-    P2Done -->|Reads questions.json| P3[Phase 3: Research 🆕<br/>Parallel Agents - Sonnet]
+    P2Done -->|Reads questions.json| P3[Phase 3: Research 🆕<br/>Parallel Research Agents]
     
     subgraph P3_Parallel["🔄 RUN IN PARALLEL"]
        P3A[Researcher 1]
@@ -180,7 +194,7 @@ flowchart TB
     P3_Parallel --> P3Agg[Aggregation:<br/>Merge into research.json]
     P3Agg --> P3Done[✅ research.json created<br/>Evidence-backed answers]
 
-    P3Done -->|Reads questions + research| P4[Phase 4: Orchestrator<br/>Single Agent - Opus]
+    P3Done -->|Reads questions + research| P4[Phase 4: Orchestrator<br/>Single High-Capability Agent]
     P4 --> P4Group[Group questions<br/>by file target]
     P4 --> P4Assign[Assign file ownership<br/>to writers]
     P4Assign --> P4Done[✅ work-assignments.json]
@@ -200,7 +214,7 @@ flowchart TB
     P5_Parallel --> P5Verify[Verify Structure]
     P5Verify --> P5Done[✅ documentation/*.md created]
 
-    P5Done --> P6[Phase 6: QA Validator<br/>Single Agent - Sonnet]
+    P5Done --> P6[Phase 6: QA Validator<br/>Single Validation Agent]
     P6 --> P6Done[✅ qa-results.json +<br/>QA-SUMMARY.md]
 
     P6Done --> Complete([✅ Documentation Complete])
@@ -218,14 +232,14 @@ flowchart TB
     <phase name="1-discovery" type="parallel" critical="true" spawn="single_message">
         <gate>
         **STOP.** Verify parallel spawn requirements.
-        **REQUIRED:** Spawn 4 agents in ONE message.
-        **FORBIDDEN:** Sequential Task calls.
+        **REQUIRED:** Use host parallelism when available.
+        **FALLBACK:** Sequential execution is allowed only when the host cannot run true parallel work.
         </gate>
         <agent_count>4</agent_count>
         <description>Discovery and Analysis</description>
-        <spawn_instruction>⚠️ Launch ALL 4 Task calls in ONE response</spawn_instruction>
+        <spawn_instruction>Prefer one-response fan-out; otherwise run sequential fallback and preserve exclusive scopes</spawn_instruction>
         <rules>
-            <rule>All 4 agents start simultaneously via single-message spawn</rule>
+            <rule>Run all 4 agents concurrently when the host supports it; otherwise use sequential fallback</rule>
             <rule>Wait for ALL 4 to complete before aggregation</rule>
             <rule>Must aggregate 4 partial JSONs into analysis.json</rule>
         </rules>
@@ -240,18 +254,18 @@ flowchart TB
     <phase name="3-research" type="parallel" critical="true" spawn="single_message">
         <gate>
         **STOP.** Verify parallel spawn requirements.
-        **REQUIRED:** Spawn N researchers in ONE message.
-        **FORBIDDEN:** Sequential Task calls.
+        **REQUIRED:** Use host parallelism when available.
+        **FALLBACK:** Sequential execution is allowed only when the host cannot run true parallel work.
         </gate>
         <agent_count_logic>
             <case condition="questions &lt; 10">1 agent</case>
             <case condition="questions &gt;= 10">Ceil(questions / 15)</case>
         </agent_count_logic>
         <description>Evidence Gathering</description>
-        <spawn_instruction>⚠️ Launch ALL researcher Task calls in ONE response</spawn_instruction>
+        <spawn_instruction>Prefer one-response fan-out; otherwise run sequential fallback and preserve batch boundaries</spawn_instruction>
         <rules>
             <rule>Split questions into batches BEFORE spawning</rule>
-            <rule>All researchers start simultaneously</rule>
+            <rule>Run all researchers concurrently when the host supports it; otherwise use sequential fallback</rule>
             <rule>Aggregate findings into research.json</rule>
         </rules>
     </phase>
@@ -269,18 +283,18 @@ flowchart TB
     <phase name="5-writers" type="dynamic_parallel" critical="false" spawn="single_message">
         <gate>
         **STOP.** Verify parallel spawn requirements.
-        **REQUIRED:** Spawn all writers in ONE message.
-        **FORBIDDEN:** Sequential Task calls.
+        **REQUIRED:** Use host parallelism when available.
+        **FALLBACK:** Sequential execution is allowed only when the host cannot run true parallel work.
         </gate>
         <agent_count_logic>
             <case condition="questions &lt; 25">1 agent</case>
             <case condition="questions 25-49">2-4 agents</case>
             <case condition="questions &gt;= 50">4-8 agents</case>
         </agent_count_logic>
-        <spawn_instruction>⚠️ Launch ALL writer Task calls in ONE response</spawn_instruction>
+        <spawn_instruction>Prefer one-response fan-out; otherwise run sequential fallback and preserve exclusive ownership</spawn_instruction>
         <rules>
             <rule>Each writer owns EXCLUSIVE files - no conflicts possible</rule>
-            <rule>All writers start simultaneously via single-message spawn</rule>
+            <rule>Run all writers concurrently when the host supports it; otherwise use sequential fallback</rule>
             <rule>Use provided research.json as primary source</rule>
         </rules>
     </phase>
@@ -350,6 +364,7 @@ Before starting, validate the repository path and check for edge cases.
 
 ### Required Actions
 1. **Define Directories** (`CONTEXT_DIR`, `DOC_DIR`)
+   - **REQUIRED:** Derive a stable `SESSION_NAME` first (caller-provided if available; otherwise use a short repository-based name)
 2. **Handle Existing State**
    - **IF** `state.json` exists in a non-terminal phase → **THEN** Resume automatically
    - **IF** caller explicitly requests a fresh run → **THEN** Reset state
@@ -365,7 +380,7 @@ Before starting, validate the repository path and check for edge cases.
 Before starting the pipeline, set up the working environment and handle any existing state.
 
 1. **Define Directories**
-   - Context Directory (`CONTEXT_DIR`): `${REPOSITORY_PATH}/.context`
+   - Session Directory (`CONTEXT_DIR`): `${REPOSITORY_PATH}/.octocode/documentation/${SESSION_NAME}`
    - Documentation Directory (`DOC_DIR`): `${REPOSITORY_PATH}/documentation`
 
 2. **Handle Existing State**
@@ -423,7 +438,7 @@ Resuming from: {START_PHASE}
 |----------|-------|
 | Parallel Agents | 4 (1a-language, 1b-components, 1c-dependencies, 1d-flows-apis) |
 | Critical | Yes |
-| Output | `.context/analysis.json` |
+| Output | `.octocode/documentation/{session-name}/analysis.json` |
 
 > See `references/agent-discovery-analysis.md` → **Orchestrator Execution Logic** section for full implementation.
 
@@ -433,10 +448,10 @@ Resuming from: {START_PHASE}
 
 | Property | Value |
 |----------|-------|
-| Agent Type | Single (Opus) |
+| Agent Type | Single (high-capability reasoning model) |
 | Critical | Yes |
-| Input | `.context/analysis.json`, `schemas/documentation-structure.json` |
-| Output | `.context/questions.json` |
+| Input | `.octocode/documentation/{session-name}/analysis.json`, `schemas/documentation-structure.json` |
+| Output | `.octocode/documentation/{session-name}/questions.json` |
 
 > See `references/agent-engineer-questions.md` → **Orchestrator Execution Logic** section for full implementation.
 
@@ -453,10 +468,10 @@ Resuming from: {START_PHASE}
 
 | Property | Value |
 |----------|-------|
-| Agent Type | Parallel (Sonnet) |
+| Agent Type | Parallel (research-capable execution model) |
 | Critical | Yes |
-| Input | `.context/analysis.json`, `.context/questions.json` |
-| Output | `.context/research.json` |
+| Input | `.octocode/documentation/{session-name}/analysis.json`, `.octocode/documentation/{session-name}/questions.json` |
+| Output | `.octocode/documentation/{session-name}/research.json` |
 
 > See `references/agent-researcher.md` → **Orchestrator Execution Logic** section for full implementation.
 
@@ -467,10 +482,10 @@ Resuming from: {START_PHASE}
 
 | Property | Value |
 |----------|-------|
-| Agent Type | Single (Opus) |
+| Agent Type | Single (high-capability reasoning model) |
 | Critical | Yes |
-| Input | `.context/analysis.json`, `.context/questions.json`, `.context/research.json`, `schemas/documentation-structure.json` |
-| Output | `.context/work-assignments.json` |
+| Input | `.octocode/documentation/{session-name}/analysis.json`, `.octocode/documentation/{session-name}/questions.json`, `.octocode/documentation/{session-name}/research.json`, `schemas/documentation-structure.json` |
+| Output | `.octocode/documentation/{session-name}/work-assignments.json` |
 
 > See `references/agent-orchestrator.md` → **Orchestrator Execution Logic** section for full implementation.
 
@@ -486,11 +501,11 @@ Resuming from: {START_PHASE}
 
 | Property | Value |
 |----------|-------|
-| Agent Type | Parallel (1-8 Sonnet writers) |
+| Agent Type | Parallel (1-8 writing-capable agents) |
 | Critical Writer | Writer owning the majority of primary core files (01-08) |
 | Non-Primary | Partial failure allowed |
 | Retry Logic | Up to 2 retries per failed writer |
-| Input | `.context/analysis.json`, `.context/questions.json`, `.context/research.json`, `.context/work-assignments.json`, `schemas/documentation-structure.json` |
+| Input | `.octocode/documentation/{session-name}/analysis.json`, `.octocode/documentation/{session-name}/questions.json`, `.octocode/documentation/{session-name}/research.json`, `.octocode/documentation/{session-name}/work-assignments.json`, `schemas/documentation-structure.json` |
 | Output | `documentation/*.md` (16 core, 5 required, plus writer-owned supplementary files; `QA-SUMMARY.md` is Phase 6 output) |
 | File Ownership | Exclusive (no conflicts) |
 
@@ -510,10 +525,10 @@ Resuming from: {START_PHASE}
 
 | Property | Value |
 |----------|-------|
-| Agent Type | Single (Sonnet) |
+| Agent Type | Single (validation-capable model) |
 | Critical | No (failure produces warning) |
-| Input | `.context/analysis.json`, `.context/questions.json`, `.context/research.json`, `documentation/*.md`, `schemas/documentation-structure.json` |
-| Output | `.context/qa-results.json`, `documentation/QA-SUMMARY.md` |
+| Input | `.octocode/documentation/{session-name}/analysis.json`, `.octocode/documentation/{session-name}/questions.json`, `.octocode/documentation/{session-name}/research.json`, `documentation/*.md`, `schemas/documentation-structure.json` |
+| Output | `.octocode/documentation/{session-name}/qa-results.json`, `documentation/QA-SUMMARY.md` |
 | Score Range | 0-100 |
 | Quality Ratings | `excellent` (≥90), `good` (≥75), `fair` (≥60), `needs-improvement` (<60) |
 
@@ -601,7 +616,7 @@ function handle_critical_failure(phase, error):
 > Only the main orchestrator process should update `state.json`. Individual parallel agents
 > (Discovery 1A-1D, Researchers, Writers) must NOT directly modify `state.json` to avoid
 > race conditions. Parallel agents should only write to their designated partial result files
-> inside `.context/` using their phase-specific contract paths
+> inside `.octocode/documentation/{session-name}/` using their phase-specific contract paths
 > (for example `partial-1a-language.json` or `research-results/partial-research-0.json`). The orchestrator aggregates these results and updates
 > `state.json` after all parallel agents complete.
 
@@ -842,8 +857,8 @@ function should_skip_task(phase_name, task_id):
 
 | # | Feature | Description |
 |---|---------|-------------|
-| 1 | **True Parallel Execution** | Phases 1, 3, 5 spawn ALL agents in ONE message for concurrent execution |
-| 2 | **Single-Message Spawn** | ⚠️ Critical: Multiple Task calls in one response = true parallelism |
+| 1 | **Host-Aware Parallel Execution** | Phases 1, 3, 5 use true parallel fan-out when supported, with sequential fallback when not |
+| 2 | **Honest Concurrency** | Parallel execution is preferred, but the skill never pretends sequential work is concurrent |
 | 3 | **Evidence-Based** | Research agent proves answers with code traces before writing |
 | 4 | **Engineer-Driven Questions** | Phase 2 generates comprehensive questions |
 | 5 | **Conflict-Free Writing** | Orchestrator assigns exclusive file ownership per writer |
@@ -862,10 +877,10 @@ Phase 1: 4 agents × parallel = ~4x faster than sequential
 Phase 3: N agents × parallel = ~Nx faster than sequential
 Phase 5: M agents × parallel = ~Mx faster than sequential
 
-Total speedup: Significant when spawn="single_message" is followed
+Total speedup: Significant when host parallelism is available
 ```
 
-**Remember**: `spawn="single_message"` phases MUST have all Task calls in ONE response.
+**Remember**: Use the strongest fan-out the host supports. When true parallelism is unavailable, fall back to sequential execution and preserve the same ownership boundaries.
 </efficiency_summary>
 
 ---

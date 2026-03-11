@@ -53,7 +53,15 @@ Analyzes and improves instructional prompts, documentation, and agent instructio
 **Compatibility note (REQUIRED):**
 - Map capability names to the active runtime's tool names.
 - Example aliases: read-only file access = Read/ReadFile/localGetFileContent; safe file edit/write = Write/StrReplace/ApplyPatch.
+- **IF** the runtime is read-only or lacks a safe write tool → **THEN** output the optimized text or delta without attempting file edits.
 </tool_control>
+
+<write_policy priority="high">
+**Write policy (REQUIRED):**
+- **IF** the user asked for review/advice only → **THEN** do not modify files; return the optimized content in chat.
+- **IF** the user asked to update a specific file and a safe write tool exists → **THEN** write only after VALIDATE passes.
+- **IF** the path is missing, not writable, or unsafe to edit → **THEN** return the optimized content or patch-style delta and state that no file changes were made.
+</write_policy>
 
 ---
 
@@ -128,7 +136,8 @@ READ → UNDERSTAND → RATE → FIX → VALIDATE → OUTPUT
 - Text output to confirm reading
 
 ### On Failure
-- **IF** file unreadable → **THEN** ask user for correct path
+- **IF** file unreadable and inline content exists → **THEN** continue using the provided content
+- **IF** file unreadable and no content exists → **THEN** ask user for correct path
 - **IF** file empty → **THEN** ask user to provide content
 </read_gate>
 
@@ -465,6 +474,7 @@ MUST answer these questions:
 **Selection rule (REQUIRED):**
 - **IF** user requests complete rewritten document → **THEN** use Variant A.
 - **IF** user requests minimal edits/delta only → **THEN** use Variant B.
+- **IF** user requests review-only or the runtime cannot write safely → **THEN** use Variant B unless the user explicitly asks for a full rewrite.
 - **IF** user does not specify → **THEN** default to Variant A.
 
 **Common report header (REQUIRED for both variants):**
@@ -502,6 +512,7 @@ MUST answer these questions:
 - Deviating from selected output variant
 - Outputting without validation pass
 - Omitting required deliverable (full document for Variant A, patch-style delta for Variant B)
+- Claiming a file was updated when the write policy prevented edits
 
 ### ALLOWED
 - Safe file edit/write capability to save optimized content

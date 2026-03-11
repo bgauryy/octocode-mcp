@@ -50,8 +50,10 @@ Proceed with whatever tools are available — do not block on setup.
 
 ### Tools
 
-**Research Delegation** (CRITICAL):
-> **MUST** delegate research—**FORBIDDEN**: executing search/exploration directly.
+**Research Delegation** (preferred):
+> **MUST** use evidence-backed research before planning.
+> **PREFER** delegating research to specialized skills when they are available.
+> **IF** the host runtime does not support skill-to-skill delegation → **THEN** use equivalent local/external research tools directly and keep the same evidence bar.
 > Local workspace → **`octocode-researcher`** | External GitHub → **`octocode-researcher`** or **`octocode-research`**
 
 | Need | Skill (REQUIRED) |
@@ -62,10 +64,13 @@ Proceed with whatever tools are available — do not block on setup.
 **Planning Tools**:
 | Tool | Purpose |
 |------|---------|
-| `TaskCreate`/`TaskUpdate` | Track planning progress and subtasks |
-| `Task` | Spawn parallel agents for independent research/implementation |
+| Task/todo tracker | Track planning progress and subtasks |
+| Parallel subagent mechanism | Spawn parallel research/implementation work when the host supports it |
 
-> **Note**: `TaskCreate`/`TaskUpdate` are the default task tracking tools. Use your runtime's equivalent if named differently (e.g., `TodoWrite`).
+> **Compatibility note**: Map capability names to the active runtime.
+> Examples: task/todo tracker = `TaskCreate`/`TaskUpdate`/`TodoWrite`; parallel subagent mechanism = `Task` or host equivalent.
+> **IF** no task tracker exists → **THEN** keep a concise in-chat checklist.
+> **IF** no parallel mechanism exists → **THEN** execute sequentially.
 
 **FileSystem**: `Read`, `Write`
 
@@ -116,7 +121,8 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 
 ## 4. Research Orchestration
 
-**Your Role**: Orchestrate research, don't execute it directly.
+**Your Role**: Prefer orchestrating research instead of ad-hoc searching.
+**Fallback**: **IF** specialist skills are unavailable → **THEN** execute equivalent research directly using MCP/local/external tools and preserve the same confidence rules.
 
 **Research Flow**:
 1. **Identify Research Needs**: What questions need answers?
@@ -190,7 +196,7 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 - **Rule of Two**: Key findings need second source unless primary is definitive
 - **Freshness**: Prefer recently updated repos/docs
 
-**Tasks**: Use `TaskCreate`/`TaskUpdate` to track research tasks and subtasks.
+**Tasks**: Use the host's task tracker if available. **IF** no tracker exists → **THEN** maintain a concise checklist in the response.
 
 **User Checkpoint**: If scope too broad or blocked → Summarize attempts and ask user.
 
@@ -319,7 +325,7 @@ Example:
 
 ## 7. Multi-Agent Parallelization
 
-> **Note**: Only applicable if parallel agents are supported by host environment.
+> **Note**: Only applicable if parallel agents are supported by the host environment. Sequential execution is the required fallback.
 
 **When to Spawn Subagents**:
 - 2+ unrelated repos to research (spawn separate research skill calls)
@@ -328,16 +334,17 @@ Example:
 - Independent implementation tasks in the plan
 
 **How to Parallelize**:
-1. Use `TaskCreate` to create tasks and identify parallelizable work
-2. Use `Task` tool to spawn subagents with scoped goals
-3. Each agent uses appropriate research skill independently
+1. Use the host's task tracker to identify parallelizable work
+2. Use the host's parallel subagent mechanism to spawn scoped work
+3. Each agent uses the appropriate research skill or equivalent research tools independently
 4. Synthesize outputs in Plan Phase
+5. **IF** the host cannot run true parallel work → **THEN** execute the same scopes sequentially in dependency order
 
 **Smart Parallelization Tips**:
 - **Research Phase**: Spawn agents for independent domains (local vs external, frontend vs backend)
 - **Planning Phase**: Keep sequential - requires synthesis of all research
 - **Implementation Phase**: Spawn agents for independent modules with clear file ownership
-- Use `TaskUpdate` to track progress across all parallel agents
+- Use the host's task tracker to record progress across all parallel agents
 - Define clear boundaries: each agent owns specific directories/domains
 
 **Conflict Resolution Priority** (when local and external findings disagree):

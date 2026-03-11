@@ -63,6 +63,7 @@ For authentication and full setup, see the [Octocode MCP docs](https://github.co
 ## ✨ Key Features
 
 - **True Parallel Execution**: Runs discovery, research, and writing phases in parallel for maximum speed.
+- **Host-Aware Execution**: Uses true parallel fan-out when the host supports it, with sequential fallback when it does not.
 - **Evidence-Based**: Research agents prove answers with code traces (LSP-powered via Octocode MCP) before writing.
 - **Conflict-Free Writing**: Writers are assigned exclusive file ownership to prevent overwrites.
 - **State Recovery**: Resume from any phase if interrupted.
@@ -101,7 +102,7 @@ The generated documentation will be saved in the `documentation/` directory with
 
 - `documentation/*.md`: The generated documentation files.
 - `documentation/QA-SUMMARY.md`: The phase-6 quality assurance summary.
-- `.context/`: Intermediate state files (analysis, research, assignments) - useful for debugging or manual inspection.
+- `.octocode/documentation/{session-name}/`: Intermediate session state (analysis, research, assignments, QA metadata) - useful for debugging or resume flows.
 
 ---
 
