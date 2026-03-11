@@ -72,13 +72,13 @@
       {
         "id": "agent-1b-components",
         "description": "Component Discovery",
-        "critical": false,
+        "critical": true,
         "subagent_id": "1b-components"
       },
       {
         "id": "agent-1c-dependencies",
         "description": "Dependency Mapping",
-        "critical": false,
+        "critical": true,
         "subagent_id": "1c-dependencies"
       },
       {

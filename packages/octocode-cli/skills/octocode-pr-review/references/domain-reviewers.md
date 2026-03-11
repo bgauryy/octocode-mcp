@@ -1,97 +1,16 @@
 # Domain Reviewers Reference
 
-Specialized review lenses for comprehensive PR analysis. Each domain has detection signals and priority mapping.
+## Domain Detection & Priority Matrix
 
----
-
-## Bug Domain
-
-**Detect**: Runtime errors, logic flaws, data corruption, resource leaks, race conditions, type violations, API misuse
-
-**Priority**:
-- **HIGH**: Crashes, data corruption, security breach, null access in hot path
-- **MED**: Edge-case errors, uncertain race conditions
-- **LOW**: Theoretical issues without evidence
-
-**Skip**: Try/catch without cleanup need, compiler-caught issues, style preferences
-
----
-
-## Architecture Domain
-
-**Detect**: Pattern violations, tight coupling, circular dependencies, mixed concerns, leaky abstractions, wrong module placement
-
-**Priority**:
-- **HIGH**: Breaking public API, circular dependencies causing bugs
-- **MED**: Significant pattern deviations, tech debt increase
-- **LOW**: Minor inconsistencies
-
-**Skip**: Single-file organization, framework-standard patterns
-
----
-
-## Performance Domain
-
-**Detect**: O(n^2) where O(n) possible, blocking operations, missing cache, unbatched ops, memory leaks
-
-**Priority**:
-- **HIGH**: O(n^2) on large datasets, memory leaks, blocking main thread
-- **MED**: Moderate inefficiency in frequent paths
-- **LOW**: Micro-optimizations, one-time setup code
-
-**Skip**: Negligible impact, theoretical improvements
-
----
-
-## Code Quality Domain
-
-**Detect**: Naming violations, confusing structure, convention breaks, visible typos, magic numbers, TODO comments in new code
-
-**Priority**:
-- **HIGH**: Typos in public API/endpoints
-- **MED**: Internal naming issues, DRY violations, codebase convention deviations
-- **LOW**: Comment typos, minor readability, TODO notes
-
-**Skip**: Personal style, linter-handled formatting
-
----
-
-## Duplicate Code Domain
-
-**Detect**: Missed opportunities to leverage existing code, utilities, or established patterns in the codebase
-
-**Priority**:
-- **HIGH**: Missing use of critical existing utilities that could prevent bugs
-- **MED**: Code duplication violating DRY across files
-- **LOW**: Minor opportunities to reuse patterns
-
-**Skip**: Intentional duplication for clarity
-
----
-
-## Error Handling & Diagnostics Domain
-
-**Detect**: Poor error messages, unclear logs, swallowed exceptions, missing debugging context
-
-**Priority**:
-- **HIGH**: Swallowed exceptions hiding critical failures
-- **MED**: Unclear error messages, missing context in logs
-- **LOW**: Verbose logging improvements
-
-**Skip**: Internal service calls in trusted environments (assume reliability)
-
----
-
-## Flow Impact Domain
-
-**Detect**: How changed code alters existing execution flows, data paths, or system behavior
-
-**Priority**:
-- **HIGH**: Changes that break existing callers, alter critical paths, or change data flow semantics
-- **MED**: Flow changes requiring updates in dependent code, altered return values/types
-- **LOW**: Internal refactors with same external behavior
-
-**Analysis**: Trace callers of modified functions, check all usages of changed interfaces, verify data flow integrity
+| Domain | Detect | HIGH Priority | MED Priority | Skip |
+|--------|--------|---------------|--------------|------|
+| **Bug** | Runtime errors, logic flaws, data corruption, resource leaks, race conditions, type violations, API misuse | Crashes, data corruption, security breach, null access in hot path | Edge-case errors, uncertain race conditions | Try/catch without cleanup need, compiler-caught issues |
+| **Architecture** | Pattern violations, tight coupling, circular deps, mixed concerns, leaky abstractions | Breaking public API, circular deps causing bugs | Significant pattern deviations, tech debt increase | Single-file organization, framework-standard patterns |
+| **Performance** | O(n²) where O(n) possible, blocking ops, missing cache, unbatched ops, memory leaks | O(n²) on large datasets, memory leaks, blocking main thread | Moderate inefficiency in frequent paths | Negligible impact, theoretical improvements |
+| **Code Quality** | Naming violations, convention breaks, visible typos, magic numbers, TODO in new code | Typos in public API/endpoints | Internal naming issues, DRY violations, convention deviations | Personal style, linter-handled formatting |
+| **Duplicate Code** | Missed opportunities to leverage existing code, utilities, established patterns | Missing use of critical utilities that could prevent bugs | Code duplication violating DRY across files | Intentional duplication for clarity |
+| **Error Handling** | Poor error messages, unclear logs, swallowed exceptions, missing debug context | Swallowed exceptions hiding critical failures | Unclear error messages, missing log context | Internal service calls in trusted environments |
+| **Flow Impact** | How changes alter execution flows, data paths, system behavior. Use `githubSearchCode` / `lspCallHierarchy` to trace. | Changes that break callers, alter critical paths, change data flow semantics | Flow changes requiring updates in dependent code, altered return values/types | Internal refactors with same external behavior |
 
 ---
 

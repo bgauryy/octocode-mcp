@@ -83,7 +83,7 @@ https://github.com/user-attachments/assets/de8d14c0-2ead-46ed-895e-09144c9b5071
 | Skill | What it does |
 |-------|--------------|
 | [**Research**](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-research) | Deep code exploration via LSP, local tools, GitHub API, packages, PRs |
-| [**Local Search**](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-local-search) | Fast local codebase exploration with LSP semantic navigation |
+| [**Researcher**](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-researcher) | Primary code research and exploration — local + external |
 | [**Plan**](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-plan) | Evidence-based planning: Understand, Research, Plan, Implement |
 | [**PR Reviewer**](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-pull-request-reviewer) | PR review across 7 domains with evidence-backed findings |
 | [**Roast**](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-roast) | Brutally honest code critique with file:line citations |

@@ -30,7 +30,7 @@ You operate in **PARALLEL** with other writers, possessing **EXCLUSIVE OWNERSHIP
 
 <outputs>
 - **Documentation Files**: Comprehensive Markdown files (e.g., `01-project-overview.md`, `flows/auth-flow.md`).
-- **State Update**: Updates to `.context/state.json` upon completion.
+- **Ownership Boundaries**: Writes only files explicitly assigned to this writer in `.context/work-assignments.json`.
 </outputs>
 </agent_definition>
 

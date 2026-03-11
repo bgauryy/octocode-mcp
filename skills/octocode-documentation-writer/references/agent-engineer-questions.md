@@ -73,13 +73,15 @@ Goal: Bridge the gap between raw analysis and human-readable documentation by ge
 
   <step name="3. Generate Questions">
     <instruction>
-      For EACH file in `documentation-structure.json` (core_files), generate 5-15 specific questions.
+      For EACH file in `documentation-structure.json` (`core_files.files`), generate 1-4 specific questions.
+      Bias required files toward 2-4 questions and optional files toward 1-3 questions based on actual code surface.
+      Target 16-60 total questions across the repository and avoid quota-filling boilerplate.
     </instruction>
     
     <rules>
       - **Map to Target**: Every question **MUST** have a `documentation_target` matching a filename in the schema.
       - **Prioritize**: Mark security/data-loss risks as "critical".
-      - **Strategy**: You **MUST** provide a `research_strategy` for the Writer agent.
+      - **Strategy**: You **MUST** provide a `research_strategy` for the Research agent.
     </rules>
     
     <guidance_by_target>
@@ -120,7 +122,7 @@ Write `.context/questions.json` adhering **STRICTLY** to `schemas/questions-sche
     {
       "id": "q001",
       "question": "How does the caching layer handle race conditions?",
-      "category": "architecture",
+      "category": "architecture-overview",
       "documentation_target": "08-design-decisions.md",
       "priority": "critical",
       "research_goal": "Verify data consistency mechanisms",
@@ -128,7 +130,7 @@ Write `.context/questions.json` adhering **STRICTLY** to `schemas/questions-sche
       "reason": "Race conditions in caching can cause data corruption; must document safeguards",
       "research_strategy": {
         "approach": "Trace the 'set' method in RedisAdapter",
-        "tools_to_use": ["lspCallHierarchy", "localGetFileContent"],
+        "tools_to_use": ["localSearchCode", "lspCallHierarchy", "localGetFileContent"],
         "expected_findings": "Look for locks or atomic operations"
       }
     }

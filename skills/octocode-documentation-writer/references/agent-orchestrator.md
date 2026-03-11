@@ -55,25 +55,25 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
         <description>Determine the optimal parallelism based on workload.</description>
         <reference>Read `schemas/documentation-structure.json` to identify the Core Documents (16 total, 5 required).</reference>
         <conditional_logic>
-            **IF** total_questions < 20 **THEN** use strategy "sequential"
-            **IF** total_questions < 100 **THEN** use strategy "parallel-core"
-            **IF** total_questions >= 100 **THEN** use strategy "parallel-all"
+            **IF** total_questions < 25 **THEN** use strategy "sequential"
+            **IF** total_questions < 50 **THEN** use strategy "parallel-core"
+            **IF** total_questions >= 50 **THEN** use strategy "parallel-all"
         </conditional_logic>
         <strategies>
             <strategy name="sequential">
-                <condition>total_questions < 20</condition>
+                <condition>total_questions < 25</condition>
                 <agent_count>1</agent_count>
-                <logic>Single agent handles all files sequentially.</logic>
+                <logic>Single agent handles all core files and any writer-owned supplementary files sequentially.</logic>
             </strategy>
             <strategy name="parallel-core">
-                <condition>total_questions < 100</condition>
+                <condition>total_questions < 50</condition>
                 <agent_count>2-4</agent_count>
-                <logic>Split the Core Docs among agents. Agent 1 also takes all supplementary files.</logic>
+                <logic>Split the Core Docs among agents. Agent 1 also takes writer-owned supplementary files only.</logic>
             </strategy>
             <strategy name="parallel-all">
-                <condition>total_questions >= 100</condition>
-                <agent_count>4-8 (Formula: min(8, ceil(total_questions / 25)))</agent_count>
-                <logic>Distribute ALL files (Core + Supplementary) across all agents using round-robin.</logic>
+                <condition>total_questions >= 50</condition>
+                <agent_count>4-8 (Formula: min(8, ceil(total_questions / 12)))</agent_count>
+                <logic>Distribute all core files and writer-owned supplementary files across agents using round-robin.</logic>
             </strategy>
         </strategies>
     </step>
@@ -82,6 +82,7 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
         <description>Create the immutable work assignments.</description>
         <rules>
             <rule>**CRITICAL**: Assign **Core Documents** first (from schema).</rule>
+            <rule>Skip supplementary files whose schema entry contains `generated_by` for another agent (for example `QA-SUMMARY.md`).</rule>
             <rule>**FORBIDDEN**: Assigning the same file to multiple agents.</rule>
             <rule>**REQUIRED**: Ensure every file is assigned to exactly ONE agent.</rule>
             <rule>**REQUIRED**: Ensure every question belongs to exactly ONE assignment.</rule>
@@ -114,6 +115,7 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
               ]
             }
             ```
+            Each `file_groups` entry MUST also declare `generated_by` so downstream phases know whether a file belongs to documentation writers or another agent type such as QA.
         </output_format>
     </step>
 
@@ -243,6 +245,8 @@ Use model: opus
   try:
     assignments_file = Read(CONTEXT_DIR + "/work-assignments.json")
     assignments_data = JSON.parse(assignments_file)
+    questions_data = JSON.parse(Read(CONTEXT_DIR + "/questions.json"))
+    structure_data = JSON.parse(Read("schemas/documentation-structure.json"))
 
     // Validate structure
     if (!assignments_data.assignments || assignments_data.assignments.length == 0):
@@ -262,8 +266,77 @@ Use model: opus
     // Validate all questions assigned exactly once
     all_question_ids = assignments_data.assignments.flatMap(a => a.question_ids)
     unique_questions = new Set(all_question_ids)
+    expected_question_ids = new Set(questions_data.questions.map(q => q.id))
     if (all_question_ids.length != unique_questions.size):
       ERROR: "Duplicate question assignments detected!"
+      EXIT code 1
+
+    if (unique_questions.size != expected_question_ids.size):
+      ERROR: "Question assignment count mismatch detected!"
+      EXIT code 1
+
+    missing_question_ids = [...expected_question_ids].filter(id => !unique_questions.has(id))
+    if (missing_question_ids.length > 0):
+      ERROR: "Some questions were not assigned to any writer!"
+      EXIT code 1
+
+    unknown_question_ids = [...unique_questions].filter(id => !expected_question_ids.has(id))
+    if (unknown_question_ids.length > 0):
+      ERROR: "Unknown question IDs found in assignments!"
+      EXIT code 1
+
+    // Validate all core documentation files are assigned
+    expected_core_files = new Set(structure_data.structure.core_files.files.map(f => f.filename))
+    missing_core_files = [...expected_core_files].filter(file => !unique_files.has(file))
+    if (missing_core_files.length > 0):
+      ERROR: "Some core documentation files were not assigned!"
+      EXIT code 1
+
+    // Validate non-writer-owned files stay out of writer assignments
+    supplementary_defaults_to = structure_data.structure.supplementary_files.generated_by_default || "documentation-writer"
+    non_writer_owned = new Set(
+      structure_data.structure.supplementary_files.files
+        .filter(file => (file.generated_by || supplementary_defaults_to) !== "documentation-writer")
+        .map(file => file.filename)
+    )
+    conflicting_writer_files = [...non_writer_owned].filter(file => unique_files.has(file))
+    if (conflicting_writer_files.length > 0):
+      ERROR: "Non-writer-owned files were assigned to documentation writers!"
+      EXIT code 1
+
+    // Validate file_groups declare the correct generator for every tracked file
+    if (!Array.isArray(assignments_data.file_groups) || assignments_data.file_groups.length === 0):
+      ERROR: "work-assignments.json missing file_groups metadata"
+      EXIT code 1
+
+    invalid_file_groups = assignments_data.file_groups.filter(group => !group.generated_by)
+    if (invalid_file_groups.length > 0):
+      ERROR: "Some file_groups entries are missing generated_by"
+      EXIT code 1
+
+    expected_file_generators = new Map()
+    for (file of structure_data.structure.core_files.files):
+      expected_file_generators.set(file.filename, file.generated_by || structure_data.structure.core_files.generated_by_default || "documentation-writer")
+    for (file of structure_data.structure.supplementary_files.files):
+      expected_file_generators.set(file.filename, file.generated_by || structure_data.structure.supplementary_files.generated_by_default || "documentation-writer")
+
+    mismatched_file_groups = assignments_data.file_groups.filter(group => {
+      expected_generator = expected_file_generators.get(group.target_file)
+      return expected_generator && group.generated_by !== expected_generator
+    })
+    if (mismatched_file_groups.length > 0):
+      ERROR: "Some file_groups entries have incorrect generated_by ownership"
+      EXIT code 1
+
+    writer_owned_targets = new Set(
+      assignments_data.file_groups
+        .filter(group => group.generated_by === "documentation-writer")
+        .map(group => group.target_file)
+    )
+    assignment_targets = new Set(all_files)
+    missing_writer_targets = [...writer_owned_targets].filter(file => !assignment_targets.has(file))
+    if (missing_writer_targets.length > 0):
+      ERROR: "Some documentation-writer targets were never assigned to a writer"
       EXIT code 1
 
   catch (error):

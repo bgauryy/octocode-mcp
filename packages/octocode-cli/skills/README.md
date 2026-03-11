@@ -7,7 +7,7 @@ Pre-built Claude Code skills for enhanced AI-assisted research and development.
 | Skill | Description | Flow |
 |-------|-------------|------|
 | `octocode-research` | Evidence-first code forensics (local & GitHub) | PREPARE → DISCOVER → ANALYZE → OUTPUT |
-| `octocode-local-search` | Local-first code exploration and discovery | DISCOVER → PLAN → EXECUTE → VERIFY → OUTPUT |
+| `octocode-researcher` | Primary code research and exploration (local + external) | DISCOVER → PLAN → EXECUTE → VERIFY → OUTPUT |
 | `octocode-implement` | Research-driven feature implementation from specs | SPEC → CONTEXT → PLAN → RESEARCH → IMPLEMENT → VALIDATE |
 | `octocode-plan` | Adaptive research & implementation planning | UNDERSTAND → RESEARCH → PLAN → IMPLEMENT → VERIFY |
 | `octocode-pr-review` | Defects-first PR review across 6+ domains | CONTEXT → CHECKPOINT → ANALYSIS → FINALIZE → REPORT |
@@ -49,16 +49,16 @@ Features:
 - Multi-agent parallelization for independent hypotheses
 - Validation pattern: Discover → Verify → Cross-check → Confirm
 
-### octocode-local-search
+### octocode-researcher
 
-**Use when**: Exploring unfamiliar codebases, searching for patterns locally, understanding project structure, finding implementations in your workspace.
+**Use when**: Researching, searching, exploring, finding, tracing, investigating, or understanding code — local or external. Primary research skill using Octocode MCP tools directly.
 
 Features:
-- Local-only focus (no GitHub tools)
+- Local + external research (GitHub repos, packages, PRs)
+- LSP-powered code intelligence (`lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`)
 - Structured discovery with `localViewStructure`, `localSearchCode`, `localFindFiles`, `localGetFileContent`
 - Interactive planning with user checkpoints
 - node_modules inspection with `noIgnore=true`
-- Token-efficient workflows with discovery mode
 - Multi-agent parallelization for independent research domains
 
 ### octocode-implement

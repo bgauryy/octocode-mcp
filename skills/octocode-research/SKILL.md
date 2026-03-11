@@ -1,6 +1,6 @@
 ---
 name: octocode-research
-description: This skill should be used when the user asks to "research code", "how does X work", "where is Y defined", "who calls Z", "trace code flow", "find usages", "review a PR", "explore this library", "understand the codebase", or needs deep code exploration. Handles both local codebase analysis (with LSP semantic navigation) and external GitHub/npm research using Octocode tools.
+description: This skill should be used when the user asks to "research code", "how does X work", "where is Y defined", "who calls Z", "trace code flow", "find usages", "explore this library", "understand the codebase", or needs deep code exploration via the HTTP research server. Handles both local codebase analysis (with LSP semantic navigation) and external GitHub/npm research. Provides session management, checkpoints, and parallel agent orchestration. For direct MCP tool research without the HTTP server, use octocode-researcher instead.
 ---
 
 # Octocode Research Skill
@@ -55,6 +55,37 @@ If you already have `octocode-mcp` installed as an MCP server, use the octocode 
 **CRITICAL REMINDER: Run Self-Check after each action to verify you're on track.**
 
 Each phase MUST complete before proceeding to the next. **FORBIDDEN**: Skipping phases without explicit fast-path qualification.
+
+---
+
+## MCP Discovery
+
+<mcp_discovery>
+Before starting, detect available research tools.
+
+**Check**: Is `octocode-mcp` available as an MCP server?
+Look for Octocode MCP tools (e.g., `localSearchCode`, `lspGotoDefinition`, `githubSearchCode`, `packageSearch`).
+
+**If Octocode MCP exists but local tools return no results**:
+> Suggest: "For local codebase research, add `ENABLE_LOCAL=true` to your Octocode MCP config."
+
+**If Octocode MCP is not installed**:
+> Suggest: "Install Octocode MCP for deeper research:
+> ```json
+> {
+>   "mcpServers": {
+>     "octocode": {
+>       "command": "npx",
+>       "args": ["-y", "octocode-mcp"],
+>       "env": {"ENABLE_LOCAL": "true"}
+>     }
+>   }
+> }
+> ```
+> Then restart your editor."
+
+Proceed with whatever tools are available — do not block on setup.
+</mcp_discovery>
 
 ---
 

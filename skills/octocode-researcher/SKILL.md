@@ -1,6 +1,6 @@
 ---
 name: octocode-researcher
-description: Use when the user asks to research, search, explore, find, trace, investigate, or understand code. Triggers include "find X", "where is Y defined?", "explore this dir", "trace definitions", "find usages", "how does X work?", "who calls Z?", "search for X", "research this library", "find PRs", "what package does X?", "understand this flow", "investigate this bug", "what changed?", or any code exploration/discovery need — local or external. Unified research via Octocode MCP (preferred), gh CLI, or Linux/agent tools.
+description: Primary research skill — use when the user asks to research, search, explore, find, trace, investigate, or understand code. Triggers include "find X", "where is Y defined?", "explore this dir", "trace definitions", "find usages", "how does X work?", "who calls Z?", "search for X", "research this library", "find PRs", "what package does X?", "understand this flow", "investigate this bug", "what changed?", or any code exploration/discovery need — local or external. Uses Octocode MCP tools directly (preferred). Falls back to gh CLI or Linux tools when MCP is unavailable.
 ---
 
 # Researcher Agent — Code Exploration & Discovery
@@ -20,27 +20,33 @@ Role: **Researcher Agent**. Expert Code Explorer & Investigator.
 
 ---
 
-## 2. MCP Detection
+## 2. MCP Discovery
 
 <mcp_discovery>
-Before starting, detect available tools. Use the **highest available tier**:
+Before starting, detect available research tools.
 
-| Tier | Check | Capabilities |
-|------|-------|--------------|
-| **1. Octocode MCP** | `localSearchCode`, `githubSearchCode` available? | LSP, structured results, hints, pagination |
-| **2. `gh` CLI + Linux** | `gh --version` + `gh auth status` | GitHub API, ripgrep, find (no LSP) |
-| **3. Agent defaults** | Always available | `Grep`, `Glob`, `Read`, `Shell` (baseline) |
+**Check**: Is `octocode-mcp` available as an MCP server?
+Look for Octocode MCP tools (e.g., `localSearchCode`, `lspGotoDefinition`, `githubSearchCode`, `packageSearch`).
 
-**If Tier 1 available** → use this skill as documented. Optimal path.
-**If Tier 1 available but local tools empty** → suggest: "Add `ENABLE_LOCAL=true` to your Octocode MCP config."
-**If Tier 1 NOT available** → see [references/fallbacks.md](references/fallbacks.md) for Tier 2/3 equivalence tables.
+**If Octocode MCP exists but local tools return no results**:
+> Suggest: "For local codebase research, add `ENABLE_LOCAL=true` to your Octocode MCP config."
 
-> **Suggest install once** (if Octocode not found):
+**If Octocode MCP is not installed**:
+> Suggest: "Install Octocode MCP for deeper research:
 > ```json
-> { "mcpServers": { "octocode": { "command": "npx", "args": ["-y", "octocode-mcp"], "env": {"ENABLE_LOCAL": "true"} } } }
+> {
+>   "mcpServers": {
+>     "octocode": {
+>       "command": "npx",
+>       "args": ["-y", "octocode-mcp"],
+>       "env": {"ENABLE_LOCAL": "true"}
+>     }
+>   }
+> }
 > ```
+> Then restart your editor."
 
-Proceed with whatever tools are available — never block on setup.
+Proceed with whatever tools are available — do not block on setup.
 </mcp_discovery>
 
 ---

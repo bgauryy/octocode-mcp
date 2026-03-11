@@ -23,8 +23,35 @@ Role: **Implementation Agent**. Expert Engineer with surgical precision.
 
 ## 2. Scope & Tooling
 
+<mcp_discovery>
+Before starting, detect available research tools.
+
+**Check**: Is `octocode-mcp` available as an MCP server?
+Look for Octocode MCP tools (e.g., `localSearchCode`, `lspGotoDefinition`, `githubSearchCode`, `packageSearch`).
+
+**If Octocode MCP exists but local tools return no results**:
+> Suggest: "For local codebase research, add `ENABLE_LOCAL=true` to your Octocode MCP config."
+
+**If Octocode MCP is not installed**:
+> Suggest: "Install Octocode MCP for deeper research:
+> ```json
+> {
+>   "mcpServers": {
+>     "octocode": {
+>       "command": "npx",
+>       "args": ["-y", "octocode-mcp"],
+>       "env": {"ENABLE_LOCAL": "true"}
+>     }
+>   }
+> }
+> ```
+> Then restart your editor."
+
+Proceed with whatever tools are available — do not block on setup.
+</mcp_discovery>
+
 <tools>
-> 🔍 **For local workspace search & LSP code intelligence, call the `octocode-local-search` skill!**
+> 🔍 **For local workspace search & LSP code intelligence, call the `octocode-researcher` skill!**
 > Includes: `localViewStructure`, `localSearchCode`, `localFindFiles`, `localGetFileContent`, `lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`
 
 >  **For external GitHub research, call the `octocode-research` skill!**
@@ -73,15 +100,15 @@ Role: **Implementation Agent**. Expert Engineer with surgical precision.
 ## 4. Research Flows
 
 <research_flows>
-> 📚 **For detailed research workflows and tool transitions, see the `octocode-local-search` and `octocode-research` skills!**
+> 📚 **For detailed research workflows and tool transitions, see the `octocode-researcher` and `octocode-research` skills!**
 
 **Implementation-Specific Research**:
 
 | Goal | Approach |
 |------|----------|
-| Map codebase | `octocode-local-search` → `localViewStructure(depth=1)` |
-| Find similar features | `octocode-local-search` → `localSearchCode(filesOnly=true)` |
-| Trace code flow | `octocode-local-search` → LSP tools (definitions, references, call hierarchy) |
+| Map codebase | `octocode-researcher` → `localViewStructure(depth=1)` |
+| Find similar features | `octocode-researcher` → `localSearchCode(filesOnly=true)` |
+| Trace code flow | `octocode-researcher` → LSP tools (definitions, references, call hierarchy) |
 | External patterns | `octocode-research` → `githubSearchCode` for reference implementations |
 | Library internals | `octocode-research` → `packageSearch` → `githubGetFileContent` |
 
@@ -124,11 +151,11 @@ Role: **Implementation Agent**. Expert Engineer with surgical precision.
 
 **SPEC + VALIDATE**: Parse spec → Check completeness → Ask if unclear.
 
-**CONTEXT**: Use `octocode-local-search` skill → Map structure → Find similar features → Understand test patterns.
+**CONTEXT**: Use `octocode-researcher` skill → Map structure → Find similar features → Understand test patterns.
 
 **PLAN**: Create plan → **User Checkpoint**: Wait for approval → Add tasks via `TaskCreate`.
 
-**RESEARCH**: Use `octocode-local-search` skill for each task (locate → read → trace flow → impact analysis).
+**RESEARCH**: Use `octocode-researcher` skill for each task (locate → read → trace flow → impact analysis).
 
 **IMPLEMENT**: Types First → Core Logic → Integration → Tests. Match existing style.
 
@@ -285,7 +312,7 @@ Before declaring implementation complete:
 ## References
 
 **Related Skills**:
-- **`octocode-local-search`**: Local workspace search & LSP code intelligence
+- **`octocode-researcher`**: Local workspace search & LSP code intelligence
 - **`octocode-research`**: External GitHub research & package discovery
 
 **Implementation Docs**:

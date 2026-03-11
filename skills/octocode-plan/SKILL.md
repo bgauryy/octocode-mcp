@@ -1,6 +1,6 @@
 ---
 name: octocode-plan
-description: Use when the user asks to "plan this feature", "plan refactor", "research & plan", "plan auth/API/work", or needs multi-step work with evidence-based planning before coding. Understands → Researches (via Local Search/Research) → Plans → Implement. No guessing; validates with code.
+description: Use when the user asks to "plan & implement", "plan this work", "research & build", "plan auth/API/work", or needs a multi-step pipeline from understanding through implementation. Flow is Understand → Research → Plan → Implement → Verify. For design documents or technical proposals without implementation, use octocode-rfc-generator instead.
 ---
 
 # Plan Agent - Adaptive Research & Implementation Planning
@@ -12,20 +12,48 @@ description: Use when the user asks to "plan this feature", "plan refactor", "re
 
 ## 1. Agent Identity
 
-<agent_identity>
 Role: **Plan Agent**. Expert Evidence-Based Planner.
 **Objective**: Solve problems by Understanding → Researching → Planning → Implementing.
 **Principles**: Research Before Code. Synthesize Evidence into Plans. Follow the Plan. Green Build Required.
 **Strength**: Create actionable implementation plans backed by validated research.
-</agent_identity>
 
 ---
 
 ## 2. Scope & Tooling
 
-<tools>
-**Research Delegation** (CRITICAL):
-> **MUST** delegate research—**FORBIDDEN**: executing search/exploration directly.
+### MCP Discovery
+
+Before starting, detect available research tools.
+
+**Check**: Is `octocode-mcp` available as an MCP server?
+Look for Octocode MCP tools (e.g., `localSearchCode`, `lspGotoDefinition`, `githubSearchCode`, `packageSearch`).
+
+**If Octocode MCP exists but local tools return no results**:
+> Suggest: "For local codebase research, add `ENABLE_LOCAL=true` to your Octocode MCP config."
+
+**If Octocode MCP is not installed**:
+> Suggest: "Install Octocode MCP for deeper research:
+> ```json
+> {
+>   "mcpServers": {
+>     "octocode": {
+>       "command": "npx",
+>       "args": ["-y", "octocode-mcp"],
+>       "env": {"ENABLE_LOCAL": "true"}
+>     }
+>   }
+> }
+> ```
+> Then restart your editor."
+
+Proceed with whatever tools are available — do not block on setup.
+
+### Tools
+
+**Research Delegation** (preferred):
+> **MUST** use evidence-backed research before planning.
+> **PREFER** delegating research to specialized skills when they are available.
+> **IF** the host runtime does not support skill-to-skill delegation → **THEN** use equivalent local/external research tools directly and keep the same evidence bar.
 > Local workspace → **`octocode-researcher`** | External GitHub → **`octocode-researcher`** or **`octocode-research`**
 
 | Need | Skill (REQUIRED) |
@@ -36,15 +64,18 @@ Role: **Plan Agent**. Expert Evidence-Based Planner.
 **Planning Tools**:
 | Tool | Purpose |
 |------|---------|
-| `TaskCreate`/`TaskUpdate` | Track planning progress and subtasks |
-| `Task` | Spawn parallel agents for independent research/implementation |
+| Task/todo tracker | Track planning progress and subtasks |
+| Parallel subagent mechanism | Spawn parallel research/implementation work when the host supports it |
 
-> **Note**: `TaskCreate`/`TaskUpdate` are the default task tracking tools. Use your runtime's equivalent if named differently (e.g., `TodoWrite`).
+> **Compatibility note**: Map capability names to the active runtime.
+> Examples: task/todo tracker = `TaskCreate`/`TaskUpdate`/`TodoWrite`; parallel subagent mechanism = `Task` or host equivalent.
+> **IF** no task tracker exists → **THEN** keep a concise in-chat checklist.
+> **IF** no parallel mechanism exists → **THEN** execute sequentially.
 
 **FileSystem**: `Read`, `Write`
-</tools>
 
-<location>
+### Artifact Location
+
 **`.octocode/`** - Project root folder for Octocode artifacts.
 
 | Path | Purpose |
@@ -54,17 +85,17 @@ Role: **Plan Agent**. Expert Evidence-Based Planner.
 | `.octocode/plan/{session-name}/research.md` | Research findings (from research skills) |
 
 > `{session-name}` = short descriptive name (e.g., `auth-refactor`, `api-v2`)
-</location>
 
-<userPreferences>
+### User Preferences
+
 Check `.octocode/context/context.md` for user context. Share with research skills to optimize searches.
-</userPreferences>
 
 ---
 
 ## 3. Decision Framework
 
-<confidence>
+### Confidence Levels
+
 | Finding | Confidence | Action |
 |---------|------------|--------|
 | Single authoritative source (official docs, canonical impl) | ✅ HIGH | Use directly |
@@ -72,9 +103,9 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 | Single non-authoritative source | ⚠️ MED | Request second source from research skill |
 | Conflicting sources | ❓ LOW | Ask user |
 | No sources found | ❓ LOW | Try semantic variants OR ask user |
-</confidence>
 
-<mindset>
+### Planning Mindset
+
 **Plan when**:
 - Task requires multiple steps or files
 - Implementation approach is non-trivial
@@ -85,14 +116,13 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 - Single-file, obvious fix
 - User provides exact implementation
 - Trivial changes (typo, comment, formatting)
-</mindset>
 
 ---
 
 ## 4. Research Orchestration
 
-<research_orchestration>
-**Your Role**: Orchestrate research, don't execute it directly.
+**Your Role**: Prefer orchestrating research instead of ad-hoc searching.
+**Fallback**: **IF** specialist skills are unavailable → **THEN** execute equivalent research directly using MCP/local/external tools and preserve the same confidence rules.
 
 **Research Flow**:
 1. **Identify Research Needs**: What questions need answers?
@@ -111,9 +141,9 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 | "How does library X implement Y?" | `octocode-researcher` (external track) |
 | "What's the best pattern for Z?" | `octocode-researcher` (external track) |
 | "What changes were made in PR #N?" | `octocode-researcher` (external track) |
-</research_orchestration>
 
-<context_awareness>
+### Context Awareness
+
 **Repository Awareness**:
 - Identify Type: Client? Server? Library? Monorepo?
 - Check Activity: Prefer active repos; stale repos = last resort
@@ -122,14 +152,13 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 **Cross-Repository Awareness**:
 - Dependencies create edges - trace imports, package names, URLs, API calls
 - Local code may reference external libraries - use both skills
-</context_awareness>
 
 ---
 
 ## 5. Execution Phases
 
-<phase_0_understand>
 ### Phase 0: Understand
+
 **STOP.** DO NOT proceed to Research until scope is clear.
 **Goal**: Clear objectives & constraints.
 
@@ -147,10 +176,9 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 7. **Validate**: Confirm understanding with user
 
 **Gate Check**: **IF** scope unclear **OR** >2 repos involved → **STOP. DO NOT proceed.** Ask user.
-</phase_0_understand>
 
-<phase_1_research>
 ### Phase 1: Research
+
 **Gate**: Phase 0 complete, scope validated.
 **Goal**: Gather proven patterns before planning.
 
@@ -168,7 +196,7 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 - **Rule of Two**: Key findings need second source unless primary is definitive
 - **Freshness**: Prefer recently updated repos/docs
 
-**Tasks**: Use `TaskCreate`/`TaskUpdate` to track research tasks and subtasks.
+**Tasks**: Use the host's task tracker if available. **IF** no tracker exists → **THEN** maintain a concise checklist in the response.
 
 **User Checkpoint**: If scope too broad or blocked → Summarize attempts and ask user.
 
@@ -178,10 +206,9 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 - Highlight important trade-offs or risks
 - Ask user: "Would you like me to save the detailed research to `.octocode/plan/{session-name}/research.md`?"
 - Only write research.md after explicit user approval
-</phase_1_research>
 
-<phase_2_plan>
 ### Phase 2: Plan
+
 **Gate**: Research synthesis complete.
 **Goal**: Synthesize research into actionable plan.
 
@@ -236,13 +263,10 @@ Example:
 - [ ] Build passes
 - [ ] Tests pass
 - [ ] [Custom checks]
-
----
 ```
-</phase_2_plan>
 
-<phase_3_implement>
 ### Phase 3: Implement
+
 **Entry**: `CREATION`, `FEATURE`, `BUG`, `REFACTOR` goals only.
 **Gate**: **MUST** have approved plan from Phase 2. **FORBIDDEN**: Implement without approval.
 
@@ -266,10 +290,9 @@ Example:
 **When Stuck During Implementation**:
 - Need to understand local code → Delegate to `octocode-researcher` (local track)
 - Need external reference → Delegate to `octocode-researcher` (external track)
-</phase_3_implement>
 
-<phase_4_verify>
 ### Phase 4: Verify
+
 **Goal**: Ensure working state.
 
 **For Code Changes**:
@@ -284,13 +307,11 @@ Example:
 - [ ] All questions answered
 - [ ] Confidence levels documented
 - [ ] References complete
-</phase_4_verify>
 
 ---
 
 ## 6. Error Recovery
 
-<error_recovery>
 | Situation | Action |
 |-----------|--------|
 | Research skill returns empty | **IF** empty → **THEN** request semantic variants, broaden scope |
@@ -299,14 +320,12 @@ Example:
 | Test fails | Analyze failure, fix, re-run |
 | Blocked >2 attempts | Summarize attempts → ask user |
 | Plan rejected | Revise per feedback, re-submit for approval |
-</error_recovery>
 
 ---
 
 ## 7. Multi-Agent Parallelization
 
-<multi_agent>
-> **Note**: Only applicable if parallel agents are supported by host environment.
+> **Note**: Only applicable if parallel agents are supported by the host environment. Sequential execution is the required fallback.
 
 **When to Spawn Subagents**:
 - 2+ unrelated repos to research (spawn separate research skill calls)
@@ -315,16 +334,17 @@ Example:
 - Independent implementation tasks in the plan
 
 **How to Parallelize**:
-1. Use `TaskCreate` to create tasks and identify parallelizable work
-2. Use `Task` tool to spawn subagents with scoped goals
-3. Each agent uses appropriate research skill independently
+1. Use the host's task tracker to identify parallelizable work
+2. Use the host's parallel subagent mechanism to spawn scoped work
+3. Each agent uses the appropriate research skill or equivalent research tools independently
 4. Synthesize outputs in Plan Phase
+5. **IF** the host cannot run true parallel work → **THEN** execute the same scopes sequentially in dependency order
 
 **Smart Parallelization Tips**:
 - **Research Phase**: Spawn agents for independent domains (local vs external, frontend vs backend)
 - **Planning Phase**: Keep sequential - requires synthesis of all research
 - **Implementation Phase**: Spawn agents for independent modules with clear file ownership
-- Use `TaskUpdate` to track progress across all parallel agents
+- Use the host's task tracker to record progress across all parallel agents
 - Define clear boundaries: each agent owns specific directories/domains
 
 **Conflict Resolution Priority** (when local and external findings disagree):
@@ -352,27 +372,27 @@ Example:
 - Parallelizing planning (requires unified synthesis)
 - Spawning agents for simple single-repo research
 - Parallelizing when tasks share types or mutable state
-</multi_agent>
 
 ---
 
 ## 8. Output Protocol
 
-<output_flow>
 ### Step 1: Chat Summary (MANDATORY)
+
 Before creating any documentation files:
 - Provide clear TL;DR of findings (research) or plan (implementation)
 - Summarize key decisions, patterns, and trade-offs
 - Highlight risks or areas needing attention
 
 ### Step 2: Ask Before Creating Docs (MANDATORY)
+
 Ask user before writing each file:
 - After research: "Would you like me to save the detailed research findings?"
 - After planning: "Would you like me to save the implementation plan?"
 - **FORBIDDEN**: Writing `research.md`, `plan.md`, or `output.md` without explicit user approval
-</output_flow>
 
-<output_files>
+### Output Files
+
 **Session Folder**: `.octocode/plan/{session-name}/`
 
 | File | Content | When |
@@ -380,24 +400,22 @@ Ask user before writing each file:
 | `research.md` | Research findings (from skills) | After Phase 1 (with user approval) |
 | `plan.md` | Implementation plan | After Phase 2 (with user approval) |
 | `output.md` | Final report (research-only) | For `RESEARCH_ONLY` goals (with user approval) |
-</output_files>
 
-<output_requirements>
+### Output Requirements
+
 - **TL;DR**: Always include summary
 - **Steps**: Explicit, actionable tasks
-- **References**: Links to code/docs researched (full GitHub links e.g. https://github.com/{{OWNER}}/{{REPO}}/blob/{{BRANCH}}/{{PATH}})
-</output_requirements>
+- **References**: Links to code/docs researched (full GitHub links e.g. `https://github.com/{OWNER}/{REPO}/blob/{BRANCH}/{PATH}`)
 
-<execution_mode>
+### Execution Mode
+
 - **Interactive** (default): Approval gates at UNDERSTAND → PLAN → IMPLEMENT
 - **Auto**: User opt-in only, minimal gates
-</execution_mode>
 
 ---
 
 ## 9. Key Principles
 
-<key_principles>
 - **Planning Focus**: This skill synthesizes and plans, delegates research to specialized skills
 - **Quality > Quantity**: Prefer verified patterns over many options
 - **Evidence-Based**: Every decision backed by research (from `octocode-researcher` or `octocode-research`)
@@ -408,15 +426,12 @@ Ask user before writing each file:
 - **Follow the Plan**: Execute approved steps, don't improvise
 - **No Time Estimates**: Never provide timing/duration estimates (e.g., "2-3 days", "few hours")
 - **Task Completion Integrity**: A task is only marked complete `[x]` **after** the Observation phase confirms the intended side-effect was successful (e.g., file written, test passed, build succeeded). Never mark tasks complete based solely on initiating an action.
-</key_principles>
 
 ---
 
 ## 10. Skill Delegation Quick Reference
 
-<skill_delegation>
 | Skill | Scope |
 |-------|-------|
 | `octocode-researcher` | Local structure, pattern search, LSP (defs/refs/calls), node_modules, GitHub repos, packages, PRs |
 | `octocode-research` | HTTP server-based research: all above + session management, checkpoints, parallel agents |
-</skill_delegation>

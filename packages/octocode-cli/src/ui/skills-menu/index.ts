@@ -33,7 +33,7 @@ const WHAT_ARE_SKILLS_URL = 'https://agentskills.io/what-are-skills';
 const RECOMMENDED_SKILLS = new Set([
   'octocode-research',
   'octocode-pr-review',
-  'octocode-local-search',
+  'octocode-researcher',
 ]);
 
 // ============================================================================

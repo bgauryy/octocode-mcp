@@ -59,12 +59,15 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
     <phase name="2-verify-file-references" tokens="15k">
         <goal>Ensure every file path mentioned in docs exists in the repo.</goal>
         <logic>
-            <step>Extract all file paths from docs (regex: `src/[\w/.-]+`).</step>
+            <step>Extract repo-relative file references from docs using generic patterns, not `src/` assumptions.</step>
+            <step>Recognize file citations like `packages/foo/src/index.ts`, `src/auth.ts:45`, `src/auth.ts#L45`, markdown links, and backticked file paths.</step>
+            <step>Normalize citations by stripping line suffixes (`:45`, `#L45`) before validation.</step>
             <step>
-                **REQUIRED TOOL:** Run `localSearchCode(filesOnly=true)` to validate existence.
+                **REQUIRED TOOL:** Use `localFindFiles` first to validate candidate paths. Use `localSearchCode` only as fallback when a citation is partial or ambiguous.
                 **FORBIDDEN:** Using `cat`, `ls`, or guessing paths.
             </step>
             <step>Match extracted paths against actual files.</step>
+            <step>Persist `file_references_total` and `file_references_valid` in `validation_details`.</step>
             <step>**Metric**: `file_reference_score` = (valid / total) * 100.</step>
         </logic>
     </phase>
@@ -82,7 +85,8 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
                b. **CHECKPOINT**: Do you have a lineHint? If NO, mark as invalid and skip to next.
                c. **LOCATE**: `lspGotoDefinition(lineHint)` -> **Verify existence**.
                d. **ANALYZE**: `lspFindReferences(lineHint)` -> **Verify usage**.
-            3. **Metric**: `api_verification_score` = (verified / total) * 100.
+            3. Persist `api_candidates_total` and `apis_verified` in `validation_details`.
+            4. **Metric**: `api_verification_score` = (verified / total) * 100.
         </logic>
     </phase>
 
@@ -90,6 +94,7 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
         <goal>Ensure compliance with `documentation-structure.json`.</goal>
         <logic>
             1. Check if all `core_files` marked `required: true` exist.
+            1a. Respect `generated_by` / `generated_by_default` in `documentation-structure.json` when deciding which files should already exist before QA writes its own outputs.
             2. Validate `folder` structure (components/, flows/).
             3. Check internal cross-links between docs.
             4. **Metric**: `structure_score`.
@@ -108,10 +113,18 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
             - `flow_coverage_score`
             - `question_coverage_score`
         </metrics>
+        <counts>
+            - Persist `components_total` / `components_covered`
+            - Persist `flows_total` / `flows_covered`
+            - Persist `questions_total` / `questions_covered`
+        </counts>
     </phase>
 
     <phase name="6-scoring-and-reporting" tokens="5k">
         <goal>Calculate scores and generate reports.</goal>
+        <instruction>
+            **REQUIRED:** Persist every weighted metric under `score_breakdown` in `.context/qa-results.json`.
+        </instruction>
         <scoring_weights>
             <weight category="file_references">0.20</weight>
             <weight category="api_verification">0.20</weight>
@@ -140,6 +153,9 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
             **REQUIRED:** Write `.context/qa-results.json`.
             - Strict JSON format.
             - No markdown code blocks inside the file content.
+            - Include `score_breakdown` with the metrics used to calculate `overall_score`.
+            - Include `validation_details` for any concrete verification counts/flags gathered during validation.
+            - Populate concrete counts for file references, API candidates, coverage, and cross-links whenever they are measurable.
         </action>
         <action>
             **REQUIRED:** Write `documentation/QA-SUMMARY.md`.
@@ -184,18 +200,27 @@ if (previous_phase_complete) {
         
         update_state({
             phase: "qa-complete",
-            completed_agents: ["discovery", "questions", "researcher", "orchestrator", "writers", "qa"],
+            completed_agents: ["discovery-analysis", "engineer-questions", "researcher", "orchestrator", "documentation-writer", "qa-validator"],
             qa_results: {
-                score: qa_results.overall_score,
-                rating: qa_results.quality_rating,
-                ready: qa_results.ready_for_use
+                overall_score: qa_results.overall_score,
+                quality_rating: qa_results.quality_rating,
+                ready_for_use: qa_results.ready_for_use,
+                critical_gaps: qa_results.gaps.filter(g => g.severity === "critical").length
             }
         });
 
         DISPLAY(`✅ QA Complete. Score: ${qa_results.overall_score}/100`);
     } else {
         WARN("QA Validator failed to produce results.");
-        update_state({ phase: "qa-failed", error: "Missing output" });
+        update_state({
+            phase: "qa-failed",
+            errors: [{
+                phase: "qa-validator",
+                message: "Missing output: qa-results.json",
+                timestamp: new Date().toISOString(),
+                recoverable: false
+            }]
+        });
     }
 }
 ```

@@ -34,7 +34,7 @@ Skills are `.md` files that define:
 | Skill | Description | Use When |
 |-------|-------------|----------|
 | **octocode-research** | Evidence-first code forensics | Researching external GitHub repos, understanding implementations |
-| **octocode-local-search** | Local-first code exploration | Exploring unfamiliar codebases, finding patterns locally |
+| **octocode-researcher** | Primary code research and exploration | Researching code, exploring codebases, tracing flows, finding definitions |
 | **octocode-implement** | Research-driven feature development | Implementing features from specs, building in large codebases |
 | **octocode-plan** | Adaptive research & implementation planning | Complex multi-step tasks requiring structured planning |
 | **octocode-pr-review** | Defects-first PR review | Reviewing PRs for bugs, security, architecture issues |
@@ -55,18 +55,19 @@ Flow: PREPARE → DISCOVER → ANALYZE → OUTPUT
 
 **Best For**: External library research, understanding third-party implementations, cross-repo analysis.
 
-#### octocode-local-search
+#### octocode-researcher
 ```
 Flow: DISCOVER → PLAN → EXECUTE → VERIFY → OUTPUT
 ```
 
 **Features**:
-- Local-only focus with `localSearchCode`, `localViewStructure`, `localFindFiles`, `localGetFileContent`
+- Local + external research using Octocode MCP tools directly
 - LSP-powered code intelligence: `lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`
+- Structured search with `localSearchCode`, `localViewStructure`, `localFindFiles`, `localGetFileContent`
+- GitHub research: `githubSearchCode`, `githubGetFileContent`, `packageSearch`
 - Interactive planning with user checkpoints
-- Token-efficient workflows with discovery mode
 
-**Best For**: Exploring new codebases, understanding project structure, tracing code flows.
+**Best For**: Any code exploration/discovery need — exploring codebases, tracing flows, finding definitions, researching libraries.
 
 #### octocode-implement
 ```

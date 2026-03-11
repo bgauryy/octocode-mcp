@@ -200,6 +200,7 @@ These templates are used by the Orchestrator to spawn parallel agents.
   <task>Map internal dependencies (import/require statements)</task>
   <task>Detect external dependencies from manifest files</task>
   <task>Build dependency relationships</task>
+  <task>Identify architectural layers (for example API, service, domain, data, CLI) and map components into them</task>
 
   **OUTPUT FORMAT (REQUIRED):**
   You MUST output to JSON matching `schemas/partial-discovery-schema.json`
@@ -303,8 +304,8 @@ must succeed for the pipeline to continue - their outputs are foundational for l
 | Agent ID | Critical | Rationale |
 |----------|----------|-----------|
 | 1a-language | **true** | Language detection is foundational - all other analysis depends on it |
-| 1b-components | false | Component discovery is helpful but not blocking |
-| 1c-dependencies | false | Dependency mapping can be incomplete without blocking |
+| 1b-components | **true** | Component inventory is required by `analysis-schema.json` and downstream coverage checks |
+| 1c-dependencies | **true** | Dependency mapping is required by `analysis-schema.json` and stack documentation |
 | 1d-flows-apis | **true** | Flow/API discovery is essential for documentation structure |
 
 ### Execution Logic
@@ -317,9 +318,14 @@ if (START_PHASE == "initialized" || START_PHASE == "discovery-analysis-failed"):
     current_agent: "discovery-analysis"
   })
 
-  // Load configuration and agent spec
-  TASKS_CONFIG = JSON.parse(Read("schemas/discovery-tasks.json"))
+  // Load task schema/config and agent spec
+  TASKS_SCHEMA = JSON.parse(Read("schemas/discovery-tasks.json"))
+  TASKS_CONFIG = TASKS_SCHEMA.default
   AGENT_SPEC = Read("references/agent-discovery-analysis.md")
+
+  if (!TASKS_CONFIG || !Array.isArray(TASKS_CONFIG.parallel_agents) || !TASKS_CONFIG.aggregation):
+    ERROR: "discovery-tasks.json missing default task configuration"
+    EXIT code 1
 
   DISPLAY: "🔍 Discovery+Analysis Agents [Running in Parallel...]"
   DISPLAY: "   " + TASKS_CONFIG.parallel_agents.length + " parallel agents analyzing repository..."
@@ -398,6 +404,36 @@ if (START_PHASE == "initialized" || START_PHASE == "discovery-analysis-failed"):
   try:
     analysis = Read(CONTEXT_DIR + "/analysis.json")
     parsed = JSON.parse(analysis)
+    required_top_level = ["metadata", "discovery", "architecture", "flows", "apis"]
+    for (field of required_top_level):
+      if (!parsed[field]):
+        ERROR: "analysis.json missing required top-level field: " + field
+        EXIT code 1
+
+    if (!parsed.metadata.repository_path):
+      ERROR: "analysis.json missing metadata.repository_path"
+      EXIT code 1
+
+    if (!parsed.discovery.primary_language || parsed.discovery.is_monorepo === undefined || !parsed.discovery.project_type):
+      ERROR: "analysis.json missing required discovery metadata"
+      EXIT code 1
+
+    if (!Array.isArray(parsed.discovery.components)):
+      ERROR: "analysis.json missing discovery.components array"
+      EXIT code 1
+
+    if (!parsed.architecture.layers || !parsed.architecture.dependencies):
+      ERROR: "analysis.json missing required architecture fields"
+      EXIT code 1
+
+    if (!parsed.flows.strategy || !Array.isArray(parsed.flows.flows)):
+      ERROR: "analysis.json missing required flow fields"
+      EXIT code 1
+
+    if (!Array.isArray(parsed.apis.components)):
+      ERROR: "analysis.json missing apis.components array"
+      EXIT code 1
+
     // GATE: CRITICAL SCHEMA ERRORS
     if (parsed.errors && parsed.errors.some(e => e.severity == "critical")):
       ERROR: "Critical errors in analysis"

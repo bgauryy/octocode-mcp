@@ -1,9 +1,5 @@
 # RFC Template
 
-Every section must include **evidence**. Proof is either a **code reference** (full GitHub link to file + line) or a **URL** (docs, articles, benchmarks). Each reference must explain **how it supports the RFC thesis** — not just "see this link" but "this proves X because Y".
-
----
-
 ## Template
 
 ```markdown
@@ -44,6 +40,12 @@ accepted, the motivation should still be reusable for alternative proposals.
 Explain the proposal as if it was already implemented and you were teaching
 it to another engineer. New concepts, examples, migration guidance.
 
+- What names and terminology work best for these concepts and why?
+- How is this idea best presented — as a continuation of existing patterns, or wholly new?
+- If applicable, provide sample error messages, deprecation warnings, or migration guidance.
+- How should this be taught to existing users vs. new users?
+- Would documentation need to be reorganized or altered? Consider API docs, guides, blog posts, tutorials.
+
 ---
 
 ## Reference-Level Explanation
@@ -55,6 +57,7 @@ For every design choice, include:
 - **What** you chose and **why** (link to §Rationale)
 - **What you considered and rejected** (link to §Alternatives)
 - **What could go wrong** (link to §Drawbacks)
+- **Compatibility**: Is this backward-compatible? Breaking changes? Do adopters need a new version? Can it be un-adopted later without breaking existing code?
 
 Enough detail for someone familiar with the codebase to implement it.
 
@@ -62,8 +65,16 @@ Enough detail for someone familiar with the codebase to implement it.
 
 ## Drawbacks
 
-Why should we NOT do this? Implementation cost, maintenance burden,
-performance impact, learning curve, migration cost, risk of bugs.
+Why should we NOT do this? Consider:
+
+- Implementation cost, both in code size and complexity
+- Can this be achieved with existing tools, a simpler approach, or configuration change?
+- Maintenance burden and operational overhead
+- Performance impact
+- Learning curve and impact on teaching
+- Migration cost — is this a breaking change? Can we write a codemod?
+- Integration impact with other existing and planned features
+- Risk of bugs and blast radius
 
 Every proposal has costs. Being honest about them builds trust.
 
@@ -123,6 +134,11 @@ Lessons learned from others. If no prior art, state that explicitly.
 **Out of scope:**
 - [ ] {question}
 
+**Bikeshedding** _(cosmetic/arbitrary decisions — syntax, naming, formatting — that should not block the proposal)_:
+- [ ] {decision}
+
+> **Tip:** Mark inline open questions anywhere in the RFC with: `> **Open Question:** {question}`
+
 ---
 
 ## Future Possibilities
@@ -175,90 +191,3 @@ Every reference must state **how it supports the RFC thesis**.
 ### Rollout Strategy
 {Feature flags? Gradual? Big bang? Rollback plan?}
 ```
-
----
-
-## Section Requirements
-
-| # | Section | Required | Notes |
-|---|---------|----------|-------|
-| 1 | Summary | Yes | 1 paragraph max |
-| 2 | Motivation | Yes | Most important — problem, current state, evidence, impact |
-| 3 | Guide-Level Explanation | Yes | Teach it as if already implemented |
-| 4 | Reference-Level Explanation | Yes | Technical detail for implementers, diagrams |
-| 5 | Drawbacks | Yes | Honest cost/benefit — builds trust |
-| 6 | Rationale & Alternatives | Yes | Minimum 2 alternatives + comparison matrix + trade-offs |
-| 7 | Prior Art | Yes | N/A with rationale if none exists |
-| 8 | Unresolved Questions | If any | Categorize: before/during/out-of-scope |
-| 9 | Future Possibilities | Optional | Out-of-scope ideas, not a reason to accept |
-| 10 | References | Yes | `file:line` local, full URLs external |
-| 11 | Implementation Plan | Yes | Steps, risk mitigations, testing, rollout — traces to RFC |
-
----
-
-## Thinking & Reasoning Hints
-
-### Per-Section Self-Check
-
-| # | Section | Ask Yourself | Evidence Required |
-|---|---------|-------------|-------------------|
-| 1 | Summary | "If someone reads ONLY this, do they get it?" | — |
-| 2 | Motivation | "Am I describing the problem or jumping to my solution?" | `file:line` refs showing current pain, concrete use cases |
-| 3 | Guide-Level | "Would a new team member understand without asking me?" | Examples, migration guidance |
-| 4 | Reference-Level | "Could someone implement this without talking to me?" | Architecture diagram, API examples, corner cases |
-| 5 | Drawbacks | "Am I honest, or protecting my proposal?" | Quantified costs where possible |
-| 6 | Alternatives | "Did I seriously consider these, or list them to dismiss?" | External URLs proving each alternative is real and used |
-| 7 | Prior Art | "What can I learn from others' mistakes, not just successes?" | Links to repos, PRs, post-mortems, blog posts |
-| 8 | Unresolved Questions | "Am I hiding unknowns as assumptions?" | Categorized: before/during/out-of-scope |
-| 9 | References | "Can a reader verify every claim by clicking a link?" | `file:line` + full URLs — no dead links |
-| 10 | Implementation Plan | "Are steps ordered by dependency, not preference?" | `file:line` for every step, risk mitigations |
-
-### Evidence & Proof Discipline
-
-Proof is a **code reference** (full GitHub/GitLab/Bitbucket link) or a **URL** (docs, blog, benchmark). Each must explain **how it helps the RFC thesis**.
-
-| Claim Type | Proof Type | Example | How It Helps Thesis |
-|-----------|-----------|---------|---------------------|
-| "Current code does X" | Code ref | [`src/auth/middleware.ts:42`](https://github.com/.../middleware.ts#L42) | Proves the coupling problem described in §Motivation |
-| "Library Y solves this" | URL | [express-rate-limit](https://github.com/express-rate-limit/express-rate-limit) (3k stars) | Validates §Proposed Solution — mature, battle-tested |
-| "Approach Z is better" | Code ref + URL | §Comparison Matrix — wins 4/6 dimensions | Supports §Rationale recommendation over alternatives |
-| "Risk is low/medium/high" | Code ref | 2 files affected ([link1], [link2]), tests exist ([link3]) | Quantifies §Drawbacks — bounded blast radius |
-| "This is the standard pattern" | URL | [Redis docs](url), [Go stdlib](url) | Supports §Prior Art — industry-proven approach |
-| "Performance claim" | URL | [Benchmark results](url) | Backs §Rationale with measured data, not assumptions |
-
-**Rule: If you can't provide proof → mark it as an unresolved question, not a claim.**
-**Rule: If a reference doesn't connect to an RFC section → it doesn't belong.**
-
-### Trade-off Thinking
-
-For every recommendation, explicitly state:
-
-- **What we gain** — the benefit, with evidence
-- **What we give up** — the cost, honestly
-- **What we defer** — what this doesn't solve (see §Future Possibilities)
-- **What could break** — risks, with mitigation plan (see §Drawbacks)
-
-### Reasoning Traps to Avoid
-
-- **Anchoring** — Don't fall in love with your first idea. Research alternatives with equal rigor.
-- **Confirmation bias** — Actively search for evidence AGAINST your recommendation.
-- **Sunk cost** — If research reveals your initial approach is wrong, pivot. The RFC is the place to change your mind.
-- **False dichotomy** — "X or Y" is rarely complete. Look for hybrids, phased rollouts, or "do nothing".
-- **Handwaving risks** — "Low risk" without evidence = unknown risk.
-- **Appeal to popularity** — "Everyone uses X" is not a reason. WHY do they use it, and does that reason apply here?
-
-### Strong RFC Signals
-
-Aim for these — they indicate a well-reasoned RFC:
-
-- Motivation section could survive even if the rest of the RFC is rejected
-- A reader can disagree with your recommendation but still find the RFC valuable
-- Alternatives section taught you something you didn't know before researching
-- Drawbacks section would satisfy your biggest skeptic
-- Every claim has a clickable reference — no reader needs to "trust you"
-
-## References
-
-- [Rust RFC template](https://github.com/rust-lang/rfcs/blob/master/0000-template.md) — Guide + Reference split, Prior Art
-- [Go Proposal template](https://github.com/golang/proposal/blob/master/design/TEMPLATE.md) — concise, rationale-focused
-- [npm RFC template](https://github.com/npm/rfcs/blob/main/accepted/0000-template.md) — mandates alternatives "even if it seems like a stretch"
