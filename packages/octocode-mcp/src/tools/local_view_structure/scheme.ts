@@ -2,7 +2,7 @@
  * Zod schema for localViewStructure tool
  */
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import {
   BaseQuerySchemaLocal,
   createBulkQuerySchema,

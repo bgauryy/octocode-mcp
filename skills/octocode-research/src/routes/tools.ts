@@ -16,7 +16,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { getMcpContent } from '../mcpCache.js';
 import { transformToJsonSchema } from '../types/mcp.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import type { ZodTypeAny } from 'zod';
+import type { z } from 'zod/v4';
 
 // Import Zod schemas from octocode-mcp (source of truth)
 import {
@@ -78,7 +78,7 @@ interface ToolsInfoQuery {
 // Zod Schema Registry - Maps tool names to their Zod schemas (source of truth)
 // ============================================================================
 
-const TOOL_ZOD_SCHEMAS: Record<string, ZodTypeAny> = {
+const TOOL_ZOD_SCHEMAS: Record<string, z.ZodType> = {
   // GitHub tools
   githubSearchCode: GitHubCodeSearchQuerySchema,
   githubGetFileContent: FileContentQuerySchema,
@@ -99,23 +99,27 @@ const TOOL_ZOD_SCHEMAS: Record<string, ZodTypeAny> = {
 };
 
 /**
- * Get JSON Schema for a tool from its Zod schema
- * Returns proper JSON Schema with correct types, required fields, and validations
+ * Convert a Zod v4 schema to JSON Schema via zod-to-json-schema.
+ * The library expects Zod v3 types; schemas are structurally compatible at runtime.
  */
-function getToolJsonSchema(toolName: string): Record<string, unknown> | null {
-  const zodSchema = TOOL_ZOD_SCHEMAS[toolName];
-  if (!zodSchema) return null;
-
+function toJsonSchema(
+  schema: z.ZodType,
+  name: string
+): Record<string, unknown> | null {
   try {
-    // Convert Zod schema to JSON Schema
-    const jsonSchema = zodToJsonSchema(zodSchema, {
-      name: toolName,
-      $refStrategy: 'none', // Inline all references
-    });
-    return jsonSchema as Record<string, unknown>;
+    type ZodToJsonSchemaInput = Parameters<typeof zodToJsonSchema>[0];
+    return zodToJsonSchema(schema as unknown as ZodToJsonSchemaInput, {
+      name,
+      $refStrategy: 'none',
+    }) as Record<string, unknown>;
   } catch {
     return null;
   }
+}
+
+function getToolJsonSchema(toolName: string): Record<string, unknown> | null {
+  const zodSchema = TOOL_ZOD_SCHEMAS[toolName];
+  return zodSchema ? toJsonSchema(zodSchema, toolName) : null;
 }
 
 /**
@@ -452,60 +456,40 @@ toolsRoutes.get('/initContext', async (
 // Tool Registry - Maps tool names to functions and resilience wrappers
 // ============================================================================
 
-import type { BaseQueryParams, QueryParamsResult } from '../types/toolTypes.js';
-
-/**
- * Tool query input type - extends base query params.
- */
-interface ToolQuery extends BaseQueryParams {
-  [key: string]: unknown;
-}
-
-/**
- * Standard tool response structure.
- */
-interface ToolResponse {
-  content?: Array<{ type: string; text?: string }>;
-  isError?: boolean;
-  [key: string]: unknown;
-}
-
-/**
- * Tool function type with proper generics.
- */
-type ToolFn<TQuery extends ToolQuery = ToolQuery> = (
-  params: QueryParamsResult<TQuery>
-) => Promise<ToolResponse>;
-
 type ResilienceFn = <T>(fn: () => Promise<T>, toolName: string) => Promise<T>;
 
+/**
+ * Tool registry entry for dynamic dispatch.
+ * Tool functions are dispatched by name at runtime; Zod schemas validate inputs.
+ */
 interface ToolEntry {
-  fn: ToolFn;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  fn: (params: any) => Promise<any>;
   resilience: ResilienceFn;
   category: 'github' | 'local' | 'lsp' | 'package';
 }
 
 const TOOL_REGISTRY: Record<string, ToolEntry> = {
   // GitHub tools
-  githubSearchCode: { fn: githubSearchCode as ToolFn, resilience: withGitHubResilience, category: 'github' },
-  githubGetFileContent: { fn: githubGetFileContent as ToolFn, resilience: withGitHubResilience, category: 'github' },
-  githubViewRepoStructure: { fn: githubViewRepoStructure as ToolFn, resilience: withGitHubResilience, category: 'github' },
-  githubSearchRepositories: { fn: githubSearchRepositories as ToolFn, resilience: withGitHubResilience, category: 'github' },
-  githubSearchPullRequests: { fn: githubSearchPullRequests as ToolFn, resilience: withGitHubResilience, category: 'github' },
+  githubSearchCode: { fn: githubSearchCode, resilience: withGitHubResilience, category: 'github' },
+  githubGetFileContent: { fn: githubGetFileContent, resilience: withGitHubResilience, category: 'github' },
+  githubViewRepoStructure: { fn: githubViewRepoStructure, resilience: withGitHubResilience, category: 'github' },
+  githubSearchRepositories: { fn: githubSearchRepositories, resilience: withGitHubResilience, category: 'github' },
+  githubSearchPullRequests: { fn: githubSearchPullRequests, resilience: withGitHubResilience, category: 'github' },
 
   // Local tools
-  localSearchCode: { fn: localSearchCode as ToolFn, resilience: withLocalResilience, category: 'local' },
-  localGetFileContent: { fn: localGetFileContent as ToolFn, resilience: withLocalResilience, category: 'local' },
-  localFindFiles: { fn: localFindFiles as ToolFn, resilience: withLocalResilience, category: 'local' },
-  localViewStructure: { fn: localViewStructure as ToolFn, resilience: withLocalResilience, category: 'local' },
+  localSearchCode: { fn: localSearchCode, resilience: withLocalResilience, category: 'local' },
+  localGetFileContent: { fn: localGetFileContent, resilience: withLocalResilience, category: 'local' },
+  localFindFiles: { fn: localFindFiles, resilience: withLocalResilience, category: 'local' },
+  localViewStructure: { fn: localViewStructure, resilience: withLocalResilience, category: 'local' },
 
   // LSP tools
-  lspGotoDefinition: { fn: lspGotoDefinition as ToolFn, resilience: withLspResilience, category: 'lsp' },
-  lspFindReferences: { fn: lspFindReferences as ToolFn, resilience: withLspResilience, category: 'lsp' },
-  lspCallHierarchy: { fn: lspCallHierarchy as ToolFn, resilience: withLspResilience, category: 'lsp' },
+  lspGotoDefinition: { fn: lspGotoDefinition, resilience: withLspResilience, category: 'lsp' },
+  lspFindReferences: { fn: lspFindReferences, resilience: withLspResilience, category: 'lsp' },
+  lspCallHierarchy: { fn: lspCallHierarchy, resilience: withLspResilience, category: 'lsp' },
 
   // Package tools
-  packageSearch: { fn: packageSearch as ToolFn, resilience: withPackageResilience, category: 'package' },
+  packageSearch: { fn: packageSearch, resilience: withPackageResilience, category: 'package' },
 };
 
 /**

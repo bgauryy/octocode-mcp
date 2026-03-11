@@ -49,7 +49,10 @@ declare module 'express' {
   }
 
   export interface Express {
+    listen(port: number, hostname: string, backlog: number, callback?: () => void): Server;
+    listen(port: number, hostname: string, callback?: () => void): Server;
     listen(port: number, callback?: () => void): Server;
+    listen(callback?: () => void): Server;
     get(path: string, handler: RequestHandler): Express;
     use(path: string, router: Router): Express;
     use(handler: RequestHandler | ErrorRequestHandler): Express;

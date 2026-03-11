@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import { logPromptCall } from '../session.js';
 import type { CompleteMetadata } from '../tools/toolMetadata/index.js';
 
@@ -37,13 +37,13 @@ export function registerPrompts(
       continue;
     }
 
-    const argsShape: Record<string, z.ZodTypeAny> = {};
+    const argsShape: Record<string, z.ZodType<unknown>> = {};
     if (prompt.args && Array.isArray(prompt.args)) {
       for (const arg of prompt.args) {
         if (!arg || typeof arg.name !== 'string') {
           continue;
         }
-        let schema: z.ZodTypeAny = z.string().describe(arg.description);
+        let schema: z.ZodType<unknown> = z.string().describe(arg.description);
         if (!arg.required) {
           schema = schema.optional();
         }
@@ -82,6 +82,6 @@ export function registerPrompts(
       description: prompt.description,
       argsSchema: argsShape,
     };
-    server.registerPrompt(prompt.name, promptOptions as never, handler);
+    server.registerPrompt(prompt.name, promptOptions, handler);
   }
 }

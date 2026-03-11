@@ -27,8 +27,7 @@ export interface QueryParamsResult<T extends BaseQueryParams = BaseQueryParams> 
  * Works for all tools - local, GitHub, LSP, and package search.
  */
 export function toQueryParams<T extends BaseQueryParams>(
-  validated: T | T[]
+  validated: T[]
 ): QueryParamsResult<T> {
-  const queries = Array.isArray(validated) ? validated : [validated];
-  return { queries };
+  return { queries: validated };
 }

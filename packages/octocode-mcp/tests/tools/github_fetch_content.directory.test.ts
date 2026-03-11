@@ -44,10 +44,11 @@ const mockIsCloneEnabled = vi.hoisted(() => vi.fn().mockReturnValue(true));
 const mockGetActiveProvider = vi.hoisted(() =>
   vi.fn().mockReturnValue('github')
 );
+const mockGetProvider = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/serverConfig.js', () => ({
   getActiveProviderConfig: vi.fn(() => ({
-    provider: 'github',
+    provider: mockGetActiveProvider(),
     baseUrl: undefined,
     token: 'mock-token',
   })),
@@ -57,7 +58,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 }));
 
 vi.mock('../../src/providers/factory.js', () => ({
-  getProvider: vi.fn(),
+  getProvider: mockGetProvider,
 }));
 
 // Mock global fetch for download_url
@@ -65,8 +66,6 @@ const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
 import { fetchMultipleGitHubFileContents } from '../../src/tools/github_fetch_content/execution.js';
-
-// ── Test helpers ────────────────────────────────────────────────────
 
 let testDir: string;
 
@@ -99,6 +98,29 @@ function mockDirectoryListing(
   });
 }
 
+function createMockProvider(type?: string) {
+  return {
+    capabilities: {
+      cloneRepo: type === 'github',
+      fetchDirectoryToDisk: type === 'github',
+      requiresScopedCodeSearch: type !== 'github',
+      supportsMergedState: type !== 'github',
+      supportsMultiTopicSearch: type === 'github',
+    },
+    getFileContent: vi.fn().mockResolvedValue({
+      data: {
+        path: 'src/file.ts',
+        content: 'const x = 1;',
+        encoding: 'utf-8',
+        size: 12,
+        ref: 'main',
+      },
+      status: 200,
+      provider: type === 'gitlab' ? 'gitlab' : 'github',
+    }),
+  };
+}
+
 // ── Tests ────────────────────────────────────────────────────────────
 
 describe('fetchMultipleGitHubFileContents - directory mode', () => {
@@ -108,6 +130,9 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
     mockGetOctocodeDir.mockReturnValue(testDir);
     mockIsCloneEnabled.mockReturnValue(true);
     mockGetActiveProvider.mockReturnValue('github');
+    mockGetProvider.mockImplementation((type?: string) =>
+      createMockProvider(type)
+    );
   });
 
   afterEach(() => {
@@ -148,23 +173,6 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
   it('should allow file mode even when ENABLE_CLONE is disabled', async () => {
     mockIsCloneEnabled.mockReturnValue(false);
 
-    // File mode should still work (uses provider, not clone)
-    const { getProvider } = await import('../../src/providers/factory.js');
-    const mockGetProvider = vi.mocked(getProvider);
-    mockGetProvider.mockReturnValue({
-      getFileContent: vi.fn().mockResolvedValue({
-        data: {
-          path: 'src/file.ts',
-          content: 'const x = 1;',
-          encoding: 'utf-8',
-          size: 12,
-          ref: 'main',
-        },
-        status: 200,
-        provider: 'github',
-      }),
-    } as any);
-
     const result = await fetchMultipleGitHubFileContents({
       queries: [
         {
@@ -182,7 +190,6 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
 
     const text =
       result.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
-    // File mode should NOT be blocked
     expect(text).not.toContain('ENABLE_CLONE');
   });
 
@@ -266,7 +273,6 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
     expect(result.isError).toBeFalsy();
     const text =
       result.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
-    // cached field no longer in user-facing response (C9)
     expect(text).toContain('fileCount:');
   });
 
@@ -305,7 +311,6 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
       firstResult.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
     expect(firstText).toContain('fileCount:');
 
-    // Second call: cache hit — must still report real fileCount/totalSize
     const cachedResult = await fetchMultipleGitHubFileContents({
       queries: [
         {
@@ -325,7 +330,6 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
     const cachedText =
       cachedResult.content?.map(c => ('text' in c ? c.text : '')).join('') ||
       '';
-    // fileCount must reflect real files on disk, NOT hardcoded 0
     expect(cachedText).toContain('fileCount: 2');
     expect(cachedText).not.toContain('fileCount: 0');
     expect(cachedText).not.toContain('totalSize: 0');
@@ -355,7 +359,6 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
       ],
     });
 
-    // Should handle error gracefully (not throw)
     expect(result).toBeDefined();
     const text =
       result.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
@@ -390,7 +393,7 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
   });
 
   it('should reject directory fetch for any non-github provider', async () => {
-    mockGetActiveProvider.mockReturnValue('some-other-provider');
+    mockGetActiveProvider.mockReturnValue('bitbucket');
 
     const result = await fetchMultipleGitHubFileContents({
       queries: [
@@ -415,22 +418,6 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
 
   it('should allow file mode when provider is gitlab', async () => {
     mockGetActiveProvider.mockReturnValue('gitlab');
-
-    const { getProvider } = await import('../../src/providers/factory.js');
-    const mockGetProvider = vi.mocked(getProvider);
-    mockGetProvider.mockReturnValue({
-      getFileContent: vi.fn().mockResolvedValue({
-        data: {
-          path: 'src/main.ts',
-          content: 'const x = 1;',
-          encoding: 'utf-8',
-          size: 12,
-          ref: 'main',
-        },
-        status: 200,
-        provider: 'gitlab',
-      }),
-    } as any);
 
     const result = await fetchMultipleGitHubFileContents({
       queries: [
@@ -474,7 +461,6 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
 
     const text =
       result.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
-    // Clone-enabled check should fire first
     expect(text).toContain('ENABLE_LOCAL=true');
     expect(text).toContain('ENABLE_CLONE=true');
   });
@@ -505,7 +491,6 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
     const text =
       result.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
     expect(text).toContain('localPath');
-    // Verify resolveDefaultBranch was called with the right args
     expect(mockResolveDefaultBranch).toHaveBeenCalledWith(
       'owner',
       'repo',

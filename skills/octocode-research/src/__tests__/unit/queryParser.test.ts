@@ -6,6 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { validateToolCallBody, getValidationHints, MAX_QUERIES } from '../../validation/toolCallSchema.js';
+import type { z } from 'zod/v4';
 
 describe('validateToolCallBody', () => {
   describe('valid inputs', () => {
@@ -51,7 +52,7 @@ describe('validateToolCallBody', () => {
       const result = validateToolCallBody({});
 
       expect(result.success).toBe(false);
-      expect(result.error?.message).toContain('Required');
+      expect(result.error?.message).toMatch(/Required|expected array/i);
     });
 
     it('rejects null queries', () => {
@@ -115,7 +116,7 @@ describe('getValidationHints', () => {
   it('includes queries format hint for queries errors', () => {
     const hints = getValidationHints('localSearchCode', {
       message: 'queries is required',
-      details: [{ path: ['queries'], message: 'Required', code: 'invalid_type', expected: 'array', received: 'undefined' }],
+      details: [{ path: ['queries'], message: 'Required', code: 'invalid_type', expected: 'array' } as z.core.$ZodIssue],
     });
 
     expect(hints.some((h) => h.includes('{ "queries": [{ ... }] }'))).toBe(true);

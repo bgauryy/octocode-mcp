@@ -7,7 +7,7 @@
  * @module validation/httpPreprocess
  */
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import path from 'path';
 import os from 'os';
 
@@ -117,8 +117,39 @@ export const safePath = z.string().refine(
 /**
  * Default research context values for HTTP requests
  */
-export const researchDefaults = {
+const RESEARCH_DEFAULTS = {
   mainResearchGoal: 'HTTP API request',
   researchGoal: 'Execute tool via HTTP',
   reasoning: 'HTTP API call',
-};
+} as const;
+
+let httpQueryCounter = 0;
+
+/**
+ * Apply research defaults and auto-generate `id`, ensuring structural compatibility
+ * with MCP tool query types (which require `id`, `mainResearchGoal`, `researchGoal`, `reasoning`).
+ */
+export function withResearchDefaults<T extends Record<string, unknown>>(
+  data: T
+): Omit<T, 'id' | 'mainResearchGoal' | 'researchGoal' | 'reasoning'> & {
+  id: string;
+  mainResearchGoal: string;
+  researchGoal: string;
+  reasoning: string;
+} {
+  return {
+    ...data,
+    id: (data.id as string | undefined) ?? `http-${++httpQueryCounter}`,
+    mainResearchGoal:
+      (data.mainResearchGoal as string | undefined) ??
+      RESEARCH_DEFAULTS.mainResearchGoal,
+    researchGoal:
+      (data.researchGoal as string | undefined) ??
+      RESEARCH_DEFAULTS.researchGoal,
+    reasoning:
+      (data.reasoning as string | undefined) ?? RESEARCH_DEFAULTS.reasoning,
+  };
+}
+
+/** @deprecated Use withResearchDefaults() instead */
+export const researchDefaults = RESEARCH_DEFAULTS;

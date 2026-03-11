@@ -7,7 +7,7 @@
  * @module validation/schemas
  */
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 // =============================================================================
 // Import authoritative schemas from octocode-mcp (Source of Truth)
@@ -42,7 +42,7 @@ import {
   requiredNumber,
   booleanString,
   stringArray,
-  researchDefaults,
+  withResearchDefaults,
 } from './httpPreprocess.js';
 
 // =============================================================================
@@ -140,11 +140,7 @@ export const localSearchSchema = z
     reasoning: z.string().optional(),
   })
   .transform((data) => {
-    const result = {
-      ...researchDefaults,
-      ...data,
-    };
-    // Map deprecated params for backwards compat
+    const result = withResearchDefaults(data);
     if (result.contextLines === undefined && data.context !== undefined) {
       result.contextLines = data.context;
     }
@@ -182,10 +178,7 @@ export const localContentSchema = z
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
   })
-  .transform((data) => ({
-    ...researchDefaults,
-    ...data,
-  }));
+  .transform(withResearchDefaults);
 
 /**
  * Transform human-readable file type to MCP's Unix-style type codes
@@ -259,10 +252,7 @@ export const localFindSchema = z
     reasoning: z.string().optional(),
   })
   .transform((data) => {
-    const result = {
-      ...researchDefaults,
-      ...data,
-    };
+    const result = withResearchDefaults(data);
     if (result.name === undefined && data.pattern !== undefined) {
       result.name = data.pattern;
     }
@@ -307,10 +297,7 @@ export const localStructureSchema = z
     reasoning: z.string().optional(),
   })
   .transform((data) => {
-    const result = {
-      ...researchDefaults,
-      ...data,
-    };
+    const result = withResearchDefaults(data);
     if (result.hidden === undefined && data.showHidden !== undefined) {
       result.hidden = data.showHidden;
     }
@@ -336,10 +323,7 @@ export const lspDefinitionSchema = z
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
   })
-  .transform((data) => ({
-    ...researchDefaults,
-    ...data,
-  }));
+  .transform(withResearchDefaults);
 
 /**
  * HTTP schema for lspFindReferences
@@ -359,10 +343,7 @@ export const lspReferencesSchema = z
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
   })
-  .transform((data) => ({
-    ...researchDefaults,
-    ...data,
-  }));
+  .transform(withResearchDefaults);
 
 /**
  * HTTP schema for lspCallHierarchy
@@ -375,7 +356,7 @@ export const lspCallsSchema = z
     lineHint: requiredNumber.refine((n) => n >= 1, 'Line hint must be at least 1'),
     orderHint: numericString.default(0),
     direction: z.enum(['incoming', 'outgoing'], {
-      errorMap: () => ({ message: "Direction must be 'incoming' or 'outgoing'" }),
+      error: "Direction must be 'incoming' or 'outgoing'",
     }),
     depth: numericString.default(1),
     contextLines: numericString.default(2),
@@ -385,10 +366,7 @@ export const lspCallsSchema = z
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
   })
-  .transform((data) => ({
-    ...researchDefaults,
-    ...data,
-  }));
+  .transform(withResearchDefaults);
 
 // =============================================================================
 // GitHub Route Schemas
@@ -413,10 +391,7 @@ export const githubSearchSchema = z
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
   })
-  .transform((data) => ({
-    ...researchDefaults,
-    ...data,
-  }));
+  .transform(withResearchDefaults);
 
 /**
  * HTTP schema for githubGetFileContent
@@ -439,10 +414,7 @@ export const githubContentSchema = z
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
   })
-  .transform((data) => ({
-    ...researchDefaults,
-    ...data,
-  }));
+  .transform(withResearchDefaults);
 
 /**
  * HTTP schema for githubSearchRepositories
@@ -474,10 +446,7 @@ export const githubReposSchema = z
       path: ['keywordsToSearch'],
     }
   )
-  .transform((data) => ({
-    ...researchDefaults,
-    ...data,
-  }));
+  .transform(withResearchDefaults);
 
 /**
  * HTTP schema for githubViewRepoStructure
@@ -496,10 +465,7 @@ export const githubStructureSchema = z
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
   })
-  .transform((data) => ({
-    ...researchDefaults,
-    ...data,
-  }));
+  .transform(withResearchDefaults);
 
 /**
  * HTTP schema for githubSearchPullRequests
@@ -547,10 +513,7 @@ export const githubPRsSchema = z
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
   })
-  .transform((data) => ({
-    ...researchDefaults,
-    ...data,
-  }));
+  .transform(withResearchDefaults);
 
 // =============================================================================
 // Package Route Schemas
@@ -571,10 +534,7 @@ export const packageSearchSchema = z
     researchGoal: z.string().optional(),
     reasoning: z.string().optional(),
   })
-  .transform((data) => ({
-    ...researchDefaults,
-    ...data,
-  }));
+  .transform(withResearchDefaults);
 
 // =============================================================================
 // Type Exports (derived from schemas)

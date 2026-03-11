@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
 import { errorHandler, type ApiError } from '../../middleware/errorHandler.js';
+import type { z } from 'zod/v4';
 import { fireAndForgetWithTimeout } from '../../utils/asyncTimeout.js';
 
 // Mock the logger
@@ -44,7 +45,7 @@ describe('errorHandler', () => {
     };
 
     mockRes = {
-      status: statusMock,
+      status: statusMock as unknown as Response['status'],
     };
 
     mockNext = vi.fn();
@@ -131,7 +132,7 @@ describe('errorHandler', () => {
       const error: ApiError = new Error('Validation failed');
       error.statusCode = 400;
       error.details = [
-        { path: ['queries'], message: 'Required', code: 'invalid_type', expected: 'array', received: 'undefined' },
+        { path: ['queries'], message: 'Required', code: 'invalid_type', expected: 'array' } as z.core.$ZodIssue,
       ];
 
       errorHandler(error, mockReq as Request, mockRes as Response, mockNext);
@@ -149,7 +150,7 @@ describe('errorHandler', () => {
 
     it('excludes details for 500 errors', () => {
       const error: ApiError = new Error('Server error');
-      error.details = [{ path: ['internal'], message: 'Debug info', code: 'custom', expected: '', received: '' }];
+      error.details = [{ path: ['internal'], message: 'Debug info', code: 'custom' } as z.core.$ZodIssue];
 
       errorHandler(error, mockReq as Request, mockRes as Response, mockNext);
 

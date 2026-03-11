@@ -12,7 +12,7 @@ import type {
   GitHubRepositoryStructureResult,
   GitHubRepositoryStructureError,
 } from '../tools/github_view_repo_structure/scheme.js';
-import { GITHUB_STRUCTURE_DEFAULTS as STRUCTURE_DEFAULTS } from '../tools/github_view_repo_structure/scheme.js';
+import { GITHUB_STRUCTURE_DEFAULTS as STRUCTURE_DEFAULTS } from '../tools/github_view_repo_structure/constants.js';
 import { getOctokit, resolveDefaultBranch } from './client';
 import { handleGitHubAPIError } from './errors';
 import { generateCacheKey, withDataCache } from '../utils/http/cache';

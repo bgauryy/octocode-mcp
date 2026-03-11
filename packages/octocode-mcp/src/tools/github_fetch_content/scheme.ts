@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import {
   BaseQuerySchema,
   createBulkQuerySchema,
@@ -92,7 +92,7 @@ export const FileContentQuerySchema = FileContentBaseSchema.superRefine(
           data[param] !== 5
         ) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: 'custom',
             message: `Parameter "${param}" is not supported when type is "directory". Directory mode saves all files to disk.`,
             path: [param],
           });
@@ -106,7 +106,7 @@ export const FileContentQuerySchema = FileContentBaseSchema.superRefine(
       (data.startLine || data.endLine || data.matchString)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message: GITHUB_FETCH_CONTENT.validation.parameterConflict,
         path: ['fullContent'],
       });
@@ -116,7 +116,7 @@ export const FileContentQuerySchema = FileContentBaseSchema.superRefine(
       (!data.startLine && data.endLine)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message: GITHUB_FETCH_CONTENT.validation.parameterConflict,
         path: ['startLine'],
       });

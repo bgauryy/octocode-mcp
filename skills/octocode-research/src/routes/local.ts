@@ -20,7 +20,6 @@ import {
 import { ResearchResponse, detectLanguageFromPath } from '../utils/responseBuilder.js';
 import { withLocalResilience } from '../utils/resilience.js';
 import { createRouteHandler } from '../utils/routeFactory.js';
-import { toQueryParams } from '../types/toolTypes.js';
 import {
   safeString,
   safeNumber,
@@ -37,7 +36,6 @@ localRoutes.get(
   '/localSearchCode',
   createRouteHandler({
     schema: localSearchSchema,
-    toParams: toQueryParams,
     toolFn: localSearchCode,
     toolName: 'localSearchCode',
     resilience: withLocalResilience,
@@ -73,7 +71,6 @@ localRoutes.get(
   '/localGetFileContent',
   createRouteHandler({
     schema: localContentSchema,
-    toParams: toQueryParams,
     toolFn: localGetFileContent,
     toolName: 'localGetFileContent',
     resilience: withLocalResilience,
@@ -104,7 +101,6 @@ localRoutes.get(
   '/localFindFiles',
   createRouteHandler({
     schema: localFindSchema,
-    toParams: toQueryParams,
     toolFn: localFindFiles,
     toolName: 'localFindFiles',
     resilience: withLocalResilience,
@@ -137,7 +133,6 @@ localRoutes.get(
   '/localViewStructure',
   createRouteHandler({
     schema: localStructureSchema,
-    toParams: toQueryParams,
     toolFn: localViewStructure,
     toolName: 'localViewStructure',
     resilience: withLocalResilience,

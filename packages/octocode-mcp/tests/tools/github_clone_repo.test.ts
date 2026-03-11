@@ -1327,6 +1327,7 @@ describe('cloneRepo', () => {
 
 const mockGetActiveProvider = vi.hoisted(() => vi.fn());
 const mockGetActiveProviderConfig = vi.hoisted(() => vi.fn());
+const mockGetProvider = vi.hoisted(() => vi.fn());
 
 vi.mock('../../src/serverConfig.js', () => ({
   getActiveProvider: mockGetActiveProvider,
@@ -1334,9 +1335,23 @@ vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
 }));
 
+vi.mock('../../src/providers/factory.js', () => ({
+  getProvider: mockGetProvider,
+}));
+
 import { executeCloneRepo } from '../../src/tools/github_clone_repo/execution.js';
 import { registerGitHubCloneRepoTool } from '../../src/tools/github_clone_repo/register.js';
 import { createMockMcpServer } from '../fixtures/mcp-fixtures.js';
+
+function createMockProviderCapabilities(type?: string) {
+  return {
+    cloneRepo: type === 'github',
+    fetchDirectoryToDisk: type === 'github',
+    requiresScopedCodeSearch: type !== 'github',
+    supportsMergedState: type !== 'github',
+    supportsMultiTopicSearch: type === 'github',
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────
 // 4.5. Registration test
@@ -1364,8 +1379,10 @@ describe('registerGitHubCloneRepoTool', () => {
     mockGetOctocodeDir.mockReturnValue(execTestDir);
     mockGetActiveProvider.mockReturnValue('github');
     mockGetActiveProviderConfig.mockReturnValue({ token: 'test-token' });
+    mockGetProvider.mockImplementation((type?: string) => ({
+      capabilities: createMockProviderCapabilities(type),
+    }));
 
-    // git commands succeed and create the target dir
     mockSpawnWithTimeout.mockImplementation(
       async (_cmd: string, args: string[]) => {
         if (args.includes('clone')) {
@@ -1427,13 +1444,15 @@ describe('executeCloneRepo', () => {
     vi.clearAllMocks();
     mockGetActiveProvider.mockReturnValue('github');
     mockGetActiveProviderConfig.mockReturnValue({ token: 'mock-token' });
+    mockGetProvider.mockImplementation((type?: string) => ({
+      capabilities: createMockProviderCapabilities(type),
+    }));
     execTestDir = join(
       tmpdir(),
       `octocode-exec-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     );
     mockGetOctocodeDir.mockReturnValue(execTestDir);
 
-    // git commands succeed and create the target dir
     mockSpawnWithTimeout.mockImplementation(
       async (_cmd: string, args: string[]) => {
         if (args.includes('clone')) {
@@ -1548,12 +1567,10 @@ describe('executeCloneRepo', () => {
       .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
       .map(c => c.text)
       .join('\n');
-    // Sparse hints mention 'sparse' or 'Partial'
     expect(text.toLowerCase()).toContain('sparse');
   });
 
   it('includes cache hint when returning cached result', async () => {
-    // First clone
     await executeCloneRepo({
       queries: [
         {
@@ -1567,7 +1584,6 @@ describe('executeCloneRepo', () => {
       ],
     });
 
-    // Second call - cached
     const result = await executeCloneRepo({
       queries: [
         {

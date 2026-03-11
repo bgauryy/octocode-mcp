@@ -6,7 +6,7 @@
  * @module validation/toolCallSchema
  */
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 // =============================================================================
 // Constants
@@ -26,7 +26,7 @@ export const MAX_QUERIES = 3;
  * Schema for individual query objects.
  * Each query must be a non-empty object with arbitrary key-value pairs.
  */
-const querySchema = z.record(z.unknown()).refine(
+const querySchema = z.record(z.string(), z.unknown()).refine(
   (obj) => Object.keys(obj).length > 0,
   { message: 'Query object cannot be empty' }
 );
@@ -59,7 +59,7 @@ export interface ValidationResult<T> {
   data?: T;
   error?: {
     message: string;
-    details: z.ZodIssue[];
+    details: z.core.$ZodIssue[];
   };
 }
 
@@ -113,7 +113,7 @@ export function validateToolCallBody(body: unknown): ValidationResult<ToolCallBo
  */
 export function getValidationHints(
   toolName: string,
-  error: { message: string; details: z.ZodIssue[] }
+  error: { message: string; details: z.core.$ZodIssue[] }
 ): string[] {
   const hints = [error.message];
 

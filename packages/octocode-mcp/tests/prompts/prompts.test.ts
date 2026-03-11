@@ -3,7 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerPrompts } from '../../src/prompts/prompts.js';
 import type { CompleteMetadata } from '../../src/tools/toolMetadata/index.js';
 import type { GetPromptResult } from '@modelcontextprotocol/sdk/types.js';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 describe('Prompts Registration', () => {
   let mockServer: McpServer;
@@ -81,7 +81,7 @@ describe('Prompts Registration', () => {
 
       const researchOpts = researchCall[1] as {
         description: string;
-        argsSchema: Record<string, z.ZodTypeAny>;
+        argsSchema: Record<string, z.ZodType>;
       };
       expect(researchOpts.description).toBe('Research prompt description');
       expect(researchOpts.argsSchema).toBeDefined();
@@ -96,7 +96,7 @@ describe('Prompts Registration', () => {
 
       const useOpts = useCall[1] as {
         description: string;
-        argsSchema: Record<string, z.ZodTypeAny>;
+        argsSchema: Record<string, z.ZodType>;
       };
       expect(useOpts.description).toBe('Use prompt description');
       expect(Object.keys(useOpts.argsSchema).length).toBe(0);

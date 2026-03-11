@@ -4,21 +4,20 @@ import type { FileContentQuery } from './types.js';
 import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
-import {
-  handleCatchError,
-  handleProviderError,
-  createSuccessResult,
-} from '../utils.js';
-import { getProvider } from '../../providers/factory.js';
-import {
-  getActiveProvider,
-  getActiveProviderConfig,
-  isCloneEnabled,
-} from '../../serverConfig.js';
-import { isProviderSuccess, type ProviderType } from '../../providers/types.js';
+import { handleCatchError, createSuccessResult } from '../utils.js';
+import { isCloneEnabled } from '../../serverConfig.js';
 import { fetchDirectoryContents } from '../../github/directoryFetch.js';
 import { resolveDefaultBranch } from '../../github/client.js';
 import { LOCAL_TOOL_LIST } from '../../hints/localToolUsageHints.js';
+import {
+  mapFileContentProviderResult,
+  mapFileContentToolQuery,
+} from '../providerMappers.js';
+import {
+  createProviderExecutionContext,
+  executeProviderOperation,
+  providerSupports,
+} from '../providerExecution.js';
 
 // ─────────────────────────────────────────────────────────────────────
 // Directory fetch hints
@@ -74,7 +73,9 @@ export async function fetchMultipleGitHubFileContents(
   args: ToolExecutionArgs<FileContentQuery>
 ): Promise<CallToolResult> {
   const { queries, authInfo } = args;
-  const { provider: providerType, baseUrl, token } = getActiveProviderConfig();
+  let providerContext:
+    | ReturnType<typeof createProviderExecutionContext>
+    | undefined;
 
   // Determine if any query uses directory mode (for keysPriority)
   const hasDirectoryQuery = queries.some(q => q.type === 'directory');
@@ -90,13 +91,15 @@ export async function fetchMultipleGitHubFileContents(
     queries,
     async (query: FileContentQuery, _index: number) => {
       try {
+        providerContext ??= createProviderExecutionContext(authInfo);
+
         // ── Directory mode ────────────────────────────────────────
         if (query.type === 'directory') {
-          return handleDirectoryFetch(query, authInfo);
+          return handleDirectoryFetch(query, authInfo, providerContext);
         }
 
         // ── File mode (default) ──────────────────────────────────
-        return handleFileFetch(query, providerType, baseUrl, token, authInfo);
+        return handleFileFetch(query, providerContext);
       } catch (error) {
         return handleCatchError(error, query);
       }
@@ -114,7 +117,8 @@ export async function fetchMultipleGitHubFileContents(
 
 async function handleDirectoryFetch(
   query: FileContentQuery,
-  authInfo?: AuthInfo
+  authInfo: AuthInfo | undefined,
+  providerContext: ReturnType<typeof createProviderExecutionContext>
 ) {
   if (!isCloneEnabled()) {
     return handleCatchError(
@@ -128,7 +132,7 @@ async function handleDirectoryFetch(
     );
   }
 
-  if (getActiveProvider() !== 'github') {
+  if (!providerSupports(providerContext, 'fetchDirectoryToDisk')) {
     return handleCatchError(
       new Error(
         'Directory fetch (type: "directory") is only available with the GitHub provider. ' +
@@ -185,74 +189,28 @@ async function handleDirectoryFetch(
 
 async function handleFileFetch(
   query: FileContentQuery,
-  providerType: ProviderType,
-  baseUrl: string | undefined,
-  token: string | undefined,
-  authInfo?: AuthInfo
+  providerContext: ReturnType<typeof createProviderExecutionContext>
 ) {
-  const provider = getProvider(providerType, {
-    type: providerType,
-    baseUrl,
-    token,
-    authInfo,
-  });
-
-  const fullContent = Boolean(query.fullContent);
-
-  // Convert query to provider format
-  const providerQuery = {
-    projectId: `${query.owner}/${query.repo}`,
-    path: String(query.path),
-    ref: query.branch ? String(query.branch) : undefined,
-    startLine: fullContent ? undefined : query.startLine,
-    endLine: fullContent ? undefined : query.endLine,
-    matchString:
-      fullContent || !query.matchString ? undefined : String(query.matchString),
-    matchStringContextLines: query.matchStringContextLines ?? 5,
-    charOffset: query.charOffset ?? 0,
-    charLength: query.charLength,
-    fullContent,
-    mainResearchGoal: query.mainResearchGoal,
-    researchGoal: query.researchGoal,
-    reasoning: query.reasoning,
-  };
-
-  const apiResult = await provider.getFileContent(providerQuery);
-
-  if (!isProviderSuccess(apiResult)) {
-    return handleProviderError(apiResult, query);
-  }
-
-  // Transform provider response to tool result format
-  const resultData: Record<string, unknown> = {
-    content: apiResult.data.content,
-    ...(apiResult.data.isPartial && {
-      isPartial: apiResult.data.isPartial,
-    }),
-    ...(apiResult.data.startLine && {
-      startLine: apiResult.data.startLine,
-    }),
-    ...(apiResult.data.endLine && { endLine: apiResult.data.endLine }),
-    ...(apiResult.data.lastModified && {
-      lastModified: apiResult.data.lastModified,
-    }),
-    ...(apiResult.data.lastModifiedBy && {
-      lastModifiedBy: apiResult.data.lastModifiedBy,
-    }),
-    ...(apiResult.data.pagination && {
-      pagination: apiResult.data.pagination,
-    }),
-    ...(apiResult.data.ref && query.branch !== apiResult.data.ref
-      ? { resolvedBranch: apiResult.data.ref }
-      : {}),
-  };
-
-  const hasContent = Boolean(
-    apiResult.data.content && apiResult.data.content.length > 0
+  const providerResult = await executeProviderOperation(query, () =>
+    providerContext.provider.getFileContent(mapFileContentToolQuery(query))
   );
 
-  const paginationHints = apiResult.hints || [];
-  const isLarge = apiResult.data.size > 50000;
+  if (!providerResult.ok) {
+    return providerResult.result;
+  }
+
+  const resultData = mapFileContentProviderResult(
+    providerResult.response.data,
+    query
+  );
+
+  const hasContent = Boolean(
+    providerResult.response.data.content &&
+    providerResult.response.data.content.length > 0
+  );
+
+  const paginationHints = providerResult.response.hints || [];
+  const isLarge = providerResult.response.data.size > 50000;
 
   return createSuccessResult(
     query,

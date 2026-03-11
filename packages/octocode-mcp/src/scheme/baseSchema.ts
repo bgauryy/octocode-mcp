@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import { BASE_SCHEMA } from '../tools/toolMetadata/index.js';
 
 const QUERY_ID_DESCRIPTION =
@@ -46,7 +46,7 @@ interface BulkQuerySchemaOptions {
  * @param singleQuerySchema - Schema for a single query
  * @param options - Configuration options (maxQueries defaults to 3)
  */
-export function createBulkQuerySchema<T extends z.ZodTypeAny>(
+export function createBulkQuerySchema<T extends z.ZodType<object>>(
   toolName: string,
   singleQuerySchema: T,
   options: BulkQuerySchemaOptions = {}
@@ -81,7 +81,7 @@ export function createBulkQuerySchema<T extends z.ZodTypeAny>(
         if (!queryId) return;
         if (seenIds.has(queryId)) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: 'custom',
             path: ['queries', index, 'id'],
             message: `Duplicate query id "${queryId}". Query ids must be unique within a single call.`,
           });

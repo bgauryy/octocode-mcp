@@ -5,7 +5,7 @@
  * runtime validation for data parsed from the session JSON file.
  */
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 /**
  * Schema for session statistics

@@ -2,7 +2,7 @@
  * Schema for localGetFileContent tool
  */
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import {
   BaseQuerySchemaLocal,
   createBulkQuerySchema,
@@ -111,7 +111,7 @@ export const FetchContentQuerySchema = FetchContentBaseSchema.superRefine(
       (data.startLine === undefined && data.endLine !== undefined)
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message: 'startLine and endLine must be used together',
         path: ['startLine'],
       });
@@ -124,7 +124,7 @@ export const FetchContentQuerySchema = FetchContentBaseSchema.superRefine(
       data.startLine > data.endLine
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message: 'startLine must be less than or equal to endLine',
         path: ['startLine'],
       });
@@ -136,7 +136,7 @@ export const FetchContentQuerySchema = FetchContentBaseSchema.superRefine(
       data.matchString !== undefined
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message:
           'Cannot use startLine/endLine with matchString - choose one extraction method',
         path: ['startLine'],
@@ -149,7 +149,7 @@ export const FetchContentQuerySchema = FetchContentBaseSchema.superRefine(
       data.fullContent === true
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message:
           'Cannot use startLine/endLine with fullContent - line extraction is partial by definition',
         path: ['fullContent'],
@@ -159,7 +159,7 @@ export const FetchContentQuerySchema = FetchContentBaseSchema.superRefine(
     // Cannot use fullContent with matchString
     if (data.fullContent === true && data.matchString !== undefined) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message:
           'Cannot use fullContent with matchString - choose one extraction method',
         path: ['fullContent'],
@@ -172,7 +172,7 @@ export const FetchContentQuerySchema = FetchContentBaseSchema.superRefine(
       data.matchString.length > 1000
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message:
           'Regex pattern too long. Use a shorter pattern (max 1000 chars in regex mode).',
         path: ['matchString'],
