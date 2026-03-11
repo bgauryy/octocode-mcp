@@ -32,6 +32,7 @@ import * as githubStructure from './githubStructure.js';
 import type { GitHubAPIError } from '../../github/githubAPI.js';
 import { handleGitHubAPIError } from '../../github/errors.js';
 import { resolveDefaultBranch as resolveGitHubDefaultBranch } from '../../github/client.js';
+import { PROVIDER_CAPABILITIES } from '../capabilities.js';
 
 /**
  * GitHub Provider implementation.
@@ -40,6 +41,7 @@ import { resolveDefaultBranch as resolveGitHubDefaultBranch } from '../../github
  */
 export class GitHubProvider implements ICodeHostProvider {
   readonly type = 'github' as const;
+  readonly capabilities = PROVIDER_CAPABILITIES.github;
   private authInfo?: AuthInfo;
 
   constructor(config?: ProviderConfig) {

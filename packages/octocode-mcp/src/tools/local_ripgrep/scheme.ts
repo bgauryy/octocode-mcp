@@ -3,7 +3,7 @@
  * Optimized ripgrep implementation with performance enhancements
  */
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import {
   BaseQuerySchemaLocal,
   createBulkQuerySchema,

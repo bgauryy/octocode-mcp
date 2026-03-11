@@ -1,4 +1,4 @@
-import type { z } from 'zod';
+import type { z } from 'zod/v4';
 
 import {
   BulkToolDataSchema,
@@ -69,14 +69,15 @@ type ItemOf<TArray> = TArray extends Array<infer TItem> ? TItem : never;
 type ValueOfRecord<TRecord> =
   TRecord extends Record<string, infer TValue> ? TValue : never;
 
-export type BulkOutputFromSchema<TSchema extends z.ZodTypeAny> = BulkOutput<
-  z.infer<TSchema>
->;
+export type BulkOutputFromSchema<TSchema extends z.ZodType<object>> =
+  BulkOutput<z.infer<TSchema>>;
 
-export type QueryResultFromOutputSchema<TSchema extends z.ZodTypeAny> =
+export type QueryResultFromOutputSchema<TSchema extends z.ZodType<object>> =
   QueryResult<z.infer<TSchema>>;
 
-export type SuccessQueryResultFromOutputSchema<TSchema extends z.ZodTypeAny> = {
+export type SuccessQueryResultFromOutputSchema<
+  TSchema extends z.ZodType<object>,
+> = {
   id: string;
   status: 'hasResults';
   data: z.infer<TSchema>;
@@ -94,17 +95,19 @@ export type ErrorQueryResultFromOutputSchema = {
   data: ErrorOutputData;
 };
 
-export type SuccessDataFromOutputSchema<TSchema extends z.ZodTypeAny> =
+export type SuccessDataFromOutputSchema<TSchema extends z.ZodType<object>> =
   z.infer<TSchema>;
 
 export type EmptyDataFromOutputSchema = EmptyOutputData;
 
 export type ErrorDataFromOutputSchema = ErrorOutputData;
 
-export type ToolResultFromOutputSchema<TSchema extends z.ZodTypeAny> =
+export type ToolResultFromOutputSchema<TSchema extends z.ZodType<object>> =
   ToolResult<z.infer<TSchema>>;
 
-export type ToolSuccessResultFromOutputSchema<TSchema extends z.ZodTypeAny> = {
+export type ToolSuccessResultFromOutputSchema<
+  TSchema extends z.ZodType<object>,
+> = {
   status: 'hasResults';
 } & z.infer<TSchema>;
 

@@ -2,7 +2,7 @@
  * Zod validation schemas for tool metadata API responses.
  * Used to validate metadata fetched from the remote API.
  */
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 // ============================================================================
 // Prompt Schemas
@@ -28,12 +28,12 @@ export const PromptMetadataSchema = z.object({
 export const ToolMetadataSchema = z.object({
   name: z.string(),
   description: z.string(),
-  schema: z.record(z.string()),
-  outputSchema: z.record(z.unknown()).optional(),
+  schema: z.record(z.string(), z.string()),
+  outputSchema: z.record(z.string(), z.unknown()).optional(),
   hints: z.object({
     hasResults: z.array(z.string()),
     empty: z.array(z.string()),
-    dynamic: z.record(z.array(z.string()).optional()).optional(),
+    dynamic: z.record(z.string(), z.array(z.string()).optional()).optional(),
   }),
 });
 
@@ -69,10 +69,10 @@ export const BulkOperationsSchema = z.object({
 
 export const RawCompleteMetadataSchema = z.object({
   instructions: z.string(),
-  prompts: z.record(PromptMetadataSchema),
-  toolNames: z.record(z.string()),
+  prompts: z.record(z.string(), PromptMetadataSchema),
+  toolNames: z.record(z.string(), z.string()),
   baseSchema: BaseSchemaSchema,
-  tools: z.record(ToolMetadataSchema),
+  tools: z.record(z.string(), ToolMetadataSchema),
   baseHints: z.object({
     hasResults: z.array(z.string()),
     empty: z.array(z.string()),

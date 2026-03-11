@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 const QueryMetaSchema = z
   .object({
@@ -71,7 +71,7 @@ export const EmptyDataSchema = z
   .catchall(z.unknown())
   .describe('Empty result metadata (may contain hints or paging details)');
 
-function createBulkOutputSchema(successDataSchema: z.ZodTypeAny) {
+function createBulkOutputSchema(successDataSchema: z.ZodType<object>) {
   const hasResultsSchema = QueryMetaSchema.extend({
     status: z
       .literal('hasResults')
@@ -558,13 +558,16 @@ export const PackageSearchPackageSchema = z
     license: z.string().optional().describe('Package license'),
     author: z.string().optional().describe('Package author'),
     keywords: z.array(z.string()).optional().describe('Package keywords'),
-    engines: z.record(z.string()).optional().describe('Engine requirements'),
+    engines: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe('Engine requirements'),
     dependencies: z
-      .record(z.string())
+      .record(z.string(), z.string())
       .optional()
       .describe('Declared dependencies'),
     peerDependencies: z
-      .record(z.string())
+      .record(z.string(), z.string())
       .optional()
       .describe('Declared peer dependencies'),
   })
@@ -813,7 +816,7 @@ export const GitHubViewRepoStructureDataSchema = z
       'Branch fallback details when the requested branch was not used'
     ),
     structure: z
-      .record(GitHubRepoStructureDirectoryEntrySchema)
+      .record(z.string(), GitHubRepoStructureDirectoryEntrySchema)
       .optional()
       .describe('Directory structure grouped by relative path'),
     summary: GitHubRepoStructureSummarySchema.optional().describe(

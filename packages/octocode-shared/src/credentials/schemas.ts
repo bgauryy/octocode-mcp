@@ -5,7 +5,7 @@
  * runtime validation for data parsed from encrypted credential files.
  */
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 /**
  * Schema for OAuth token structure

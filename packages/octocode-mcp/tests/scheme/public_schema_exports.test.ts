@@ -3,7 +3,7 @@
  * and contain valid schema definitions with all expected fields.
  */
 import { describe, it, expect } from 'vitest';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 // Import all schemas from public API
 import {

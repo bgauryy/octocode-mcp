@@ -186,6 +186,85 @@ describe('GitHub Search Repositories Query Splitting', () => {
       ).toBe(1);
       expect(responseText).toContain('duplicate/repo');
     });
+
+    it('omits pagination hints when merged topic and keyword searches both succeed', async () => {
+      mockProvider.searchRepos
+        .mockResolvedValueOnce({
+          data: {
+            repositories: [
+              {
+                id: '1',
+                name: 'topic-repo',
+                fullPath: 'topic/repo',
+                description: 'Topic result',
+                url: 'https://github.com/topic/repo',
+                stars: 100,
+                forks: 10,
+                language: 'TypeScript',
+                topics: ['topic'],
+                createdAt: '01/01/2020',
+                updatedAt: '01/01/2024',
+                pushedAt: '01/01/2024',
+                defaultBranch: 'main',
+                isPrivate: false,
+              },
+            ],
+            totalCount: 1,
+            pagination: { currentPage: 1, totalPages: 2, hasMore: true },
+          },
+          status: 200,
+          provider: 'github',
+        })
+        .mockResolvedValueOnce({
+          data: {
+            repositories: [
+              {
+                id: '2',
+                name: 'keyword-repo',
+                fullPath: 'keyword/repo',
+                description: 'Keyword result',
+                url: 'https://github.com/keyword/repo',
+                stars: 50,
+                forks: 5,
+                language: 'TypeScript',
+                topics: [],
+                createdAt: '01/01/2020',
+                updatedAt: '01/01/2024',
+                pushedAt: '01/01/2024',
+                defaultBranch: 'main',
+                isPrivate: false,
+              },
+            ],
+            totalCount: 1,
+            pagination: { currentPage: 1, totalPages: 3, hasMore: true },
+          },
+          status: 200,
+          provider: 'github',
+        });
+
+      const mockServer = createMockMcpServer();
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              id: 'merged_success',
+              topicsToSearch: ['topic'],
+              keywordsToSearch: ['keyword'],
+            },
+          ],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain(
+        'Combined topic and keyword searches into one result; pagination is omitted because multiple result sets were merged.'
+      );
+      expect(responseText).not.toContain('Page 1/');
+      expect(responseText).not.toContain('pagination:');
+    });
   });
 
   describe('Error Handling', () => {
@@ -251,6 +330,44 @@ describe('GitHub Search Repositories Query Splitting', () => {
       expect(responseText).toContain(
         'Keyword search failed: Rate limit exceeded'
       );
+      expect(responseText).toContain(
+        'Only topics search succeeded; pagination reflects that subset.'
+      );
+    });
+
+    it('returns the first normalized provider failure when all split variants fail', async () => {
+      mockProvider.searchRepos
+        .mockResolvedValueOnce({
+          error: 'Rate limit exceeded',
+          status: 429,
+          provider: 'github',
+        })
+        .mockResolvedValueOnce({
+          error: 'Secondary failure',
+          status: 500,
+          provider: 'github',
+        });
+
+      const mockServer = createMockMcpServer();
+      registerSearchGitHubReposTool(mockServer.server);
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        {
+          queries: [
+            {
+              id: 'all_failures',
+              topicsToSearch: ['topic1'],
+              keywordsToSearch: ['keyword1'],
+            },
+          ],
+        }
+      );
+
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('status: "error"');
+      expect(responseText).toContain('Rate limit exceeded');
+      expect(responseText).not.toContain('Secondary failure');
     });
   });
 

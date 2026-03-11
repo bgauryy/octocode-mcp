@@ -61,6 +61,13 @@ import {
 function createMockProviderClass(type: ProviderType) {
   return class MockProvider implements ICodeHostProvider {
     readonly type = type;
+    readonly capabilities = {
+      cloneRepo: type === 'github',
+      fetchDirectoryToDisk: type === 'github',
+      requiresScopedCodeSearch: type !== 'github',
+      supportsMergedState: type !== 'github',
+      supportsMultiTopicSearch: type === 'github',
+    };
     readonly config: ProviderConfig | undefined;
 
     constructor(config?: ProviderConfig) {

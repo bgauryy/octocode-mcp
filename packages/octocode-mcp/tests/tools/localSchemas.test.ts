@@ -8,12 +8,17 @@ import { BulkFetchContentSchema } from '../../src/tools/local_fetch_content/sche
 import { STATIC_TOOL_NAMES } from '../../src/tools/toolMetadata/index.js';
 
 describe('Local tool schemas (TDD for local tools registration)', () => {
-  const bulkQueriesShape = (schema: unknown) =>
-    (
-      schema as {
-        _def: { schema: { shape: { queries: { description?: string } } } };
-      }
-    )._def.schema.shape.queries;
+  const bulkQueriesShape = (schema: unknown) => {
+    const s = schema as Record<string, unknown>;
+    const def = s.def as Record<string, unknown> | undefined;
+    const inner = (def?.in ?? def?.schema) as
+      | Record<string, unknown>
+      | undefined;
+    const shape = (inner?.shape ?? (s as Record<string, unknown>).shape) as
+      | Record<string, unknown>
+      | undefined;
+    return shape?.queries as { description?: string } | undefined;
+  };
 
   describe('BulkRipgrepQuerySchema', () => {
     it('should be defined and valid', () => {

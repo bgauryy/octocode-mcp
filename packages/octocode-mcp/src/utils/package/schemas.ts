@@ -5,7 +5,7 @@
  * before type-asserting to internal interfaces.
  */
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 // ============================================================================
 // NPM VIEW RESULT
@@ -49,11 +49,11 @@ export const NpmViewResultSchema = z
         z.object({ name: z.string().optional(), email: z.string().optional() })
       )
       .optional(),
-    engines: z.record(z.string()).optional(),
-    dependencies: z.record(z.string()).optional(),
-    devDependencies: z.record(z.string()).optional(),
-    peerDependencies: z.record(z.string()).optional(),
-    time: z.record(z.string().optional()).optional(),
+    engines: z.record(z.string(), z.string()).optional(),
+    dependencies: z.record(z.string(), z.string()).optional(),
+    devDependencies: z.record(z.string(), z.string()).optional(),
+    peerDependencies: z.record(z.string(), z.string()).optional(),
+    time: z.record(z.string(), z.string().optional()).optional(),
   })
   .passthrough();
 
@@ -140,5 +140,5 @@ export const NpmDeprecationOutputSchema = z.union([
   z.boolean(),
   z.number(),
   z.null(),
-  z.record(z.unknown()),
+  z.record(z.string(), z.unknown()),
 ]);

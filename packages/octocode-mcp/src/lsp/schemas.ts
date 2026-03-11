@@ -5,7 +5,7 @@
  * before type-asserting to LSPConfigFile.
  */
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 const MAX_COMMAND_LENGTH = 512;
 const MAX_ARG_LENGTH = 1024;
@@ -35,7 +35,7 @@ const UserLanguageServerConfigSchema = z
       )
       .max(MAX_ARGS_COUNT)
       .optional(),
-    initializationOptions: z.record(z.unknown()).optional(),
+    initializationOptions: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough();
 

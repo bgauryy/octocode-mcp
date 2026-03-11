@@ -27,7 +27,6 @@ import {
   loadToolContent,
   CompleteMetadata,
 } from './tools/toolMetadata/index.js';
-import { registerTools } from './tools/toolsManager.js';
 import { version, name } from '../package.json';
 import { STARTUP_ERRORS } from './errorCodes.js';
 import { startCacheGC, stopCacheGC } from './tools/github_clone_repo/cache.js';
@@ -155,6 +154,10 @@ export async function registerAllTools(
     await logger.info('GitHub token ready');
   }
 
+  // Dynamic import: defers all tool schema construction until AFTER metadata
+  // is loaded. Zod .describe() captures strings eagerly at call time, so
+  // schema modules must be evaluated after the metadata singleton is set.
+  const { registerTools } = await import('./tools/toolsManager.js');
   const { successCount } = await registerTools(server);
   await logger.info('Tools registered', { count: successCount });
 

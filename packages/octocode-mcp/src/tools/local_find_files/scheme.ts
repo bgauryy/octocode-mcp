@@ -2,7 +2,7 @@
  * Zod schema for localFindFiles tool
  */
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import {
   BaseQuerySchemaLocal,
   createBulkQuerySchema,

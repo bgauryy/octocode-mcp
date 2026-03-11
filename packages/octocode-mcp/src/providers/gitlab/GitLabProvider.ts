@@ -32,6 +32,7 @@ import { handleGitLabAPIError } from '../../gitlab/errors.js';
 import type { GitLabAPIError } from '../../gitlab/types.js';
 import { getGitlab } from '../../gitlab/client.js';
 import { logRateLimit } from '../../session.js';
+import { PROVIDER_CAPABILITIES } from '../capabilities.js';
 
 /**
  * GitLab Provider implementation.
@@ -40,6 +41,7 @@ import { logRateLimit } from '../../session.js';
  */
 export class GitLabProvider implements ICodeHostProvider {
   readonly type = 'gitlab' as const;
+  readonly capabilities = PROVIDER_CAPABILITIES.gitlab;
   private config?: ProviderConfig;
 
   constructor(config?: ProviderConfig) {

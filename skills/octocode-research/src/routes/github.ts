@@ -22,7 +22,6 @@ import {
 import { ResearchResponse, QuickResult, detectLanguageFromPath } from '../utils/responseBuilder.js';
 import { withGitHubResilience } from '../utils/resilience.js';
 import { createRouteHandler } from '../utils/routeFactory.js';
-import { toQueryParams } from '../types/toolTypes.js';
 import {
   safeString,
   safeNumber,
@@ -38,7 +37,6 @@ githubRoutes.get(
   '/githubSearchCode',
   createRouteHandler({
     schema: githubSearchSchema,
-    toParams: toQueryParams,
     toolFn: githubSearchCode,
     toolName: 'githubSearchCode',
     resilience: withGitHubResilience,
@@ -74,7 +72,6 @@ githubRoutes.get(
   '/githubGetFileContent',
   createRouteHandler({
     schema: githubContentSchema,
-    toParams: toQueryParams,
     toolFn: githubGetFileContent,
     toolName: 'githubGetFileContent',
     resilience: withGitHubResilience,
@@ -105,7 +102,6 @@ githubRoutes.get(
   '/githubSearchRepositories',
   createRouteHandler({
     schema: githubReposSchema,
-    toParams: toQueryParams,
     toolFn: githubSearchRepositories,
     toolName: 'githubSearchRepositories',
     resilience: withGitHubResilience,
@@ -142,7 +138,6 @@ githubRoutes.get(
   '/githubViewRepoStructure',
   createRouteHandler({
     schema: githubStructureSchema,
-    toParams: toQueryParams,
     toolFn: githubViewRepoStructure,
     toolName: 'githubViewRepoStructure',
     resilience: withGitHubResilience,
@@ -175,7 +170,6 @@ githubRoutes.get(
   '/githubSearchPullRequests',
   createRouteHandler({
     schema: githubPRsSchema,
-    toParams: toQueryParams,
     toolFn: githubSearchPullRequests,
     toolName: 'githubSearchPullRequests',
     resilience: withGitHubResilience,

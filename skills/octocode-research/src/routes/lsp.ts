@@ -18,7 +18,6 @@ import {
 import { ResearchResponse } from '../utils/responseBuilder.js';
 import { withLspResilience } from '../utils/resilience.js';
 import { createRouteHandler } from '../utils/routeFactory.js';
-import { toQueryParams } from '../types/toolTypes.js';
 import { safeString, safeArray } from '../utils/responseFactory.js';
 import { isObject, hasProperty, hasNumberProperty, hasStringProperty } from '../types/guards.js';
 
@@ -29,7 +28,6 @@ lspRoutes.get(
   '/lspGotoDefinition',
   createRouteHandler({
     schema: lspDefinitionSchema,
-    toParams: toQueryParams,
     toolFn: lspGotoDefinition,
     toolName: 'lspGotoDefinition',
     resilience: withLspResilience,
@@ -53,7 +51,6 @@ lspRoutes.get(
   '/lspFindReferences',
   createRouteHandler({
     schema: lspReferencesSchema,
-    toParams: toQueryParams,
     toolFn: lspFindReferences,
     toolName: 'lspFindReferences',
     resilience: withLspResilience,
@@ -77,7 +74,6 @@ lspRoutes.get(
   '/lspCallHierarchy',
   createRouteHandler({
     schema: lspCallsSchema,
-    toParams: toQueryParams,
     toolFn: lspCallHierarchy,
     toolName: 'lspCallHierarchy',
     resilience: withLspResilience,

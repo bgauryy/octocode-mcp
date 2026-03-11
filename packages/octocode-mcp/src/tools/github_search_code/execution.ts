@@ -3,123 +3,53 @@ import type { GitHubCodeSearchQuery, SearchResult } from './types.js';
 import { TOOL_NAMES } from '../toolMetadata/index.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
+import { handleCatchError, createSuccessResult } from '../utils.js';
 import {
-  handleCatchError,
-  handleProviderError,
-  createSuccessResult,
-} from '../utils.js';
-import { getProvider } from '../../providers/factory.js';
-import { getActiveProviderConfig } from '../../serverConfig.js';
-import { isProviderSuccess } from '../../providers/types.js';
+  buildPaginationHints,
+  mapCodeSearchProviderResult,
+  mapCodeSearchToolQuery,
+} from '../providerMappers.js';
+import {
+  createProviderExecutionContext,
+  executeProviderOperation,
+} from '../providerExecution.js';
 
 export async function searchMultipleGitHubCode(
   args: ToolExecutionArgs<GitHubCodeSearchQuery>
 ): Promise<CallToolResult> {
   const { queries, authInfo } = args;
-  const { provider: providerType, baseUrl, token } = getActiveProviderConfig();
+  let providerContext:
+    | ReturnType<typeof createProviderExecutionContext>
+    | undefined;
+  const getProviderContext = () =>
+    (providerContext ??= createProviderExecutionContext(authInfo));
 
   return executeBulkOperation(
     queries,
     async (query: GitHubCodeSearchQuery, _index: number) => {
       try {
-        const provider = getProvider(providerType, {
-          type: providerType,
-          baseUrl,
-          token,
-          authInfo,
-        });
+        const currentProviderContext = getProviderContext();
 
-        // Convert query to provider format
-        const providerQuery = {
-          keywords: query.keywordsToSearch,
-          projectId:
-            query.owner && query.repo
-              ? `${query.owner}/${query.repo}`
-              : undefined,
-          path: query.path,
-          filename: query.filename,
-          extension: query.extension,
-          match: query.match,
-          limit: query.limit,
-          page: query.page,
-          mainResearchGoal: query.mainResearchGoal,
-          researchGoal: query.researchGoal,
-          reasoning: query.reasoning,
-        };
+        const providerResult = await executeProviderOperation(query, () =>
+          currentProviderContext.provider.searchCode(
+            mapCodeSearchToolQuery(query)
+          )
+        );
 
-        const apiResult = await provider.searchCode(providerQuery);
-
-        if (!isProviderSuccess(apiResult)) {
-          return handleProviderError(apiResult, query);
+        if (!providerResult.ok) {
+          return providerResult.result;
         }
 
-        // Transform provider response to tool result format
-        const files = apiResult.data.items.map(item => {
-          const repoFullName = item.repository.name || '';
-          const slashIdx = repoFullName.indexOf('/');
-          const owner = slashIdx > 0 ? repoFullName.substring(0, slashIdx) : '';
-          const repoName =
-            slashIdx > 0 ? repoFullName.substring(slashIdx + 1) : repoFullName;
+        const result: SearchResult = mapCodeSearchProviderResult(
+          providerResult.response.data,
+          query
+        );
 
-          const baseFile = {
-            path: item.path,
-            owner,
-            repo: repoName,
-            ...(item.lastModifiedAt && { lastModifiedAt: item.lastModifiedAt }),
-          };
-
-          if (query.match === 'path') {
-            return baseFile;
-          }
-          return {
-            ...baseFile,
-            text_matches: item.matches.map(match => match.context),
-          };
-        });
-
-        const result: SearchResult = { files };
-
-        if (apiResult.data.repositoryContext?.branch) {
-          result.repositoryContext = {
-            branch: apiResult.data.repositoryContext.branch,
-          };
-        }
-
-        if (apiResult.data.pagination) {
-          result.pagination = {
-            currentPage: apiResult.data.pagination.currentPage,
-            totalPages: apiResult.data.pagination.totalPages,
-            perPage: apiResult.data.pagination.entriesPerPage || 10,
-            totalMatches: apiResult.data.pagination.totalMatches || 0,
-            hasMore: apiResult.data.pagination.hasMore,
-          };
-        }
-
-        const hasContent = files.length > 0;
+        const hasContent = (result.files?.length || 0) > 0;
         const hasOwnerRepo = !!(query.owner && query.repo);
-
-        // Generate pagination hints
-        const paginationHints: string[] = [];
-        if (result.pagination) {
-          const { currentPage, totalPages, totalMatches, perPage, hasMore } =
-            result.pagination;
-          const startItem = (currentPage - 1) * perPage + 1;
-          const endItem = Math.min(currentPage * perPage, totalMatches);
-
-          paginationHints.push(
-            `Page ${currentPage}/${totalPages} (showing ${startItem}-${endItem} of ${totalMatches} matches)`
-          );
-
-          if (hasMore) paginationHints.push(`Next: page=${currentPage + 1}`);
-          if (currentPage > 1)
-            paginationHints.push(`Previous: page=${currentPage - 1}`);
-          if (!hasMore) paginationHints.push('Final page');
-          if (totalPages > 2) {
-            paginationHints.push(
-              `Jump to: page=1 (first) or page=${totalPages} (last)`
-            );
-          }
-        }
+        const paginationHints = result.pagination
+          ? buildPaginationHints(result.pagination, 'matches')
+          : [];
 
         return createSuccessResult(
           query,

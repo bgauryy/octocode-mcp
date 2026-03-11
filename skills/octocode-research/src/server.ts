@@ -221,10 +221,8 @@ export async function startServer(): Promise<void> {
   const app = await createServer();
   
   await new Promise<void>((resolve) => {
-    const httpServer = app.listen(PORT, HOST);
-    server = httpServer;
-    
-    httpServer.on('listening', () => {
+    const httpServer = app.listen(PORT, HOST, () => {
+      server = httpServer;
       console.log(agentLog(`🔍 Octocode Research Server running on http://${HOST}:${PORT}`));
       console.log(dimLog(`⏳ initializing context...`));
       

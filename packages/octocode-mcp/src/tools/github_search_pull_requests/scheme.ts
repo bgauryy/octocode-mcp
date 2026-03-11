@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import {
   BaseQuerySchema,
   createBulkQuerySchema,
@@ -228,7 +228,7 @@ export const GitHubPullRequestSearchQuerySchema =
   GitHubPullRequestSearchBaseSchema.superRefine((data, ctx) => {
     if (data.query && String(data.query).length > 256) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message: PR_VALIDATION_MESSAGES.QUERY_TOO_LONG,
         path: ['query'],
       });
@@ -244,7 +244,7 @@ export const GitHubPullRequestSearchQuerySchema =
 
     if (!hasValidParams) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message: PR_VALIDATION_MESSAGES.MISSING_PARAMS,
         path: [],
       });

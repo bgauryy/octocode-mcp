@@ -12,7 +12,7 @@
  */
 
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
-import type { ZodSchema, ZodType, ZodTypeDef } from 'zod';
+import type { z } from 'zod/v4';
 import { parseAndValidate } from '../middleware/queryParser.js';
 import { parseToolResponse, type ParsedResponse } from './responseParser.js';
 
@@ -25,11 +25,6 @@ type ResilienceWrapper = <T>(
 ) => Promise<T>;
 
 /**
- * Tool function type - the MCP tool function to call
- */
-type ToolFunction<TParams> = (params: TParams) => Promise<unknown>;
-
-/**
  * Transformer function type - converts parsed tool response to final response
  */
 type ResponseTransformer<TQuery, TResponse> = (
@@ -38,17 +33,28 @@ type ResponseTransformer<TQuery, TResponse> = (
 ) => TResponse;
 
 /**
- * Route configuration options
+ * MCP tool function type for the route factory.
+ *
+ * Uses `any` for the params intentionally: HTTP schemas produce slightly different
+ * types than MCP tool functions expect (optional vs required fields, auto-generated id).
+ * Type safety is enforced by Zod schema validation at runtime, not by static types
+ * at this HTTP→MCP boundary.
  */
-export interface RouteConfig<TQuery, TParams, TResponse> {
-  /** Zod schema for query validation - accepts schemas with transforms */
-  schema: ZodType<TQuery, ZodTypeDef, unknown>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type McpToolFn = (params: any) => Promise<any>;
 
-  /** Convert validated queries to tool params */
-  toParams: (queries: TQuery[]) => TParams;
+/**
+ * Route configuration options.
+ * TQuery flows from schema validation through to response transformation.
+ * The toolFn boundary uses McpToolFn because the schema's runtime transforms
+ * (defaults, id generation) produce MCP-compatible data that TypeScript can't verify.
+ */
+export interface RouteConfig<TQuery, TResponse> {
+  /** Zod schema for query validation - accepts schemas with transforms */
+  schema: z.ZodType<TQuery>;
 
   /** The MCP tool function to execute */
-  toolFn: ToolFunction<TParams>;
+  toolFn: McpToolFn;
 
   /** Tool name for logging/resilience */
   toolName: string;
@@ -67,7 +73,6 @@ export interface RouteConfig<TQuery, TParams, TResponse> {
  * ```typescript
  * localRoutes.get('/search', createRouteHandler({
  *   schema: localSearchSchema,
- *   toParams: toLocalSearchParams,
  *   toolFn: localSearchCode,
  *   toolName: 'localSearchCode',
  *   resilience: withLocalResilience,
@@ -78,22 +83,22 @@ export interface RouteConfig<TQuery, TParams, TResponse> {
  * }));
  * ```
  */
-export function createRouteHandler<TQuery, TParams, TResponse>(
-  config: RouteConfig<TQuery, TParams, TResponse>
+export function createRouteHandler<TQuery, TResponse>(
+  config: RouteConfig<TQuery, TResponse>
 ): RequestHandler {
-  const { schema, toParams, toolFn, toolName, resilience, transform } = config;
+  const { schema, toolFn, toolName, resilience, transform } = config;
 
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       // 1. Parse and validate query params
       const queries = parseAndValidate(
         req.query as Record<string, unknown>,
-        schema as ZodSchema<TQuery>
+        schema as z.ZodType<TQuery>
       ) as TQuery[];
 
       // 2. Execute tool with resilience wrapper
       const rawResult = await resilience(
-        () => toolFn(toParams(queries)),
+        () => toolFn({ queries }),
         toolName
       );
 

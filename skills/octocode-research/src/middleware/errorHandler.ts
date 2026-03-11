@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import type { z } from 'zod';
+import type { z } from 'zod/v4';
 import { logError, logWarn, sanitizeQueryParams } from '../utils/logger.js';
 import { logSessionError } from '../index.js';
 import { fireAndForgetWithTimeout } from '../utils/asyncTimeout.js';
@@ -7,7 +7,7 @@ import { fireAndForgetWithTimeout } from '../utils/asyncTimeout.js';
 export interface ApiError extends Error {
   statusCode?: number;
   code?: string;
-  details?: z.ZodIssue[];
+  details?: z.core.$ZodIssue[];
 }
 
 import { extractToolName } from '../utils/url.js';
@@ -46,7 +46,7 @@ export function errorHandler(
     error: {
       message: string;
       code: string;
-      details?: z.ZodIssue[];
+      details?: z.core.$ZodIssue[];
     };
   } = {
     success: false,

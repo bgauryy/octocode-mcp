@@ -5,7 +5,7 @@ import { packageSearchSchema } from '../validation/index.js';
 import { ResearchResponse } from '../utils/responseBuilder.js';
 import { parseToolResponse } from '../utils/responseParser.js';
 import { withPackageResilience } from '../utils/resilience.js';
-import { toQueryParams } from '../types/toolTypes.js';
+
 import { safeString, safeArray } from '../utils/responseFactory.js';
 import { isObject, hasProperty, hasStringProperty } from '../types/guards.js';
 
@@ -20,8 +20,9 @@ packageRoutes.get(
         req.query as Record<string, unknown>,
         packageSearchSchema
       );
+      type PackageSearchParams = Parameters<typeof packageSearch>[0];
       const rawResult = await withPackageResilience(
-        () => packageSearch(toQueryParams(queries)),
+        () => packageSearch({ queries } as PackageSearchParams),
         'packageSearch'
       );
       const { data, isError, hints, research } = parseToolResponse(rawResult);

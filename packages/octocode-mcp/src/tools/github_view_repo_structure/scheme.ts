@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import {
   BaseQuerySchema,
   createBulkQuerySchema,
@@ -10,12 +10,9 @@ import {
 import type { PaginationInfo } from '../../types.js';
 import type { DirectoryEntry } from './types.js';
 import type { ContentDirectoryEntry } from '../../github/githubAPI.js';
+import { GITHUB_STRUCTURE_DEFAULTS } from './constants.js';
 
-/** Default entries per page for GitHub repo structure pagination */
-export const GITHUB_STRUCTURE_DEFAULTS = {
-  ENTRIES_PER_PAGE: 50,
-  MAX_ENTRIES_PER_PAGE: 200,
-} as const;
+export { GITHUB_STRUCTURE_DEFAULTS };
 
 export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
   owner: z

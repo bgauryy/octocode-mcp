@@ -1,5 +1,5 @@
 import type { Response } from 'express';
-import { z, type ZodSchema, ZodError } from 'zod';
+import { z } from 'zod/v4';
 
 /**
  * Custom error class for validation failures.
@@ -8,9 +8,9 @@ import { z, type ZodSchema, ZodError } from 'zod';
 class ValidationError extends Error {
   statusCode: number;
   code: string;
-  details: z.ZodIssue[];
+  details: z.core.$ZodIssue[];
 
-  constructor(message: string, details: z.ZodIssue[] = []) {
+  constructor(message: string, details: z.core.$ZodIssue[] = []) {
     super(message);
     this.name = 'ValidationError';
     this.statusCode = 400;
@@ -30,7 +30,7 @@ class ValidationError extends Error {
  */
 export function parseAndValidate<T>(
   query: Record<string, unknown>,
-  schema: ZodSchema<T>
+  schema: z.ZodType<T>
 ): T[] {
   // Check for JSON-encoded queries array (batch mode)
   if (query.queries && typeof query.queries === 'string') {
@@ -79,7 +79,7 @@ export function parseAndValidate<T>(
 /**
  * Format Zod error into a human-readable string.
  */
-function formatZodError(error: ZodError): string {
+function formatZodError(error: z.ZodError): string {
   return error.issues
     .map((issue) => {
       const path = issue.path.join('.');

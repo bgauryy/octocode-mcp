@@ -87,7 +87,7 @@ localSearchCode(path=localPath, pattern="...")   → search code
 lspGotoDefinition(uri=localPath+"/src/file.ts") → semantic navigation
 ```
 
-> **Note:** `githubCloneRepo` and `githubGetFileContent` directory mode are **GitHub only** — they are not available when GitLab is the active provider. Both require `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
+> **Note:** `githubCloneRepo` and `githubGetFileContent` directory mode are **GitHub only** — they are not available when GitLab or Bitbucket is the active provider. Both require `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
 
 > **Full workflow guide:** [Clone & Local Tools Workflow](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md)
 
@@ -728,5 +728,5 @@ Tools with no dependencies can run in parallel:
 ## Related Documentation
 
 - [Clone & Local Tools Workflow](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md) — How to clone external repos and analyze them with local + LSP tools
-- [GitHub & GitLab Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) — GitHub/GitLab tools including `githubCloneRepo`
+- [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) — code host tools including `githubCloneRepo`
 - [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) — `ENABLE_LOCAL`, `ENABLE_CLONE`, and other settings

@@ -12,9 +12,9 @@ import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { handleCatchError, createSuccessResult } from '../utils.js';
 import {
-  getActiveProviderConfig,
-  getActiveProvider,
-} from '../../serverConfig.js';
+  createProviderExecutionContext,
+  providerSupports,
+} from '../providerExecution.js';
 import { cloneRepo } from './cloneRepo.js';
 import {
   LOCAL_TOOL_LIST,
@@ -55,34 +55,28 @@ export async function executeCloneRepo(
   args: ToolExecutionArgs<CloneRepoQuery>
 ): Promise<CallToolResult> {
   const { queries, authInfo } = args;
-
-  // ── GitHub-only guard ───────────────────────────────────────────
-  if (getActiveProvider() !== 'github') {
-    return executeBulkOperation(
-      queries,
-      async (query: CloneRepoQuery) =>
-        handleCatchError(
-          new Error(
-            'githubCloneRepo is only available with the GitHub provider.'
-          ),
-          query,
-          'Provider not supported',
-          TOOL_NAMES.GITHUB_CLONE_REPO
-        ),
-      {
-        toolName: TOOL_NAMES.GITHUB_CLONE_REPO,
-        keysPriority: ['error'],
-      }
-    );
-  }
-
-  const { token } = getActiveProviderConfig();
+  let providerContext:
+    | ReturnType<typeof createProviderExecutionContext>
+    | undefined;
 
   return executeBulkOperation(
     queries,
     async (query: CloneRepoQuery, _index: number) => {
       try {
-        const result = await cloneRepo(query, authInfo, token);
+        providerContext ??= createProviderExecutionContext(authInfo);
+
+        if (!providerSupports(providerContext, 'cloneRepo')) {
+          return handleCatchError(
+            new Error(
+              'githubCloneRepo is only available with the GitHub provider.'
+            ),
+            query,
+            'Provider not supported',
+            TOOL_NAMES.GITHUB_CLONE_REPO
+          );
+        }
+
+        const result = await cloneRepo(query, authInfo, providerContext.token);
 
         // ── Build result data ──────────────────────────────────
         const resultData: Record<string, unknown> = {

@@ -8,7 +8,7 @@
  * They MUST be validated against path-traversal patterns (../ , / , \).
  */
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import {
   BaseQuerySchema,
   createBulkQuerySchema,
