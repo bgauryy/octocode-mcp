@@ -54,8 +54,17 @@
       "properties": {
         "architecture": {
           "type": "object",
-          "required": ["dependencies"],
+          "required": ["layers", "dependencies"],
           "properties": {
+            "layers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
             "dependencies": {
               "type": "object",
               "properties": {

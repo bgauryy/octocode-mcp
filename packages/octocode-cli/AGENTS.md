@@ -147,7 +147,7 @@ skills/
 │       ├── execution-phases.md
 │       ├── tool-reference.md
 │       └── workflow-patterns.md
-├── octocode-local-search/   # Local code exploration skill
+├── octocode-researcher/     # Primary code research and exploration
 │   ├── SKILL.md
 │   └── references/
 │       ├── tool-reference.md

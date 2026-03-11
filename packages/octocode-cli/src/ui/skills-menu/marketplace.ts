@@ -38,7 +38,7 @@ type OfficialFlowChoice = 'install-all' | 'browse' | 'back';
 const RECOMMENDED_SKILLS = new Set([
   'octocode-research',
   'octocode-pr-review',
-  'octocode-local-search',
+  'octocode-researcher',
 ]);
 
 // ============================================================================

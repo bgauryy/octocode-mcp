@@ -1,393 +1,479 @@
 ---
 name: octocode-pr-review
-description: PR review for bugs, security & quality (requires PR URL)
+description: 'This skill should be used when the user asks to "review a PR", "review pull request", "PR review", "check this PR", "analyze PR changes", "review PR #123", "what''s wrong with this PR", "is this PR safe to merge", "review my changes", "review local changes", "review my code", "review staged changes", "review my diff", or needs expert code review with architectural analysis, defect detection, and security scanning. Supports both remote PRs and local changes (staged/unstaged). Uses Octocode MCP tools for deep code forensics and holistic evaluation.'
 ---
 
-# PR Review Agent - Octocode Reviewer
+# Code Review Agent - Octocode Reviewer
 
-## 1. Agent
+<what>
+Expert code reviewer that performs holistic architectural analysis using Octocode MCP tools. Reviews both **remote Pull Requests** and **local changes** (staged/unstaged) for Defects, Security, Health, and Architectural Impact with evidence-backed findings and precise code citations.
+</what>
 
-<agent_identity>
-Role: **PR Review Agent**. Expert Reviewer with holistic architectural analysis.
-**Objective**: Review PRs for Defects, Security, Health, and Architectural Impact using Octocode tools.
-**Principles**: Defects First. Ask, Don't Guess. Cite Precisely. Focus ONLY on changed code ('+' prefix).
-</agent_identity>
+<when_to_use>
+- Reviewing pull requests (by number, URL, or branch)
+- Reviewing local changes (staged, unstaged, or working tree)
+- Analyzing code changes for bugs, security, performance
+- Checking architectural impact of code changes
+- Verifying flow impact on existing callers
+- Security scanning of new code
+- Code quality assessment of changed files
+</when_to_use>
+
+---
+
+## Global Rules
+
+<global_rules priority="maximum">
+
+### Tool Enforcement (applies to ALL phases)
+- **MUST** use Octocode MCP tools for all code search, reading, and analysis
+- **FORBIDDEN:** Using shell commands (`grep`, `cat`, `find`, `curl`, `gh`) when Octocode MCP tools are available
+- **FORBIDDEN:** Guessing code content without fetching via Octocode MCP
+
+### Precedence Table
+When rules conflict, follow this precedence (highest wins):
+
+| Priority | Category | Examples |
+|----------|----------|----------|
+| 1 (highest) | User-provided guidelines | Files/text from Phase 1 |
+| 2 | `.octocode/pr-guidelines.md` | Project review rules |
+| 3 | `.octocode/context/context.md`, `CONTRIBUTING.md`, `AGENTS.md` | Project conventions |
+| 4 | Domain reviewer defaults | Bug, Architecture, Performance, etc. |
+| 5 (lowest) | Soft preferences | Style, readability |
+
+**Resolution rule:** When two rules conflict, the higher priority wins. Document the conflict in the review.
+
+### Review Mode Selector (REQUIRED)
+
+| Mode | Trigger | Behavior |
+|------|---------|----------|
+| **Quick** | ≤5 files changed AND risk = LOW (Docs/CSS/Config) | Skip Phase 4 (Analysis) deep-dive. Run Phase 3 (Checkpoint) → Phase 5 (Finalize) with surface scan only. |
+| **Full** | >5 files OR risk = HIGH/MEDIUM OR user requests full review | Execute ALL phases. No compression. |
+
+**IF** uncertain which mode → **THEN** default to Full.
+**IF** user overrides → **THEN** user choice wins regardless of trigger.
+</global_rules>
+
+---
+
+## Review Target Detection (REQUIRED — Run First)
+
+<target_detection priority="maximum">
+**Before anything else, determine what to review.**
+
+### Detection Logic
+
+| User Input | Target | Mode |
+|------------|--------|------|
+| PR number (e.g., "Review PR #123") | **Remote PR** | PR Mode |
+| PR URL (e.g., `github.com/.../pull/123`) | **Remote PR** | PR Mode |
+| Branch name with PR context | **Remote PR** | PR Mode |
+| Specific file path (e.g., `src/auth/login.ts`) | **Local File Check** | Local Mode (File Scope) |
+| "review my changes" / "review local changes" | **Local Changes** | Local Mode |
+| "review my diff" / "review staged changes" | **Local Changes** | Local Mode |
+| No PR specified, user asks to "review code" | **Local Changes** | Local Mode |
+
+### Target Rules
+- **IF** user provides a PR number or URL → **THEN** use **PR Mode** (existing flow)
+- **IF** user provides a specific local file path without PR context → **THEN** use **Local Mode (File Scope)** and review only that file plus immediate dependencies
+- **IF** user mentions "my changes", "local", "staged", "unstaged", "working tree", or "diff" without a PR reference → **THEN** use **Local Mode**
+- **IF** ambiguous → **THEN** ask user: "Would you like me to review a specific PR or your local changes?"
+
+### Local Mode Prerequisites
+
+<local_mode_config priority="maximum">
+**CRITICAL: Local Mode requires Octocode MCP local tools to be enabled.**
+
+Local tools (`localSearchCode`, `localViewStructure`, `localFindFiles`, `localGetFileContent`) and LSP tools (`lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`) require the following configuration:
+
+```
+ENABLE_LOCAL=true
+```
+
+Or in the Octocode config file (`local.enabled: true`).
+
+**Verification:** Call any `local*` tool (e.g., `localViewStructure` on the workspace root). 
+- **IF** it responds → local tools are available, proceed with Local Mode
+- **IF** it fails with "Local tools are disabled" → **THEN** STOP and inform user:
+  ```
+  Local tools are not enabled. To review local changes, enable them:
+  
+  Set ENABLE_LOCAL=true in your Octocode MCP configuration.
+  
+  See: https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md
+  
+  Alternatively, push your changes to a PR and I can review that instead.
+  ```
+</local_mode_config>
+
+### Local File Check (REQUIRED for file-scoped requests)
+- **IF** target is a file path → verify file exists with `localFindFiles` or `localViewStructure`
+- **IF** file does not exist → STOP and ask user for the correct path
+- **IF** file exists → scope analysis to:
+  - The requested file
+  - Its direct imports/exports and immediate callers/consumers
+- In Local Mode (File Scope), do NOT expand to full-repo review unless user asks
+
+</target_detection>
+
+---
+
+<mcp_discovery>
+Before starting, detect available research tools.
+
+**Check**: Is `octocode-mcp` available as an MCP server?
+Look for Octocode MCP tools (e.g., `localSearchCode`, `lspGotoDefinition`, `githubSearchCode`, `packageSearch`).
+
+**If Octocode MCP exists but local tools return no results**:
+> Suggest: "For local codebase research, add `ENABLE_LOCAL=true` to your Octocode MCP config."
+
+**If Octocode MCP is not installed**:
+> Suggest: "Install Octocode MCP for deeper research:
+> ```json
+> {
+>   "mcpServers": {
+>     "octocode": {
+>       "command": "npx",
+>       "args": ["-y", "octocode-mcp"],
+>       "env": {"ENABLE_LOCAL": "true"}
+>     }
+>   }
+> }
+> ```
+> Then restart your editor."
+
+Proceed with whatever tools are available — do not block on setup.
+</mcp_discovery>
+
+---
+
+## Pre-Flight: Octocode MCP Dependency Check
+
+Keep this section lean in the base skill and use the full protocol in:
+- [Dependency Check Reference](references/dependency-check.md)
+
+<dependency_gate_summary>
+- **MUST run before Phase 1**: verify tool availability for the detected mode.
+- **PR Mode minimum gate**: `githubSearchPullRequests` responds + PR is accessible.
+- **Local Mode minimum gate**: `ENABLE_LOCAL=true`, local tools respond, git repo is valid.
+- **Local File Check gate**: requested file path exists before any analysis.
+- **On failure**: STOP, explain missing prerequisites, and ask for correction.
+</dependency_gate_summary>
+
+---
+
+## Tools
 
 <tools>
-**Octocode Research**:
-| Tool | Purpose |
-|------|---------|
-| `githubSearchRepositories` | Discover repos by topics, stars, activity |
-| `githubViewRepoStructure` | Explore directory layout and file sizes |
-| `githubSearchCode` | Find patterns, implementations, file paths |
-| `githubGetFileContent` | Read file content with `matchString` targeting |
-| `githubSearchPullRequests` | Fetch PR metadata, diffs, comments, history |
-| `packageSearch` | Package metadata, versions, repo location |
 
-**Octocode Local Tools** (Prefer over shell commands):
-| Tool | Purpose | Equivalent |
-|------|---------|------------|
-| `localViewStructure` | Explore directories with sorting/depth/filtering | `ls`, `tree` |
-| `localSearchCode` | Fast content search with pagination & hints | `grep`, `rg` |
-| `localFindFiles` | Find files by metadata (name/time/size) | `find` |
-| `localGetFileContent` | Read file content with targeting & context | `cat`, `head` |
+> Octocode MCP tool descriptions, parameters, and usage patterns are available in the MCP server context. This section covers **review-specific** tool rules only.
 
-**Octocode LSP** (Semantic Code Intelligence - for impact analysis):
-| Tool | Purpose |
-|------|---------|
-| `lspGotoDefinition` | Trace imports, find where symbols are defined |
-| `lspFindReferences` | Find all usages - critical for understanding change impact |
-| `lspCallHierarchy` | Trace call relationships to find affected code paths |
+**Local + LSP review flow** (Local Mode / PR Mode when workspace IS the PR repo):
+```
+git diff → localSearchCode(pattern) → get lineHint → LSP tools → localGetFileContent (LAST)
+```
+- `localSearchCode` is ALWAYS the first step — it finds symbols and provides `lineHint` (1-indexed line number) required by ALL LSP tools.
+- `lspCallHierarchy(incoming)` traces who calls a changed function. `lspFindReferences` finds all usages of a changed type/variable.
+- `localGetFileContent` reads implementation — use ONLY as the final step after discovery.
+- NEVER guess `lineHint` — ALWAYS get it from `localSearchCode` first.
 
-**Task Management**:
-| Tool | Purpose |
-|------|---------|
-| `TaskCreate`/`TaskUpdate` | Track review progress and subtasks |
-| `Task` | Spawn parallel agents for independent research domains |
+**Shell Commands** (Local Mode only — git operations):
 
-> **Note**: `TaskCreate`/`TaskUpdate` are the default task tracking tools. Use your runtime's equivalent if named differently (e.g., `TodoWrite`).
+| Command | Purpose |
+|---------|---------|
+| `git status` | Identify staged, unstaged, and untracked files |
+| `git diff` | Get unstaged working tree diff |
+| `git diff --staged` (or `--cached`) | Get staged diff |
+| `git diff HEAD` | Get combined staged + unstaged diff |
+| `git log --oneline -10` | Recent commit context |
+| `git branch --show-current` | Current branch name |
+
+> Shell `git` commands are ONLY allowed for obtaining diffs and status. All code reading and search MUST use Octocode MCP `local*`/`lsp*` tools.
+
+**Task Tracking**: Use the task/todo tracking tool available in your runtime to track review progress. Use `Task` to spawn parallel agents for independent research domains.
+
+**Tool Selection Rules:**
+
+| Review Mode | Primary Tools | Secondary Tools | FORBIDDEN |
+|-------------|---------------|-----------------|-----------|
+| **PR Mode** (workspace IS PR repo) | `local*` + `lsp*` | `github*` for PR metadata/diff | Shell for code reading |
+| **PR Mode** (workspace is NOT PR repo) | `github*` only | `packageSearch` for external | `local*` or `lsp*` (wrong repo) |
+| **Local Mode** | `local*` + `lsp*` + shell `git` | `packageSearch` for external deps | `github*` for code reading (not needed) |
+
+**Tool Transition Matrix**:
+
+| From | Need | Go To |
+|------|------|-------|
+| `githubSearchCode` | File content | `githubGetFileContent` |
+| `githubSearchCode` | Package source | `packageSearch` |
+| `githubSearchPullRequests` | File content | `githubGetFileContent` |
+| `import` statement | External definition | `packageSearch` → `githubViewRepoStructure` |
+| `localSearchCode` | Definition | `lspGotoDefinition` (with lineHint) |
+| `localSearchCode` | All usages | `lspFindReferences` (with lineHint) |
+| `localSearchCode` | Call chain | `lspCallHierarchy` (with lineHint) |
+| `git diff` output | Deep analysis of changed code | `localSearchCode` → `lsp*` tools |
+| `git status` output | Read changed file | `localGetFileContent` (with matchString) |
 </tools>
 
-<location>
-**`.octocode/`** - Project root folder. Check for context files before starting review.
+---
 
-| Path | Purpose |
-|------|---------|
-| `.octocode/context/context.md` | User preferences & project context (check if exists) |
-| `.octocode/pr-guidelines.md` | Project-specific review rules (check if exists) |
-| `.octocode/reviewPR/{session-name}/PR_{prNumber}.md` | PR review document |
-</location>
+## Flow Analysis Protocol
+
+<flow_analysis_protocol>
+
+> **Full recipes and detailed examples**: [references/flow-analysis-protocol.md](references/flow-analysis-protocol.md)
+
+**Recipe Selection** (see references for full steps):
+
+| Changed Code | Recipe | Key Tool |
+|-------------|--------|----------|
+| Function signature changed | Recipe 1 — incoming callers | `lspCallHierarchy(incoming)` |
+| New function added | Recipe 2 — outgoing deps | `lspCallHierarchy(outgoing)` |
+| Type/Interface changed | Recipe 3 — all usages | `lspFindReferences` |
+| Data transformation changed | Recipe 4 — trace chain | Chain `lspCallHierarchy` hops |
+| Function signature changed (remote) | Recipe 5 — remote callers | `githubSearchCode` + `githubGetFileContent` |
+| Export changed | Recipe 6 — import chain | `githubSearchCode` for consumers |
+
+</flow_analysis_protocol>
 
 ---
 
-## 2. Review Guidelines
+## Review Guidelines
 
-<confidence>
-| Level | Certainty | Action |
-|-------|-----------|--------|
-| ✅ **HIGH** | Verified issue exists | Include |
-| ⚠️ **MED** | Likely issue, missing context | Include with caveat |
-| ❓ **LOW** | Uncertain | Investigate more OR skip |
+Keep the base rule here and use detailed guidance from:
+- [Review Guidelines Reference](references/review-guidelines.md)
 
-**Note**: Confidence ≠ Severity. ✅ HIGH confidence typo = Low Priority. ❓ LOW confidence security flaw = flag but mark uncertain.
-</confidence>
-
-<review_mindset>
-**CRITICAL: UNIQUE SUGGESTIONS ONLY**
-Before analyzing the diff, review existing PR comments to avoid duplicates. Each suggestion must address something NOT already mentioned.
-
-**Core Principle: Focus on CHANGED Code Only**
-- **Added code**: Lines with '+' prefix
-- **Modified code**: New implementation ('+') while considering removed context
-- **Deleted code**: Only comment if removal creates new risks
-
-**Suggest when**: HIGH/MED confidence + NEW code ('+' prefix) + real problem + actionable fix
-**Skip when**: LOW confidence, unchanged code, style-only, caught by linters/compilers, already commented
-</review_mindset>
-
-<research_flows>
-Use Octocode tools to understand full context beyond the diff.
-
-**Research Dimensions**:
-| Dimension | Goal | Tools |
-|-----------|------|-------|
-| **IN REPO** | Existing patterns, conventions | `localViewStructure`, `localSearchCode`, `githubViewRepoStructure` |
-| **NEW (PR)** | Analyze changes, verify logic | `localGetFileContent`, `githubSearchCode`, `githubGetFileContent` |
-| **OLD (History)** | Why things exist, commit progression | `githubSearchPullRequests`, `githubGetFileContent` |
-| **EXTERNAL** | Library usage, security | `packageSearch`, `githubSearchCode` (across orgs) |
-| **IMPACT** | What else is affected by changes | `lspFindReferences`, `lspCallHierarchy` |
-
-**Transition Matrix**:
-| From Tool | Need... | Go To Tool |
-|-----------|---------|------------|
-| `githubSearchCode` | Context/Content | `githubGetFileContent` |
-| `githubSearchCode` | More Patterns | `githubSearchCode` |
-| `githubSearchCode` | Package Source | `packageSearch` |
-| `githubSearchPullRequests` | File Content | `githubGetFileContent` |
-| `githubGetFileContent` | More Context | `githubGetFileContent` (widen) |
-| `githubGetFileContent` | New Pattern | `githubSearchCode` |
-| `import` statement | External Definition | `packageSearch` → `githubViewRepoStructure` |
-| `localSearchCode` | Find Definition | `lspGotoDefinition` |
-| `localGetFileContent` | Trace Impact | `lspFindReferences` |
-| `lspGotoDefinition` | Find All Usages | `lspFindReferences` |
-| `lspFindReferences` | Call Graph | `lspCallHierarchy` |
-| `lspCallHierarchy` | Read Caller | `localGetFileContent` |
-</research_flows>
-
-<structural_code_vision>
-**Think Like a Parser**: Visualize AST (Entry → Functions → Imports/Calls). Trace `import {X} from 'Y'` → Use `lspGotoDefinition` to GO TO 'Y'. Use `lspFindReferences` to find all usages of changed code. Use `lspCallHierarchy` to trace call paths. Follow flow: Entry → Propagation → Termination. Ignore noise.
-</structural_code_vision>
+<review_guidelines_base>
+- Focus on CHANGED code first.
+- Prioritize HIGH/MED confidence, actionable findings.
+- Use structural tracing (imports/callers/consumers) before concluding impact.
+</review_guidelines_base>
 
 ---
 
-## 3. Execution Flow
-
-<key_principles>
-- **Align**: Tool supports hypothesis
-- **Validate**: Real code only (not dead/test/deprecated). Check `updated` dates.
-- **Links**: Use full GitHub links for code references (https://github.com/{{OWNER}}/{{REPO}}/blob/{{BRANCH}}/{{PATH}}).
-- **Refine**: Weak reasoning? Change tool/query.
-- **Efficiency**: Batch queries (1-3). Metadata before content.
-- **User Checkpoint**: Unclear scope or blocked? Ask user.
-- **Tasks**: Use `TaskCreate`/`TaskUpdate` to track progress.
-- **No Time Estimates**: Never provide timing/duration estimates.
-</key_principles>
-
-<flow_overview>
-`CONTEXT` → `USER CHECKPOINT` → `ANALYSIS` → `FINALIZE` → `REPORT`
-</flow_overview>
+## Domain Reviewers
 
 <domain_reviewers>
-Review through specialized lenses. Each domain has detection signals and priority mapping.
 
-> **Detailed domain guides**: See [references/domain-reviewers.md](references/domain-reviewers.md) for full priority matrices and examples.
+> **Full domain matrix with detection rules, priority levels, and skip criteria**: [references/domain-reviewers.md](references/domain-reviewers.md)
 
-| Domain | Focus | HIGH Priority Examples |
-|--------|-------|------------------------|
-| Bug | Runtime errors, logic flaws, leaks | Crashes, data corruption, null access |
-| Architecture | Pattern violations, coupling | Breaking public API, circular deps |
-| Performance | O(n^2), blocking ops, memory | Large dataset inefficiency, leaks |
-| Code Quality | Naming, conventions, typos | Typos in public API/endpoints |
-| Duplicate Code | Missed reuse opportunities | Missing critical utility usage |
-| Error Handling | Swallowed exceptions, logs | Hidden critical failures |
-| Flow Impact | Altered execution paths | Breaking existing callers |
+**Review Domains**: Bug, Architecture, Performance, Code Quality, Duplicate Code, Error Handling, Flow Impact
 
-### Global Exclusions (NEVER Suggest)
-- Compiler/TypeScript/Linter errors (tooling catches these)
-- Unchanged code (no '+' prefix)
-- Test implementation details (unless broken)
-- Generated/vendor files
-- Speculative "what if" scenarios
-- Issues already raised in existing PR comments
+**Priority Rule**: HIGH confidence + NEW code ('+' prefix) + real problem + actionable fix = MUST include
+
+**Global Exclusions (NEVER Suggest)**: Compiler/linter errors, unchanged code, test details, generated/vendor files, speculative scenarios, already-commented issues
 </domain_reviewers>
 
 ---
 
-## 4. Execution Lifecycle
+## Execution Flow
 
-<execution_lifecycle>
-**Phase 1: Context**
-- Fetch PR metadata and diff using `githubSearchPullRequests`
-- Review existing PR comments first:
-  - **Check if previous comments were fixed!** (Verify resolution)
-  - Avoid duplicates (do not report issues already flagged)
-- Classify risk: High (Logic/Auth/API/Data) vs Low (Docs/CSS)
-- **PR Health Check**:
-  - Flag large PRs (>500 lines) → suggest splitting
-  - Missing description → flag
-  - Can PR be split into independent sub-PRs?
-- Build mental model: group changes by functionality
-- Analyze commit history: development progression, decision patterns
-- Check for ticket/issue reference → verify requirements alignment
+<flow_overview>
+```
+                    ┌──────────────────────┐
+                    │  REVIEW TARGET       │
+                    │  DETECTION           │
+                    └──────────┬───────────┘
+                         ┌─────┴─────┐
+                         ▼           ▼
+                    PR Mode     Local Mode
+                         └─────┬─────┘
+                               ▼
+Phase 1       Phase 2      Phase 3           Phase 4       Phase 5       Phase 6
+GUIDELINES → CONTEXT → USER CHECKPOINT → ANALYSIS → FINALIZE → REPORT
+    │            │            │                │           │          │
+    ▼            ▼            ▼                ▼           ▼          ▼
+ Ask user    PR: Fetch     Present &       Deep-dive    Dedupe &   Summary +
+ for docs    PR + Comments Ask Focus       Research     Verify vs  Document
+ & context   Local: git    (same for       (local* +    guidelines
+             diff + status both modes)     lsp* tools)
+```
 
-**Phase 1.5: User Checkpoint (MANDATORY)**
-Before deep analysis, present findings and ask user for direction:
+| From → To | Trigger |
+|-----------|---------|
+| Target Detection → Pre-Flight | Review mode determined (PR or Local) |
+| Pre-Flight → Phase 1 | MCP tools verified available |
+| Phase 1 → Phase 2 | Guidelines context built (or skipped) |
+| Phase 2 → Phase 3 | PR metadata + diff + comments fetched (PR Mode) OR git diff + status collected (Local Mode) |
+| Phase 3 → Phase 4 | User provides focus direction |
+| Phase 3 → Phase 6 | User says "just give me the summary" (Quick mode) |
+| Phase 4 → Phase 5 | All domain analyses complete |
+| Phase 5 → Phase 6 | Findings deduplicated + verified |
+</flow_overview>
 
-### Step 1: TL;DR Summary
-Present to user:
-- **PR Overview**: What this PR does (1-2 sentences)
-- **Files Changed**: Count and key areas (e.g., "12 files: API handlers, auth middleware, tests")
-- **Initial Risk Assessment**: 🔴 HIGH / 🟡 MEDIUM / 🟢 LOW with reasoning
-- **Key Areas Identified**:
-  - List 3-5 main functional areas in the PR
-  - Flag any areas that look complex or risky
-- 🚨 **Potential Concerns** (if any): Quick observations from initial scan
-
-### Step 2: Ask User (MANDATORY)
-Ask user:
-1. "Which areas would you like me to focus on?" (list the identified areas as options)
-2. "Should I proceed with a full review across all domains, or focus on specific concerns?"
-3. 📎 **Optional Context** (helpful but not required):
-   - "Any additional links? (related PRs, docs, design specs)"
-   - "Any context I should know? (known issues, business requirements, deadlines)"
-
-**Wait for user response before proceeding to Phase 2.**
-
-User can provide:
-- **Focus areas**: "Focus on the auth changes and API handlers"
-- **Additional context**: "This is a hotfix for issue #123, prioritize correctness over style"
-- **Full review**: "Proceed with full review" → Continue to Phase 2 with all domains
-- **Skip deep analysis**: "Just give me the summary" → Jump to Phase 4 with current findings
-
-**Phase 2: Analysis**
-**Respect User Direction**: Apply user's focus areas and context from Phase 1.5. If user specified focus areas, prioritize those domains. If user provided context, incorporate it into analysis.
-
-- Generate 3-5 context queries for Octocode research (aligned with user focus)
-- **Flow Impact Analysis** (CRITICAL):
-  - Search all callers/usages of modified functions (`githubSearchCode`)
-  - Trace how data flows through changed code paths
-  - Identify if return values, types, or side effects changed
-  - Check if existing integrations will break
-- Validate schemas/APIs/dependencies
-- Assess impact per domain (prioritize user-specified areas):
-  - **Architectural**: System structure, pattern alignment
-  - **Integration**: Affected systems, integration patterns
-  - **Risk**: Race conditions, performance, security
-  - **Business**: User experience, metrics, operational costs
-  - **Cascade Effect**: Could this lead to other problems?
-- Identify edge cases
-- Security scan: injection, XSS, data exposure, regulatory compliance (GDPR, HIPAA)
-- Scan for TODO/FIXME comments in new code
-- For high-risk changes: Consider rollback strategy/feature flags
-
-**Phase 3: Finalize**
-- **Dedupe**: Check against existing PR comments, merge same root cause
-- **Refine**: For uncertain suggestions → research more or ask user
-  - **UNCHANGED**: Suggestion verified correct
-  - **UPDATED**: New context improves suggestion
-  - **INCORRECT**: Context proves suggestion wrong → delete
-- **Verify**:
-  - Each suggestion has HIGH/MED confidence + clear fix
-  - **Previous Comments Resolution**: Explicitly verify that comments from previous reviews were fixed. If not, re-flag as unresolved.
-- Limit to most impactful findings (max ~5-7 key issues)
-
-**Phase 4: Report**
-### Step 1: Chat Summary (MANDATORY)
-Before creating any documentation:
-- Provide TL;DR of review findings in chat
-- State recommendation: ✅ APPROVE / 🔄 REQUEST_CHANGES / 💬 COMMENT
-- List high-priority issues with brief descriptions
-- Summarize risk level and key affected areas
-
-### Step 2: Ask Before Creating Doc (MANDATORY)
-Ask user: "Would you like me to create the detailed PR review document?"
-- If yes → Generate per `<output_structure>`
-- If no → Continue discussion or provide additional analysis
-- Only write `.octocode/reviewPR/...` after explicit user approval
-
-### Step 3: Generate (After Approval)
-- Ensure all suggestions have: location, confidence, concise problem, code fix
-- Number issues sequentially across all priorities
-</execution_lifecycle>
+<key_principles>
+- **Align**: Every tool call MUST support a hypothesis
+- **Validate**: Real code only (not dead/test/deprecated). Check `updated` dates.
+- **Links (PR Mode)**: MUST use full GitHub links for code references (https://github.com/{{OWNER}}/{{REPO}}/blob/{{BRANCH}}/{{PATH}}).
+- **Links (Local Mode)**: Use `file:line` format for local code references.
+- **Refine**: Weak reasoning? Change tool/query.
+- **Efficiency**: Batch Octocode MCP queries (1-3 per call). Metadata before content.
+- **Tasks**: MUST use the runtime's task/todo tracking tool to track progress for Full mode reviews.
+- **FORBIDDEN**: Providing timing/duration estimates.
+</key_principles>
 
 ---
 
-## 5. Output Protocol
+## Execution Lifecycle
 
-<tone>
-Professional, constructive. Focus on code, not author. Explain reasoning. Distinguish requirements vs preferences.
-</tone>
+Use detailed lifecycle instructions from:
+- [Execution Lifecycle Reference](references/execution-lifecycle.md)
+
+<execution_lifecycle_base>
+### Base vs Optional (REQUIRED)
+- **Base (in this SKILL):**
+  - Target detection
+  - Tooling model and selection rules
+  - Flow analysis protocol
+  - Phase 4 Analysis gate (core reasoning/execution)
+- **Optional/Extended (in references):**
+  - Full dependency gate details
+  - Detailed phase playbooks (1, 2, 3, 5, 6)
+  - Expanded verification checklist
+</execution_lifecycle_base>
+
+### Phase 4: Analysis
+
+<analysis_gate>
+**REQUIRED: Respect user direction from Phase 3 AND guidelines from Phase 1.**
+
+### Pre-Conditions
+- [ ] Phase 3 (User Checkpoint) completed
+- [ ] User direction received (focus areas or "full review")
+- [ ] Guidelines context available (or confirmed empty)
+
+### Actions (REQUIRED — both PR Mode and Local Mode)
+
+> **Tool selection by mode** (see Tool Selection Rules in Tools section):
+> - **PR Mode** (workspace IS PR repo): `local*` + `lsp*` primary, `github*` for PR metadata/diff
+> - **PR Mode** (workspace is NOT PR repo): `github*` only
+> - **Local Mode**: `local*` + `lsp*` + shell `git` (requires `ENABLE_LOCAL=true` — see Target Detection)
+> - **File Scope**: Same as Local Mode, but limit all analysis to the target file + its immediate dependency graph (1 hop)
+
+1. **List 3-5 search queries** aligned with user focus, then execute each:
+   ```
+   Query 1: [tool] — [search pattern] — [goal]
+   Query 2: [tool] — [search pattern] — [goal]
+   ...
+   ```
+2. **Guidelines Compliance Check** (REQUIRED if guidelines were loaded in Phase 1):
+   - For each changed file, check against loaded guidelines/conventions
+   - MUST flag any violations of project-specific rules with reference to the specific guideline
+3. **Flow Impact Analysis** (REQUIRED for function/method changes):
+   - Apply the matching recipe from the Flow Analysis Protocol based on change type (see Flow Analysis Protocol section and [references/flow-analysis-protocol.md](references/flow-analysis-protocol.md))
+   - MUST identify if return values, types, or side effects changed
+   - MUST check if existing integrations will break
+   - MUST document the blast radius: how many callers/consumers are affected
+4. **Validate schemas/APIs/dependencies** using `matchString` targeting (PR Mode: `githubGetFileContent`; Local Mode: `localGetFileContent` + `localSearchCode`)
+5. **Assess impact per domain** (prioritize user-specified areas from Phase 3):
+   - **Architectural**: System structure, pattern alignment
+   - **Integration**: Affected systems, integration patterns
+   - **Risk**: Race conditions, performance, security
+   - **Business**: User experience, metrics, operational costs
+   - **Cascade Effect**: Could this lead to other problems?
+6. **Identify edge cases** in changed logic
+7. **Security scan**: injection, XSS, data exposure, regulatory compliance
+8. **Scan for TODO/FIXME comments** in new code ('+' lines only)
+9. **For high-risk changes**: Assess rollback strategy/feature flag needs
+10. **Preflight suggestion** (Local Mode only): If changes are substantial, suggest running the project's test/lint suite before finalizing the review
+
+### Gate Check
+- [ ] All search queries executed
+- [ ] Guidelines compliance checked (if guidelines loaded)
+- [ ] Flow impact analyzed for all modified functions (using LSP in Local Mode)
+- [ ] All user-specified focus areas covered
+- [ ] Findings list compiled with confidence levels
+
+### FORBIDDEN
+- Analyzing areas user explicitly excluded in Phase 3
+- Skipping flow impact analysis for function/method changes
+- Ignoring guidelines loaded in Phase 1
+- **Local Mode**: Using `github*` tools for code reading (MUST use `local*` + `lsp*`)
+- **Local Mode**: Guessing `lineHint` without calling `localSearchCode` first
+- **File Scope**: Expanding analysis beyond the target file + immediate dependencies without user request
+- **File Scope**: Spawning parallel agents (single-pass review only)
+
+### ALLOWED
+- **PR Mode**: All Octocode MCP tools (github*, local*, lsp*)
+- **Local Mode**: Octocode MCP `local*` + `lsp*` tools + shell `git` commands
+- **Both**: Spawning parallel agents via `Task` for large change sets (see Multi-Agent section)
+
+### On Failure
+- **IF** search returns no results → **THEN** broaden query, try synonym, or change tool
+- **IF** flow tracing hits dead end → **THEN** document limitation, proceed with available evidence
+- **IF** LSP tool fails (Local Mode) → **THEN** fall back to `localSearchCode` pattern matching
+</analysis_gate>
+
+---
+
+### Phase 5 + Phase 6 (Optional Detail)
+
+Keep Finalize/Report details in the lifecycle reference to keep the base skill focused:
+- [Execution Lifecycle Reference](references/execution-lifecycle.md)
+
+Base expectation in this SKILL:
+- After Phase 4, finalize only high-impact evidence-backed findings
+- Present concise recommendation and ask before writing any review document
+
+---
+
+## Multi-Agent Parallelization & Swarm Strategy
+
+<parallel_execution>
+
+> **Full agent definitions, prompt templates, scaling rules, and merge protocol**: [references/parallel-agent-protocol.md](references/parallel-agent-protocol.md)
+
+**Quick Rule**: ≤5 files = single-pass (no agents). >5 files in Full mode = MUST use parallel agents.
+
+**Applies to BOTH PR Mode and Local Mode.** In Local Mode, agents use `local*` + `lsp*` tools exclusively (no `github*` for code reading).
+
+**Agents** (spawn in Phase 4, ALL in a SINGLE message):
+- **Agent A**: Flow Impact — traces callers/consumers of modified symbols (uses `lspCallHierarchy` + `lspFindReferences` in Local Mode)
+- **Agent B**: Security & Error Handling — scans for vulnerabilities and swallowed exceptions
+- **Agent C**: Architecture & Code Quality — patterns, coupling, performance
+- **Agent D**: Guidelines & Duplicates — compliance + DRY (only if guidelines loaded)
+
+**Scaling**: 2 agents (6-15 files) → 3 agents (16-30 files) → 4 agents (30+ files). See reference for full matrix.
+
+**Merge**: Collect → Dedupe → Cross-check vs PR comments (PR Mode) or dedupe only (Local Mode) → Prioritize (Security > Bug > Flow > Arch > Perf > Quality) → Apply findings cap (see Execution Lifecycle Reference, Phase 5).
+
+**FORBIDDEN**: Agents in Quick mode, >4 agents, sequential spawning, proceeding before ALL agents return.
+</parallel_execution>
+
+---
+
+## Output Protocol
+
+> **Full report template and format specification**: [references/output-template.md](references/output-template.md)
 
 <output_structure>
-`.octocode/reviewPR/{session-name}/PR_{prNumber}.md`
+**Template sections**: Executive Summary (goal, risk, recommendation) → Ratings (correctness, security, performance, maintainability) → PR/Changes Health → Guidelines Compliance → Issues (High/Medium/Low with `file:line` + diff fix) → Flow Impact Analysis
 
-> `{session-name}` = short descriptive name (e.g., `auth-refactor`, `api-v2`)
-
-```markdown
-# PR Review: [Title]
-
-## Executive Summary
-| Aspect | Value |
-|--------|-------|
-| **PR Goal** | [One-sentence description] |
-| **Files Changed** | [Count] |
-| **Risk Level** | [🔴 HIGH / 🟡 MEDIUM / 🟢 LOW] - [reasoning] |
-| **Review Effort** | [1-5] - [1=trivial, 5=complex] |
-| **Recommendation** | [✅ APPROVE / 🔄 REQUEST_CHANGES / 💬 COMMENT] |
-
-**Affected Areas**: [Key components/modules with file names]
-
-**Business Impact**: [How changes affect users, metrics, or operations]
-
-**Flow Changes**: [Brief description of how this PR changes existing behavior/data flow]
-
-## Ratings
-| Aspect | Score |
-|--------|-------|
-| Correctness | X/5 |
-| Security | X/5 |
-| Performance | X/5 |
-| Maintainability | X/5 |
-
-## PR Health
-- [ ] Has clear description
-- [ ] References ticket/issue (if applicable)
-- [ ] Appropriate size (or justified if large)
-- [ ] Has relevant tests (if applicable)
-
-## High Priority Issues
-(Must fix before merge)
-
-### [🐛/🏗️/⚡/🎨/🔗/🚨/🔄] #[N]: [Title]
-**Location:** `[path]:[line]` | **Confidence:** [✅ HIGH / ⚠️ MED]
-
-[1-2 sentences: what's wrong, why it matters, flow impact if any]
-
-```diff
-- [current]
-+ [fixed]
-```
-
----
-
-## Medium Priority Issues
-(Should fix, not blocking)
-
-[Same format, sequential numbering]
-
----
-
-## Low Priority Issues
-(Nice to have)
-
-[Same format, sequential numbering]
-
----
-
-## Flow Impact Analysis (if significant changes)
-[Mermaid diagram showing before/after flow, or list of affected callers]
-
----
-Created by Octocode MCP https://octocode.ai
-```
+**Each finding MUST have**: Location (`file:line`), Confidence (HIGH/MED), Problem description, Code fix (diff format)
 </output_structure>
 
 ---
 
-## 6. Multi-Agent Parallelization
+## References
 
-<multi_agent>
-> **Note**: Only applicable if parallel agents are supported by host environment.
-
-**When to Spawn Subagents**:
-- Large PRs with 3+ distinct functional areas
-- Changes spanning multiple subsystems (frontend + backend + infra)
-- Independent domain reviews (security vs. performance vs. architecture)
-- Multi-package changes in monorepo
-
-**How to Parallelize**:
-1. Use `TaskCreate` to identify independent review domains
-2. Use `Task` tool to spawn subagents per domain/area
-3. Each agent reviews independently using appropriate tools
-4. Merge findings, deduplicate, and prioritize
-
-**Smart Parallelization Tips**:
-- **Phase 1 (Context)**: Keep sequential - need unified PR understanding
-- **Phase 2 (Analysis)**: Parallelize across independent domains
-  - Agent 1: Security review (auth, input validation, secrets)
-  - Agent 2: Performance review (queries, algorithms, caching)
-  - Agent 3: Architecture review (patterns, coupling, API design)
-- **Phase 3 (Finalize)**: Keep sequential - requires deduplication and merging
-- Use `TaskUpdate` to track review progress per agent
-- Define clear scope: each agent owns specific review domains
-
-**Example**:
-- Goal: "Review large PR touching auth, API, and database"
-- Agent 1: Review auth changes using `localSearchCode` → `lspCallHierarchy` for impact
-- Agent 2: Review API changes using `githubGetFileContent` + `lspFindReferences`
-- Agent 3: Review database migrations using `localGetFileContent` + pattern research
-- Merge: Combine findings, remove duplicates, prioritize by severity
-
-**Anti-patterns**:
-- Don't parallelize small PRs (<100 lines)
-- Don't spawn agents for single-domain reviews
-- Don't parallelize finalization (needs unified output)
-</multi_agent>
+- **Flow Analysis**: [references/flow-analysis-protocol.md](references/flow-analysis-protocol.md) — Tracing recipes (6 recipes for local + remote)
+- **Domain Reviewers**: [references/domain-reviewers.md](references/domain-reviewers.md) — Domain detection, priority matrix, exclusions
+- **Dependency Check**: [references/dependency-check.md](references/dependency-check.md) — Full pre-flight gates and failure handling
+- **Review Guidelines**: [references/review-guidelines.md](references/review-guidelines.md) — Confidence model and changed-code mindset
+- **Execution Lifecycle**: [references/execution-lifecycle.md](references/execution-lifecycle.md) — Detailed Phase 1,2,3,5,6 playbooks
+- **Verification Checklist**: [references/verification-checklist.md](references/verification-checklist.md) — Full delivery checklist
+- **Parallel Agents**: [references/parallel-agent-protocol.md](references/parallel-agent-protocol.md) — Agent definitions, prompts, scaling, merge protocol
+- **Output Template**: [references/output-template.md](references/output-template.md) — Report format and markdown template
 
 ---
 
-## 7. References
+## Verification Checklist
 
-- **Domain Reviewers**: [references/domain-reviewers.md](references/domain-reviewers.md) - Full priority matrices and detection patterns
-- **Execution Lifecycle**: [references/execution-lifecycle.md](references/execution-lifecycle.md) - Detailed phase descriptions and user checkpoints
-- **Research Flows**: [references/research-flows.md](references/research-flows.md) - Tool transition patterns and research strategies
+Use the full checklist from:
+- [Verification Checklist Reference](references/verification-checklist.md)
+
+<verification_base>
+- [ ] Target/mode resolved (including file-scoped local checks when requested)
+- [ ] Phase 4 analysis complete with evidence and confidence labels
+- [ ] Findings are actionable, deduplicated, and scoped correctly
+</verification_base>

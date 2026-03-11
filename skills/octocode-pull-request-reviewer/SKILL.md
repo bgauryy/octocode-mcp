@@ -118,6 +118,35 @@ Or in the Octocode config file (`local.enabled: true`).
 
 ---
 
+<mcp_discovery>
+Before starting, detect available research tools.
+
+**Check**: Is `octocode-mcp` available as an MCP server?
+Look for Octocode MCP tools (e.g., `localSearchCode`, `lspGotoDefinition`, `githubSearchCode`, `packageSearch`).
+
+**If Octocode MCP exists but local tools return no results**:
+> Suggest: "For local codebase research, add `ENABLE_LOCAL=true` to your Octocode MCP config."
+
+**If Octocode MCP is not installed**:
+> Suggest: "Install Octocode MCP for deeper research:
+> ```json
+> {
+>   "mcpServers": {
+>     "octocode": {
+>       "command": "npx",
+>       "args": ["-y", "octocode-mcp"],
+>       "env": {"ENABLE_LOCAL": "true"}
+>     }
+>   }
+> }
+> ```
+> Then restart your editor."
+
+Proceed with whatever tools are available — do not block on setup.
+</mcp_discovery>
+
+---
+
 ## Pre-Flight: Octocode MCP Dependency Check
 
 Keep this section lean in the base skill and use the full protocol in:

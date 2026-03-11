@@ -13,10 +13,11 @@ description: This skill should be used when the user asks to "roast my code", "r
 DESTROY → DOCUMENT → REDEEM
 ```
 
-**Three Laws**:
+**Four Laws**:
 1. **Cite or Die**: No roast without `file:line`. Vague roasts are coward roasts.
 2. **Punch the Code, Not the Coder**: Mock patterns mercilessly, never personally.
-3. **Wait for Consent**: Present the carnage, let them choose what to fix.
+3. **Never Leak Secrets**: When flagging hardcoded credentials, NEVER output the actual secret values. Report the pattern, file, and line — but redact the value (e.g., `API_KEY = "sk-live-****"`). The goal is to flag the sin, not exfiltrate the secret.
+4. **Wait for Consent**: Present the carnage, let them choose what to fix.
 
 ## Tone Calibration
 
@@ -33,6 +34,33 @@ TARGET → OBLITERATE → INVENTORY → AUTOPSY → [USER PICKS] → RESURRECT
          │
          └── If 20+ sins: TRIAGE first (pick top 10)
 ```
+
+<mcp_discovery>
+Before starting, detect available research tools.
+
+**Check**: Is `octocode-mcp` available as an MCP server?
+Look for Octocode MCP tools (e.g., `localSearchCode`, `lspGotoDefinition`, `githubSearchCode`, `packageSearch`).
+
+**If Octocode MCP exists but local tools return no results**:
+> Suggest: "For local codebase research, add `ENABLE_LOCAL=true` to your Octocode MCP config."
+
+**If Octocode MCP is not installed**:
+> Suggest: "Install Octocode MCP for deeper research:
+> ```json
+> {
+>   "mcpServers": {
+>     "octocode": {
+>       "command": "npx",
+>       "args": ["-y", "octocode-mcp"],
+>       "env": {"ENABLE_LOCAL": "true"}
+>     }
+>   }
+> }
+> ```
+> Then restart your editor."
+
+Proceed with whatever tools are available — do not block on setup.
+</mcp_discovery>
 
 ## Tools
 
@@ -121,7 +149,7 @@ tsconfig and embrace the chaos you've already chosen.
 There's a try/catch block wrapping 400 lines of code.
 The programming equivalent of "thoughts and prayers."
 
-Found `password = "admin123"` on line 47.
+Found a hardcoded password on line 47.
 Security researchers thank you for your service.
 
 Let's catalog the destruction...
@@ -146,7 +174,7 @@ Run with `--full` to see all 27 disasters.
 
 1. **Hardcoded credentials** — `src/config.ts:47`
    ```ts
-   const API_KEY = "sk-live-abc123..."
+   const API_KEY = "sk-live-****" // ⚠️ value redacted — never output secrets
    ```
    Security incident waiting to happen. Actually, probably already happened.
 
@@ -347,6 +375,7 @@ Before delivering:
 - [ ] Every roast cites `file:line`
 - [ ] No personal attacks, only pattern mockery
 - [ ] Security issues (CAPITAL) flagged prominently with action items
+- [ ] **Credential values are NEVER output** — report pattern + location, redact the value
 - [ ] Fixes are actionable
 - [ ] User checkpoint before any code modifications
 - [ ] Severity matches request and context
@@ -357,10 +386,11 @@ Before delivering:
 
 1. **Specific > Generic**: "Bad code" = lazy. "`processAll()` at 847 lines" = roast.
 2. **Security > Everything**: Hardcoded secrets get escalated immediately.
-3. **Funny > Mean**: If it's not entertaining, it's just criticism.
-4. **Actionable > Academic**: Every sin needs a fix path.
-5. **Wait > Assume**: Never fix without explicit user consent.
-6. **Pattern > Person**: "This pattern is bad" not "You are bad."
+3. **Redact > Expose**: Flag credential locations but NEVER output actual secret values in roast output.
+4. **Funny > Mean**: If it's not entertaining, it's just criticism.
+5. **Actionable > Academic**: Every sin needs a fix path.
+6. **Wait > Assume**: Never fix without explicit user consent.
+7. **Pattern > Person**: "This pattern is bad" not "You are bad."
 
 ---
 

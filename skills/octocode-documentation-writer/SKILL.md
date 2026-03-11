@@ -35,7 +35,7 @@ This command orchestrates specialized AI agents in 6 phases to analyze your code
   Agent: Sonnet
   Parallel: Dynamic (based on question volume)
   What: Deep-dive code forensics to ANSWER the questions with evidence
-  Input: `questions.json`
+  Input: `analysis.json` + `questions.json`
   Output: `research.json`
   </phase_3>
 
@@ -53,14 +53,14 @@ This command orchestrates specialized AI agents in 6 phases to analyze your code
   Parallel: 1-8 parallel agents (dynamic based on workload)
   What: Synthesize research and write comprehensive documentation with exclusive file ownership
   Input: `analysis.json` + `questions.json` + `research.json` + `work-assignments.json`
-  Output: `documentation/*.md` (16 core docs, 5 required + supplementary files)
+  Output: `documentation/*.md` (16 core docs, 5 required, plus writer-owned supplementary files; `QA-SUMMARY.md` is generated in Phase 6)
   </phase_5>
 
   <phase_6>
   **QA Validator** (Phase 6)
   Agent: Sonnet
   What: Validates documentation quality using LSP-powered verification
-  Input: `documentation/*.md` + `analysis.json` + `questions.json`
+  Input: `documentation/*.md` + `analysis.json` + `questions.json` + `research.json`
   Output: `qa-results.json` + `QA-SUMMARY.md`
   </phase_6>
 </steps>
@@ -68,6 +68,33 @@ This command orchestrates specialized AI agents in 6 phases to analyze your code
 <subagents>
 Use spawn explore opus/sonnet/haiku subagents to explore code with MCP tools (localSearchCode, lspGotoDefinition, lspCallHierarchy, lspFindReferences)
 </subagents>
+
+<mcp_discovery>
+Before starting, detect available research tools.
+
+**Check**: Is `octocode-mcp` available as an MCP server?
+Look for Octocode MCP tools (e.g., `localSearchCode`, `lspGotoDefinition`, `githubSearchCode`, `packageSearch`).
+
+**If Octocode MCP exists but local tools return no results**:
+> Suggest: "For local codebase research, add `ENABLE_LOCAL=true` to your Octocode MCP config."
+
+**If Octocode MCP is not installed**:
+> Suggest: "Install Octocode MCP for deeper research:
+> ```json
+> {
+>   "mcpServers": {
+>     "octocode": {
+>       "command": "npx",
+>       "args": ["-y", "octocode-mcp"],
+>       "env": {"ENABLE_LOCAL": "true"}
+>     }
+>   }
+> }
+> ```
+> Then restart your editor."
+
+Proceed with whatever tools are available — do not block on setup.
+</mcp_discovery>
 
 **Documentation Flow:** analysis.json → questions.json → **research.json** → work-assignments.json → documentation (conflict-free!)
 
@@ -246,9 +273,9 @@ flowchart TB
         **FORBIDDEN:** Sequential Task calls.
         </gate>
         <agent_count_logic>
-            <case condition="questions &lt; 20">1 agent</case>
-            <case condition="questions 20-99">2-4 agents</case>
-            <case condition="questions &gt;= 100">4-8 agents</case>
+            <case condition="questions &lt; 25">1 agent</case>
+            <case condition="questions 25-49">2-4 agents</case>
+            <case condition="questions &gt;= 50">4-8 agents</case>
         </agent_count_logic>
         <spawn_instruction>⚠️ Launch ALL writer Task calls in ONE response</spawn_instruction>
         <rules>
@@ -303,8 +330,7 @@ Before starting, validate the repository path and check for edge cases.
    - Exclude directories: `node_modules`, `.git`, `dist`, `build`.
    - If fewer than 3 source files are found:
      - WARN: "Very few source files detected ({count}). This may not be a code repository."
-     - Ask user: "Continue anyway? [y/N]"
-     - If not confirmed, EXIT.
+     - Continue automatically in low-confidence mode unless the caller explicitly requested strict validation.
 
 4. **Build Directory Check**
    - Ensure the path does not contain `node_modules`, `dist`, or `build`.
@@ -314,8 +340,7 @@ Before starting, validate the repository path and check for edge cases.
    - Estimate the repository size.
    - If larger than 200,000 LOC:
      - WARN: "Large repository detected (~{size} LOC)."
-     - Ask user: "Continue anyway? [y/N]"
-     - If not confirmed, EXIT.
+     - Continue automatically, but prefer conservative exploration and batching.
 </instruction>
 
 ## Initialize Workspace
@@ -326,8 +351,8 @@ Before starting, validate the repository path and check for edge cases.
 ### Required Actions
 1. **Define Directories** (`CONTEXT_DIR`, `DOC_DIR`)
 2. **Handle Existing State**
-   - **IF** `state.json` exists → **THEN** Prompt User to Resume
-   - **IF** User says NO → **THEN** Reset state
+   - **IF** `state.json` exists in a non-terminal phase → **THEN** Resume automatically
+   - **IF** caller explicitly requests a fresh run → **THEN** Reset state
 3. **Create Directories**
 4. **Initialize New State** (if not resuming)
 
@@ -346,11 +371,10 @@ Before starting the pipeline, set up the working environment and handle any exis
 2. **Handle Existing State**
    - Check if `${CONTEXT_DIR}/state.json` exists.
    - If it exists and the phase is NOT "complete" or "failed":
-     - **Prompt User**: "Found existing documentation generation in progress (phase: [PHASE]). Resume from last checkpoint? [Y/n]"
-     - **If User Confirms (Yes)**:
-       - Set `RESUME_MODE = true`
-       - Set `START_PHASE` from the saved state.
-     - **If User Declines (No)**:
+     - **Default Behavior**: Resume from the saved checkpoint.
+     - Set `RESUME_MODE = true`
+     - Set `START_PHASE` from the saved state.
+     - **Only if** the caller explicitly requests restart/fresh generation:
        - **WARN**: "Restarting from beginning. Previous progress will be overwritten."
        - Set `RESUME_MODE = false`
        - Set `START_PHASE = "initialized"`
@@ -393,7 +417,7 @@ Resuming from: {START_PHASE}
 </phase_1_gate>
 
 **Agent Spec**: `references/agent-discovery-analysis.md`
-**Task Config**: `schemas/discovery-tasks.json`
+**Task Schema/Config**: `schemas/discovery-tasks.json`
 
 | Property | Value |
 |----------|-------|
@@ -411,7 +435,7 @@ Resuming from: {START_PHASE}
 |----------|-------|
 | Agent Type | Single (Opus) |
 | Critical | Yes |
-| Input | `.context/analysis.json` |
+| Input | `.context/analysis.json`, `schemas/documentation-structure.json` |
 | Output | `.context/questions.json` |
 
 > See `references/agent-engineer-questions.md` → **Orchestrator Execution Logic** section for full implementation.
@@ -431,7 +455,7 @@ Resuming from: {START_PHASE}
 |----------|-------|
 | Agent Type | Parallel (Sonnet) |
 | Critical | Yes |
-| Input | `.context/questions.json` |
+| Input | `.context/analysis.json`, `.context/questions.json` |
 | Output | `.context/research.json` |
 
 > See `references/agent-researcher.md` → **Orchestrator Execution Logic** section for full implementation.
@@ -445,7 +469,7 @@ Resuming from: {START_PHASE}
 |----------|-------|
 | Agent Type | Single (Opus) |
 | Critical | Yes |
-| Input | `.context/analysis.json`, `.context/questions.json`, `.context/research.json` |
+| Input | `.context/analysis.json`, `.context/questions.json`, `.context/research.json`, `schemas/documentation-structure.json` |
 | Output | `.context/work-assignments.json` |
 
 > See `references/agent-orchestrator.md` → **Orchestrator Execution Logic** section for full implementation.
@@ -463,20 +487,20 @@ Resuming from: {START_PHASE}
 | Property | Value |
 |----------|-------|
 | Agent Type | Parallel (1-8 Sonnet writers) |
-| Primary Writer | Writer 1 (Critical) |
+| Critical Writer | Writer owning the majority of primary core files (01-08) |
 | Non-Primary | Partial failure allowed |
 | Retry Logic | Up to 2 retries per failed writer |
-| Input | `.context/analysis.json`, `.context/research.json`, `.context/work-assignments.json` |
-| Output | `documentation/*.md` (16 core, 5 required + supplementary) |
+| Input | `.context/analysis.json`, `.context/questions.json`, `.context/research.json`, `.context/work-assignments.json`, `schemas/documentation-structure.json` |
+| Output | `documentation/*.md` (16 core, 5 required, plus writer-owned supplementary files; `QA-SUMMARY.md` is Phase 6 output) |
 | File Ownership | Exclusive (no conflicts) |
 
 #### Writer Scaling Strategy
 
 | Strategy | Agent Count | When Used |
 |----------|-------------|-----------|
-| `sequential` | 1 | < 20 questions |
-| `parallel-core` | 2-4 | 20-99 questions |
-| `parallel-all` | 4-8 | >= 100 questions |
+| `sequential` | 1 | < 25 questions |
+| `parallel-core` | 2-4 | 25-49 questions |
+| `parallel-all` | 4-8 | >= 50 questions |
 
 > See `references/agent-documentation-writer.md` → **Orchestrator Execution Logic** section for full implementation.
 
@@ -488,7 +512,7 @@ Resuming from: {START_PHASE}
 |----------|-------|
 | Agent Type | Single (Sonnet) |
 | Critical | No (failure produces warning) |
-| Input | `.context/analysis.json`, `.context/questions.json`, `documentation/*.md` |
+| Input | `.context/analysis.json`, `.context/questions.json`, `.context/research.json`, `documentation/*.md`, `schemas/documentation-structure.json` |
 | Output | `.context/qa-results.json`, `documentation/QA-SUMMARY.md` |
 | Score Range | 0-100 |
 | Quality Ratings | `excellent` (≥90), `good` (≥75), `fair` (≥60), `needs-improvement` (<60) |
@@ -535,7 +559,10 @@ DISPLAY: "📝 Documentation Coverage:"
 DISPLAY: "   {parsed_questions.summary.total_questions} questions researched"
 DISPLAY: "   {parsed_qa.question_coverage.answered} questions answered in docs"
 DISPLAY: ""
-DISPLAY: "View documentation: {DOC_DIR}/index.md"
+if (exists(DOC_DIR + "/index.md")):
+  DISPLAY: "View documentation: {DOC_DIR}/index.md"
+else:
+  DISPLAY: "View documentation: {DOC_DIR}/01-project-overview.md"
 DISPLAY: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 EXIT code 0
@@ -574,12 +601,13 @@ function handle_critical_failure(phase, error):
 > Only the main orchestrator process should update `state.json`. Individual parallel agents
 > (Discovery 1A-1D, Researchers, Writers) must NOT directly modify `state.json` to avoid
 > race conditions. Parallel agents should only write to their designated partial result files
-> in `partials/<phase>/<task_id>.json`. The orchestrator aggregates these results and updates
+> inside `.context/` using their phase-specific contract paths
+> (for example `partial-1a-language.json` or `research-results/partial-research-0.json`). The orchestrator aggregates these results and updates
 > `state.json` after all parallel agents complete.
 
 ```javascript
 // NOTE: This function should ONLY be called by the main orchestrator process,
-// never by parallel sub-agents. Parallel agents use save_partial_result() instead.
+// never by parallel sub-agents. Parallel agents use their designated partial-result path instead.
 function update_state(updates):
   current_state = Read(CONTEXT_DIR + "/state.json")
   parsed = JSON.parse(current_state)
@@ -689,19 +717,34 @@ function retry_parallel_agents(phase_name, agent_tasks, options = {}):
 
 // === PARTIAL RESULT PRESERVATION ===
 // Uses atomic writes to prevent corruption from concurrent access
-function save_partial_result(phase_name, task_id, result):
-  partial_dir = CONTEXT_DIR + "/partials/" + phase_name
-  mkdir_p(partial_dir)
+function resolve_partial_result_path(phase_name, task_id):
+  if (phase_name == "discovery-analysis"):
+    discovery_paths = {
+      "agent-1a-language": CONTEXT_DIR + "/partial-1a-language.json",
+      "agent-1b-components": CONTEXT_DIR + "/partial-1b-components.json",
+      "agent-1c-dependencies": CONTEXT_DIR + "/partial-1c-dependencies.json",
+      "agent-1d-flows-apis": CONTEXT_DIR + "/partial-1d-flows-apis.json"
+    }
+    return discovery_paths[task_id] || (CONTEXT_DIR + "/partials/" + phase_name + "/" + task_id + ".json")
 
-  target_path = partial_dir + "/" + task_id + ".json"
-  temp_path = partial_dir + "/" + task_id + ".json.tmp." + random_uuid()
+  if (phase_name == "research"):
+    index = task_id.replace("researcher-", "")
+    return CONTEXT_DIR + "/research-results/partial-research-" + index + ".json"
+
+  return CONTEXT_DIR + "/partials/" + phase_name + "/" + task_id + ".json"
+
+function save_partial_result(phase_name, task_id, result):
+  target_path = resolve_partial_result_path(phase_name, task_id)
+  partial_dir = dirname(target_path)
+  mkdir_p(partial_dir)
+  temp_path = target_path + ".tmp." + random_uuid()
 
   // Atomic write: write to temp file, then rename (rename is atomic on POSIX)
   Write(temp_path, JSON.stringify(result))
   rename(temp_path, target_path)  // Atomic operation
 
 function load_partial_result(phase_name, task_id):
-  path = CONTEXT_DIR + "/partials/" + phase_name + "/" + task_id + ".json"
+  path = resolve_partial_result_path(phase_name, task_id)
   if (exists(path)):
     return JSON.parse(Read(path))
   return null

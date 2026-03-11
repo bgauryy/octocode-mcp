@@ -79,6 +79,7 @@
     },
     "questions": {
       "type": "array",
+      "minItems": 10,
       "items": {
         "type": "object",
         "required": [
@@ -89,7 +90,8 @@
           "research_goal",
           "files_to_examine",
           "reason",
-          "documentation_target"
+          "documentation_target",
+          "research_strategy"
         ],
         "properties": {
           "id": {
@@ -155,6 +157,7 @@
           },
           "files_to_examine": {
             "type": "array",
+            "minItems": 1,
             "items": {
               "type": "string"
             },
@@ -170,6 +173,11 @@
           },
           "research_strategy": {
             "type": "object",
+            "required": [
+              "approach",
+              "tools_to_use",
+              "expected_findings"
+            ],
             "properties": {
               "approach": {
                 "type": "string",
@@ -177,6 +185,7 @@
               },
               "tools_to_use": {
                 "type": "array",
+                "minItems": 1,
                 "items": {
                   "type": "string"
                 }

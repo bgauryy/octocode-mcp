@@ -1,6 +1,6 @@
 ---
 name: octocode-rfc-generator
-description: Research-driven RFC generator. Use when the user asks to plan, design, propose, or make a technical decision before coding. Triggers include "plan a feature", "create an RFC", "design doc", "propose migration", "how should we build X", "plan refactor", "evaluate options for X", "write a technical proposal". Outputs a validated RFC with research evidence, alternatives, recommendation, and implementation plan.
+description: Research-driven RFC and design document generator. Use when the user asks to "create an RFC", "write a design doc", "propose a migration", "how should we architect X", "evaluate options for X", "write a technical proposal", "compare approaches", or needs a technical decision document before coding. Outputs a validated RFC with research evidence, alternatives, recommendation, and implementation plan. For planning with implementation, use octocode-plan instead.
 ---
 
 # RFC Agent — Research, Reason, Plan

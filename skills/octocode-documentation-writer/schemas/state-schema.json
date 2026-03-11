@@ -51,6 +51,9 @@
     "current_agent": {
       "type": ["string", "null"]
     },
+    "status": {
+      "type": "string"
+    },
     "completed_agents": {
       "type": "array",
       "items": {
@@ -64,6 +67,46 @@
           "qa-validator"
         ]
       }
+    },
+    "writer_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "critical_writer_id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "retry_attempt": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failed_writer_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "failed_writers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "successful_writers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "writers_completed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "warning": {
+      "type": "string"
+    },
+    "error": {
+      "type": "string"
     },
     "token_usage": {
       "type": "object",

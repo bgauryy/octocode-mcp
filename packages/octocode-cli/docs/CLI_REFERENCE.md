@@ -158,7 +158,7 @@ octocode skills [--force]
 | `octocode-research` | GitHub repository research workflows |
 | `octocode-implement` | Implementation guidance with references |
 | `octocode-pr-review` | Pull request review automation |
-| `octocode-local-search` | Local codebase exploration |
+| `octocode-researcher` | Primary code research and exploration |
 | `octocode-plan` | Task planning and decomposition |
 | `octocode-roast` | Code review with personality |
 
