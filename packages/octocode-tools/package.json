@@ -1,0 +1,44 @@
+{
+  "name": "octocode-tools",
+  "version": "1.0.0",
+  "description": "GitHub code research and analysis CLI. Search, explore, and analyze code across GitHub repos and local codebases.",
+  "keywords": [
+    "github",
+    "code-search",
+    "code-analysis",
+    "cli",
+    "developer-tools",
+    "repository-analysis",
+    "lsp",
+    "ripgrep"
+  ],
+  "author": "octocode-tools",
+  "license": "MIT",
+  "bin": "./dist/octocode-tools.js",
+  "dependencies": {
+    "commander": "^13.1.0",
+    "octocode-mcp": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "dist/octocode-tools.js",
+  "scripts": {
+    "build": "vite build",
+    "build:dev": "vite build",
+    "clean": "rm -rf dist/",
+    "start": "node ./dist/octocode-tools.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "type": "module"
+}
