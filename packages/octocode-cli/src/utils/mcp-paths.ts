@@ -203,7 +203,7 @@ export function getMCPConfigPath(
         vsCodeStorage,
         'rooveterinaryinc.roo-cline',
         'settings',
-        'cline_mcp_settings.json'
+        'mcp_settings.json'
       );
 
     case 'windsurf':

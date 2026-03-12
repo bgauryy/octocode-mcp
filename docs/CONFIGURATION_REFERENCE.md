@@ -8,26 +8,16 @@ Octocode reads configuration from **two sources**. You can use either or both:
 
 ### 1. Environment Variables (in your MCP client settings)
 
-Your MCP client (Cursor, VS Code, Claude Desktop, etc.) has a settings file where you declare MCP servers. Environment variables go in the `"env"` block of your server config:
+Your MCP client (Cursor, VS Code, Claude Desktop, etc.) has a settings file where you declare MCP servers. Environment variables go in the `"env"` block of your server config.
 
-**Cursor / VS Code** — `.cursor/mcp.json` or `.vscode/mcp.json`:
+The JSON structure is the same across all clients — only the file location differs:
 
-```json
-{
-  "mcpServers": {
-    "octocode": {
-      "command": "npx",
-      "args": ["-y", "octocode-mcp@latest"],
-      "env": {
-        "GITHUB_TOKEN": "ghp_xxxxxxxxxxxx",
-        "ENABLE_LOCAL": "true"
-      }
-    }
-  }
-}
-```
-
-**Claude Desktop** — `claude_desktop_config.json`:
+| Client | Config file |
+|--------|------------|
+| Cursor | `~/.cursor/mcp.json` |
+| VS Code | `.vscode/mcp.json` |
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
 
 ```json
 {
@@ -272,56 +262,7 @@ All values are strings in the `"env"` block:
 
 ### In `.octocoderc` Config File (`~/.octocode/.octocoderc`)
 
-Values use native JSON types (booleans, numbers, arrays — not strings):
-
-```jsonc
-{
-  "version": 1,
-
-  "github": {
-    "apiUrl": "https://api.github.com"
-  },
-
-  "gitlab": {
-    "host": "https://gitlab.com"
-  },
-
-  "bitbucket": {
-    "host": "https://api.bitbucket.org/2.0"
-  },
-
-  "local": {
-    "enabled": true,
-    "enableClone": true,
-    "workspaceRoot": "/Users/me/projects",
-    "allowedPaths": ["/Users/me/projects", "/Users/me/libs"]
-  },
-
-  "tools": {
-    "enabled": ["githubSearchCode", "githubGetFileContent"],
-    "enableAdditional": ["localSearchCode"],
-    "disabled": ["packageSearch"],
-    "disablePrompts": false
-  },
-
-  "network": {
-    "timeout": 30000,
-    "maxRetries": 3
-  },
-
-  "telemetry": {
-    "logging": true
-  },
-
-  "lsp": {
-    "configPath": "/Users/me/.octocode/lsp-servers.json"
-  },
-
-  "output": {
-    "format": "yaml"
-  }
-}
-```
+Values use native JSON types (booleans, numbers, arrays — not strings). See the [complete schema above](#2-the-octocoderc-config-file-persistent-defaults) for all fields and defaults.
 
 ### Key Differences Between the Two Formats
 

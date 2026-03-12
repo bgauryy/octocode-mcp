@@ -226,7 +226,13 @@ amp mcp add octocode -- npx octocode-mcp@latest
 Use the Claude Code CLI to add the Octocode MCP server:
 
 ```bash
-claude mcp add octocode npx octocode-mcp@latest
+claude mcp add octocode -- npx octocode-mcp@latest
+```
+
+**With local tools enabled:**
+
+```bash
+claude mcp add octocode -e ENABLE_LOCAL=true -- npx octocode-mcp@latest
 ```
 
 </details>

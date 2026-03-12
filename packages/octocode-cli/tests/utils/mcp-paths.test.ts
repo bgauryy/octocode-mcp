@@ -94,6 +94,7 @@ describe('MCP Paths Utilities', () => {
 
       const result = getMCPConfigPath('vscode-roo');
       expect(result).toContain('rooveterinaryinc.roo-cline');
+      expect(result).toContain('mcp_settings.json');
     });
 
     it('should return windsurf config path', async () => {
