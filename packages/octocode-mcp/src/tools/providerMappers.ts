@@ -83,12 +83,24 @@ export function mapCodeSearchProviderResult(
   data: CodeSearchResult,
   query: GitHubCodeSearchQuery
 ): SearchResult {
+  const splitRepositoryPath = (repositoryPath: string) => {
+    const slashIdx = repositoryPath.lastIndexOf('/');
+    if (slashIdx <= 0) {
+      return {
+        owner: '',
+        repo: repositoryPath,
+      };
+    }
+
+    return {
+      owner: repositoryPath.substring(0, slashIdx),
+      repo: repositoryPath.substring(slashIdx + 1),
+    };
+  };
+
   const files = data.items.map(item => {
     const repoFullName = item.repository.name || '';
-    const slashIdx = repoFullName.indexOf('/');
-    const owner = slashIdx > 0 ? repoFullName.substring(0, slashIdx) : '';
-    const repoName =
-      slashIdx > 0 ? repoFullName.substring(slashIdx + 1) : repoFullName;
+    const { owner, repo: repoName } = splitRepositoryPath(repoFullName);
 
     const baseFile = {
       path: item.path,
@@ -156,8 +168,23 @@ export function mapRepoSearchToolQuery(query: GitHubReposSearchQuery) {
 export function mapRepoSearchProviderRepositories(
   repositories: ProviderRepoSearchResult['repositories']
 ): SimplifiedRepository[] {
+  const splitRepositoryPath = (repositoryPath: string) => {
+    const slashIdx = repositoryPath.lastIndexOf('/');
+    if (slashIdx <= 0) {
+      return {
+        owner: '',
+        repo: repositoryPath,
+      };
+    }
+
+    return {
+      owner: repositoryPath.substring(0, slashIdx),
+      repo: repositoryPath.substring(slashIdx + 1),
+    };
+  };
+
   return repositories.map(repo => {
-    const [owner, repoName] = repo.fullPath.split('/');
+    const { owner, repo: repoName } = splitRepositoryPath(repo.fullPath);
     return {
       owner: owner || '',
       repo: repoName || repo.name,

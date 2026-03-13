@@ -112,40 +112,74 @@ describe('GitLab File Content', () => {
         });
       });
 
-      it('should return error when ref is missing', async () => {
+      it('should use HEAD when ref is an empty string', async () => {
+        const mockGitlabClient = {
+          RepositoryFiles: {
+            show: vi.fn().mockResolvedValue({
+              file_name: 'README.md',
+              file_path: 'README.md',
+              size: 13,
+              encoding: 'base64',
+              content: Buffer.from('Hello, World!').toString('base64'),
+              content_sha256: 'abc123',
+              ref: 'HEAD',
+              blob_id: 'blob123',
+              commit_id: 'commit123',
+              last_commit_id: 'lastcommit123',
+              execute_filemode: false,
+            }),
+          },
+        };
+
+        mockGetGitlab.mockResolvedValue(mockGitlabClient as any);
+
         const result = await fetchGitLabFileContentAPI({
           projectId: '12345',
           path: 'README.md',
           ref: '',
         });
 
-        expect(result).toEqual({
-          error: 'Reference (ref) is required for GitLab file content',
-          status: 400,
-          type: 'http',
-          hints: [
-            'Unlike GitHub, GitLab requires an explicit branch, tag, or commit reference.',
-            'Use the default branch name (e.g., "main" or "master") or a specific ref.',
-          ],
-        });
+        expect(result).toHaveProperty('status', 200);
+        expect(mockGitlabClient.RepositoryFiles.show).toHaveBeenCalledWith(
+          '12345',
+          'README.md',
+          'HEAD'
+        );
       });
 
-      it('should return error when ref is undefined', async () => {
+      it('should use HEAD when ref is undefined', async () => {
+        const mockGitlabClient = {
+          RepositoryFiles: {
+            show: vi.fn().mockResolvedValue({
+              file_name: 'README.md',
+              file_path: 'README.md',
+              size: 13,
+              encoding: 'base64',
+              content: Buffer.from('Hello, World!').toString('base64'),
+              content_sha256: 'abc123',
+              ref: 'HEAD',
+              blob_id: 'blob123',
+              commit_id: 'commit123',
+              last_commit_id: 'lastcommit123',
+              execute_filemode: false,
+            }),
+          },
+        };
+
+        mockGetGitlab.mockResolvedValue(mockGitlabClient as any);
+
         const result = await fetchGitLabFileContentAPI({
           projectId: '12345',
           path: 'README.md',
           ref: undefined as unknown as string,
         });
 
-        expect(result).toEqual({
-          error: 'Reference (ref) is required for GitLab file content',
-          status: 400,
-          type: 'http',
-          hints: [
-            'Unlike GitHub, GitLab requires an explicit branch, tag, or commit reference.',
-            'Use the default branch name (e.g., "main" or "master") or a specific ref.',
-          ],
-        });
+        expect(result).toHaveProperty('status', 200);
+        expect(mockGitlabClient.RepositoryFiles.show).toHaveBeenCalledWith(
+          '12345',
+          'README.md',
+          'HEAD'
+        );
       });
     });
 
@@ -809,7 +843,7 @@ describe('GitLab File Content', () => {
           size: 0,
           content: 'test',
           content_sha256: '',
-          ref: '',
+          ref: 'main',
           blob_id: '',
           commit_id: '',
           last_commit_id: '',

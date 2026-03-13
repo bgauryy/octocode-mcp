@@ -16,9 +16,18 @@ import type {
 import {
   searchGitLabMergeRequestsAPI,
   getGitLabMRNotes,
+  getGitLabMRChanges,
 } from '../../gitlab/mergeRequests.js';
-import { parseGitLabProjectId, extractGitLabRateLimit } from './utils.js';
-export { parseGitLabProjectId };
+import {
+  handleGitLabAPIResponse,
+  mapGitLabMRState,
+  parseGitLabProjectId,
+} from './utils.js';
+import {
+  countPatchLineChanges,
+  shapePullRequestFileChanges,
+} from '../pullRequestFileChanges.js';
+export { mapGitLabMRState as mapMRState, parseGitLabProjectId };
 
 interface GitLabPaginationData {
   currentPage?: number;
@@ -37,6 +46,15 @@ interface GitLabMRNote {
   body?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+interface GitLabMRChange {
+  old_path?: string;
+  new_path?: string;
+  diff?: string;
+  new_file?: boolean;
+  renamed_file?: boolean;
+  deleted_file?: boolean;
 }
 
 interface GitLabMRData {
@@ -59,21 +77,7 @@ interface GitLabMRData {
   merged_at?: string;
   user_notes_count?: number;
   _notes?: GitLabMRNote[];
-}
-
-/**
- * Map MR state to GitLab format.
- */
-export function mapMRState(
-  state?: string
-): 'opened' | 'closed' | 'merged' | 'all' | undefined {
-  const mapping: Record<string, 'opened' | 'closed' | 'merged' | 'all'> = {
-    open: 'opened',
-    closed: 'closed',
-    merged: 'merged',
-    all: 'all',
-  };
-  return state ? mapping[state] : undefined;
+  _changes?: GitLabMRChange[];
 }
 
 /**
@@ -82,7 +86,7 @@ export function mapMRState(
 export function transformPullRequestResult(
   mergeRequests: GitLabMRData[],
   pagination: GitLabPaginationData | undefined,
-  _query: PullRequestQuery
+  query: PullRequestQuery
 ): PullRequestSearchResult {
   const items: PullRequestItem[] = mergeRequests.map(mr => {
     // Map GitLab state to unified state
@@ -94,6 +98,32 @@ export function transformPullRequestResult(
     } else {
       state = 'open';
     }
+
+    const rawFileChanges =
+      mr._changes?.map(change => {
+        const path = change.new_path || change.old_path || '';
+        const patch = change.diff || undefined;
+        const patchCounts = countPatchLineChanges(patch);
+
+        return {
+          path,
+          status: change.new_file
+            ? 'added'
+            : change.deleted_file
+              ? 'removed'
+              : change.renamed_file
+                ? 'renamed'
+                : 'modified',
+          additions: patchCounts.additions,
+          deletions: patchCounts.deletions,
+          patch,
+        };
+      }) || [];
+
+    const fileChangeSummary = shapePullRequestFileChanges(
+      rawFileChanges,
+      query
+    );
 
     return {
       number: mr.iid,
@@ -121,6 +151,7 @@ export function transformPullRequestResult(
         createdAt: note.created_at ?? '',
         updatedAt: note.updated_at ?? '',
       })),
+      ...fileChangeSummary,
     };
   });
 
@@ -146,7 +177,7 @@ export async function searchPullRequests(
   ) => number | string = parseGitLabProjectId,
   mapMRStateFn: (
     state?: string
-  ) => 'opened' | 'closed' | 'merged' | 'all' | undefined = mapMRState
+  ) => 'opened' | 'closed' | 'merged' | 'all' | undefined = mapGitLabMRState
 ): Promise<ProviderResponse<PullRequestSearchResult>> {
   const projectId = query.projectId
     ? parseProjectId(query.projectId)
@@ -174,42 +205,57 @@ export async function searchPullRequests(
   };
 
   const result = await searchGitLabMergeRequestsAPI(gitlabQuery);
+  const providerResult = handleGitLabAPIResponse(
+    result,
+    'gitlab',
+    data => data
+  );
 
-  if ('error' in result && result.error) {
+  if (!providerResult.data) {
     return {
-      error: result.error,
-      status: result.status || 500,
+      error: providerResult.error || 'No data returned from GitLab API',
+      status: providerResult.status,
       provider: 'gitlab',
-      hints: 'hints' in result ? result.hints : undefined,
-      rateLimit: extractGitLabRateLimit(result),
+      hints: providerResult.hints,
+      rateLimit: providerResult.rateLimit,
     };
   }
 
-  if (!('data' in result) || !result.data) {
-    return {
-      error: 'No data returned from GitLab API',
-      status: 500,
-      provider: 'gitlab',
-    };
-  }
-
-  // Optionally fetch comments
-  let mergeRequests = result.data.mergeRequests;
-  if (query.withComments && projectId && mergeRequests.length > 0) {
+  let mergeRequests = providerResult.data.mergeRequests as GitLabMRData[];
+  if (
+    projectId &&
+    mergeRequests.length > 0 &&
+    (query.withComments || query.type)
+  ) {
     mergeRequests = await Promise.all(
       mergeRequests.map(async mr => {
+        let enrichedMergeRequest: GitLabMRData = mr as GitLabMRData;
+
         try {
-          const notesResult = await getGitLabMRNotes(projectId, mr.iid);
-          if ('data' in notesResult && notesResult.data) {
-            return {
-              ...mr,
-              _notes: notesResult.data,
-            };
+          if (query.withComments) {
+            const notesResult = await getGitLabMRNotes(projectId, mr.iid);
+            if ('data' in notesResult && notesResult.data) {
+              enrichedMergeRequest = {
+                ...enrichedMergeRequest,
+                _notes: notesResult.data,
+              };
+            }
+          }
+
+          if (query.type) {
+            const changesResult = await getGitLabMRChanges(projectId, mr.iid);
+            if ('data' in changesResult && changesResult.data) {
+              enrichedMergeRequest = {
+                ...enrichedMergeRequest,
+                _changes: (changesResult.data.changes ||
+                  []) as GitLabMRChange[],
+              };
+            }
           }
         } catch {
           // Ignore errors fetching notes
         }
-        return mr;
+        return enrichedMergeRequest;
       })
     );
   }
@@ -217,10 +263,10 @@ export async function searchPullRequests(
   return {
     data: transformPullRequestResult(
       mergeRequests as GitLabMRData[],
-      result.data.pagination,
+      providerResult.data.pagination,
       query
     ),
-    status: 200,
+    status: providerResult.status,
     provider: 'gitlab',
   };
 }

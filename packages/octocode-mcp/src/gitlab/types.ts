@@ -152,8 +152,8 @@ export interface GitLabFileContentQuery {
   projectId: number | string;
   /** File path (URL-encoded) */
   path: string;
-  /** Branch/tag/commit reference (REQUIRED for GitLab) */
-  ref: string;
+  /** Branch/tag/commit reference. Omit to use GitLab's HEAD shorthand. */
+  ref?: string;
   /** Start line for partial content */
   startLine?: number;
   /** End line for partial content */

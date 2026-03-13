@@ -33,6 +33,11 @@ import type { GitLabAPIError } from '../../gitlab/types.js';
 import { getGitlab } from '../../gitlab/client.js';
 import { logRateLimit } from '../../session.js';
 import { PROVIDER_CAPABILITIES } from '../capabilities.js';
+import {
+  mapGitLabMRState,
+  mapGitLabRepoSortField,
+  parseGitLabProjectId,
+} from './utils.js';
 
 /**
  * GitLab Provider implementation.
@@ -56,10 +61,7 @@ export class GitLabProvider implements ICodeHostProvider {
     query: CodeSearchQuery
   ): Promise<ProviderResponse<CodeSearchResult>> {
     try {
-      return await gitlabSearch.searchCode(
-        query,
-        this.parseProjectId.bind(this)
-      );
+      return await gitlabSearch.searchCode(query, parseGitLabProjectId);
     } catch (error) {
       return this.handleError(error);
     }
@@ -73,10 +75,7 @@ export class GitLabProvider implements ICodeHostProvider {
     query: FileContentQuery
   ): Promise<ProviderResponse<FileContentResult>> {
     try {
-      return await gitlabContent.getFileContent(
-        query,
-        this.parseProjectId.bind(this)
-      );
+      return await gitlabContent.getFileContent(query, parseGitLabProjectId);
     } catch (error) {
       return this.handleError(error);
     }
@@ -90,10 +89,7 @@ export class GitLabProvider implements ICodeHostProvider {
     query: RepoSearchQuery
   ): Promise<ProviderResponse<RepoSearchResult>> {
     try {
-      return await gitlabSearch.searchRepos(
-        query,
-        this.mapSortField.bind(this)
-      );
+      return await gitlabSearch.searchRepos(query, mapGitLabRepoSortField);
     } catch (error) {
       return this.handleError(error);
     }
@@ -109,8 +105,8 @@ export class GitLabProvider implements ICodeHostProvider {
     try {
       return await gitlabPullRequests.searchPullRequests(
         query,
-        this.parseProjectId.bind(this),
-        this.mapMRState.bind(this)
+        parseGitLabProjectId,
+        mapGitLabMRState
       );
     } catch (error) {
       return this.handleError(error);
@@ -127,7 +123,7 @@ export class GitLabProvider implements ICodeHostProvider {
     try {
       return await gitlabStructure.getRepoStructure(
         query,
-        this.parseProjectId.bind(this)
+        parseGitLabProjectId
       );
     } catch (error) {
       return this.handleError(error);
@@ -145,7 +141,7 @@ export class GitLabProvider implements ICodeHostProvider {
           ? { host: this.config.baseUrl, token: this.config.token }
           : undefined
       );
-      const parsedId = this.parseProjectId(projectId);
+      const parsedId = parseGitLabProjectId(projectId);
       const project = (await gitlab.Projects.show(
         parsedId
       )) as unknown as Record<string, unknown>;
@@ -158,61 +154,6 @@ export class GitLabProvider implements ICodeHostProvider {
   // ============================================================================
   // HELPER METHODS
   // ============================================================================
-
-  private parseProjectId(projectId?: string): number | string {
-    if (!projectId) {
-      throw new Error('Project ID is required');
-    }
-
-    const numId = parseInt(projectId, 10);
-    if (!isNaN(numId) && String(numId) === projectId) {
-      return numId;
-    }
-
-    return encodeURIComponent(projectId);
-  }
-
-  private mapSortField(
-    sort?: string
-  ):
-    | 'id'
-    | 'name'
-    | 'path'
-    | 'created_at'
-    | 'updated_at'
-    | 'last_activity_at'
-    | 'similarity'
-    | 'star_count'
-    | undefined {
-    const mapping: Record<
-      string,
-      | 'id'
-      | 'name'
-      | 'path'
-      | 'created_at'
-      | 'updated_at'
-      | 'last_activity_at'
-      | 'similarity'
-      | 'star_count'
-    > = {
-      stars: 'star_count',
-      updated: 'updated_at',
-      created: 'created_at',
-    };
-    return sort ? mapping[sort] : undefined;
-  }
-
-  private mapMRState(
-    state?: string
-  ): 'opened' | 'closed' | 'merged' | 'all' | undefined {
-    const mapping: Record<string, 'opened' | 'closed' | 'merged' | 'all'> = {
-      open: 'opened',
-      closed: 'closed',
-      merged: 'merged',
-      all: 'all',
-    };
-    return state ? mapping[state] : undefined;
-  }
 
   private handleError(error: unknown): ProviderResponse<never> {
     const apiError = handleGitLabAPIError(error);

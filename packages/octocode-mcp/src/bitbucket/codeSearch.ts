@@ -14,13 +14,73 @@ import type {
   BitbucketCodeSearchResult,
   BitbucketCodeSearchItem,
 } from './types.js';
+import { getBitbucketRepositoryIdentity } from './searchUtils.js';
 
 export interface BitbucketCodeSearchQuery {
   workspace: string;
   repoSlug?: string;
   searchQuery: string;
+  path?: string;
+  filename?: string;
+  extension?: string;
   page?: number;
   limit?: number;
+}
+
+function quoteSearchModifier(
+  value: string,
+  forceQuote: boolean = false
+): string {
+  return forceQuote || /[\s"]/u.test(value)
+    ? `"${value.replaceAll('"', '\\"')}"`
+    : value;
+}
+
+function buildSearchQuery(params: BitbucketCodeSearchQuery): string {
+  const queryParts = [params.searchQuery.trim()];
+
+  if (params.repoSlug) {
+    queryParts.push(`repo:${quoteSearchModifier(params.repoSlug)}`);
+  }
+
+  if (params.path) {
+    queryParts.push(`path:${quoteSearchModifier(params.path, true)}`);
+  }
+
+  return queryParts.join(' ');
+}
+
+function filterSearchResults(
+  items: BitbucketCodeSearchItem[],
+  params: BitbucketCodeSearchQuery
+): BitbucketCodeSearchItem[] {
+  return items.filter(item => {
+    const filePath = item.file?.path || '';
+    const fileName = filePath.split('/').pop() || '';
+    const repositoryIdentity = getBitbucketRepositoryIdentity(item);
+
+    if (
+      params.repoSlug &&
+      repositoryIdentity &&
+      repositoryIdentity.repoSlug !== params.repoSlug
+    ) {
+      return false;
+    }
+
+    if (params.path && !filePath.startsWith(params.path)) {
+      return false;
+    }
+
+    if (params.filename && fileName !== params.filename) {
+      return false;
+    }
+
+    if (params.extension && !fileName.endsWith(`.${params.extension}`)) {
+      return false;
+    }
+
+    return true;
+  });
 }
 
 export async function searchBitbucketCodeAPI(
@@ -45,7 +105,7 @@ export async function searchBitbucketCodeAPI(
     const client = getBitbucketClient();
 
     const queryParams = {
-      search_query: params.searchQuery,
+      search_query: buildSearchQuery(params),
       page: params.page || 1,
       pagelen: params.limit || 20,
     };
@@ -89,18 +149,7 @@ export async function searchBitbucketCodeAPI(
       }
     );
 
-    // Post-filter by repo if a specific repo was requested
-    if (params.repoSlug) {
-      items = items.filter(item => {
-        const filePath = item.file?.path || '';
-        const selfHref = item.file?.links?.self?.href || '';
-        return (
-          selfHref.includes(`/${params.repoSlug}/`) ||
-          selfHref.includes(`/${params.repoSlug}?`) ||
-          filePath.startsWith(params.repoSlug + '/')
-        );
-      });
-    }
+    items = filterSearchResults(items, params);
 
     return {
       data: {

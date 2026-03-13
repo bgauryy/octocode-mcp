@@ -3,6 +3,7 @@ import {
   buildPaginationHints,
   mapCodeSearchProviderResult,
   mapCodeSearchToolQuery,
+  mapRepoSearchProviderRepositories,
   mapRepoStructureProviderResult,
 } from '../../src/tools/providerMappers.js';
 
@@ -60,6 +61,68 @@ describe('providerMappers', () => {
         text_matches: ['const test = 1;'],
       }),
     ]);
+  });
+
+  it('should preserve subgroup owners when mapping code search results', () => {
+    const result = mapCodeSearchProviderResult(
+      {
+        items: [
+          {
+            path: 'src/index.ts',
+            matches: [{ context: 'const test = 1;', positions: [] }],
+            url: '',
+            repository: {
+              id: '1',
+              name: 'group/subgroup/repo',
+              url: '',
+            },
+          },
+        ],
+        totalCount: 1,
+        pagination: {
+          currentPage: 1,
+          totalPages: 1,
+          hasMore: false,
+          totalMatches: 1,
+        },
+      },
+      {
+        keywordsToSearch: ['test'],
+      }
+    );
+
+    expect(result.files).toEqual([
+      expect.objectContaining({
+        owner: 'group/subgroup',
+        repo: 'repo',
+      }),
+    ]);
+  });
+
+  it('should preserve subgroup owners when mapping repository results', () => {
+    const result = mapRepoSearchProviderRepositories([
+      {
+        id: '1',
+        name: 'repo',
+        fullPath: 'group/subgroup/repo',
+        description: 'test',
+        url: 'https://example.com/group/subgroup/repo',
+        cloneUrl: 'https://example.com/group/subgroup/repo.git',
+        defaultBranch: 'main',
+        stars: 0,
+        forks: 0,
+        visibility: 'public',
+        topics: [],
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+        lastActivityAt: '2024-01-01T00:00:00Z',
+      },
+    ]);
+
+    expect(result[0]).toMatchObject({
+      owner: 'group/subgroup',
+      repo: 'repo',
+    });
   });
 
   it('should build pagination hints with stable wording', () => {

@@ -12,31 +12,25 @@ import {
   handleBitbucketAPIResponse,
   parseBitbucketProjectId,
 } from './utils.js';
+import { extractFileContent } from '../contentExtraction.js';
 
 export function transformFileContentResult(
   data: BitbucketFileContentResult,
   query: FileContentQuery
 ): FileContentResult {
-  let content = data.content;
-
-  if (query.startLine || query.endLine) {
-    const lines = content.split('\n');
-    const start = (query.startLine || 1) - 1;
-    const end = query.endLine || lines.length;
-    content = lines.slice(start, end).join('\n');
-  }
+  const extracted = extractFileContent(data.content, query);
 
   return {
     path: data.path || query.path,
-    content,
+    content: extracted.content,
     encoding: 'utf-8',
     size: data.size || 0,
     ref: data.ref || query.ref || '',
     lastCommitSha: data.lastCommitSha,
-    pagination: undefined,
-    isPartial: query.startLine !== undefined || query.endLine !== undefined,
-    startLine: query.startLine,
-    endLine: query.endLine,
+    pagination: extracted.pagination,
+    isPartial: extracted.isPartial,
+    startLine: extracted.startLine,
+    endLine: extracted.endLine,
   };
 }
 

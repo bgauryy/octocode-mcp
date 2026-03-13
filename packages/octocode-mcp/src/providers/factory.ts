@@ -287,7 +287,7 @@ type ProviderClass = new (config?: ProviderConfig) => ICodeHostProvider;
 async function tryInitProvider(
   name: ProviderType,
   loader: () => Promise<Record<string, unknown>>,
-  key: string,
+  key: string
 ): Promise<ProviderDiagnostic> {
   try {
     const mod = await loader();
@@ -295,7 +295,9 @@ async function tryInitProvider(
     return { provider: name, ok: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`⚠️  ${name} provider failed to initialize: ${message}\n`);
+    process.stderr.write(
+      `⚠️  ${name} provider failed to initialize: ${message}\n`
+    );
     return { provider: name, ok: false, error: message };
   }
 }
@@ -309,9 +311,21 @@ async function tryInitProvider(
  */
 export async function initializeProviders(): Promise<ProviderDiagnostic[]> {
   return Promise.all([
-    tryInitProvider('github', () => import('./github/GitHubProvider.js'), 'GitHubProvider'),
-    tryInitProvider('gitlab', () => import('./gitlab/GitLabProvider.js'), 'GitLabProvider'),
-    tryInitProvider('bitbucket', () => import('./bitbucket/BitbucketProvider.js'), 'BitbucketProvider'),
+    tryInitProvider(
+      'github',
+      () => import('./github/GitHubProvider.js'),
+      'GitHubProvider'
+    ),
+    tryInitProvider(
+      'gitlab',
+      () => import('./gitlab/GitLabProvider.js'),
+      'GitLabProvider'
+    ),
+    tryInitProvider(
+      'bitbucket',
+      () => import('./bitbucket/BitbucketProvider.js'),
+      'BitbucketProvider'
+    ),
   ]);
 }
 

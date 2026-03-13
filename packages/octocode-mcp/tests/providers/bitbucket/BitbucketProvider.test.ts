@@ -683,6 +683,53 @@ describe('transformCodeSearchResult', () => {
 
     expect(result.items[0]!.matches[0]!.context).toBe('');
   });
+
+  it('should preserve repository identity from projectId', () => {
+    const result = transformCodeSearchResult(
+      [
+        {
+          type: 'code_search_result',
+          content_matches: [],
+          file: {
+            path: 'packages/app/src/index.ts',
+            type: 'commit_file',
+            links: {
+              self: {
+                href: 'https://bitbucket.org/ws/repo/src/main/packages/app/src/index.ts',
+              },
+            },
+          },
+        },
+      ],
+      { keywords: ['index'], projectId: 'ws/repo' }
+    );
+
+    expect(result.items[0]!.repository.name).toBe('ws/repo');
+    expect(result.repositoryContext).toEqual({ owner: 'ws', repo: 'repo' });
+  });
+
+  it('should parse repository identity from Bitbucket API self links', () => {
+    const result = transformCodeSearchResult(
+      [
+        {
+          type: 'code_search_result',
+          content_matches: [],
+          file: {
+            path: 'packages/app/src/index.ts',
+            type: 'commit_file',
+            links: {
+              self: {
+                href: 'https://api.bitbucket.org/2.0/repositories/ws/repo/src/main/packages/app/src/index.ts',
+              },
+            },
+          },
+        },
+      ],
+      { keywords: ['index'] }
+    );
+
+    expect(result.items[0]!.repository.name).toBe('ws/repo');
+  });
 });
 
 describe('transformRepoSearchResult', () => {
@@ -767,6 +814,58 @@ describe('transformFileContentResult', () => {
 
     expect(result.content).toBe('full content');
     expect(result.isPartial).toBe(false);
+  });
+
+  it('should prioritize matchString extraction over explicit line ranges', () => {
+    const result = transformFileContentResult(
+      {
+        content: ['alpha', 'beta', 'target line', 'delta', 'epsilon'].join(
+          '\n'
+        ),
+        path: 'f.ts',
+        size: 32,
+        ref: 'main',
+        encoding: 'utf-8',
+      },
+      {
+        projectId: 'ws/repo',
+        path: 'f.ts',
+        startLine: 1,
+        endLine: 2,
+        matchString: 'TARGET',
+        matchStringContextLines: 1,
+      }
+    );
+
+    expect(result.content).toBe('beta\ntarget line\ndelta');
+    expect(result.startLine).toBe(2);
+    expect(result.endLine).toBe(4);
+  });
+
+  it('should apply char pagination after content extraction', () => {
+    const result = transformFileContentResult(
+      {
+        content: '1234567890abcdefghij',
+        path: 'f.ts',
+        size: 20,
+        ref: 'main',
+        encoding: 'utf-8',
+      },
+      {
+        projectId: 'ws/repo',
+        path: 'f.ts',
+        charOffset: 5,
+        charLength: 5,
+      }
+    );
+
+    expect(result.content).toBe('67890');
+    expect(result.pagination).toMatchObject({
+      charOffset: 5,
+      charLength: 5,
+      totalChars: 20,
+      hasMore: true,
+    });
   });
 });
 
@@ -888,6 +987,92 @@ describe('transformPullRequestResult', () => {
     );
 
     expect(result.items[0]!.author).toBe('johnd');
+  });
+
+  it('should include file change summaries from diffstat for metadata mode', () => {
+    const result = transformPullRequestResult(
+      [
+        {
+          id: 1,
+          title: 'PR',
+          description: '',
+          state: 'OPEN' as const,
+          author: { display_name: 'john', uuid: '{u}' },
+          source: { branch: { name: 'feat' } },
+          destination: { branch: { name: 'main' } },
+          created_on: '',
+          updated_on: '',
+        },
+      ],
+      { currentPage: 1, totalPages: 1, hasMore: false },
+      undefined,
+      [
+        {
+          type: 'diffstat',
+          status: 'modified',
+          new: { path: 'src/app.ts' },
+          lines_added: 4,
+          lines_removed: 1,
+        },
+      ],
+      undefined,
+      { projectId: 'ws/repo', type: 'metadata' }
+    );
+
+    expect(result.items[0]!.changedFilesCount).toBe(1);
+    expect(result.items[0]!.additions).toBe(4);
+    expect(result.items[0]!.deletions).toBe(1);
+    expect(result.items[0]!.fileChanges).toEqual([
+      {
+        path: 'src/app.ts',
+        status: 'modified',
+        additions: 4,
+        deletions: 1,
+        patch: undefined,
+      },
+    ]);
+  });
+
+  it('should attach parsed patches for fullContent mode', () => {
+    const diff = [
+      'diff --git a/src/app.ts b/src/app.ts',
+      '--- a/src/app.ts',
+      '+++ b/src/app.ts',
+      '@@ -1 +1 @@',
+      '-old',
+      '+new',
+    ].join('\n');
+
+    const result = transformPullRequestResult(
+      [
+        {
+          id: 1,
+          title: 'PR',
+          description: '',
+          state: 'OPEN' as const,
+          author: { display_name: 'john', uuid: '{u}' },
+          source: { branch: { name: 'feat' } },
+          destination: { branch: { name: 'main' } },
+          created_on: '',
+          updated_on: '',
+        },
+      ],
+      { currentPage: 1, totalPages: 1, hasMore: false },
+      undefined,
+      [
+        {
+          type: 'diffstat',
+          status: 'modified',
+          new: { path: 'src/app.ts' },
+          lines_added: 1,
+          lines_removed: 1,
+        },
+      ],
+      diff,
+      { projectId: 'ws/repo', type: 'fullContent' }
+    );
+
+    expect(result.items[0]!.fileChanges?.[0]!.patch).toContain('+new');
   });
 });
 

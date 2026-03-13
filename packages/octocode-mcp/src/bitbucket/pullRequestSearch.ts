@@ -47,6 +47,12 @@ export interface BitbucketPRSearchResult {
   diffstat?: BitbucketDiffstatEntry[];
 }
 
+export interface BitbucketPRSupplementalData {
+  comments?: BitbucketPRComment[];
+  diff?: string;
+  diffstat?: BitbucketDiffstatEntry[];
+}
+
 function buildPRQueryFilter(
   params: BitbucketPRSearchQuery
 ): string | undefined {
@@ -136,6 +142,26 @@ async function fetchSinglePR(
   return { data: result, status: 200 };
 }
 
+export async function fetchBitbucketPRSupplementalData(
+  params: BitbucketPRSearchQuery
+): Promise<BitbucketPRSupplementalData> {
+  const result: BitbucketPRSupplementalData = {};
+
+  if (params.withComments) {
+    result.comments = await fetchPRComments(params);
+  }
+
+  if (params.withDiff) {
+    result.diff = await fetchPRDiff(params);
+  }
+
+  if (params.withDiffstat) {
+    result.diffstat = await fetchPRDiffstat(params);
+  }
+
+  return result;
+}
+
 async function listPRs(
   params: BitbucketPRSearchQuery
 ): Promise<BitbucketAPIResponse<BitbucketPRSearchResult>> {
@@ -191,27 +217,10 @@ async function fetchPRComments(
     const host = getBitbucketHost();
     const authHeader = getAuthHeader();
     const url = `${host}/repositories/${encodeURIComponent(params.workspace)}/${encodeURIComponent(params.repoSlug)}/pullrequests/${params.prNumber}/comments`;
-
-    const response = await fetch(url, {
-      headers: {
-        Authorization: authHeader,
-        Accept: 'application/json',
-      },
+    return await fetchPaginatedCollection<BitbucketPRComment>(url, {
+      Authorization: authHeader,
+      Accept: 'application/json',
     });
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        throw Object.assign(new Error('Rate limited'), {
-          status: 429,
-          response,
-        });
-      }
-      return [];
-    }
-
-    const data =
-      (await response.json()) as BitbucketPaginatedResponse<BitbucketPRComment>;
-    return data?.values || [];
   } catch (error) {
     // Re-throw rate limit errors so they bubble up to the main handler
     if (
@@ -266,27 +275,10 @@ async function fetchPRDiffstat(
     const host = getBitbucketHost();
     const authHeader = getAuthHeader();
     const url = `${host}/repositories/${encodeURIComponent(params.workspace)}/${encodeURIComponent(params.repoSlug)}/pullrequests/${params.prNumber}/diffstat`;
-
-    const response = await fetch(url, {
-      headers: {
-        Authorization: authHeader,
-        Accept: 'application/json',
-      },
+    return await fetchPaginatedCollection<BitbucketDiffstatEntry>(url, {
+      Authorization: authHeader,
+      Accept: 'application/json',
     });
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        throw Object.assign(new Error('Rate limited'), {
-          status: 429,
-          response,
-        });
-      }
-      return [];
-    }
-
-    const data =
-      (await response.json()) as BitbucketPaginatedResponse<BitbucketDiffstatEntry>;
-    return data?.values || [];
   } catch (error) {
     if (
       error instanceof Error &&
@@ -297,4 +289,33 @@ async function fetchPRDiffstat(
     }
     return [];
   }
+}
+
+async function fetchPaginatedCollection<T>(
+  initialUrl: string,
+  headers: Record<string, string>
+): Promise<T[]> {
+  const items: T[] = [];
+  let nextUrl: string | undefined = initialUrl;
+
+  while (nextUrl) {
+    const response = await fetch(nextUrl, { headers });
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        throw Object.assign(new Error('Rate limited'), {
+          status: 429,
+          response,
+        });
+      }
+
+      return [];
+    }
+
+    const data = (await response.json()) as BitbucketPaginatedResponse<T>;
+    items.push(...(data?.values || []));
+    nextUrl = typeof data?.next === 'string' ? data.next : undefined;
+  }
+
+  return items;
 }

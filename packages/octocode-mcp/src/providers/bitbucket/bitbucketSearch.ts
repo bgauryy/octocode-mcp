@@ -14,6 +14,10 @@ import type {
   BitbucketRepository,
 } from '../../bitbucket/types.js';
 import {
+  formatBitbucketRepositoryIdentity,
+  getBitbucketRepositoryIdentity,
+} from '../../bitbucket/searchUtils.js';
+import {
   handleBitbucketAPIResponse,
   parseBitbucketProjectId,
 } from './utils.js';
@@ -29,25 +33,52 @@ function extractContextFromMatches(item: BitbucketCodeSearchItem): string {
   return lines.join('\n');
 }
 
+function parseRepositoryName(
+  item: BitbucketCodeSearchItem,
+  query: CodeSearchQuery
+): string {
+  if (query.projectId) {
+    return query.projectId;
+  }
+
+  return formatBitbucketRepositoryIdentity(
+    getBitbucketRepositoryIdentity(item)
+  );
+}
+
 export function transformCodeSearchResult(
   items: BitbucketCodeSearchItem[],
   query: CodeSearchQuery
 ): CodeSearchResult {
-  const transformedItems: CodeSearchItem[] = items.map(item => ({
-    path: item.file.path,
-    matches: [
-      {
-        context: extractContextFromMatches(item),
-        positions: [] as [number, number][],
+  const transformedItems: CodeSearchItem[] = items.map(item => {
+    const repositoryName = parseRepositoryName(item, query);
+
+    return {
+      path: item.file.path,
+      matches: [
+        {
+          context: extractContextFromMatches(item),
+          positions: [] as [number, number][],
+        },
+      ],
+      url: item.file.links?.self?.href || '',
+      repository: {
+        id: repositoryName,
+        name: repositoryName,
+        url: '',
       },
-    ],
-    url: item.file.links?.self?.href || '',
-    repository: {
-      id: '',
-      name: '',
-      url: '',
-    },
-  }));
+    };
+  });
+
+  const repositoryContext = query.projectId
+    ? (() => {
+        const parsed = parseBitbucketProjectId(query.projectId);
+        return {
+          owner: parsed.workspace,
+          repo: parsed.repoSlug,
+        };
+      })()
+    : undefined;
 
   return {
     items: transformedItems,
@@ -57,6 +88,7 @@ export function transformCodeSearchResult(
       totalPages: 1,
       hasMore: items.length === (query.limit || 20),
     },
+    repositoryContext,
   };
 }
 
@@ -132,6 +164,9 @@ export async function searchCode(
     workspace,
     repoSlug,
     searchQuery: query.keywords.join(' '),
+    path: query.path,
+    filename: query.filename,
+    extension: query.extension,
     page: query.page,
     limit: query.limit,
   });

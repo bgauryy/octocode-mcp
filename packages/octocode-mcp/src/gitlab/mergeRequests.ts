@@ -210,11 +210,20 @@ export async function getGitLabMRChanges(
   try {
     const gitlab = await getGitlab();
 
-    const changes = await gitlab.MergeRequests.showChanges(projectId, mrIid);
-    const changesData = changes as unknown as Record<string, unknown>;
+    const changes = (await (
+      gitlab.MergeRequests as unknown as {
+        allDiffs: (
+          projectId: number | string,
+          mrIid: number,
+          options?: { perPage?: number }
+        ) => Promise<unknown>;
+      }
+    ).allDiffs(projectId, mrIid, {
+      perPage: 100,
+    })) as unknown;
 
     return {
-      data: { changes: (changesData.changes as unknown[]) || [] },
+      data: { changes: Array.isArray(changes) ? changes : [] },
       status: 200,
     };
   } catch (error) {

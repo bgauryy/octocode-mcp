@@ -5,6 +5,24 @@
  */
 
 import type { ProviderResponse } from '../types.js';
+import type { GitLabAPIError, GitLabAPIResponse } from '../../gitlab/types.js';
+
+type GitLabRepoSortField =
+  | 'id'
+  | 'name'
+  | 'path'
+  | 'created_at'
+  | 'updated_at'
+  | 'last_activity_at'
+  | 'similarity'
+  | 'star_count';
+
+type GitLabMRState = 'opened' | 'closed' | 'merged' | 'all';
+
+interface HandleGitLabAPIResponseOptions {
+  stringifyError?: boolean;
+  noDataMessage?: string;
+}
 
 /**
  * Parse a unified projectId into GitLab format.
@@ -21,6 +39,35 @@ export function parseGitLabProjectId(projectId?: string): number | string {
   }
 
   return encodeURIComponent(projectId);
+}
+
+/**
+ * Map unified repo sort fields to GitLab sort fields.
+ */
+export function mapGitLabRepoSortField(
+  sort?: string
+): GitLabRepoSortField | undefined {
+  const mapping: Record<string, GitLabRepoSortField> = {
+    stars: 'star_count',
+    updated: 'updated_at',
+    created: 'created_at',
+  };
+
+  return sort ? mapping[sort] : undefined;
+}
+
+/**
+ * Map unified PR states to GitLab MR states.
+ */
+export function mapGitLabMRState(state?: string): GitLabMRState | undefined {
+  const mapping: Record<string, GitLabMRState> = {
+    open: 'opened',
+    closed: 'closed',
+    merged: 'merged',
+    all: 'all',
+  };
+
+  return state ? mapping[state] : undefined;
 }
 
 export function extractGitLabRateLimit(result: {
@@ -56,3 +103,43 @@ export function extractGitLabRateLimit(result: {
     retryAfter,
   };
 }
+
+/**
+ * Convert raw GitLab API responses into the shared provider response shape.
+ */
+export function handleGitLabAPIResponse<TData, TRaw>(
+  result: GitLabAPIResponse<TRaw>,
+  provider: 'gitlab',
+  transform: (data: TRaw) => TData,
+  options: HandleGitLabAPIResponseOptions = {}
+): ProviderResponse<TData> {
+  if ('error' in result && result.error) {
+    const errorMessage =
+      options.stringifyError || typeof result.error !== 'string'
+        ? String(result.error)
+        : result.error;
+
+    return {
+      error: errorMessage,
+      status: result.status || 500,
+      provider,
+      hints: 'hints' in result ? (result as GitLabAPIError).hints : undefined,
+      rateLimit: extractGitLabRateLimit(result as GitLabAPIError),
+    };
+  }
+
+  if (!('data' in result) || !result.data) {
+    return {
+      error: options.noDataMessage ?? 'No data returned from GitLab API',
+      status: 500,
+      provider,
+    };
+  }
+
+  return {
+    data: transform(result.data),
+    status: 'status' in result ? result.status : 200,
+    provider,
+  };
+}
+export type { GitLabRepoSortField, GitLabMRState };
