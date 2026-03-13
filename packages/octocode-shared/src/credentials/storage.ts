@@ -55,6 +55,7 @@ import {
   resolveTokenFull,
   type FullTokenResolution,
   type GhCliTokenGetter,
+  resolveTokenString,
 } from './tokenResolution.js';
 import {
   normalizeHostname,
@@ -415,6 +416,7 @@ export {
   resolveToken,
   resolveTokenWithRefresh,
   resolveTokenFull,
+  resolveTokenString,
   type ResolvedToken,
   type ResolvedTokenWithRefresh,
   type FullTokenResolution,

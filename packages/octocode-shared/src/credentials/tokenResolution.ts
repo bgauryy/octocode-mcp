@@ -238,3 +238,20 @@ export async function resolveTokenFull(options?: {
 
   return null;
 }
+
+/**
+ * Convenience wrapper that returns just the token string.
+ *
+ * Uses {@link resolveTokenFull} under the hood with the same priority chain:
+ *   env vars → stored credentials (with refresh) → gh CLI fallback
+ *
+ * @returns The resolved token string, or null if no token found
+ */
+export async function resolveTokenString(options?: {
+  hostname?: string;
+  clientId?: string;
+  getGhCliToken?: GhCliTokenGetter;
+}): Promise<string | null> {
+  const result = await resolveTokenFull(options);
+  return result?.token || null;
+}
