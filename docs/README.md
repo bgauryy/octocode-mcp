@@ -8,6 +8,7 @@
 |-----|---------|
 | [DEVELOPMENT_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md) | Monorepo setup, TDD, commands, agent guidelines |
 | [CONFIGURATION_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) | Env vars, `.octocoderc`, config examples |
+| [CONFIGURATION_STARTUP_RFC.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_STARTUP_RFC.md) | RFC for unifying runtime config, editor MCP config, and startup flows |
 | [TROUBLESHOOTING.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) | Common issues, auth, MCP connection |
 
 ## Package Docs

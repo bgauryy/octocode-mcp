@@ -94,6 +94,7 @@ describe('MCP Paths Utilities', () => {
 
       const result = getMCPConfigPath('vscode-roo');
       expect(result).toContain('rooveterinaryinc.roo-cline');
+      expect(result).toContain('mcp_settings.json');
     });
 
     it('should return windsurf config path', async () => {
@@ -347,6 +348,66 @@ describe('MCP Paths Utilities', () => {
         ...result.cli,
       ];
       expect(allClients.some(c => c.id === 'custom')).toBe(false);
+    });
+  });
+
+  describe('Cross-registry consistency (CLI ↔ VSCode contract)', () => {
+    /**
+     * The VSCode extension (extension.ts) hardcodes MCP client paths.
+     * These tests assert the CLI paths match, preventing future drift.
+     * If a path changes here, the VSCode extension must be updated too.
+     */
+
+    it('Roo Code path should use mcp_settings.json (matches VSCode extension)', async () => {
+      const { getMCPConfigPath } = await import('../../src/utils/mcp-paths.js');
+      const rooPath = getMCPConfigPath('vscode-roo');
+
+      expect(rooPath).toContain('rooveterinaryinc.roo-cline');
+      expect(rooPath).toContain('settings');
+      expect(rooPath).toMatch(/mcp_settings\.json$/);
+    });
+
+    it('Cline path should use cline_mcp_settings.json (matches VSCode extension)', async () => {
+      const { getMCPConfigPath } = await import('../../src/utils/mcp-paths.js');
+      const clinePath = getMCPConfigPath('vscode-cline');
+
+      expect(clinePath).toContain('saoudrizwan.claude-dev');
+      expect(clinePath).toContain('settings');
+      expect(clinePath).toMatch(/cline_mcp_settings\.json$/);
+    });
+
+    it('Cline and Roo should use different config filenames', async () => {
+      const { getMCPConfigPath } = await import('../../src/utils/mcp-paths.js');
+      const clinePath = getMCPConfigPath('vscode-cline');
+      const rooPath = getMCPConfigPath('vscode-roo');
+
+      const clineFile = clinePath.split('/').pop();
+      const rooFile = rooPath.split('/').pop();
+
+      expect(clineFile).not.toBe(rooFile);
+      expect(clineFile).toBe('cline_mcp_settings.json');
+      expect(rooFile).toBe('mcp_settings.json');
+    });
+
+    it('Trae path should match between CLI and VSCode contract', async () => {
+      const { getMCPConfigPath } = await import('../../src/utils/mcp-paths.js');
+      const traePath = getMCPConfigPath('trae');
+
+      expect(traePath).toMatch(/Trae.*mcp\.json$/);
+    });
+
+    it('VS Code extension clients (Cline, Roo) should resolve under globalStorage', async () => {
+      const { getMCPConfigPath } = await import('../../src/utils/mcp-paths.js');
+
+      const vsCodeExtensions: Array<Parameters<typeof getMCPConfigPath>[0]> = [
+        'vscode-cline',
+        'vscode-roo',
+      ];
+
+      for (const clientId of vsCodeExtensions) {
+        const p = getMCPConfigPath(clientId);
+        expect(p).toContain('globalStorage');
+      }
     });
   });
 });

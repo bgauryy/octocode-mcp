@@ -276,34 +276,57 @@ export function clearProviderInstance(
 // PROVIDER INITIALIZATION
 // ============================================================================
 
+export interface ProviderDiagnostic {
+  provider: string;
+  ok: boolean;
+  error?: string;
+}
+
+type ProviderClass = new (config?: ProviderConfig) => ICodeHostProvider;
+
+async function tryInitProvider(
+  name: ProviderType,
+  loader: () => Promise<Record<string, unknown>>,
+  key: string
+): Promise<ProviderDiagnostic> {
+  try {
+    const mod = await loader();
+    registerProvider(name, mod[key] as ProviderClass);
+    return { provider: name, ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(
+      `⚠️  ${name} provider failed to initialize: ${message}\n`
+    );
+    return { provider: name, ok: false, error: message };
+  }
+}
+
 /**
  * Initialize all providers.
  *
- * This function dynamically imports and registers all available providers.
- * Called during server startup.
+ * Dynamically imports and registers all available providers.
+ * Called during server startup. Returns diagnostics so callers can observe
+ * partial failures instead of having them silently swallowed.
  */
-export async function initializeProviders(): Promise<void> {
-  try {
-    const { GitHubProvider } = await import('./github/GitHubProvider.js');
-    registerProvider('github', GitHubProvider);
-  } catch {
-    // GitHub provider initialization failed - will be unavailable
-  }
-
-  try {
-    const { GitLabProvider } = await import('./gitlab/GitLabProvider.js');
-    registerProvider('gitlab', GitLabProvider);
-  } catch {
-    // GitLab provider is optional - don't fail if not available
-  }
-
-  try {
-    const { BitbucketProvider } =
-      await import('./bitbucket/BitbucketProvider.js');
-    registerProvider('bitbucket', BitbucketProvider);
-  } catch {
-    // Bitbucket provider is optional - don't fail if not available
-  }
+export async function initializeProviders(): Promise<ProviderDiagnostic[]> {
+  return Promise.all([
+    tryInitProvider(
+      'github',
+      () => import('./github/GitHubProvider.js'),
+      'GitHubProvider'
+    ),
+    tryInitProvider(
+      'gitlab',
+      () => import('./gitlab/GitLabProvider.js'),
+      'GitLabProvider'
+    ),
+    tryInitProvider(
+      'bitbucket',
+      () => import('./bitbucket/BitbucketProvider.js'),
+      'BitbucketProvider'
+    ),
+  ]);
 }
 
 // ============================================================================

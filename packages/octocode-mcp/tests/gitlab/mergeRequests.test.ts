@@ -38,7 +38,7 @@ describe('GitLab Merge Requests', () => {
     MergeRequests: {
       show: ReturnType<typeof vi.fn>;
       all: ReturnType<typeof vi.fn>;
-      showChanges: ReturnType<typeof vi.fn>;
+      allDiffs: ReturnType<typeof vi.fn>;
     };
     MergeRequestNotes: {
       all: ReturnType<typeof vi.fn>;
@@ -53,7 +53,7 @@ describe('GitLab Merge Requests', () => {
       MergeRequests: {
         show: vi.fn(),
         all: vi.fn(),
-        showChanges: vi.fn(),
+        allDiffs: vi.fn(),
       },
       MergeRequestNotes: {
         all: vi.fn(),
@@ -1026,32 +1026,30 @@ describe('GitLab Merge Requests', () => {
 
   describe('getGitLabMRChanges', () => {
     it('should fetch MR changes successfully', async () => {
-      const mockChanges = {
-        changes: [
-          {
-            old_path: 'src/file.ts',
-            new_path: 'src/file.ts',
-            a_mode: '100644',
-            b_mode: '100644',
-            diff: '@@ -1,5 +1,10 @@...',
-            new_file: false,
-            renamed_file: false,
-            deleted_file: false,
-          },
-          {
-            old_path: 'src/new-file.ts',
-            new_path: 'src/new-file.ts',
-            a_mode: '0',
-            b_mode: '100644',
-            diff: '+new file content',
-            new_file: true,
-            renamed_file: false,
-            deleted_file: false,
-          },
-        ],
-      };
+      const mockChanges = [
+        {
+          old_path: 'src/file.ts',
+          new_path: 'src/file.ts',
+          a_mode: '100644',
+          b_mode: '100644',
+          diff: '@@ -1,5 +1,10 @@...',
+          new_file: false,
+          renamed_file: false,
+          deleted_file: false,
+        },
+        {
+          old_path: 'src/new-file.ts',
+          new_path: 'src/new-file.ts',
+          a_mode: '0',
+          b_mode: '100644',
+          diff: '+new file content',
+          new_file: true,
+          renamed_file: false,
+          deleted_file: false,
+        },
+      ];
 
-      mockGitlab.MergeRequests.showChanges.mockResolvedValue(mockChanges);
+      mockGitlab.MergeRequests.allDiffs.mockResolvedValue(mockChanges);
 
       const result = await getGitLabMRChanges(123, 42);
 
@@ -1059,28 +1057,26 @@ describe('GitLab Merge Requests', () => {
       expect(result).toHaveProperty('status', 200);
       const data = (result as { data: { changes: unknown[] } }).data;
       expect(data.changes).toHaveLength(2);
-      expect(mockGitlab.MergeRequests.showChanges).toHaveBeenCalledWith(
-        123,
-        42
-      );
+      expect(mockGitlab.MergeRequests.allDiffs).toHaveBeenCalledWith(123, 42, {
+        perPage: 100,
+      });
     });
 
     it('should work with string projectId', async () => {
-      const mockChanges = { changes: [] };
-      mockGitlab.MergeRequests.showChanges.mockResolvedValue(mockChanges);
+      mockGitlab.MergeRequests.allDiffs.mockResolvedValue([]);
 
       const result = await getGitLabMRChanges('group/project', 42);
 
       expect(result).toHaveProperty('data');
-      expect(mockGitlab.MergeRequests.showChanges).toHaveBeenCalledWith(
+      expect(mockGitlab.MergeRequests.allDiffs).toHaveBeenCalledWith(
         'group/project',
-        42
+        42,
+        { perPage: 100 }
       );
     });
 
     it('should handle empty changes array', async () => {
-      const mockChanges = { changes: [] };
-      mockGitlab.MergeRequests.showChanges.mockResolvedValue(mockChanges);
+      mockGitlab.MergeRequests.allDiffs.mockResolvedValue([]);
 
       const result = await getGitLabMRChanges(123, 42);
 
@@ -1090,9 +1086,7 @@ describe('GitLab Merge Requests', () => {
     });
 
     it('should handle missing changes property in response', async () => {
-      // Some API responses might not have changes
-      const mockChanges = {};
-      mockGitlab.MergeRequests.showChanges.mockResolvedValue(mockChanges);
+      mockGitlab.MergeRequests.allDiffs.mockResolvedValue(undefined);
 
       const result = await getGitLabMRChanges(123, 42);
 
@@ -1103,7 +1097,7 @@ describe('GitLab Merge Requests', () => {
 
     it('should handle API errors', async () => {
       const apiError = new Error('Failed to fetch changes');
-      mockGitlab.MergeRequests.showChanges.mockRejectedValue(apiError);
+      mockGitlab.MergeRequests.allDiffs.mockRejectedValue(apiError);
       mockHandleGitLabAPIError.mockReturnValue({
         error: 'Failed to fetch changes',
         type: 'http',
@@ -1118,7 +1112,7 @@ describe('GitLab Merge Requests', () => {
 
     it('should handle MR not found errors', async () => {
       const notFoundError = new Error('MR not found');
-      mockGitlab.MergeRequests.showChanges.mockRejectedValue(notFoundError);
+      mockGitlab.MergeRequests.allDiffs.mockRejectedValue(notFoundError);
       mockHandleGitLabAPIError.mockReturnValue({
         error: 'Merge request not found',
         type: 'http',
@@ -1133,7 +1127,7 @@ describe('GitLab Merge Requests', () => {
 
     it('should handle large diff errors', async () => {
       const largeDiffError = new Error('Diff too large');
-      mockGitlab.MergeRequests.showChanges.mockRejectedValue(largeDiffError);
+      mockGitlab.MergeRequests.allDiffs.mockRejectedValue(largeDiffError);
       mockHandleGitLabAPIError.mockReturnValue({
         error: 'Diff too large to display',
         type: 'http',

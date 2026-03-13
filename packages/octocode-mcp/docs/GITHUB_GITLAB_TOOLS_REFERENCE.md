@@ -8,30 +8,30 @@
 
 ### GitHub
 
-| Variable | Description |
-|----------|-------------|
-| `GITHUB_TOKEN` | GitHub personal access token |
-| `OCTOCODE_TOKEN` | Octocode-specific token (highest priority) |
-| `GH_TOKEN` | GitHub CLI compatible token |
-| `GITHUB_API_URL` | Custom API URL for GitHub Enterprise |
-| `ENABLE_CLONE` | Enable `githubCloneRepo` and `githubGetFileContent` directory mode (requires `ENABLE_LOCAL=true`) |
+| Variable         | Description                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| `GITHUB_TOKEN`   | GitHub personal access token                                                                      |
+| `OCTOCODE_TOKEN` | Octocode-specific token (highest priority)                                                        |
+| `GH_TOKEN`       | GitHub CLI compatible token                                                                       |
+| `GITHUB_API_URL` | Custom API URL for GitHub Enterprise                                                              |
+| `ENABLE_CLONE`   | Enable `githubCloneRepo` and `githubGetFileContent` directory mode (requires `ENABLE_LOCAL=true`) |
 
 ### GitLab
 
-| Variable | Description |
-|----------|-------------|
-| `GITLAB_TOKEN` | GitLab personal access token |
-| `GL_TOKEN` | GitLab token (fallback) |
-| `GITLAB_HOST` | GitLab instance URL (default: `https://gitlab.com`) |
+| Variable       | Description                                         |
+| -------------- | --------------------------------------------------- |
+| `GITLAB_TOKEN` | GitLab personal access token                        |
+| `GL_TOKEN`     | GitLab token (fallback)                             |
+| `GITLAB_HOST`  | GitLab instance URL (default: `https://gitlab.com`) |
 
 ### Bitbucket
 
-| Variable | Description |
-|----------|-------------|
-| `BITBUCKET_TOKEN` | Bitbucket app password or OAuth token |
-| `BB_TOKEN` | Bitbucket token (fallback) |
-| `BITBUCKET_USERNAME` | Bitbucket username (enables Basic auth; omit for Bearer) |
-| `BITBUCKET_HOST` | Bitbucket API endpoint (default: `https://api.bitbucket.org/2.0`) |
+| Variable             | Description                                                       |
+| -------------------- | ----------------------------------------------------------------- |
+| `BITBUCKET_TOKEN`    | Bitbucket app password or OAuth token                             |
+| `BB_TOKEN`           | Bitbucket token (fallback)                                        |
+| `BITBUCKET_USERNAME` | Bitbucket username (enables Basic auth; omit for Bearer)          |
+| `BITBUCKET_HOST`     | Bitbucket API endpoint (default: `https://api.bitbucket.org/2.0`) |
 
 **Auto-detection:** Provider priority is **GitLab → Bitbucket → GitHub**. If `GITLAB_TOKEN` is set, GitLab is active. If `BITBUCKET_TOKEN` is set (and no GitLab token), Bitbucket is active. Otherwise GitHub is the default.
 
@@ -41,11 +41,11 @@
 
 Octocode MCP provides **7 tools** for external code research that work with **GitHub** (and most with **GitLab** and **Bitbucket**):
 
-| Category | Tools | Purpose |
-|----------|-------|---------|
-| **Search Tools** (3) | `githubSearchCode`, `githubSearchRepositories`, `githubSearchPullRequests` | Find code, repos, and PRs/MRs across providers |
-| **Content Tools** (3) | `githubGetFileContent`, `githubViewRepoStructure`, `githubCloneRepo` | Read files, browse trees, clone repos locally |
-| **Package Tools** (1) | `packageSearch` | Lookup NPM/PyPI packages → get repo URLs |
+| Category              | Tools                                                                      | Purpose                                        |
+| --------------------- | -------------------------------------------------------------------------- | ---------------------------------------------- |
+| **Search Tools** (3)  | `githubSearchCode`, `githubSearchRepositories`, `githubSearchPullRequests` | Find code, repos, and PRs/MRs across providers |
+| **Content Tools** (3) | `githubGetFileContent`, `githubViewRepoStructure`, `githubCloneRepo`       | Read files, browse trees, clone repos locally  |
+| **Package Tools** (1) | `packageSearch`                                                            | Lookup NPM/PyPI packages → get repo URLs       |
 
 ### Provider Selection
 
@@ -61,11 +61,11 @@ The active provider is determined by the **server configuration** (environment v
 
 Every tool query **requires** three research context fields:
 
-| Field | Description |
-|-------|-------------|
+| Field              | Description                                  |
+| ------------------ | -------------------------------------------- |
 | `mainResearchGoal` | High-level objective of the research session |
-| `researchGoal` | Specific goal for this particular query |
-| `reasoning` | Why this tool/query was chosen |
+| `researchGoal`     | Specific goal for this particular query      |
+| `reasoning`        | Why this tool/query was chosen               |
 
 These fields are required on **every query** for all GitHub/GitLab and package tools. They help track research intent and improve result quality.
 
@@ -75,25 +75,26 @@ These fields are required on **every query** for all GitHub/GitLab and package t
 
 Tools use unified parameters that map to provider-specific concepts:
 
-| Parameter | GitHub | GitLab | Bitbucket |
-|-----------|--------|--------|-----------|
-| `owner` | Organization / User | Group / Namespace | Workspace |
-| `repo` | Repository | Project Name | Repository Slug |
-| `owner` + `repo` | `owner/repo` | `group/project` (Project ID) | `workspace/repo_slug` |
-| `branch` | Branch Name | Ref (Branch/Tag) | Branch Name |
-| `prNumber` | Pull Request # | Merge Request IID | Pull Request ID |
+| Parameter        | GitHub              | GitLab                       | Bitbucket             |
+| ---------------- | ------------------- | ---------------------------- | --------------------- |
+| `owner`          | Organization / User | Group / Namespace            | Workspace             |
+| `repo`           | Repository          | Project Name                 | Repository Slug       |
+| `owner` + `repo` | `owner/repo`        | `group/project` (Project ID) | `workspace/repo_slug` |
+| `branch`         | Branch Name         | Ref (Branch/Tag)             | Branch Name           |
+| `prNumber`       | Pull Request #      | Merge Request IID            | Pull Request ID       |
 
 ### GitLab-Specific Notes
 
 1.  **Scope is Required**: You must provide `owner` and `repo` to target a specific project (e.g., `owner="my-group"`, `repo="my-project"`).
-2.  **`branch` is Recommended**: While `branch` is auto-detected for both providers, providing it explicitly is recommended for GitLab to avoid extra API calls.
+2.  **`branch` is Optional**: If you omit `branch`, Octocode uses GitLab's `HEAD` shorthand to read the default branch. Explicit refs are still better for reproducibility.
 3.  **Global Search**: GitLab global code search requires authentication and potentially Enterprise/Premium features. Scope to a project for best results.
 
 ### Bitbucket-Specific Notes
 
-1.  **Workspace Scope**: Code search is scoped to a Bitbucket workspace. Always provide `owner` (workspace). You can optionally add `repo` to narrow to a specific repository.
+1.  **Workspace Scope**: Code search is scoped to a Bitbucket workspace. Always provide `owner` (workspace). Add `repo` to narrow the provider query to a specific repository.
 2.  **No Star Counts**: Bitbucket does not expose star/watch counts. Repository search results will show `stars: 0`.
 3.  **PR States**: Bitbucket uses `OPEN`, `DECLINED`, `MERGED` — these are mapped automatically from the unified `open`/`closed`/`merged` states.
+4.  **Search Narrowing**: `repo` and `path` are pushed into the Bitbucket search query natively. `filename` and `extension` are narrowed after the provider response is returned.
 
 ---
 
@@ -101,37 +102,37 @@ Tools use unified parameters that map to provider-specific concepts:
 
 ### Search Tools
 
-| Tool | Description |
-|------|-------------|
-| **`githubSearchCode`** | Search for code patterns across repositories by keywords. Filter by file extension, filename, path, or match type (content vs path). |
-| **`githubSearchRepositories`** | Discover repositories by keywords or topics. Filter by stars, size, dates, and sort results. |
-| **`githubSearchPullRequests`** | Search pull requests/merge requests with extensive filters. Retrieve metadata, diffs, comments, and commits. |
+| Tool                           | Description                                                                                                                                      |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`githubSearchCode`**         | Search for code patterns across repositories by keywords. Filter by file extension, filename, path, or match type (content vs path).             |
+| **`githubSearchRepositories`** | Discover repositories by keywords or topics. Filter by stars, size, dates, and sort results.                                                     |
+| **`githubSearchPullRequests`** | Search pull requests/merge requests with extensive filters. Retrieve metadata, changed-file info, comments, and provider-supported diff details. |
 
 ### Content Tools
 
-| Tool | Description |
-|------|-------------|
-| **`githubGetFileContent`** | Read file content from repositories, or fetch an entire directory to disk (`type: "directory"`). Supports line ranges, string matching with context, and pagination for large files. Directory mode requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`, and is **GitHub only**. |
-| **`githubViewRepoStructure`** | Display directory tree structure of a repository. Configurable depth and pagination. |
-| **`githubCloneRepo`** | Clone a repository (or subdirectory) locally for deep analysis with local + LSP tools. **GitHub only.** Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`. |
+| Tool                          | Description                                                                                                                                                                                                                                                                       |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`githubGetFileContent`**    | Read file content from repositories, or fetch an entire directory to disk (`type: "directory"`). Supports line ranges, string matching with context, and pagination for large files. Directory mode requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`, and is **GitHub only**. |
+| **`githubViewRepoStructure`** | Display directory tree structure of a repository. Configurable depth and pagination.                                                                                                                                                                                              |
+| **`githubCloneRepo`**         | Clone a repository (or subdirectory) locally for deep analysis with local + LSP tools. **GitHub only.** Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.                                                                                                                     |
 
 ### Package Tools
 
-| Tool | Description |
-|------|-------------|
+| Tool                | Description                                                                                                       |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | **`packageSearch`** | Lookup NPM or Python packages to find repository URLs, version info, and metadata including deprecation warnings. |
 
 ### Quick Decision Guide
 
-| Question | Tool |
-|----------|------|
-| "Find code pattern across repos" | `githubSearchCode` |
-| "Find repositories about X" | `githubSearchRepositories` |
-| "Find PRs/MRs that changed X" | `githubSearchPullRequests` |
-| "Read file from repo" | `githubGetFileContent` |
-| "Browse repository structure" | `githubViewRepoStructure` |
-| "Clone repo for deep local analysis" | `githubCloneRepo` |
-| "Get repo URL for npm package" | `packageSearch` |
+| Question                             | Tool                       |
+| ------------------------------------ | -------------------------- |
+| "Find code pattern across repos"     | `githubSearchCode`         |
+| "Find repositories about X"          | `githubSearchRepositories` |
+| "Find PRs/MRs that changed X"        | `githubSearchPullRequests` |
+| "Read file from repo"                | `githubGetFileContent`     |
+| "Browse repository structure"        | `githubViewRepoStructure`  |
+| "Clone repo for deep local analysis" | `githubCloneRepo`          |
+| "Get repo URL for npm package"       | `packageSearch`            |
 
 ---
 
@@ -143,13 +144,14 @@ Tools for discovering code, repositories, and pull requests/merge requests.
 
 **What it does:** Search for code patterns using keywords across repositories.
 
-| Feature | GitHub | GitLab |
-|---------|--------|--------|
-| **Scope** | Global or per-repo | Per-project (Group + Project) |
+| Feature              | GitHub                          | GitLab                              |
+| -------------------- | ------------------------------- | ----------------------------------- |
+| **Scope**            | Global or per-repo              | Per-project (Group + Project)       |
 | **Pattern matching** | Keywords (1-5), partial matches | Keywords with path/filename filters |
-| **Project filter** | `owner` + `repo` | `owner` (Group) + `repo` (Project) |
+| **Project filter**   | `owner` + `repo`                | `owner` (Group) + `repo` (Project)  |
 
 **Key parameters:**
+
 - `keywordsToSearch` (required): Array of 1-5 search keywords
 - `owner`: User or organization / GitLab Group
 - `repo`: Specific repository / GitLab Project
@@ -176,6 +178,7 @@ owner="mygroup", repo="myproject", keywordsToSearch=["middleware"]
 **Response format:** Each file in the result contains `path`, `text_matches`, and `lastModifiedAt`. When all results come from the same repo, a `repositoryContext` with just the `branch` name is included (for follow-up calls to `githubGetFileContent`).
 
 **⚠️ Gotchas:**
+
 - Use 1-2 filters max. **Never combine** extension + filename + path together
 - `path` is a strict prefix: `pkg` finds `pkg/file`, NOT `parent/pkg/file`
 
@@ -185,12 +188,13 @@ owner="mygroup", repo="myproject", keywordsToSearch=["middleware"]
 
 **What it does:** Discover repositories/projects by keywords or topics.
 
-| Feature | GitHub | GitLab |
-|---------|--------|--------|
-| **Search modes** | Keywords, topics | Keywords, topics |
-| **Visibility** | Public (mostly) | Public/Internal/Private based on token |
+| Feature          | GitHub           | GitLab                                 |
+| ---------------- | ---------------- | -------------------------------------- |
+| **Search modes** | Keywords, topics | Keywords, topics                       |
+| **Visibility**   | Public (mostly)  | Public/Internal/Private based on token |
 
 **Key parameters:**
+
 - `keywordsToSearch`: Keywords to search in repos
 - `topicsToSearch`: Topics to filter by
 - `owner`: Filter by user or organization / GitLab Group
@@ -214,6 +218,7 @@ owner="wix-private", keywordsToSearch=["auth-service"]
 ```
 
 **⚠️ Gotchas:**
+
 - Check `pushedAt` (code change) > `updatedAt` (meta change) for activity
 - `stars >1000` filters noise but may hide new projects
 - Try synonyms: `auth` ↔ `authentication`, `plugin` ↔ `extension`
@@ -223,18 +228,19 @@ owner="wix-private", keywordsToSearch=["auth-service"]
 
 ### `githubSearchPullRequests`
 
-**What it does:** Search GitHub Pull Requests or GitLab Merge Requests with extensive filtering.
+**What it does:** Search GitHub Pull Requests, GitLab Merge Requests, or Bitbucket Pull Requests with extensive filtering.
 
-| Feature | GitHub (PRs) | GitLab (MRs) |
-|---------|--------------|--------------|
-| **Direct lookup** | `prNumber` | `prNumber` (maps to IID) |
-| **State values** | `open`, `closed` | `open`, `closed`, `merged`, `all` |
-| **Branch filters** | `head`, `base` | `source`, `target` |
+| Feature            | GitHub (PRs)     | GitLab (MRs)                      | Bitbucket (PRs)            |
+| ------------------ | ---------------- | --------------------------------- | -------------------------- |
+| **Direct lookup**  | `prNumber`       | `prNumber` (maps to IID)          | `prNumber`                 |
+| **State values**   | `open`, `closed` | `open`, `closed`, `merged`, `all` | `open`, `closed`, `merged` |
+| **Branch filters** | `head`, `base`   | `source`, `target`                | `source`, `target`         |
 
 **Key parameters:**
+
 - `prNumber`: Direct lookup (ignores all other filters). Maps to GitLab MR IID.
-- `owner`: User or organization / GitLab Group
-- `repo`: Repository name / GitLab Project
+- `owner`: User or organization / GitLab Group / Bitbucket Workspace
+- `repo`: Repository name / GitLab Project / Bitbucket Repository Slug
 - `query`: Free-text search
 - `state`: `open`, `closed`
 - `author`: User filter
@@ -248,12 +254,13 @@ owner="wix-private", keywordsToSearch=["auth-service"]
 - `order`: `asc` or `desc` (default: desc)
 - `type`: `metadata`, `fullContent`, `partialContent`
 - `withComments`: Include comments/notes
-- `withCommits`: Include commit list
+- `withCommits`: Include commit list (GitHub only today)
 - `partialContentMetadata`: Specific files to fetch diff for (`[{ file, additions?, deletions? }]`)
 - `limit`: Max results (default: 5, max: 10)
 - `page`: Page number (default: 1, max: 10)
 
 **Additional filters:**
+
 - `head`/`base`: Branch filters (source/target branch)
 - `commenter`/`involves`/`mentions`: User involvement filters
 - `review-requested`/`reviewed-by`: Review filters
@@ -264,11 +271,11 @@ owner="wix-private", keywordsToSearch=["auth-service"]
 
 **PR body auto-truncation:** PR body text is automatically truncated based on the `limit` (batch size) to save tokens:
 
-| Batch Size | Body Limit | Rationale |
-|------------|-----------|-----------|
-| `limit=1` | No truncation | Deep-dive intent |
-| `limit=2-3` | 2000 chars | Moderate exploration |
-| `limit=4+` | 800 chars | Batch scan |
+| Batch Size  | Body Limit    | Rationale            |
+| ----------- | ------------- | -------------------- |
+| `limit=1`   | No truncation | Deep-dive intent     |
+| `limit=2-3` | 2000 chars    | Moderate exploration |
+| `limit=4+`  | 800 chars     | Batch scan           |
 
 Truncated bodies include a hint with the PR number for requesting the full body.
 
@@ -284,19 +291,27 @@ owner="org", repo="app", state="closed", merged=true, query="authentication"
 # GitLab: Find MRs by state
 owner="group", repo="project", state="merged", author="johndoe"
 
+# Bitbucket: Inspect a PR with targeted file diffs
+owner="workspace", repo="repo", prNumber=123,
+type="partialContent", partialContentMetadata=[{file: "src/auth.ts"}]
+
 # Get PR with comments (understand WHY)
 prNumber=123, type="metadata", withComments=true, owner="org", repo="app"
 ```
 
 **Output pagination:**
+
 - `charOffset`/`charLength`: Character-based pagination for large responses
 - PRs with >30 file changes emit hints guiding you to use `type='partialContent'` with `partialContentMetadata` for targeted file diffs
 
 **⚠️ Gotchas:**
+
 - `prNumber` **ignores ALL other filters** when set
 - Use `type=metadata` first (fast), then `partialContent` for details
 - Avoid `fullContent` on large PRs (token expensive)
 - Set `withComments=true` to understand the reasoning behind changes
+- `withCommits` currently has full support on GitHub only
+- GitLab and Bitbucket expand changed-file metadata and diff selections only when the query is repository-scoped (`owner` + `repo`)
 
 ---
 
@@ -308,18 +323,19 @@ Tools for reading file content and browsing repository structure.
 
 **What it does:** Read file content from repositories with flexible extraction options, or fetch an entire directory to disk for local tool analysis.
 
-| Feature | GitHub | GitLab |
-|---------|--------|--------|
-| **Branch** | Optional (auto-detects default) | Optional (auto-detects default) |
-| **Identifier** | `owner` + `repo` + `path` | `owner` + `repo` + `path` |
-| **Directory fetch** | ✅ Supported (`type: "directory"`) | ❌ Not supported (GitHub only) |
-| **Clone to disk** | ✅ `githubCloneRepo` | ❌ Not supported (GitHub only) |
+| Feature             | GitHub                             | GitLab                          |
+| ------------------- | ---------------------------------- | ------------------------------- |
+| **Branch**          | Optional (auto-detects default)    | Optional (auto-detects default) |
+| **Identifier**      | `owner` + `repo` + `path`          | `owner` + `repo` + `path`       |
+| **Directory fetch** | ✅ Supported (`type: "directory"`) | ❌ Not supported (GitHub only)  |
+| **Clone to disk**   | ✅ `githubCloneRepo`               | ❌ Not supported (GitHub only)  |
 
 **Key parameters:**
+
 - `owner` (required): User or organization / GitLab Group
 - `repo` (required): Repository name / GitLab Project
 - `path` (required): File path or directory path in repository
-- `branch`: Branch name (optional — auto-detects default branch for both providers)
+- `branch`: Branch name (optional — GitHub auto-detects, GitLab uses `HEAD`, Bitbucket resolves the repo default branch)
 - `type`: `"file"` (default) or `"directory"` — controls fetch mode
 - `fullContent`: Read entire file (use sparingly, file mode only)
 - `startLine`/`endLine`: Line range (1-indexed, file mode only)
@@ -329,17 +345,19 @@ Tools for reading file content and browsing repository structure.
 
 **Fetch modes (choose ONE via `type`):**
 
-| Mode | `type` | What it does | Returns |
-|------|--------|-------------|---------|
-| **File** (default) | `"file"` | Read a single file with extraction options | Inline content |
-| **Directory** | `"directory"` | Fetch all files in a directory to disk | `localPath` for local tools |
+| Mode               | `type`        | What it does                               | Returns                     |
+| ------------------ | ------------- | ------------------------------------------ | --------------------------- |
+| **File** (default) | `"file"`      | Read a single file with extraction options | Inline content              |
+| **Directory**      | `"directory"` | Fetch all files in a directory to disk     | `localPath` for local tools |
 
 **File mode extraction (choose ONE):**
+
 1. `matchString` with context lines
 2. `startLine` + `endLine`
 3. `fullContent=true` (small configs only)
 
 **Directory mode details:**
+
 - **GitHub only** — returns an error if GitLab is the active provider (same restriction as `githubCloneRepo`)
 - **Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`** (same as `githubCloneRepo`)
 - Fetches all files via GitHub Contents API + `download_url` (no git required)
@@ -368,9 +386,13 @@ owner="facebook", repo="react", path="packages/react/src",
 type="directory", branch="main"
 # Returns localPath — use with localSearchCode, localGetFileContent, etc.
 
-# GitLab: Read file (branch recommended)
+# GitLab: Read file (explicit branch is clearer, but optional)
 owner="group", repo="project", path="src/main.ts",
 branch="main", matchString="export class"
+
+# Bitbucket: Read a focused section with pagination
+owner="workspace", repo="repo", path="src/main.ts",
+matchString="class AuthService", charLength=2000
 
 # Read entire config (small files only)
 path="package.json", fullContent=true, owner="org", repo="repo"
@@ -381,13 +403,14 @@ path="package.json", fullContent=true, owner="org", repo="repo"
 **Response format (directory mode):** Returns `localPath`, `owner`, `repo`, `branch`, `directoryPath`, `fileCount`, `totalSize`, `files`. Internal cache fields (`cached`, `expiresAt`) are not included. Clone-cache is never overwritten by directory fetch — if a git clone already exists, it is used as-is.
 
 **⚠️ Gotchas:**
+
 - Choose ONE mode: `matchString` OR `startLine/endLine` OR `fullContent` (file mode only)
 - When `type="directory"`: `startLine`, `endLine`, `matchString`, `charOffset`, `charLength` are rejected
 - **Directory mode is GitHub only** — returns an error with GitLab (use file mode instead)
 - **Directory mode requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`**
 - Max file size: 300KB (FILE_TOO_LARGE error)
 - Directory mode: max 50 files, max 5MB total, skips binary files
-- **GitLab REQUIRES `branch`** - unlike GitHub which auto-detects
+- GitLab uses the provider `HEAD` shorthand when `branch` is omitted; explicit refs are still better for reproducibility
 - For `branch`: Use NAME (e.g., `main`), not SHA
 - Prefer `matchString` for large files (token efficient)
 - Directory mode shares cache with `githubCloneRepo` — if a clone exists, it's reused (clone content is never downgraded)
@@ -398,21 +421,23 @@ path="package.json", fullContent=true, owner="org", repo="repo"
 
 **What it does:** Display the directory tree structure of a repository.
 
-| Feature | GitHub | GitLab |
-|---------|--------|--------|
-| **Identifier** | `owner` + `repo` + `branch` | `owner` + `repo` + `branch` |
-| **Depth control** | 1-2 levels | Recursive by default |
+| Feature           | GitHub                      | GitLab                      |
+| ----------------- | --------------------------- | --------------------------- |
+| **Identifier**    | `owner` + `repo` + `branch` | `owner` + `repo` + `branch` |
+| **Depth control** | 1-2 levels                  | Recursive by default        |
 
 **Key parameters:**
+
 - `owner` (required): User or organization / GitLab Group
 - `repo` (required): Repository name / GitLab Project
-- `branch`: Branch name (optional — auto-detects default branch for both providers)
+- `branch`: Branch name (optional — GitHub auto-detects, GitLab resolves the project default branch, Bitbucket resolves the repo default branch)
 - `path`: Starting path (default: root `""`)
 - `depth`: Traversal depth (1-2, default: 1)
 - `entriesPerPage`: Entries per page (default: 50, max: 200)
 - `entryPageNumber`: Page number (default: 1)
 
 **Exploration workflow:**
+
 1. Start at root: `path=""`, `depth=1`
 2. Drill into source: `path="src"`, `depth=2`
 3. Explore specific area: `path="packages/core"`, `depth=1`
@@ -434,6 +459,7 @@ owner="group", repo="project", branch="develop", path="src/api"
 ```
 
 **⚠️ Gotchas:**
+
 - Start at root (`path=""`, `depth=1`) first
 - `depth=2` is slow on large directories - use on subdirs only
 - For monorepos: Check `packages/`, `apps/`, `libs/`
@@ -448,14 +474,15 @@ owner="group", repo="project", branch="develop", path="src/api"
 
 > **GitHub only** — not available with GitLab or Bitbucket. Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
 
-| Feature | Description |
-|---------|-------------|
-| **Full clone** | Shallow `git clone --depth 1` of the entire repo |
-| **Partial fetch** | Sparse checkout of a single subdirectory (fast for monorepos) |
-| **Caching** | Cloned repos cached for **24 hours** under `~/.octocode/repos/` |
-| **After clone** | Returns `localPath` — pass it to local + LSP tools |
+| Feature           | Description                                                     |
+| ----------------- | --------------------------------------------------------------- |
+| **Full clone**    | Shallow `git clone --depth 1` of the entire repo                |
+| **Partial fetch** | Sparse checkout of a single subdirectory (fast for monorepos)   |
+| **Caching**       | Cloned repos cached for **24 hours** under `~/.octocode/repos/` |
+| **After clone**   | Returns `localPath` — pass it to local + LSP tools              |
 
 **Key parameters:**
+
 - `owner` (required): User or organization (max 200 chars)
 - `repo` (required): Repository name (max 150 chars)
 - `branch`: Branch to clone (max 255 chars). Omit to auto-detect the repo's default branch via the GitHub API (falls back to `main`)
@@ -463,12 +490,13 @@ owner="group", repo="project", branch="develop", path="src/api"
 
 **Two modes:**
 
-| Mode | When to use | Parameter |
-|------|-------------|-----------|
-| **Full clone** | General exploration, LSP needs full project context | _(default — omit `sparse_path`)_ |
-| **Partial fetch** | Large monorepo, only need a specific package/dir | `sparse_path="packages/core"` |
+| Mode              | When to use                                         | Parameter                        |
+| ----------------- | --------------------------------------------------- | -------------------------------- |
+| **Full clone**    | General exploration, LSP needs full project context | _(default — omit `sparse_path`)_ |
+| **Partial fetch** | Large monorepo, only need a specific package/dir    | `sparse_path="packages/core"`    |
 
 **Branch resolution:**
+
 - If `branch` is provided, that specific branch is cloned
 - If `branch` is **omitted**, the default branch is **auto-detected** via the GitHub API (falls back to `main`)
 - The resolved branch name is **always included** in the result (`branch` field) and the cache path
@@ -492,6 +520,7 @@ owner="microsoft", repo="TypeScript", sparse_path="src/compiler"
 ```
 
 **After cloning, use these tools on the returned `localPath`:**
+
 - `localSearchCode` — search code with ripgrep
 - `localGetFileContent` — read file content
 - `localViewStructure` — browse the directory tree
@@ -503,6 +532,7 @@ owner="microsoft", repo="TypeScript", sparse_path="src/compiler"
 **Response format:** Returns `owner`, `repo`, `branch`, `localPath`, and optionally `sparse_path`. Internal fields like `cached` and `expiresAt` are not included in the response.
 
 **⚠️ Gotchas:**
+
 - **GitHub only** — returns an error if GitLab or Bitbucket is the active provider
 - Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true` (both must be enabled)
 - Clone timeout: **2 minutes** for full clone, **30 seconds** for sparse checkout
@@ -520,14 +550,15 @@ owner="microsoft", repo="TypeScript", sparse_path="src/compiler"
 
 **What it does:** Lookup NPM or Python packages to find their source repositories.
 
-| Feature | Description |
-|---------|-------------|
-| **Ecosystems** | NPM (npm) and Python (PyPI) |
-| **Repository URL** | Get owner/repo for further exploration |
-| **Metadata** | Version, description, deprecation status |
-| **Alternatives** | Search for similar packages |
+| Feature            | Description                              |
+| ------------------ | ---------------------------------------- |
+| **Ecosystems**     | NPM (npm) and Python (PyPI)              |
+| **Repository URL** | Get owner/repo for further exploration   |
+| **Metadata**       | Version, description, deprecation status |
+| **Alternatives**   | Search for similar packages              |
 
 **Key parameters:**
+
 - `name` (required): Package name
 - `ecosystem` (required): `npm` or `python`
 - `searchLimit`: Number of results (default: 1, max: 10)
@@ -548,12 +579,14 @@ ecosystem="npm", name="lodash", searchLimit=5
 ```
 
 **⚠️ Gotchas:**
+
 - Use `searchLimit=1` for known package names
 - Python always returns 1 result (PyPI limitation)
 - NPM uses dashes (`my-package`), Python uses underscores (`my_package`)
 - Check DEPRECATED warnings first before using
 
 **vs GitHub/GitLab Search:**
+
 - `packageSearch`: Fast lookup by exact name → get repo URL
 - `githubSearchRepositories`: Broad discovery by keywords
 
@@ -570,6 +603,7 @@ packageSearch → githubViewRepoStructure → githubSearchCode → githubGetFile
 ```
 
 **Steps:**
+
 1. `packageSearch(name="express", ecosystem="npm")` → Get repo URL
 2. `githubViewRepoStructure(owner="expressjs", repo="express", depth=1)` → See structure
 3. `githubSearchCode(owner="expressjs", repo="express", keywordsToSearch=["middleware"])` → Find code
@@ -584,6 +618,7 @@ githubSearchCode → githubViewRepoStructure → githubGetFileContent
 ```
 
 **Steps:**
+
 1. `githubSearchCode(keywordsToSearch=["useReducer", "context"], extension="tsx")` → Find files
 2. `githubViewRepoStructure` on interesting repos → Understand layout
 3. `githubGetFileContent(matchString="useReducer")` → Read full implementation
@@ -597,6 +632,7 @@ githubSearchCode → githubSearchPullRequests → githubGetFileContent
 ```
 
 **Steps:**
+
 1. `githubSearchCode(owner="org", repo="app", keywordsToSearch=["deprecatedFunc"])` → Find code
 2. `githubSearchPullRequests(owner="org", repo="app", query="deprecatedFunc", merged=true)` → Find PRs
 3. `githubSearchPullRequests(prNumber=123, type="partialContent", withComments=true)` → Get details
@@ -610,6 +646,7 @@ githubViewRepoStructure → githubGetFileContent → githubSearchCode
 ```
 
 **Steps:**
+
 1. `githubViewRepoStructure(path="", depth=1)` → Root overview
 2. `githubGetFileContent(path="README.md", fullContent=true)` → Read docs
 3. `githubGetFileContent(path="package.json", fullContent=true)` → Check deps
@@ -625,6 +662,7 @@ githubSearchRepositories → githubViewRepoStructure → githubSearchCode → gi
 ```
 
 **Steps:**
+
 1. `githubSearchRepositories(topicsToSearch=["authentication"], stars=">500")` → Find projects
 2. `githubViewRepoStructure` on top results → Browse structure
 3. `githubSearchCode(keywordsToSearch=["oauth", "token"])` → Find implementations
@@ -639,6 +677,7 @@ githubSearchRepositories (gitlab) → githubViewRepoStructure → githubSearchCo
 ```
 
 **Steps:**
+
 1. **Ensure `GITLAB_TOKEN` is set.**
 2. `githubSearchRepositories(keywordsToSearch=["auth"])` → Find projects
 3. `githubViewRepoStructure(owner="group", repo="project", branch="main")` → See structure
@@ -654,6 +693,7 @@ githubCloneRepo → localSearchCode → lspGotoDefinition → lspCallHierarchy
 ```
 
 **Steps:**
+
 1. `githubCloneRepo(owner="vercel", repo="next.js", sparse_path="packages/next/src")` → Get `localPath`
 2. `localSearchCode(pattern="handleRequest", path=localPath)` → Find code + get `lineHint`
 3. `lspGotoDefinition(uri="file.ts", symbolName="handleRequest", lineHint=42)` → Jump to definition
@@ -667,24 +707,24 @@ githubCloneRepo → localSearchCode → lspGotoDefinition → lspCallHierarchy
 
 ### Tool Selection Guide
 
-| Question | Tool |
-|----------|------|
-| "Search code patterns" | `githubSearchCode` |
-| "Find repositories/projects about X" | `githubSearchRepositories` |
-| "Find PRs/MRs that changed X" | `githubSearchPullRequests` |
-| "Read file from repo" | `githubGetFileContent` |
-| "Browse repo directory tree" | `githubViewRepoStructure` |
-| "Clone repo for local + LSP analysis" | `githubCloneRepo` |
-| "Get repo URL for package X" | `packageSearch` |
+| Question                              | Tool                       |
+| ------------------------------------- | -------------------------- |
+| "Search code patterns"                | `githubSearchCode`         |
+| "Find repositories/projects about X"  | `githubSearchRepositories` |
+| "Find PRs/MRs that changed X"         | `githubSearchPullRequests` |
+| "Read file from repo"                 | `githubGetFileContent`     |
+| "Browse repo directory tree"          | `githubViewRepoStructure`  |
+| "Clone repo for local + LSP analysis" | `githubCloneRepo`          |
+| "Get repo URL for package X"          | `packageSearch`            |
 
 ### Provider vs Local Tools
 
-| Scenario | Use |
-|----------|-----|
-| Your codebase (files on disk) | **Local tools** + LSP |
-| External repos — quick browse/read | **GitHub/GitLab tools** |
+| Scenario                           | Use                                       |
+| ---------------------------------- | ----------------------------------------- |
+| Your codebase (files on disk)      | **Local tools** + LSP                     |
+| External repos — quick browse/read | **GitHub/GitLab tools**                   |
 | External repos — deep LSP analysis | `githubCloneRepo` → **Local tools** + LSP |
-| Found import, need source? | `packageSearch` → Provider tools |
+| Found import, need source?         | `packageSearch` → Provider tools          |
 
 **⚠️ Local code questions → NEVER use `github*` tools. Use `localSearchCode` → LSP.**
 
@@ -734,14 +774,14 @@ Avoid token-expensive operations until you know what you need.
 ✅ RIGHT: githubGetFileContent(matchString="function authenticate")
 ```
 
-### ⚠️ Rule 6: GitLab Requires `branch` for File Content
+### ⚠️ Rule 6: Prefer Explicit GitLab `branch` for File Content
 
 ```
-❌ WRONG (GitLab): githubGetFileContent(owner="g", repo="p", path="file.ts")
-✅ RIGHT (GitLab): githubGetFileContent(owner="g", repo="p", path="file.ts", branch="main")
+✅ BETTER (GitLab): githubGetFileContent(owner="g", repo="p", path="file.ts", branch="main")
+✅ ALSO VALID (GitLab): githubGetFileContent(owner="g", repo="p", path="file.ts")
 ```
 
-Unlike GitHub, GitLab does not auto-detect the default branch.
+GitLab now uses the provider `HEAD` shorthand when `branch` is omitted, so file reads still target the default branch without a separate lookup. Explicit refs are still better for reproducibility.
 
 ### ⚠️ Rule 7: GitLab Code Search Needs Scope
 
@@ -782,19 +822,19 @@ All GitHub/GitLab tool responses are optimized for LLM token efficiency:
 
 ## Anti-Patterns to Avoid
 
-| Anti-Pattern | Why It's Wrong | Correct Approach |
-|--------------|----------------|------------------|
-| Using provider tools for local code | Slower, less semantic | Use local + LSP tools |
-| Searching GitHub for known packages | Broad results | `packageSearch` first |
-| Too many filters in code search | API fails | Start with 1-2 filters |
-| `fullContent=true` on large files | Token waste | Use `matchString` |
-| `type=fullContent` for PRs | Token expensive | `metadata` → `partialContent` |
-| Ignoring `packageSearch` | Miss exact repo URL | Always check for packages |
-| GitLab without `branch` | API error | Always specify `branch` for GitLab file content |
-| GitLab code search without scope | API error | Specify `owner` and `repo` |
-| Cloning repo just to read one file | Slow, wastes disk | Use `githubGetFileContent` instead |
-| Cloning without `sparse_path` on monorepo | Downloads everything | Set `sparse_path` to the dir you need |
-| Using clone/directory fetch with GitLab/Bitbucket | Not supported, errors | Use `githubGetFileContent` file mode for GitLab/Bitbucket |
+| Anti-Pattern                                      | Why It's Wrong                  | Correct Approach                                          |
+| ------------------------------------------------- | ------------------------------- | --------------------------------------------------------- |
+| Using provider tools for local code               | Slower, less semantic           | Use local + LSP tools                                     |
+| Searching GitHub for known packages               | Broad results                   | `packageSearch` first                                     |
+| Too many filters in code search                   | API fails                       | Start with 1-2 filters                                    |
+| `fullContent=true` on large files                 | Token waste                     | Use `matchString`                                         |
+| `type=fullContent` for PRs                        | Token expensive                 | `metadata` → `partialContent`                             |
+| Ignoring `packageSearch`                          | Miss exact repo URL             | Always check for packages                                 |
+| GitLab without `branch`                           | Extra lookup, less reproducible | Prefer explicit `branch` for GitLab file content          |
+| GitLab code search without scope                  | API error                       | Specify `owner` and `repo`                                |
+| Cloning repo just to read one file                | Slow, wastes disk               | Use `githubGetFileContent` instead                        |
+| Cloning without `sparse_path` on monorepo         | Downloads everything            | Set `sparse_path` to the dir you need                     |
+| Using clone/directory fetch with GitLab/Bitbucket | Not supported, errors           | Use `githubGetFileContent` file mode for GitLab/Bitbucket |
 
 ---
 
@@ -816,5 +856,6 @@ Tools with no dependencies can run in parallel:
 ```
 
 **Batch limits:**
+
 - All GitHub/GitLab tools: Up to **3 queries** per call
 - Package search: Up to **3 queries** per call

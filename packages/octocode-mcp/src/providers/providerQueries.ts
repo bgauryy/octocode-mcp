@@ -59,7 +59,7 @@ export interface FileContentQuery extends BaseProviderQuery {
   projectId: string;
   /** File path within the repository */
   path: string;
-  /** Branch, tag, or commit reference (required for GitLab) */
+  /** Branch, tag, or commit reference. Omit to use the provider default branch when supported. */
   ref?: string;
   /** Start line number for partial content */
   startLine?: number;

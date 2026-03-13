@@ -23,8 +23,12 @@ import type {
   GitLabCodeSearchItem,
   GitLabProject,
 } from '../../gitlab/types.js';
-import { parseGitLabProjectId, extractGitLabRateLimit } from './utils.js';
-export { parseGitLabProjectId };
+import {
+  handleGitLabAPIResponse,
+  mapGitLabRepoSortField,
+  parseGitLabProjectId,
+} from './utils.js';
+export { mapGitLabRepoSortField as mapSortField, parseGitLabProjectId };
 
 interface GitLabPaginationData {
   currentPage?: number;
@@ -40,6 +44,11 @@ export function transformCodeSearchResult(
   items: GitLabCodeSearchItem[],
   query: CodeSearchQuery
 ): CodeSearchResult {
+  const repositoryName =
+    query.projectId && Number.isNaN(Number(query.projectId))
+      ? query.projectId
+      : undefined;
+
   const transformedItems: CodeSearchItem[] = items.map(item => ({
     path: item.path,
     matches: [
@@ -51,10 +60,18 @@ export function transformCodeSearchResult(
     url: '', // GitLab code search doesn't return URL directly
     repository: {
       id: String(item.project_id),
-      name: String(item.project_id),
+      name: repositoryName || String(item.project_id),
       url: '',
     },
   }));
+
+  const repositoryContext =
+    repositoryName && repositoryName.includes('/')
+      ? {
+          owner: repositoryName.substring(0, repositoryName.lastIndexOf('/')),
+          repo: repositoryName.substring(repositoryName.lastIndexOf('/') + 1),
+        }
+      : undefined;
 
   return {
     items: transformedItems,
@@ -64,6 +81,7 @@ export function transformCodeSearchResult(
       totalPages: 1,
       hasMore: items.length === (query.limit || 20),
     },
+    repositoryContext,
   };
 }
 
@@ -106,39 +124,6 @@ export function transformRepoSearchResult(
 }
 
 /**
- * Map sort field to GitLab format.
- */
-export function mapSortField(
-  sort?: string
-):
-  | 'id'
-  | 'name'
-  | 'path'
-  | 'created_at'
-  | 'updated_at'
-  | 'last_activity_at'
-  | 'similarity'
-  | 'star_count'
-  | undefined {
-  const mapping: Record<
-    string,
-    | 'id'
-    | 'name'
-    | 'path'
-    | 'created_at'
-    | 'updated_at'
-    | 'last_activity_at'
-    | 'similarity'
-    | 'star_count'
-  > = {
-    stars: 'star_count',
-    updated: 'updated_at',
-    created: 'created_at',
-  };
-  return sort ? mapping[sort] : undefined;
-}
-
-/**
  * Search code on GitLab.
  */
 export async function searchCode(
@@ -159,30 +144,9 @@ export async function searchCode(
   };
 
   const result = await searchGitLabCodeAPI(gitlabQuery);
-
-  if ('error' in result && result.error) {
-    return {
-      error: result.error,
-      status: result.status || 500,
-      provider: 'gitlab',
-      hints: 'hints' in result ? result.hints : undefined,
-      rateLimit: extractGitLabRateLimit(result),
-    };
-  }
-
-  if (!('data' in result) || !result.data) {
-    return {
-      error: 'No data returned from GitLab API',
-      status: 500,
-      provider: 'gitlab',
-    };
-  }
-
-  return {
-    data: transformCodeSearchResult(result.data.items, query),
-    status: 200,
-    provider: 'gitlab',
-  };
+  return handleGitLabAPIResponse(result, 'gitlab', data =>
+    transformCodeSearchResult(data.items, query)
+  );
 }
 /**
  * Search repositories on GitLab.
@@ -200,7 +164,7 @@ export async function searchRepos(
     | 'last_activity_at'
     | 'similarity'
     | 'star_count'
-    | undefined = mapSortField
+    | undefined = mapGitLabRepoSortField
 ): Promise<ProviderResponse<RepoSearchResult>> {
   const gitlabQuery = {
     search: query.keywords?.join(' '),
@@ -214,31 +178,7 @@ export async function searchRepos(
   };
 
   const result = await searchGitLabProjectsAPI(gitlabQuery);
-
-  if ('error' in result && result.error) {
-    return {
-      error: result.error,
-      status: result.status || 500,
-      provider: 'gitlab',
-      hints: 'hints' in result ? result.hints : undefined,
-      rateLimit: extractGitLabRateLimit(result),
-    };
-  }
-
-  if (!('data' in result) || !result.data) {
-    return {
-      error: 'No data returned from GitLab API',
-      status: 500,
-      provider: 'gitlab',
-    };
-  }
-
-  return {
-    data: transformRepoSearchResult(
-      result.data.projects,
-      result.data.pagination
-    ),
-    status: 200,
-    provider: 'gitlab',
-  };
+  return handleGitLabAPIResponse(result, 'gitlab', data =>
+    transformRepoSearchResult(data.projects, data.pagination)
+  );
 }

@@ -2,12 +2,15 @@
  * Bitbucket configuration module.
  * Handles Bitbucket token resolution and host configuration.
  */
+import { getConfigSync } from 'octocode-shared';
 import type { BitbucketConfig, BitbucketTokenSourceType } from './types.js';
 
 interface BitbucketTokenResolutionResult {
   token: string | null;
   source: BitbucketTokenSourceType;
 }
+
+const DEFAULT_BITBUCKET_HOST = 'https://api.bitbucket.org/2.0';
 
 /**
  * Resolve Bitbucket token from environment variables.
@@ -27,11 +30,24 @@ function resolveBitbucketToken(): BitbucketTokenResolutionResult {
   return { token: null, source: 'none' };
 }
 
+function resolveBitbucketHost(): string {
+  const envHost = process.env.BITBUCKET_HOST?.trim();
+  if (envHost) {
+    return envHost;
+  }
+
+  return getConfigSync().bitbucket.host || DEFAULT_BITBUCKET_HOST;
+}
+
+/**
+ * Resolve Bitbucket configuration from environment variables and global config.
+ * Priority: env vars > ~/.octocode/.octocoderc > hardcoded defaults
+ */
 function resolveBitbucketConfig(): BitbucketConfig {
   const tokenResult = resolveBitbucketToken();
 
   return {
-    host: process.env.BITBUCKET_HOST?.trim() || 'https://api.bitbucket.org/2.0',
+    host: resolveBitbucketHost(),
     token: tokenResult.token,
     username: process.env.BITBUCKET_USERNAME?.trim() || null,
     tokenSource: tokenResult.source,
@@ -47,8 +63,12 @@ export function getBitbucketToken(): string | null {
   return resolveBitbucketToken().token;
 }
 
+/**
+ * Get the Bitbucket host URL.
+ * Priority: env var > config file > default
+ */
 export function getBitbucketHost(): string {
-  return process.env.BITBUCKET_HOST?.trim() || 'https://api.bitbucket.org/2.0';
+  return resolveBitbucketHost();
 }
 
 export function getBitbucketUsername(): string | null {

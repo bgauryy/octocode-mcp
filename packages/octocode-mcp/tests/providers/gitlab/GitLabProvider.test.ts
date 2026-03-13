@@ -1,10 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GitLabProvider } from '../../../src/providers/gitlab/GitLabProvider.js';
 import { searchGitLabCodeAPI } from '../../../src/gitlab/codeSearch.js';
-import {
-  fetchGitLabFileContentAPI,
-  getGitLabDefaultBranch,
-} from '../../../src/gitlab/fileContent.js';
+import { fetchGitLabFileContentAPI } from '../../../src/gitlab/fileContent.js';
 import { searchGitLabProjectsAPI } from '../../../src/gitlab/projectsSearch.js';
 import {
   searchGitLabMergeRequestsAPI,
@@ -442,9 +439,7 @@ describe('GitLabProvider', () => {
         expect(result.data!.lastCommitSha).toBe('lastcommit123');
       });
 
-      it('should get default branch when ref not provided', async () => {
-        vi.mocked(getGitLabDefaultBranch).mockResolvedValue('develop');
-
+      it('should use HEAD when ref is not provided', async () => {
         const mockApiResponse = {
           data: {
             file_name: 'test.ts',
@@ -453,7 +448,7 @@ describe('GitLabProvider', () => {
             encoding: 'utf-8',
             content: 'test',
             content_sha256: 'sha',
-            ref: 'develop',
+            ref: 'HEAD',
             blob_id: 'blob',
             commit_id: 'commit',
             last_commit_id: 'last',
@@ -471,10 +466,9 @@ describe('GitLabProvider', () => {
 
         await provider.getFileContent(query);
 
-        expect(getGitLabDefaultBranch).toHaveBeenCalledWith(123);
         expect(fetchGitLabFileContentAPI).toHaveBeenCalledWith(
           expect.objectContaining({
-            ref: 'develop',
+            ref: 'HEAD',
           })
         );
       });

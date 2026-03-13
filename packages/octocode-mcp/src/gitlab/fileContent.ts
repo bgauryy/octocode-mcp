@@ -2,7 +2,7 @@
  * GitLab File Content
  *
  * Fetch file content from GitLab repositories.
- * Note: `ref` parameter is REQUIRED for GitLab (unlike GitHub).
+ * When `ref` is omitted, GitLab's `HEAD` shorthand targets the default branch.
  *
  * @module gitlab/fileContent
  */
@@ -44,16 +44,7 @@ export async function fetchGitLabFileContentAPI(
     return createGitLabError('File path is required', 400);
   }
 
-  if (!params.ref) {
-    return createGitLabError(
-      'Reference (ref) is required for GitLab file content',
-      400,
-      [
-        'Unlike GitHub, GitLab requires an explicit branch, tag, or commit reference.',
-        'Use the default branch name (e.g., "main" or "master") or a specific ref.',
-      ]
-    );
-  }
+  const ref = params.ref || 'HEAD';
 
   // Generate cache key
   const cacheKey = generateCacheKey(
@@ -61,14 +52,14 @@ export async function fetchGitLabFileContentAPI(
     {
       projectId: params.projectId,
       path: params.path,
-      ref: params.ref,
+      ref,
     },
     sessionId
   );
 
   return withDataCache<GitLabAPIResponse<GitLabFileContent>>(
     cacheKey,
-    async () => fetchGitLabFileContentAPIInternal(params),
+    async () => fetchGitLabFileContentAPIInternal({ ...params, ref }),
     {
       shouldCache: value => 'data' in value && !('error' in value),
     }
@@ -80,6 +71,7 @@ async function fetchGitLabFileContentAPIInternal(
 ): Promise<GitLabAPIResponse<GitLabFileContent>> {
   try {
     const gitlab = await getGitlab();
+    const ref = params.ref || 'HEAD';
 
     // URL-encode the file path as required by GitLab API
     const encodedPath = encodeURIComponent(params.path);
@@ -88,7 +80,7 @@ async function fetchGitLabFileContentAPIInternal(
     const file = (await gitlab.RepositoryFiles.show(
       params.projectId,
       encodedPath,
-      params.ref
+      ref
     )) as unknown as Record<string, unknown>;
 
     // Decode base64 content
@@ -113,7 +105,7 @@ async function fetchGitLabFileContentAPIInternal(
         encoding: 'utf-8', // We decoded it
         content,
         content_sha256: String(file.content_sha256 || ''),
-        ref: String(file.ref || ''),
+        ref: String(file.ref || ref),
         blob_id: String(file.blob_id || ''),
         commit_id: String(file.commit_id || ''),
         last_commit_id: String(file.last_commit_id || ''),

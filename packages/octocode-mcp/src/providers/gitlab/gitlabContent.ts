@@ -12,15 +12,13 @@ import type {
   FileContentResult,
 } from '../types.js';
 
-import {
-  fetchGitLabFileContentAPI,
-  getGitLabDefaultBranch,
-} from '../../gitlab/fileContent.js';
+import { fetchGitLabFileContentAPI } from '../../gitlab/fileContent.js';
 import type {
   GitLabFileContentQuery,
   GitLabFileContent,
 } from '../../gitlab/types.js';
-import { parseGitLabProjectId, extractGitLabRateLimit } from './utils.js';
+import { handleGitLabAPIResponse, parseGitLabProjectId } from './utils.js';
+import { extractFileContent } from '../contentExtraction.js';
 export { parseGitLabProjectId };
 
 /**
@@ -30,9 +28,11 @@ export function transformFileContentResult(
   data: GitLabFileContent,
   query: FileContentQuery
 ): FileContentResult {
+  const extracted = extractFileContent(data.content || '', query);
+
   return {
     path: data.file_path || query.path,
-    content: data.content || '',
+    content: extracted.content,
     encoding: (data.encoding === 'base64' ? 'base64' : 'utf-8') as
       | 'utf-8'
       | 'base64',
@@ -40,10 +40,10 @@ export function transformFileContentResult(
     ref: data.ref || query.ref || '',
     lastCommitSha: data.last_commit_id,
     lastModifiedBy: undefined, // GitLab doesn't provide this in file content API
-    pagination: undefined, // GitLab file content doesn't support pagination
-    isPartial: query.startLine !== undefined || query.endLine !== undefined,
-    startLine: query.startLine,
-    endLine: query.endLine,
+    pagination: extracted.pagination,
+    isPartial: extracted.isPartial,
+    startLine: extracted.startLine,
+    endLine: extracted.endLine,
   };
 }
 
@@ -56,44 +56,19 @@ export async function getFileContent(
 ): Promise<ProviderResponse<FileContentResult>> {
   const projectId = parseProjectId(query.projectId);
 
-  // If no ref provided, fetch default branch
-  let ref = query.ref;
-  if (!ref) {
-    ref = await getGitLabDefaultBranch(projectId);
-  }
-
   const gitlabQuery: GitLabFileContentQuery = {
     projectId,
     path: query.path,
-    ref,
+    ref: query.ref || 'HEAD',
     startLine: query.startLine,
     endLine: query.endLine,
   };
 
   const result = await fetchGitLabFileContentAPI(gitlabQuery);
-
-  if ('error' in result && result.error) {
-    return {
-      error:
-        typeof result.error === 'string' ? result.error : String(result.error),
-      status: result.status || 500,
-      provider: 'gitlab',
-      hints: 'hints' in result ? result.hints : undefined,
-      rateLimit: extractGitLabRateLimit(result),
-    };
-  }
-
-  if (!('data' in result) || !result.data) {
-    return {
-      error: 'No data returned from GitLab API',
-      status: 500,
-      provider: 'gitlab',
-    };
-  }
-
-  return {
-    data: transformFileContentResult(result.data, query),
-    status: 200,
-    provider: 'gitlab',
-  };
+  return handleGitLabAPIResponse(
+    result,
+    'gitlab',
+    data => transformFileContentResult(data, query),
+    { stringifyError: true }
+  );
 }

@@ -142,6 +142,89 @@ describe('searchBitbucketCodeAPI', () => {
     expect(data.items).toHaveLength(1);
   });
 
+  it('should handle repoSlug filtering against Bitbucket API self links', async () => {
+    mockGET.mockResolvedValue({
+      data: {
+        values: [
+          {
+            type: 'code_search_result',
+            content_matches: [],
+            file: {
+              path: 'lib/utils.ts',
+              type: 'commit_file',
+              links: {
+                self: {
+                  href: 'https://api.bitbucket.org/2.0/repositories/ws/target-repo/src/main/lib/utils.ts',
+                },
+              },
+            },
+          },
+          {
+            type: 'code_search_result',
+            content_matches: [],
+            file: {
+              path: 'lib/other.ts',
+              type: 'commit_file',
+              links: {
+                self: {
+                  href: 'https://api.bitbucket.org/2.0/repositories/ws/other-repo/src/main/lib/other.ts',
+                },
+              },
+            },
+          },
+        ],
+        size: 2,
+        page: 1,
+      },
+    });
+
+    const result = await searchBitbucketCodeAPI({
+      workspace: 'myws',
+      repoSlug: 'target-repo',
+      searchQuery: 'utils',
+    });
+
+    const data = (
+      result as { data: { items: Array<{ file: { path: string } }> } }
+    ).data;
+    expect(data.items).toHaveLength(1);
+    expect(data.items[0]!.file.path).toBe('lib/utils.ts');
+  });
+
+  it('should use provider-native repo and path modifiers in the search query', async () => {
+    mockGET.mockResolvedValue({
+      data: { values: [], size: 0 },
+    });
+
+    await searchBitbucketCodeAPI({
+      workspace: 'myws',
+      repoSlug: 'target-repo',
+      path: 'src/services',
+      searchQuery: 'authenticate',
+    });
+
+    expect(mockGET).toHaveBeenCalledWith(
+      '/workspaces/{workspace}/search/code',
+      expect.objectContaining({
+        params: expect.objectContaining({
+          query: expect.objectContaining({
+            search_query: expect.stringContaining('repo:target-repo'),
+          }),
+        }),
+      })
+    );
+    expect(mockGET).toHaveBeenCalledWith(
+      '/workspaces/{workspace}/search/code',
+      expect.objectContaining({
+        params: expect.objectContaining({
+          query: expect.objectContaining({
+            search_query: expect.stringContaining('path:"src/services"'),
+          }),
+        }),
+      })
+    );
+  });
+
   it('should handle API errors', async () => {
     mockGET.mockRejectedValue(
       Object.assign(new Error('Not Found'), { status: 404 })

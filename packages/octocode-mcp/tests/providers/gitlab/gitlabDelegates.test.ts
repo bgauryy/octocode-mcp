@@ -33,7 +33,6 @@ import type {
 // Mock GitLab API functions
 vi.mock('../../../src/gitlab/fileContent.js', () => ({
   fetchGitLabFileContentAPI: vi.fn(),
-  getGitLabDefaultBranch: vi.fn(),
 }));
 
 vi.mock('../../../src/gitlab/repoStructure.js', () => ({
@@ -51,22 +50,20 @@ vi.mock('../../../src/gitlab/projectsSearch.js', () => ({
 vi.mock('../../../src/gitlab/mergeRequests.js', () => ({
   searchGitLabMergeRequestsAPI: vi.fn(),
   getGitLabMRNotes: vi.fn(),
+  getGitLabMRChanges: vi.fn(),
 }));
 
-import {
-  fetchGitLabFileContentAPI,
-  getGitLabDefaultBranch,
-} from '../../../src/gitlab/fileContent.js';
+import { fetchGitLabFileContentAPI } from '../../../src/gitlab/fileContent.js';
 import { viewGitLabRepositoryStructureAPI } from '../../../src/gitlab/repoStructure.js';
 import { searchGitLabCodeAPI } from '../../../src/gitlab/codeSearch.js';
 import { searchGitLabProjectsAPI } from '../../../src/gitlab/projectsSearch.js';
 import {
   searchGitLabMergeRequestsAPI,
   getGitLabMRNotes,
+  getGitLabMRChanges,
 } from '../../../src/gitlab/mergeRequests.js';
 
 const mockFetchGitLabFileContentAPI = vi.mocked(fetchGitLabFileContentAPI);
-const mockGetGitLabDefaultBranch = vi.mocked(getGitLabDefaultBranch);
 const mockViewGitLabRepositoryStructureAPI = vi.mocked(
   viewGitLabRepositoryStructureAPI
 );
@@ -76,6 +73,7 @@ const mockSearchGitLabMergeRequestsAPI = vi.mocked(
   searchGitLabMergeRequestsAPI
 );
 const mockGetGitLabMRNotes = vi.mocked(getGitLabMRNotes);
+const mockGetGitLabMRChanges = vi.mocked(getGitLabMRChanges);
 
 describe('GitLab Provider Delegates', () => {
   beforeEach(() => {
@@ -171,12 +169,12 @@ describe('GitLab Provider Delegates', () => {
         const query: FileContentQuery = {
           projectId: '123',
           path: 'test.ts',
-          startLine: 10,
+          startLine: 2,
         };
         const data = {
           file_path: 'test.ts',
-          content: 'content',
-          size: 7,
+          content: 'line1\nline2',
+          size: 11,
         };
         const result = transformFileContentResult(data as any, query);
         expect(result.isPartial).toBe(true);
@@ -196,17 +194,60 @@ describe('GitLab Provider Delegates', () => {
         const result = transformFileContentResult(data as any, query);
         expect(result.isPartial).toBe(true);
       });
+
+      it('should prioritize matchString extraction over line ranges', () => {
+        const query: FileContentQuery = {
+          projectId: '123',
+          path: 'test.ts',
+          startLine: 1,
+          endLine: 2,
+          matchString: 'TARGET',
+          matchStringContextLines: 1,
+        };
+        const data = {
+          file_path: 'test.ts',
+          content: ['alpha', 'beta', 'target line', 'delta', 'epsilon'].join(
+            '\n'
+          ),
+          size: 32,
+        };
+        const result = transformFileContentResult(data as any, query);
+        expect(result.content).toBe('beta\ntarget line\ndelta');
+        expect(result.startLine).toBe(2);
+        expect(result.endLine).toBe(4);
+      });
+
+      it('should paginate extracted content by character offsets', () => {
+        const query: FileContentQuery = {
+          projectId: '123',
+          path: 'test.ts',
+          charOffset: 4,
+          charLength: 6,
+        };
+        const data = {
+          file_path: 'test.ts',
+          content: '0123456789abcdef',
+          size: 16,
+        };
+        const result = transformFileContentResult(data as any, query);
+        expect(result.content).toBe('456789');
+        expect(result.pagination).toMatchObject({
+          charOffset: 4,
+          charLength: 6,
+          totalChars: 16,
+          hasMore: true,
+        });
+      });
     });
 
     describe('getFileContent', () => {
-      it('should fetch default branch when ref is not provided', async () => {
-        mockGetGitLabDefaultBranch.mockResolvedValue('main');
+      it('should use HEAD when ref is not provided', async () => {
         mockFetchGitLabFileContentAPI.mockResolvedValue({
           data: {
             file_path: 'test.ts',
             content: 'content',
             size: 7,
-            ref: 'main',
+            ref: 'HEAD',
           } as any,
         } as any);
 
@@ -216,9 +257,8 @@ describe('GitLab Provider Delegates', () => {
         };
         await getFileContent(query);
 
-        expect(mockGetGitLabDefaultBranch).toHaveBeenCalledWith(123);
         expect(mockFetchGitLabFileContentAPI).toHaveBeenCalledWith(
-          expect.objectContaining({ ref: 'main' })
+          expect.objectContaining({ ref: 'HEAD' })
         );
       });
 
@@ -239,14 +279,12 @@ describe('GitLab Provider Delegates', () => {
         };
         await getFileContent(query);
 
-        expect(mockGetGitLabDefaultBranch).not.toHaveBeenCalled();
         expect(mockFetchGitLabFileContentAPI).toHaveBeenCalledWith(
           expect.objectContaining({ ref: 'develop' })
         );
       });
 
       it('should return error when API returns error', async () => {
-        mockGetGitLabDefaultBranch.mockResolvedValue('main');
         mockFetchGitLabFileContentAPI.mockResolvedValue({
           error: 'File not found',
           status: 404,
@@ -265,7 +303,6 @@ describe('GitLab Provider Delegates', () => {
       });
 
       it('should handle error with object toString', async () => {
-        mockGetGitLabDefaultBranch.mockResolvedValue('main');
         const errorObj = {
           toString: () => 'Object error',
         };
@@ -285,7 +322,6 @@ describe('GitLab Provider Delegates', () => {
       });
 
       it('should return 500 error when API returns no data', async () => {
-        mockGetGitLabDefaultBranch.mockResolvedValue('main');
         mockFetchGitLabFileContentAPI.mockResolvedValue({
           status: 200,
         } as any);
@@ -301,7 +337,6 @@ describe('GitLab Provider Delegates', () => {
       });
 
       it('should return 500 error when data is null', async () => {
-        mockGetGitLabDefaultBranch.mockResolvedValue('main');
         mockFetchGitLabFileContentAPI.mockResolvedValue({
           data: null,
           status: 200,
@@ -318,7 +353,6 @@ describe('GitLab Provider Delegates', () => {
       });
 
       it('should return success when API returns data', async () => {
-        mockGetGitLabDefaultBranch.mockResolvedValue('main');
         mockFetchGitLabFileContentAPI.mockResolvedValue({
           data: {
             file_path: 'test.ts',
@@ -395,8 +429,7 @@ describe('GitLab Provider Delegates', () => {
         };
         const result = await getRepoStructure(query);
 
-        // gitlabStructure passes the error through as-is (it's the raw error object)
-        expect(result.error).toBe(errorObj);
+        expect(result.error).toBe('Object error');
         expect(result.status).toBe(500);
       });
 
@@ -1131,6 +1164,128 @@ describe('GitLab Provider Delegates', () => {
         expect(result.data).toBeDefined();
         expect(mockGetGitLabMRNotes).toHaveBeenCalledWith(123, 1);
         expect(result.data?.items[0]?.comments).toHaveLength(1);
+      });
+
+      it('should fetch MR changes for metadata mode and expose file changes', async () => {
+        mockSearchGitLabMergeRequestsAPI.mockResolvedValue({
+          data: {
+            mergeRequests: [
+              {
+                iid: 1,
+                title: 'Test MR',
+                web_url: 'https://gitlab.com/group/project/-/merge_requests/1',
+                state: 'opened',
+                source_branch: 'feature',
+                target_branch: 'main',
+                created_at: '2024-01-01T10:00:00Z',
+                updated_at: '2024-01-01T10:00:00Z',
+              } as any,
+            ],
+            pagination: {
+              currentPage: 1,
+              totalPages: 1,
+              hasMore: false,
+            } as any,
+          },
+        } as any);
+
+        mockGetGitLabMRChanges.mockResolvedValue({
+          data: {
+            changes: [
+              {
+                old_path: 'src/app.ts',
+                new_path: 'src/app.ts',
+                diff: '@@ -1 +1,2 @@\n-old\n+new\n+again',
+                new_file: false,
+                renamed_file: false,
+                deleted_file: false,
+              },
+            ],
+          },
+          status: 200,
+        } as any);
+
+        const result = await searchPullRequests({
+          projectId: '123',
+          type: 'metadata',
+        });
+
+        expect(mockGetGitLabMRChanges).toHaveBeenCalledWith(123, 1);
+        expect(result.data?.items[0]?.changedFilesCount).toBe(1);
+        expect(result.data?.items[0]?.additions).toBe(2);
+        expect(result.data?.items[0]?.deletions).toBe(1);
+        expect(result.data?.items[0]?.fileChanges).toEqual([
+          {
+            path: 'src/app.ts',
+            status: 'modified',
+            additions: 2,
+            deletions: 1,
+            patch: undefined,
+          },
+        ]);
+      });
+
+      it('should filter MR file changes for partialContent mode', async () => {
+        mockSearchGitLabMergeRequestsAPI.mockResolvedValue({
+          data: {
+            mergeRequests: [
+              {
+                iid: 1,
+                title: 'Test MR',
+                web_url: 'https://gitlab.com/group/project/-/merge_requests/1',
+                state: 'opened',
+                source_branch: 'feature',
+                target_branch: 'main',
+                created_at: '2024-01-01T10:00:00Z',
+                updated_at: '2024-01-01T10:00:00Z',
+              } as any,
+            ],
+            pagination: {
+              currentPage: 1,
+              totalPages: 1,
+              hasMore: false,
+            } as any,
+          },
+        } as any);
+
+        mockGetGitLabMRChanges.mockResolvedValue({
+          data: {
+            changes: [
+              {
+                old_path: 'src/app.ts',
+                new_path: 'src/app.ts',
+                diff: '@@ -10 +10,2 @@\n-old\n+new\n+again',
+                new_file: false,
+                renamed_file: false,
+                deleted_file: false,
+              },
+              {
+                old_path: 'src/ignore.ts',
+                new_path: 'src/ignore.ts',
+                diff: '@@ -1 +1 @@\n-old\n+new',
+                new_file: false,
+                renamed_file: false,
+                deleted_file: false,
+              },
+            ],
+          },
+          status: 200,
+        } as any);
+
+        const result = await searchPullRequests({
+          projectId: '123',
+          type: 'partialContent',
+          partialContentMetadata: [{ file: 'src/app.ts', additions: [10] }],
+        });
+
+        expect(result.data?.items[0]?.changedFilesCount).toBe(2);
+        expect(result.data?.items[0]?.fileChanges).toHaveLength(1);
+        expect(result.data?.items[0]?.fileChanges?.[0]?.path).toBe(
+          'src/app.ts'
+        );
+        expect(result.data?.items[0]?.fileChanges?.[0]?.patch).toContain(
+          '+10: new'
+        );
       });
 
       it('should handle error fetching notes gracefully', async () => {

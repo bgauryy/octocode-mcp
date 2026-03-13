@@ -542,7 +542,11 @@ export const PackageSearchPackageSchema = z
       .optional()
       .describe('NPM package path or repository subdirectory'),
     version: z.string().optional().describe('Package version'),
-    description: z.string().optional().describe('Package description'),
+    description: z
+      .string()
+      .nullable()
+      .optional()
+      .describe('Package description'),
     homepage: z.string().optional().describe('Package homepage'),
     mainEntry: z
       .string()

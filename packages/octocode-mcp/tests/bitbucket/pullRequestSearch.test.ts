@@ -115,6 +115,65 @@ describe('searchBitbucketPRsAPI', () => {
       expect(data.comments[0]!.id).toBe(100);
     });
 
+    it('should paginate PR comments until next is exhausted', async () => {
+      mockGET.mockResolvedValue({
+        data: {
+          id: 1,
+          title: 'PR',
+          state: 'OPEN',
+          author: { display_name: 'user', uuid: '{u}' },
+          source: { branch: { name: 'feat' } },
+          destination: { branch: { name: 'main' } },
+          created_on: '2024-01-01T00:00:00Z',
+          updated_on: '2024-01-01T00:00:00Z',
+        },
+      });
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              values: [
+                {
+                  id: 100,
+                  content: { raw: 'first' },
+                  user: { display_name: 'reviewer' },
+                  created_on: '2024-01-01T00:00:00Z',
+                  updated_on: '2024-01-01T00:00:00Z',
+                },
+              ],
+              next: 'https://api.bitbucket.org/2.0/next-comments',
+            }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              values: [
+                {
+                  id: 101,
+                  content: { raw: 'second' },
+                  user: { display_name: 'reviewer' },
+                  created_on: '2024-01-01T00:00:00Z',
+                  updated_on: '2024-01-01T00:00:00Z',
+                },
+              ],
+            }),
+        });
+
+      const result = await searchBitbucketPRsAPI({
+        workspace: 'ws',
+        repoSlug: 'repo',
+        prNumber: 1,
+        withComments: true,
+      });
+
+      const data = (result as { data: { comments: Array<{ id: number }> } })
+        .data;
+      expect(data.comments.map(comment => comment.id)).toEqual([100, 101]);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
     it('should fetch PR with diff when withDiff=true', async () => {
       mockGET.mockResolvedValue({
         data: {
@@ -187,6 +246,66 @@ describe('searchBitbucketPRsAPI', () => {
         .data;
       expect(data.diffstat).toHaveLength(1);
       expect(data.diffstat[0]!.status).toBe('modified');
+    });
+
+    it('should paginate diffstat until next is exhausted', async () => {
+      mockGET.mockResolvedValue({
+        data: {
+          id: 1,
+          title: 'PR',
+          state: 'OPEN',
+          author: { display_name: 'user', uuid: '{u}' },
+          source: { branch: { name: 'feat' } },
+          destination: { branch: { name: 'main' } },
+          created_on: '2024-01-01T00:00:00Z',
+          updated_on: '2024-01-01T00:00:00Z',
+        },
+      });
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              values: [
+                {
+                  type: 'diffstat',
+                  status: 'modified',
+                  new: { path: 'src/app.ts' },
+                  lines_added: 3,
+                  lines_removed: 1,
+                },
+              ],
+              next: 'https://api.bitbucket.org/2.0/next-diffstat',
+            }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              values: [
+                {
+                  type: 'diffstat',
+                  status: 'added',
+                  new: { path: 'src/new.ts' },
+                  lines_added: 5,
+                  lines_removed: 0,
+                },
+              ],
+            }),
+        });
+
+      const result = await searchBitbucketPRsAPI({
+        workspace: 'ws',
+        repoSlug: 'repo',
+        prNumber: 1,
+        withDiffstat: true,
+      });
+
+      const data = (result as { data: { diffstat: Array<{ status: string }> } })
+        .data;
+      expect(data.diffstat).toHaveLength(2);
+      expect(data.diffstat[1]!.status).toBe('added');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 
     it('should handle comments fetch failure gracefully', async () => {
