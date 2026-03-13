@@ -53,11 +53,11 @@ Answer each question with evidence from the code:
 npx -y octocode-cli local-search --pattern "authenticate" --path ./src --type ts
 
 # 2. Trace definitions and references
-npx -y octocode-cli lsp-definition --uri ./src/auth.ts --symbol "authenticate" --line-hint 15
-npx -y octocode-cli lsp-call-hierarchy --uri ./src/auth.ts --symbol "authenticate" --line-hint 15 --direction incoming
+npx -y octocode-cli lsp-definition --uri ./src/auth.ts --symbol-name "authenticate" --line-hint 15
+npx -y octocode-cli lsp-call-hierarchy --uri ./src/auth.ts --symbol-name "authenticate" --line-hint 15 --direction incoming
 
 # 3. Read implementation details LAST
-npx -y octocode-cli local-file --path ./src/auth.ts --match "authenticate" --context-lines 10
+npx -y octocode-cli local-file --path ./src/auth.ts --match-string "authenticate" --match-string-context-lines 10
 ```
 
 ### Phase 4: Orchestration

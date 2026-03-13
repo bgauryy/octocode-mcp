@@ -34,14 +34,14 @@ If `gh` CLI is authenticated, no configuration is needed.
 | "Where is X defined?" | `local-search --pattern "X"` → `lsp-definition` |
 | "Who calls function Y?" | `local-search --pattern "Y"` → `lsp-call-hierarchy --direction incoming` |
 | "All usages of type Z?" | `local-search --pattern "Z"` → `lsp-references` |
-| "Find X on GitHub" | `search-code --keywords "X" --owner O --repo R` |
+| "Find X on GitHub" | `search-code --keywords-to-search "X" --owner O --repo R` |
 | "Explore repo structure" | `tree --owner O --repo R --depth 2` |
 | "Find library/package Z" | `search-packages --name Z --ecosystem npm` |
 | "Read file from repo" | `get-file --owner O --repo R --path path/to/file` |
 | "Search PRs about X" | `search-prs --owner O --repo R --query "X"` |
-| "Find repos about X" | `search-repos --keywords "X" --sort stars` |
+| "Find repos about X" | `search-repos --keywords-to-search "X" --sort stars` |
 | "Search local code" | `local-search --pattern "X" --path ./src` |
-| "Read local file" | `local-file --path ./src/file.ts --match "pattern"` |
+| "Read local file" | `local-file --path ./src/file.ts --match-string "pattern"` |
 | "Find files by name" | `local-find --path . --name "*.ts"` |
 | "View local directory" | `local-tree --path ./src --depth 2` |
 
@@ -96,11 +96,12 @@ DISCOVER  →  EXPLORE  →  SEARCH  →  ANALYZE  →  READ (LAST)
 
 | Command | Key Flags | Example |
 |---------|-----------|---------|
-| `search-code` | `--keywords` (required, comma-sep), `--owner`, `--repo`, `--extension`, `--limit` | `search-code --keywords "useState,hook" --owner facebook --repo react` |
-| `get-file` | `--owner`, `--repo`, `--path` (all required), `--match`, `--context-lines` | `get-file --owner expressjs --repo express --path lib/router/index.js --match "handle"` |
+| `search-code` | `--keywords-to-search` (required, comma-sep), `--owner`, `--repo`, `--extension`, `--limit` | `search-code --keywords-to-search "useState,hook" --owner facebook --repo react` |
+| `get-file` | `--owner`, `--repo`, `--path` (all required), `--match-string`, `--match-string-context-lines` | `get-file --owner expressjs --repo express --path lib/router/index.js --match-string "handle"` |
 | `tree` | `--owner`, `--repo` (required), `--path`, `--depth` | `tree --owner expressjs --repo express --path lib --depth 2` |
-| `search-repos` | `--keywords`, `--topics`, `--stars`, `--sort` | `search-repos --keywords "react,state" --sort stars --limit 5` |
+| `search-repos` | `--keywords-to-search`, `--topics-to-search`, `--stars`, `--sort` | `search-repos --keywords-to-search "react,state" --sort stars --limit 5` |
 | `search-prs` | `--owner`, `--repo`, `--query`, `--merged`, `--state` | `search-prs --owner expressjs --repo express --query "security" --merged` |
+
 | `search-packages` | `--name` (required), `--ecosystem` (npm\|python) | `search-packages --name fastapi --ecosystem python` |
 
 ### Local
@@ -108,7 +109,7 @@ DISCOVER  →  EXPLORE  →  SEARCH  →  ANALYZE  →  READ (LAST)
 | Command | Key Flags | Example |
 |---------|-----------|---------|
 | `local-search` | `--pattern` (required), `--path` (required), `--type`, `--files-only` | `local-search --pattern "handleAuth" --path ./src --type ts` |
-| `local-file` | `--path` (required), `--match`, `--start-line`, `--end-line` | `local-file --path ./src/auth.ts --match "validateToken"` |
+| `local-file` | `--path` (required), `--match-string`, `--start-line`, `--end-line` | `local-file --path ./src/auth.ts --match-string "validateToken"` |
 | `local-find` | `--path` (required), `--name`, `--type`, `--modified-within` | `local-find --path . --name "*.test.ts" --modified-within 7d` |
 | `local-tree` | `--path` (required), `--depth`, `--extension`, `--sort-by` | `local-tree --path ./src --depth 2 --extension ts` |
 
@@ -118,9 +119,9 @@ All LSP commands require `--line-hint` from a prior `local-search` result. Never
 
 | Command | Key Flags | Example |
 |---------|-----------|---------|
-| `lsp-definition` | `--uri`, `--symbol`, `--line-hint` (all required) | `lsp-definition --uri ./src/auth.ts --symbol "validateToken" --line-hint 42` |
-| `lsp-references` | `--uri`, `--symbol`, `--line-hint` (all required) | `lsp-references --uri ./src/auth.ts --symbol "validateToken" --line-hint 42` |
-| `lsp-call-hierarchy` | `--uri`, `--symbol`, `--line-hint`, `--direction` (all required) | `lsp-call-hierarchy --uri ./src/auth.ts --symbol "validateToken" --line-hint 42 --direction incoming` |
+| `lsp-definition` | `--uri`, `--symbol-name`, `--line-hint` (all required) | `lsp-definition --uri ./src/auth.ts --symbol-name "validateToken" --line-hint 42` |
+| `lsp-references` | `--uri`, `--symbol-name`, `--line-hint` (all required) | `lsp-references --uri ./src/auth.ts --symbol-name "validateToken" --line-hint 42` |
+| `lsp-call-hierarchy` | `--uri`, `--symbol-name`, `--line-hint`, `--direction` (all required) | `lsp-call-hierarchy --uri ./src/auth.ts --symbol-name "validateToken" --line-hint 42 --direction incoming` |
 
 > **Full command reference with all flags**: [references/command-reference.md](references/command-reference.md)
 
@@ -174,7 +175,7 @@ Never call LSP commands without `--line-hint` from `local-search`.
 | Too many results | Add filters: `--extension`, `--path`, `--type` |
 | Rate limit | Back off, batch fewer queries |
 | Auth failure | Check `gh auth status` or set `GITHUB_TOKEN` |
-| Large file | Use `--match` for targeted extraction, or `--start-line`/`--end-line` |
+| Large file | Use `--match-string` for targeted extraction, or `--start-line`/`--end-line` |
 | LSP no results | Verify `--line-hint` from `local-search`; try broader search |
 | 3 consecutive empties | Broaden: remove `--type`, try `--case-insensitive` |
 | Blocked >2 attempts | Summarize what was tried, ask user |
@@ -202,6 +203,6 @@ These reference skills provide specialized workflows. Read the relevant file whe
 - **Funnel method** — discover → explore → search → analyze → read
 - **LSP requires search first** — never guess `--line-hint`
 - **Read content LAST** — after search and LSP analysis
-- **Use `--match` for large files** — targeted extraction over full content
+- **Use `--match-string` for large files** — targeted extraction over full content
 - **Semantic variants** — when search is empty, try synonyms
 - **Cite precisely** — include file paths and line numbers in answers

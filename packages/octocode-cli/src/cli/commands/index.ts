@@ -38,6 +38,13 @@ const commands: CLICommand[] = [
 ];
 
 /**
+ * Get all registered commands
+ */
+export function getAllCommands(): CLICommand[] {
+  return commands;
+}
+
+/**
  * Find a command by name or alias
  */
 export function findCommand(name: string): CLICommand | undefined {

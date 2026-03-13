@@ -3,11 +3,10 @@
  */
 
 import type { ParsedArgs } from './types.js';
+import { getAllCommands } from './commands/index.js';
 
-// Options that take values
-// Note: -h is reserved for --help, use -H for --hostname
-const OPTIONS_WITH_VALUES = new Set([
-  // Existing CLI options
+/** Setup command options with short aliases — always needed */
+const SETUP_OPTIONS_WITH_VALUES = new Set([
   'ide',
   'method',
   'output',
@@ -16,74 +15,30 @@ const OPTIONS_WITH_VALUES = new Set([
   'H', // Short for --hostname (uppercase to avoid conflict with -h for help)
   'git-protocol',
   'p',
-  'type', // For token command + local-search/local-find
+  'type', // For token command
   't', // Short for --type
   'model', // For chat command
   'resume', // For chat command
   'r', // Short for --resume
-
-  // Research tool options
-  'keywords',
-  'owner',
-  'repo',
-  'extension',
-  'filename',
-  'path',
-  'match',
-  'limit',
-  'page',
-  'branch',
-  'start-line',
-  'end-line',
-  'context-lines',
-  'char-offset',
-  'char-length',
-  'depth',
-  'entries-per-page',
-  'name',
-  'ecosystem',
-  'query',
-  'pr-number',
-  'state',
-  'author',
-  'assignee',
-  'label',
-  'head',
-  'base',
-  'created',
-  'updated',
-  'sort',
-  'order',
-  'content-type',
-  'pattern',
-  'mode',
-  'include',
-  'exclude',
-  'exclude-dir',
-  'max-files',
-  'files-per-page',
-  'file-page',
-  'iname',
-  'names',
-  'regex',
-  'max-depth',
-  'min-depth',
-  'modified-within',
-  'modified-before',
-  'size-greater',
-  'size-less',
-  'sort-by',
-  'extensions',
-  'uri',
-  'symbol',
-  'line-hint',
-  'order-hint',
-  'refs-per-page',
-  'include-pattern',
-  'exclude-pattern',
-  'direction',
-  'calls-per-page',
 ]);
+
+/** Lazily built set of all options that take values */
+let _optionsWithValues: Set<string> | null = null;
+
+function getOptionsWithValues(): Set<string> {
+  if (!_optionsWithValues) {
+    _optionsWithValues = new Set(SETUP_OPTIONS_WITH_VALUES);
+    for (const cmd of getAllCommands()) {
+      for (const opt of cmd.options ?? []) {
+        if (opt.hasValue) {
+          _optionsWithValues.add(opt.name);
+          if (opt.short) _optionsWithValues.add(opt.short);
+        }
+      }
+    }
+  }
+  return _optionsWithValues;
+}
 
 /**
  * Parse command line arguments
@@ -94,6 +49,8 @@ export function parseArgs(argv: string[] = process.argv.slice(2)): ParsedArgs {
     args: [],
     options: {},
   };
+
+  const OPTIONS_WITH_VALUES = getOptionsWithValues();
 
   let i = 0;
   while (i < argv.length) {

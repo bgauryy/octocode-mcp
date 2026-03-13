@@ -52,8 +52,8 @@ npx -y octocode-cli local-search --pattern "console\\.log" --path ./src --type t
 npx -y octocode-cli local-search --pattern "password\|secret\|api.key" --path ./src --type ts  # Hardcoded creds
 
 # Trace infection paths with LSP
-npx -y octocode-cli lsp-find-references --uri ./src/bad-pattern.ts --symbol "badFunction" --line-hint 42
-npx -y octocode-cli lsp-call-hierarchy --uri ./src/god-file.ts --symbol "doEverything" --line-hint 100 --direction outgoing
+npx -y octocode-cli lsp-find-references --uri ./src/bad-pattern.ts --symbol-name "badFunction" --line-hint 42
+npx -y octocode-cli lsp-call-hierarchy --uri ./src/god-file.ts --symbol-name "doEverything" --line-hint 100 --direction outgoing
 ```
 
 ### Phase 3: Sin Inventory

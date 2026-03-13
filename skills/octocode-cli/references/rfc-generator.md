@@ -43,7 +43,7 @@ Dual-track research using CLI tools:
 npx -y octocode-cli local-search --pattern "current_approach" --path ./src --type ts
 
 # Which modules are impacted?
-npx -y octocode-cli lsp-references --uri ./src/module.ts --symbol "AffectedType" --line-hint 10
+npx -y octocode-cli lsp-references --uri ./src/module.ts --symbol-name "AffectedType" --line-hint 10
 
 # What patterns exist?
 npx -y octocode-cli local-search --pattern "middleware\|interceptor\|handler" --path ./src --files-only
@@ -56,14 +56,14 @@ npx -y octocode-cli local-search --pattern "from '.*'" --path ./src/affected-are
 
 ```bash
 # How do major projects solve this?
-npx -y octocode-cli search-repos --keywords "caching,middleware,express" --sort stars --limit 5
+npx -y octocode-cli search-repos --keywords-to-search "caching,middleware,express" --sort stars --limit 5
 
 # What packages exist?
-npx -y octocode-cli search-packages --name "cache-manager" --ecosystem npm --fetch-metadata --limit 3
+npx -y octocode-cli search-packages --name "cache-manager" --ecosystem npm --fetch-metadata --search-limit 3
 
 # Explore implementations
 npx -y octocode-cli tree --owner owner --repo best-repo --path src --depth 2
-npx -y octocode-cli search-code --keywords "cache,strategy" --owner owner --repo best-repo --extension ts
+npx -y octocode-cli search-code --keywords-to-search "cache,strategy" --owner owner --repo best-repo --extension ts
 
 # Check PRs for patterns
 npx -y octocode-cli search-prs --owner owner --repo best-repo --query "caching strategy" --merged

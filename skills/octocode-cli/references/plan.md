@@ -34,13 +34,13 @@ npx -y octocode-cli local-tree --path . --depth 2
 npx -y octocode-cli local-search --pattern "auth\|login\|session" --path ./src --type ts
 
 # Trace definitions
-npx -y octocode-cli lsp-definition --uri ./src/auth.ts --symbol "createSession" --line-hint 25
+npx -y octocode-cli lsp-definition --uri ./src/auth.ts --symbol-name "createSession" --line-hint 25
 
 # Find all usages
-npx -y octocode-cli lsp-references --uri ./src/auth.ts --symbol "createSession" --line-hint 25
+npx -y octocode-cli lsp-references --uri ./src/auth.ts --symbol-name "createSession" --line-hint 25
 
 # Trace call chain
-npx -y octocode-cli lsp-call-hierarchy --uri ./src/auth.ts --symbol "createSession" --line-hint 25 --direction incoming
+npx -y octocode-cli lsp-call-hierarchy --uri ./src/auth.ts --symbol-name "createSession" --line-hint 25 --direction incoming
 ```
 
 ### External Research
@@ -49,9 +49,9 @@ npx -y octocode-cli lsp-call-hierarchy --uri ./src/auth.ts --symbol "createSessi
 npx -y octocode-cli search-packages --name "express-rate-limit" --ecosystem npm --fetch-metadata
 
 # Explore reference implementations
-npx -y octocode-cli search-repos --keywords "rate,limiting,middleware" --sort stars --limit 5
+npx -y octocode-cli search-repos --keywords-to-search "rate,limiting,middleware" --sort stars --limit 5
 npx -y octocode-cli tree --owner express-rate-limit --repo express-rate-limit --depth 2
-npx -y octocode-cli search-code --keywords "rateLimit,middleware" --owner express-rate-limit --repo express-rate-limit
+npx -y octocode-cli search-code --keywords-to-search "rateLimit,middleware" --owner express-rate-limit --repo express-rate-limit
 
 # Check PR patterns
 npx -y octocode-cli search-prs --owner expressjs --repo express --query "rate limit" --merged
