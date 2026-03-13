@@ -8,7 +8,7 @@ export interface ParsedArgs {
   options: Record<string, string | boolean>;
 }
 
-interface CLIOption {
+export interface CLIOption {
   name: string;
   short?: string;
   description: string;
@@ -22,5 +22,6 @@ export interface CLICommand {
   description: string;
   usage?: string;
   options?: CLIOption[];
+  category?: string;
   handler: (args: ParsedArgs) => Promise<void>;
 }

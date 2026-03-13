@@ -124,7 +124,7 @@ describe('CLI Commands', () => {
         username: 'testuser',
       });
 
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const tokenCmd = findCommand('token');
       expect(tokenCmd).toBeDefined();
 
@@ -146,7 +146,7 @@ describe('CLI Commands', () => {
         username: 'ghuser',
       });
 
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const tokenCmd = findCommand('token');
 
       await tokenCmd!.handler({
@@ -166,7 +166,7 @@ describe('CLI Commands', () => {
         source: 'none',
       });
 
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const tokenCmd = findCommand('token');
       expect(tokenCmd).toBeDefined();
 
@@ -195,7 +195,7 @@ describe('CLI Commands', () => {
         username: 'enterpriseuser',
       });
 
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const tokenCmd = findCommand('token');
 
       await tokenCmd!.handler({
@@ -217,7 +217,7 @@ describe('CLI Commands', () => {
         username: 'testuser',
       });
 
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const tokenCmd = findCommand('token');
 
       await tokenCmd!.handler({
@@ -235,7 +235,7 @@ describe('CLI Commands', () => {
     });
 
     it('should be findable by alias "t"', async () => {
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const tokenCmd = findCommand('t');
       expect(tokenCmd).toBeDefined();
       expect(tokenCmd!.name).toBe('token');
@@ -249,7 +249,7 @@ describe('CLI Commands', () => {
         username: 'ghuser',
       });
 
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const tokenCmd = findCommand('token');
 
       await tokenCmd!.handler({
@@ -270,7 +270,7 @@ describe('CLI Commands', () => {
         username: 'autouser',
       });
 
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const tokenCmd = findCommand('token');
 
       await tokenCmd!.handler({
@@ -284,7 +284,7 @@ describe('CLI Commands', () => {
     });
 
     it('should show error for invalid --type value', async () => {
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const tokenCmd = findCommand('token');
 
       await tokenCmd!.handler({
@@ -308,7 +308,7 @@ describe('CLI Commands', () => {
           envSource: 'env:GH_TOKEN',
         });
 
-        const { findCommand } = await import('../../src/cli/commands.js');
+        const { findCommand } = await import('../../src/cli/commands/index.js');
         const tokenCmd = findCommand('token');
 
         await tokenCmd!.handler({
@@ -337,7 +337,7 @@ describe('CLI Commands', () => {
           username: 'ghuser',
         });
 
-        const { findCommand } = await import('../../src/cli/commands.js');
+        const { findCommand } = await import('../../src/cli/commands/index.js');
         const tokenCmd = findCommand('token');
 
         await tokenCmd!.handler({
@@ -364,7 +364,7 @@ describe('CLI Commands', () => {
           username: 'octocodeuser',
         });
 
-        const { findCommand } = await import('../../src/cli/commands.js');
+        const { findCommand } = await import('../../src/cli/commands/index.js');
         const tokenCmd = findCommand('token');
 
         await tokenCmd!.handler({
@@ -390,7 +390,7 @@ describe('CLI Commands', () => {
           source: 'none',
         });
 
-        const { findCommand } = await import('../../src/cli/commands.js');
+        const { findCommand } = await import('../../src/cli/commands/index.js');
         const tokenCmd = findCommand('token');
 
         await tokenCmd!.handler({
@@ -417,7 +417,7 @@ describe('CLI Commands', () => {
           source: 'gh-cli',
         });
 
-        const { findCommand } = await import('../../src/cli/commands.js');
+        const { findCommand } = await import('../../src/cli/commands/index.js');
         const tokenCmd = findCommand('token');
 
         await tokenCmd!.handler({
@@ -437,7 +437,7 @@ describe('CLI Commands', () => {
       });
 
       it('should output JSON error for invalid type in json mode', async () => {
-        const { findCommand } = await import('../../src/cli/commands.js');
+        const { findCommand } = await import('../../src/cli/commands/index.js');
         const tokenCmd = findCommand('token');
 
         await tokenCmd!.handler({
@@ -470,7 +470,7 @@ describe('CLI Commands', () => {
         tokenExpired: false,
       });
 
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const statusCmd = findCommand('status');
       expect(statusCmd).toBeDefined();
 
@@ -497,7 +497,7 @@ describe('CLI Commands', () => {
         authenticated: false,
       });
 
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const statusCmd = findCommand('status');
 
       await statusCmd!.handler({
@@ -521,7 +521,7 @@ describe('CLI Commands', () => {
         tokenExpired: true,
       });
 
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const statusCmd = findCommand('status');
 
       await statusCmd!.handler({
@@ -544,7 +544,7 @@ describe('CLI Commands', () => {
         username: 'enterpriseuser',
       });
 
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const statusCmd = findCommand('status');
 
       await statusCmd!.handler({
@@ -557,7 +557,7 @@ describe('CLI Commands', () => {
     });
 
     it('should be findable by alias "s"', async () => {
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const statusCmd = findCommand('s');
       expect(statusCmd).toBeDefined();
       expect(statusCmd!.name).toBe('status');
@@ -566,21 +566,21 @@ describe('CLI Commands', () => {
 
   describe('findCommand', () => {
     it('should find token command by name', async () => {
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const cmd = findCommand('token');
       expect(cmd).toBeDefined();
       expect(cmd!.name).toBe('token');
     });
 
     it('should find status command by name', async () => {
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const cmd = findCommand('status');
       expect(cmd).toBeDefined();
       expect(cmd!.name).toBe('status');
     });
 
     it('should return undefined for unknown command', async () => {
-      const { findCommand } = await import('../../src/cli/commands.js');
+      const { findCommand } = await import('../../src/cli/commands/index.js');
       const cmd = findCommand('unknown-command');
       expect(cmd).toBeUndefined();
     });

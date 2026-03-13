@@ -3,10 +3,10 @@
  */
 
 import type { ParsedArgs } from './types.js';
+import { getAllCommands } from './commands/index.js';
 
-// Options that take values
-// Note: -h is reserved for --help, use -H for --hostname
-const OPTIONS_WITH_VALUES = new Set([
+/** Setup command options with short aliases — always needed */
+const SETUP_OPTIONS_WITH_VALUES = new Set([
   'ide',
   'method',
   'output',
@@ -22,6 +22,24 @@ const OPTIONS_WITH_VALUES = new Set([
   'r', // Short for --resume
 ]);
 
+/** Lazily built set of all options that take values */
+let _optionsWithValues: Set<string> | null = null;
+
+function getOptionsWithValues(): Set<string> {
+  if (!_optionsWithValues) {
+    _optionsWithValues = new Set(SETUP_OPTIONS_WITH_VALUES);
+    for (const cmd of getAllCommands()) {
+      for (const opt of cmd.options ?? []) {
+        if (opt.hasValue) {
+          _optionsWithValues.add(opt.name);
+          if (opt.short) _optionsWithValues.add(opt.short);
+        }
+      }
+    }
+  }
+  return _optionsWithValues;
+}
+
 /**
  * Parse command line arguments
  */
@@ -31,6 +49,8 @@ export function parseArgs(argv: string[] = process.argv.slice(2)): ParsedArgs {
     args: [],
     options: {},
   };
+
+  const OPTIONS_WITH_VALUES = getOptionsWithValues();
 
   let i = 0;
   while (i < argv.length) {

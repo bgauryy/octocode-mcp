@@ -5847,6 +5847,7 @@ __metadata:
     "@types/node": "npm:^22.15.29"
     "@vitest/coverage-v8": "npm:^4.0.16"
     eslint: "npm:^9.18.0"
+    octocode-mcp: "workspace:^"
     octocode-shared: "workspace:^"
     open: "npm:^11.0.0"
     tsx: "npm:^4.21.0"

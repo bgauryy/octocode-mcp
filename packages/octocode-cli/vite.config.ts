@@ -23,6 +23,9 @@ export default defineConfig({
         '@inquirer/prompts',
         '@octokit/oauth-methods', // Used by octocode-shared for token refresh
         '@octokit/request', // Used by octocode-shared
+        /^octocode-/, // octocode-mcp, octocode-shared
+        /^@modelcontextprotocol\//, // MCP SDK
+        /^@octokit\//, // All Octokit packages
       ],
       output: {
         banner: '#!/usr/bin/env node',

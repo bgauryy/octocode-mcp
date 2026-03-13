@@ -4,13 +4,32 @@
 
 import { c, bold, dim } from '../utils/colors.js';
 import type { CLICommand } from './types.js';
+import { getAllCommands } from './commands/index.js';
 
 declare const __APP_VERSION__: string;
+
+const CATEGORY_LABELS: Record<string, string> = {
+  github: 'GitHub',
+  local: 'Local',
+  lsp: 'LSP',
+};
 
 /**
  * Show main help
  */
 export function showHelp(): void {
+  const commands = getAllCommands();
+  const setupCmds = commands.filter(cmd => !cmd.category);
+  const researchCmds = commands.filter(cmd => cmd.category);
+
+  // Group research commands by category (preserving insertion order)
+  const groups = new Map<string, CLICommand[]>();
+  for (const cmd of researchCmds) {
+    const cat = cmd.category!;
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat)!.push(cmd);
+  }
+
   console.log();
   console.log(
     `  ${c('magenta', bold('🔍🐙 Octocode CLI'))} - Install and configure octocode-mcp`
@@ -19,28 +38,28 @@ export function showHelp(): void {
   console.log(`  ${bold('USAGE')}`);
   console.log(`    ${c('magenta', 'octocode')} [command] [options]`);
   console.log();
+
+  // Setup commands
   console.log(`  ${bold('COMMANDS')}`);
-  console.log(
-    `    ${c('magenta', 'install')}     Configure octocode-mcp for an IDE`
-  );
-  console.log(
-    `    ${c('magenta', 'skills')}      Install Octocode skills for Claude Code`
-  );
-  console.log(
-    `    ${c('magenta', 'sync')}        Sync MCP configurations across all IDEs`
-  );
-  console.log(
-    `    ${c('magenta', 'auth')}        Manage GitHub authentication`
-  );
-  console.log(`    ${c('magenta', 'login')}       Authenticate with GitHub`);
-  console.log(`    ${c('magenta', 'logout')}      Sign out from GitHub`);
-  console.log(
-    `    ${c('magenta', 'status')}      Show GitHub authentication status`
-  );
-  console.log(
-    `    ${c('magenta', 'token')}       Print the stored GitHub OAuth token`
-  );
+  const setupMaxLen = Math.max(...setupCmds.map(cmd => cmd.name.length));
+  for (const cmd of setupCmds) {
+    const padded = cmd.name.padEnd(setupMaxLen + 4);
+    console.log(`    ${c('magenta', padded)} ${cmd.description}`);
+  }
   console.log();
+
+  // Research commands grouped by category
+  console.log(`  ${bold('RESEARCH COMMANDS')}`);
+  const researchMaxLen = Math.max(...researchCmds.map(cmd => cmd.name.length));
+  for (const [cat, cmds] of groups) {
+    console.log(`    ${dim(CATEGORY_LABELS[cat] + ':')}`);
+    for (const cmd of cmds) {
+      const padded = cmd.name.padEnd(researchMaxLen + 2);
+      console.log(`    ${c('magenta', padded)} ${cmd.description}`);
+    }
+  }
+  console.log();
+
   console.log(`  ${bold('OPTIONS')}`);
   console.log(`    ${c('cyan', '-h, --help')}       Show this help message`);
   console.log(`    ${c('cyan', '-v, --version')}    Show version number`);

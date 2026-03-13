@@ -2,14 +2,14 @@
  * CLI Commands
  */
 
-import type { CLICommand, ParsedArgs } from './types.js';
-import type { IDE, InstallMethod } from '../types/index.js';
-import { c, bold, dim } from '../utils/colors.js';
+import type { CLICommand, ParsedArgs } from '../types.js';
+import type { IDE, InstallMethod } from '../../types/index.js';
+import { c, bold, dim } from '../../utils/colors.js';
 import {
   installOctocode,
   detectAvailableIDEs,
   getInstallPreview,
-} from '../features/install.js';
+} from '../../features/install.js';
 import {
   login as oauthLogin,
   logout as oauthLogout,
@@ -20,13 +20,17 @@ import {
   getGhCliToken,
   getTokenType,
   type VerificationInfo,
-} from '../features/github-oauth.js';
-import { GH_CLI_URL } from '../features/gh-auth.js';
-import type { TokenSource } from '../types/index.js';
-import { loadInquirer, select } from '../utils/prompts.js';
-import { checkNodeInPath, checkNpmInPath } from '../features/node-check.js';
-import { IDE_INFO, CLIENT_INFO, INSTALL_METHOD_INFO } from '../ui/constants.js';
-import { Spinner } from '../utils/spinner.js';
+} from '../../features/github-oauth.js';
+import { GH_CLI_URL } from '../../features/gh-auth.js';
+import type { TokenSource } from '../../types/index.js';
+import { loadInquirer, select } from '../../utils/prompts.js';
+import { checkNodeInPath, checkNpmInPath } from '../../features/node-check.js';
+import {
+  IDE_INFO,
+  CLIENT_INFO,
+  INSTALL_METHOD_INFO,
+} from '../../ui/constants.js';
+import { Spinner } from '../../utils/spinner.js';
 
 /**
  * Get display name for an IDE/client
@@ -43,14 +47,18 @@ function getIDEDisplayName(ide: string): string {
   // Capitalize as fallback
   return ide.charAt(0).toUpperCase() + ide.slice(1);
 }
-import { copyDirectory, dirExists, listSubdirectories } from '../utils/fs.js';
-import { getSkillsSourceDir, getSkillsDestDir } from '../utils/skills.js';
-import { quickSync } from '../ui/sync/index.js';
+import {
+  copyDirectory,
+  dirExists,
+  listSubdirectories,
+} from '../../utils/fs.js';
+import { getSkillsSourceDir, getSkillsDestDir } from '../../utils/skills.js';
+import { quickSync } from '../../ui/sync/index.js';
 import {
   readAllClientConfigs,
   analyzeSyncState,
   getClientDisplayName,
-} from '../features/sync.js';
+} from '../../features/sync.js';
 import path from 'node:path';
 
 type GetTokenSource = 'octocode' | 'gh' | 'auto';
@@ -1024,9 +1032,9 @@ const syncCommand: CLICommand = {
 };
 
 /**
- * All available commands
+ * Setup & management commands (install, auth, skills, etc.)
  */
-const commands: CLICommand[] = [
+export const setupCommands: CLICommand[] = [
   installCommand,
   authCommand,
   loginCommand,
@@ -1036,10 +1044,3 @@ const commands: CLICommand[] = [
   statusCommand,
   syncCommand,
 ];
-
-/**
- * Find a command by name or alias
- */
-export function findCommand(name: string): CLICommand | undefined {
-  return commands.find(cmd => cmd.name === name || cmd.aliases?.includes(name));
-}

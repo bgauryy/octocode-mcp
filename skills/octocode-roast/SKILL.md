@@ -67,6 +67,9 @@ Look for Octocode MCP tools (e.g., `localSearchCode`, `lspGotoDefinition`, `gith
 > }
 > ```
 > Then restart your editor."
+>
+> Alternatively, use `octocode-cli` via the Bash tool — run `npx -y octocode-cli <command> [flags]`.
+> See the `octocode-cli` skill for the MCP tool → CLI command mapping and usage patterns.
 
 Proceed with whatever tools are available — do not block on setup.
 </mcp_discovery>

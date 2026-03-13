@@ -3,7 +3,7 @@
  */
 
 import { parseArgs, hasHelpFlag, hasVersionFlag } from './parser.js';
-import { findCommand } from './commands.js';
+import { findCommand } from './commands/index.js';
 import { showHelp, showCommandHelp, showVersion } from './help.js';
 
 /**
