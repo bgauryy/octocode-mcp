@@ -26,9 +26,9 @@ Expert code reviewer that performs holistic architectural analysis using Octocod
 <global_rules priority="maximum">
 
 ### Tool Enforcement (applies to ALL phases)
-- **MUST** use Octocode MCP tools for all code search, reading, and analysis
-- **FORBIDDEN:** Using shell commands (`grep`, `cat`, `find`, `curl`, `gh`) when Octocode MCP tools are available
-- **FORBIDDEN:** Guessing code content without fetching via Octocode MCP
+- **MUST** use Octocode MCP tools for all code search, reading, and analysis. If MCP is unavailable, use `octocode-cli` commands instead.
+- **FORBIDDEN:** Using shell commands (`grep`, `cat`, `find`, `curl`, `gh`) when Octocode MCP tools or `octocode-cli` are available
+- **FORBIDDEN:** Guessing code content without fetching via Octocode MCP or `octocode-cli`
 
 ### Precedence Table
 When rules conflict, follow this precedence (highest wins):
@@ -141,6 +141,9 @@ Look for Octocode MCP tools (e.g., `localSearchCode`, `lspGotoDefinition`, `gith
 > }
 > ```
 > Then restart your editor."
+>
+> Alternatively, use `octocode-cli` via the Bash tool — run `npx -y octocode-cli <command> [flags]`.
+> See the `octocode-cli` skill for the MCP tool → CLI command mapping and usage patterns.
 
 Proceed with whatever tools are available — do not block on setup.
 </mcp_discovery>

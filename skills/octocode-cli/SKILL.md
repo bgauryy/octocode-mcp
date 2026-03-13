@@ -1,80 +1,48 @@
 ---
 name: octocode-cli
-description: "Code research and analysis using octocode-cli CLI (npx). Use when user asks to research, search, explore, find, trace, or analyze code — on GitHub, local codebase, or packages. Triggers: 'find X on GitHub', 'search repo', 'explore library', 'trace definition', 'find PRs about', 'search packages', 'who calls function X', 'how does Y work in Z repo', 'find usages of X', 'what package does Y'. Also provides documentation writing, PR review, RFC generation, planning, prompt optimization, and code roasting via reference skills. Use this skill even when the user doesn't explicitly mention 'octocode' — any code search, exploration, or research need across GitHub or local files should use these CLI tools."
+description: "CLI alternative to Octocode MCP tools. Use when Octocode MCP server is NOT available but the user needs code research, search, exploration, or analysis — on GitHub, local codebase, or packages. Run commands via `npx -y octocode-cli <command> [flags]` using the Bash tool. Triggers: 'find X on GitHub', 'search repo', 'explore library', 'trace definition', 'find PRs about', 'search packages', 'who calls function X', 'how does Y work in Z repo', 'find usages of X', 'what package does Y'. Also use this skill when another octocode skill (documentation-writer, plan, PR reviewer, RFC generator, roast) mentions Octocode MCP tools but MCP is not available — this CLI provides the same capabilities."
 ---
 
-# Octocode CLI — Code Research & Analysis
+# Octocode CLI
 
-`DISCOVER` → `EXPLORE` → `SEARCH` → `ANALYZE` → `READ`
-
-All commands run via `npx -y octocode-cli <command> [flags]` using the Bash tool.
-
----
-
-## 1. Setup
-
-**Authentication** (first match wins):
-
-| Priority | Source | Setup |
-|----------|--------|-------|
-| 1 | `OCTOCODE_TOKEN` env var | `export OCTOCODE_TOKEN=ghp_xxx` |
-| 2 | `GH_TOKEN` env var | `export GH_TOKEN=ghp_xxx` |
-| 3 | `GITHUB_TOKEN` env var | `export GITHUB_TOKEN=ghp_xxx` |
-| 4 | Octocode storage | `~/.octocode/credentials.json` |
-| 5 | **gh CLI** (easiest) | `gh auth login` — no env vars needed after this |
-
-If `gh` CLI is authenticated, no configuration is needed.
-
----
-
-## 2. Quick Reference
-
-| Question | Command |
-|----------|---------|
-| "Where is X defined?" | `local-search --pattern "X"` → `lsp-definition` |
-| "Who calls function Y?" | `local-search --pattern "Y"` → `lsp-call-hierarchy --direction incoming` |
-| "All usages of type Z?" | `local-search --pattern "Z"` → `lsp-references` |
-| "Find X on GitHub" | `search-code --keywords-to-search "X" --owner O --repo R` |
-| "Explore repo structure" | `tree --owner O --repo R --depth 2` |
-| "Find library/package Z" | `search-packages --name Z --ecosystem npm` |
-| "Read file from repo" | `get-file --owner O --repo R --path path/to/file` |
-| "Search PRs about X" | `search-prs --owner O --repo R --query "X"` |
-| "Find repos about X" | `search-repos --keywords-to-search "X" --sort stars` |
-| "Search local code" | `local-search --pattern "X" --path ./src` |
-| "Read local file" | `local-file --path ./src/file.ts --match-string "pattern"` |
-| "Find files by name" | `local-find --path . --name "*.ts"` |
-| "View local directory" | `local-tree --path ./src --depth 2` |
-
----
-
-## 3. Invocation
-
-All commands use the Bash tool:
+CLI equivalent of the Octocode MCP tools. All commands run via:
 
 ```bash
 npx -y octocode-cli <command> [flags]
 ```
 
-**Output**: JSON to stdout by default. Add `--pretty` for human-readable format. Errors go to stderr.
-
-Every command has `--help`:
-```bash
-npx -y octocode-cli --help
-npx -y octocode-cli search-code --help
-```
+Every command supports `--help` for full flag reference.
 
 ---
 
-## 4. The Funnel Method
+## When to Use
+
+Use this CLI when Octocode MCP tools are **not available** as an MCP server. The CLI provides the same research capabilities:
+
+| MCP Tool | CLI Command |
+|----------|-------------|
+| `localSearchCode` | `local-search` |
+| `localGetFileContent` | `local-file` |
+| `localViewStructure` | `local-tree` |
+| `localFindFiles` | `local-find` |
+| `lspGotoDefinition` | `lsp-definition` |
+| `lspFindReferences` | `lsp-references` |
+| `lspCallHierarchy` | `lsp-call-hierarchy` |
+| `githubSearchCode` | `search-code` |
+| `githubGetFileContent` | `get-file` |
+| `githubViewRepoStructure` | `tree` |
+| `githubSearchRepositories` | `search-repos` |
+| `githubSearchPullRequests` | `search-prs` |
+| `packageSearch` | `search-packages` |
+
+---
+
+## The Funnel Method
 
 Progressive narrowing — each stage reduces scope. Never skip stages.
 
 ```
-DISCOVER  →  EXPLORE  →  SEARCH  →  ANALYZE  →  READ (LAST)
-    |           |           |           |           |
-    v           v           v           v           v
- Repos &     Structure   Pattern    Semantic    Implementation
- Packages   & Scope     Matching   Analysis     Details
+DISCOVER → EXPLORE → SEARCH → ANALYZE → READ (LAST)
 ```
 
 | Stage | Commands | Purpose |
@@ -84,125 +52,95 @@ DISCOVER  →  EXPLORE  →  SEARCH  →  ANALYZE  →  READ (LAST)
 | SEARCH | `search-code`, `local-search` | Find patterns, get file locations |
 | ANALYZE | `lsp-definition`, `lsp-references`, `lsp-call-hierarchy` | Semantic code intelligence |
 | READ | `get-file`, `local-file` | Implementation details — **LAST** |
-| HISTORY | `search-prs` | Change context, why code changed |
-
-**Golden Rule**: Search narrows → LSP identifies → Read confirms.
 
 ---
 
-## 5. Commands
+## Usage Patterns
 
-### GitHub
+### GitHub: Find and explore code
 
-| Command | Key Flags | Example |
-|---------|-----------|---------|
-| `search-code` | `--keywords-to-search` (required, comma-sep), `--owner`, `--repo`, `--extension`, `--limit` | `search-code --keywords-to-search "useState,hook" --owner facebook --repo react` |
-| `get-file` | `--owner`, `--repo`, `--path` (all required), `--match-string`, `--match-string-context-lines` | `get-file --owner expressjs --repo express --path lib/router/index.js --match-string "handle"` |
-| `tree` | `--owner`, `--repo` (required), `--path`, `--depth` | `tree --owner expressjs --repo express --path lib --depth 2` |
-| `search-repos` | `--keywords-to-search`, `--topics-to-search`, `--stars`, `--sort` | `search-repos --keywords-to-search "react,state" --sort stars --limit 5` |
-| `search-prs` | `--owner`, `--repo`, `--query`, `--merged`, `--state` | `search-prs --owner expressjs --repo express --query "security" --merged` |
+```bash
+# Search code in a repo
+npx -y octocode-cli search-code --keywords-to-search "useState,hook" --owner facebook --repo react
 
-| `search-packages` | `--name` (required), `--ecosystem` (npm\|python) | `search-packages --name fastapi --ecosystem python` |
+# Explore repo structure
+npx -y octocode-cli tree --owner expressjs --repo express --path lib --depth 2
 
-### Local
+# Read a file with pattern matching
+npx -y octocode-cli get-file --owner expressjs --repo express --path lib/router/index.js --match-string "handle"
 
-| Command | Key Flags | Example |
-|---------|-----------|---------|
-| `local-search` | `--pattern` (required), `--path` (required), `--type`, `--files-only` | `local-search --pattern "handleAuth" --path ./src --type ts` |
-| `local-file` | `--path` (required), `--match-string`, `--start-line`, `--end-line` | `local-file --path ./src/auth.ts --match-string "validateToken"` |
-| `local-find` | `--path` (required), `--name`, `--type`, `--modified-within` | `local-find --path . --name "*.test.ts" --modified-within 7d` |
-| `local-tree` | `--path` (required), `--depth`, `--extension`, `--sort-by` | `local-tree --path ./src --depth 2 --extension ts` |
+# Search repositories
+npx -y octocode-cli search-repos --keywords-to-search "react,state" --sort stars
 
-### LSP
+# Search merged PRs
+npx -y octocode-cli search-prs --owner expressjs --repo express --query "security" --merged
 
-All LSP commands require `--line-hint` from a prior `local-search` result. Never guess line numbers.
+# Find a package
+npx -y octocode-cli search-packages --name express --ecosystem npm --fetch-metadata
+```
 
-| Command | Key Flags | Example |
-|---------|-----------|---------|
-| `lsp-definition` | `--uri`, `--symbol-name`, `--line-hint` (all required) | `lsp-definition --uri ./src/auth.ts --symbol-name "validateToken" --line-hint 42` |
-| `lsp-references` | `--uri`, `--symbol-name`, `--line-hint` (all required) | `lsp-references --uri ./src/auth.ts --symbol-name "validateToken" --line-hint 42` |
-| `lsp-call-hierarchy` | `--uri`, `--symbol-name`, `--line-hint`, `--direction` (all required) | `lsp-call-hierarchy --uri ./src/auth.ts --symbol-name "validateToken" --line-hint 42 --direction incoming` |
+### Local: Search and read code
 
-> **Full command reference with all flags**: [references/command-reference.md](references/command-reference.md)
+```bash
+# Search for a pattern
+npx -y octocode-cli local-search --pattern "handleAuth" --path ./src --type ts
 
----
+# Read a file with targeted extraction
+npx -y octocode-cli local-file --path ./src/auth.ts --match-string "validateToken" --match-string-context-lines 10
 
-## 6. Research Flows
+# Find files by name/metadata
+npx -y octocode-cli local-find --path . --name "*.test.ts" --modified-within 7d
 
-### Local Flow (LSP Triple Lock)
+# View directory structure
+npx -y octocode-cli local-tree --path ./src --depth 2 --extension ts
+```
 
-1. `local-search` first — get file path and line number
-2. `lsp-definition` / `lsp-references` / `lsp-call-hierarchy` — use `--line-hint` from search
-3. `local-file` — read implementation details **LAST**
+### LSP: Semantic analysis
 
-Never call LSP commands without `--line-hint` from `local-search`.
+All LSP commands require `--line-hint` from a prior `local-search`. Never guess line numbers.
 
-### GitHub Flow
+```bash
+# 1. Search first to get line hint
+npx -y octocode-cli local-search --pattern "validateToken" --path ./src --type ts
 
-1. `search-packages` or `search-repos` — find the right repo
-2. `tree` — understand repo layout
-3. `search-code` — find specific patterns
-4. `get-file` — read content **LAST**
-5. `search-prs` — change history context
+# 2. Go to definition
+npx -y octocode-cli lsp-definition --uri ./src/auth.ts --symbol-name "validateToken" --line-hint 42
 
-### Transition Matrix
+# 3. Find all references
+npx -y octocode-cli lsp-references --uri ./src/auth.ts --symbol-name "validateToken" --line-hint 42
 
-| From | Need... | Go To |
-|------|---------|-------|
-| `local-tree` | Find pattern | `local-search` |
-| `local-search` | Definition | `lsp-definition` (use --line-hint) |
-| `local-search` | All usages | `lsp-references` (use --line-hint) |
-| `local-search` | Call flow | `lsp-call-hierarchy` (use --line-hint) |
-| `local-search` | Empty results | `local-find` or `local-tree` |
-| `lsp-definition` | Usages | `lsp-references` |
-| `lsp-definition` | Call graph | `lsp-call-hierarchy` |
-| Any local | External repo | `tree` → `search-code` |
-| Any local | Package source | `search-packages` → `tree` |
-| Any local | PR history | `search-prs` |
-| `search-packages` | Repo structure | `tree` |
-| `tree` | Find pattern | `search-code` |
-| `search-code` | Read file | `get-file` |
+# 4. Trace call hierarchy
+npx -y octocode-cli lsp-call-hierarchy --uri ./src/auth.ts --symbol-name "validateToken" --line-hint 42 --direction incoming
+```
 
-> **Full workflow patterns and recipes**: [references/workflow-patterns.md](references/workflow-patterns.md)
+### Common research flow
 
----
+```bash
+# Local: structure → search → LSP → read
+npx -y octocode-cli local-tree --path . --depth 2
+npx -y octocode-cli local-search --pattern "createSession" --path ./src --type ts
+npx -y octocode-cli lsp-call-hierarchy --uri ./src/auth.ts --symbol-name "createSession" --line-hint 25 --direction incoming
+npx -y octocode-cli local-file --path ./src/auth.ts --match-string "createSession"
 
-## 7. Error Recovery
-
-| Situation | Action |
-|-----------|--------|
-| Empty results | Try semantic variants (auth → login → credentials → session) |
-| Too many results | Add filters: `--extension`, `--path`, `--type` |
-| Rate limit | Back off, batch fewer queries |
-| Auth failure | Check `gh auth status` or set `GITHUB_TOKEN` |
-| Large file | Use `--match-string` for targeted extraction, or `--start-line`/`--end-line` |
-| LSP no results | Verify `--line-hint` from `local-search`; try broader search |
-| 3 consecutive empties | Broaden: remove `--type`, try `--case-insensitive` |
-| Blocked >2 attempts | Summarize what was tried, ask user |
+# GitHub: discover → explore → search → read
+npx -y octocode-cli search-packages --name zustand --ecosystem npm
+npx -y octocode-cli tree --owner pmndrs --repo zustand --depth 2
+npx -y octocode-cli search-code --keywords-to-search "createStore" --owner pmndrs --repo zustand
+npx -y octocode-cli get-file --owner pmndrs --repo zustand --path src/vanilla.ts --match-string "createStore"
+```
 
 ---
 
-## 8. Additional Capabilities
+## Output
 
-These reference skills provide specialized workflows. Read the relevant file when the user's request matches:
-
-| Need | Reference File |
-|------|---------------|
-| Generate project documentation | [references/documentation-writer.md](references/documentation-writer.md) |
-| Plan & implement a feature | [references/plan.md](references/plan.md) |
-| Review a PR or local changes | [references/pr-reviewer.md](references/pr-reviewer.md) |
-| Write an RFC / design doc | [references/rfc-generator.md](references/rfc-generator.md) |
-| Optimize a prompt / SKILL.md | [references/prompt-optimizer.md](references/prompt-optimizer.md) |
-| Roast code quality | [references/roast.md](references/roast.md) |
+JSON to stdout by default. Add `--pretty` for human-readable format. Errors go to stderr.
 
 ---
 
-## 9. Principles
+## Principles
 
-- **Evidence first** — find proof in code before claiming anything
 - **Funnel method** — discover → explore → search → analyze → read
 - **LSP requires search first** — never guess `--line-hint`
 - **Read content LAST** — after search and LSP analysis
 - **Use `--match-string` for large files** — targeted extraction over full content
-- **Semantic variants** — when search is empty, try synonyms
-- **Cite precisely** — include file paths and line numbers in answers
+- **Use `--help` for details** — every command has full flag documentation
