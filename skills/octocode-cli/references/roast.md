@@ -1,6 +1,6 @@
 # Code Roast
 
-Sharp, evidence-backed code roasting using octocode-tools CLI.
+Sharp, evidence-backed code roasting using octocode-cli CLI.
 
 ## When to Use
 - "Roast my code", "review code brutally", "find code sins"
@@ -29,13 +29,13 @@ TARGET → OBLITERATE → INVENTORY → AUTOPSY → [USER PICKS] → RESURRECT
 
 ```bash
 # Survey the crime scene
-npx -y octocode-tools local-tree --path . --depth 2 --details
+npx -y octocode-cli local-tree --path . --depth 2 --details
 
 # Hunt for God files (large files)
-npx -y octocode-tools local-find --path ./src --type f --sort-by size --limit 20
+npx -y octocode-cli local-find --path ./src --type f --sort-by size --limit 20
 
 # Map the blast radius
-npx -y octocode-tools local-search --pattern "any\|TODO\|FIXME\|HACK\|XXX" --path ./src --files-only --type ts
+npx -y octocode-cli local-search --pattern "any\|TODO\|FIXME\|HACK\|XXX" --path ./src --files-only --type ts
 ```
 
 Auto-detect scope: staged files → branch diff → specified files → entire repo.
@@ -46,14 +46,14 @@ Auto-detect scope: staged files → branch diff → specified files → entire r
 
 ```bash
 # Hunt antipatterns
-npx -y octocode-tools local-search --pattern "catch.*\\{\\s*\\}" --path ./src --type ts  # Empty catches
-npx -y octocode-tools local-search --pattern ": any" --path ./src --type ts  # any abuse
-npx -y octocode-tools local-search --pattern "console\\.log" --path ./src --type ts  # Debug leftovers
-npx -y octocode-tools local-search --pattern "password\|secret\|api.key" --path ./src --type ts  # Hardcoded creds
+npx -y octocode-cli local-search --pattern "catch.*\\{\\s*\\}" --path ./src --type ts  # Empty catches
+npx -y octocode-cli local-search --pattern ": any" --path ./src --type ts  # any abuse
+npx -y octocode-cli local-search --pattern "console\\.log" --path ./src --type ts  # Debug leftovers
+npx -y octocode-cli local-search --pattern "password\|secret\|api.key" --path ./src --type ts  # Hardcoded creds
 
 # Trace infection paths with LSP
-npx -y octocode-tools lsp-find-references --uri ./src/bad-pattern.ts --symbol "badFunction" --line-hint 42
-npx -y octocode-tools lsp-call-hierarchy --uri ./src/god-file.ts --symbol "doEverything" --line-hint 100 --direction outgoing
+npx -y octocode-cli lsp-find-references --uri ./src/bad-pattern.ts --symbol "badFunction" --line-hint 42
+npx -y octocode-cli lsp-call-hierarchy --uri ./src/god-file.ts --symbol "doEverything" --line-hint 100 --direction outgoing
 ```
 
 ### Phase 3: Sin Inventory

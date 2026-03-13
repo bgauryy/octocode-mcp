@@ -1,13 +1,13 @@
 ---
 name: octocode-cli
-description: "Code research and analysis using octocode-tools CLI (npx). Use when user asks to research, search, explore, find, trace, or analyze code — on GitHub, local codebase, or packages. Triggers: 'find X on GitHub', 'search repo', 'explore library', 'trace definition', 'find PRs about', 'search packages', 'who calls function X', 'how does Y work in Z repo', 'find usages of X', 'what package does Y'. Also provides documentation writing, PR review, RFC generation, planning, prompt optimization, and code roasting via reference skills. Use this skill even when the user doesn't explicitly mention 'octocode' — any code search, exploration, or research need across GitHub or local files should use these CLI tools."
+description: "Code research and analysis using octocode-cli CLI (npx). Use when user asks to research, search, explore, find, trace, or analyze code — on GitHub, local codebase, or packages. Triggers: 'find X on GitHub', 'search repo', 'explore library', 'trace definition', 'find PRs about', 'search packages', 'who calls function X', 'how does Y work in Z repo', 'find usages of X', 'what package does Y'. Also provides documentation writing, PR review, RFC generation, planning, prompt optimization, and code roasting via reference skills. Use this skill even when the user doesn't explicitly mention 'octocode' — any code search, exploration, or research need across GitHub or local files should use these CLI tools."
 ---
 
 # Octocode CLI — Code Research & Analysis
 
 `DISCOVER` → `EXPLORE` → `SEARCH` → `ANALYZE` → `READ`
 
-All commands run via `npx -y octocode-tools <command> [flags]` using the Bash tool.
+All commands run via `npx -y octocode-cli <command> [flags]` using the Bash tool.
 
 ---
 
@@ -52,15 +52,15 @@ If `gh` CLI is authenticated, no configuration is needed.
 All commands use the Bash tool:
 
 ```bash
-npx -y octocode-tools <command> [flags]
+npx -y octocode-cli <command> [flags]
 ```
 
 **Output**: JSON to stdout by default. Add `--pretty` for human-readable format. Errors go to stderr.
 
 Every command has `--help`:
 ```bash
-npx -y octocode-tools --help
-npx -y octocode-tools search-code --help
+npx -y octocode-cli --help
+npx -y octocode-cli search-code --help
 ```
 
 ---

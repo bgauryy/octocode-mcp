@@ -1,6 +1,6 @@
 # Command Reference
 
-Complete flag reference for all 13 octocode-tools CLI commands.
+Complete flag reference for all 13 octocode-cli CLI commands.
 
 ## Table of Contents
 - [GitHub Commands](#github-commands)
@@ -42,7 +42,7 @@ Search code across GitHub repositories using keyword matching.
 | `--pretty` | boolean | No | false | Human-readable output |
 
 ```bash
-npx -y octocode-tools search-code --keywords "useState,hook" --owner facebook --repo react --extension tsx --limit 5
+npx -y octocode-cli search-code --keywords "useState,hook" --owner facebook --repo react --extension tsx --limit 5
 ```
 
 ### get-file
@@ -67,7 +67,7 @@ Get file content from a GitHub repository with pattern matching.
 | `--pretty` | boolean | No | false | Human-readable output |
 
 ```bash
-npx -y octocode-tools get-file --owner expressjs --repo express --path lib/router/index.js --match "handle" --context-lines 10
+npx -y octocode-cli get-file --owner expressjs --repo express --path lib/router/index.js --match "handle" --context-lines 10
 ```
 
 ### tree
@@ -86,7 +86,7 @@ View repository directory structure.
 | `--pretty` | boolean | No | false | Human-readable output |
 
 ```bash
-npx -y octocode-tools tree --owner facebook --repo react --path packages --depth 2
+npx -y octocode-cli tree --owner facebook --repo react --path packages --depth 2
 ```
 
 ### search-repos
@@ -109,7 +109,7 @@ Search GitHub repositories.
 | `--pretty` | boolean | No | false | Human-readable output |
 
 ```bash
-npx -y octocode-tools search-repos --keywords "react,state,management" --sort stars --limit 5
+npx -y octocode-cli search-repos --keywords "react,state,management" --sort stars --limit 5
 ```
 
 ### search-prs
@@ -144,7 +144,7 @@ Search pull requests on GitHub.
 | `--pretty` | boolean | No | false | Human-readable output |
 
 ```bash
-npx -y octocode-tools search-prs --owner expressjs --repo express --query "security fix" --merged --limit 3
+npx -y octocode-cli search-prs --owner expressjs --repo express --query "security fix" --merged --limit 3
 ```
 
 ### search-packages
@@ -160,7 +160,7 @@ Search npm or PyPI packages.
 | `--pretty` | boolean | No | false | Human-readable output |
 
 ```bash
-npx -y octocode-tools search-packages --name express --ecosystem npm --fetch-metadata
+npx -y octocode-cli search-packages --name express --ecosystem npm --fetch-metadata
 ```
 
 ---
@@ -199,7 +199,7 @@ Search local code using ripgrep.
 | `--pretty` | boolean | No | false | Human-readable output |
 
 ```bash
-npx -y octocode-tools local-search --pattern "handleAuth" --path ./src --type ts --context-lines 3
+npx -y octocode-cli local-search --pattern "handleAuth" --path ./src --type ts --context-lines 3
 ```
 
 ### local-file
@@ -221,7 +221,7 @@ Read local file content with targeted extraction.
 | `--pretty` | boolean | No | false | Human-readable output |
 
 ```bash
-npx -y octocode-tools local-file --path ./src/auth.ts --match "validateToken" --context-lines 10
+npx -y octocode-cli local-file --path ./src/auth.ts --match "validateToken" --context-lines 10
 ```
 
 ### local-find
@@ -252,7 +252,7 @@ Find local files by name, type, or metadata.
 | `--pretty` | boolean | No | false | Human-readable output |
 
 ```bash
-npx -y octocode-tools local-find --path . --name "*.test.ts" --modified-within 7d --sort-by modified
+npx -y octocode-cli local-find --path . --name "*.test.ts" --modified-within 7d --sort-by modified
 ```
 
 ### local-tree
@@ -280,7 +280,7 @@ View local directory structure.
 | `--pretty` | boolean | No | false | Human-readable output |
 
 ```bash
-npx -y octocode-tools local-tree --path ./src --depth 2 --extension ts --sort-by name
+npx -y octocode-cli local-tree --path ./src --depth 2 --extension ts --sort-by name
 ```
 
 ---
@@ -305,7 +305,7 @@ Go to symbol definition.
 | `--pretty` | boolean | No | false | Human-readable output |
 
 ```bash
-npx -y octocode-tools lsp-definition --uri ./src/auth.ts --symbol "validateToken" --line-hint 42
+npx -y octocode-cli lsp-definition --uri ./src/auth.ts --symbol "validateToken" --line-hint 42
 ```
 
 ### lsp-references
@@ -328,7 +328,7 @@ Find all references to a symbol.
 | `--pretty` | boolean | No | false | Human-readable output |
 
 ```bash
-npx -y octocode-tools lsp-references --uri ./src/auth.ts --symbol "validateToken" --line-hint 42 --context-lines 3
+npx -y octocode-cli lsp-references --uri ./src/auth.ts --symbol "validateToken" --line-hint 42 --context-lines 3
 ```
 
 ### lsp-call-hierarchy
@@ -351,5 +351,5 @@ Trace call relationships (incoming/outgoing).
 | `--pretty` | boolean | No | false | Human-readable output |
 
 ```bash
-npx -y octocode-tools lsp-call-hierarchy --uri ./src/auth.ts --symbol "validateToken" --line-hint 42 --direction incoming --depth 2
+npx -y octocode-cli lsp-call-hierarchy --uri ./src/auth.ts --symbol "validateToken" --line-hint 42 --direction incoming --depth 2
 ```

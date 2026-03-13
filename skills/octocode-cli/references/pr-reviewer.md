@@ -1,6 +1,6 @@
 # PR Reviewer
 
-Expert code review using octocode-tools CLI for deep code forensics and holistic evaluation.
+Expert code review using octocode-cli CLI for deep code forensics and holistic evaluation.
 
 ## When to Use
 - User asks to "review a PR", "review pull request", "check this PR", "review my changes"
@@ -43,20 +43,20 @@ git log --oneline -10
 
 ## Phase 2: Context Gathering
 
-Use octocode-tools to understand the changed code:
+Use octocode-cli to understand the changed code:
 
 ```bash
 # For each changed file, understand its role
-npx -y octocode-tools local-search --pattern "export.*function\|export.*class" --path ./src/changed-file.ts
+npx -y octocode-cli local-search --pattern "export.*function\|export.*class" --path ./src/changed-file.ts
 
 # Trace impact — who calls the changed functions?
-npx -y octocode-tools lsp-call-hierarchy --uri ./src/changed-file.ts --symbol "changedFunction" --line-hint 42 --direction incoming
+npx -y octocode-cli lsp-call-hierarchy --uri ./src/changed-file.ts --symbol "changedFunction" --line-hint 42 --direction incoming
 
 # Find all usages of changed types
-npx -y octocode-tools lsp-references --uri ./src/types.ts --symbol "ChangedType" --line-hint 10
+npx -y octocode-cli lsp-references --uri ./src/types.ts --symbol "ChangedType" --line-hint 10
 
 # Check for similar patterns in codebase
-npx -y octocode-tools local-search --pattern "similar_pattern" --path ./src --type ts
+npx -y octocode-cli local-search --pattern "similar_pattern" --path ./src --type ts
 ```
 
 ## Phase 3: User Checkpoint
@@ -72,16 +72,16 @@ Present findings and ask for focus direction:
 
 ```bash
 # 1. Search for the changed symbol
-npx -y octocode-tools local-search --pattern "changedFunction" --path ./src --type ts
+npx -y octocode-cli local-search --pattern "changedFunction" --path ./src --type ts
 
 # 2. Trace incoming callers
-npx -y octocode-tools lsp-call-hierarchy --uri ./src/file.ts --symbol "changedFunction" --line-hint 42 --direction incoming --depth 2
+npx -y octocode-cli lsp-call-hierarchy --uri ./src/file.ts --symbol "changedFunction" --line-hint 42 --direction incoming --depth 2
 
 # 3. Find all references (types, variables)
-npx -y octocode-tools lsp-references --uri ./src/file.ts --symbol "ChangedType" --line-hint 10
+npx -y octocode-cli lsp-references --uri ./src/file.ts --symbol "ChangedType" --line-hint 10
 
 # 4. Check outgoing dependencies
-npx -y octocode-tools lsp-call-hierarchy --uri ./src/file.ts --symbol "changedFunction" --line-hint 42 --direction outgoing
+npx -y octocode-cli lsp-call-hierarchy --uri ./src/file.ts --symbol "changedFunction" --line-hint 42 --direction outgoing
 ```
 
 ### Domain Analysis
@@ -99,8 +99,8 @@ npx -y octocode-tools lsp-call-hierarchy --uri ./src/file.ts --symbol "changedFu
 
 ```bash
 # Check how a dependency is supposed to be used
-npx -y octocode-tools search-packages --name "dependency-name" --ecosystem npm --fetch-metadata
-npx -y octocode-tools search-code --keywords "usage,pattern" --owner owner --repo dep-repo --extension ts
+npx -y octocode-cli search-packages --name "dependency-name" --ecosystem npm --fetch-metadata
+npx -y octocode-cli search-code --keywords "usage,pattern" --owner owner --repo dep-repo --extension ts
 ```
 
 ## Phase 5: Finalize

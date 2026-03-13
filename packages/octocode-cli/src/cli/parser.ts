@@ -7,6 +7,7 @@ import type { ParsedArgs } from './types.js';
 // Options that take values
 // Note: -h is reserved for --help, use -H for --hostname
 const OPTIONS_WITH_VALUES = new Set([
+  // Existing CLI options
   'ide',
   'method',
   'output',
@@ -15,11 +16,73 @@ const OPTIONS_WITH_VALUES = new Set([
   'H', // Short for --hostname (uppercase to avoid conflict with -h for help)
   'git-protocol',
   'p',
-  'type', // For token command
+  'type', // For token command + local-search/local-find
   't', // Short for --type
   'model', // For chat command
   'resume', // For chat command
   'r', // Short for --resume
+
+  // Research tool options
+  'keywords',
+  'owner',
+  'repo',
+  'extension',
+  'filename',
+  'path',
+  'match',
+  'limit',
+  'page',
+  'branch',
+  'start-line',
+  'end-line',
+  'context-lines',
+  'char-offset',
+  'char-length',
+  'depth',
+  'entries-per-page',
+  'name',
+  'ecosystem',
+  'query',
+  'pr-number',
+  'state',
+  'author',
+  'assignee',
+  'label',
+  'head',
+  'base',
+  'created',
+  'updated',
+  'sort',
+  'order',
+  'content-type',
+  'pattern',
+  'mode',
+  'include',
+  'exclude',
+  'exclude-dir',
+  'max-files',
+  'files-per-page',
+  'file-page',
+  'iname',
+  'names',
+  'regex',
+  'max-depth',
+  'min-depth',
+  'modified-within',
+  'modified-before',
+  'size-greater',
+  'size-less',
+  'sort-by',
+  'extensions',
+  'uri',
+  'symbol',
+  'line-hint',
+  'order-hint',
+  'refs-per-page',
+  'include-pattern',
+  'exclude-pattern',
+  'direction',
+  'calls-per-page',
 ]);
 
 /**

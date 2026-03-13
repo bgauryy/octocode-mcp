@@ -41,6 +41,50 @@ export function showHelp(): void {
     `    ${c('magenta', 'token')}       Print the stored GitHub OAuth token`
   );
   console.log();
+  console.log(`  ${bold('RESEARCH COMMANDS')}`);
+  console.log(`    ${dim('GitHub:')}`);
+  console.log(
+    `    ${c('magenta', 'search-code')}       Search code across GitHub repositories`
+  );
+  console.log(
+    `    ${c('magenta', 'get-file')}          Get file content from a GitHub repository`
+  );
+  console.log(
+    `    ${c('magenta', 'tree')}              View repository directory structure`
+  );
+  console.log(
+    `    ${c('magenta', 'search-repos')}      Search GitHub repositories`
+  );
+  console.log(
+    `    ${c('magenta', 'search-prs')}        Search pull requests on GitHub`
+  );
+  console.log(
+    `    ${c('magenta', 'search-packages')}   Search npm or PyPI packages`
+  );
+  console.log(`    ${dim('Local:')}`);
+  console.log(
+    `    ${c('magenta', 'local-search')}      Search local code with ripgrep`
+  );
+  console.log(
+    `    ${c('magenta', 'local-file')}        Read local file content`
+  );
+  console.log(
+    `    ${c('magenta', 'local-find')}        Find local files by name, type, or metadata`
+  );
+  console.log(
+    `    ${c('magenta', 'local-tree')}        View local directory structure`
+  );
+  console.log(`    ${dim('LSP:')}`);
+  console.log(
+    `    ${c('magenta', 'lsp-definition')}    Go to symbol definition`
+  );
+  console.log(
+    `    ${c('magenta', 'lsp-references')}    Find all references to a symbol`
+  );
+  console.log(
+    `    ${c('magenta', 'lsp-call-hierarchy')} Trace call relationships`
+  );
+  console.log();
   console.log(`  ${bold('OPTIONS')}`);
   console.log(`    ${c('cyan', '-h, --help')}       Show this help message`);
   console.log(`    ${c('cyan', '-v, --version')}    Show version number`);

@@ -1,6 +1,6 @@
 # Documentation Writer
 
-Production-ready documentation generation pipeline using octocode-tools CLI for code analysis.
+Production-ready documentation generation pipeline using octocode-cli CLI for code analysis.
 
 ## When to Use
 - User asks to "generate documentation", "document this project", "create docs", "write documentation"
@@ -20,16 +20,16 @@ Use CLI tools to understand the codebase:
 
 ```bash
 # Survey structure
-npx -y octocode-tools local-tree --path . --depth 3 --details
+npx -y octocode-cli local-tree --path . --depth 3 --details
 
 # Identify languages and frameworks
-npx -y octocode-tools local-find --path . --type f --sort-by size --limit 50
+npx -y octocode-cli local-find --path . --type f --sort-by size --limit 50
 
 # Find entry points
-npx -y octocode-tools local-search --pattern "main\|start\|bootstrap\|createApp" --path ./src --files-only
+npx -y octocode-cli local-search --pattern "main\|start\|bootstrap\|createApp" --path ./src --files-only
 
 # Find APIs and exports
-npx -y octocode-tools local-search --pattern "export.*function\|app\.(get|post|put|delete)" --path ./src --type ts
+npx -y octocode-cli local-search --pattern "export.*function\|app\.(get|post|put|delete)" --path ./src --type ts
 ```
 
 Analyze: language, architecture, components, dependencies, flows, APIs.
@@ -50,14 +50,14 @@ Answer each question with evidence from the code:
 ```bash
 # For each question, use the funnel method:
 # 1. Search for relevant patterns
-npx -y octocode-tools local-search --pattern "authenticate" --path ./src --type ts
+npx -y octocode-cli local-search --pattern "authenticate" --path ./src --type ts
 
 # 2. Trace definitions and references
-npx -y octocode-tools lsp-definition --uri ./src/auth.ts --symbol "authenticate" --line-hint 15
-npx -y octocode-tools lsp-call-hierarchy --uri ./src/auth.ts --symbol "authenticate" --line-hint 15 --direction incoming
+npx -y octocode-cli lsp-definition --uri ./src/auth.ts --symbol "authenticate" --line-hint 15
+npx -y octocode-cli lsp-call-hierarchy --uri ./src/auth.ts --symbol "authenticate" --line-hint 15 --direction incoming
 
 # 3. Read implementation details LAST
-npx -y octocode-tools local-file --path ./src/auth.ts --match "authenticate" --context-lines 10
+npx -y octocode-cli local-file --path ./src/auth.ts --match "authenticate" --context-lines 10
 ```
 
 ### Phase 4: Orchestration

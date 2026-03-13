@@ -7,7 +7,12 @@
 export function withContext<T extends Record<string, unknown>>(
   query: T,
   id = 'cli-query'
-): T & { id: string; mainResearchGoal: string; researchGoal: string; reasoning: string } {
+): T & {
+  id: string;
+  mainResearchGoal: string;
+  researchGoal: string;
+  reasoning: string;
+} {
   return {
     id,
     mainResearchGoal: 'CLI query',

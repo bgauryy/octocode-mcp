@@ -1,6 +1,6 @@
 # RFC Generator
 
-Research-driven RFC and design document generator using octocode-tools CLI.
+Research-driven RFC and design document generator using octocode-cli CLI.
 
 ## When to Use
 - User asks to "create an RFC", "write a design doc", "propose a migration"
@@ -40,33 +40,33 @@ Dual-track research using CLI tools:
 
 ```bash
 # How does the codebase handle this today?
-npx -y octocode-tools local-search --pattern "current_approach" --path ./src --type ts
+npx -y octocode-cli local-search --pattern "current_approach" --path ./src --type ts
 
 # Which modules are impacted?
-npx -y octocode-tools lsp-references --uri ./src/module.ts --symbol "AffectedType" --line-hint 10
+npx -y octocode-cli lsp-references --uri ./src/module.ts --symbol "AffectedType" --line-hint 10
 
 # What patterns exist?
-npx -y octocode-tools local-search --pattern "middleware\|interceptor\|handler" --path ./src --files-only
+npx -y octocode-cli local-search --pattern "middleware\|interceptor\|handler" --path ./src --files-only
 
 # What dependencies are involved?
-npx -y octocode-tools local-search --pattern "from '.*'" --path ./src/affected-area --type ts --files-only
+npx -y octocode-cli local-search --pattern "from '.*'" --path ./src/affected-area --type ts --files-only
 ```
 
 ### Track B — External Best Practices
 
 ```bash
 # How do major projects solve this?
-npx -y octocode-tools search-repos --keywords "caching,middleware,express" --sort stars --limit 5
+npx -y octocode-cli search-repos --keywords "caching,middleware,express" --sort stars --limit 5
 
 # What packages exist?
-npx -y octocode-tools search-packages --name "cache-manager" --ecosystem npm --fetch-metadata --limit 3
+npx -y octocode-cli search-packages --name "cache-manager" --ecosystem npm --fetch-metadata --limit 3
 
 # Explore implementations
-npx -y octocode-tools tree --owner owner --repo best-repo --path src --depth 2
-npx -y octocode-tools search-code --keywords "cache,strategy" --owner owner --repo best-repo --extension ts
+npx -y octocode-cli tree --owner owner --repo best-repo --path src --depth 2
+npx -y octocode-cli search-code --keywords "cache,strategy" --owner owner --repo best-repo --extension ts
 
 # Check PRs for patterns
-npx -y octocode-tools search-prs --owner owner --repo best-repo --query "caching strategy" --merged
+npx -y octocode-cli search-prs --owner owner --repo best-repo --query "caching strategy" --merged
 ```
 
 ### When to Run Which Track
