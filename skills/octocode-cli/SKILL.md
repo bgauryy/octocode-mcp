@@ -1,11 +1,11 @@
 ---
 name: octocode-cli
-description: "CLI alternative to Octocode MCP tools. Use when Octocode MCP server is NOT available but the user needs code research, search, exploration, or analysis — on GitHub, local codebase, or packages. Run commands via `npx -y octocode-cli <command> [flags]` using the Bash tool. Triggers: 'find X on GitHub', 'search repo', 'explore library', 'trace definition', 'find PRs about', 'search packages', 'who calls function X', 'how does Y work in Z repo', 'find usages of X', 'what package does Y'. Also use this skill when another octocode skill (documentation-writer, plan, PR reviewer, RFC generator, roast) mentions Octocode MCP tools but MCP is not available — this CLI provides the same capabilities."
+description: "Code research and analysis CLI. Use when user asks to research, search, explore, find, trace, or analyze code — on GitHub, local codebase, or packages. Run commands via `npx -y octocode-cli <command> [flags]` using the Bash tool. Triggers: 'find X on GitHub', 'search repo', 'explore library', 'trace definition', 'find PRs about', 'search packages', 'who calls function X', 'how does Y work in Z repo', 'find usages of X', 'what package does Y'. Use this skill even when the user doesn't explicitly mention 'octocode' — any code search, exploration, or research need across GitHub or local files should use these CLI tools."
 ---
 
 # Octocode CLI
 
-CLI equivalent of the Octocode MCP tools. All commands run via:
+Code research and analysis via CLI. All commands run via:
 
 ```bash
 npx -y octocode-cli <command> [flags]
@@ -15,25 +15,23 @@ Every command supports `--help` for full flag reference.
 
 ---
 
-## When to Use
+## Commands
 
-Use this CLI when Octocode MCP tools are **not available** as an MCP server. The CLI provides the same research capabilities:
-
-| MCP Tool | CLI Command |
-|----------|-------------|
-| `localSearchCode` | `local-search` |
-| `localGetFileContent` | `local-file` |
-| `localViewStructure` | `local-tree` |
-| `localFindFiles` | `local-find` |
-| `lspGotoDefinition` | `lsp-definition` |
-| `lspFindReferences` | `lsp-references` |
-| `lspCallHierarchy` | `lsp-call-hierarchy` |
-| `githubSearchCode` | `search-code` |
-| `githubGetFileContent` | `get-file` |
-| `githubViewRepoStructure` | `tree` |
-| `githubSearchRepositories` | `search-repos` |
-| `githubSearchPullRequests` | `search-prs` |
-| `packageSearch` | `search-packages` |
+| Category | Command | Description |
+|----------|---------|-------------|
+| GitHub | `search-code` | Search code across repositories |
+| GitHub | `get-file` | Get file content from a repository |
+| GitHub | `tree` | View repository directory structure |
+| GitHub | `search-repos` | Search repositories |
+| GitHub | `search-prs` | Search pull requests |
+| GitHub | `search-packages` | Search npm or PyPI packages |
+| Local | `local-search` | Search local code with ripgrep |
+| Local | `local-file` | Read local file content |
+| Local | `local-find` | Find files by name, type, or metadata |
+| Local | `local-tree` | View local directory structure |
+| LSP | `lsp-definition` | Go to symbol definition |
+| LSP | `lsp-references` | Find all references to a symbol |
+| LSP | `lsp-call-hierarchy` | Trace call relationships |
 
 ---
 
