@@ -54,8 +54,10 @@ describe('Octocode Eval Suite', () => {
       }
 
       if (COMPARE_BASELINE) {
-        await loadLatestBaseline('octocode-eval');
-        // Baseline comparison runs silently in CI
+        const baseline = await loadLatestBaseline('octocode-eval');
+        if (baseline) {
+          compareToBaseline(results, baseline.results);
+        }
       }
     }
   });

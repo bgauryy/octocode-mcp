@@ -27,8 +27,8 @@ describe('Local tool schemas (TDD for local tools registration)', () => {
     });
 
     it('should have correct description containing tool name', () => {
-      const description =
-        bulkQueriesShape(BulkRipgrepQuerySchema).description || '';
+      const queriesShape = bulkQueriesShape(BulkRipgrepQuerySchema);
+      const description = queriesShape?.description ?? '';
       // Should contain the actual tool name, not 'undefined'
       expect(description).not.toContain('undefined');
       expect(description).toContain(STATIC_TOOL_NAMES.LOCAL_RIPGREP);
@@ -42,8 +42,8 @@ describe('Local tool schemas (TDD for local tools registration)', () => {
     });
 
     it('should have correct description containing tool name', () => {
-      const description =
-        bulkQueriesShape(BulkViewStructureSchema).description || '';
+      const queriesShape = bulkQueriesShape(BulkViewStructureSchema);
+      const description = queriesShape?.description ?? '';
       expect(description).not.toContain('undefined');
       expect(description).toContain(STATIC_TOOL_NAMES.LOCAL_VIEW_STRUCTURE);
     });
@@ -56,8 +56,8 @@ describe('Local tool schemas (TDD for local tools registration)', () => {
     });
 
     it('should have correct description containing tool name', () => {
-      const description =
-        bulkQueriesShape(BulkFindFilesSchema).description || '';
+      const queriesShape = bulkQueriesShape(BulkFindFilesSchema);
+      const description = queriesShape?.description ?? '';
       expect(description).not.toContain('undefined');
       expect(description).toContain(STATIC_TOOL_NAMES.LOCAL_FIND_FILES);
     });
@@ -70,8 +70,8 @@ describe('Local tool schemas (TDD for local tools registration)', () => {
     });
 
     it('should have correct description containing tool name', () => {
-      const description =
-        bulkQueriesShape(BulkFetchContentSchema).description || '';
+      const queriesShape = bulkQueriesShape(BulkFetchContentSchema);
+      const description = queriesShape?.description ?? '';
       expect(description).not.toContain('undefined');
       expect(description).toContain(STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT);
     });

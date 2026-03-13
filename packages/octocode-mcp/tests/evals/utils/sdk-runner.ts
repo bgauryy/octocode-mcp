@@ -7,7 +7,6 @@
  * - No tools (baseline)
  */
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import type {
   EvalTestCase,
   ToolResponse,
@@ -45,12 +44,54 @@ export interface MultiProviderEvalResult {
   };
 }
 
+interface ClaudeQueryStreamMessage {
+  type: string;
+  subtype?: string;
+  result?: string;
+  message?: {
+    content?: Array<
+      | { type: 'tool_use'; name: string }
+      | { type: 'text'; text: string }
+      | { type: string }
+    >;
+  };
+}
+
+interface ClaudeQueryInput {
+  prompt: string;
+  options: {
+    model?: string;
+    maxTurns?: number;
+    mcpServers: Record<string, { command: string; args: string[] }>;
+    permissionMode: 'bypassPermissions';
+    allowDangerouslySkipPermissions: boolean;
+  };
+}
+
+type ClaudeQueryStream = AsyncIterable<ClaudeQueryStreamMessage> & {
+  mcpServerStatus?: () => Promise<unknown>;
+};
+
+type ClaudeQueryFn = (input: ClaudeQueryInput) => ClaudeQueryStream;
+
+let cachedClaudeQuery: ClaudeQueryFn | null = null;
+
 const DEFAULT_OPTIONS: SdkRunnerOptions = {
   model: 'claude-sonnet-4-5-20250929',
   maxTurns: 10,
   timeout: 60000,
   verbose: false,
 };
+
+async function loadClaudeQuery(): Promise<ClaudeQueryFn> {
+  if (cachedClaudeQuery) {
+    return cachedClaudeQuery;
+  }
+
+  const sdkModule = await import('@anthropic-ai/claude-agent-sdk');
+  cachedClaudeQuery = sdkModule.query as ClaudeQueryFn;
+  return cachedClaudeQuery;
+}
 
 const SYSTEM_PROMPTS: Record<McpProvider, string> = {
   octocode: `You are a code research assistant with access to Octocode MCP tools.
@@ -150,6 +191,8 @@ export async function runWithProvider(
   let response = '';
 
   try {
+    const query = await loadClaudeQuery();
+
     // Combine system prompt with user prompt
     const fullPrompt = `${config.systemPrompt}\n\n---\n\nUser Question: ${prompt}`;
 
@@ -166,10 +209,8 @@ export async function runWithProvider(
     });
 
     if (opts.verbose && provider !== 'none') {
-      try {
+      if (typeof q.mcpServerStatus === 'function') {
         await q.mcpServerStatus();
-      } catch {
-        // MCP status check - silent in non-verbose
       }
     }
 
@@ -179,10 +220,10 @@ export async function runWithProvider(
         const content = message.message?.content;
         if (Array.isArray(content)) {
           for (const block of content) {
-            if (block.type === 'tool_use') {
+            if (block.type === 'tool_use' && 'name' in block) {
               toolsCalled.push(block.name);
             }
-            if (block.type === 'text') {
+            if (block.type === 'text' && 'text' in block) {
               response += block.text;
             }
           }

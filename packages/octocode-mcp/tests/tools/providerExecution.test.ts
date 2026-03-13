@@ -111,4 +111,39 @@ describe('providerExecution', () => {
     expect(result.successes[0]?.meta.label).toBe('topics');
     expect(result.failures[0]?.response.error).toBe('rate limited');
   });
+
+  it('should preserve partial successes when one provider operation throws', async () => {
+    const result = await executeProviderOperations([
+      {
+        meta: { label: 'topics' },
+        operation: async () => ({
+          data: {
+            repositories: [],
+            totalCount: 0,
+            pagination: {
+              currentPage: 1,
+              totalPages: 0,
+              hasMore: false,
+            },
+          },
+          status: 200,
+          provider: 'github',
+        }),
+      },
+      {
+        meta: { label: 'keywords' },
+        operation: async () => {
+          throw new Error('network exploded');
+        },
+      },
+    ]);
+
+    expect(result.successes).toHaveLength(1);
+    expect(result.failures).toHaveLength(1);
+    expect(result.successes[0]?.meta.label).toBe('topics');
+    expect(result.failures[0]?.meta.label).toBe('keywords');
+    expect(result.failures[0]?.response.error).toBe('network exploded');
+    expect(result.failures[0]?.response.status).toBe(500);
+    expect(result.failures[0]?.response.provider).toBe('github');
+  });
 });

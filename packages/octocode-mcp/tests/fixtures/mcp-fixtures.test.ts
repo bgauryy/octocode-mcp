@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   createMockMcpServer,
   createMockResult,
@@ -56,6 +56,24 @@ describe('MCP Test Fixtures', () => {
 
       await expect(mockServer.callTool('error_tool')).rejects.toThrow(
         'Tool execution failed'
+      );
+    });
+
+    it('should forward signal to registerTool handlers', async () => {
+      const handler = vi.fn(async () => createMockResult({ ok: true }));
+      const controller = new AbortController();
+
+      mockServer.server.registerTool('signal_tool', {}, handler);
+
+      await mockServer.callTool(
+        'signal_tool',
+        { input: 'test' },
+        { signal: controller.signal }
+      );
+
+      expect(handler).toHaveBeenCalledWith(
+        { input: 'test' },
+        expect.objectContaining({ signal: controller.signal })
       );
     });
   });

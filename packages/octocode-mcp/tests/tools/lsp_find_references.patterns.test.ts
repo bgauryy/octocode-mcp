@@ -247,6 +247,63 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
       expect(result.locations!.length).toBe(2);
     });
 
+    it('should preserve hasMultipleFiles when pagination reduces the page to one file', async () => {
+      const rgOutput = [
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/workspace/src/consumer.ts' },
+            line_number: 4,
+            lines: { text: 'const score = computeScore(input);\n' },
+          },
+        }),
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/workspace/src/secondary.ts' },
+            line_number: 7,
+            lines: {
+              text: 'return computeScore(left) - computeScore(right);\n',
+            },
+          },
+        }),
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/workspace/src/score.ts' },
+            line_number: 10,
+            lines: {
+              text: 'export function computeScore(input: ScoreInput): number {\n',
+            },
+          },
+        }),
+      ].join('\n');
+
+      setupSpawnSuccess(rgOutput);
+
+      const result = await findReferencesWithPatternMatching(
+        '/workspace/src/score.ts',
+        '/workspace',
+        {
+          id: 'pattern_query_paginated_multi_file',
+          uri: '/workspace/src/score.ts',
+          symbolName: 'computeScore',
+          lineHint: 10,
+          includeDeclaration: false,
+          referencesPerPage: 1,
+          page: 1,
+          contextLines: 0,
+          orderHint: 0,
+          researchGoal: 'test',
+          reasoning: 'test',
+        }
+      );
+
+      expect(result.status).toBe('hasResults');
+      expect(result.locations).toHaveLength(1);
+      expect(result.hasMultipleFiles).toBe(true);
+    });
+
     it('should filter by includeDeclaration=false', async () => {
       const rgOutput = JSON.stringify({
         type: 'match',

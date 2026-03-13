@@ -181,6 +181,29 @@ describe('mergeReferenceResults - branch coverage', () => {
     );
   });
 
+  it('should keep hasMultipleFiles true when a paginated merged page shows one location', () => {
+    const lspResult: any = {
+      status: 'hasResults',
+      locations: [makeLocation('a.ts', 1)],
+      totalReferences: 1,
+      hints: [],
+    };
+    const patternResult: any = {
+      status: 'hasResults',
+      locations: [makeLocation('a.ts', 1), makeLocation('b.ts', 2)],
+      totalReferences: 2,
+    };
+
+    const result = mergeReferenceResults(lspResult, patternResult, {
+      ...baseQuery,
+      referencesPerPage: 1,
+      page: 1,
+    });
+
+    expect(result.locations).toHaveLength(1);
+    expect(result.hasMultipleFiles).toBe(true);
+  });
+
   it('should not add pagination hint when all results fit on one page', () => {
     const lspLoc = makeLocation('a.ts', 5);
     const patternLoc = makeLocation('b.ts', 10);

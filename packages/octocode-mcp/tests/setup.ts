@@ -1,5 +1,10 @@
 import { beforeEach, afterEach, afterAll, vi } from 'vitest';
 import { initializeToolMetadata } from '../src/tools/toolMetadata/index.js';
+import {
+  consumeExpectedStderrWarning,
+  resetExpectedStderrWarnings,
+  shouldSuppressUnexpectedWarningFailure,
+} from './warningPolicy.js';
 
 // Increase max listeners to avoid warnings in test environments
 // Tests may legitimately register many listeners due to module isolation
@@ -501,6 +506,51 @@ vi.mock('child_process', () => ({
   spawn: vi.fn(),
 }));
 
+const enforceWarningFreeTests =
+  process.env.OCTOCODE_ENFORCE_WARNING_FREE_TESTS === '1';
+
+interface CapturedWarning {
+  source: 'console.warn' | 'process.emitWarning' | 'process.stderr.write';
+  message: string;
+}
+
+let capturedWarnings: CapturedWarning[] = [];
+
+function formatWarningMessage(value: unknown): string {
+  if (value instanceof Error) {
+    return value.message;
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  return String(value);
+}
+
+function captureProcessWarning(warning: string | Error): void {
+  capturedWarnings.push({
+    source: 'process.emitWarning',
+    message: formatWarningMessage(warning),
+  });
+}
+
+function captureStderrWrite(chunk: string | Uint8Array): boolean {
+  const message =
+    typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+
+  if (consumeExpectedStderrWarning(message)) {
+    return true;
+  }
+
+  capturedWarnings.push({
+    source: 'process.stderr.write',
+    message: message.trimEnd(),
+  });
+
+  return true;
+}
+
 // Initialize tool metadata for all tests - using top-level await to ensure it runs before test file imports
 await initializeToolMetadata();
 
@@ -509,9 +559,26 @@ beforeEach(() => {
   // Reset session mock state with a new UUID
   sessionMockState.sessionId = generateMockUUID();
   sessionMockState.deleted = false;
+  capturedWarnings = [];
+  resetExpectedStderrWarnings();
+
+  if (enforceWarningFreeTests) {
+    vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+      capturedWarnings.push({
+        source: 'console.warn',
+        message: args.map(formatWarningMessage).join(' '),
+      });
+    });
+    vi.spyOn(process, 'emitWarning').mockImplementation(
+      captureProcessWarning as typeof process.emitWarning
+    );
+    vi.spyOn(process.stderr, 'write').mockImplementation(
+      captureStderrWrite as typeof process.stderr.write
+    );
+  }
 
   // Only mock if not in debug mode
-  if (!process.env.VITEST_DEBUG) {
+  if (!process.env.VITEST_DEBUG && !enforceWarningFreeTests) {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -522,6 +589,20 @@ afterEach(() => {
   // Clean up session mock state with a new UUID for next test
   sessionMockState.sessionId = generateMockUUID();
   sessionMockState.deleted = false;
+
+  if (
+    enforceWarningFreeTests &&
+    capturedWarnings.length > 0 &&
+    !shouldSuppressUnexpectedWarningFailure()
+  ) {
+    const warnings = capturedWarnings
+      .map(warning => `${warning.source}: ${warning.message}`)
+      .join('\n');
+
+    throw new Error(
+      `Unexpected warning emitted during contract test.\n${warnings}`
+    );
+  }
 });
 
 afterAll(() => {

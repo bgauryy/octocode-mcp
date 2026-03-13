@@ -50,6 +50,22 @@ export type ProviderOperationResult<TMeta, TData> =
   | ProviderOperationSuccess<TMeta, TData>
   | ProviderOperationFailure<TMeta, TData>;
 
+function getCurrentProviderType(): ProviderType {
+  return getActiveProviderConfig().provider ?? getActiveProvider();
+}
+
+function createProviderFailureResponse<TData>(
+  error: unknown
+): ProviderResponse<TData> {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+
+  return {
+    error: maskSensitiveData(errorMessage),
+    status: 500,
+    provider: getCurrentProviderType(),
+  };
+}
+
 export function createProviderExecutionContext(
   authInfo?: AuthInfo
 ): ProviderExecutionContext {
@@ -128,10 +144,19 @@ export async function executeProviderOperations<TMeta, TData>(
 }> {
   const responses: Array<ProviderOperationResult<TMeta, TData>> =
     await Promise.all(
-      operations.map(async operation => ({
-        meta: operation.meta,
-        response: await operation.operation(),
-      }))
+      operations.map(async operation => {
+        try {
+          return {
+            meta: operation.meta,
+            response: await operation.operation(),
+          };
+        } catch (error) {
+          return {
+            meta: operation.meta,
+            response: createProviderFailureResponse<TData>(error),
+          };
+        }
+      })
     );
 
   const successes: Array<ProviderOperationSuccess<TMeta, TData>> = [];
@@ -139,9 +164,15 @@ export async function executeProviderOperations<TMeta, TData>(
 
   for (const response of responses) {
     if (isProviderSuccess(response.response)) {
-      successes.push(response);
+      successes.push({
+        meta: response.meta,
+        response: response.response,
+      });
     } else {
-      failures.push(response);
+      failures.push({
+        meta: response.meta,
+        response: response.response,
+      });
     }
   }
 

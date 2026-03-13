@@ -88,8 +88,6 @@ async function main() {
     testCases = testCases.slice(0, limit);
   }
 
-  const startTime = Date.now();
-
   if (mode === '3way' || providers.length > 2) {
     // Multi-provider comparison
     const { results, summary } = await runBatchMultiProviderEval(

@@ -191,7 +191,7 @@ export async function getCredentials(
   // 1. Check cache first (unless bypassed)
   if (!options?.bypassCache) {
     const cached = getCachedCredentials(normalizedHostname);
-    if (cached) {
+    if (cached !== undefined) {
       return cached;
     }
   }
@@ -200,7 +200,7 @@ export async function getCredentials(
   const store = readCredentialsStore();
   const credentials = store.credentials[normalizedHostname] || null;
 
-  // 3. Update cache (even if null - we cache the absence)
+  // 3. Update cache, including misses, to avoid repeated disk reads
   setCachedCredentials(normalizedHostname, credentials);
 
   return credentials;

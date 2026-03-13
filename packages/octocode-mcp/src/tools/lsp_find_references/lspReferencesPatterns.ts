@@ -234,7 +234,7 @@ export async function findReferencesWithPatternMatching(
     paginatedReferences.push(await enhancePatternReference(raw, contextLines));
   }
 
-  const uniqueFiles = new Set(paginatedReferences.map(ref => ref.uri));
+  const uniqueFiles = new Set(filteredReferences.map(ref => ref.uri));
   const hasMultipleFiles = uniqueFiles.size > 1;
 
   const pagination: LSPPaginationInfo = {

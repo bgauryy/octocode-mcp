@@ -61,31 +61,32 @@ function createBulkResponse<TQuery extends object>(
     ]),
   ];
 
-  const flatQueries: FlatQueryResult[] = [];
+  const orderedQueries: Array<FlatQueryResult | undefined> = new Array(
+    queries.length
+  );
 
   results.forEach(r => {
-    const status = r.result.status;
-    const toolData = extractToolData(r.result);
-
-    const flatQuery: FlatQueryResult = {
+    orderedQueries[r.queryIndex] = {
       id: resolveQueryId(r.originalQuery, r.queryIndex),
-      status,
-      data: toolData,
+      status: r.result.status,
+      data: extractToolData(r.result),
     };
-
-    flatQueries.push(flatQuery);
   });
 
   errors.forEach(err => {
     const originalQuery = queries[err.queryIndex];
     if (!originalQuery) return;
 
-    flatQueries.push({
+    orderedQueries[err.queryIndex] = {
       id: resolveQueryId(originalQuery, err.queryIndex),
       status: 'error',
       data: { error: err.error },
-    });
+    };
   });
+
+  const flatQueries = orderedQueries.filter(
+    (query): query is FlatQueryResult => query !== undefined
+  );
 
   const responseData: BulkToolResponse = {
     results: flatQueries,

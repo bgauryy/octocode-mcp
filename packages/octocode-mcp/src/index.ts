@@ -143,15 +143,18 @@ export async function registerAllTools(
   _content: CompleteMetadata
 ) {
   const logger = LoggerFactory.getLogger(server, 'tools');
+  const activeProvider = getActiveProvider();
 
-  const token = await getGitHubToken();
-  if (!token) {
-    await logger.warning('No GitHub token - limited functionality');
-    process.stderr.write(
-      '⚠️  No GitHub token available - some features may be limited\n'
-    );
-  } else {
-    await logger.info('GitHub token ready');
+  if (activeProvider === 'github') {
+    const token = await getGitHubToken();
+    if (!token) {
+      await logger.warning('No GitHub token - limited functionality');
+      process.stderr.write(
+        '⚠️  No GitHub token available - some features may be limited\n'
+      );
+    } else {
+      await logger.info('GitHub token ready');
+    }
   }
 
   // Dynamic import: defers all tool schema construction until AFTER metadata

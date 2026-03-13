@@ -38,10 +38,10 @@
 
 | Package | Key Commands |
 |---------|--------------|
-| `octocode-mcp` | `yarn debug` (MCP inspector), `yarn typecheck`, `yarn build:watch` |
+| `octocode-mcp` | `yarn mcp:package`, `yarn mcp:contracts`, `yarn mcp:evals`, `yarn debug`, `yarn build:watch` |
 | `octocode-cli` | `yarn start`, `yarn validate:mcp`, `yarn validate:skills` |
 | `octocode-vscode` | `yarn package`, `yarn publish` |
-| `octocode-shared` | `yarn typecheck` |
+| `octocode-shared` | `yarn shared:package`, `yarn typecheck` |
 
 #### Linux & File Operations
 
@@ -82,6 +82,17 @@
 ### Requirements
 - **Coverage**: 90% required for `octocode-mcp` (Statements, Branches, Functions, Lines)
 - **Framework**: Vitest with V8 coverage provider
+
+### Quality Lanes
+
+| Package | Lane | Command | This lane should fail when... |
+|---------|------|---------|-------------------------------|
+| `octocode-mcp` | Package gate | `yarn mcp:package` | Shipping runtime code, startup/config contracts, provider execution, response envelopes, or declared user flows regress. |
+| `octocode-mcp` | Contract suite | `yarn mcp:contracts` | You need the fast deterministic contract signal while iterating locally. |
+| `octocode-mcp` | Eval lane | `yarn mcp:evals` | The issue is in eval harnesses, comparison scripts, or optional research dependencies. |
+| `octocode-shared` | Package gate | `yarn shared:package` | Shared config, credential, platform, or session boundaries regress. |
+
+For the MCP contract family map and test-writing rules, see [MCP TDD Quality Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/TDD_QUALITY_GUIDE.md). For the shared ownership map, see [Shared Quality Ownership](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/QUALITY_OWNERSHIP.md).
 
 ### Structure
 ```

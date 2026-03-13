@@ -9,7 +9,7 @@ import { isTokenExpired, normalizeHostname } from './credentialUtils.js';
 
 /** Cache entry structure */
 interface CachedCredentials {
-  credentials: StoredCredentials;
+  credentials: StoredCredentials | null;
   cachedAt: number;
 }
 
@@ -23,11 +23,17 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
  * Check if cached credentials are still valid (not expired)
  */
 function isCacheValid(hostname: string): boolean {
-  const cached = credentialsCache.get(hostname);
+  const normalizedHostname = normalizeHostname(hostname);
+  const cached = credentialsCache.get(normalizedHostname);
   if (!cached) return false;
 
   const age = Date.now() - cached.cachedAt;
   if (age >= CACHE_TTL_MS) return false;
+
+  // Negative cache entries are valid until the TTL expires.
+  if (!cached.credentials) {
+    return true;
+  }
 
   // Don't serve expired tokens from cache
   return !isTokenExpired(cached.credentials);
@@ -80,11 +86,14 @@ export function _resetCredentialsCache(): void {
  */
 export function getCachedCredentials(
   hostname: string
-): StoredCredentials | null {
-  if (isCacheValid(hostname)) {
-    return credentialsCache.get(hostname)!.credentials;
+): StoredCredentials | null | undefined {
+  const normalizedHostname = normalizeHostname(hostname);
+
+  if (isCacheValid(normalizedHostname)) {
+    return credentialsCache.get(normalizedHostname)!.credentials;
   }
-  return null;
+
+  return undefined;
 }
 
 /**
@@ -96,13 +105,8 @@ export function setCachedCredentials(
   credentials: StoredCredentials | null
 ): void {
   const normalizedHostname = normalizeHostname(hostname);
-  if (credentials) {
-    credentialsCache.set(normalizedHostname, {
-      credentials,
-      cachedAt: Date.now(),
-    });
-  } else {
-    // Remove stale cache entry if credentials no longer exist
-    credentialsCache.delete(normalizedHostname);
-  }
+  credentialsCache.set(normalizedHostname, {
+    credentials,
+    cachedAt: Date.now(),
+  });
 }

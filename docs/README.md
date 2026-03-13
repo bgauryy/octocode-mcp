@@ -8,16 +8,15 @@
 |-----|---------|
 | [DEVELOPMENT_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md) | Monorepo setup, TDD, commands, agent guidelines |
 | [CONFIGURATION_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) | Env vars, `.octocoderc`, config examples |
-| [CONFIGURATION_STARTUP_RFC.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_STARTUP_RFC.md) | RFC for unifying runtime config, editor MCP config, and startup flows |
 | [TROUBLESHOOTING.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) | Common issues, auth, MCP connection |
 
 ## Package Docs
 
 | Package | Location | Key Docs |
 |---------|----------|----------|
-| **octocode-mcp** | `packages/octocode-mcp/docs/` | GITHUB_GITLAB_TOOLS_REFERENCE, LOCAL_TOOLS_REFERENCE, CLONE_AND_LOCAL_TOOLS_WORKFLOW, AUTHENTICATION_SETUP, GITHUB_SETUP_GUIDE, GITLAB_SETUP_GUIDE, BITBUCKET_SETUP_GUIDE |
+| **octocode-mcp** | `packages/octocode-mcp/docs/` | [TDD_QUALITY_GUIDE](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/TDD_QUALITY_GUIDE.md), [PROVIDER_ARCHITECTURE](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/PROVIDER_ARCHITECTURE.md), GITHUB_GITLAB_TOOLS_REFERENCE, LOCAL_TOOLS_REFERENCE, CLONE_AND_LOCAL_TOOLS_WORKFLOW, AUTHENTICATION_SETUP, GITHUB_SETUP_GUIDE, GITLAB_SETUP_GUIDE, BITBUCKET_SETUP_GUIDE |
 | **octocode-cli** | `packages/octocode-cli/docs/` | SKILLS_GUIDE, CLI_REFERENCE, MENU_FLOW, ARCHITECTURE |
-| **octocode-shared** | `packages/octocode-shared/docs/` | API_REFERENCE, CREDENTIALS_ARCHITECTURE, SESSION_PERSISTENCE |
+| **octocode-shared** | `packages/octocode-shared/docs/` | [QUALITY_OWNERSHIP](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/QUALITY_OWNERSHIP.md), API_REFERENCE, CREDENTIALS_ARCHITECTURE, SESSION_PERSISTENCE |
 | **octocode-vscode** | `packages/octocode-vscode/docs/` | [README](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-vscode/docs/README.md), AGENTS.md |
 
 ## Skills Docs
