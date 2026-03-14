@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { clearAllCache } from '../../src/utils/http/cache.js';
 
 const mockGET = vi.fn();
 vi.mock('../../src/bitbucket/client.js', () => ({
@@ -16,6 +17,7 @@ import { searchBitbucketReposAPI } from '../../src/bitbucket/repoSearch.js';
 describe('searchBitbucketReposAPI', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAllCache();
   });
 
   it('should return error when workspace is missing', async () => {

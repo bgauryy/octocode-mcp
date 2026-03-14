@@ -1093,8 +1093,38 @@ describe('mapPRState', () => {
     expect(mapPRState()).toBeUndefined();
   });
 
-  it('should return undefined for unknown state', () => {
-    expect(mapPRState('draft')).toBeUndefined();
+  it('should throw for unknown state', () => {
+    expect(() => mapPRState('draft')).toThrow(/Invalid Bitbucket PR state/);
+  });
+
+  it('should throw for other unknown states', () => {
+    expect(() => mapPRState('foo')).toThrow(/Invalid Bitbucket PR state/);
+    expect(() => mapPRState('pending')).toThrow(/Invalid Bitbucket PR state/);
+  });
+
+  it('should map "opened" to "OPEN"', () => {
+    expect(mapPRState('opened')).toBe('OPEN');
+  });
+
+  it('should map "declined" to "DECLINED"', () => {
+    expect(mapPRState('declined')).toBe('DECLINED');
+  });
+
+  it('should map "superseded" to "SUPERSEDED"', () => {
+    expect(mapPRState('superseded')).toBe('SUPERSEDED');
+  });
+
+  it('should return undefined for "all"', () => {
+    expect(mapPRState('all')).toBeUndefined();
+  });
+
+  it('should normalize case and whitespace', () => {
+    expect(mapPRState('  OPEN  ')).toBe('OPEN');
+    expect(mapPRState('Merged')).toBe('MERGED');
+  });
+
+  it('should throw for empty-after-trim state', () => {
+    expect(() => mapPRState('  ')).toThrow(/Invalid Bitbucket PR state/);
   });
 });
 

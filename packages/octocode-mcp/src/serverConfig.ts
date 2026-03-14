@@ -140,7 +140,7 @@ export async function initialize(): Promise<void> {
     return initializationPromise;
   }
 
-  initializationPromise = (async () => {
+  const pendingInitialization = (async () => {
     // Load fully-resolved configuration from ~/.octocode/.octocoderc
     // Already handles: env vars > config file > hardcoded defaults
     const resolved = getConfigSync();
@@ -168,7 +168,17 @@ export async function initialize(): Promise<void> {
     };
   })();
 
-  await initializationPromise;
+  initializationPromise = pendingInitialization;
+
+  try {
+    await pendingInitialization;
+  } catch (error) {
+    if (initializationPromise === pendingInitialization) {
+      config = null;
+      initializationPromise = null;
+    }
+    throw error;
+  }
 }
 
 export function cleanup(): void {

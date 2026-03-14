@@ -15,7 +15,7 @@ describe('🔍 Investigating Potential Bypasses', () => {
   describe('URL Encoding Analysis', () => {
     it('URL encoded %2e%2e - check if real bypass', () => {
       const testPath = path.join(workspaceRoot, '%2e%2e/%2e%2e/etc');
-      const result = validator.validate(testPath);
+      validator.validate(testPath);
 
       // What does Node's path.resolve do?
       const resolved = path.resolve(testPath);

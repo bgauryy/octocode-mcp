@@ -22,15 +22,20 @@
   },
   "private": true,
   "scripts": {
-    "build": "yarn workspaces foreach -Apt run build",
-    "lint": "yarn workspaces foreach -Apt run lint",
+    "build": "node ./scripts/workspace-health.mjs run build",
+    "docs:verify": "node ./scripts/docs-verify.mjs",
+    "health:check": "node ./scripts/workspace-health.mjs check",
+    "health:report": "node ./scripts/workspace-health.mjs report",
+    "lint": "node ./scripts/workspace-health.mjs run lint",
     "lint:fix": "yarn workspaces foreach -Apt run lint:fix",
     "syncpack:fix": "syncpack fix",
     "syncpack:format": "syncpack format",
     "syncpack:lint": "syncpack lint",
     "syncpack:list": "syncpack list",
-    "test": "yarn workspaces foreach -Apt run test",
-    "test:quiet": "yarn workspaces foreach -Apt run test:quiet"
+    "test": "node ./scripts/workspace-health.mjs run test",
+    "test:quiet": "yarn workspaces foreach -Apt run test:quiet",
+    "typecheck": "node ./scripts/workspace-health.mjs run typecheck",
+    "verify": "node ./scripts/workspace-health.mjs verify"
   },
   "type": "module",
   "workspaces": [

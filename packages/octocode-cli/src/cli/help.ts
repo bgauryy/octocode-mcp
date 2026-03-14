@@ -27,6 +27,9 @@ export function showHelp(): void {
     `    ${c('magenta', 'skills')}      Install Octocode skills for Claude Code`
   );
   console.log(
+    `    ${c('magenta', 'cache')}       Inspect and clean Octocode cache directories`
+  );
+  console.log(
     `    ${c('magenta', 'sync')}        Sync MCP configurations across all IDEs`
   );
   console.log(

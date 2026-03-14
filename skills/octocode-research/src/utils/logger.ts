@@ -20,7 +20,7 @@ import os from 'node:os';
 // ============================================================================
 
 const HOME = os.homedir();
-const OCTOCODE_DIR = path.join(HOME, '.octocode');
+const OCTOCODE_DIR = process.env.OCTOCODE_HOME || path.join(HOME, '.octocode');
 const LOGS_DIR = path.join(OCTOCODE_DIR, 'logs');
 const ERROR_LOG = path.join(LOGS_DIR, 'errors.log');
 const TOOLS_LOG = path.join(LOGS_DIR, 'tools.log');
@@ -49,8 +49,8 @@ async function ensureLogsDirAsync(): Promise<void> {
 
   initPromise = (async () => {
     try {
-      await fsAsync.mkdir(OCTOCODE_DIR, { recursive: true, mode: 0o755 });
-      await fsAsync.mkdir(LOGS_DIR, { recursive: true, mode: 0o755 });
+      await fsAsync.mkdir(OCTOCODE_DIR, { recursive: true, mode: 0o700 });
+      await fsAsync.mkdir(LOGS_DIR, { recursive: true, mode: 0o700 });
       initialized = true;
     } catch (err) {
       process.stderr.write(
@@ -72,10 +72,10 @@ function ensureLogsDirSync(): void {
 
   try {
     if (!fs.existsSync(OCTOCODE_DIR)) {
-      fs.mkdirSync(OCTOCODE_DIR, { recursive: true, mode: 0o755 });
+      fs.mkdirSync(OCTOCODE_DIR, { recursive: true, mode: 0o700 });
     }
     if (!fs.existsSync(LOGS_DIR)) {
-      fs.mkdirSync(LOGS_DIR, { recursive: true, mode: 0o755 });
+      fs.mkdirSync(LOGS_DIR, { recursive: true, mode: 0o700 });
     }
     initialized = true;
   } catch (err) {

@@ -108,14 +108,7 @@ function normalizeUrl(url: string): string {
 
   try {
     const parsed = new URL(url);
-    // Remove default ports
-    if (
-      (parsed.protocol === 'https:' && parsed.port === '443') ||
-      (parsed.protocol === 'http:' && parsed.port === '80')
-    ) {
-      parsed.port = '';
-    }
-    // Lowercase hostname, remove trailing slash from pathname
+    // URL parser already strips default ports (443/https, 80/http)
     let normalized = `${parsed.protocol}//${parsed.hostname.toLowerCase()}`;
     if (parsed.port) normalized += `:${parsed.port}`;
     normalized += parsed.pathname.replace(/\/+$/, '') || '';

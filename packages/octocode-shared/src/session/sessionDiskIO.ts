@@ -12,8 +12,8 @@ import {
   unlinkSync,
   renameSync,
 } from 'node:fs';
-import { join } from 'node:path';
-import { OCTOCODE_DIR, ensureOctocodeDir } from '../credentials/storage.js';
+import { ensureOctocodeDir } from '../credentials/storage.js';
+import { paths } from '../paths.js';
 import { createLogger } from '../logger/index.js';
 import { PersistedSessionSchema } from './schemas.js';
 import type { PersistedSession } from './types.js';
@@ -21,7 +21,7 @@ import type { PersistedSession } from './types.js';
 const logger = createLogger('session');
 
 // Storage constants
-export const SESSION_FILE = join(OCTOCODE_DIR, 'session.json');
+export const SESSION_FILE = paths.session;
 
 /**
  * Write session directly to disk (internal)

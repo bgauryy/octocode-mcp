@@ -3,7 +3,7 @@
  * Targets: file read catch block (line 351-353), output limit branch (lines 512-529)
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as fs from 'fs/promises';
 
 vi.mock('fs/promises', () => ({

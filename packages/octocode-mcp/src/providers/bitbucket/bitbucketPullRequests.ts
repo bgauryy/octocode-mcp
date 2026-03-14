@@ -22,7 +22,12 @@ import {
   shapePullRequestFileChanges,
 } from '../pullRequestFileChanges.js';
 
-type BitbucketPRState = 'OPEN' | 'MERGED' | 'DECLINED' | undefined;
+type BitbucketPRState =
+  | 'OPEN'
+  | 'MERGED'
+  | 'DECLINED'
+  | 'SUPERSEDED'
+  | undefined;
 
 interface BitbucketPullRequestWithDetails extends BitbucketPullRequest {
   _comments?: BitbucketPRComment[];
@@ -30,13 +35,52 @@ interface BitbucketPullRequestWithDetails extends BitbucketPullRequest {
   _diff?: string;
 }
 
+const BITBUCKET_PR_STATE_MAP: Record<
+  string,
+  Exclude<BitbucketPRState, undefined>
+> = {
+  open: 'OPEN',
+  opened: 'OPEN',
+  closed: 'DECLINED',
+  declined: 'DECLINED',
+  merged: 'MERGED',
+  superseded: 'SUPERSEDED',
+};
+
+const VALID_BITBUCKET_PR_STATES = [
+  'open',
+  'closed',
+  'merged',
+  'superseded',
+  'all',
+] as const;
+
+function createInvalidPRStateError(state: string): Error {
+  return new Error(
+    `Invalid Bitbucket PR state '${state}'. Valid values are: ${VALID_BITBUCKET_PR_STATES.join(', ')}.`
+  );
+}
+
 export function mapPRState(state?: string): BitbucketPRState {
-  const mapping: Record<string, 'OPEN' | 'MERGED' | 'DECLINED'> = {
-    open: 'OPEN',
-    closed: 'DECLINED',
-    merged: 'MERGED',
-  };
-  return state ? mapping[state] : undefined;
+  if (!state) {
+    return undefined;
+  }
+
+  const normalizedState = state.trim().toLowerCase();
+
+  if (!normalizedState) {
+    throw createInvalidPRStateError(state);
+  }
+
+  if (normalizedState === 'all') {
+    return undefined;
+  }
+
+  const mapped = BITBUCKET_PR_STATE_MAP[normalizedState];
+  if (!mapped) {
+    throw createInvalidPRStateError(state);
+  }
+  return mapped;
 }
 
 function mapUnifiedState(bbState: string): 'open' | 'closed' | 'merged' {
@@ -139,14 +183,47 @@ export async function searchPullRequests(
     };
   }
 
-  const { workspace, repoSlug } = parseBitbucketProjectId(query.projectId);
   const needsFileChanges = query.type !== undefined;
+  let state: BitbucketPRState;
+  let workspace = '';
+  let repoSlug = '';
+
+  try {
+    state = mapPRState(query.state);
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Invalid Bitbucket PR state provided.',
+      status: 400,
+      provider: 'bitbucket',
+      hints: [
+        'Valid states are: open, closed, merged, superseded, all.',
+        'Use "all" to return all states.',
+      ],
+    };
+  }
+
+  try {
+    ({ workspace, repoSlug } = parseBitbucketProjectId(query.projectId));
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Invalid Bitbucket project ID provided.',
+      status: 400,
+      provider: 'bitbucket',
+      hints: ['Provide projectId as "workspace/repo_slug".'],
+    };
+  }
 
   const result = await searchBitbucketPRsAPI({
     workspace,
     repoSlug,
     prNumber: query.number,
-    state: mapPRState(query.state),
+    state,
     author: query.author,
     baseBranch: query.baseBranch,
     headBranch: query.headBranch,

@@ -253,22 +253,32 @@ describe('Provider Factory - Branch Coverage', () => {
       let fakeTime = 1_000_000;
       Date.now = () => fakeTime;
 
-      // Fill to exactly MAX_PROVIDER_INSTANCES with non-expired entries
+      // Fill to MAX_PROVIDER_INSTANCES with non-expired entries
       for (let i = 0; i < 20; i++) {
         getProvider('github', {
           type: 'github',
           baseUrl: `https://lru-${i}.github.com`,
         });
-        fakeTime += 100; // small increments, all within TTL
+        fakeTime += 100;
       }
 
-      // This triggers eviction since we're at capacity
+      // 21st entry: triggers eviction guard but size=20 > 20 is false,
+      // so no LRU eviction yet. Entry added, size becomes 21.
+      getProvider('github', {
+        type: 'github',
+        baseUrl: 'https://lru-overflow-1.github.com',
+      });
+      fakeTime += 100;
+
+      // 22nd entry: size=21 >= 20 triggers eviction. After step 1
+      // (no expired), size=21 > 20 is TRUE, triggering LRU eviction.
       const result = getProvider('github', {
         type: 'github',
-        baseUrl: 'https://lru-overflow.github.com',
+        baseUrl: 'https://lru-overflow-2.github.com',
       });
 
       expect(result).toBeDefined();
+      expect(result.type).toBe('github');
     });
   });
 
@@ -283,7 +293,7 @@ describe('Provider Factory - Branch Coverage', () => {
       expect(provider).toBeDefined();
     });
 
-    it('should strip default HTTPS port 443 from URL', () => {
+    it('should normalize URL with default HTTPS port (stripped by URL parser)', () => {
       const config1: ProviderConfig = {
         type: 'github',
         baseUrl: 'https://gitlab.example.com:443/api/v4',
@@ -292,12 +302,20 @@ describe('Provider Factory - Branch Coverage', () => {
       expect(provider).toBeDefined();
     });
 
-    it('should strip default HTTP port 80 from URL', () => {
+    it('should normalize URL with default HTTP port (stripped by URL parser)', () => {
       const config1: ProviderConfig = {
         type: 'github',
         baseUrl: 'http://gitlab.example.com:80/api/v4',
       };
       const provider = getProvider('github', config1);
+      expect(provider).toBeDefined();
+    });
+
+    it('should handle invalid URL by normalizing trailing slashes', () => {
+      const provider = getProvider('github', {
+        type: 'github',
+        baseUrl: 'not-a-url///',
+      });
       expect(provider).toBeDefined();
     });
   });

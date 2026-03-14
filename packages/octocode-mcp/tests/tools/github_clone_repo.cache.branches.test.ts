@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import type { PathLike, StatSyncOptions, Stats } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 vi.mock('node:fs', async importOriginal => {
@@ -58,9 +59,10 @@ describe('github_clone_repo cache - branch coverage', () => {
       writeCacheMeta(cloneDir, meta);
 
       const realFs = await vi.importActual<typeof import('node:fs')>('node:fs');
-      vi.mocked(fs.existsSync).mockImplementation((path: string) => {
-        if (path === cloneDir) return false;
-        return realFs.existsSync(path);
+      const actualExistsSync = realFs.existsSync as (path: PathLike) => boolean;
+      vi.mocked(fs.existsSync).mockImplementation((pathLike: PathLike) => {
+        if (String(pathLike) === cloneDir) return false;
+        return actualExistsSync(pathLike);
       });
 
       const result = isCacheHit(cloneDir);
@@ -125,10 +127,19 @@ describe('github_clone_repo cache - branch coverage', () => {
       writeCacheMeta(branchDir, expiredMeta);
 
       const realFs = await vi.importActual<typeof import('node:fs')>('node:fs');
-      vi.mocked(fs.statSync).mockImplementation((path: string) => {
-        if (path === branchDir) throw new Error('Permission denied');
-        return realFs.statSync(path);
-      });
+      const actualStatSync = realFs.statSync as (
+        path: PathLike,
+        options?: StatSyncOptions
+      ) => Stats;
+      vi.mocked(fs.statSync).mockImplementation(
+        (pathLike: PathLike, options?: StatSyncOptions) => {
+          if (String(pathLike) === branchDir) {
+            throw new Error('Permission denied');
+          }
+
+          return actualStatSync(pathLike, options);
+        }
+      );
 
       const count = evictExpiredClones(octocodeDir);
       expect(count).toBe(0);

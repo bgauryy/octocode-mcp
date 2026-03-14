@@ -11,6 +11,7 @@ import { getBitbucketClient } from './client.js';
 import { getBitbucketDefaultBranch } from './fileContent.js';
 import { handleBitbucketAPIError, createBitbucketError } from './errors.js';
 import type { BitbucketAPIResponse, BitbucketTreeEntry } from './types.js';
+import { generateCacheKey, withDataCache } from '../utils/http/cache.js';
 
 export interface BitbucketRepoStructureQuery {
   workspace: string;
@@ -41,67 +42,76 @@ export async function viewBitbucketRepoStructureAPI(
     return createBitbucketError('Workspace and repo slug are required.', 400);
   }
 
-  try {
-    const branch =
-      params.ref ||
-      (await getBitbucketDefaultBranch(params.workspace, params.repoSlug));
+  const cacheKey = generateCacheKey('bb-repo-structure-api', params);
+  return withDataCache(
+    cacheKey,
+    async () => {
+      try {
+        const branch =
+          params.ref ||
+          (await getBitbucketDefaultBranch(params.workspace, params.repoSlug));
 
-    const client = getBitbucketClient();
-    const dirPath = params.path || '';
-    const pagelen = params.entriesPerPage || 50;
-    const pageNum = params.entryPageNumber || 1;
+        const client = getBitbucketClient();
+        const dirPath = params.path || '';
+        const pagelen = params.entriesPerPage || 50;
+        const pageNum = params.entryPageNumber || 1;
 
-    const queryParams: Record<string, string> = {
-      format: 'meta',
-      pagelen: String(pagelen),
-      page: String(pageNum),
-    };
-    if (params.depth) {
-      queryParams.max_depth = String(params.depth);
-    }
+        const queryParams: Record<string, string> = {
+          format: 'meta',
+          pagelen: String(pagelen),
+          page: String(pageNum),
+        };
+        if (params.depth) {
+          queryParams.max_depth = String(params.depth);
+        }
 
-    const { data } = await client.GET(
-      '/repositories/{workspace}/{repo_slug}/src/{commit}/{path}',
-      {
-        params: {
-          path: {
-            workspace: params.workspace,
-            repo_slug: params.repoSlug,
-            commit: branch,
+        const { data } = await client.GET(
+          '/repositories/{workspace}/{repo_slug}/src/{commit}/{path}',
+          {
+            params: {
+              path: {
+                workspace: params.workspace,
+                repo_slug: params.repoSlug,
+                commit: branch,
+                path: dirPath,
+              },
+              query: queryParams,
+            },
+          }
+        );
+
+        const rawData = data as unknown as {
+          values?: BitbucketTreeEntry[];
+          page?: number;
+          size?: number;
+          next?: string;
+        };
+
+        const entries = rawData?.values || [];
+        const size = rawData?.size || entries.length;
+
+        return {
+          data: {
+            entries,
+            branch,
             path: dirPath,
+            pagination: {
+              currentPage: rawData?.page || pageNum,
+              totalPages: Math.ceil(size / pagelen),
+              hasMore: !!rawData?.next,
+              totalMatches: size,
+            },
           },
-          query: queryParams,
-        },
+          status: 200,
+        };
+      } catch (error) {
+        return handleBitbucketAPIError(
+          error
+        ) as BitbucketAPIResponse<BitbucketRepoStructureResult>;
       }
-    );
-
-    const rawData = data as unknown as {
-      values?: BitbucketTreeEntry[];
-      page?: number;
-      size?: number;
-      next?: string;
-    };
-
-    const entries = rawData?.values || [];
-    const size = rawData?.size || entries.length;
-
-    return {
-      data: {
-        entries,
-        branch,
-        path: dirPath,
-        pagination: {
-          currentPage: rawData?.page || pageNum,
-          totalPages: Math.ceil(size / pagelen),
-          hasMore: !!rawData?.next,
-          totalMatches: size,
-        },
-      },
-      status: 200,
-    };
-  } catch (error) {
-    return handleBitbucketAPIError(
-      error
-    ) as BitbucketAPIResponse<BitbucketRepoStructureResult>;
-  }
+    },
+    {
+      shouldCache: value => 'data' in value && !('error' in value),
+    }
+  );
 }

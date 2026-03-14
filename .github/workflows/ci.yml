@@ -9,6 +9,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  health:
+    name: Health
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Check workspace contract
+        run: yarn health:check
+
+      - name: Verify docs and workflow references
+        run: yarn docs:verify
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -29,6 +53,27 @@ jobs:
 
       - name: Run ESLint
         run: yarn lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Run type checks
+        run: yarn typecheck
 
   build:
     name: Build
@@ -52,18 +97,7 @@ jobs:
         run: yarn build
 
       - name: Verify build outputs
-        run: |
-          echo "🔍 Verifying build outputs..."
-
-          # Check octocode-mcp
-          if [ -f "packages/octocode-mcp/dist/index.js" ]; then
-            echo "✅ packages/octocode-mcp/dist/index.js exists"
-          else
-            echo "❌ packages/octocode-mcp/dist/index.js missing"
-            exit 1
-          fi
-
-          echo "✅ All build outputs verified"
+        run: node scripts/workspace-health.mjs check-outputs
 
   test:
     name: Test
@@ -101,23 +135,28 @@ jobs:
   # Summary job that depends on all checks
   pr-validation-complete:
     name: PR Validation Complete
-    needs: [lint, build, test]
+    needs: [health, lint, typecheck, build, test]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Check all jobs passed
         run: |
-          if [ "${{ needs.lint.result }}" != "success" ] || \
+          if [ "${{ needs.health.result }}" != "success" ] || \
+             [ "${{ needs.lint.result }}" != "success" ] || \
+             [ "${{ needs.typecheck.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ]; then
             echo "❌ One or more CI jobs failed"
+            echo "   Health: ${{ needs.health.result }}"
             echo "   Lint: ${{ needs.lint.result }}"
+            echo "   Typecheck: ${{ needs.typecheck.result }}"
             echo "   Build: ${{ needs.build.result }}"
             echo "   Test: ${{ needs.test.result }}"
             exit 1
           fi
           echo "✅ All CI checks passed!"
+          echo "   Health: ${{ needs.health.result }}"
           echo "   Lint: ${{ needs.lint.result }}"
+          echo "   Typecheck: ${{ needs.typecheck.result }}"
           echo "   Build: ${{ needs.build.result }}"
           echo "   Test: ${{ needs.test.result }}"
-

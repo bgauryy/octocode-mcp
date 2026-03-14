@@ -50,6 +50,10 @@ export type ProviderOperationResult<TMeta, TData> =
   | ProviderOperationSuccess<TMeta, TData>
   | ProviderOperationFailure<TMeta, TData>;
 
+function getCurrentProviderType(): ProviderType {
+  return getActiveProviderConfig().provider ?? getActiveProvider();
+}
+
 export function createProviderExecutionContext(
   authInfo?: AuthInfo
 ): ProviderExecutionContext {
@@ -121,17 +125,35 @@ export async function executeProviderOperation<
 }
 
 export async function executeProviderOperations<TMeta, TData>(
-  operations: Array<ProviderOperationSpec<TMeta, TData>>
+  operations: Array<ProviderOperationSpec<TMeta, TData>>,
+  providerType?: ProviderType
 ): Promise<{
   successes: Array<ProviderOperationSuccess<TMeta, TData>>;
   failures: Array<ProviderOperationFailure<TMeta, TData>>;
 }> {
+  const resolvedProviderType = providerType ?? getCurrentProviderType();
+
   const responses: Array<ProviderOperationResult<TMeta, TData>> =
     await Promise.all(
-      operations.map(async operation => ({
-        meta: operation.meta,
-        response: await operation.operation(),
-      }))
+      operations.map(async operation => {
+        try {
+          return {
+            meta: operation.meta,
+            response: await operation.operation(),
+          };
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          return {
+            meta: operation.meta,
+            response: {
+              error: maskSensitiveData(errorMessage),
+              status: 500,
+              provider: resolvedProviderType,
+            } as ProviderResponse<TData>,
+          };
+        }
+      })
     );
 
   const successes: Array<ProviderOperationSuccess<TMeta, TData>> = [];
@@ -139,9 +161,15 @@ export async function executeProviderOperations<TMeta, TData>(
 
   for (const response of responses) {
     if (isProviderSuccess(response.response)) {
-      successes.push(response);
+      successes.push({
+        meta: response.meta,
+        response: response.response,
+      });
     } else {
-      failures.push(response);
+      failures.push({
+        meta: response.meta,
+        response: response.response,
+      });
     }
   }
 

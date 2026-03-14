@@ -14,6 +14,26 @@ This will diagnose common Node.js issues and let your AI agent help resolve them
 
 ---
 
+## Octocode Home Layout
+
+Octocode stores local state under `${OCTOCODE_HOME:-~/.octocode}`.
+
+```
+~/.octocode/
+├── .octocoderc           # Global config
+├── credentials.json      # Encrypted credentials
+├── .key                  # Encryption key (local-only)
+├── session.json          # Session telemetry state
+├── repos/                # Cloned repository cache
+├── logs/                 # Runtime logs
+├── config.json           # CLI config
+└── lsp-servers.json      # User-level LSP server config
+```
+
+If you set `OCTOCODE_HOME`, all of these paths move under that directory.
+
+---
+
 ## Table of Contents
 
 - [1. npm Registry Issues](#1-npm-registry-issues)

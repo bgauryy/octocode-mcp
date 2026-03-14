@@ -190,7 +190,7 @@ export async function findReferencesWithLSP(
     }
 
     // Determine if references span multiple files
-    const uniqueFiles = new Set(paginatedReferences.map(ref => ref.uri));
+    const uniqueFiles = new Set(filteredLocations.map(ref => ref.uri));
     const hasMultipleFiles = uniqueFiles.size > 1;
 
     const pagination: LSPPaginationInfo = {

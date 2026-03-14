@@ -39,7 +39,7 @@ export interface UserLanguageServerConfig {
  * File locations (in priority order):
  * 1. OCTOCODE_LSP_CONFIG environment variable
  * 2. .octocode/lsp-servers.json (workspace-level)
- * 3. ~/.octocode/lsp-servers.json (user-level)
+ * 3. ${OCTOCODE_HOME:-~/.octocode}/lsp-servers.json (user-level)
  */
 export interface LSPConfigFile {
   /** Language servers by file extension (e.g., ".py", ".java") */

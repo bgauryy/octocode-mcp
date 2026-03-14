@@ -6,10 +6,8 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { HOME } from '../platform/index.js';
+import { paths } from '../paths.js';
 import type { OctocodeConfig, LoadConfigResult } from './types.js';
-import { CONFIG_FILE_NAME } from './types.js';
 import { OctocodeConfigSchema } from './schemas.js';
 
 // ============================================================================
@@ -17,14 +15,9 @@ import { OctocodeConfigSchema } from './schemas.js';
 // ============================================================================
 
 /**
- * Octocode configuration directory
- */
-const OCTOCODE_DIR = join(HOME, '.octocode');
-
-/**
  * Full path to configuration file
  */
-export const CONFIG_FILE_PATH = join(OCTOCODE_DIR, CONFIG_FILE_NAME);
+export const CONFIG_FILE_PATH = paths.config;
 
 // ============================================================================
 // JSON5-LIKE PARSER
@@ -219,5 +212,5 @@ export function getConfigPath(): string {
  * @returns Full path to ~/.octocode
  */
 export function getOctocodeDir(): string {
-  return OCTOCODE_DIR;
+  return paths.home;
 }

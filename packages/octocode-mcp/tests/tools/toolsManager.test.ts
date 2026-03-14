@@ -167,7 +167,7 @@ describe('ToolsManager', () => {
 
   describe('TOOLS_TO_RUN Configuration', () => {
     it('should register only specified tools when TOOLS_TO_RUN is set', async () => {
-      const allowedTools = [
+      const allowedTools: string[] = [
         TOOL_NAMES.GITHUB_SEARCH_CODE,
         TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
       ];
@@ -201,7 +201,7 @@ describe('ToolsManager', () => {
     });
 
     it('should handle non-existent tools in TOOLS_TO_RUN gracefully', async () => {
-      const validTools = [
+      const validTools: string[] = [
         TOOL_NAMES.GITHUB_SEARCH_CODE,
         TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
       ];

@@ -55,7 +55,7 @@ describe('GitLab provider utils', () => {
 
       const result = handleGitLabAPIResponse(
         {
-          error,
+          error: error as unknown as string,
           status: 500,
           type: 'unknown',
         },
