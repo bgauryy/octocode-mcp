@@ -11,5 +11,5 @@
     "tests/utils/bulkOperations.test.ts",
     "tests/flows/**/*.ts"
   ],
-  "exclude": ["node_modules", "tests/evals/**/*"]
+  "exclude": ["node_modules"]
 }

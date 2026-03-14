@@ -38,7 +38,7 @@
 
 | Package | Key Commands |
 |---------|--------------|
-| `octocode-mcp` | `yarn mcp:package`, `yarn mcp:contracts`, `yarn mcp:evals`, `yarn debug`, `yarn build:watch` |
+| `octocode-mcp` | `yarn mcp:package`, `yarn mcp:contracts`, `yarn debug`, `yarn build:watch` |
 | `octocode-cli` | `yarn start`, `yarn validate:mcp`, `yarn validate:skills` |
 | `octocode-vscode` | `yarn package`, `yarn publish` |
 | `octocode-shared` | `yarn shared:package`, `yarn typecheck` |
@@ -89,7 +89,6 @@
 |---------|------|---------|-------------------------------|
 | `octocode-mcp` | Package gate | `yarn mcp:package` | Shipping runtime code, startup/config contracts, provider execution, response envelopes, or declared user flows regress. |
 | `octocode-mcp` | Contract suite | `yarn mcp:contracts` | You need the fast deterministic contract signal while iterating locally. |
-| `octocode-mcp` | Eval lane | `yarn mcp:evals` | The issue is in eval harnesses, comparison scripts, or optional research dependencies. |
 | `octocode-shared` | Package gate | `yarn shared:package` | Shared config, credential, platform, or session boundaries regress. |
 
 For package-specific references, use the package docs indexes: [octocode-mcp docs](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/README.md) and [octocode-shared docs](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/README.md).

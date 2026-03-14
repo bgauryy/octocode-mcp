@@ -1,8 +1,8 @@
 /**
- * localSearchCode Eval Test Suite
+ * localSearchCode Schema Test Suite
  *
- * Comprehensive evaluation tests covering ALL schema parameters.
- * Tests are designed to validate agent behavior with the localSearchCode tool.
+ * Comprehensive schema tests covering ALL schema parameters.
+ * Tests are designed to validate query construction with the localSearchCode tool.
  *
  * Schema Parameters Covered:
  * - Required: pattern, path
@@ -33,13 +33,13 @@ const createQuery = (
   overrides: Partial<RipgrepQuery> & { pattern: string; path: string }
 ): RipgrepQuery =>
   RipgrepQuerySchema.parse({
-    id: 'test:eval',
-    researchGoal: 'Eval test',
+    id: 'test:schema',
+    researchGoal: 'Schema test',
     reasoning: 'Schema validation',
     ...overrides,
   });
 
-describe('localSearchCode Eval Tests - All Schema Parameters', () => {
+describe('localSearchCode Schema Tests - All Schema Parameters', () => {
   /**
    * ============================================================
    * SECTION 1: REQUIRED PARAMETERS
