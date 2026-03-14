@@ -239,6 +239,8 @@ vi.mock('octocode-shared', () => ({
   }),
   invalidateConfigCache: vi.fn(),
   _resetConfigCache: vi.fn(),
+  getDirectorySizeBytes: vi.fn(() => 0),
+  formatBytes: vi.fn((b: number) => `${b} B`),
 }));
 
 // Export for tests that need to access the mock state

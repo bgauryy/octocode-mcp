@@ -657,9 +657,13 @@ vi.mock('../../src/github/client.js', () => ({
   resolveDefaultBranch: mockResolveDefaultBranch,
 }));
 
-vi.mock('octocode-shared', () => ({
-  getOctocodeDir: mockGetOctocodeDir,
-}));
+vi.mock('octocode-shared', async importOriginal => {
+  const actual = await importOriginal<typeof import('octocode-shared')>();
+  return {
+    ...actual,
+    getOctocodeDir: mockGetOctocodeDir,
+  };
+});
 
 import { cloneRepo } from '../../src/tools/github_clone_repo/cloneRepo.js';
 

@@ -91,6 +91,8 @@ export interface CloneCacheMeta {
    * Used to prevent directoryFetch cache from being treated as a full clone.
    */
   source?: CacheSource;
+  /** Approximate on-disk size in bytes, recorded at clone time for fast GC. */
+  sizeBytes?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────

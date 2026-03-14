@@ -25,3 +25,6 @@ export * from './logger/index.js';
 
 // Re-export centralized paths
 export * from './paths.js';
+
+// Re-export filesystem utilities
+export * from './fs-utils.js';

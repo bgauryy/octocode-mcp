@@ -76,7 +76,11 @@ export function mapPRState(state?: string): BitbucketPRState {
     return undefined;
   }
 
-  return BITBUCKET_PR_STATE_MAP[normalizedState];
+  const mapped = BITBUCKET_PR_STATE_MAP[normalizedState];
+  if (!mapped) {
+    throw createInvalidPRStateError(state);
+  }
+  return mapped;
 }
 
 function mapUnifiedState(bbState: string): 'open' | 'closed' | 'merged' {

@@ -22,6 +22,7 @@ import {
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import type { CloneCacheMeta, CacheSource } from './types.js';
+import { getDirectorySizeBytes } from 'octocode-shared';
 
 // ─────────────────────────────────────────────────────────────────────
 // Constants
@@ -285,24 +286,6 @@ export function evictExpiredClones(octocodeDir: string): number {
     }
   }
 
-  function getDirectorySizeBytes(target: string): number {
-    let total = 0;
-    for (const name of listDir(target)) {
-      const fullPath = join(target, name);
-      try {
-        const stat = statSync(fullPath);
-        if (stat.isDirectory()) {
-          total += getDirectorySizeBytes(fullPath);
-        } else if (stat.isFile()) {
-          total += stat.size;
-        }
-      } catch {
-        // Ignore unreadable entries
-      }
-    }
-    return total;
-  }
-
   function cleanupEmptyDirectories(): void {
     for (const ownerName of listDir(reposBase)) {
       const ownerDir = join(reposBase, ownerName);
@@ -394,7 +377,7 @@ export function evictExpiredClones(octocodeDir: string): number {
         entries.push({
           branchDir,
           clonedAtMs,
-          sizeBytes: getDirectorySizeBytes(branchDir),
+          sizeBytes: meta.sizeBytes ?? getDirectorySizeBytes(branchDir),
         });
       }
     }
