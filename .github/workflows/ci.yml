@@ -72,6 +72,9 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
+      - name: Build shared package types
+        run: yarn workspace octocode-shared run build:dev
+
       - name: Run type checks
         run: yarn typecheck
 
