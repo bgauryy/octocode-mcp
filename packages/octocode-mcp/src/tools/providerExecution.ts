@@ -54,18 +54,6 @@ function getCurrentProviderType(): ProviderType {
   return getActiveProviderConfig().provider ?? getActiveProvider();
 }
 
-function createProviderFailureResponse<TData>(
-  error: unknown
-): ProviderResponse<TData> {
-  const errorMessage = error instanceof Error ? error.message : String(error);
-
-  return {
-    error: maskSensitiveData(errorMessage),
-    status: 500,
-    provider: getCurrentProviderType(),
-  };
-}
-
 export function createProviderExecutionContext(
   authInfo?: AuthInfo
 ): ProviderExecutionContext {

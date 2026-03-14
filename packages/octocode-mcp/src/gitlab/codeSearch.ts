@@ -97,6 +97,7 @@ export async function searchGitLabCodeAPI(
       search: params.search,
       projectId: params.projectId,
       groupId: params.groupId,
+      searchType: params.searchType,
       path: params.path,
       filename: params.filename,
       extension: params.extension,
