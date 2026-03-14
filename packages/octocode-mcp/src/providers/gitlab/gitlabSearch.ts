@@ -33,6 +33,7 @@ export { mapGitLabRepoSortField as mapSortField, parseGitLabProjectId };
 interface GitLabPaginationData {
   currentPage?: number;
   totalPages?: number;
+  perPage?: number;
   hasMore?: boolean;
   totalMatches?: number;
 }
@@ -42,12 +43,18 @@ interface GitLabPaginationData {
  */
 export function transformCodeSearchResult(
   items: GitLabCodeSearchItem[],
-  query: CodeSearchQuery
+  query: CodeSearchQuery,
+  pagination?: GitLabPaginationData
 ): CodeSearchResult {
   const repositoryName =
     query.projectId && Number.isNaN(Number(query.projectId))
       ? query.projectId
       : undefined;
+  const perPage = pagination?.perPage || query.limit || 20;
+  const currentPage = pagination?.currentPage || query.page || 1;
+  const hasMore = pagination?.hasMore ?? items.length === perPage;
+  const totalPages =
+    pagination?.totalPages || (hasMore ? currentPage + 1 : currentPage);
 
   const transformedItems: CodeSearchItem[] = items.map(item => ({
     path: item.path,
@@ -77,9 +84,9 @@ export function transformCodeSearchResult(
     items: transformedItems,
     totalCount: items.length,
     pagination: {
-      currentPage: query.page || 1,
-      totalPages: 1,
-      hasMore: items.length === (query.limit || 20),
+      currentPage,
+      totalPages,
+      hasMore,
     },
     repositoryContext,
   };
@@ -145,7 +152,7 @@ export async function searchCode(
 
   const result = await searchGitLabCodeAPI(gitlabQuery);
   return handleGitLabAPIResponse(result, 'gitlab', data =>
-    transformCodeSearchResult(data.items, query)
+    transformCodeSearchResult(data.items, query, data.pagination)
   );
 }
 /**

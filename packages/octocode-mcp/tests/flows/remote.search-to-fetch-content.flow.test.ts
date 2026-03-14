@@ -14,6 +14,10 @@ import { expectHasResultsData } from './assertions.js';
 import { FLOW_CATALOG } from './catalog.js';
 
 const mockGetProvider = vi.hoisted(() => vi.fn());
+const mockGetServerConfig = vi.hoisted(() => vi.fn());
+const mockIsToolInMetadata = vi.hoisted(() => vi.fn());
+const mockGetActiveProvider = vi.hoisted(() => vi.fn());
+const mockGetActiveProviderConfig = vi.hoisted(() => vi.fn());
 const mockLogSessionError = vi.hoisted(() => vi.fn());
 const mockLogToolCall = vi.hoisted(() => vi.fn());
 
@@ -27,17 +31,9 @@ vi.mock('../../src/session.js', () => ({
 }));
 
 vi.mock('../../src/serverConfig.js', () => ({
-  getServerConfig: vi.fn(() => ({
-    toolsToRun: ['githubSearchCode', 'githubGetFileContent'],
-    enableTools: [],
-    disableTools: [],
-  })),
-  getActiveProviderConfig: vi.fn(() => ({
-    provider: 'gitlab',
-    baseUrl: 'https://gitlab.example.com',
-    token: 'provider-token',
-  })),
-  getActiveProvider: vi.fn(() => 'gitlab'),
+  getServerConfig: mockGetServerConfig,
+  getActiveProviderConfig: mockGetActiveProviderConfig,
+  getActiveProvider: mockGetActiveProvider,
   isLocalEnabled: vi.fn(() => false),
   isCloneEnabled: vi.fn(() => false),
   isLoggingEnabled: vi.fn(() => false),
@@ -50,7 +46,7 @@ vi.mock('../../src/tools/toolMetadata/index.js', async () => {
 
   return {
     ...actual,
-    isToolInMetadata: vi.fn().mockReturnValue(true),
+    isToolInMetadata: mockIsToolInMetadata,
     TOOL_NAMES: actual.STATIC_TOOL_NAMES,
     DESCRIPTIONS: new Proxy(
       {},
@@ -62,6 +58,33 @@ vi.mock('../../src/tools/toolMetadata/index.js', async () => {
 });
 
 describe(FLOW_CATALOG.remoteSearchToFetchContent.id, () => {
+  const providerFlows = [
+    {
+      provider: 'github' as const,
+      baseUrl: undefined as string | undefined,
+      token: 'github-token',
+      owner: 'octocat',
+      repo: 'octokit',
+      urlPrefix: 'https://github.com',
+    },
+    {
+      provider: 'gitlab' as const,
+      baseUrl: 'https://gitlab.example.com',
+      token: 'gitlab-token',
+      owner: 'group',
+      repo: 'project',
+      urlPrefix: 'https://gitlab.example.com',
+    },
+    {
+      provider: 'bitbucket' as const,
+      baseUrl: 'https://api.bitbucket.org',
+      token: 'bitbucket-token',
+      owner: 'workspace',
+      repo: 'repo',
+      urlPrefix: 'https://bitbucket.org',
+    },
+  ];
+
   let mockServer: MockMcpServer;
   let mockProvider: {
     capabilities: {
@@ -79,8 +102,23 @@ describe(FLOW_CATALOG.remoteSearchToFetchContent.id, () => {
     resolveDefaultBranch: ReturnType<typeof vi.fn>;
   };
 
+  function setupActiveProvider(provider: (typeof providerFlows)[number]) {
+    mockGetActiveProvider.mockReturnValue(provider.provider);
+    mockGetActiveProviderConfig.mockReturnValue({
+      provider: provider.provider,
+      baseUrl: provider.baseUrl,
+      token: provider.token,
+    });
+  }
+
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockGetServerConfig.mockReturnValue({
+      toolsToRun: ['githubSearchCode', 'githubGetFileContent'],
+      enableTools: [],
+      disableTools: [],
+    });
+    mockIsToolInMetadata.mockReturnValue(true);
     mockServer = createMockMcpServer();
     mockProvider = {
       capabilities: {
@@ -98,10 +136,6 @@ describe(FLOW_CATALOG.remoteSearchToFetchContent.id, () => {
       resolveDefaultBranch: vi.fn().mockResolvedValue('main'),
     };
     mockGetProvider.mockReturnValue(mockProvider);
-
-    const result = await registerTools(mockServer.server);
-    expect(result.successCount).toBe(2);
-    expect(result.failedTools).toEqual([]);
   });
 
   afterEach(() => {
@@ -109,118 +143,139 @@ describe(FLOW_CATALOG.remoteSearchToFetchContent.id, () => {
     vi.resetAllMocks();
   });
 
-  it('chains registered remote tools through provider selection and file handoff', async () => {
-    mockProvider.searchCode.mockResolvedValue({
-      data: {
-        items: [
-          {
-            path: 'src/score.ts',
-            matches: [
-              {
-                context:
-                  'export function computeScore(input: ScoreInput): number {',
-                positions: [[16, 28]],
+  it.each(providerFlows)(
+    'chains remote search->fetch for %s provider',
+    async providerCase => {
+      setupActiveProvider(providerCase);
+      const result = await registerTools(mockServer.server);
+      expect(result.successCount).toBe(2);
+      expect(result.failedTools).toEqual([]);
+
+      mockProvider.searchCode.mockResolvedValue({
+        data: {
+          items: [
+            {
+              path: 'src/score.ts',
+              matches: [
+                {
+                  context:
+                    'export function computeScore(input: ScoreInput): number {',
+                  positions: [[16, 28]],
+                },
+              ],
+              url: `${providerCase.urlPrefix}/${providerCase.owner}/${providerCase.repo}/-/blob/main/src/score.ts`,
+              repository: {
+                id: '42',
+                name: `${providerCase.owner}/${providerCase.repo}`,
+                url: `${providerCase.urlPrefix}/${providerCase.owner}/${providerCase.repo}`,
               },
-            ],
-            url: 'https://gitlab.example.com/group/project/-/blob/main/src/score.ts',
-            repository: {
-              id: '42',
-              name: 'group/project',
-              url: 'https://gitlab.example.com/group/project',
+              lastModifiedAt: '2026-03-13T10:00:00.000Z',
             },
-            lastModifiedAt: '2026-03-13T10:00:00.000Z',
+          ],
+          totalCount: 1,
+          pagination: {
+            currentPage: 1,
+            totalPages: 1,
+            hasMore: false,
+            entriesPerPage: 10,
+            totalMatches: 1,
+          },
+          repositoryContext: {
+            owner: providerCase.owner,
+            repo: providerCase.repo,
+            branch: 'main',
+          },
+        },
+        status: 200,
+        provider: providerCase.provider,
+      });
+
+      mockProvider.getFileContent.mockResolvedValue({
+        data: {
+          path: 'src/score.ts',
+          content:
+            'export function computeScore(input: ScoreInput): number {\n  return input.value + input.bonus;\n}\n',
+          encoding: 'utf-8',
+          size: 96,
+          ref: 'main',
+          lastModified: '2026-03-13T10:00:00.000Z',
+        },
+        status: 200,
+        provider: providerCase.provider,
+      });
+
+      const searchResponse = await mockServer.callTool('githubSearchCode', {
+        queries: [
+          {
+            id: `remote_search_score_${providerCase.provider}`,
+            owner: providerCase.owner,
+            repo: providerCase.repo,
+            keywordsToSearch: ['computeScore'],
+            path: 'src',
+            match: 'file',
+            researchGoal: `Find the computeScore implementation in ${providerCase.provider}`,
+            reasoning: 'Need a remote file path before fetching content',
           },
         ],
-        totalCount: 1,
-        pagination: {
-          currentPage: 1,
-          totalPages: 1,
-          hasMore: false,
-          entriesPerPage: 10,
-          totalMatches: 1,
-        },
-        repositoryContext: {
-          owner: 'group',
-          repo: 'project',
-          branch: 'main',
-        },
-      },
-      status: 200,
-      provider: 'gitlab',
-    });
+      });
 
-    mockProvider.getFileContent.mockResolvedValue({
-      data: {
-        path: 'src/score.ts',
-        content:
-          'export function computeScore(input: ScoreInput): number {\n  return input.value + input.bonus;\n}\n',
-        encoding: 'utf-8',
-        size: 96,
-        ref: 'main',
-        lastModified: '2026-03-13T10:00:00.000Z',
-      },
-      status: 200,
-      provider: 'gitlab',
-    });
+      const searchData = expectHasResultsData(
+        GitHubSearchCodeOutputSchema,
+        GitHubSearchCodeDataSchema,
+        searchResponse
+      );
+      const matchedFile = searchData.files?.[0];
 
-    const searchResponse = await mockServer.callTool('githubSearchCode', {
-      queries: [
-        {
-          id: 'remote_search_score',
-          owner: 'group',
-          repo: 'project',
-          keywordsToSearch: ['computeScore'],
+      expect(matchedFile).toBeDefined();
+      expect(matchedFile?.path).toBe('src/score.ts');
+      expect(matchedFile?.owner).toBe(providerCase.owner);
+      expect(matchedFile?.repo).toBe(providerCase.repo);
+      expect(mockGetProvider).toHaveBeenCalledWith(
+        providerCase.provider,
+        expect.objectContaining({
+          type: providerCase.provider,
+          baseUrl: providerCase.baseUrl,
+          token: providerCase.token,
+        })
+      );
+      expect(mockProvider.searchCode).toHaveBeenCalledWith(
+        expect.objectContaining({
+          keywords: ['computeScore'],
+          projectId: `${providerCase.owner}/${providerCase.repo}`,
           path: 'src',
-          match: 'file',
-          researchGoal:
-            'Find the computeScore implementation in the active provider',
-          reasoning: 'Need a remote file path before fetching content',
-        },
-      ],
-    });
+        })
+      );
 
-    const searchData = expectHasResultsData(
-      GitHubSearchCodeOutputSchema,
-      GitHubSearchCodeDataSchema,
-      searchResponse
-    );
-    const matchedFile = searchData.files?.[0];
+      const fetchResponse = await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            id: `remote_fetch_score_${providerCase.provider}`,
+            owner: matchedFile!.owner,
+            repo: matchedFile!.repo,
+            path: matchedFile!.path,
+            branch: searchData.repositoryContext?.branch,
+            matchString: 'export function computeScore',
+            researchGoal: 'Read the matched remote file',
+            reasoning: 'Use the path handoff from remote code search',
+          },
+        ],
+      });
 
-    expect(matchedFile).toBeDefined();
-    expect(matchedFile?.path).toBe('src/score.ts');
-    expect(matchedFile?.owner).toBe('group');
-    expect(matchedFile?.repo).toBe('project');
-    expect(mockGetProvider).toHaveBeenCalledWith(
-      'gitlab',
-      expect.objectContaining({
-        type: 'gitlab',
-        baseUrl: 'https://gitlab.example.com',
-        token: 'provider-token',
-      })
-    );
+      const fetchData = expectHasResultsData(
+        GitHubFetchContentOutputSchema,
+        GitHubFetchContentDataSchema,
+        fetchResponse
+      );
 
-    const fetchResponse = await mockServer.callTool('githubGetFileContent', {
-      queries: [
-        {
-          id: 'remote_fetch_score',
-          owner: matchedFile!.owner,
-          repo: matchedFile!.repo,
-          path: matchedFile!.path,
-          branch: searchData.repositoryContext?.branch,
-          matchString: 'export function computeScore',
-          researchGoal: 'Read the matched remote file',
-          reasoning: 'Use the path handoff from remote code search',
-        },
-      ],
-    });
-
-    const fetchData = expectHasResultsData(
-      GitHubFetchContentOutputSchema,
-      GitHubFetchContentDataSchema,
-      fetchResponse
-    );
-
-    expect(fetchData.content).toContain('computeScore');
-    expect(fetchData.lastModified).toBe('2026-03-13T10:00:00.000Z');
-  });
+      expect(fetchData.content).toContain('computeScore');
+      expect(fetchData.lastModified).toBe('2026-03-13T10:00:00.000Z');
+      expect(mockProvider.getFileContent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: `${providerCase.owner}/${providerCase.repo}`,
+          path: 'src/score.ts',
+          ref: searchData.repositoryContext?.branch,
+        })
+      );
+    }
+  );
 });

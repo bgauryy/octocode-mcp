@@ -564,6 +564,39 @@ describe('CLI Commands', () => {
     });
   });
 
+  describe('cacheCommand', () => {
+    it('should expose cache command with tool cache flags', async () => {
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const cacheCmd = findCommand('cache');
+
+      expect(cacheCmd).toBeDefined();
+      expect(cacheCmd!.usage).toContain('--tools');
+      expect(cacheCmd!.usage).toContain('--local');
+      expect(cacheCmd!.usage).toContain('--lsp');
+      expect(cacheCmd!.usage).toContain('--api');
+    });
+
+    it('should handle clean --tools without failing', async () => {
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const cacheCmd = findCommand('cache');
+      expect(cacheCmd).toBeDefined();
+
+      await cacheCmd!.handler({
+        command: 'cache',
+        args: ['clean'],
+        options: { tools: true },
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Tool cache cleanup flags')
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('restart the MCP server process')
+      );
+      expect(process.exitCode).toBeUndefined();
+    });
+  });
+
   describe('findCommand', () => {
     it('should find token command by name', async () => {
       const { findCommand } = await import('../../src/cli/commands.js');

@@ -11,6 +11,7 @@ import type {
   EvalContext,
   EvalScorer,
   ToolResponse,
+  EvalProvider,
 } from '../scorers/types.js';
 import { createDefaultScorers, DEFAULT_WEIGHTS } from '../scorers/index.js';
 
@@ -30,13 +31,17 @@ export async function runSingleEval(
   toolsCalled: string[],
   scorers: EvalScorer[],
   startTime: number,
-  endTime: number
+  endTime: number,
+  provider?: EvalProvider,
+  finalResponse?: string
 ): Promise<EvalResult> {
   const ctx: EvalContext = {
     tools: toolsCalled,
+    provider,
     testCase,
     startTime,
     endTime,
+    finalResponse: finalResponse?.trim() ? finalResponse : undefined,
   };
 
   const scores: Record<string, number> = {};
@@ -81,6 +86,7 @@ export async function runSingleEval(
 
   return {
     testCase: testCase.name,
+    category: testCase.category,
     scores,
     overall,
     explanations,
@@ -140,8 +146,7 @@ export function generateReport(
   const byCategory: Record<string, { count: number; totalScore: number }> = {};
 
   for (const result of results) {
-    // Extract category from test case name or use default
-    const category = extractCategory(result.testCase);
+    const category = result.category ?? extractCategory(result.testCase);
 
     if (!byCategory[category]) {
       byCategory[category] = { count: 0, totalScore: 0 };

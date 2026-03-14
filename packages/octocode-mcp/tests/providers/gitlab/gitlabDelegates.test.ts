@@ -534,7 +534,7 @@ describe('GitLab Provider Delegates', () => {
         const result = transformCodeSearchResult(items, query);
         expect(result.pagination).toEqual({
           currentPage: 2,
-          totalPages: 1,
+          totalPages: 2,
           hasMore: false,
         });
       });

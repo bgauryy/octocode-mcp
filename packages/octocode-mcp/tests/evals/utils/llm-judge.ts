@@ -55,20 +55,27 @@ export class LLMJudge {
   async evaluate(
     testCase: EvalTestCase,
     responses: ToolResponse[],
-    toolsCalled: string[]
+    toolsCalled: string[],
+    finalResponse?: string
   ): Promise<LLMJudgeResponse> {
     const apiKey = this.config.apiKey ?? process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
-      // Return neutral score if no API key
+      // Return a skipped result so the caller can keep scoring neutral.
       return {
         score: 3,
         reasoning: 'LLM judge skipped: No API key configured',
         confidence: 0,
+        skipped: true,
       };
     }
 
-    const userPrompt = this.buildUserPrompt(testCase, responses, toolsCalled);
+    const userPrompt = this.buildUserPrompt(
+      testCase,
+      responses,
+      toolsCalled,
+      finalResponse
+    );
 
     try {
       const response = await this.callOpenAI(apiKey, userPrompt);
@@ -80,6 +87,7 @@ export class LLMJudge {
         score: 3,
         reasoning: `LLM judge error: ${errorMessage}`,
         confidence: 0,
+        skipped: true,
       };
     }
   }
@@ -87,7 +95,8 @@ export class LLMJudge {
   private buildUserPrompt(
     testCase: EvalTestCase,
     responses: ToolResponse[],
-    toolsCalled: string[]
+    toolsCalled: string[],
+    finalResponse?: string
   ): string {
     const responsesSummary = responses
       .map((r, i) => {
@@ -121,6 +130,10 @@ export class LLMJudge {
       })
       .join('\n');
 
+    const finalAnswer = finalResponse?.trim()
+      ? finalResponse.trim().slice(0, 4000)
+      : 'No final answer captured.';
+
     return `## Research Question
 ${testCase.prompt}
 
@@ -130,11 +143,15 @@ ${testCase.category}
 ## Tools Called
 ${toolsCalled.join(' -> ') || 'None'}
 
+## Final Answer
+${finalAnswer}
+
 ## Tool Responses
 ${responsesSummary}
 
 ## Expected Outcome
 ${testCase.expected.mustContain ? `Must contain: ${testCase.expected.mustContain.join(', ')}` : 'No specific requirements'}
+${testCase.expected.mustNotContain ? `Must avoid: ${testCase.expected.mustNotContain.join(', ')}` : ''}
 ${testCase.expected.minResults ? `Minimum results: ${testCase.expected.minResults}` : ''}
 
 Please evaluate the quality of this research response.`;
@@ -195,12 +212,14 @@ Please evaluate the quality of this research response.`;
         score: Math.max(1, Math.min(5, parsed.score ?? 3)),
         reasoning: parsed.reasoning ?? 'No reasoning provided',
         confidence: Math.max(0, Math.min(1, parsed.confidence ?? 0.5)),
+        skipped: parsed.skipped ?? false,
       };
     } catch {
       return {
         score: 3,
         reasoning: `Failed to parse LLM response: ${content.slice(0, 100)}`,
         confidence: 0,
+        skipped: true,
       };
     }
   }

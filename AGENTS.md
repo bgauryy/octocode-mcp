@@ -87,9 +87,9 @@ Each package has specific guidelines that **override** this root file:
 - **Bitbucket Setup**: [packages/octocode-mcp/docs/BITBUCKET_SETUP_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/BITBUCKET_SETUP_GUIDE.md)
 
 ### Octocode CLI
-- **Architecture**: [packages/octocode-cli/docs/ARCHITECTURE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/ARCHITECTURE.md)
+- **Docs Index**: [packages/octocode-cli/docs/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/README.md)
 - **CLI Reference**: [packages/octocode-cli/docs/CLI_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md)
-- **Menu Flow**: [packages/octocode-cli/docs/MENU_FLOW.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/MENU_FLOW.md)
+- **Skills Guide**: [packages/octocode-cli/docs/SKILLS_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md)
 
 ### Octocode VS Code
 - **Package README**: [packages/octocode-vscode/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-vscode/README.md)

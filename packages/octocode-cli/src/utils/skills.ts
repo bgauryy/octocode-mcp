@@ -14,13 +14,15 @@ import {
   readFileContent,
 } from './fs.js';
 import { HOME, isWindows, getAppDataPath } from './platform.js';
+import { paths } from 'octocode-shared';
 
 // ============================================================================
 // Config Storage
 // ============================================================================
 
-const OCTOCODE_DIR = join(HOME, '.octocode');
-const CONFIG_FILE = join(OCTOCODE_DIR, 'config.json');
+const OCTOCODE_DIR =
+  paths?.home || process.env.OCTOCODE_HOME || join(HOME, '.octocode');
+const CONFIG_FILE = paths?.cliConfig || join(OCTOCODE_DIR, 'config.json');
 
 interface OctocodeConfig {
   skillsDestDir?: string;

@@ -1,202 +1,100 @@
 # Octocode Evaluation Framework
 
-> Technical documentation for the evaluation framework that measures Octocode MCP research quality.
+Benchmarks Octocode MCP research quality by comparing provider lanes across multiple AI clients.
 
-## Knowledge Gap Eval (v3)
+## How It Works
 
-The primary evaluation measures whether tools help AI answer questions it cannot answer from training data alone.
-
-### Quick Start
-
-```bash
-# Run knowledge gap eval (single run)
-npx tsx tests/evals/run-knowledge-eval.ts
-
-# Run with statistical rigor (3 runs per test)
-npx tsx tests/evals/run-knowledge-eval.ts --runs 3
-
-# Run with verbose output
-npx tsx tests/evals/run-knowledge-eval.ts --verbose --limit 3
+```
+Prompt Corpus (JSON)
+  ↓
+run-comparison.ts (filter → run → score → report)
+  ↓
+┌──────────────────────────────────────────────────┐
+│  For each test case × each provider:             │
+│                                                  │
+│  1. Send prompt to client (Claude/Codex/Cursor)  │
+│  2. Client calls MCP tools (or not)              │
+│  3. Collect tool responses + final answer         │
+│  4. Run 5 scorers against expected rubric         │
+│  5. Compute weighted overall score               │
+└──────────────────────────────────────────────────┘
+  ↓
+Comparison table + optional baseline save
 ```
 
-### Methodology (v3)
+### Provider Lanes
 
-The eval uses a rigorous methodology based on best practices from [promptfoo](https://github.com/promptfoo/promptfoo) and [deepeval](https://github.com/confident-ai/deepeval):
-
-| Feature | Implementation |
-|---------|----------------|
-| **Blind judging** | LLM judge evaluates factuality without seeing ground truth |
-| **Factuality categories** | A=correct, B=partial, C=incorrect, D=uncertain, E=irrelevant |
-| **Randomized order** | Provider order shuffled per test to avoid ordering bias |
-| **Same conditions** | Identical system prompt and maxTurns for all providers |
-| **Statistical rigor** | Optional multiple runs with confidence intervals |
-| **Exact + semantic** | 40% exact string match + 60% blind judge scoring |
+| Lane | What it means |
+|------|---------------|
+| `octocode` | Octocode MCP tools available and required |
+| `context7` | Context7 MCP tools available (Claude only) |
+| `none` | No external MCP provider. **Not** a universal no-tools baseline — `codex` and `cursor` may still use native client tools |
 
 ### Scoring
 
-```
-Combined Score = (Exact Match × 0.4) + (Blind Judge × 0.6)
-```
+Five dimensions, weighted to prioritize correctness:
 
-- **Exact Match (40%)**: Response must contain specific strings (e.g., "408", "ReactQueryStreamedHydration")
-- **Blind Judge (60%)**: LLM evaluates factual accuracy using criteria (not ground truth)
+| Scorer | Weight | What it measures |
+|--------|--------|------------------|
+| `accuracy` | 0.40 | Status, result count, expected files, `mustContain`/`mustNotContain` patterns, final answer content |
+| `completeness` | 0.25 | Coverage of expected answer surface, pagination, file anchors |
+| `reasoning` | 0.20 | LLM judge (GPT-4o-mini) grades the final answer + evidence |
+| `tool_selection` | 0.10 | Correct tools called in correct order |
+| `latency` | 0.05 | Response time against configurable thresholds |
 
-### Factuality Categories
+Overall = weighted sum normalized to 0–1. Pass threshold: 0.5.
 
-| Category | Score | Description |
-|----------|-------|-------------|
-| A | 100 | Correct - accurate, specific information matching criteria |
-| B | 50 | Partial - some correct info but missing key details |
-| C | 0 | Incorrect - wrong values or contradicts criteria |
-| D | 0 | Uncertain - admits not knowing or hedges |
-| E | 0 | Irrelevant - doesn't address the question |
-
-### Test Case Distribution
-
-Current test cases cover 11 different libraries (11 total tests, all difficulty 5):
-
-| Library | Count | Category | Difficulty |
-|---------|-------|----------|------------|
-| Zod | 1 | Validation | 5 |
-| Drizzle | 1 | ORM | 5 |
-| Effect-TS | 1 | Functional | 5 |
-| ohash | 1 | Serialization | 5 |
-| citty | 1 | CLI parser | 5 |
-| unstorage | 1 | Storage | 5 |
-| defu | 1 | Object utils | 5 |
-| h3 | 1 | Web framework | 5 |
-| scule | 1 | String utils | 5 |
-| consola | 1 | Logging | 5 |
-| hookable | 1 | Hooks | 5 |
-
-**All tests are difficulty 5** - targeting less popular libraries with implementation details that can't be found via web search or guessed from training data.
-
-### Adding Test Cases
-
-Use the `/generate-knowledge-gap` command to create new test cases:
-
-```bash
-# In Claude Code
-/generate-knowledge-gap https://github.com/honojs/hono
-```
-
-The command:
-1. Clones repo locally (not via Octocode to avoid bias)
-2. Searches for obscure implementation details
-3. Validates baseline doesn't know via subagent
-4. Outputs JSON ready for `verified-knowledge-gaps.json`
-
-### Known Limitations
-
-| Limitation | Mitigation |
-|------------|------------|
-| Small sample size (N=11) | Use `--runs 3` for confidence intervals |
-| Test cases may favor certain tools | Generate cases without Octocode (clone locally) |
-| Ground truth can become stale | Verify against current source before adding |
-| 40/60 weight split is somewhat arbitrary | Based on promptfoo patterns; ablation study recommended |
-
-### Output Example
+### Architecture
 
 ```
-══════════════════════════════════════════════════════════════════════
-                         RESULTS SUMMARY
-══════════════════════════════════════════════════════════════════════
-
-AGGREGATE SCORES:
-  🔵 Octocode:  83% ± 12.5% (95% CI: 70-96%)
-  🟢 Context7:  73% ± 15.2% (95% CI: 58-88%)
-  ⚪ Baseline:  38% ± 18.1% (95% CI: 20-56%)
-
-✅ TOOLS HELP: Octocode provides the most value (statistically significant)
+tests/evals/
+├── run-comparison.ts           # CLI entry point for real evals
+├── octocode-eval.test.ts       # Vitest mock harness
+├── eval-regressions.test.ts    # Scorer + SDK runner regressions
+├── prompts/
+│   ├── index.ts                # Prompt loader + filters
+│   └── manual/                 # JSON prompt fixtures
+│       ├── research-scenarios.json
+│       ├── research-scenarios-realistic.json
+│       └── verified-ground-truth.json
+├── scorers/
+│   ├── types.ts                # Core types (EvalTestCase, ToolResponse, EvalScorer, etc.)
+│   ├── index.ts                # Scorer registry + DEFAULT_WEIGHTS
+│   ├── accuracy.ts             # Correctness scorer
+│   ├── completeness.ts         # Coverage scorer
+│   ├── latency.ts              # Response time scorer
+│   ├── tool-selection.ts       # Tool choice scorer
+│   ├── reasoning.ts            # LLM judge scorer
+│   └── result-count.ts         # Shared result counting helper
+└── utils/
+    ├── eval-runner.ts           # Orchestration: runSingleEval, generateReport
+    ├── sdk-runner.ts            # Client adapters (Claude SDK/CLI, Codex, Cursor)
+    ├── baseline.ts              # Save/load/compare baseline artifacts
+    └── llm-judge.ts             # OpenAI-based reasoning evaluator
 ```
-
----
-
-## Overview
-
-The eval framework provides objective measurement of Octocode's effectiveness compared to other tools (Context7) and baseline (no tools). It evaluates across 5 dimensions:
-
-- **Accuracy** (25%) — Correctness of results against expected outcomes
-- **Completeness** (20%) — Coverage of expected information
-- **Latency** (15%) — Response time performance
-- **Tool Selection** (20%) — Correct tool choices and ordering
-- **Reasoning** (20%) — LLM judge evaluation of research logic
 
 ## Quick Start
 
 ```bash
-# Run quick 2-way comparison (Octocode vs Baseline)
-yarn eval:real:quick
+# Validate mock harness + regression tests
+yarn test:eval
 
-# Run 3-way comparison (Octocode vs Context7 vs Baseline)
-yarn eval:real:3way:quick
+# Typecheck the real harness
+yarn typecheck:evals
 
-# Run challenging scenarios only
-yarn eval:challenging:quick
+# Preview which prompts will run (no API calls)
+npx tsx tests/evals/run-comparison.ts --list --category symbol_lookup --limit 3
 
-# Run hardest scenarios (difficulty >= 5)
-yarn eval:hard
+# Claude 2-way: Octocode vs no external MCP
+yarn eval:real
+
+# Claude 3-way: Octocode vs Context7 vs no external MCP
+yarn eval:real:3way
+
+# Codex / Cursor smoke
+npx tsx tests/evals/run-comparison.ts --client codex --category symbol_lookup --limit 1
+npx tsx tests/evals/run-comparison.ts --client cursor --category symbol_lookup --limit 1
 ```
-
-## Directory Structure
-
-```
-tests/evals/
-├── scorers/                              # Scoring implementations
-│   ├── types.ts                          # Core type definitions
-│   ├── index.ts                          # Scorer exports
-│   ├── accuracy.ts                       # Result correctness scorer
-│   ├── completeness.ts                   # Coverage scorer
-│   ├── latency.ts                        # Performance scorer
-│   ├── tool-selection.ts                 # Tool choice scorer
-│   └── reasoning.ts                      # LLM judge scorer
-├── prompts/                              # Test case definitions
-│   ├── index.ts                          # Prompt loaders & filters
-│   └── manual/
-│       ├── research-scenarios.json       # Base test cases (20)
-│       └── research-scenarios-realistic.json  # Challenging cases (20)
-├── utils/
-│   ├── eval-runner.ts                    # Mock eval orchestration
-│   ├── sdk-runner.ts                     # Real LLM eval runner
-│   ├── llm-judge.ts                      # LLM judge integration
-│   └── baseline.ts                       # Baseline comparison utils
-├── baselines/                            # Stored baseline results
-├── octocode-eval.test.ts                 # Vitest test suite
-└── run-comparison.ts                     # CLI for real comparisons
-```
-
-## Test Categories
-
-| Category | Description | Example |
-|----------|-------------|---------|
-| `code_search` | Finding code patterns in repositories | "Find useState implementation in React" |
-| `file_discovery` | Locating files by name or pattern | "Find all tsconfig.json in Next.js repo" |
-| `symbol_lookup` | Definition/reference lookups | "Find definition of createServer" |
-| `package_search` | NPM/PyPI package lookups | "Find zod package repository" |
-| `pr_archaeology` | Finding PRs that introduced features | "Find PR that added Server Actions" |
-| `error_handling` | Graceful error handling | "Search non-existent repository" |
-
-## Challenging Scenarios
-
-The `research-scenarios-realistic.json` contains 20 scenarios specifically designed to test where AI struggles without tools:
-
-### Categories
-
-- **Breaking Changes** — React 19's `use` hook, Next.js 15 async APIs, Tailwind v4 CSS config
-- **Undocumented Internals** — Plugin architectures, extension patterns, internal flows
-- **Emerging Frameworks** — Mastra AI, Bun workspaces, Crawlee
-- **Protocol Specifications** — MCP responses, WebSocket subprotocols, gRPC-web
-- **Complex Configuration** — TypeScript monorepos, K8s NGINX ingress
-
-### Difficulty Ratings
-
-Each challenging scenario has a difficulty rating (1-5):
-
-| Difficulty | Description | Count |
-|------------|-------------|-------|
-| 3 | Moderately challenging | 4 |
-| 4 | Hard without tools | 10 |
-| 5 | Extremely hard (post-cutoff, undocumented) | 6 |
 
 ## CLI Reference
 
@@ -204,203 +102,99 @@ Each challenging scenario has a difficulty rating (1-5):
 npx tsx tests/evals/run-comparison.ts [options]
 ```
 
-### Options
-
 | Option | Description |
 |--------|-------------|
-| `--verbose` | Show detailed output per test case |
-| `--limit N` | Limit to N test cases |
-| `--category X` | Filter by category (code_search, file_discovery, etc.) |
-| `--save` | Save results to baseline file |
-| `--providers X` | Comma-separated: octocode,context7,none |
-| `--mode 2way\|3way` | 2-way (default) or 3-way comparison |
-| `--challenging` | Only run challenging/realistic test cases |
-| `--difficulty N` | Only run cases with difficulty >= N |
+| `--client X` | `claude`, `codex`, or `cursor` |
+| `--model X` | Override client model |
+| `--mode 2way\|3way` | Comparison mode |
+| `--providers X` | Comma-separated: `octocode,context7,none` |
+| `--category X` | Filter by category |
+| `--names X` | Comma-separated exact prompt names |
+| `--tags X` | Comma-separated tags (match-any) |
+| `--difficulty N` | Minimum difficulty (1–5) |
+| `--challenging` | Use only realistic prompts |
+| `--limit N` | Cap test case count |
+| `--list` | Print selected cases and exit |
+| `--save` | Save results as baseline artifact |
+| `--verbose` | Detailed per-case output |
 
-### NPM Scripts
+Notes: `context7` requires `--client claude`. Use `--list` to validate selections before expensive runs.
+
+## Client Matrix
+
+| Client | Octocode | Context7 | `none` lane behavior |
+|--------|----------|----------|----------------------|
+| `claude` | yes | yes | Built-in tools disabled |
+| `codex` | yes | no | Native tools may still be used |
+| `cursor` | yes | no | Native tools may still be used |
+
+## Creating Benchmark Packs
+
+### 1. Reuse existing prompts
+
+Preview candidates before running anything expensive:
 
 ```bash
-# Mock eval tests (fast, uses Vitest)
-yarn test:eval                    # Run all eval tests
-yarn test:eval:baseline           # Save results as baseline
-yarn test:eval:compare            # Compare against baseline
-
-# Real LLM evals (slow, uses Claude SDK)
-yarn eval:real                    # Full 2-way comparison
-yarn eval:real:verbose            # With detailed output
-yarn eval:real:quick              # Limited to 3 cases
-yarn eval:real:3way               # Full 3-way comparison
-yarn eval:real:3way:quick         # 3-way, limited to 3 cases
-
-# Challenging scenarios
-yarn eval:challenging             # All 20 realistic cases (3-way)
-yarn eval:challenging:quick       # 5 realistic cases (3-way)
-yarn eval:hard                    # Only difficulty >= 5 (3-way)
+npx tsx tests/evals/run-comparison.ts --list --tags nextjs --difficulty 4
 ```
 
-## Output Format
+### 2. Add prompts only when needed
 
-```
-══════════════════════════════════════════════════════════════════════════════
-                    OCTOCODE vs CONTEXT7 vs BASELINE
-══════════════════════════════════════════════════════════════════════════════
+Add to the appropriate JSON fixture with these required fields:
 
-Test Case                            Octocode  Context7  Baseline   Winner
-─────────────────────────────────────────────────────────────────────────────
-find_react_hooks_implementation         72%       65%       45%    🔵 octocode
-locate_config_files                     68%       70%       40%    🟢 context7
-npm_package_lookup                      85%       82%       50%    🔵 octocode
+- `name` — stable identifier
+- `prompt` — clear research question
+- `category` — one of: `code_search`, `file_discovery`, `symbol_lookup`, `package_search`, `pr_archaeology`, `error_handling`
+- `expected` — assertions (`status`, `minResults`, `expectedTools`, `mustContain`, `expectedFiles`)
+- `tags` — for pack selection
+- Optional: `difficulty` (1–5), `whyHard`, `groundTruth`
 
-══════════════════════════════════════════════════════════════════════════════
-                              SUMMARY
-─────────────────────────────────────────────────────────────────────────────
+Prefer source-backed rubric anchors over generic keywords — `expectedFiles` and specific `mustContain` terms that prove the model actually found the right code.
 
-Average Scores:
-  🔵 Octocode:  75.0%  (avg 25000ms)
-  🟢 Context7:  72.3%  (avg 28000ms)
-  ⚪ Baseline:  45.0%  (avg 12000ms)
+### 3. Run and interpret
 
-Head-to-Head (Octocode vs Context7):
-  Octocode wins: 2  |  Context7 wins: 1  |  Ties: 0
+```bash
+# Validate selection
+npx tsx tests/evals/run-comparison.ts --list --names case1,case2
 
-Improvement Over Baseline:
-  Octocode: +30.0%
-  Context7: +27.3%
+# Run
+npx tsx tests/evals/run-comparison.ts --client claude --mode 3way --names case1,case2
+
+# Save baseline
+npx tsx tests/evals/run-comparison.ts --client claude --names case1,case2 --save
 ```
 
-## Adding New Test Cases
+Interpretation rules:
+- Any `codex`/`cursor` row where the baseline lane used native tools is a contaminated comparison
+- Zero tool calls in the Octocode lane means provider-usage failure, not capability failure
+- Run at least 2 repeats before drawing conclusions; single runs have high variance
 
-Create test cases in `prompts/manual/research-scenarios.json`:
+## Prompt Corpus
 
-```json
-{
-  "name": "unique_test_name",
-  "description": "What this tests",
-  "prompt": "The actual prompt to send to the LLM",
-  "category": "code_search",
-  "expected": {
-    "status": "hasResults",
-    "minResults": 1,
-    "expectedTools": ["githubSearchCode", "githubGetFileContent"],
-    "mustContain": ["keyword1", "keyword2"]
-  },
-  "tags": ["github", "react"]
-}
-```
-
-For challenging scenarios, add to `research-scenarios-realistic.json`:
-
-```json
-{
-  "name": "challenging_scenario",
-  "description": "Description",
-  "prompt": "The prompt",
-  "category": "code_search",
-  "difficulty": 5,
-  "whyHard": "Explanation of why AI struggles without tools",
-  "expected": { ... },
-  "tags": ["post-cutoff", "breaking-change"]
-}
-```
-
-## Scorer Details
-
-### Accuracy Scorer
-
-Checks:
-- Status matches expected (hasResults, empty, error)
-- Minimum result count met
-- Expected files found
-- Must-contain patterns present
-- Must-not-contain patterns absent
-
-### Completeness Scorer
-
-Checks:
-- All expected files retrieved
-- No truncated results
-- Pagination handled properly
-- Content coverage
-
-### Latency Scorer
-
-Thresholds (configurable):
-- Excellent (<1000ms): 1.0
-- Good (<3000ms): 0.8
-- Acceptable (<5000ms): 0.5
-- Poor (>5000ms): 0.2
-
-### Tool Selection Scorer
-
-Checks:
-- Correct tools called
-- Tool order matches expected (if specified)
-- No unnecessary tool calls (configurable penalty)
-
-### Reasoning Scorer
-
-Uses LLM-as-Judge pattern:
-- Sends prompt + response to GPT-4o-mini
-- Evaluates research logic quality (1-5 scale)
-- Requires `OPENAI_API_KEY` environment variable
-
-## Environment Variables
-
-| Variable | Description |
+| Category | Description |
 |----------|-------------|
-| `ANTHROPIC_API_KEY` | Required for real LLM evals |
-| `OPENAI_API_KEY` | Required for LLM judge scorer |
-| `SAVE_BASELINE` | Set to "true" to save mock eval results |
-| `COMPARE_BASELINE` | Set to "true" to compare against baseline |
+| `code_search` | Find code patterns, implementations, API usage |
+| `file_discovery` | Locate files by structure or metadata |
+| `symbol_lookup` | Jump to definitions, references, call hierarchy |
+| `package_search` | Find npm/PyPI packages and repos |
+| `pr_archaeology` | Find PRs that introduced changes |
+| `error_handling` | Invalid inputs, missing resources |
 
-## Interpreting Results
+## Environment
 
-### Expected Patterns
+| Variable | Required for |
+|----------|-------------|
+| `ANTHROPIC_API_KEY` | Real Claude evals |
+| `OPENAI_API_KEY` | LLM judge (reasoning scorer) |
+| `GITHUB_TOKEN` | Octocode GitHub tool calls |
+| `SAVE_BASELINE=true` | Save mock eval baseline |
+| `COMPARE_BASELINE=true` | Compare to saved baseline |
 
-- **Tools should outperform baseline** on standard research tasks
-- **Challenging scenarios may show lower scores** — these test edge cases
-- **Latency tradeoff** — tools take longer but should provide better results
+## Known Limitations
 
-### Warning Signs
-
-- Octocode consistently worse than baseline → investigate tool selection
-- High latency with low accuracy → tools being called but not used effectively
-- Low reasoning scores → LLM not synthesizing tool results properly
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              run-comparison.ts                               │
-│                         (CLI Entry Point)                                    │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              sdk-runner.ts                                   │
-│  • Claude Agent SDK integration                                              │
-│  • MCP server configuration (Octocode, Context7, None)                       │
-│  • Batch evaluation orchestration                                            │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                    ┌─────────────────┼─────────────────┐
-                    ▼                 ▼                 ▼
-             ┌──────────┐      ┌──────────┐      ┌──────────┐
-             │ Octocode │      │ Context7 │      │ Baseline │
-             │   MCP    │      │   MCP    │      │ (no MCP) │
-             └──────────┘      └──────────┘      └──────────┘
-                    │                 │                 │
-                    └─────────────────┼─────────────────┘
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Scorers                                         │
-│  accuracy.ts │ completeness.ts │ latency.ts │ tool-selection.ts │ reasoning │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Results & Reporting                                  │
-│  • Per-test scores    • Summary statistics    • Winner determination         │
-│  • Baseline comparison    • Latency breakdown                                │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+- The `none` lane is not a universal no-tools baseline on `codex`/`cursor`
+- `context7` only works with `--client claude`
+- Cursor Octocode runs depend on external MCP config
+- LLM judge falls back to neutral (0.5) without `OPENAI_API_KEY`
+- Ground truth can become stale — re-verify against upstream sources
+- Small corpus — add cases before drawing broad conclusions

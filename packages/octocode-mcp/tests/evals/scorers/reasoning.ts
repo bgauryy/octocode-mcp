@@ -42,8 +42,13 @@ export class ReasoningScorer implements EvalScorer {
     const judgeResult = await this.judge.evaluate(
       ctx.testCase,
       responses,
-      ctx.tools
+      ctx.tools,
+      ctx.finalResponse
     );
+
+    if (judgeResult.skipped) {
+      return 0.5;
+    }
 
     // Convert 1-5 scale to 0-1
     // 1 -> 0, 2 -> 0.25, 3 -> 0.5, 4 -> 0.75, 5 -> 1.0
@@ -65,8 +70,13 @@ export class ReasoningScorer implements EvalScorer {
     const judgeResult = await this.judge.evaluate(
       ctx.testCase,
       responses,
-      ctx.tools
+      ctx.tools,
+      ctx.finalResponse
     );
+
+    if (judgeResult.skipped) {
+      return `LLM Judge skipped. Reason: ${judgeResult.reasoning}`;
+    }
 
     return (
       `LLM Judge score: ${judgeResult.score}/5 ` +

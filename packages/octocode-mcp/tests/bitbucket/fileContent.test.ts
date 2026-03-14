@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { clearAllCache } from '../../src/utils/http/cache.js';
 
 vi.mock('../../src/bitbucket/client.js', () => ({
   getBitbucketClient: vi.fn(() => ({ GET: vi.fn() })),
@@ -22,6 +23,7 @@ global.fetch = mockFetch;
 describe('fetchBitbucketFileContentAPI', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAllCache();
   });
 
   it('should return error when workspace is missing', async () => {
@@ -162,6 +164,7 @@ describe('fetchBitbucketFileContentAPI', () => {
 describe('getBitbucketDefaultBranch', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAllCache();
   });
 
   it('should return the repository default branch', async () => {

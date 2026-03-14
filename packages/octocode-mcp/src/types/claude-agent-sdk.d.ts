@@ -4,7 +4,16 @@ declare module '@anthropic-ai/claude-agent-sdk' {
     options: {
       model?: string;
       maxTurns?: number;
-      mcpServers: Record<string, { command: string; args: string[] }>;
+      cwd?: string;
+      allowedTools?: string[];
+      mcpServers: Record<
+        string,
+        {
+          command: string;
+          args: string[];
+          env?: Record<string, string>;
+        }
+      >;
       permissionMode: 'bypassPermissions';
       allowDangerouslySkipPermissions: boolean;
     };

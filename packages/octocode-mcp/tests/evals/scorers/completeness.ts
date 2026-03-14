@@ -9,6 +9,7 @@ import type {
   ToolResponse,
   CompletenessScorerOptions,
 } from './types.js';
+import { countToolResponseResults } from './result-count.js';
 
 const DEFAULT_OPTIONS: CompletenessScorerOptions = {
   penalizeTruncated: true,
@@ -28,7 +29,7 @@ export class CompletenessScorer implements EvalScorer {
   async score(
     output: ToolResponse | ToolResponse[],
     expected: ExpectedResult,
-    _ctx: EvalContext
+    ctx: EvalContext
   ): Promise<number> {
     const responses = Array.isArray(output) ? output : [output];
 
@@ -85,13 +86,7 @@ export class CompletenessScorer implements EvalScorer {
       weights += this.options.minResultsWeight;
 
       const totalResults = responses.reduce((sum, r) => {
-        return (
-          sum +
-          ((r.files as unknown[])?.length ?? 0) +
-          ((r.repositories as unknown[])?.length ?? 0) +
-          ((r.packages as unknown[])?.length ?? 0) +
-          ((r.locations as unknown[])?.length ?? 0)
-        );
+        return sum + countToolResponseResults(r);
       }, 0);
 
       if (totalResults >= expected.minResults) {
@@ -100,6 +95,36 @@ export class CompletenessScorer implements EvalScorer {
         const ratio = totalResults / expected.minResults;
         score += this.options.minResultsWeight * ratio;
       }
+    }
+
+    const contentCoverageChecks: number[] = [];
+    const allContent = this.extractAllContent(responses, ctx.finalResponse);
+
+    if (expected.mustContain && expected.mustContain.length > 0) {
+      const matchedPatterns = expected.mustContain.filter(pattern =>
+        allContent.toLowerCase().includes(pattern.toLowerCase())
+      );
+      contentCoverageChecks.push(
+        matchedPatterns.length / expected.mustContain.length
+      );
+    }
+
+    if (expected.expectedPatterns && expected.expectedPatterns.length > 0) {
+      const matchedPatterns = expected.expectedPatterns.filter(pattern =>
+        pattern.test(allContent)
+      );
+      contentCoverageChecks.push(
+        matchedPatterns.length / expected.expectedPatterns.length
+      );
+    }
+
+    if (contentCoverageChecks.length > 0) {
+      const contentCoverageWeight = 0.3;
+      weights += contentCoverageWeight;
+      score +=
+        contentCoverageWeight *
+        (contentCoverageChecks.reduce((sum, value) => sum + value, 0) /
+          contentCoverageChecks.length);
     }
 
     // Penalize truncation if enabled
@@ -127,7 +152,7 @@ export class CompletenessScorer implements EvalScorer {
   async explain(
     output: ToolResponse | ToolResponse[],
     expected: ExpectedResult,
-    _ctx: EvalContext
+    ctx: EvalContext
   ): Promise<string> {
     const responses = Array.isArray(output) ? output : [output];
     const explanations: string[] = [];
@@ -161,13 +186,7 @@ export class CompletenessScorer implements EvalScorer {
 
     // Results count
     const totalResults = responses.reduce((sum, r) => {
-      return (
-        sum +
-        ((r.files as unknown[])?.length ?? 0) +
-        ((r.repositories as unknown[])?.length ?? 0) +
-        ((r.packages as unknown[])?.length ?? 0) +
-        ((r.locations as unknown[])?.length ?? 0)
-      );
+      return sum + countToolResponseResults(r);
     }, 0);
 
     explanations.push(`Retrieved ${totalResults} results`);
@@ -188,6 +207,16 @@ export class CompletenessScorer implements EvalScorer {
       ).length;
       explanations.push(
         `Expected files: ${matchedCount}/${expected.expectedFiles.length} found`
+      );
+    }
+
+    if (expected.mustContain && expected.mustContain.length > 0) {
+      const allContent = this.extractAllContent(responses, ctx.finalResponse);
+      const matched = expected.mustContain.filter(pattern =>
+        allContent.toLowerCase().includes(pattern.toLowerCase())
+      );
+      explanations.push(
+        `Answer coverage: ${matched.length}/${expected.mustContain.length} rubric points found`
       );
     }
 
@@ -215,6 +244,25 @@ export class CompletenessScorer implements EvalScorer {
     }
 
     return files;
+  }
+
+  private extractAllContent(
+    responses: ToolResponse[],
+    finalResponse?: string
+  ): string {
+    const parts: string[] = [];
+
+    if (finalResponse?.trim()) {
+      parts.push(finalResponse);
+    }
+
+    for (const response of responses) {
+      if (response.content && typeof response.content === 'string') {
+        parts.push(response.content);
+      }
+    }
+
+    return parts.join('\n');
   }
 }
 

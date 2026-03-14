@@ -125,4 +125,32 @@ describe('ignoredPathFilter', () => {
       expect(shouldIgnore('/project/src/index.ts')).toBe(false);
     });
   });
+
+  describe('shouldIgnorePath - full path pattern matching', () => {
+    it('should match .config/gcloud path via full path pattern', () => {
+      expect(shouldIgnorePath('.config/gcloud')).toBe(true);
+    });
+
+    it('should match nested .config/gcloud path via full path pattern', () => {
+      expect(shouldIgnorePath('.config/gcloud/credentials')).toBe(true);
+    });
+  });
+
+  describe('shouldIgnoreFile - full path pattern matching', () => {
+    it('should match .docker/config.json via full path file pattern', () => {
+      expect(shouldIgnoreFile('.docker/config.json')).toBe(true);
+    });
+
+    it('should match .aws/credentials via full path file pattern', () => {
+      expect(shouldIgnoreFile('.aws/credentials')).toBe(true);
+    });
+
+    it('should match .kube/config via full path file pattern', () => {
+      expect(shouldIgnoreFile('.kube/config')).toBe(true);
+    });
+
+    it('should match .pip/pip.conf via full path file pattern', () => {
+      expect(shouldIgnoreFile('.pip/pip.conf')).toBe(true);
+    });
+  });
 });

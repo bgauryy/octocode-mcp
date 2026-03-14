@@ -44,10 +44,12 @@ export function createDefaultScorers(): EvalScorer[] {
 }
 
 // Scorer weights (should sum to 1.0)
+// Benchmarks are quality-first: correctness and coverage dominate, while
+// latency and tool choice remain secondary dimensions.
 export const DEFAULT_WEIGHTS = {
-  accuracy: 0.25,
-  completeness: 0.2,
-  latency: 0.15,
-  tool_selection: 0.2,
+  accuracy: 0.4,
+  completeness: 0.25,
+  latency: 0.05,
+  tool_selection: 0.1,
   reasoning: 0.2,
 } as const;

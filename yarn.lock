@@ -5864,10 +5864,12 @@ __metadata:
   dependencies:
     "@types/node": "npm:^22.15.29"
     "@types/vscode": "npm:^1.107.0"
+    "@vitest/coverage-v8": "npm:^4.0.16"
     "@vscode/vsce": "npm:^3.7.1"
     esbuild: "npm:^0.27.2"
     eslint: "npm:^9.18.0"
     typescript: "npm:^5.9.3"
+    vitest: "npm:^4.0.16"
   languageName: unknown
   linkType: soft
 

@@ -33,6 +33,12 @@ const DEFAULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 /** GC sweep interval: 10 minutes in milliseconds */
 const GC_INTERVAL_MS = 10 * 60 * 1000;
 
+/** Default maximum on-disk clone cache size: 2 GB */
+const DEFAULT_MAX_CACHE_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
+
+/** Default maximum number of cached clones */
+const DEFAULT_MAX_CLONE_COUNT = 50;
+
 /** Metadata file stored inside each clone directory */
 const META_FILE_NAME = '.octocode-clone-meta.json';
 
@@ -160,6 +166,32 @@ export function getCacheTTL(): number {
 }
 
 /**
+ * Resolve max cache size from env (bytes).
+ * Accepts OCTOCODE_MAX_CACHE_SIZE as a positive integer.
+ */
+export function getMaxCacheSizeBytes(): number {
+  const raw = process.env.OCTOCODE_MAX_CACHE_SIZE;
+  if (raw != null) {
+    const parsed = Number(raw);
+    if (!Number.isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return DEFAULT_MAX_CACHE_SIZE_BYTES;
+}
+
+/**
+ * Resolve max clone count from env.
+ * Accepts OCTOCODE_MAX_CLONES as a positive integer.
+ */
+export function getMaxCloneCount(): number {
+  const raw = process.env.OCTOCODE_MAX_CLONES;
+  if (raw != null) {
+    const parsed = Number(raw);
+    if (!Number.isNaN(parsed) && parsed > 0) return Math.floor(parsed);
+  }
+  return DEFAULT_MAX_CLONE_COUNT;
+}
+
+/**
  * Build a fresh metadata object with a configurable TTL (default 24 h).
  */
 export function createCacheMeta(
@@ -253,6 +285,53 @@ export function evictExpiredClones(octocodeDir: string): number {
     }
   }
 
+  function getDirectorySizeBytes(target: string): number {
+    let total = 0;
+    for (const name of listDir(target)) {
+      const fullPath = join(target, name);
+      try {
+        const stat = statSync(fullPath);
+        if (stat.isDirectory()) {
+          total += getDirectorySizeBytes(fullPath);
+        } else if (stat.isFile()) {
+          total += stat.size;
+        }
+      } catch {
+        // Ignore unreadable entries
+      }
+    }
+    return total;
+  }
+
+  function cleanupEmptyDirectories(): void {
+    for (const ownerName of listDir(reposBase)) {
+      const ownerDir = join(reposBase, ownerName);
+      if (!isDir(ownerDir)) continue;
+
+      for (const repoName of listDir(ownerDir)) {
+        const repoDir = join(ownerDir, repoName);
+        if (!isDir(repoDir)) continue;
+
+        if (listDir(repoDir).length === 0) {
+          try {
+            rmSync(repoDir, { recursive: true, force: true });
+          } catch {
+            // skip
+          }
+        }
+      }
+
+      if (listDir(ownerDir).length === 0) {
+        try {
+          rmSync(ownerDir, { recursive: true, force: true });
+        } catch {
+          // skip
+        }
+      }
+    }
+  }
+
+  // Pass 1: remove expired and orphan entries.
   try {
     for (const ownerName of listDir(reposBase)) {
       const ownerDir = join(reposBase, ownerName);
@@ -268,7 +347,6 @@ export function evictExpiredClones(octocodeDir: string): number {
 
           try {
             const meta = readCacheMeta(branchDir);
-            // Evict if: no metadata (orphan) or expired
             if (!meta || !isCacheValid(meta)) {
               rmSync(branchDir, { recursive: true, force: true });
               evicted++;
@@ -277,28 +355,76 @@ export function evictExpiredClones(octocodeDir: string): number {
             // Skip entries we can't read/delete
           }
         }
-
-        // Clean up empty repo directories
-        if (listDir(repoDir).length === 0) {
-          try {
-            rmSync(repoDir, { recursive: true, force: true });
-          } catch {
-            // skip
-          }
-        }
-      }
-
-      // Clean up empty owner directories
-      if (listDir(ownerDir).length === 0) {
-        try {
-          rmSync(ownerDir, { recursive: true, force: true });
-        } catch {
-          // skip
-        }
       }
     }
   } catch {
     // reposBase unreadable — nothing to evict
+    return evicted;
+  }
+
+  cleanupEmptyDirectories();
+
+  // Pass 2: enforce size and count limits by evicting oldest clones.
+  interface LiveCacheEntry {
+    branchDir: string;
+    clonedAtMs: number;
+    sizeBytes: number;
+  }
+
+  const entries: LiveCacheEntry[] = [];
+
+  for (const ownerName of listDir(reposBase)) {
+    const ownerDir = join(reposBase, ownerName);
+    if (!isDir(ownerDir)) continue;
+
+    for (const repoName of listDir(ownerDir)) {
+      const repoDir = join(ownerDir, repoName);
+      if (!isDir(repoDir)) continue;
+
+      for (const branchName of listDir(repoDir)) {
+        const branchDir = join(repoDir, branchName);
+        if (!isDir(branchDir)) continue;
+
+        const meta = readCacheMeta(branchDir);
+        if (!meta) continue;
+
+        const clonedAtMs = Number.isNaN(Date.parse(meta.clonedAt))
+          ? 0
+          : Date.parse(meta.clonedAt);
+        entries.push({
+          branchDir,
+          clonedAtMs,
+          sizeBytes: getDirectorySizeBytes(branchDir),
+        });
+      }
+    }
+  }
+
+  const maxSizeBytes = getMaxCacheSizeBytes();
+  const maxCloneCount = getMaxCloneCount();
+
+  let totalSize = entries.reduce((sum, entry) => sum + entry.sizeBytes, 0);
+  let totalCount = entries.length;
+
+  if (totalSize > maxSizeBytes || totalCount > maxCloneCount) {
+    entries.sort((a, b) => a.clonedAtMs - b.clonedAtMs);
+
+    for (const entry of entries) {
+      if (totalSize <= maxSizeBytes && totalCount <= maxCloneCount) {
+        break;
+      }
+
+      try {
+        rmSync(entry.branchDir, { recursive: true, force: true });
+        evicted++;
+        totalSize -= entry.sizeBytes;
+        totalCount -= 1;
+      } catch {
+        // Best effort: continue evicting other entries
+      }
+    }
+
+    cleanupEmptyDirectories();
   }
 
   return evicted;

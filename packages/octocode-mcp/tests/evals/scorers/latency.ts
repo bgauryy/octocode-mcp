@@ -11,10 +11,10 @@ import type {
 } from './types.js';
 
 const DEFAULT_OPTIONS: LatencyScorerOptions = {
-  excellent: 1000, // <1s = 1.0
-  good: 3000, // <3s = 0.8
-  acceptable: 5000, // <5s = 0.5
-  poor: 10000, // <10s = 0.2, >10s = 0.1
+  excellent: 3000, // <3s = 1.0
+  good: 8000, // <8s = 0.9
+  acceptable: 20000, // <20s = 0.7
+  poor: 60000, // <60s = 0.3, >60s = 0.1
 };
 
 export class LatencyScorer implements EvalScorer {

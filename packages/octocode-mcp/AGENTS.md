@@ -508,11 +508,11 @@ yarn test:ui
 
 | Document | Description |
 |----------|-------------|
-| [`GITHUB_GITLAB_TOOLS_REFERENCE.md`](./docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) | GitHub/GitLab tools: search code/repos/PRs, content, packages |
-| [`LOCAL_TOOLS_REFERENCE.md`](./docs/LOCAL_TOOLS_REFERENCE.md) | Local + LSP tools: search, structure, files, semantic analysis |
-| [`CLONE_AND_LOCAL_TOOLS_WORKFLOW.md`](./docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md) | Clone repos → use local + LSP tools for deep analysis |
-| [`AUTHENTICATION_SETUP.md`](./docs/AUTHENTICATION_SETUP.md) | GitHub/GitLab authentication setup |
-| [`README.md`](./README.md) | Installation, usage, configuration |
+| [`GITHUB_GITLAB_TOOLS_REFERENCE.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) | GitHub/GitLab tools: search code/repos/PRs, content, packages |
+| [`LOCAL_TOOLS_REFERENCE.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) | Local + LSP tools: search, structure, files, semantic analysis |
+| [`CLONE_AND_LOCAL_TOOLS_WORKFLOW.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md) | Clone repos → use local + LSP tools for deep analysis |
+| [`AUTHENTICATION_SETUP.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) | GitHub/GitLab authentication setup |
+| [`README.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/README.md) | Installation, usage, configuration |
 | [MCP Spec](https://modelcontextprotocol.io/) | Model Context Protocol specification |
 | [GitHub REST API](https://docs.github.com/en/rest) | GitHub API reference |
 | [LSP Spec](https://microsoft.github.io/language-server-protocol/) | Language Server Protocol specification |

@@ -9,6 +9,7 @@ import type {
   ToolResponse,
   AccuracyScorerOptions,
 } from './types.js';
+import { countToolResponseResults } from './result-count.js';
 
 const DEFAULT_OPTIONS: AccuracyScorerOptions = {
   requireAllExpectedFiles: false,
@@ -27,7 +28,7 @@ export class AccuracyScorer implements EvalScorer {
   async score(
     output: ToolResponse | ToolResponse[],
     expected: ExpectedResult,
-    _ctx: EvalContext
+    ctx: EvalContext
   ): Promise<number> {
     const responses = Array.isArray(output) ? output : [output];
 
@@ -51,15 +52,10 @@ export class AccuracyScorer implements EvalScorer {
     // Check minimum results
     if (expected.minResults !== undefined) {
       checks++;
-      const totalResults = responses.reduce((sum, r) => {
-        const resultsCount =
-          (r.files as unknown[])?.length ??
-          (r.repositories as unknown[])?.length ??
-          (r.packages as unknown[])?.length ??
-          (r.locations as unknown[])?.length ??
-          0;
-        return sum + resultsCount;
-      }, 0);
+      const totalResults = responses.reduce(
+        (sum, response) => sum + countToolResponseResults(response),
+        0
+      );
 
       if (totalResults >= expected.minResults) {
         score += 1;
@@ -108,7 +104,7 @@ export class AccuracyScorer implements EvalScorer {
     // Check must contain patterns
     if (expected.mustContain && expected.mustContain.length > 0) {
       checks++;
-      const allContent = this.extractAllContent(responses);
+      const allContent = this.extractAllContent(responses, ctx.finalResponse);
 
       const matchedPatterns = expected.mustContain.filter(pattern =>
         allContent.toLowerCase().includes(pattern.toLowerCase())
@@ -120,7 +116,7 @@ export class AccuracyScorer implements EvalScorer {
     // Check must NOT contain patterns
     if (expected.mustNotContain && expected.mustNotContain.length > 0) {
       checks++;
-      const allContent = this.extractAllContent(responses);
+      const allContent = this.extractAllContent(responses, ctx.finalResponse);
 
       const violatedPatterns = expected.mustNotContain.filter(pattern =>
         allContent.toLowerCase().includes(pattern.toLowerCase())
@@ -132,7 +128,7 @@ export class AccuracyScorer implements EvalScorer {
     // Check regex patterns
     if (expected.expectedPatterns && expected.expectedPatterns.length > 0) {
       checks++;
-      const allContent = this.extractAllContent(responses);
+      const allContent = this.extractAllContent(responses, ctx.finalResponse);
 
       const matchedPatterns = expected.expectedPatterns.filter(pattern =>
         pattern.test(allContent)
@@ -162,7 +158,7 @@ export class AccuracyScorer implements EvalScorer {
   async explain(
     output: ToolResponse | ToolResponse[],
     expected: ExpectedResult,
-    _ctx: EvalContext
+    ctx: EvalContext
   ): Promise<string> {
     const responses = Array.isArray(output) ? output : [output];
     const explanations: string[] = [];
@@ -180,13 +176,7 @@ export class AccuracyScorer implements EvalScorer {
 
     // Results count
     const totalResults = responses.reduce((sum, r) => {
-      return (
-        sum +
-        ((r.files as unknown[])?.length ?? 0) +
-        ((r.repositories as unknown[])?.length ?? 0) +
-        ((r.packages as unknown[])?.length ?? 0) +
-        ((r.locations as unknown[])?.length ?? 0)
-      );
+      return sum + countToolResponseResults(r);
     }, 0);
 
     explanations.push(`Total results: ${totalResults}`);
@@ -221,7 +211,7 @@ export class AccuracyScorer implements EvalScorer {
 
     // Content checks
     if (expected.mustContain && expected.mustContain.length > 0) {
-      const allContent = this.extractAllContent(responses);
+      const allContent = this.extractAllContent(responses, ctx.finalResponse);
       const matched = expected.mustContain.filter(p =>
         allContent.toLowerCase().includes(p.toLowerCase())
       );
@@ -233,8 +223,15 @@ export class AccuracyScorer implements EvalScorer {
     return explanations.join('. ');
   }
 
-  private extractAllContent(responses: ToolResponse[]): string {
+  private extractAllContent(
+    responses: ToolResponse[],
+    finalResponse?: string
+  ): string {
     const parts: string[] = [];
+
+    if (finalResponse?.trim()) {
+      parts.push(finalResponse);
+    }
 
     for (const response of responses) {
       // Direct content

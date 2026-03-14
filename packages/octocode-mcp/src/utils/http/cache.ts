@@ -29,6 +29,18 @@ const CACHE_TTL_CONFIG = {
   'gh-api-prs': 1800,
   'gh-api-file-content': 3600,
   'gh-repo-structure-api': 7200,
+  'bb-api-code': 3600,
+  'bb-api-repos': 7200,
+  'bb-api-prs': 1800,
+  'bb-api-file-content': 3600,
+  'bb-repo-structure-api': 7200,
+  'local-search': 86400,
+  'local-view-structure': 86400,
+  'local-find-files': 86400,
+  'local-file-content': 86400,
+  'lsp-definition': 86400,
+  'lsp-references': 86400,
+  'lsp-call-hierarchy': 86400,
   'github-user': 900,
   'npm-search': 14400, // 4 hours
   'pypi-search': 14400, // 4 hours
@@ -230,6 +242,52 @@ export function clearAllCache(): void {
   cacheStats.sets = 0;
   cacheStats.totalKeys = 0;
   cacheStats.lastReset = new Date();
+}
+
+/**
+ * Clear cache entries by key prefix.
+ * Prefix should match the logical cache prefix (e.g. "local-", "gh-api-").
+ * Returns number of removed entries.
+ */
+export function clearCacheByPrefix(prefix: string): number {
+  const keys = cache.keys();
+  let cleared = 0;
+
+  for (const key of keys) {
+    const keyPrefixMatch = key.match(/^v\d+-([^:]+):/);
+    const keyPrefix = keyPrefixMatch?.[1];
+    if (!keyPrefix || !keyPrefix.startsWith(prefix)) continue;
+
+    if (cache.del(key) > 0) {
+      cleared++;
+    }
+  }
+
+  if (cleared > 0) {
+    cacheStats.totalKeys = cache.keys().length;
+  }
+
+  return cleared;
+}
+
+export function clearLocalToolCache(): number {
+  return clearCacheByPrefix('local-');
+}
+
+export function clearLSPToolCache(): number {
+  return clearCacheByPrefix('lsp-');
+}
+
+export function clearRemoteAPICache(): number {
+  let cleared = 0;
+  cleared += clearCacheByPrefix('gh-api-');
+  cleared += clearCacheByPrefix('bb-api-');
+  cleared += clearCacheByPrefix('gh-repo-');
+  cleared += clearCacheByPrefix('bb-repo-');
+  cleared += clearCacheByPrefix('github-user');
+  cleared += clearCacheByPrefix('npm-search');
+  cleared += clearCacheByPrefix('pypi-search');
+  return cleared;
 }
 
 /**

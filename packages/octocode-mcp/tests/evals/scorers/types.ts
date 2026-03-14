@@ -5,9 +5,20 @@
 // Tool response status from Octocode tools
 export type ToolStatus = 'hasResults' | 'empty' | 'error';
 
+export type EvalCategory =
+  | 'code_search'
+  | 'file_discovery'
+  | 'symbol_lookup'
+  | 'package_search'
+  | 'pr_archaeology'
+  | 'error_handling';
+
+export type EvalProvider = 'octocode' | 'context7' | 'none';
+
 // Generic tool response shape
 export interface ToolResponse {
   status: ToolStatus;
+  resultCount?: number;
   error?: string;
   errorCode?: string;
   hints?: string[];
@@ -32,6 +43,7 @@ export interface ExpectedResult {
   minResults?: number;
   maxLatencyMs?: number;
   expectedTools?: string[];
+  expectedToolsByProvider?: Partial<Record<EvalProvider, string[]>>;
   expectedToolOrder?: boolean;
   mustContain?: string[];
   mustNotContain?: string[];
@@ -39,31 +51,38 @@ export interface ExpectedResult {
   expectedPatterns?: RegExp[];
 }
 
+// Ground truth for verified-answer test cases
+export interface GroundTruth {
+  exactAnswer: string;
+  sourceFile: string;
+  sourceRepo: string;
+  verifiedDate: string;
+  validationQuery?: string;
+  exactMatch?: string;
+}
+
 // Test case definition
 export interface EvalTestCase {
   name: string;
   description?: string;
   prompt: string;
-  category:
-    | 'code_search'
-    | 'file_discovery'
-    | 'symbol_lookup'
-    | 'package_search'
-    | 'pr_archaeology'
-    | 'error_handling';
+  category: EvalCategory;
   expected: ExpectedResult;
   tags?: string[];
   difficulty?: number; // 1-5 scale: how hard without tools
   whyHard?: string; // Explanation of why AI struggles without tools
+  groundTruth?: GroundTruth; // Verified answer from source code
 }
 
 // Context passed to scorers
 export interface EvalContext {
   tools: string[];
+  provider?: EvalProvider;
   testCase: EvalTestCase;
   baseline?: EvalResult;
   startTime: number;
   endTime: number;
+  finalResponse?: string;
 }
 
 // Individual scorer interface
@@ -85,6 +104,7 @@ export interface EvalScorer {
 // Result from a single eval run
 export interface EvalResult {
   testCase: string;
+  category?: EvalCategory | 'general';
   scores: Record<string, number>;
   overall: number;
   explanations: Record<string, string>;
@@ -146,6 +166,7 @@ export interface LLMJudgeResponse {
   score: number; // 1-5 scale
   reasoning: string;
   confidence: number; // 0-1
+  skipped?: boolean;
 }
 
 // Scorer options

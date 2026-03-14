@@ -10,9 +10,14 @@
       "status": "hasResults",
       "minResults": 1,
       "expectedTools": ["githubSearchCode", "githubGetFileContent"],
-      "mustContain": ["use", "promise", "context"]
+      "expectedFiles": ["ReactFiberHooks.js", "ReactFizzHooks.js"],
+      "expectedToolsByProvider": {
+        "octocode": ["githubSearchCode", "githubGetFileContent"],
+        "context7": ["resolve-library-id", "query-docs"]
+      },
+      "mustContain": ["thenable", "readContext", "useThenable", "unsupported type"]
     },
-    "tags": ["github", "react", "breaking-change", "post-cutoff"]
+    "tags": ["github", "react", "breaking-change", "post-cutoff", "benchmark-top"]
   },
   {
     "name": "nextjs15_async_request_apis",
@@ -25,9 +30,14 @@
       "status": "hasResults",
       "minResults": 1,
       "expectedTools": ["githubSearchCode", "githubGetFileContent"],
-      "mustContain": ["async", "cookies", "await"]
+      "expectedFiles": ["codemods.mdx", "sync-dynamic-apis.mdx"],
+      "expectedToolsByProvider": {
+        "octocode": ["githubSearchCode", "githubGetFileContent"],
+        "context7": ["resolve-library-id", "query-docs"]
+      },
+      "mustContain": ["next-async-request-api", "await params", "React.use", "cookies", "headers"]
     },
-    "tags": ["github", "nextjs", "breaking-change", "migration"]
+    "tags": ["github", "nextjs", "breaking-change", "migration", "benchmark-top"]
   },
   {
     "name": "prisma5_json_protocol",
@@ -265,9 +275,33 @@
       "status": "hasResults",
       "minResults": 1,
       "expectedTools": ["githubSearchCode", "githubGetFileContent"],
-      "mustContain": ["memo", "optimization"]
+      "expectedFiles": ["CompilerError.ts", "ValidatePreservedManualMemoization.ts"],
+      "expectedToolsByProvider": {
+        "octocode": ["githubSearchCode", "githubGetFileContent"],
+        "context7": ["resolve-library-id", "query-docs"]
+      },
+      "mustContain": ["manual memoization", "useMemo", "useCallback", "inference"]
     },
-    "tags": ["github", "react", "compiler", "emerging"]
+    "tags": ["github", "react", "compiler", "emerging", "benchmark-top"]
+  },
+  {
+    "name": "nextjs16_cache_components_use_cache",
+    "description": "Next.js Cache Components and use cache migration guidance",
+    "prompt": "Explain how Next.js cacheComponents and the 'use cache' directive work together. Show how to enable the config flag and how to migrate an older force-static style page to use cache + cacheLife.",
+    "category": "code_search",
+    "difficulty": 5,
+    "whyHard": "Current Next.js guidance now centers Cache Components and 'use cache'. Older models often answer with unstable_cache or route segment config instead of the current recommendation.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedFiles": ["cacheComponents.mdx", "cacheLife.mdx"],
+      "expectedToolsByProvider": {
+        "octocode": ["githubSearchCode", "githubGetFileContent"],
+        "context7": ["resolve-library-id", "query-docs"]
+      },
+      "mustContain": ["cacheComponents", "use cache", "cacheLife", "next.config", "force-static"]
+    },
+    "tags": ["github", "nextjs", "cache", "migration", "benchmark-top"]
   },
   {
     "name": "tanstack_query_v5_suspense",

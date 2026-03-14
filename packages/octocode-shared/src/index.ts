@@ -22,3 +22,6 @@ export * from './config/index.js';
 
 // Re-export everything from logger
 export * from './logger/index.js';
+
+// Re-export centralized paths
+export * from './paths.js';

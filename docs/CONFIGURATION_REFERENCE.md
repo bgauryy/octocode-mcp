@@ -163,6 +163,27 @@ For full authentication details (token creation, auth modes, troubleshooting), s
 
 ---
 
+## Octocode Home Directory
+
+Octocode stores local state under `~/.octocode` by default (credentials, config, session, clone cache, logs).
+
+You can override the root directory with `OCTOCODE_HOME`:
+
+```bash
+export OCTOCODE_HOME=/data/octocode
+```
+
+When set, these paths move under the new root:
+
+- `.octocoderc` -> `${OCTOCODE_HOME}/.octocoderc`
+- credentials -> `${OCTOCODE_HOME}/credentials.json`
+- session -> `${OCTOCODE_HOME}/session.json`
+- clone cache -> `${OCTOCODE_HOME}/repos/`
+- logs -> `${OCTOCODE_HOME}/logs/`
+- LSP user config -> `${OCTOCODE_HOME}/lsp-servers.json`
+
+---
+
 ## All Configuration Options
 
 | # | Env Variable | `.octocoderc` Field | Type | Default | Description |
@@ -203,6 +224,9 @@ For full authentication details (token creation, auth modes, troubleshooting), s
 | 25 | `OCTOCODE_BULK_QUERY_TIMEOUT_MS` | — | number | `60000` | Timeout for bulk/multi-query tool calls (ms). |
 | 26 | `OCTOCODE_COMMAND_CHECK_TIMEOUT_MS` | — | number | `5000` | Timeout for checking system command availability (ms). |
 | 27 | `OCTOCODE_CACHE_TTL_MS` | — | number | `86400000` | Cache TTL for cloned repos (ms). Default is 24 hours. Must be a positive integer. |
+| 28 | `OCTOCODE_HOME` | — | string | `~/.octocode` | Override Octocode home directory for all local state (config, credentials, repos, logs, session). |
+| 29 | `OCTOCODE_MAX_CACHE_SIZE` | — | number | `2147483648` | Maximum clone cache disk usage in bytes (default 2 GB). Evicts oldest clones when exceeded. |
+| 30 | `OCTOCODE_MAX_CLONES` | — | number | `50` | Maximum number of cached clones. Evicts oldest clones when exceeded. |
 
 **Type parsing (all values are case-insensitive, whitespace is trimmed):**
 
@@ -218,7 +242,7 @@ For full authentication details (token creation, auth modes, troubleshooting), s
 
 - **Tool filtering:** `TOOLS_TO_RUN` is a strict whitelist that overrides both `ENABLE_TOOLS` and `DISABLE_TOOLS`. When `TOOLS_TO_RUN` is not set, start with all tools, remove `DISABLE_TOOLS`, then add `ENABLE_TOOLS`.
 - **Clone:** Requires both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
-- **LSP:** Requires `ENABLE_LOCAL=true`. When `OCTOCODE_LSP_CONFIG` is unset, Octocode checks `<workspace>/.octocode/lsp-servers.json` then `~/.octocode/lsp-servers.json`.
+- **LSP:** Requires `ENABLE_LOCAL=true`. When `OCTOCODE_LSP_CONFIG` is unset, Octocode checks `<workspace>/.octocode/lsp-servers.json` then `${OCTOCODE_HOME:-~/.octocode}/lsp-servers.json`.
 - **WORKSPACE_ROOT and LSP:** LSP tools read `WORKSPACE_ROOT` from the environment only (not `.octocoderc`). Set it as an env variable in your MCP client if you use LSP tools.
 - **Auth tokens:** Never store in `.octocoderc`. GitHub fallback chain: env vars > `~/.octocode/credentials.json` > `gh auth token`.
 
@@ -253,7 +277,10 @@ All values are strings in the `"env"` block:
         "MAX_RETRIES": "3",
         "LOG": "true",
         "OCTOCODE_LSP_CONFIG": "/Users/me/.octocode/lsp-servers.json",
-        "OCTOCODE_OUTPUT_FORMAT": "yaml"
+        "OCTOCODE_OUTPUT_FORMAT": "yaml",
+        "OCTOCODE_HOME": "/Users/me/.octocode",
+        "OCTOCODE_MAX_CACHE_SIZE": "2147483648",
+        "OCTOCODE_MAX_CLONES": "50"
       }
     }
   }

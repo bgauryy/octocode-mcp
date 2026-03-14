@@ -32,14 +32,22 @@ export async function loadRealisticPrompts(): Promise<EvalTestCase[]> {
 }
 
 /**
- * Load all manual prompts (base + realistic)
+ * Load all manual prompts (base + realistic + ground truth)
  */
 export async function loadManualPrompts(): Promise<EvalTestCase[]> {
-  const [base, realistic] = await Promise.all([
+  const [base, realistic, groundTruth] = await Promise.all([
     loadBasePrompts(),
     loadRealisticPrompts(),
+    loadGroundTruthPrompts(),
   ]);
-  return [...base, ...realistic];
+  return [...base, ...realistic, ...groundTruth];
+}
+
+/**
+ * Load verified ground truth prompts (React, Next.js, Linux with exact answers)
+ */
+export async function loadGroundTruthPrompts(): Promise<EvalTestCase[]> {
+  return loadPrompts('manual/verified-ground-truth.json');
 }
 
 /**

@@ -17,6 +17,17 @@ const DEFAULT_OPTIONS: ToolSelectionScorerOptions = {
   wrongOrderPenalty: 0.2, // -0.2 for wrong order
 };
 
+function getExpectedTools(
+  expected: ExpectedResult,
+  ctx: EvalContext
+): string[] {
+  if (ctx.provider && expected.expectedToolsByProvider?.[ctx.provider]) {
+    return expected.expectedToolsByProvider[ctx.provider] ?? [];
+  }
+
+  return expected.expectedTools ?? [];
+}
+
 export class ToolSelectionScorer implements EvalScorer {
   name = 'tool_selection';
   weight = 0.2;
@@ -31,7 +42,7 @@ export class ToolSelectionScorer implements EvalScorer {
     expected: ExpectedResult,
     ctx: EvalContext
   ): Promise<number> {
-    const expectedTools = expected.expectedTools ?? [];
+    const expectedTools = getExpectedTools(expected, ctx);
     const actualTools = ctx.tools;
 
     // If no expected tools specified, check that at least some tools were called
@@ -102,7 +113,7 @@ export class ToolSelectionScorer implements EvalScorer {
     expected: ExpectedResult,
     ctx: EvalContext
   ): Promise<string> {
-    const expectedTools = expected.expectedTools ?? [];
+    const expectedTools = getExpectedTools(expected, ctx);
     const actualTools = ctx.tools;
 
     if (expectedTools.length === 0) {

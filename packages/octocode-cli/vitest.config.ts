@@ -22,6 +22,13 @@ export default defineConfig({
         'src/configs/**', // Static config objects
         'src/features/github-oauth.ts', // OAuth flow - requires network mocking
       ],
+      // Transitional floor while the interactive UI remains partially manual.
+      thresholds: {
+        statements: 85,
+        branches: 75,
+        functions: 90,
+        lines: 85,
+      },
     },
     testTimeout: 10000,
     hookTimeout: 10000,

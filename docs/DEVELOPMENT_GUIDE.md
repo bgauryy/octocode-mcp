@@ -92,7 +92,7 @@
 | `octocode-mcp` | Eval lane | `yarn mcp:evals` | The issue is in eval harnesses, comparison scripts, or optional research dependencies. |
 | `octocode-shared` | Package gate | `yarn shared:package` | Shared config, credential, platform, or session boundaries regress. |
 
-For the MCP contract family map and test-writing rules, see [MCP TDD Quality Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/TDD_QUALITY_GUIDE.md). For the shared ownership map, see [Shared Quality Ownership](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/QUALITY_OWNERSHIP.md).
+For package-specific references, use the package docs indexes: [octocode-mcp docs](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/README.md) and [octocode-shared docs](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/README.md).
 
 ### Structure
 ```
@@ -122,7 +122,7 @@ Skills are markdown-based instruction sets that teach AI assistants specific tas
 
 ## Package Documentation
 
-For the complete package documentation index, see the [Key References](https://github.com/bgauryy/octocode-mcp/blob/main/AGENTS.md#key-references) section in the root AGENTS.md.
+For the complete package documentation index, see [docs/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/README.md).
 
 
 ## Agent Compatibility

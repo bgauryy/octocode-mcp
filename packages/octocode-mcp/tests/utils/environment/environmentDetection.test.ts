@@ -99,4 +99,20 @@ describe('Environment Detection', () => {
       expect(getLspEnvironmentHint()).toBeNull();
     });
   });
+
+  describe('shouldUseMCPLsp - error handling', () => {
+    it('should return false when getConfigSync throws', async () => {
+      const { getConfigSync } = await import('octocode-shared');
+      const originalFn = getConfigSync;
+      const mod = await import('octocode-shared');
+      const spy = vi.spyOn(mod, 'getConfigSync').mockImplementation(() => {
+        throw new Error('Config file corrupted');
+      });
+
+      const { shouldUseMCPLsp: freshShouldUseMCPLsp } =
+        await import('../../../src/utils/environment/environmentDetection.js');
+      expect(freshShouldUseMCPLsp()).toBe(false);
+      spy.mockRestore();
+    });
+  });
 });

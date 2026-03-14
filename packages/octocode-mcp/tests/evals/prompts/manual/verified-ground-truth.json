@@ -1,0 +1,511 @@
+[
+  {
+    "name": "react_element_type_symbol",
+    "description": "What Symbol.for string does React use for REACT_ELEMENT_TYPE?",
+    "prompt": "In the React source code (facebook/react), what is the exact Symbol.for() string used for REACT_ELEMENT_TYPE? Also tell me what REACT_LEGACY_ELEMENT_TYPE uses. Show me the file where they are defined.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "React 19 changed REACT_ELEMENT_TYPE from 'react.element' to 'react.transitional.element'. AI trained on older versions will give the wrong answer.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["ReactSymbols.js"],
+      "mustContain": ["react.transitional.element", "react.element", "Symbol.for"],
+      "mustNotContain": ["react.element_type"]
+    },
+    "tags": ["github", "react", "internals", "ground-truth", "post-cutoff"],
+    "groundTruth": {
+      "exactAnswer": "REACT_ELEMENT_TYPE = Symbol.for('react.transitional.element'), REACT_LEGACY_ELEMENT_TYPE = Symbol.for('react.element')",
+      "sourceFile": "packages/shared/ReactSymbols.js",
+      "sourceRepo": "facebook/react",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "react_total_lanes_count",
+    "description": "How many priority lanes does React's reconciler use?",
+    "prompt": "In React's fiber reconciler (facebook/react), how many total lanes are there? What is the value of TotalLanes? Show me the file and line where it's defined.",
+    "category": "code_search",
+    "difficulty": 3,
+    "whyHard": "The lane model is an internal implementation detail. The exact count (31) maps to a 31-bit bitmask and must be verified in source.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["ReactFiberLane.js"],
+      "mustContain": ["TotalLanes", "31"],
+      "mustNotContain": ["32", "64"]
+    },
+    "tags": ["github", "react", "internals", "ground-truth"],
+    "groundTruth": {
+      "exactAnswer": "TotalLanes = 31",
+      "sourceFile": "packages/react-reconciler/src/ReactFiberLane.js",
+      "sourceRepo": "facebook/react",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "react_scheduler_priority_values",
+    "description": "What are the numeric values for React scheduler priority levels?",
+    "prompt": "What are the exact numeric values for each priority level in React's scheduler (facebook/react)? List all of them: NoPriority, ImmediatePriority, UserBlockingPriority, NormalPriority, LowPriority, IdlePriority. Show the source file.",
+    "category": "code_search",
+    "difficulty": 3,
+    "whyHard": "Internal scheduler constants. Must be looked up in source, not guessed.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["SchedulerPriorities.js"],
+      "mustContain": ["NoPriority", "ImmediatePriority", "UserBlockingPriority", "NormalPriority", "LowPriority", "IdlePriority"]
+    },
+    "tags": ["github", "react", "internals", "ground-truth"],
+    "groundTruth": {
+      "exactAnswer": "NoPriority=0, ImmediatePriority=1, UserBlockingPriority=2, NormalPriority=3, LowPriority=4, IdlePriority=5",
+      "sourceFile": "packages/scheduler/src/SchedulerPriorities.js",
+      "sourceRepo": "facebook/react",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "react_client_internals_export_name",
+    "description": "What is the exact name of React's internal shared object export?",
+    "prompt": "What is the exact property name that React exports its internal shared internals object as? The long one that warns users not to use it. Show the export statement from packages/react/index.js.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "React 19 renamed __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED to a new name. AI trained on older React gives the wrong name.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["index.js", "ReactClient.js"],
+      "mustContain": ["__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE"],
+      "mustNotContain": ["__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED"]
+    },
+    "tags": ["github", "react", "internals", "ground-truth", "post-cutoff"],
+    "groundTruth": {
+      "exactAnswer": "__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE (aliased from ReactSharedInternals)",
+      "sourceFile": "packages/react/src/ReactClient.js",
+      "sourceRepo": "facebook/react",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "nextjs_redirect_error_code",
+    "description": "What error code constant does Next.js use internally for redirect()?",
+    "prompt": "In the Next.js source code (vercel/next.js), what is the exact value of REDIRECT_ERROR_CODE? What is the format of the error digest string for redirect errors? Show the source file.",
+    "category": "code_search",
+    "difficulty": 3,
+    "whyHard": "Internal Next.js error handling mechanism. Must read source to find exact constant and digest format.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["redirect-error.ts"],
+      "mustContain": ["NEXT_REDIRECT", "digest", "RedirectType"]
+    },
+    "tags": ["github", "nextjs", "internals", "ground-truth"],
+    "groundTruth": {
+      "exactAnswer": "REDIRECT_ERROR_CODE = 'NEXT_REDIRECT', digest format: 'NEXT_REDIRECT;{type};{url};{statusCode};'",
+      "sourceFile": "packages/next/src/client/components/redirect-error.ts",
+      "sourceRepo": "vercel/next.js",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "nextjs_rsc_content_type",
+    "description": "What Content-Type does Next.js use for RSC payloads?",
+    "prompt": "What is the exact Content-Type header value Next.js uses for React Server Component (RSC) payloads? Show me the constant name and value from the Next.js source code (vercel/next.js). Also list the other app router header constants defined in the same file.",
+    "category": "code_search",
+    "difficulty": 3,
+    "whyHard": "RSC payload format is an internal implementation detail. The content type 'text/x-component' is not widely documented.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["app-router-headers.ts"],
+      "mustContain": ["text/x-component", "RSC_CONTENT_TYPE_HEADER", "RSC_HEADER"]
+    },
+    "tags": ["github", "nextjs", "internals", "ground-truth"],
+    "groundTruth": {
+      "exactAnswer": "RSC_CONTENT_TYPE_HEADER = 'text/x-component'",
+      "sourceFile": "packages/next/src/client/components/app-router-headers.ts",
+      "sourceRepo": "vercel/next.js",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "nextjs_phase_constants",
+    "description": "What are the Next.js lifecycle phase constants?",
+    "prompt": "What are all the PHASE_* constants exported from Next.js (vercel/next.js) shared/lib/constants.ts? List their exact string values.",
+    "category": "code_search",
+    "difficulty": 2,
+    "whyHard": "Phase constants are used in next.config.js but exact string values must be verified in source.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["constants.ts"],
+      "mustContain": ["phase-production-server", "phase-production-build", "phase-development-server", "phase-export"]
+    },
+    "tags": ["github", "nextjs", "internals", "ground-truth"],
+    "groundTruth": {
+      "exactAnswer": "PHASE_EXPORT='phase-export', PHASE_ANALYZE='phase-analyze', PHASE_PRODUCTION_BUILD='phase-production-build', PHASE_PRODUCTION_SERVER='phase-production-server', PHASE_DEVELOPMENT_SERVER='phase-development-server'",
+      "sourceFile": "packages/next/src/shared/lib/constants.ts",
+      "sourceRepo": "vercel/next.js",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "nextjs_cache_handler_config",
+    "description": "What is the config key for custom cache handlers in Next.js?",
+    "prompt": "In Next.js (vercel/next.js), what is the current stable config key for providing a custom incremental cache handler? What was it renamed from? Show the config type definition and when it became stable.",
+    "category": "code_search",
+    "difficulty": 3,
+    "whyHard": "The config key was renamed from incrementalCacheHandlerPath to cacheHandler. AI trained on older versions gives the deprecated name.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["config-shared.ts", "incrementalCacheHandlerPath.mdx"],
+      "mustContain": ["cacheHandler", "incrementalCacheHandlerPath", "v14.1.0"]
+    },
+    "tags": ["github", "nextjs", "configuration", "ground-truth"],
+    "groundTruth": {
+      "exactAnswer": "Current: cacheHandler (stable since v14.1.0). Previously: incrementalCacheHandlerPath (experimental since v12.2.0)",
+      "sourceFile": "packages/next/src/server/config-shared.ts",
+      "sourceRepo": "vercel/next.js",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "linux_pipe_buf_value",
+    "description": "What is the PIPE_BUF constant in Linux?",
+    "prompt": "What is the value of PIPE_BUF in the Linux kernel (torvalds/linux)? What other limits are defined in the same header file? Show the file path and the surrounding constants.",
+    "category": "code_search",
+    "difficulty": 2,
+    "whyHard": "While PIPE_BUF=4096 is well-known, verifying it in kernel source along with surrounding constants requires code search.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["limits.h"],
+      "mustContain": ["PIPE_BUF", "4096", "PATH_MAX", "NAME_MAX"]
+    },
+    "tags": ["github", "linux", "kernel", "ground-truth"],
+    "groundTruth": {
+      "exactAnswer": "PIPE_BUF=4096, PATH_MAX=4096, NAME_MAX=255, ARG_MAX=131072, NR_OPEN=1024",
+      "sourceFile": "include/uapi/linux/limits.h",
+      "sourceRepo": "torvalds/linux",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "linux_oom_score_adj_range",
+    "description": "What is the valid range for OOM score adjustment in Linux?",
+    "prompt": "In the Linux kernel (torvalds/linux), what are the values of OOM_SCORE_ADJ_MIN and OOM_SCORE_ADJ_MAX? What value of oom_score_adj completely disables OOM killing? What is the legacy OOM_DISABLE value? Show the header file.",
+    "category": "code_search",
+    "difficulty": 3,
+    "whyHard": "Requires finding the exact header and verifying both modern and legacy OOM constants together.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["oom.h"],
+      "mustContain": ["OOM_SCORE_ADJ_MIN", "-1000", "OOM_SCORE_ADJ_MAX", "1000", "OOM_DISABLE", "-17"]
+    },
+    "tags": ["github", "linux", "kernel", "ground-truth"],
+    "groundTruth": {
+      "exactAnswer": "OOM_SCORE_ADJ_MIN=(-1000), OOM_SCORE_ADJ_MAX=1000, OOM_DISABLE=(-17), OOM_ADJUST_MIN=(-16), OOM_ADJUST_MAX=15",
+      "sourceFile": "include/uapi/linux/oom.h",
+      "sourceRepo": "torvalds/linux",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "linux_pid_max_default",
+    "description": "What is the default maximum PID value in Linux?",
+    "prompt": "In the Linux kernel (torvalds/linux), what is PID_MAX_DEFAULT and PID_MAX_LIMIT? How does PID_MAX_LIMIT differ between 32-bit and 64-bit systems? Show the header file with the conditional compilation.",
+    "category": "code_search",
+    "difficulty": 3,
+    "whyHard": "PID_MAX_DEFAULT uses conditional compilation (CONFIG_BASE_SMALL). The 64-bit limit of 4M PIDs is a specific detail.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["threads.h"],
+      "mustContain": ["PID_MAX_DEFAULT", "0x8000", "PID_MAX_LIMIT", "4 * 1024 * 1024"]
+    },
+    "tags": ["github", "linux", "kernel", "ground-truth"],
+    "groundTruth": {
+      "exactAnswer": "PID_MAX_DEFAULT=0x8000 (32768), PID_MAX_LIMIT on 64-bit=4*1024*1024 (4194304), on 32-bit=PID_MAX_DEFAULT",
+      "sourceFile": "include/linux/threads.h",
+      "sourceRepo": "torvalds/linux",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "linux_tcp_keepalive_default",
+    "description": "What is the default TCP keepalive timeout in the Linux kernel?",
+    "prompt": "In the Linux kernel (torvalds/linux), what is the default value of TCP_KEEPALIVE_TIME? How many keepalive probes are sent (TCP_KEEPALIVE_PROBES)? Show me the header file where these are defined.",
+    "category": "code_search",
+    "difficulty": 3,
+    "whyHard": "The exact macro definition (120*60*HZ = 2 hours) and probe count (9) must be verified in kernel source.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["tcp.h"],
+      "mustContain": ["TCP_KEEPALIVE_TIME", "120", "TCP_KEEPALIVE_PROBES", "9", "two hours"]
+    },
+    "tags": ["github", "linux", "kernel", "ground-truth", "networking"],
+    "groundTruth": {
+      "exactAnswer": "TCP_KEEPALIVE_TIME = (120*60*HZ) (two hours), TCP_KEEPALIVE_PROBES = 9",
+      "sourceFile": "include/net/tcp.h",
+      "sourceRepo": "torvalds/linux",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "linux_epoll_max_events",
+    "description": "What is the maximum number of events epoll_wait can return?",
+    "prompt": "In the Linux kernel (torvalds/linux), what is EP_MAX_EVENTS? How is it calculated? What validation does the kernel do on the maxevents parameter? Show the source file.",
+    "category": "code_search",
+    "difficulty": 3,
+    "whyHard": "EP_MAX_EVENTS is derived from INT_MAX divided by struct size. The validation logic must be traced in eventpoll.c.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["eventpoll.c"],
+      "mustContain": ["EP_MAX_EVENTS", "INT_MAX", "epoll_event", "EINVAL"]
+    },
+    "tags": ["github", "linux", "kernel", "ground-truth", "io"],
+    "groundTruth": {
+      "exactAnswer": "EP_MAX_EVENTS = INT_MAX / sizeof(struct epoll_event). Validation: maxevents <= 0 || maxevents > EP_MAX_EVENTS returns -EINVAL",
+      "sourceFile": "fs/eventpoll.c",
+      "sourceRepo": "torvalds/linux",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "react_router_route_scoring_algorithm",
+    "description": "How does React Router rank competing route matches?",
+    "prompt": "In React Router (remix-run/react-router), how does the route matching scoring algorithm work? What are the exact point values for static segments, dynamic params, splat routes, index routes, and empty segments? Show the computeScore function.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "Multi-step: must find the utils.ts file, locate computeScore, and extract the exact numeric constants. The scoring system is undocumented.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["utils.ts"],
+      "mustContain": ["computeScore", "staticSegmentValue", "dynamicSegmentValue", "splatPenalty", "10", "3", "-2"]
+    },
+    "tags": ["github", "react-router", "internals", "ground-truth", "algorithm"],
+    "groundTruth": {
+      "exactAnswer": "staticSegmentValue=10, dynamicSegmentValue=3, indexRouteValue=2, emptySegmentValue=1, splatPenalty=-2. Initial score = segment count + penalties/bonuses, then each non-splat segment adds its type value.",
+      "sourceFile": "packages/react-router/lib/router/utils.ts",
+      "sourceRepo": "remix-run/react-router",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "node_event_loop_phase_order",
+    "description": "What is the exact phase execution order of the Node.js event loop?",
+    "prompt": "In the Node.js source code (nodejs/node), what is the exact order of phases in the libuv event loop? Show me the uv_run function from deps/uv/src/unix/core.c with the actual function call sequence.",
+    "category": "code_search",
+    "difficulty": 5,
+    "whyHard": "Classic interview question where most answers are wrong. The actual order must be read from the C source. Many sources omit phases or get the order wrong.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["core.c"],
+      "mustContain": ["uv__run_timers", "uv__run_pending", "uv__run_idle", "uv__run_prepare", "uv__io_poll"]
+    },
+    "tags": ["github", "nodejs", "internals", "ground-truth", "event-loop", "libuv"],
+    "groundTruth": {
+      "exactAnswer": "Phase order in uv_run while loop: 1) uv__run_pending (pending callbacks), 2) uv__run_idle (idle handles), 3) uv__run_prepare (prepare handles), 4) uv__io_poll (I/O polling), 5) uv__run_pending again (up to 8x), then check/close. Timers run once before the loop and via uv__run_timers.",
+      "sourceFile": "deps/uv/src/unix/core.c",
+      "sourceRepo": "nodejs/node",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "node_stream_highwatermark_default",
+    "description": "What is the default highWaterMark for Node.js streams?",
+    "prompt": "In Node.js (nodejs/node), what is the default highWaterMark for readable and writable streams? Does it differ between object mode and non-object mode? Does it differ by platform? Show the exact values from the source.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "The default changed from 16KB to 64KB on non-Windows. Most documentation still says 16KB. Platform-specific behavior is undocumented.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["state.js"],
+      "mustContain": ["defaultHighWaterMarkBytes", "defaultHighWaterMarkObjectMode", "16"]
+    },
+    "tags": ["github", "nodejs", "internals", "ground-truth", "streams"],
+    "groundTruth": {
+      "exactAnswer": "Non-object mode: 64*1024 (64KB) on non-Windows, 16*1024 (16KB) on Windows. Object mode: 16 objects. Platform check: process.platform === 'win32'",
+      "sourceFile": "lib/internal/streams/state.js",
+      "sourceRepo": "nodejs/node",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "express_app_listen_implementation",
+    "description": "How does Express app.listen() work internally?",
+    "prompt": "In Express.js (expressjs/express), what does app.listen() actually do internally? Does it create an HTTP server? Show the exact implementation from lib/application.js.",
+    "category": "code_search",
+    "difficulty": 2,
+    "whyHard": "Common interview question. Must verify that Express creates a new http.Server on every listen() call.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["application.js"],
+      "mustContain": ["http.createServer", "server.listen", "app.listen"]
+    },
+    "tags": ["github", "express", "internals", "ground-truth"],
+    "groundTruth": {
+      "exactAnswer": "app.listen creates a new http.createServer(this), wraps the callback with once() for error handling, then calls server.listen.apply(server, args). Returns the http.Server instance.",
+      "sourceFile": "lib/application.js",
+      "sourceRepo": "expressjs/express",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "zod_v4_email_regex_variants",
+    "description": "What email validation regexes does Zod v4 provide?",
+    "prompt": "In Zod v4 (colinhacks/zod), what different email validation regex patterns are available? Show me the default email regex and the named variants (html5Email, rfc5322Email, etc.) from the regexes.ts file.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "Zod v4 completely rewrote validation. It now has 5 different email regexes. AI trained on Zod v3 knows none of them.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch", "githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["regexes.ts"],
+      "mustContain": ["html5Email", "rfc5322Email", "unicodeEmail", "email"]
+    },
+    "tags": ["github", "zod", "internals", "ground-truth", "post-cutoff", "validation"],
+    "groundTruth": {
+      "exactAnswer": "5 email regexes: 1) email (default, custom pattern), 2) html5Email (HTML5 spec), 3) rfc5322Email (RFC 5322), 4) unicodeEmail/idnEmail (Unicode support), 5) browserEmail (browser compat). Located in packages/zod/src/v4/core/regexes.ts",
+      "sourceFile": "packages/zod/src/v4/core/regexes.ts",
+      "sourceRepo": "colinhacks/zod",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "vite_hmr_boundary_propagation",
+    "description": "How does Vite determine HMR update boundaries?",
+    "prompt": "In Vite (vitejs/vite), how does the HMR system determine which modules are update boundaries? What makes a module 'self-accepting'? Show the propagateUpdate function and the isSelfAccepting check from the HMR source.",
+    "category": "code_search",
+    "difficulty": 5,
+    "whyHard": "Multi-file tracing: must find hmr.ts, understand propagateUpdate, trace isSelfAccepting back to import analysis. Complex graph traversal logic.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["hmr.ts", "moduleGraph.ts"],
+      "mustContain": ["isSelfAccepting", "propagateUpdate", "acceptedHmrDeps", "boundary"]
+    },
+    "tags": ["github", "vite", "internals", "ground-truth", "hmr", "complex-flow"],
+    "groundTruth": {
+      "exactAnswer": "propagateUpdate walks the import graph upward. A module is an HMR boundary if: 1) isSelfAccepting=true (has import.meta.hot.accept()), or 2) an importer has it in acceptedHmrDeps. If traversal reaches a module with no accepter, it's a dead end requiring full reload. Circular imports are detected via isNodeWithinCircularImports.",
+      "sourceFile": "packages/vite/src/node/server/hmr.ts",
+      "sourceRepo": "vitejs/vite",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "webpack5_split_chunks_defaults",
+    "description": "What are the default splitChunks values in Webpack 5?",
+    "prompt": "In Webpack 5 (webpack/webpack), what are the exact default values for splitChunks optimization? Specifically: minSize, minChunks, maxAsyncRequests, maxInitialRequests, enforceSizeThreshold. Do they differ between production and development?",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "Defaults differ between production and development. Many blog posts cite outdated Webpack 4 defaults. Must trace through lib/config/defaults.js.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["defaults.js", "SplitChunksPlugin.js"],
+      "mustContain": ["minSize", "minChunks", "maxAsyncRequests", "production"]
+    },
+    "tags": ["github", "webpack", "configuration", "ground-truth"],
+    "groundTruth": {
+      "exactAnswer": "Production: minSize=20000, minChunks=1, maxAsyncRequests=30, maxInitialRequests=30, enforceSizeThreshold=50000. Development: minSize=10000, maxAsyncRequests=Infinity, maxInitialRequests=Infinity, enforceSizeThreshold=30000.",
+      "sourceFile": "lib/config/defaults.js",
+      "sourceRepo": "webpack/webpack",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "tailwind_v4_theme_options",
+    "description": "What @theme options does Tailwind CSS v4 support?",
+    "prompt": "In Tailwind CSS v4 (tailwindlabs/tailwindcss), what options can be passed to the @theme directive? Show the parseThemeOptions function and the ThemeOptions enum/flags from the source.",
+    "category": "code_search",
+    "difficulty": 5,
+    "whyHard": "Tailwind v4 is a complete rewrite. The @theme directive with options like 'reference', 'inline', 'default', 'static' is entirely new. No AI training data covers this.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["packageSearch", "githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["index.ts"],
+      "mustContain": ["reference", "inline", "default", "static", "parseThemeOptions", "ThemeOptions"]
+    },
+    "tags": ["github", "tailwindcss", "internals", "ground-truth", "post-cutoff", "css"],
+    "groundTruth": {
+      "exactAnswer": "@theme options: 'reference' (ThemeOptions.REFERENCE), 'inline' (ThemeOptions.INLINE), 'default' (ThemeOptions.DEFAULT), 'static' (ThemeOptions.STATIC), and prefix() for custom prefix. Options are bitflags ORed together. Parsed by parseThemeOptions in packages/tailwindcss/src/index.ts.",
+      "sourceFile": "packages/tailwindcss/src/index.ts",
+      "sourceRepo": "tailwindlabs/tailwindcss",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "typescript_isolated_declarations_errors",
+    "description": "What errors does TypeScript emit for isolatedDeclarations violations?",
+    "prompt": "In TypeScript (microsoft/TypeScript), what is the codefix ID for missing type annotations with isolatedDeclarations? What specific diagnostics does it handle? Show the codefix file.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "isolatedDeclarations is a TypeScript 5.5 feature. The codefix and error codes are post-cutoff for most AI models.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["fixMissingTypeAnnotationOnExports.ts"],
+      "mustContain": ["fixMissingTypeAnnotationOnExports", "isolatedDeclarations", "Function_must_have_an_explicit_return_type_annotation"]
+    },
+    "tags": ["github", "typescript", "internals", "ground-truth", "post-cutoff"],
+    "groundTruth": {
+      "exactAnswer": "Codefix ID: 'fixMissingTypeAnnotationOnExports'. Handles diagnostics including: Function_must_have_an_explicit_return_type_annotation_with_isolatedDeclarations, Method_must_have_an_explicit_return_type_annotation_with_isolatedDeclarations, and others.",
+      "sourceFile": "src/services/codefixes/fixMissingTypeAnnotationOnExports.ts",
+      "sourceRepo": "microsoft/TypeScript",
+      "verifiedDate": "2026-03-14"
+    }
+  },
+  {
+    "name": "node_cjs_require_resolve_algorithm",
+    "description": "How does Node.js Module._resolveFilename work?",
+    "prompt": "In Node.js (nodejs/node), show me the Module._resolveFilename function from the CJS loader. How does it resolve built-in modules? Where is Module._extensions defined? Show the file path.",
+    "category": "code_search",
+    "difficulty": 4,
+    "whyHard": "Multi-step: must locate the CJS loader, find _resolveFilename, understand the BuiltinModule check. Deep internal that most devs never see.",
+    "expected": {
+      "status": "hasResults",
+      "minResults": 1,
+      "expectedTools": ["githubSearchCode", "githubGetFileContent"],
+      "expectedFiles": ["loader.js"],
+      "mustContain": ["Module._resolveFilename", "BuiltinModule", "Module._extensions"]
+    },
+    "tags": ["github", "nodejs", "internals", "ground-truth", "module-system"],
+    "groundTruth": {
+      "exactAnswer": "Module._resolveFilename first checks BuiltinModule.normalizeRequirableId(request) for built-in modules. Module._extensions handles .js, .json, .node file loading. Located in lib/internal/modules/cjs/loader.js",
+      "sourceFile": "lib/internal/modules/cjs/loader.js",
+      "sourceRepo": "nodejs/node",
+      "verifiedDate": "2026-03-14"
+    }
+  }
+]

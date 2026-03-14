@@ -43,7 +43,7 @@ describe('Octocode Eval Suite', () => {
     scorers = createDefaultScorers();
 
     if (!ENABLE_LLM_JUDGE) {
-      // LLM judge scorer will return 0 when OPENAI_API_KEY not set
+      // LLM judge scorer falls back to a neutral score when OPENAI_API_KEY is not set.
     }
   });
 

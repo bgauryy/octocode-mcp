@@ -46,9 +46,9 @@ Technical documentation for the shared utilities:
 
 | Document | Description |
 |----------|-------------|
-| [`API_REFERENCE.md`](./docs/API_REFERENCE.md) | Complete API documentation for all modules |
-| [`CREDENTIALS_ARCHITECTURE.md`](./docs/CREDENTIALS_ARCHITECTURE.md) | Token storage, encryption, file storage integration, refresh flow |
-| [`SESSION_PERSISTENCE.md`](./docs/SESSION_PERSISTENCE.md) | Deferred writes, exit handlers, statistics tracking |
+| [`API_REFERENCE.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/API_REFERENCE.md) | Complete API documentation for all modules |
+| [`CREDENTIALS_ARCHITECTURE.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) | Token storage, encryption, file storage integration, refresh flow |
+| [`SESSION_PERSISTENCE.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/SESSION_PERSISTENCE.md) | Deferred writes, exit handlers, statistics tracking |
 
 ---
 
