@@ -2,7 +2,7 @@
  * Centralized .octocode path management.
  */
 
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { HOME } from './platform/index.js';
 
@@ -24,15 +24,21 @@ export const paths = {
 } as const;
 
 export function ensureHome(): void {
-  mkdirSync(paths.home, { recursive: true, mode: DIR_MODE });
+  if (!existsSync(paths.home)) {
+    mkdirSync(paths.home, { recursive: true, mode: DIR_MODE });
+  }
 }
 
 export function ensureRepos(): void {
   ensureHome();
-  mkdirSync(paths.repos, { recursive: true, mode: DIR_MODE });
+  if (!existsSync(paths.repos)) {
+    mkdirSync(paths.repos, { recursive: true, mode: DIR_MODE });
+  }
 }
 
 export function ensureLogs(): void {
   ensureHome();
-  mkdirSync(paths.logs, { recursive: true, mode: DIR_MODE });
+  if (!existsSync(paths.logs)) {
+    mkdirSync(paths.logs, { recursive: true, mode: DIR_MODE });
+  }
 }

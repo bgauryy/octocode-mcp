@@ -588,10 +588,7 @@ describe('CLI Commands', () => {
       });
 
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Tool cache cleanup flags')
-      );
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('restart the MCP server process')
+        expect.stringContaining('No disk caches to clean')
       );
       expect(process.exitCode).toBeUndefined();
     });

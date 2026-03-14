@@ -1076,11 +1076,11 @@ const cacheCommand: CLICommand = {
   handler: async (args: ParsedArgs) => {
     const subcommand = (args.args[0] || 'status').toLowerCase();
     const octocodeHome =
-      paths?.home ||
+      paths.home ||
       process.env.OCTOCODE_HOME ||
       path.join(process.env.HOME || '', '.octocode');
-    const reposDir = paths?.repos || path.join(octocodeHome, 'repos');
-    const logsDir = paths?.logs || path.join(octocodeHome, 'logs');
+    const reposDir = paths.repos || path.join(octocodeHome, 'repos');
+    const logsDir = paths.logs || path.join(octocodeHome, 'logs');
     const skillsDir = getSkillsCacheDir();
 
     const hasReposFlag = Boolean(args.options['repos']);
@@ -1168,20 +1168,16 @@ const cacheCommand: CLICommand = {
       }
 
       if (targetTools) {
+        const toolFlags = [
+          hasToolsFlag ? '--tools' : '',
+          hasLocalFlag ? '--local' : '',
+          hasLspFlag ? '--lsp' : '',
+          hasApiFlag ? '--api' : '',
+        ]
+          .filter(Boolean)
+          .join(', ');
         console.log(
-          `  ${c('yellow', '⚠')} Tool cache cleanup flags (${[
-            hasToolsFlag ? '--tools' : '',
-            hasLocalFlag ? '--local' : '',
-            hasLspFlag ? '--lsp' : '',
-            hasApiFlag ? '--api' : '',
-          ]
-            .filter(Boolean)
-            .join(
-              ', '
-            )}) apply to in-memory MCP cache and clear on server restart.`
-        );
-        console.log(
-          `  ${dim('Tip: restart the MCP server process to reset local/LSP/API in-memory caches.')}`
+          `  ${c('yellow', 'ℹ')} ${toolFlags}: No disk caches to clean. Tool caches are in-memory and clear on MCP server restart.`
         );
       }
 

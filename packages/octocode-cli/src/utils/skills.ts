@@ -21,8 +21,8 @@ import { paths } from 'octocode-shared';
 // ============================================================================
 
 const OCTOCODE_DIR =
-  paths?.home || process.env.OCTOCODE_HOME || join(HOME, '.octocode');
-const CONFIG_FILE = paths?.cliConfig || join(OCTOCODE_DIR, 'config.json');
+  paths.home || process.env.OCTOCODE_HOME || join(HOME, '.octocode');
+const CONFIG_FILE = paths.cliConfig || join(OCTOCODE_DIR, 'config.json');
 
 interface OctocodeConfig {
   skillsDestDir?: string;

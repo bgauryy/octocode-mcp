@@ -2,7 +2,7 @@
  * Shared filesystem utilities for Octocode packages.
  */
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -28,7 +28,10 @@ export function getDirectorySizeBytes(targetPath: string): number {
     for (const entry of entries) {
       const fullPath = join(current, entry);
       try {
-        const st = statSync(fullPath);
+        const st = lstatSync(fullPath);
+        if (st.isSymbolicLink()) {
+          continue;
+        }
         if (st.isDirectory()) {
           stack.push(fullPath);
         } else if (st.isFile()) {

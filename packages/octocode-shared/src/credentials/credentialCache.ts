@@ -81,7 +81,13 @@ export function _resetCredentialsCache(): void {
 }
 
 /**
- * Get cached credentials if valid
+ * Get cached credentials if valid.
+ *
+ * Returns:
+ * - `StoredCredentials` — cache hit with valid credentials
+ * - `null` — cache hit recording absence of credentials (negative cache)
+ * - `undefined` — cache miss (caller should fetch from storage)
+ *
  * @internal
  */
 export function getCachedCredentials(

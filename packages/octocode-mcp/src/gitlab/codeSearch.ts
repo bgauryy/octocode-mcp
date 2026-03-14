@@ -135,7 +135,6 @@ async function searchGitLabCodeAPIInternal(
 
     const search = (gitlab as unknown as { Search: SearchAPI }).Search;
     const searchOptions = {
-      ref: params.ref,
       perPage,
       page,
     } as Record<string, unknown>;
@@ -147,8 +146,10 @@ async function searchGitLabCodeAPIInternal(
 
     if (params.projectId) {
       scope.projectId = params.projectId;
+      if (params.ref) {
+        searchOptions.ref = params.ref;
+      }
     } else if (params.groupId) {
-      // Group-scoped search (Premium)
       scope.groupId = params.groupId;
     }
 

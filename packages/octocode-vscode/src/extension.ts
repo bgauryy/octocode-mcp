@@ -696,7 +696,8 @@ export async function activate(
         let needsInstall = true;
 
         const existingConfig = await readJsonFile<McpConfig>(
-          editorInfo.mcpConfigPath
+          editorInfo.mcpConfigPath,
+          message => outputChannel?.appendLine(message)
         );
         if (existingConfig?.mcpServers?.[MCP_SERVER_NAME]) {
           needsInstall = false;

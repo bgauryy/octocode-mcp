@@ -146,4 +146,56 @@ describe('providerExecution', () => {
     expect(result.failures[0]?.response.status).toBe(500);
     expect(result.failures[0]?.response.provider).toBe('github');
   });
+
+  it('should use passed providerType in error response when operation throws', async () => {
+    mockGetActiveProviderConfig.mockReturnValue({
+      provider: 'github',
+      baseUrl: undefined,
+      token: 'mock-token',
+    });
+
+    const result = await executeProviderOperations(
+      [
+        {
+          meta: { label: 'op' },
+          operation: async () => {
+            throw new Error('gitlab api down');
+          },
+        },
+      ],
+      'gitlab'
+    );
+
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.response.provider).toBe('gitlab');
+    expect(result.failures[0]?.response.error).toBe('gitlab api down');
+  });
+
+  it('should capture providerType at call time, not from global state in catch', async () => {
+    mockGetActiveProviderConfig.mockReturnValue({
+      provider: 'github',
+      baseUrl: undefined,
+      token: 'mock-token',
+    });
+
+    const result = await executeProviderOperations(
+      [
+        {
+          meta: { label: 'op' },
+          operation: async () => {
+            mockGetActiveProviderConfig.mockReturnValue({
+              provider: 'bitbucket',
+              baseUrl: undefined,
+              token: 'mock-token',
+            });
+            throw new Error('failed');
+          },
+        },
+      ],
+      'gitlab'
+    );
+
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.response.provider).toBe('gitlab');
+  });
 });

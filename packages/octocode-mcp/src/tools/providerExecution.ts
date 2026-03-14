@@ -137,11 +137,14 @@ export async function executeProviderOperation<
 }
 
 export async function executeProviderOperations<TMeta, TData>(
-  operations: Array<ProviderOperationSpec<TMeta, TData>>
+  operations: Array<ProviderOperationSpec<TMeta, TData>>,
+  providerType?: ProviderType
 ): Promise<{
   successes: Array<ProviderOperationSuccess<TMeta, TData>>;
   failures: Array<ProviderOperationFailure<TMeta, TData>>;
 }> {
+  const resolvedProviderType = providerType ?? getCurrentProviderType();
+
   const responses: Array<ProviderOperationResult<TMeta, TData>> =
     await Promise.all(
       operations.map(async operation => {
@@ -151,9 +154,15 @@ export async function executeProviderOperations<TMeta, TData>(
             response: await operation.operation(),
           };
         } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           return {
             meta: operation.meta,
-            response: createProviderFailureResponse<TData>(error),
+            response: {
+              error: maskSensitiveData(errorMessage),
+              status: 500,
+              provider: resolvedProviderType,
+            } as ProviderResponse<TData>,
           };
         }
       })

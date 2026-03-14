@@ -252,6 +252,8 @@ describe('index.ts - Server Lifecycle', () => {
       expect(stderrSpy).toHaveBeenCalledWith(
         expect.stringContaining('No GitHub token available')
       );
+
+      stderrSpy.mockRestore();
     });
 
     it('should log info when GitHub token is ready', async () => {

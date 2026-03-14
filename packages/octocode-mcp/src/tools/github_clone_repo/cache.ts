@@ -200,7 +200,8 @@ export function createCacheMeta(
   repo: string,
   branch: string,
   sparsePath?: string,
-  source?: CacheSource
+  source?: CacheSource,
+  sizeBytes?: number
 ): CloneCacheMeta {
   const now = new Date();
   return {
@@ -211,6 +212,7 @@ export function createCacheMeta(
     branch,
     ...(sparsePath ? { sparse_path: sparsePath } : {}),
     ...(source ? { source } : {}),
+    ...(sizeBytes != null ? { sizeBytes } : {}),
   };
 }
 
@@ -287,11 +289,11 @@ export function evictExpiredClones(octocodeDir: string): number {
   }
 
   function cleanupEmptyDirectories(): void {
-    for (const ownerName of listDir(reposBase)) {
+    for (const ownerName of [...listDir(reposBase)]) {
       const ownerDir = join(reposBase, ownerName);
       if (!isDir(ownerDir)) continue;
 
-      for (const repoName of listDir(ownerDir)) {
+      for (const repoName of [...listDir(ownerDir)]) {
         const repoDir = join(ownerDir, repoName);
         if (!isDir(repoDir)) continue;
 

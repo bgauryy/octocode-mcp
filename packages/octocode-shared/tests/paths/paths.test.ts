@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 
 vi.mock('node:fs', () => ({
+  existsSync: vi.fn(),
   mkdirSync: vi.fn(),
 }));
 
@@ -10,6 +11,7 @@ describe('paths', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(existsSync).mockReturnValue(false);
     vi.resetModules();
   });
 
@@ -75,6 +77,25 @@ describe('paths', () => {
       mode: 0o700,
     });
     expect(mkdirSync).toHaveBeenCalledWith(mod.paths.logs, {
+      recursive: true,
+      mode: 0o700,
+    });
+  });
+
+  it('ensureHome does NOT call mkdirSync when directory already exists', async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    const mod = await import('../../src/paths.js');
+    mod.ensureHome();
+
+    expect(mkdirSync).not.toHaveBeenCalled();
+  });
+
+  it('ensureHome DOES call mkdirSync when directory does not exist', async () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    const mod = await import('../../src/paths.js');
+    mod.ensureHome();
+
+    expect(mkdirSync).toHaveBeenCalledWith(mod.paths.home, {
       recursive: true,
       mode: 0o700,
     });

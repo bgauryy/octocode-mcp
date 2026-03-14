@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { getDirectorySizeBytes, formatBytes } from '../src/fs-utils.js';
@@ -37,6 +37,22 @@ describe('getDirectorySizeBytes', () => {
     writeFileSync(join(testDir, 'root.txt'), 'abc'); // 3 bytes
     writeFileSync(join(nested, 'deep.txt'), 'defgh'); // 5 bytes
     expect(getDirectorySizeBytes(testDir)).toBe(8);
+  });
+
+  it('skips symlinks and does not follow circular symlinks (uses lstatSync)', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'octocode-fs-utils-symlink-'));
+    try {
+      writeFileSync(join(tempDir, 'a.txt'), 'hello'); // 5 bytes
+      const subDir = join(tempDir, 'sub');
+      mkdirSync(subDir, { recursive: true });
+      writeFileSync(join(subDir, 'b.txt'), 'world'); // 5 bytes
+      // Circular symlink: sub/loop -> .. (points back to tempDir)
+      symlinkSync('..', join(subDir, 'loop'));
+      const size = getDirectorySizeBytes(tempDir);
+      expect(size).toBe(10);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });
 

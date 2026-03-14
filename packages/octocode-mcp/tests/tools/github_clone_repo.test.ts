@@ -381,6 +381,23 @@ describe('github_clone_repo cache', () => {
       );
       expect(meta.source).toBe('directoryFetch');
     });
+
+    it('includes sizeBytes when provided', () => {
+      const meta = createCacheMeta(
+        'org',
+        'repo',
+        'main',
+        undefined,
+        'clone',
+        12345
+      );
+      expect(meta.sizeBytes).toBe(12345);
+    });
+
+    it('omits sizeBytes when not provided', () => {
+      const meta = createCacheMeta('org', 'repo', 'main');
+      expect(meta).not.toHaveProperty('sizeBytes');
+    });
   });
 
   describe('ensureCloneParentDir', () => {

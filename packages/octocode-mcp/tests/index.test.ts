@@ -627,6 +627,8 @@ describe('Index Module', () => {
       expect(stderrSpy).toHaveBeenCalledWith(
         expect.stringContaining('No GitHub token available')
       );
+
+      stderrSpy.mockRestore();
     });
 
     it('should not warn about a missing GitHub token when GitLab is the active provider', async () => {
