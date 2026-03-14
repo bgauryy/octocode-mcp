@@ -26,7 +26,7 @@ vi.mock('../../src/github/client.js', () => ({
 }));
 
 const mockGetOctocodeDir = vi.hoisted(() => vi.fn());
-vi.mock('octocode-shared', async (importOriginal) => {
+vi.mock('octocode-shared', async importOriginal => {
   const actual = await importOriginal<typeof import('octocode-shared')>();
   return {
     ...actual,

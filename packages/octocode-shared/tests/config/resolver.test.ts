@@ -1159,9 +1159,7 @@ describe('config/resolver', () => {
 
     it('config with single empty section — other sections still default', () => {
       vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockReturnValue(
-        JSON.stringify({ network: {} })
-      );
+      vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ network: {} }));
 
       const config = resolveConfigSync();
 
