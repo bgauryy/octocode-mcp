@@ -13,12 +13,11 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.d.ts', 'src/**/index.ts'],
-      // Lower thresholds - comprehensive tests are in octocode-cli which imports from this package
       thresholds: {
-        statements: 35,
-        branches: 20,
-        functions: 40,
-        lines: 35,
+        statements: 90,
+        branches: 90,
+        functions: 90,
+        lines: 90,
       },
     },
   },

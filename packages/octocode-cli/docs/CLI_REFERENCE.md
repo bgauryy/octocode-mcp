@@ -25,6 +25,7 @@ octocode status
 | `logout` | - | Sign out from GitHub |
 | `auth` | - | Interactive GitHub authentication menu |
 | `skills` | - | Install/manage AI skills |
+| `cache` | - | Inspect/clean Octocode cache and logs |
 | `token` | - | Display or manage GitHub tokens |
 | `status` | - | Show environment and auth status |
 | `sync` | - | Sync MCP configurations across clients |
@@ -162,6 +163,47 @@ octocode skills [--force]
 | `octocode-plan` | Task planning and decomposition |
 | `octocode-roast` | Code review with personality |
 
+
+---
+
+### `octocode cache`
+
+Inspect or clean Octocode cache and log directories.
+
+```bash
+octocode cache [status|clean] [--repos] [--skills] [--logs] [--all]
+```
+
+**Subcommands:**
+
+- `status` (default): Show disk usage for repos, skills cache, and logs
+- `clean`: Remove selected cache directories
+
+**Options (for `clean`):**
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--repos` | - | Remove cloned repositories cache (`~/.octocode/repos`) | `true` (when no flags) |
+| `--skills` | - | Remove skills marketplace cache files | `true` (when no flags) |
+| `--logs` | - | Remove Octocode logs directory | `false` |
+| `--all` | `-a` | Remove repos + skills + logs | `false` |
+
+**Examples:**
+
+```bash
+# Show cache usage
+octocode cache status
+
+# Clean repos and skills cache (default clean behavior)
+octocode cache clean
+
+# Clean repos only
+octocode cache clean --repos
+
+# Clean everything including logs
+octocode cache clean --all
+```
+
 ---
 
 ### `octocode token`
@@ -257,5 +299,5 @@ octocode --version
 
 ## See Also
 
-- [Menu Flow Documentation](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/MENU_FLOW.md)
-- [Architecture Overview](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/ARCHITECTURE.md)
+- [CLI Docs Index](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/README.md)
+- [Skills Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md)

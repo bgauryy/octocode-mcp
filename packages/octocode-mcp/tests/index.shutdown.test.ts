@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import type { OctocodeLogger } from '../src/utils/core/logger.js';
+import {
+  allowExpectedStderrWarning,
+  allowUnexpectedWarningFailureForCurrentTest,
+} from './warningPolicy.js';
 
 // Mock process.exit to prevent tests from actually exiting
 const mockProcessExit = vi.spyOn(process, 'exit').mockImplementation((() => {
@@ -29,6 +33,7 @@ vi.mock('../src/serverConfig.js', () => ({
   initialize: vi.fn(() => Promise.resolve()),
   cleanup: vi.fn(),
   getGitHubToken: vi.fn(() => Promise.resolve('test-token')),
+  getActiveProvider: vi.fn(() => 'github'),
 }));
 
 vi.mock('../src/session.js', () => ({
@@ -161,10 +166,8 @@ describe('index.ts - Server Lifecycle', () => {
         failedTools: [],
       });
 
-      // Mock stderr.write to prevent warning output during test
-      const stderrSpy = vi
-        .spyOn(process.stderr, 'write')
-        .mockImplementation(() => true);
+      allowExpectedStderrWarning(/No GitHub token available/);
+      allowUnexpectedWarningFailureForCurrentTest();
 
       const { loadToolContent } =
         await import('../src/tools/toolMetadata/index.js');
@@ -176,8 +179,6 @@ describe('index.ts - Server Lifecycle', () => {
         'No GitHub token - limited functionality'
       );
       expect(registerTools).toHaveBeenCalled();
-
-      stderrSpy.mockRestore();
     });
 
     it('should throw error when no tools are registered', async () => {
@@ -234,6 +235,9 @@ describe('index.ts - Server Lifecycle', () => {
         successCount: 3,
         failedTools: [],
       });
+
+      allowExpectedStderrWarning(/No GitHub token available/);
+      allowUnexpectedWarningFailureForCurrentTest();
 
       const stderrSpy = vi
         .spyOn(process.stderr, 'write')

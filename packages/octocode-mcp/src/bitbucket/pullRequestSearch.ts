@@ -17,12 +17,13 @@ import type {
   BitbucketPRComment,
   BitbucketDiffstatEntry,
 } from './types.js';
+import { generateCacheKey, withDataCache } from '../utils/http/cache.js';
 
 export interface BitbucketPRSearchQuery {
   workspace: string;
   repoSlug: string;
   prNumber?: number;
-  state?: 'OPEN' | 'MERGED' | 'DECLINED';
+  state?: 'OPEN' | 'MERGED' | 'DECLINED' | 'SUPERSEDED';
   author?: string;
   baseBranch?: string;
   headBranch?: string;
@@ -83,19 +84,28 @@ export async function searchBitbucketPRsAPI(
     );
   }
 
-  try {
-    // Single PR fetch
-    if (params.prNumber) {
-      return await fetchSinglePR(params);
-    }
+  const cacheKey = generateCacheKey('bb-api-prs', params);
+  return withDataCache(
+    cacheKey,
+    async () => {
+      try {
+        // Single PR fetch
+        if (params.prNumber) {
+          return await fetchSinglePR(params);
+        }
 
-    // List PRs
-    return await listPRs(params);
-  } catch (error) {
-    return handleBitbucketAPIError(
-      error
-    ) as BitbucketAPIResponse<BitbucketPRSearchResult>;
-  }
+        // List PRs
+        return await listPRs(params);
+      } catch (error) {
+        return handleBitbucketAPIError(
+          error
+        ) as BitbucketAPIResponse<BitbucketPRSearchResult>;
+      }
+    },
+    {
+      shouldCache: value => 'data' in value && !('error' in value),
+    }
+  );
 }
 
 async function fetchSinglePR(

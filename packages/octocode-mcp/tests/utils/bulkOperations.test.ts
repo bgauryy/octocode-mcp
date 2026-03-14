@@ -187,6 +187,71 @@ describe('executeBulkOperation', () => {
   });
 
   describe('Multiple queries - mixed statuses (2 types)', () => {
+    it('should preserve input query order when thrown errors are mixed with successes', async () => {
+      const queries = [
+        { id: 'q1', delayMs: 25, type: 'success' },
+        { id: 'q2', delayMs: 5, type: 'throw' },
+        { id: 'q3', delayMs: 0, type: 'success' },
+      ];
+
+      const processor = vi
+        .fn()
+        .mockImplementation(
+          async (query: {
+            id: string;
+            delayMs: number;
+            type: 'success' | 'throw';
+          }) => {
+            await new Promise(resolve => setTimeout(resolve, query.delayMs));
+
+            if (query.type === 'throw') {
+              throw new Error(`processor failed for ${query.id}`);
+            }
+
+            return {
+              status: 'hasResults' as const,
+              payload: query.id,
+            };
+          }
+        );
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        concurrency: 3,
+      });
+
+      expect(result.isError).toBe(false);
+
+      const structured = result.structuredContent as {
+        results: Array<{
+          id: string;
+          status: QueryStatus;
+          data: Record<string, unknown>;
+        }>;
+      };
+
+      expect(structured.results.map(entry => entry.id)).toEqual([
+        'q1',
+        'q2',
+        'q3',
+      ]);
+      expect(structured.results[1]).toMatchObject({
+        id: 'q2',
+        status: 'error',
+        data: {
+          error: 'processor failed for q2',
+        },
+      });
+
+      const responseText = getTextContent(result.content);
+      expect(responseText.indexOf('id: "q1"')).toBeLessThan(
+        responseText.indexOf('id: "q2"')
+      );
+      expect(responseText.indexOf('id: "q2"')).toBeLessThan(
+        responseText.indexOf('id: "q3"')
+      );
+    });
+
     it('should handle hasResults + empty mix', async () => {
       const queries = [
         { id: 'q1', name: 'found' },

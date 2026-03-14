@@ -18,7 +18,7 @@ describe('Tool Registration - Failed Tools Reporting', () => {
     _setTokenResolvers({
       resolveTokenFull: vi.fn(async () => ({
         token: 'test-token',
-        source: 'env:GITHUB_TOKEN',
+        source: 'env:GITHUB_TOKEN' as const,
         wasRefreshed: false,
       })),
     });

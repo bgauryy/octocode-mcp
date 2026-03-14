@@ -148,6 +148,31 @@ describe('Local Tools Execution', () => {
         { toolName: 'localGetFileContent' }
       );
     });
+
+    it('should not cache callback responses', async () => {
+      const { executeFetchContent } =
+        await import('../../src/tools/local_fetch_content/execution.js');
+      const { executeBulkOperation } =
+        await import('../../src/utils/response/bulk.js');
+      const { fetchContent } =
+        await import('../../src/tools/local_fetch_content/fetchContent.js');
+      vi.mocked(fetchContent).mockResolvedValue({
+        status: 'hasResults',
+        content: 'abc',
+      } as any);
+
+      const query = {
+        researchGoal: 'Test',
+        reasoning: 'Schema validation',
+        path: '/test/file.ts',
+      };
+      await executeFetchContent({ queries: [query] as any });
+      const callback = vi.mocked(executeBulkOperation).mock.calls[0]![1];
+      await callback(query as any, 0);
+      await callback(query as any, 0);
+
+      expect(fetchContent).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('executeFindFiles', () => {

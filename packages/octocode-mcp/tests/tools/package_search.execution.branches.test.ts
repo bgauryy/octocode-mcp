@@ -121,7 +121,7 @@ describe('package_search execution branches', () => {
           {
             path: 'deprecated-pkg',
             version: '1.0.0',
-            repository: 'https://github.com/owner/repo',
+            repoUrl: 'https://github.com/owner/repo',
             mainEntry: null,
             typeDefinitions: null,
           },
@@ -155,7 +155,7 @@ describe('package_search execution branches', () => {
           {
             path: 'my-pkg',
             version: '1.0.0',
-            repository: 'https://github.com/owner/my-repo',
+            repoUrl: 'https://github.com/owner/my-repo',
             mainEntry: null,
             typeDefinitions: null,
           },
@@ -187,8 +187,9 @@ describe('package_search execution branches', () => {
           {
             name: 'requests',
             version: '2.28.0',
-            summary: 'Python HTTP library',
-            project_url: 'https://pypi.org/project/requests/',
+            description: 'Python HTTP library',
+            keywords: [],
+            repository: null,
           },
         ],
         ecosystem: 'python',

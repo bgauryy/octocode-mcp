@@ -25,8 +25,8 @@ Octocode VS Code Extension is the management hub for Octocode MCP:
 
 | Document | Description |
 |----------|-------------|
-| [`docs/README.md`](./docs/README.md) | VS Code package docs index and quick reference |
-| [`README.md`](./README.md) | Extension overview, installation, and usage |
+| [`docs/README.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-vscode/docs/README.md) | VS Code package docs index and quick reference |
+| [`README.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-vscode/README.md) | Extension overview, installation, and usage |
 | [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) | Shared authentication setup details |
 
 ---
@@ -38,10 +38,14 @@ All commands run from this package directory (`packages/octocode-vscode/`).
 | Task | Command | Description |
 |------|---------|-------------|
 | **Build** | `yarn build` | Bundle with esbuild (minified) |
-| **Watch** | `yarn watch` | Watch mode for development |
 | **Lint** | `yarn lint` | ESLint check |
+| **Test** | `yarn test` | Run Vitest unit coverage for extracted helpers |
+| **Test (Quiet)** | `yarn test:quiet` | Minimal test output |
+| **Typecheck** | `yarn typecheck` | TypeScript type checking |
+| **Verify** | `yarn verify` | Lint + typecheck + tests + build |
 | **Package** | `yarn package` | Create `.vsix` package |
 | **Publish** | `yarn publish` | Publish to VS Code Marketplace |
+| **Watch** | `yarn watch` | Watch mode for development |
 
 ---
 
@@ -49,12 +53,13 @@ All commands run from this package directory (`packages/octocode-vscode/`).
 
 ```
 src/
-└── extension.ts          # Single-file extension with all functionality
-    ├── MCP Configuration  # Config path detection per editor
-    ├── GitHub OAuth       # Device flow authentication
-    ├── Token Management   # Sync tokens across configs
-    ├── Server Control     # Start/stop MCP server process
-    └── Multi-Client       # Support for Cline, Roo Code, Trae
+├── extension.ts          # Extension activation + VS Code wiring
+├── configPaths.ts        # Editor detection and MCP client config paths
+└── jsonUtils.ts          # Shared JSON file read helper
+
+tests/
+├── configPaths.test.ts   # Cross-platform path and editor detection coverage
+└── jsonUtils.test.ts     # JSON file handling coverage
 
 images/
 └── icon.png              # Extension icon
@@ -63,7 +68,7 @@ out/
 └── extension.js          # Bundled output (esbuild)
 ```
 
-### Key Components in `extension.ts`
+### Key Components
 
 | Component | Purpose |
 |-----------|---------|
@@ -73,6 +78,8 @@ out/
 | `installMcpServer()` | Configure MCP server in editor config |
 | `startMcpServer()` | Spawn MCP server process |
 | `MCP_CLIENTS` | Registry of supported MCP clients |
+| `configPaths.ts` | Pure path logic extracted for unit testing |
+| `jsonUtils.ts` | Safe JSON parsing shared across config operations |
 
 ---
 
@@ -116,7 +123,7 @@ out/
 
 These are the core principles for this VS Code extension:
 
-1. **Single File**: All logic in `extension.ts` for simplicity and fast bundling.
+1. **Thin Entry Point**: Keep VS Code wiring in `extension.ts`, but extract pure helpers when logic becomes testable outside the editor runtime.
 2. **Cross-Platform**: Support macOS, Linux, and Windows config paths.
 3. **Non-Invasive**: Only modify MCP configs, never editor settings.
 4. **Graceful Degradation**: Handle missing configs, failed auth, and errors gracefully.
@@ -180,16 +187,22 @@ Fallback to Claude Desktop config for VS Code
 
 ## 🧪 Testing Protocol
 
-> **Note**: This package currently has no automated tests. Consider adding:
+This package now has lightweight automated coverage for cross-platform path detection and JSON config parsing. The current suite is intentionally narrow; full extension-host integration tests are still a follow-up.
 
-### Recommended Test Structure
+### Current Test Structure
+
+```
+tests/
+├── configPaths.test.ts   # Editor detection + MCP client path coverage
+└── jsonUtils.test.ts     # JSON config parsing and error handling
+```
+
+### Next Recommended Additions
 
 ```
 tests/
 ├── extension.test.ts     # Extension activation tests
-├── auth.test.ts          # OAuth flow mocking
-├── config.test.ts        # MCP config read/write tests
-└── detection.test.ts     # Editor detection tests
+└── auth.test.ts          # OAuth flow mocking
 ```
 
 ### Manual Testing Checklist
@@ -229,4 +242,3 @@ esbuild src/extension.ts \
 yarn package   # Create .vsix
 yarn publish   # Publish to marketplace (requires PAT)
 ```
-

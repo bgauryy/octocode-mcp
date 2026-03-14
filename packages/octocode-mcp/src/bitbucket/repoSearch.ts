@@ -13,6 +13,7 @@ import type {
   BitbucketPaginatedResponse,
   BitbucketRepository,
 } from './types.js';
+import { generateCacheKey, withDataCache } from '../utils/http/cache.js';
 
 export interface BitbucketRepoSearchQuery {
   workspace: string;
@@ -78,45 +79,54 @@ export async function searchBitbucketReposAPI(
     );
   }
 
-  try {
-    const client = getBitbucketClient();
-    const q = buildQueryFilter(params);
-    const sort = mapSortField(params.sort);
+  const cacheKey = generateCacheKey('bb-api-repos', params);
+  return withDataCache(
+    cacheKey,
+    async () => {
+      try {
+        const client = getBitbucketClient();
+        const q = buildQueryFilter(params);
+        const sort = mapSortField(params.sort);
 
-    const queryParams: Record<string, string> = {};
-    if (q) queryParams.q = q;
-    if (sort) queryParams.sort = sort;
-    queryParams.pagelen = String(params.limit || 10);
-    queryParams.page = String(params.page || 1);
+        const queryParams: Record<string, string> = {};
+        if (q) queryParams.q = q;
+        if (sort) queryParams.sort = sort;
+        queryParams.pagelen = String(params.limit || 10);
+        queryParams.page = String(params.page || 1);
 
-    const { data } = await client.GET('/repositories/{workspace}', {
-      params: {
-        path: { workspace: params.workspace },
-        query: queryParams as Record<string, string>,
-      },
-    });
+        const { data } = await client.GET('/repositories/{workspace}', {
+          params: {
+            path: { workspace: params.workspace },
+            query: queryParams as Record<string, string>,
+          },
+        });
 
-    const paginated =
-      data as unknown as BitbucketPaginatedResponse<BitbucketRepository>;
-    const repos = paginated?.values || [];
-    const size = paginated?.size || repos.length;
-    const pagelen = params.limit || 10;
+        const paginated =
+          data as unknown as BitbucketPaginatedResponse<BitbucketRepository>;
+        const repos = paginated?.values || [];
+        const size = paginated?.size || repos.length;
+        const pagelen = params.limit || 10;
 
-    return {
-      data: {
-        repositories: repos,
-        pagination: {
-          currentPage: paginated?.page || params.page || 1,
-          totalPages: Math.ceil(size / pagelen),
-          hasMore: !!paginated?.next,
-          totalMatches: size,
-        },
-      },
-      status: 200,
-    };
-  } catch (error) {
-    return handleBitbucketAPIError(
-      error
-    ) as BitbucketAPIResponse<BitbucketRepoSearchResult>;
-  }
+        return {
+          data: {
+            repositories: repos,
+            pagination: {
+              currentPage: paginated?.page || params.page || 1,
+              totalPages: Math.ceil(size / pagelen),
+              hasMore: !!paginated?.next,
+              totalMatches: size,
+            },
+          },
+          status: 200,
+        };
+      } catch (error) {
+        return handleBitbucketAPIError(
+          error
+        ) as BitbucketAPIResponse<BitbucketRepoSearchResult>;
+      }
+    },
+    {
+      shouldCache: value => 'data' in value && !('error' in value),
+    }
+  );
 }

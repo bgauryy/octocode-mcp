@@ -10,8 +10,75 @@ import { getHints } from '../hints/index.js';
 import { logSessionError } from '../session.js';
 import { TOOL_ERRORS } from '../errorCodes.js';
 import { createErrorResult } from '../utils/response/error.js';
+import { generateCacheKey } from '../utils/http/cache.js';
 
 export { createErrorResult };
+
+interface ResearchContextFields {
+  id?: string;
+  mainResearchGoal?: string;
+  researchGoal?: string;
+  reasoning?: string;
+}
+
+/**
+ * Shared cache policy for tool execution wrappers.
+ * We only cache successful results with actual content payload.
+ */
+export function shouldCacheHasResults(result: unknown): boolean {
+  if (!result || typeof result !== 'object') return false;
+  return (result as { status?: string }).status === 'hasResults';
+}
+
+/**
+ * Remove research-context-only fields from query payloads before key generation.
+ * These fields are metadata for agent reasoning and should never affect cache hits.
+ */
+export function stripResearchContext<T extends Record<string, unknown>>(
+  query: T
+): Omit<T, keyof ResearchContextFields> {
+  const { id, mainResearchGoal, researchGoal, reasoning, ...cacheable } = query;
+  void id;
+  void mainResearchGoal;
+  void researchGoal;
+  void reasoning;
+  return cacheable as Omit<T, keyof ResearchContextFields>;
+}
+
+/**
+ * Build a workspace-scoped key for local/LSP tools to avoid cross-workspace collisions.
+ */
+export function buildWorkspaceScopedToolCacheKey(
+  prefix: string,
+  query: Record<string, unknown>,
+  sessionId?: string
+): string {
+  const cacheable = stripResearchContext(query);
+  return generateCacheKey(
+    prefix,
+    {
+      workspace: process.cwd(),
+      ...cacheable,
+    },
+    sessionId
+  );
+}
+
+/**
+ * Pull optional cache controls from a query payload.
+ * Tools that don't expose these fields simply get undefined options.
+ */
+export function getCacheControlFromQuery(query: Record<string, unknown>): {
+  forceRefresh?: boolean;
+  skipCache?: boolean;
+} {
+  return {
+    forceRefresh:
+      typeof query.forceRefresh === 'boolean' ? query.forceRefresh : undefined,
+    skipCache:
+      typeof query.skipCache === 'boolean' ? query.skipCache : undefined,
+  };
+}
 
 /**
  * Safely invoke a tool invocation callback with error logging.

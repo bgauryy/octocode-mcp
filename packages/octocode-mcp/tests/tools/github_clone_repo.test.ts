@@ -179,6 +179,8 @@ import {
   removeCloneDir,
   evictExpiredClones,
   getCacheTTL,
+  getMaxCacheSizeBytes,
+  getMaxCloneCount,
   startCacheGC,
   stopCacheGC,
 } from '../../src/tools/github_clone_repo/cache.js';
@@ -379,6 +381,23 @@ describe('github_clone_repo cache', () => {
       );
       expect(meta.source).toBe('directoryFetch');
     });
+
+    it('includes sizeBytes when provided', () => {
+      const meta = createCacheMeta(
+        'org',
+        'repo',
+        'main',
+        undefined,
+        'clone',
+        12345
+      );
+      expect(meta.sizeBytes).toBe(12345);
+    });
+
+    it('omits sizeBytes when not provided', () => {
+      const meta = createCacheMeta('org', 'repo', 'main');
+      expect(meta).not.toHaveProperty('sizeBytes');
+    });
   });
 
   describe('ensureCloneParentDir', () => {
@@ -444,6 +463,113 @@ describe('github_clone_repo cache', () => {
     it('ignores negative values', () => {
       process.env.OCTOCODE_CACHE_TTL_MS = '-5000';
       expect(getCacheTTL()).toBe(24 * 60 * 60 * 1000);
+    });
+  });
+
+  describe('cache size and count limits', () => {
+    const origSize = process.env.OCTOCODE_MAX_CACHE_SIZE;
+    const origCount = process.env.OCTOCODE_MAX_CLONES;
+
+    afterEach(() => {
+      if (origSize === undefined) {
+        delete process.env.OCTOCODE_MAX_CACHE_SIZE;
+      } else {
+        process.env.OCTOCODE_MAX_CACHE_SIZE = origSize;
+      }
+
+      if (origCount === undefined) {
+        delete process.env.OCTOCODE_MAX_CLONES;
+      } else {
+        process.env.OCTOCODE_MAX_CLONES = origCount;
+      }
+    });
+
+    it('uses defaults when env vars are not set', () => {
+      delete process.env.OCTOCODE_MAX_CACHE_SIZE;
+      delete process.env.OCTOCODE_MAX_CLONES;
+
+      expect(getMaxCacheSizeBytes()).toBe(2 * 1024 * 1024 * 1024);
+      expect(getMaxCloneCount()).toBe(50);
+    });
+
+    it('reads positive env var overrides', () => {
+      process.env.OCTOCODE_MAX_CACHE_SIZE = '12345';
+      process.env.OCTOCODE_MAX_CLONES = '7';
+
+      expect(getMaxCacheSizeBytes()).toBe(12345);
+      expect(getMaxCloneCount()).toBe(7);
+    });
+
+    it('ignores invalid env var overrides', () => {
+      process.env.OCTOCODE_MAX_CACHE_SIZE = '-1';
+      process.env.OCTOCODE_MAX_CLONES = '0';
+
+      expect(getMaxCacheSizeBytes()).toBe(2 * 1024 * 1024 * 1024);
+      expect(getMaxCloneCount()).toBe(50);
+    });
+
+    it('evicts oldest clones when clone count exceeds max', () => {
+      const dir = join(testBaseDir, 'count-limit-test');
+      process.env.OCTOCODE_MAX_CLONES = '2';
+      process.env.OCTOCODE_MAX_CACHE_SIZE = String(10 * 1024 * 1024);
+
+      const oldDir = join(dir, 'repos', 'owner', 'repo', 'old');
+      const midDir = join(dir, 'repos', 'owner', 'repo', 'mid');
+      const newDir = join(dir, 'repos', 'owner', 'repo', 'new');
+
+      mkdirSync(oldDir, { recursive: true });
+      mkdirSync(midDir, { recursive: true });
+      mkdirSync(newDir, { recursive: true });
+
+      writeFileSync(join(oldDir, 'a.txt'), 'old', 'utf-8');
+      writeFileSync(join(midDir, 'a.txt'), 'mid', 'utf-8');
+      writeFileSync(join(newDir, 'a.txt'), 'new', 'utf-8');
+
+      const oldMeta = createCacheMeta('owner', 'repo', 'old');
+      oldMeta.clonedAt = new Date(Date.now() - 30_000).toISOString();
+      writeCacheMeta(oldDir, oldMeta);
+
+      const midMeta = createCacheMeta('owner', 'repo', 'mid');
+      midMeta.clonedAt = new Date(Date.now() - 20_000).toISOString();
+      writeCacheMeta(midDir, midMeta);
+
+      const newMeta = createCacheMeta('owner', 'repo', 'new');
+      newMeta.clonedAt = new Date(Date.now() - 10_000).toISOString();
+      writeCacheMeta(newDir, newMeta);
+
+      const evicted = evictExpiredClones(dir);
+      expect(evicted).toBe(1);
+      expect(existsSync(oldDir)).toBe(false);
+      expect(existsSync(midDir)).toBe(true);
+      expect(existsSync(newDir)).toBe(true);
+    });
+
+    it('evicts oldest clones when cache size exceeds max', () => {
+      const dir = join(testBaseDir, 'size-limit-test');
+      process.env.OCTOCODE_MAX_CLONES = '10';
+      process.env.OCTOCODE_MAX_CACHE_SIZE = '300';
+
+      const oldDir = join(dir, 'repos', 'owner', 'repo', 'old');
+      const newDir = join(dir, 'repos', 'owner', 'repo', 'new');
+
+      mkdirSync(oldDir, { recursive: true });
+      mkdirSync(newDir, { recursive: true });
+
+      writeFileSync(join(oldDir, 'a.txt'), 'x'.repeat(120), 'utf-8');
+      writeFileSync(join(newDir, 'a.txt'), 'y'.repeat(120), 'utf-8');
+
+      const oldMeta = createCacheMeta('owner', 'repo', 'old');
+      oldMeta.clonedAt = new Date(Date.now() - 20_000).toISOString();
+      writeCacheMeta(oldDir, oldMeta);
+
+      const newMeta = createCacheMeta('owner', 'repo', 'new');
+      newMeta.clonedAt = new Date(Date.now() - 10_000).toISOString();
+      writeCacheMeta(newDir, newMeta);
+
+      const evicted = evictExpiredClones(dir);
+      expect(evicted).toBe(1);
+      expect(existsSync(oldDir)).toBe(false);
+      expect(existsSync(newDir)).toBe(true);
     });
   });
 
@@ -548,9 +674,13 @@ vi.mock('../../src/github/client.js', () => ({
   resolveDefaultBranch: mockResolveDefaultBranch,
 }));
 
-vi.mock('octocode-shared', () => ({
-  getOctocodeDir: mockGetOctocodeDir,
-}));
+vi.mock('octocode-shared', async importOriginal => {
+  const actual = await importOriginal<typeof import('octocode-shared')>();
+  return {
+    ...actual,
+    getOctocodeDir: mockGetOctocodeDir,
+  };
+});
 
 import { cloneRepo } from '../../src/tools/github_clone_repo/cloneRepo.js';
 

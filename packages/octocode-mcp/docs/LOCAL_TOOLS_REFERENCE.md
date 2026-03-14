@@ -40,7 +40,7 @@ Config files loaded in priority order (optional — if unset, workspace/home fal
 
 1. `OCTOCODE_LSP_CONFIG=/path/to/config.json` (env var)
 2. `.octocode/lsp-servers.json` (workspace)
-3. `~/.octocode/lsp-servers.json` (user)
+3. `${OCTOCODE_HOME:-~/.octocode}/lsp-servers.json` (user)
 
 ```json
 {

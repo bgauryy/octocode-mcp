@@ -1,9 +1,14 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
-import * as os from 'os';
 import { spawn, ChildProcess } from 'child_process';
+
+import {
+  createMcpClients,
+  detectEditorInfo,
+  type McpClientDef,
+} from './configPaths';
+import { readJsonFile } from './jsonUtils';
 
 const MCP_SERVER_NAME = 'octocode';
 const MCP_COMMAND = 'npx';
@@ -29,86 +34,7 @@ type McpConfig = {
   mcpServers: Record<string, McpServerConfig>;
 };
 
-// MCP Client definitions with platform-aware paths
-type McpClientDef = {
-  name: string;
-  getConfigPath: () => string;
-  configKey: 'mcpServers' | 'servers';
-};
-
-function getPlatformConfigBase(): string {
-  const platform = process.platform;
-  const home = os.homedir();
-
-  if (platform === 'darwin') {
-    return path.join(home, 'Library', 'Application Support');
-  } else if (platform === 'win32') {
-    return process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
-  } else {
-    return path.join(home, '.config');
-  }
-}
-
-const MCP_CLIENTS: Record<string, McpClientDef> = {
-  cline: {
-    name: 'Cline',
-    getConfigPath: () =>
-      path.join(
-        getPlatformConfigBase(),
-        'Code',
-        'User',
-        'globalStorage',
-        'saoudrizwan.claude-dev',
-        'settings',
-        'cline_mcp_settings.json'
-      ),
-    configKey: 'mcpServers',
-  },
-  rooCode: {
-    name: 'Roo Code',
-    getConfigPath: () =>
-      path.join(
-        getPlatformConfigBase(),
-        'Code',
-        'User',
-        'globalStorage',
-        'rooveterinaryinc.roo-cline',
-        'settings',
-        'mcp_settings.json'
-      ),
-    configKey: 'mcpServers',
-  },
-  trae: {
-    name: 'Trae',
-    getConfigPath: () => path.join(getPlatformConfigBase(), 'Trae', 'mcp.json'),
-    configKey: 'mcpServers',
-  },
-};
-
-// Helper: Safe JSON Read
-async function safeReadJson<T>(filePath: string): Promise<T | null> {
-  try {
-    // Check access first to avoid throwing on non-existent files
-    try {
-      await fsPromises.access(filePath, fs.constants.R_OK);
-    } catch {
-      return null;
-    }
-
-    const content = await fsPromises.readFile(filePath, 'utf-8');
-    if (!content.trim()) {
-      return null;
-    }
-    return JSON.parse(content) as T;
-  } catch (error) {
-    if (outputChannel) {
-      outputChannel.appendLine(
-        `Failed to read/parse JSON at ${filePath}: ${error}`
-      );
-    }
-    return null;
-  }
-}
+const MCP_CLIENTS: Record<string, McpClientDef> = createMcpClients();
 
 // Detect editor type
 function getEditorInfo(): {
@@ -116,74 +42,7 @@ function getEditorInfo(): {
   scheme: string;
   mcpConfigPath: string | null;
 } {
-  try {
-    const appName = vscode.env.appName.toLowerCase();
-
-    if (appName.includes('cursor')) {
-      // Windows uses %APPDATA%\Cursor, macOS/Linux use ~/.cursor
-      const cursorConfigPath =
-        process.platform === 'win32'
-          ? path.join(getPlatformConfigBase(), 'Cursor', 'mcp.json')
-          : path.join(os.homedir(), '.cursor', 'mcp.json');
-      return {
-        name: 'Cursor',
-        scheme: 'cursor',
-        mcpConfigPath: cursorConfigPath,
-      };
-    }
-
-    if (appName.includes('windsurf')) {
-      return {
-        name: 'Windsurf',
-        scheme: 'windsurf',
-        mcpConfigPath: path.join(
-          os.homedir(),
-          '.codeium',
-          'windsurf',
-          'mcp_config.json'
-        ),
-      };
-    }
-
-    if (appName.includes('antigravity')) {
-      return {
-        name: 'Antigravity',
-        scheme: 'antigravity',
-        mcpConfigPath: path.join(
-          os.homedir(),
-          '.gemini',
-          'antigravity',
-          'mcp_config.json'
-        ),
-      };
-    }
-
-    if (appName.includes('trae')) {
-      return {
-        name: 'Trae',
-        scheme: 'trae',
-        mcpConfigPath: path.join(getPlatformConfigBase(), 'Trae', 'mcp.json'),
-      };
-    }
-
-    // VS Code fallback - use Claude Desktop config (platform-aware)
-    return {
-      name: 'VS Code',
-      scheme: 'vscode',
-      mcpConfigPath: path.join(
-        getPlatformConfigBase(),
-        'Claude',
-        'claude_desktop_config.json'
-      ),
-    };
-  } catch {
-    // Fallback if something fails in detection
-    return {
-      name: 'VS Code',
-      scheme: 'vscode',
-      mcpConfigPath: null,
-    };
-  }
+  return detectEditorInfo(vscode.env.appName);
 }
 
 // ===== GitHub Authentication Functions =====
@@ -311,7 +170,9 @@ async function updateMcpConfigToken(
   configPath: string,
   token: string | undefined
 ): Promise<void> {
-  const existingConfig = await safeReadJson<McpConfig>(configPath);
+  const existingConfig = await readJsonFile<McpConfig>(configPath, message =>
+    outputChannel?.appendLine(message)
+  );
 
   if (!existingConfig?.mcpServers?.[MCP_SERVER_NAME]) {
     // Server not configured in this file, skip
@@ -398,7 +259,10 @@ async function installMcpServer(
     let mcpConfig: McpConfig = { mcpServers: {} };
 
     // Read existing config safely
-    const existingConfig = await safeReadJson<McpConfig>(mcpConfigPath);
+    const existingConfig = await readJsonFile<McpConfig>(
+      mcpConfigPath,
+      message => outputChannel?.appendLine(message)
+    );
     if (existingConfig && typeof existingConfig === 'object') {
       // Preserve existing config structure
       mcpConfig = {
@@ -831,8 +695,9 @@ export async function activate(
         // Check if config file exists and has our server
         let needsInstall = true;
 
-        const existingConfig = await safeReadJson<McpConfig>(
-          editorInfo.mcpConfigPath
+        const existingConfig = await readJsonFile<McpConfig>(
+          editorInfo.mcpConfigPath,
+          message => outputChannel?.appendLine(message)
         );
         if (existingConfig?.mcpServers?.[MCP_SERVER_NAME]) {
           needsInstall = false;

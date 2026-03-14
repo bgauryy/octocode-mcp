@@ -18,16 +18,15 @@ Octocode CLI is the unified installer and management hub for AI-assisted develop
 - **Skills Manager**: Install and update AI coding skills for Claude Code
 - **MCP Marketplace**: Browse and install 70+ community MCP servers
 
-**Key Docs**: [`README.md`](./README.md) • [`docs/`](./docs/)
+**Key Docs**: [`README.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/README.md) • [`docs/`](https://github.com/bgauryy/octocode-mcp/tree/main/packages/octocode-cli/docs/)
 
 ### Documentation
 
 | Document | Description |
 |----------|-------------|
-| [`CLI_REFERENCE.md`](./docs/CLI_REFERENCE.md) | Complete CLI commands reference with options and examples |
-| [`MENU_FLOW.md`](./docs/MENU_FLOW.md) | Interactive menu system documentation with flow diagrams |
-| [`ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Technical architecture and design patterns |
-| [`SKILLS_GUIDE.md`](./docs/SKILLS_GUIDE.md) | Comprehensive guide to Octocode Skills system |
+| [`README.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/README.md) | Package docs index for the CLI user guides |
+| [`CLI_REFERENCE.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md) | Complete CLI commands reference with options and examples |
+| [`SKILLS_GUIDE.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md) | Comprehensive guide to Octocode Skills system |
 
 ---
 

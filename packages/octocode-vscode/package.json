@@ -108,10 +108,12 @@
   "devDependencies": {
     "@types/node": "^22.15.29",
     "@types/vscode": "^1.107.0",
+    "@vitest/coverage-v8": "^4.0.16",
     "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.27.2",
     "eslint": "^9.18.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
   },
   "displayName": "Octocode MCP",
   "engines": {
@@ -127,6 +129,10 @@
     "lint:fix": "eslint src --fix",
     "package": "npx @vscode/vsce package --allow-missing-repository --no-dependencies",
     "publish": "npx @vscode/vsce publish",
+    "test": "vitest run --coverage",
+    "test:quiet": "vitest run --reporter=dot --silent",
+    "typecheck": "tsc --noEmit",
+    "verify": "yarn lint && yarn typecheck && yarn test && yarn build",
     "vscode:prepublish": "npm run build",
     "watch": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --watch"
   }

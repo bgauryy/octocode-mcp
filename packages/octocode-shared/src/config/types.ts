@@ -93,7 +93,7 @@ export interface TelemetryConfigOptions {
  * LSP tools configuration
  */
 export interface LspConfigOptions {
-  /** Path to custom LSP servers config file (default: ~/.octocode/lsp-servers.json) */
+  /** Path to custom LSP servers config file (default: ${OCTOCODE_HOME:-~/.octocode}/lsp-servers.json) */
   configPath?: string;
 }
 

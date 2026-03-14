@@ -111,4 +111,91 @@ describe('providerExecution', () => {
     expect(result.successes[0]?.meta.label).toBe('topics');
     expect(result.failures[0]?.response.error).toBe('rate limited');
   });
+
+  it('should preserve partial successes when one provider operation throws', async () => {
+    const result = await executeProviderOperations([
+      {
+        meta: { label: 'topics' },
+        operation: async () => ({
+          data: {
+            repositories: [],
+            totalCount: 0,
+            pagination: {
+              currentPage: 1,
+              totalPages: 0,
+              hasMore: false,
+            },
+          },
+          status: 200,
+          provider: 'github',
+        }),
+      },
+      {
+        meta: { label: 'keywords' },
+        operation: async () => {
+          throw new Error('network exploded');
+        },
+      },
+    ]);
+
+    expect(result.successes).toHaveLength(1);
+    expect(result.failures).toHaveLength(1);
+    expect(result.successes[0]?.meta.label).toBe('topics');
+    expect(result.failures[0]?.meta.label).toBe('keywords');
+    expect(result.failures[0]?.response.error).toBe('network exploded');
+    expect(result.failures[0]?.response.status).toBe(500);
+    expect(result.failures[0]?.response.provider).toBe('github');
+  });
+
+  it('should use passed providerType in error response when operation throws', async () => {
+    mockGetActiveProviderConfig.mockReturnValue({
+      provider: 'github',
+      baseUrl: undefined,
+      token: 'mock-token',
+    });
+
+    const result = await executeProviderOperations(
+      [
+        {
+          meta: { label: 'op' },
+          operation: async () => {
+            throw new Error('gitlab api down');
+          },
+        },
+      ],
+      'gitlab'
+    );
+
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.response.provider).toBe('gitlab');
+    expect(result.failures[0]?.response.error).toBe('gitlab api down');
+  });
+
+  it('should capture providerType at call time, not from global state in catch', async () => {
+    mockGetActiveProviderConfig.mockReturnValue({
+      provider: 'github',
+      baseUrl: undefined,
+      token: 'mock-token',
+    });
+
+    const result = await executeProviderOperations(
+      [
+        {
+          meta: { label: 'op' },
+          operation: async () => {
+            mockGetActiveProviderConfig.mockReturnValue({
+              provider: 'bitbucket',
+              baseUrl: undefined,
+              token: 'mock-token',
+            });
+            throw new Error('failed');
+          },
+        },
+      ],
+      'gitlab'
+    );
+
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.response.provider).toBe('gitlab');
+  });
 });

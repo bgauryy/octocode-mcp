@@ -69,7 +69,8 @@
     "validate:mcp": "npx tsx scripts/validate-mcp-registry.ts",
     "validate:mcp:json": "npx tsx scripts/validate-mcp-registry.ts --json",
     "validate:skills": "npx tsx scripts/validate-skills-marketplace.ts",
-    "validate:skills:json": "npx tsx scripts/validate-skills-marketplace.ts --json"
+    "validate:skills:json": "npx tsx scripts/validate-skills-marketplace.ts --json",
+    "verify": "yarn lint && yarn typecheck && yarn test && yarn validate:mcp && yarn validate:skills"
   },
   "type": "module"
 }

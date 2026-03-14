@@ -192,7 +192,7 @@ This project is licensed under the **MIT License**.
 
 Copyright © 2026 Octocode AI.
 
-See [LICENSE](./LICENSE) for details.
+See [LICENSE](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-vscode/LICENSE) for details.
 
 <div align="center">
   <p>Powered by <a href="https://octocode.ai"><b>Octocode.ai</b></a></p>

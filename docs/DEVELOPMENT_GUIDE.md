@@ -38,10 +38,10 @@
 
 | Package | Key Commands |
 |---------|--------------|
-| `octocode-mcp` | `yarn debug` (MCP inspector), `yarn typecheck`, `yarn build:watch` |
+| `octocode-mcp` | `yarn mcp:package`, `yarn mcp:contracts`, `yarn debug`, `yarn build:watch` |
 | `octocode-cli` | `yarn start`, `yarn validate:mcp`, `yarn validate:skills` |
 | `octocode-vscode` | `yarn package`, `yarn publish` |
-| `octocode-shared` | `yarn typecheck` |
+| `octocode-shared` | `yarn shared:package`, `yarn typecheck` |
 
 #### Linux & File Operations
 
@@ -83,6 +83,16 @@
 - **Coverage**: 90% required for `octocode-mcp` (Statements, Branches, Functions, Lines)
 - **Framework**: Vitest with V8 coverage provider
 
+### Quality Lanes
+
+| Package | Lane | Command | This lane should fail when... |
+|---------|------|---------|-------------------------------|
+| `octocode-mcp` | Package gate | `yarn mcp:package` | Shipping runtime code, startup/config contracts, provider execution, response envelopes, or declared user flows regress. |
+| `octocode-mcp` | Contract suite | `yarn mcp:contracts` | You need the fast deterministic contract signal while iterating locally. |
+| `octocode-shared` | Package gate | `yarn shared:package` | Shared config, credential, platform, or session boundaries regress. |
+
+For package-specific references, use the package docs indexes: [octocode-mcp docs](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/README.md) and [octocode-shared docs](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/README.md).
+
 ### Structure
 ```
 packages/<name>/tests/
@@ -111,7 +121,7 @@ Skills are markdown-based instruction sets that teach AI assistants specific tas
 
 ## Package Documentation
 
-For the complete package documentation index, see the [Key References](https://github.com/bgauryy/octocode-mcp/blob/main/AGENTS.md#key-references) section in the root AGENTS.md.
+For the complete package documentation index, see [docs/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/README.md).
 
 
 ## Agent Compatibility

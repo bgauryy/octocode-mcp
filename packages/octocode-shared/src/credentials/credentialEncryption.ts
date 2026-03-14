@@ -6,16 +6,14 @@
 
 import {
   existsSync,
-  mkdirSync,
   readFileSync,
   writeFileSync,
   unlinkSync,
   statSync,
   chmodSync,
 } from 'node:fs';
-import { join } from 'node:path';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { HOME } from '../platform/index.js';
+import { ensureHome, paths } from '../paths.js';
 import { CredentialsStoreSchema } from './schemas.js';
 import type { CredentialsStore } from './types.js';
 import { createLogger } from '../logger/index.js';
@@ -35,9 +33,9 @@ function maskErrorMessage(message: string): string {
 }
 
 // Storage constants for file storage
-export const OCTOCODE_DIR = join(HOME, '.octocode');
-export const CREDENTIALS_FILE = join(OCTOCODE_DIR, 'credentials.json');
-export const KEY_FILE = join(OCTOCODE_DIR, '.key');
+export const OCTOCODE_DIR = paths.home;
+export const CREDENTIALS_FILE = paths.credentials;
+export const KEY_FILE = paths.key;
 
 // Encryption constants
 const ALGORITHM = 'aes-256-gcm';
@@ -47,9 +45,7 @@ const IV_LENGTH = 16;
  * Ensure .octocode directory exists with secure permissions (0o700)
  */
 export function ensureOctocodeDir(): void {
-  if (!existsSync(OCTOCODE_DIR)) {
-    mkdirSync(OCTOCODE_DIR, { recursive: true, mode: 0o700 });
-  }
+  ensureHome();
 }
 
 /**

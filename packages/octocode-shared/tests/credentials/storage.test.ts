@@ -179,6 +179,47 @@ describe('Token Storage', () => {
       expect(result).toBeNull();
     });
 
+    it('should cache missing credentials to avoid repeated file reads', async () => {
+      const storedCreds = createMockCredentials({
+        hostname: 'github.enterprise.example',
+      });
+      const store = {
+        version: 1,
+        credentials: { 'github.enterprise.example': storedCreds },
+      };
+
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        return 'iv:authtag:encrypted';
+      });
+
+      const mockDecipher = {
+        update: vi.fn().mockReturnValue(JSON.stringify(store)),
+        final: vi.fn().mockReturnValue(''),
+        setAuthTag: vi.fn(),
+      };
+      vi.mocked(crypto.createDecipheriv).mockReturnValue(
+        mockDecipher as unknown as crypto.DecipherGCM
+      );
+
+      const { getCredentials } =
+        await import('../../src/credentials/storage.js');
+
+      expect(await getCredentials('github.com')).toBeNull();
+      const readCountAfterFirstLookup = vi.mocked(fs.readFileSync).mock.calls
+        .length;
+
+      expect(await getCredentials('github.com')).toBeNull();
+      expect(vi.mocked(fs.readFileSync).mock.calls).toHaveLength(
+        readCountAfterFirstLookup
+      );
+    });
+
     it('should return credentials when they exist in file', async () => {
       const storedCreds = createMockCredentials();
       const store = { version: 1, credentials: { 'github.com': storedCreds } };

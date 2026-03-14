@@ -103,9 +103,10 @@ async function searchGitLabProjectsAPIInternal(
     });
 
     // Fetch projects
-    let projects = (await gitlab.Projects.all(
+    const rawProjects = (await gitlab.Projects.all(
       queryOptions
     )) as unknown as GitLabProject[];
+    let projects = rawProjects;
 
     // Apply client-side filters (GitLab API doesn't support these)
     if (params.minStars !== undefined || params.maxStars !== undefined) {

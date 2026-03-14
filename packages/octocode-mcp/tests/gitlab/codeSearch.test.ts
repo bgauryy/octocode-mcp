@@ -196,6 +196,34 @@ describe('GitLab Code Search', () => {
     });
   });
 
+  describe('ref parameter scope (project vs group)', () => {
+    it('should include ref in search options when projectId is set and ref is provided', async () => {
+      mockSearchAll.mockResolvedValue([]);
+
+      await searchGitLabCodeAPI({
+        search: 'function',
+        projectId: 123,
+        ref: 'feature-branch',
+      });
+
+      const callArgs = mockSearchAll.mock.calls[0];
+      expect(callArgs?.[2]).toHaveProperty('ref', 'feature-branch');
+    });
+
+    it('should NOT include ref in search options when groupId is set (no projectId) even if ref is provided', async () => {
+      mockSearchAll.mockResolvedValue([]);
+
+      await searchGitLabCodeAPI({
+        search: 'function',
+        groupId: 789,
+        ref: 'main',
+      });
+
+      const callArgs = mockSearchAll.mock.calls[0];
+      expect(callArgs?.[2]).not.toHaveProperty('ref');
+    });
+  });
+
   // ============================================================================
   // GROUP-SCOPED SEARCH TESTS
   // ============================================================================

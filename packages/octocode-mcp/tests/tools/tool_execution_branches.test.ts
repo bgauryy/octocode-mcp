@@ -140,7 +140,7 @@ describe('Tool Execution Branch Coverage Tests', () => {
       expect(mockClient.stop).toHaveBeenCalled();
     });
 
-    it('should set hasMultipleFiles to true when references span multiple files (line 110)', async () => {
+    it('should set hasMultipleFiles from the full result set even when page 1 has one reference', async () => {
       const mockClient = {
         findReferences: vi.fn().mockResolvedValue([
           {
@@ -172,7 +172,7 @@ describe('Tool Execution Branch Coverage Tests', () => {
         lineHint: 5,
         researchGoal: 'test',
         reasoning: 'test',
-        referencesPerPage: 20,
+        referencesPerPage: 1,
         page: 1,
       } as any;
 
@@ -185,6 +185,7 @@ describe('Tool Execution Branch Coverage Tests', () => {
 
       expect(result).not.toBeNull();
       expect(result?.status).toBe('hasResults');
+      expect(result?.locations).toHaveLength(1);
       expect(result?.hasMultipleFiles).toBe(true);
       expect(result?.hints).toContainEqual(
         expect.stringContaining('References span 2 files')

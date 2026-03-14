@@ -17,6 +17,51 @@ import { getGitlab } from './client.js';
 import { handleGitLabAPIError, createGitLabError } from './errors.js';
 import { generateCacheKey, withDataCache } from '../utils/http/cache.js';
 
+type SearchAPI = {
+  all: (
+    scope: string,
+    query: string,
+    options: Record<string, unknown>
+  ) => Promise<unknown>;
+};
+
+interface GitLabCodeSearchOptions {
+  searchText: string;
+  path?: string;
+  filename?: string;
+  extension?: string;
+}
+
+function buildCodeSearchFilter(
+  filterName: 'path' | 'filename' | 'extension',
+  value?: string
+): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return normalized ? `${filterName}:${normalized}` : undefined;
+}
+
+function buildGitLabSearchQuery({
+  searchText,
+  path,
+  filename,
+  extension,
+}: GitLabCodeSearchOptions): string {
+  const terms = [searchText.trim()];
+  const pathTerm = buildCodeSearchFilter('path', path);
+  const filenameTerm = buildCodeSearchFilter('filename', filename);
+  const extensionTerm = buildCodeSearchFilter('extension', extension);
+
+  if (pathTerm) terms.push(pathTerm);
+  if (filenameTerm) terms.push(filenameTerm);
+  if (extensionTerm) terms.push(extensionTerm);
+
+  return terms.join(' ');
+}
+
 // ============================================================================
 // CODE SEARCH
 // ============================================================================
@@ -52,6 +97,7 @@ export async function searchGitLabCodeAPI(
       search: params.search,
       projectId: params.projectId,
       groupId: params.groupId,
+      searchType: params.searchType,
       path: params.path,
       filename: params.filename,
       extension: params.extension,
@@ -81,58 +127,40 @@ async function searchGitLabCodeAPIInternal(
     const page = params.page || 1;
 
     // Build search string with filters
-    let searchQuery = params.search;
+    const searchQuery = buildGitLabSearchQuery({
+      searchText: params.search,
+      path: params.path,
+      filename: params.filename,
+      extension: params.extension,
+    });
 
-    if (params.path) {
-      searchQuery += ` path:${params.path}`;
-    }
-    if (params.filename) {
-      searchQuery += ` filename:${params.filename}`;
-    }
-    if (params.extension) {
-      searchQuery += ` extension:${params.extension}`;
-    }
-
-    let items: GitLabCodeSearchItem[];
-
-    // Type assertion for Search API which is not fully typed in gitbeaker
-    type SearchAPI = {
-      all: (
-        scope: string,
-        query: string,
-        options: Record<string, unknown>
-      ) => Promise<unknown>;
-    };
     const search = (gitlab as unknown as { Search: SearchAPI }).Search;
+    const searchOptions = {
+      perPage,
+      page,
+    } as Record<string, unknown>;
+    const scope: Record<string, unknown> = {};
+
+    if (params.searchType) {
+      searchOptions.searchType = params.searchType;
+    }
 
     if (params.projectId) {
-      // Project-scoped search using the project search endpoint
-      const results = await search.all('blobs', searchQuery, {
-        projectId: params.projectId,
-        ref: params.ref,
-        perPage,
-        page,
-      });
-
-      items = results as unknown as GitLabCodeSearchItem[];
+      scope.projectId = params.projectId;
+      if (params.ref) {
+        searchOptions.ref = params.ref;
+      }
     } else if (params.groupId) {
-      // Group-scoped search (Premium)
-      const results = await search.all('blobs', searchQuery, {
-        groupId: params.groupId,
-        perPage,
-        page,
-      });
-
-      items = results as unknown as GitLabCodeSearchItem[];
-    } else {
-      // Global search (Premium)
-      const results = await search.all('blobs', searchQuery, {
-        perPage,
-        page,
-      });
-
-      items = results as unknown as GitLabCodeSearchItem[];
+      scope.groupId = params.groupId;
     }
+
+    // Global search when no project/group scope is provided
+    const results = await search.all('blobs', searchQuery, {
+      ...scope,
+      ...searchOptions,
+    });
+
+    const items = results as unknown as GitLabCodeSearchItem[];
 
     // Check if we have more results
     const hasMore = items.length === perPage;

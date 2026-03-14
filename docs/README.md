@@ -1,36 +1,30 @@
 # Documentation Index
 
-> Central index for Octocode monorepo documentation. **Primary entry**: [AGENTS.md](https://github.com/bgauryy/octocode-mcp/blob/main/AGENTS.md)
+## Start Here
 
-## Root Docs (`docs/`)
-
-| Doc | Purpose |
-|-----|---------|
-| [DEVELOPMENT_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md) | Monorepo setup, TDD, commands, agent guidelines |
-| [CONFIGURATION_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) | Env vars, `.octocoderc`, config examples |
-| [CONFIGURATION_STARTUP_RFC.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_STARTUP_RFC.md) | RFC for unifying runtime config, editor MCP config, and startup flows |
-| [TROUBLESHOOTING.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) | Common issues, auth, MCP connection |
+| Need | Doc |
+|------|-----|
+| Configure Octocode | [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) |
+| Fix common install or auth issues | [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) |
+| Work on the monorepo | [Development Guide](https://github.com/bgauryy/octocode-mcp/blob/main/docs/DEVELOPMENT_GUIDE.md) |
 
 ## Package Docs
 
-| Package | Location | Key Docs |
-|---------|----------|----------|
-| **octocode-mcp** | `packages/octocode-mcp/docs/` | GITHUB_GITLAB_TOOLS_REFERENCE, LOCAL_TOOLS_REFERENCE, CLONE_AND_LOCAL_TOOLS_WORKFLOW, AUTHENTICATION_SETUP, GITHUB_SETUP_GUIDE, GITLAB_SETUP_GUIDE, BITBUCKET_SETUP_GUIDE |
-| **octocode-cli** | `packages/octocode-cli/docs/` | SKILLS_GUIDE, CLI_REFERENCE, MENU_FLOW, ARCHITECTURE |
-| **octocode-shared** | `packages/octocode-shared/docs/` | API_REFERENCE, CREDENTIALS_ARCHITECTURE, SESSION_PERSISTENCE |
-| **octocode-vscode** | `packages/octocode-vscode/docs/` | [README](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-vscode/docs/README.md), AGENTS.md |
+| Package | Doc Index | Focus |
+|---------|-----------|-------|
+| `octocode-mcp` | [packages/octocode-mcp/docs/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/README.md) | Provider setup, tool reference, local workflow |
+| `octocode-cli` | [packages/octocode-cli/docs/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/README.md) | CLI commands and skills |
+| `octocode-shared` | [packages/octocode-shared/docs/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/README.md) | Shared package API and storage behavior |
+| `octocode-vscode` | [packages/octocode-vscode/docs/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-vscode/docs/README.md) | VS Code extension setup and links |
 
-## Skills Docs
+## Skills
 
-| Location | Purpose |
-|----------|---------|
-| `skills/README.md` | Skills overview, when-to-use table |
-| `skills/octocode-research/docs/` | Research HTTP server: API_REFERENCE, ARCHITECTURE, FLOWS, OVERVIEW |
-| `packages/octocode-cli/skills/` | CLI-bundled skills (install, pr-review, roast, etc.) |
+| Need | Doc |
+|------|-----|
+| Browse available skills | [skills/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/skills/README.md) |
 
-## Avoiding Duplication
+## Documentation Rules
 
-- **Package-specific** content → `packages/<pkg>/docs/`
-- **Monorepo-wide** content → `docs/` (root)
-- **Skills** → `skills/` (root) for repo skills; `packages/octocode-cli/skills/` for CLI marketplace
-- **Cross-reference** instead of copying; use absolute GitHub URLs: `[Doc](https://github.com/bgauryy/octocode-mcp/blob/main/path)`
+- Keep one package docs index per package and link to it from shared indexes.
+- Keep task instructions in one canonical doc instead of repeating them in multiple references.
+- Use absolute GitHub URLs in documentation files.

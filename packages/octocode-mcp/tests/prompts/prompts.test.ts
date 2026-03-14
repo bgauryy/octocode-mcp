@@ -310,4 +310,64 @@ describe('Prompts Registration', () => {
       );
     });
   });
+
+  describe('Edge Cases', () => {
+    it('should do nothing when prompts is undefined', () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: undefined as unknown as CompleteMetadata['prompts'],
+      };
+
+      registerPrompts(mockServer, metadata);
+      expect(registerPromptSpy).not.toHaveBeenCalled();
+    });
+
+    it('should skip args with null or non-string name', () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          test: {
+            name: 'Test',
+            description: 'Valid prompt',
+            content: 'Valid content',
+            args: [
+              null as unknown as { name: string; description: string },
+              { name: 'valid', description: 'Valid arg', required: true },
+              { name: 123 as unknown as string, description: 'Numeric name' },
+            ],
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      expect(registerPromptSpy).toHaveBeenCalledTimes(1);
+      const call = registerPromptSpy.mock.calls[0];
+      const opts = call[1] as {
+        argsSchema: Record<string, z.ZodType>;
+      };
+      expect(Object.keys(opts.argsSchema)).toEqual(['valid']);
+    });
+
+    it('should skip null prompt entries', () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          nullEntry: null as unknown as {
+            name: string;
+            description: string;
+            content: string;
+          },
+          valid: {
+            name: 'Valid',
+            description: 'Desc',
+            content: 'Content',
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+      expect(registerPromptSpy).toHaveBeenCalledTimes(1);
+    });
+  });
 });

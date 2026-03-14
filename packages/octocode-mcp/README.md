@@ -550,7 +550,7 @@ Add the `GITHUB_API_URL` environment variable to your MCP configuration:
 
 **Default:** If not specified, defaults to `https://api.github.com` (public GitHub).
 
-**Note:** Ensure your GitHub Enterprise token has the same scopes as documented in the [Authentication Setup](./docs/AUTHENTICATION_SETUP.md).
+**Note:** Ensure your GitHub Enterprise token has the same scopes as documented in the [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md).
 
 ---
 
@@ -687,7 +687,7 @@ Comprehensive security analysis of a repository. Identifies vulnerabilities, rev
 |----------|-------------|------|
 | **Official Website** | Interactive tutorials, demos, community | [octocode.ai](https://octocode.ai) |
 | **Configuration Guide** | Environment variables and server configuration | [CONFIGURATION_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) |
-| **Authentication Guide** | Setup instructions for GitHub & GitLab | [Authentication Setup](./docs/AUTHENTICATION_SETUP.md) |
+| **Authentication Guide** | Setup instructions for GitHub & GitLab | [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) |
 | **Troubleshooting** | Common issues and solutions | [Troubleshooting Guide](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) |
 | **YouTube Channel** | Video tutorials and demonstrations | [Octocode on YouTube](https://www.youtube.com/@Octocode-ai) |
 
@@ -735,4 +735,4 @@ This project is licensed under the **MIT License**.
 
 Copyright © 2026 Octocode AI.
 
-See [LICENSE](./LICENSE) for details.
+See [LICENSE](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/LICENSE) for details.

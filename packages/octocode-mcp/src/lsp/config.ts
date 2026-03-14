@@ -6,9 +6,8 @@
 
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { createRequire } from 'module';
-import { getConfigSync } from 'octocode-shared';
+import { getConfigSync, getOctocodeDir } from 'octocode-shared';
 import type {
   LanguageServerConfig,
   UserLanguageServerConfig,
@@ -61,7 +60,7 @@ function sanitizeUserLanguageServers(
  * Checks (in order):
  * 1. OCTOCODE_LSP_CONFIG env var
  * 2. .octocode/lsp-servers.json (workspace-level)
- * 3. ~/.octocode/lsp-servers.json (user-level)
+ * 3. ${OCTOCODE_HOME:-~/.octocode}/lsp-servers.json (user-level)
  *
  * @param workspaceRoot - Workspace root to check for local config
  * @returns Language server configs by extension, or empty object
@@ -91,7 +90,7 @@ export async function loadUserConfig(
   }
 
   // 3. User-level config
-  configPaths.push(path.join(os.homedir(), '.octocode', 'lsp-servers.json'));
+  configPaths.push(path.join(getOctocodeDir(), 'lsp-servers.json'));
 
   for (const configPath of configPaths) {
     try {

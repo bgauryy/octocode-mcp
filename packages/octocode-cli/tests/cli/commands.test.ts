@@ -564,6 +564,53 @@ describe('CLI Commands', () => {
     });
   });
 
+  describe('cacheCommand', () => {
+    it('should expose cache command with tool cache flags', async () => {
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const cacheCmd = findCommand('cache');
+
+      expect(cacheCmd).toBeDefined();
+      expect(cacheCmd!.usage).toContain('--tools');
+      expect(cacheCmd!.usage).toContain('--local');
+      expect(cacheCmd!.usage).toContain('--lsp');
+      expect(cacheCmd!.usage).toContain('--api');
+    });
+
+    it('should handle clean --tools without failing', async () => {
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const cacheCmd = findCommand('cache');
+      expect(cacheCmd).toBeDefined();
+
+      await cacheCmd!.handler({
+        command: 'cache',
+        args: ['clean'],
+        options: { tools: true },
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('No disk caches to clean')
+      );
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it('should show help when clean is called with no flags', async () => {
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const cacheCmd = findCommand('cache');
+      expect(cacheCmd).toBeDefined();
+
+      await cacheCmd!.handler({
+        command: 'cache',
+        args: ['clean'],
+        options: {},
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('No target specified')
+      );
+      expect(process.exitCode).toBeUndefined();
+    });
+  });
+
   describe('findCommand', () => {
     it('should find token command by name', async () => {
       const { findCommand } = await import('../../src/cli/commands.js');
