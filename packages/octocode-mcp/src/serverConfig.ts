@@ -173,8 +173,8 @@ export async function initialize(): Promise<void> {
   try {
     await pendingInitialization;
   } catch (error) {
-    config = null;
     if (initializationPromise === pendingInitialization) {
+      config = null;
       initializationPromise = null;
     }
     throw error;

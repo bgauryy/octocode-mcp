@@ -1076,6 +1076,144 @@ describe('config/resolver', () => {
     });
   });
 
+  // ============================================================================
+  // EMPTY CONFIG {} — must resolve to all defaults
+  // ============================================================================
+
+  describe('empty config {} uses all defaults', () => {
+    it('empty object {} resolves every field to its default', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(JSON.stringify({}));
+
+      const config = resolveConfigSync();
+
+      expect(config.version).toBe(DEFAULT_CONFIG.version);
+      expect(config.github).toEqual(DEFAULT_CONFIG.github);
+      expect(config.gitlab).toEqual(DEFAULT_CONFIG.gitlab);
+      expect(config.bitbucket).toEqual(DEFAULT_CONFIG.bitbucket);
+      expect(config.local).toEqual(DEFAULT_CONFIG.local);
+      expect(config.tools).toEqual(DEFAULT_CONFIG.tools);
+      expect(config.network).toEqual(DEFAULT_CONFIG.network);
+      expect(config.telemetry).toEqual(DEFAULT_CONFIG.telemetry);
+      expect(config.lsp).toEqual(DEFAULT_CONFIG.lsp);
+      expect(config.output).toEqual(DEFAULT_CONFIG.output);
+    });
+
+    it('empty file content resolves every field to its default', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('');
+
+      const config = resolveConfigSync();
+
+      expect(config.version).toBe(DEFAULT_CONFIG.version);
+      expect(config.github).toEqual(DEFAULT_CONFIG.github);
+      expect(config.gitlab).toEqual(DEFAULT_CONFIG.gitlab);
+      expect(config.bitbucket).toEqual(DEFAULT_CONFIG.bitbucket);
+      expect(config.local).toEqual(DEFAULT_CONFIG.local);
+      expect(config.tools).toEqual(DEFAULT_CONFIG.tools);
+      expect(config.network).toEqual(DEFAULT_CONFIG.network);
+      expect(config.telemetry).toEqual(DEFAULT_CONFIG.telemetry);
+      expect(config.lsp).toEqual(DEFAULT_CONFIG.lsp);
+      expect(config.output).toEqual(DEFAULT_CONFIG.output);
+    });
+
+    it('whitespace-only file content resolves to all defaults', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue('   \n\t  \n  ');
+
+      const config = resolveConfigSync();
+
+      expect(config.version).toBe(DEFAULT_CONFIG.version);
+      expect(config.github).toEqual(DEFAULT_CONFIG.github);
+      expect(config.network).toEqual(DEFAULT_CONFIG.network);
+    });
+
+    it('config with all empty section objects resolves to defaults', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({
+          github: {},
+          gitlab: {},
+          bitbucket: {},
+          local: {},
+          tools: {},
+          network: {},
+          telemetry: {},
+          lsp: {},
+          output: {},
+        })
+      );
+
+      const config = resolveConfigSync();
+
+      expect(config.github).toEqual(DEFAULT_CONFIG.github);
+      expect(config.gitlab).toEqual(DEFAULT_CONFIG.gitlab);
+      expect(config.bitbucket).toEqual(DEFAULT_CONFIG.bitbucket);
+      expect(config.local).toEqual(DEFAULT_CONFIG.local);
+      expect(config.tools).toEqual(DEFAULT_CONFIG.tools);
+      expect(config.network).toEqual(DEFAULT_CONFIG.network);
+      expect(config.telemetry).toEqual(DEFAULT_CONFIG.telemetry);
+      expect(config.lsp).toEqual(DEFAULT_CONFIG.lsp);
+      expect(config.output).toEqual(DEFAULT_CONFIG.output);
+    });
+
+    it('config with single empty section — other sections still default', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({ network: {} })
+      );
+
+      const config = resolveConfigSync();
+
+      expect(config.network).toEqual(DEFAULT_CONFIG.network);
+      expect(config.github).toEqual(DEFAULT_CONFIG.github);
+      expect(config.local).toEqual(DEFAULT_CONFIG.local);
+    });
+
+    it('empty config {} source is "file" (file exists, just empty)', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(JSON.stringify({}));
+
+      const config = resolveConfigSync();
+      expect(config.source).toBe('file');
+      expect(config.configPath).toBeDefined();
+    });
+
+    it('env overrides still apply even when config is empty {}', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(JSON.stringify({}));
+      process.env.ENABLE_LOCAL = 'true';
+      process.env.REQUEST_TIMEOUT = '60000';
+
+      const config = resolveConfigSync();
+
+      expect(config.local.enabled).toBe(true);
+      expect(config.network.timeout).toBe(60000);
+      expect(config.github).toEqual(DEFAULT_CONFIG.github);
+      expect(config.source).toBe('mixed');
+    });
+
+    it('partial section with one value — other fields in same section default', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({
+          local: { enabled: true },
+        })
+      );
+
+      const config = resolveConfigSync();
+
+      expect(config.local.enabled).toBe(true);
+      expect(config.local.enableClone).toBe(DEFAULT_CONFIG.local.enableClone);
+      expect(config.local.allowedPaths).toEqual(
+        DEFAULT_CONFIG.local.allowedPaths
+      );
+      expect(config.local.workspaceRoot).toBe(
+        DEFAULT_CONFIG.local.workspaceRoot
+      );
+    });
+  });
+
   describe('error handling', () => {
     it('falls back to defaults on parse error', () => {
       vi.mocked(existsSync).mockReturnValue(true);
