@@ -9,10 +9,6 @@ import type {
   GitHubViewRepoStructureToolResult,
 } from '../../scheme/outputTypes.js';
 
-// ============================================================================
-// INPUT TYPES
-// ============================================================================
-
 /**
  * Query parameters for viewing repository structure
  */
@@ -25,14 +21,12 @@ export interface GitHubViewRepoStructureQuery {
   depth?: number;
   entriesPerPage?: number;
   entryPageNumber?: number;
+  charOffset?: number;
+  charLength?: number;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
-
-// ============================================================================
-// OUTPUT TYPES
-// ============================================================================
 
 export type DirectoryEntry = GitHubRepoStructureDirectoryEntry;
 

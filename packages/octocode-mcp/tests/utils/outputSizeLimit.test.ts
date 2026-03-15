@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { applyOutputSizeLimit } from '../../src/utils/pagination/outputSizeLimit.js';
 
+const DEFAULT_OUTPUT_CHAR_LENGTH = 8000;
+
 describe('applyOutputSizeLimit', () => {
   describe('no pagination needed', () => {
     it('should return content unchanged when under MAX_OUTPUT_CHARS', () => {
@@ -14,7 +16,7 @@ describe('applyOutputSizeLimit', () => {
     });
 
     it('should return content unchanged when exactly at MAX_OUTPUT_CHARS threshold', () => {
-      const content = 'x'.repeat(2000);
+      const content = 'x'.repeat(DEFAULT_OUTPUT_CHAR_LENGTH);
       const result = applyOutputSizeLimit(content, {});
 
       expect(result.wasLimited).toBe(false);
@@ -24,14 +26,13 @@ describe('applyOutputSizeLimit', () => {
 
   describe('auto-pagination (no explicit charOffset/charLength)', () => {
     it('should auto-paginate when content exceeds MAX_OUTPUT_CHARS', () => {
-      const largeContent = 'x'.repeat(5000);
+      const largeContent = 'x'.repeat(DEFAULT_OUTPUT_CHAR_LENGTH + 1000);
       const result = applyOutputSizeLimit(largeContent, {});
 
       expect(result.wasLimited).toBe(true);
-      // 5000 < 10000 (recommended char length), so all content fits in page 1
-      expect(result.content.length).toBe(5000);
+      expect(result.content.length).toBe(DEFAULT_OUTPUT_CHAR_LENGTH);
       expect(result.pagination).toBeDefined();
-      expect(result.pagination!.hasMore).toBe(false);
+      expect(result.pagination!.hasMore).toBe(true);
       expect(result.warnings).toHaveLength(1);
       expect(result.warnings[0]).toContain('Auto-paginated');
     });
@@ -41,12 +42,16 @@ describe('applyOutputSizeLimit', () => {
       const result = applyOutputSizeLimit(hugeContent, {});
 
       expect(result.wasLimited).toBe(true);
-      expect(result.content.length).toBeLessThanOrEqual(10000);
+      expect(result.content.length).toBeLessThanOrEqual(
+        DEFAULT_OUTPUT_CHAR_LENGTH
+      );
       expect(result.pagination).toBeDefined();
       expect(result.pagination!.hasMore).toBe(true);
       expect(result.pagination!.totalChars).toBe(80000);
       expect(result.pagination!.charOffset).toBe(0);
-      expect(result.pagination!.charLength).toBeLessThanOrEqual(10000);
+      expect(result.pagination!.charLength).toBeLessThanOrEqual(
+        DEFAULT_OUTPUT_CHAR_LENGTH
+      );
     });
 
     it('should include correct pagination metadata for auto-paginated content', () => {
@@ -55,7 +60,7 @@ describe('applyOutputSizeLimit', () => {
 
       expect(result.pagination).toBeDefined();
       expect(result.pagination!.currentPage).toBe(1);
-      expect(result.pagination!.totalPages).toBe(3); // 25000 / 10000 = 2.5 → 3
+      expect(result.pagination!.totalPages).toBe(4); // 25000 / 8000 = 3.125 → 4
       expect(result.pagination!.hasMore).toBe(true);
     });
   });

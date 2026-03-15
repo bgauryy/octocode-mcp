@@ -83,6 +83,9 @@ export const DEFAULT_LSP_CONFIG: RequiredLspConfig = {
  */
 export const DEFAULT_OUTPUT_CONFIG: RequiredOutputConfig = {
   format: 'yaml',
+  pagination: {
+    defaultCharLength: 8000,
+  },
 };
 
 // ============================================================================
@@ -121,3 +124,9 @@ export const MIN_RETRIES = 0;
 
 /** Maximum retries */
 export const MAX_RETRIES = 10;
+
+/** Minimum output char-length pagination budget */
+export const MIN_OUTPUT_DEFAULT_CHAR_LENGTH = 1000;
+
+/** Maximum output char-length pagination budget */
+export const MAX_OUTPUT_DEFAULT_CHAR_LENGTH = 50000;

@@ -15,6 +15,19 @@ const PackageBaseFields = {
     .optional()
     .default(1)
     .describe(PACKAGE_SEARCH.options.searchLimit),
+  charOffset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe('Character offset for output pagination.'),
+  charLength: z
+    .number()
+    .int()
+    .min(1)
+    .max(50000)
+    .optional()
+    .describe('Character budget for output pagination.'),
 };
 
 export const NpmPackageQuerySchema = BaseQuerySchema.extend({

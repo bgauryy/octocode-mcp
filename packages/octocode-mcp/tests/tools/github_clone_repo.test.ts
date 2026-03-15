@@ -1561,6 +1561,82 @@ describe('registerGitHubCloneRepoTool', () => {
       rmSync(execTestDir, { recursive: true, force: true });
     }
   });
+
+  it('registered handler adds outputPagination when clone hints exceed charLength', async () => {
+    const execTestDir = join(
+      tmpdir(),
+      `octocode-reg-pagination-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    );
+    mockGetOctocodeDir.mockReturnValue(execTestDir);
+    mockGetActiveProvider.mockReturnValue('github');
+    mockGetActiveProviderConfig.mockReturnValue({ token: 'test-token' });
+    mockGetProvider.mockImplementation((type?: string) => ({
+      capabilities: createMockProviderCapabilities(type),
+    }));
+
+    mockSpawnWithTimeout.mockImplementation(
+      async (_cmd: string, args: string[]) => {
+        if (args.includes('clone')) {
+          const targetDir = args[args.length - 1]!;
+          if (targetDir && !existsSync(targetDir)) {
+            mkdirSync(targetDir, { recursive: true });
+          }
+        }
+        return { success: true, stdout: 'ok', stderr: '', exitCode: 0 };
+      }
+    );
+
+    mockGetOctokit.mockResolvedValue({
+      rest: {
+        repos: {
+          get: vi.fn().mockResolvedValue({ data: { default_branch: 'main' } }),
+        },
+      },
+    });
+
+    const mockServer = createMockMcpServer();
+    registerGitHubCloneRepoTool(mockServer.server);
+
+    const result = await mockServer.callTool('githubCloneRepo', {
+      queries: [
+        {
+          mainResearchGoal: 'test',
+          researchGoal: 'test',
+          reasoning: 'test',
+          owner: 'fb',
+          repo: 'react',
+          branch: 'main',
+          charLength: 120,
+        },
+      ],
+    });
+
+    const structured = result.structuredContent as {
+      results: Array<{
+        data: {
+          localPath: string;
+          hints?: string[];
+          outputPagination?: {
+            hasMore: boolean;
+            charOffset: number;
+            charLength: number;
+          };
+        };
+      }>;
+    };
+
+    expect(structured.results[0]!.data.localPath).toContain(execTestDir);
+    expect(structured.results[0]!.data.outputPagination?.hasMore).toBe(true);
+    expect(
+      structured.results[0]!.data.hints?.some(hint =>
+        hint.includes('Use charOffset=')
+      )
+    ).toBe(true);
+
+    if (existsSync(execTestDir)) {
+      rmSync(execTestDir, { recursive: true, force: true });
+    }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────

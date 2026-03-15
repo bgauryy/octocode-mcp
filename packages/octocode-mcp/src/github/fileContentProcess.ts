@@ -3,6 +3,7 @@
  * Extracted from fileContent.ts to isolate post-cache processing.
  */
 import type { GitHubFileContentApiResult } from '../tools/github_fetch_content/types.js';
+import { getConfigSync } from 'octocode-shared';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { minifyContent } from '../utils/minifier/index.js';
 import {
@@ -12,12 +13,25 @@ import {
 } from '../utils/pagination/index.js';
 import { OctokitWithThrottling } from './client';
 
-/** Pagination constants for GitHub content fetching */
-const GITHUB_PAGINATION = {
-  MAX_CHARS_BEFORE_PAGINATION: 20000,
-  DEFAULT_PAGE_SIZE: 20000,
-  CHARS_PER_TOKEN: 4,
-} as const;
+function readConfiguredDefaultCharLength(): number {
+  const config = getConfigSync() as {
+    output?: {
+      pagination?: {
+        defaultCharLength?: number;
+      };
+    };
+  };
+
+  return config.output?.pagination?.defaultCharLength ?? 8000;
+}
+
+function getDefaultContentPageSize(): number {
+  try {
+    return readConfiguredDefaultCharLength();
+  } catch {
+    return 8000;
+  }
+}
 
 interface FileTimestampInfo {
   lastModified: string;
@@ -33,7 +47,7 @@ export function applyContentPagination(
   charLength?: number
 ): GitHubFileContentApiResult {
   const content = data.content ?? '';
-  const maxChars = charLength ?? GITHUB_PAGINATION.MAX_CHARS_BEFORE_PAGINATION;
+  const maxChars = charLength ?? getDefaultContentPageSize();
 
   const totalBytes = Buffer.byteLength(content, 'utf-8');
   if (totalBytes <= maxChars && charOffset === 0) {

@@ -3,6 +3,7 @@ import {
   buildPaginationHints,
   mapCodeSearchProviderResult,
   mapCodeSearchToolQuery,
+  mapPullRequestToolQuery,
   mapRepoSearchProviderRepositories,
   mapRepoStructureProviderResult,
 } from '../../src/tools/providerMappers.js';
@@ -58,7 +59,7 @@ describe('providerMappers', () => {
         path: 'src/index.ts',
         owner: 'owner',
         repo: 'repo',
-        text_matches: ['const test = 1;'],
+        text_matches: [{ value: 'const test = 1;' }],
       }),
     ]);
   });
@@ -123,6 +124,48 @@ describe('providerMappers', () => {
       owner: 'group/subgroup',
       repo: 'repo',
     });
+  });
+
+  it('should preserve owner in code search query when repo is absent', () => {
+    const result = mapCodeSearchToolQuery({
+      keywordsToSearch: ['refund'],
+      owner: 'wix-private',
+    });
+
+    expect(result.projectId).toBeUndefined();
+    expect(result.owner).toBe('wix-private');
+  });
+
+  it('should preserve owner in PR search query when repo is absent', () => {
+    const result = mapPullRequestToolQuery({
+      owner: 'wix-private',
+      state: 'open',
+    });
+
+    expect(result.projectId).toBeUndefined();
+    expect(result.owner).toBe('wix-private');
+  });
+
+  it('should set both projectId and owner in code search when both are provided', () => {
+    const result = mapCodeSearchToolQuery({
+      keywordsToSearch: ['test'],
+      owner: 'facebook',
+      repo: 'react',
+    });
+
+    expect(result.projectId).toBe('facebook/react');
+    expect(result.owner).toBe('facebook');
+  });
+
+  it('should set both projectId and owner in PR search when both are provided', () => {
+    const result = mapPullRequestToolQuery({
+      owner: 'facebook',
+      repo: 'react',
+      state: 'open',
+    });
+
+    expect(result.projectId).toBe('facebook/react');
+    expect(result.owner).toBe('facebook');
   });
 
   it('should build pagination hints with stable wording', () => {

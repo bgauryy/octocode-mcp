@@ -33,6 +33,8 @@ export function registerSearchGitHubReposTool(
       async (
         args: {
           queries: GitHubReposSearchQuery[];
+          responseCharOffset?: number;
+          responseCharLength?: number;
         },
         authInfo,
         sessionId
@@ -45,7 +47,13 @@ export function registerSearchGitHubReposTool(
           queries
         );
 
-        return searchMultipleGitHubRepos({ queries, authInfo, sessionId });
+        return searchMultipleGitHubRepos({
+          queries,
+          responseCharOffset: args.responseCharOffset,
+          responseCharLength: args.responseCharLength,
+          authInfo,
+          sessionId,
+        });
       }
     )
   );

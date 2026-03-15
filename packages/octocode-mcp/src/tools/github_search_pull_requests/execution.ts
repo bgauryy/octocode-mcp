@@ -28,7 +28,7 @@ import {
 export async function searchMultipleGitHubPullRequests(
   args: ToolExecutionArgs<GitHubPullRequestSearchQuery>
 ): Promise<CallToolResult> {
-  const { queries, authInfo } = args;
+  const { queries, authInfo, responseCharOffset, responseCharLength } = args;
   let providerContext:
     | ReturnType<typeof createProviderExecutionContext>
     | undefined;
@@ -91,14 +91,12 @@ export async function searchMultipleGitHubPullRequests(
             )
           : [];
 
-        // Apply output size limits for large responses
         const serialized = serializeForPagination(resultData, true);
         const sizeLimitResult = applyOutputSizeLimit(serialized, {
           charOffset: query.charOffset,
           charLength: query.charLength,
         });
 
-        // Add outputPagination if output was limited
         let outputLimitData: Record<string, unknown> = resultData;
         if (sizeLimitResult.wasLimited && sizeLimitResult.pagination) {
           const pg = sizeLimitResult.pagination;
@@ -122,20 +120,28 @@ export async function searchMultipleGitHubPullRequests(
 
         const fileChangeHints: string[] = [];
         const largeFileChangePRs = pullRequests.filter(
-          (pr: Record<string, unknown>) =>
-            Array.isArray(pr.fileChanges) &&
-            (pr.fileChanges as unknown[]).length > 30
+          (pr: Record<string, unknown>) => {
+            const count =
+              typeof pr.changedFilesCount === 'number'
+                ? pr.changedFilesCount
+                : Array.isArray(pr.fileChanges)
+                  ? (pr.fileChanges as unknown[]).length
+                  : 0;
+            return count > 30;
+          }
         );
         if (largeFileChangePRs.length > 0) {
           const prNumbers = largeFileChangePRs
             .map((pr: Record<string, unknown>) => `#${pr.number}`)
             .join(', ');
           const maxFiles = Math.max(
-            ...largeFileChangePRs.map((pr: Record<string, unknown>) =>
-              Array.isArray(pr.fileChanges)
+            ...largeFileChangePRs.map((pr: Record<string, unknown>) => {
+              if (typeof pr.changedFilesCount === 'number')
+                return pr.changedFilesCount;
+              return Array.isArray(pr.fileChanges)
                 ? (pr.fileChanges as unknown[]).length
-                : 0
-            )
+                : 0;
+            })
           );
           fileChangeHints.push(
             `Large PR(s) ${prNumbers} have ${maxFiles}+ file changes`,
@@ -172,6 +178,8 @@ export async function searchMultipleGitHubPullRequests(
         'total_count',
         'error',
       ] satisfies Array<keyof PullRequestSearchResult>,
+      responseCharOffset,
+      responseCharLength,
     }
   );
 }

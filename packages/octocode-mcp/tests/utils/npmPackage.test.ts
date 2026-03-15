@@ -129,6 +129,67 @@ describe('mapToResult - time object parsing', () => {
       ).toBeUndefined();
     }
   });
+
+  it('should fallback to fetchLastPublished when time object is absent', async () => {
+    mockFetchWithRetries
+      .mockResolvedValueOnce({ name: 'test-pkg', version: '1.0.0' }) // main /latest
+      .mockResolvedValueOnce({ downloads: 500 }) // weekly downloads
+      .mockResolvedValueOnce({ modified: '2024-03-01T09:00:00.000Z' }); // abbreviated metadata
+
+    const result = await searchNpmPackage('test-pkg', 1, false);
+
+    expect('packages' in result).toBe(true);
+    if ('packages' in result) {
+      expect((result.packages[0] as NpmPackageResult).lastPublished).toBe(
+        '2024-03-01T09:00:00.000Z'
+      );
+      expect((result.packages[0] as NpmPackageResult).weeklyDownloads).toBe(
+        500
+      );
+    }
+  });
+
+  it('should fallback to full doc when abbreviated metadata lacks modified', async () => {
+    mockFetchWithRetries
+      .mockResolvedValueOnce({ name: 'test-pkg', version: '1.0.0' }) // main /latest
+      .mockResolvedValueOnce({ downloads: 200 }) // weekly downloads
+      .mockResolvedValueOnce({}) // abbreviated - no modified field
+      .mockResolvedValueOnce({
+        time: { modified: '2024-05-10T08:00:00.000Z' },
+      }); // full doc fallback
+
+    const result = await searchNpmPackage('test-pkg', 1, false);
+
+    expect('packages' in result).toBe(true);
+    if ('packages' in result) {
+      expect((result.packages[0] as NpmPackageResult).lastPublished).toBe(
+        '2024-05-10T08:00:00.000Z'
+      );
+      expect((result.packages[0] as NpmPackageResult).weeklyDownloads).toBe(
+        200
+      );
+    }
+  });
+
+  it('should not call fetchLastPublished when time object already provides lastPublished', async () => {
+    mockFetchWithRetries
+      .mockResolvedValueOnce({
+        name: 'test-pkg',
+        version: '2.0.0',
+        time: { '2.0.0': '2024-02-15T10:00:00.000Z' },
+      })
+      .mockResolvedValueOnce({ downloads: 1000 });
+
+    const result = await searchNpmPackage('test-pkg', 1, false);
+
+    expect('packages' in result).toBe(true);
+    if ('packages' in result) {
+      expect((result.packages[0] as NpmPackageResult).lastPublished).toBe(
+        '2024-02-15T10:00:00.000Z'
+      );
+    }
+    expect(mockFetchWithRetries).toHaveBeenCalledTimes(2);
+  });
 });
 
 // fetchPackageDetails — HTTP error handling
@@ -498,7 +559,8 @@ describe('mapToResult - extended metadata coverage', () => {
     mockFetchWithRetries.mockResolvedValue({
       name: 'test-pkg',
       version: '1.0.0',
-      description: 'Should not be included',
+      description: 'Always included',
+      license: 'MIT',
       author: 'Should not be included',
       peerDependencies: { react: '^18.0.0' },
     });
@@ -508,7 +570,10 @@ describe('mapToResult - extended metadata coverage', () => {
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
       const pkg = result.packages[0] as NpmPackageResult;
-      expect(pkg.description).toBeUndefined();
+      // description and license are always included (lightweight metadata)
+      expect(pkg.description).toBe('Always included');
+      expect(pkg.license).toBe('MIT');
+      // author and peerDependencies require fetchMetadata=true
       expect(pkg.author).toBeUndefined();
       expect(pkg.peerDependencies).toBeUndefined();
     }

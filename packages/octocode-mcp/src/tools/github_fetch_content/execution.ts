@@ -19,10 +19,6 @@ import {
   providerSupports,
 } from '../providerExecution.js';
 
-// ─────────────────────────────────────────────────────────────────────
-// Directory fetch hints
-// ─────────────────────────────────────────────────────────────────────
-
 const DIRECTORY_FETCH_HINTS: string[] = [
   'Directory fetched and saved to disk.',
   'Use `localPath` as the `path` parameter for local tools:',
@@ -32,10 +28,6 @@ const DIRECTORY_FETCH_HINTS: string[] = [
 
 const DIRECTORY_CACHE_HIT_HINT =
   'Served from 24-hour cache (no network call). To force refresh, wait for expiry or manually delete the localPath.';
-
-// ─────────────────────────────────────────────────────────────────────
-// Keys priority for directory results
-// ─────────────────────────────────────────────────────────────────────
 
 const DIRECTORY_KEYS_PRIORITY = [
   'resolvedBranch',
@@ -47,10 +39,6 @@ const DIRECTORY_KEYS_PRIORITY = [
   'expiresAt',
   'error',
 ];
-
-// ─────────────────────────────────────────────────────────────────────
-// File content keys priority
-// ─────────────────────────────────────────────────────────────────────
 
 const FILE_KEYS_PRIORITY = [
   'content',
@@ -65,23 +53,17 @@ const FILE_KEYS_PRIORITY = [
   'error',
 ];
 
-// ─────────────────────────────────────────────────────────────────────
-// Handler
-// ─────────────────────────────────────────────────────────────────────
-
 export async function fetchMultipleGitHubFileContents(
   args: ToolExecutionArgs<FileContentQuery>
 ): Promise<CallToolResult> {
-  const { queries, authInfo } = args;
+  const { queries, authInfo, responseCharOffset, responseCharLength } = args;
   let providerContext:
     | ReturnType<typeof createProviderExecutionContext>
     | undefined;
 
-  // Determine if any query uses directory mode (for keysPriority)
   const hasDirectoryQuery = queries.some(q => q.type === 'directory');
   const hasFileQuery = queries.some(q => q.type !== 'directory');
 
-  // Use directory keys if all queries are directory type
   const keysPriority =
     hasDirectoryQuery && !hasFileQuery
       ? DIRECTORY_KEYS_PRIORITY
@@ -93,12 +75,10 @@ export async function fetchMultipleGitHubFileContents(
       try {
         providerContext ??= createProviderExecutionContext(authInfo);
 
-        // ── Directory mode ────────────────────────────────────────
         if (query.type === 'directory') {
           return handleDirectoryFetch(query, authInfo, providerContext);
         }
 
-        // ── File mode (default) ──────────────────────────────────
         return handleFileFetch(query, providerContext);
       } catch (error) {
         return handleCatchError(error, query);
@@ -107,13 +87,11 @@ export async function fetchMultipleGitHubFileContents(
     {
       toolName: TOOL_NAMES.GITHUB_FETCH_CONTENT,
       keysPriority,
+      responseCharOffset,
+      responseCharLength,
     }
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// Directory fetch handler
-// ─────────────────────────────────────────────────────────────────────
 
 async function handleDirectoryFetch(
   query: FileContentQuery,
@@ -144,7 +122,6 @@ async function handleDirectoryFetch(
     );
   }
 
-  // Resolve branch: use provided value, or auto-detect via GitHub API (like githubCloneRepo)
   const branch =
     query.branch ??
     (await resolveDefaultBranch(query.owner, query.repo, authInfo));
@@ -183,10 +160,6 @@ async function handleDirectoryFetch(
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// File fetch handler (existing flow)
-// ─────────────────────────────────────────────────────────────────────
-
 async function handleFileFetch(
   query: FileContentQuery,
   providerContext: ReturnType<typeof createProviderExecutionContext>
@@ -211,6 +184,8 @@ async function handleFileFetch(
 
   const paginationHints = providerResult.response.hints || [];
   const isLarge = providerResult.response.data.size > 50000;
+  const isPartial = providerResult.response.data.isPartial;
+  const endLine = providerResult.response.data.endLine;
 
   return createSuccessResult(
     query,
@@ -218,7 +193,7 @@ async function handleFileFetch(
     hasContent,
     TOOL_NAMES.GITHUB_FETCH_CONTENT,
     {
-      hintContext: { isLarge },
+      hintContext: { isLarge, isPartial, endLine },
       extraHints: paginationHints,
     }
   );

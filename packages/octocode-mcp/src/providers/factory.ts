@@ -14,10 +14,6 @@ import type {
 } from './types.js';
 import { createHash } from 'crypto';
 
-// ============================================================================
-// PROVIDER REGISTRY
-// ============================================================================
-
 /** Provider cache TTL (1 hour) - providers are re-created after this time */
 const PROVIDER_CACHE_TTL_MS = 60 * 60 * 1000;
 
@@ -84,10 +80,6 @@ function evictProviderInstances(): void {
   }
 }
 
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
 /**
  * Hash a token for cache key generation.
  * Never stores raw tokens in cache keys.
@@ -128,10 +120,6 @@ function getCacheKey(type: ProviderType, config?: ProviderConfig): string {
   const tokenHash = hashToken(config?.token || config?.authInfo?.token);
   return `${type}:${baseUrl}:${tokenHash}`;
 }
-
-// ============================================================================
-// PUBLIC API
-// ============================================================================
 
 /**
  * Get a provider instance for the given type and configuration.
@@ -265,10 +253,6 @@ export function clearProviderInstance(
   instanceCache.delete(cacheKey);
 }
 
-// ============================================================================
-// PROVIDER INITIALIZATION
-// ============================================================================
-
 export interface ProviderDiagnostic {
   provider: string;
   ok: boolean;
@@ -321,10 +305,6 @@ export async function initializeProviders(): Promise<ProviderDiagnostic[]> {
     ),
   ]);
 }
-
-// ============================================================================
-// UTILITY EXPORTS
-// ============================================================================
 
 /**
  * Default provider type.

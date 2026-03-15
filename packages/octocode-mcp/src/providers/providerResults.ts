@@ -41,6 +41,8 @@ export interface UnifiedRepository {
   openIssuesCount?: number;
   /** Archived status */
   archived?: boolean;
+  /** Primary programming language */
+  language?: string;
 }
 
 /**

@@ -38,11 +38,13 @@ export async function viewStructure(
     }
 
     // For recursive mode, we use Node.js fs directly (no external command needed)
+    const effectiveShowModified = query.showFileLastModified ?? true;
+
     if (query.depth || query.recursive) {
       return await viewStructureRecursive(
         query,
         pathValidation.sanitizedPath!,
-        query.showFileLastModified
+        effectiveShowModified
       );
     }
 
@@ -87,7 +89,7 @@ export async function viewStructure(
       : await parseLsSimple(
           result.stdout,
           pathValidation.sanitizedPath!,
-          query.showFileLastModified
+          effectiveShowModified
         );
 
     let filteredEntries = applyEntryFilters(entries, query);
@@ -132,10 +134,19 @@ export async function viewStructure(
     const status = totalEntries > 0 ? 'hasResults' : 'empty';
     const entryPaginationHints = [
       `Page ${entryPageNumber}/${totalPages} (showing ${paginatedEntries.length} of ${totalEntries})`,
-      entryPaginationInfo.hasMore
-        ? `Next: entryPageNumber=${entryPageNumber + 1}`
-        : 'Final page',
     ];
+
+    if (entryPaginationInfo.hasMore) {
+      const nextPagePreview = filteredEntries
+        .slice(endIdx, endIdx + 3)
+        .map(e => e.name)
+        .join(', ');
+      entryPaginationHints.push(
+        `Next: entryPageNumber=${entryPageNumber + 1}${nextPagePreview ? ` (starts with: ${nextPagePreview}...)` : ''}`
+      );
+    } else {
+      entryPaginationHints.push('Final page');
+    }
 
     const pagination = {
       currentPage: entryPaginationInfo.currentPage,
@@ -280,10 +291,19 @@ async function viewStructureRecursive(
 
   const entryPaginationHints = [
     `Page ${entryPageNumber}/${totalPages} (showing ${paginatedEntries.length} of ${totalEntries})`,
-    entryPaginationInfo.hasMore
-      ? `Next: entryPageNumber=${entryPageNumber + 1}`
-      : 'Final page',
   ];
+
+  if (entryPaginationInfo.hasMore) {
+    const nextPagePreview = filteredEntries
+      .slice(endIdx, endIdx + 3)
+      .map(e => e.name)
+      .join(', ');
+    entryPaginationHints.push(
+      `Next: entryPageNumber=${entryPageNumber + 1}${nextPagePreview ? ` (starts with: ${nextPagePreview}...)` : ''}`
+    );
+  } else {
+    entryPaginationHints.push('Final page');
+  }
 
   const pagination = {
     currentPage: entryPaginationInfo.currentPage,

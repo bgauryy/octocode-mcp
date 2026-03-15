@@ -15,10 +15,6 @@ import {
 } from '../../scheme/baseSchema.js';
 import { TOOL_NAMES } from '../toolMetadata/index.js';
 
-// ─────────────────────────────────────────────────────────────────────
-// Validators
-// ─────────────────────────────────────────────────────────────────────
-
 /**
  * GitHub identifier pattern – prevents path traversal.
  * Allows alphanumeric, hyphens, underscores, dots (but NOT ".." or "/" or "\").
@@ -37,10 +33,6 @@ const SAFE_BRANCH = /^(?!-)(?!.*\.\.)(?!.*\\)[a-zA-Z0-9._/-]+$/;
  * but must NOT contain "..", "\", or start with "-" (git flag injection).
  */
 const SAFE_SPARSE_PATH = /^(?!-)(?!.*\.\.)(?!.*\\)[a-zA-Z0-9._/@-]+$/;
-
-// ─────────────────────────────────────────────────────────────────────
-// Schema
-// ─────────────────────────────────────────────────────────────────────
 
 const CloneRepoQuerySchema = BaseQuerySchema.extend({
   owner: z
@@ -99,6 +91,19 @@ const CloneRepoQuerySchema = BaseQuerySchema.extend({
       'When true, bypass the cache and force a fresh clone even if a ' +
         'valid cached copy exists. Useful when you know upstream has changed.'
     ),
+  charOffset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe('Character offset for output pagination.'),
+  charLength: z
+    .number()
+    .int()
+    .min(1)
+    .max(50000)
+    .optional()
+    .describe('Character budget for output pagination.'),
 });
 
 export const BulkCloneRepoSchema = createBulkQuerySchema(
@@ -106,10 +111,6 @@ export const BulkCloneRepoSchema = createBulkQuerySchema(
   CloneRepoQuerySchema,
   { maxQueries: 3 }
 );
-
-// ─────────────────────────────────────────────────────────────────────
-// Tool description (shown in the MCP tool listing)
-// ─────────────────────────────────────────────────────────────────────
 
 export const GITHUB_CLONE_REPO_DESCRIPTION = [
   '## Clone or partially fetch a GitHub repository for deep local analysis',

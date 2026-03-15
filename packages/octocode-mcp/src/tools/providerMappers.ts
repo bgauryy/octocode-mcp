@@ -67,6 +67,7 @@ export function mapCodeSearchToolQuery(query: GitHubCodeSearchQuery) {
   return {
     keywords: query.keywordsToSearch,
     projectId: toProviderProjectId(query.owner, query.repo),
+    owner: query.owner,
     path: query.path,
     filename: query.filename,
     extension: query.extension,
@@ -115,7 +116,15 @@ export function mapCodeSearchProviderResult(
 
     return {
       ...baseFile,
-      text_matches: item.matches.map(match => match.context),
+      text_matches: item.matches.map(match => ({
+        value: match.context,
+        ...(match.positions?.length && {
+          matchIndices: match.positions.map(([start, end]) => ({
+            start,
+            end,
+          })),
+        }),
+      })),
     };
   });
 
@@ -199,6 +208,7 @@ export function mapRepoSearchProviderRepositories(
       topics: repo.topics,
       forksCount: repo.forks,
       openIssuesCount: repo.openIssuesCount,
+      ...(repo.language && { language: repo.language }),
     };
   });
 }
@@ -206,6 +216,7 @@ export function mapRepoSearchProviderRepositories(
 export function mapPullRequestToolQuery(query: GitHubPullRequestSearchQuery) {
   return {
     projectId: toProviderProjectId(query.owner, query.repo),
+    owner: query.owner,
     number: query.prNumber,
     state: query.state as 'open' | 'closed' | 'merged' | 'all' | undefined,
     author: query.author,
@@ -254,32 +265,61 @@ export function mapPullRequestToolQuery(query: GitHubPullRequestSearchQuery) {
   };
 }
 
+const MAX_PR_BODY_LENGTH = 500;
+const MAX_FILE_CHANGES_DEFAULT = 20;
+
+function truncatePrBody(body: string | undefined | null): string | undefined {
+  if (!body) return body ?? undefined;
+  if (body.length <= MAX_PR_BODY_LENGTH) return body;
+  return `${body.substring(0, MAX_PR_BODY_LENGTH)}... (${body.length} chars total, use prNumber for full body)`;
+}
+
+function capFileChanges(
+  fileChanges: ProviderPullRequestSearchResult['items'][number]['fileChanges'],
+  cap: number = MAX_FILE_CHANGES_DEFAULT
+): {
+  capped: typeof fileChanges;
+  totalCount: number;
+  wasTruncated: boolean;
+} {
+  if (!fileChanges)
+    return { capped: undefined, totalCount: 0, wasTruncated: false };
+  const totalCount = fileChanges.length;
+  if (totalCount <= cap)
+    return { capped: fileChanges, totalCount, wasTruncated: false };
+  return { capped: fileChanges.slice(0, cap), totalCount, wasTruncated: true };
+}
+
 export function mapPullRequestProviderResultData(
   data: ProviderPullRequestSearchResult
 ) {
-  const pullRequests = data.items.map(pr => ({
-    number: pr.number,
-    title: pr.title,
-    body: pr.body,
-    url: pr.url,
-    state: pr.state,
-    draft: pr.draft,
-    author: pr.author,
-    assignees: pr.assignees,
-    labels: pr.labels,
-    sourceBranch: pr.sourceBranch,
-    targetBranch: pr.targetBranch,
-    createdAt: pr.createdAt,
-    updatedAt: pr.updatedAt,
-    closedAt: pr.closedAt,
-    mergedAt: pr.mergedAt,
-    commentsCount: pr.commentsCount,
-    changedFilesCount: pr.changedFilesCount,
-    additions: pr.additions,
-    deletions: pr.deletions,
-    ...(pr.comments && { comments: pr.comments }),
-    ...(pr.fileChanges && { fileChanges: pr.fileChanges }),
-  }));
+  const pullRequests = data.items.map(pr => {
+    const { capped: cappedFileChanges, totalCount: originalFileChangeCount } =
+      capFileChanges(pr.fileChanges);
+    return {
+      number: pr.number,
+      title: pr.title,
+      body: truncatePrBody(pr.body),
+      url: pr.url,
+      state: pr.state,
+      draft: pr.draft,
+      author: pr.author,
+      assignees: pr.assignees,
+      labels: pr.labels,
+      sourceBranch: pr.sourceBranch,
+      targetBranch: pr.targetBranch,
+      createdAt: pr.createdAt,
+      updatedAt: pr.updatedAt,
+      closedAt: pr.closedAt,
+      mergedAt: pr.mergedAt,
+      commentsCount: pr.commentsCount,
+      changedFilesCount: pr.changedFilesCount ?? originalFileChangeCount,
+      additions: pr.additions,
+      deletions: pr.deletions,
+      ...(pr.comments && { comments: pr.comments }),
+      ...(cappedFileChanges && { fileChanges: cappedFileChanges }),
+    };
+  });
 
   const pagination = data.pagination
     ? {

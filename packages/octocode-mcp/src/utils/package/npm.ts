@@ -113,6 +113,25 @@ function cleanRepoUrl(url: string): string {
   return url.replace(/^git\+/, '').replace(/\.git$/, '');
 }
 
+const NPM_DOWNLOADS_API = 'https://api.npmjs.org/downloads/point/last-week';
+
+async function fetchWeeklyDownloads(
+  packageName: string
+): Promise<number | undefined> {
+  try {
+    const url = `${NPM_DOWNLOADS_API}/${encodeURIComponent(packageName)}`;
+    const data = (await fetchWithRetries(url, {
+      maxRetries: 0,
+      initialDelayMs: 300,
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(8000),
+    })) as { downloads?: number } | null;
+    return typeof data?.downloads === 'number' ? data.downloads : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function isExactPackageName(query: string): boolean {
   if (query.startsWith('@') && query.includes('/')) {
     return true;
@@ -154,15 +173,17 @@ function mapToResult(
     lastPublished,
   };
 
-  // Extended metadata - only included when explicitly requested
-  if (includeExtendedMetadata) {
-    // Extract license (can be string or object)
-    if (data.license) {
-      result.license =
-        typeof data.license === 'string' ? data.license : data.license.type;
-    }
+  // Lightweight metadata — always included for quick comparison
+  if (data.description) {
+    result.description = data.description;
+  }
+  if (data.license) {
+    result.license =
+      typeof data.license === 'string' ? data.license : data.license.type;
+  }
 
-    // Extract author (can be string or object)
+  // Extended metadata — only when explicitly requested via npmFetchMetadata
+  if (includeExtendedMetadata) {
     if (data.author) {
       if (typeof data.author === 'string') {
         result.author = data.author;
@@ -171,9 +192,6 @@ function mapToResult(
       }
     }
 
-    if (data.description) {
-      result.description = data.description;
-    }
     if (data.keywords && data.keywords.length > 0) {
       result.keywords = data.keywords;
     }
@@ -207,6 +225,41 @@ function encodeRegistryPackageName(packageName: string): string {
     return '@' + packageName.slice(1).replace('/', '%2F');
   }
   return packageName;
+}
+
+async function fetchLastPublished(
+  packageName: string
+): Promise<string | undefined> {
+  try {
+    const registryUrl = await getNpmRegistryUrl();
+    const urlName = encodeRegistryPackageName(packageName);
+    const url = `${registryUrl}/${urlName}`;
+    const signal = AbortSignal.timeout(8000);
+
+    // Try abbreviated metadata first (smaller response)
+    try {
+      const data = (await fetchWithRetries(url, {
+        maxRetries: 0,
+        initialDelayMs: 300,
+        headers: { Accept: 'application/vnd.npm.install-v1+json' },
+        signal,
+      })) as { modified?: string } | null;
+      if (data?.modified) return data.modified;
+    } catch {
+      // Abbreviated endpoint may not be supported by all registries
+    }
+
+    // Fallback: fetch full document and extract time.modified
+    const data = (await fetchWithRetries(url, {
+      maxRetries: 0,
+      initialDelayMs: 300,
+      headers: { Accept: 'application/json' },
+      signal,
+    })) as { time?: { modified?: string } } | null;
+    return data?.time?.modified || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function fetchPackageDetailsWithError(
@@ -243,12 +296,25 @@ async function fetchPackageDetailsWithError(
       return { pkg: null, errorDetail: 'Invalid npm registry response format' };
     }
 
-    return {
-      pkg: mapToResult(
-        validation.data as NpmViewResult,
-        includeExtendedMetadata
-      ),
-    };
+    const pkg = mapToResult(
+      validation.data as NpmViewResult,
+      includeExtendedMetadata
+    );
+
+    const [downloads, lastPublished] = await Promise.all([
+      fetchWeeklyDownloads(packageName),
+      pkg.lastPublished
+        ? Promise.resolve(undefined)
+        : fetchLastPublished(packageName),
+    ]);
+    if (downloads !== undefined) {
+      pkg.weeklyDownloads = downloads;
+    }
+    if (lastPublished && !pkg.lastPublished) {
+      pkg.lastPublished = lastPublished;
+    }
+
+    return { pkg };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     return { pkg: null, errorDetail: msg };

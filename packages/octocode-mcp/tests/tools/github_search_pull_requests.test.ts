@@ -633,6 +633,49 @@ describe('GitHub Search Pull Requests Tool', () => {
     });
   });
 
+  describe('Owner-only search (no repo)', () => {
+    it('should pass owner to provider when only owner is specified', async () => {
+      mockProvider.searchPullRequests.mockResolvedValue(
+        createMockPRProviderResponse()
+      );
+
+      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS, {
+        queries: [
+          {
+            owner: 'wix-private',
+            state: 'open',
+          },
+        ],
+      });
+
+      expect(mockProvider.searchPullRequests).toHaveBeenCalledTimes(1);
+      const providerQuery = mockProvider.searchPullRequests.mock.calls[0]?.[0];
+      expect(providerQuery.owner).toBe('wix-private');
+    });
+
+    it('should return results when searching by owner only', async () => {
+      mockProvider.searchPullRequests.mockResolvedValue(
+        createMockPRProviderResponse()
+      );
+
+      const result = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_PULL_REQUESTS,
+        {
+          queries: [
+            {
+              owner: 'wix-private',
+              author: 'developer',
+            },
+          ],
+        }
+      );
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('Test PR');
+    });
+  });
+
   describe('Query text search', () => {
     it('should search by query string', async () => {
       mockProvider.searchPullRequests.mockResolvedValue(

@@ -1,4 +1,13 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  afterEach,
+} from 'vitest';
 import { PackageSearchQuerySchema } from '../../src/tools/package_search/scheme.js';
 import type { ToolInvocationCallback } from '../../src/types.js';
 import {
@@ -213,11 +222,16 @@ vi.mock('axios', () => ({
 // Mock executeNpmCommand and checkNpmAvailability (for npm CLI searches)
 const mockExecuteNpmCommand = vi.fn();
 const mockCheckNpmAvailability = vi.fn();
-vi.mock('../../src/utils/exec/index.js', () => ({
-  executeNpmCommand: (...args: unknown[]) => mockExecuteNpmCommand(...args),
-  checkNpmAvailability: (...args: unknown[]) =>
-    mockCheckNpmAvailability(...args),
-}));
+vi.mock('../../src/utils/exec/index.js', async importOriginal => {
+  const actual =
+    await importOriginal<typeof import('../../src/utils/exec/index.js')>();
+  return {
+    ...actual,
+    executeNpmCommand: (...args: unknown[]) => mockExecuteNpmCommand(...args),
+    checkNpmAvailability: (...args: unknown[]) =>
+      mockCheckNpmAvailability(...args),
+  };
+});
 
 // Mock the cache to prevent interference
 vi.mock('../../src/utils/http/cache.js', () => ({
@@ -499,8 +513,11 @@ describe('searchPackage - NPM (CLI)', () => {
       // version IS present now
       expect(pkg.version).toBe('1.6.0');
 
-      // description and keywords are REMOVED
-      expect('description' in pkg).toBe(false);
+      // description is now always included (lightweight metadata)
+      expect(pkg.description).toBe(
+        'Promise based HTTP client for the browser and node.js'
+      );
+      // keywords still require npmFetchMetadata=true
       expect('keywords' in pkg).toBe(false);
 
       expect(result.ecosystem).toBe('npm');
@@ -1714,8 +1731,9 @@ describe('Package search response structure', () => {
       expect(pkg).toHaveProperty('repoUrl');
       expect(pkg).toHaveProperty('version');
 
-      // Without npmFetchMetadata, description/keywords are not included
-      expect(pkg).not.toHaveProperty('description');
+      // description is now always included (lightweight metadata)
+      expect(pkg).toHaveProperty('description', 'Fast web framework');
+      // keywords still require npmFetchMetadata=true
       expect(pkg).not.toHaveProperty('keywords');
     }
   });
@@ -3039,6 +3057,106 @@ describe('Task 2: Name Variation Suggestions', () => {
 
     const text = (result.content[0] as { text: string }).text;
     expect(text).toContain('pytest');
+  });
+
+  it('should add outputPagination for large npm alternative lists and resume with charOffset', async () => {
+    const searchResults = JSON.stringify(
+      Array.from({ length: 4 }, (_, index) => ({
+        name: `pkg-${index}`,
+        version: '1.0.0',
+        description: `Package ${index}`,
+        keywords: [],
+        links: {
+          repository: `https://github.com/octo/pkg-${index}`,
+        },
+      }))
+    );
+
+    for (let index = 0; index < 4; index += 1) {
+      mockNpmViewFull(`pkg-${index}`, {
+        name: `pkg-${index}`,
+        version: '1.0.0',
+        description: `Package ${index}`,
+        keywords: Array.from(
+          { length: 18 },
+          (_, keywordIndex) => `keyword-${index}-${keywordIndex}`
+        ),
+        repository: `https://github.com/octo/pkg-${index}`,
+      });
+    }
+
+    mockExecuteNpmCommand.mockImplementation(
+      createNpmCommandMock({
+        stdout: searchResults,
+        stderr: '',
+        exitCode: 0,
+      })
+    );
+
+    await registerPackageSearchTool(mockServer.server);
+
+    const firstResult = await mockServer.callTool('packageSearch', {
+      queries: [
+        {
+          ecosystem: 'npm',
+          name: 'pkg',
+          searchLimit: 4,
+          npmFetchMetadata: true,
+          mainResearchGoal: 'Test',
+          researchGoal: 'Test',
+          reasoning: 'Test',
+          charLength: 350,
+        },
+      ],
+    });
+
+    const firstStructured = firstResult.structuredContent as {
+      results: Array<{
+        data: {
+          packages?: Array<{ name: string; keywords?: string[] }>;
+          outputPagination?: {
+            hasMore: boolean;
+            charOffset: number;
+            charLength: number;
+          };
+        };
+      }>;
+    };
+    const firstData = firstStructured.results[0]!.data;
+    const nextOffset =
+      (firstData.outputPagination?.charOffset ?? 0) +
+      (firstData.outputPagination?.charLength ?? 0);
+
+    expect(firstData.packages?.length).toBeGreaterThan(0);
+    expect(firstData.outputPagination?.hasMore).toBe(true);
+
+    const secondResult = await mockServer.callTool('packageSearch', {
+      queries: [
+        {
+          ecosystem: 'npm',
+          name: 'pkg',
+          searchLimit: 4,
+          npmFetchMetadata: true,
+          mainResearchGoal: 'Test',
+          researchGoal: 'Test',
+          reasoning: 'Test',
+          charOffset: nextOffset,
+          charLength: 350,
+        },
+      ],
+    });
+
+    const secondStructured = secondResult.structuredContent as {
+      results: Array<{
+        data: {
+          packages?: Array<{ name: string; keywords?: string[] }>;
+        };
+      }>;
+    };
+
+    expect(secondStructured.results[0]!.data.packages).not.toEqual(
+      firstData.packages
+    );
   });
 });
 

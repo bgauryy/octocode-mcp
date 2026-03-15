@@ -14,11 +14,15 @@ export const TOOL_NAME = TOOL_NAMES.LSP_CALL_HIERARCHY;
 export async function executeCallHierarchy(
   args: ToolExecutionArgs<LSPCallHierarchyQuery>
 ): Promise<CallToolResult> {
-  const { queries } = args;
+  const { queries, responseCharOffset, responseCharLength } = args;
 
   return executeBulkOperation(
     queries || [],
     async (query: LSPCallHierarchyQuery) => processCallHierarchy(query),
-    { toolName: TOOL_NAME }
+    {
+      toolName: TOOL_NAME,
+      responseCharOffset,
+      responseCharLength,
+    }
   );
 }

@@ -48,6 +48,8 @@ export async function registerPackageSearchTool(
       async (
         args: {
           queries: PackageSearchQuery[];
+          responseCharOffset?: number;
+          responseCharLength?: number;
         },
         _authInfo,
         _sessionId
@@ -60,7 +62,11 @@ export async function registerPackageSearchTool(
           queries
         );
 
-        return searchPackages({ queries });
+        return searchPackages({
+          queries,
+          responseCharOffset: args.responseCharOffset,
+          responseCharLength: args.responseCharLength,
+        });
       }
     )
   );

@@ -46,6 +46,7 @@ export type {
   TelemetryConfigOptions,
   LspConfigOptions,
   OutputConfigOptions,
+  OutputPaginationConfigOptions,
 
   // Section types (resolved)
   RequiredGitHubConfig,
@@ -57,6 +58,7 @@ export type {
   RequiredTelemetryConfig,
   RequiredLspConfig,
   RequiredOutputConfig,
+  RequiredOutputPaginationConfig,
 } from './types.js';
 
 // ============================================================================
@@ -83,6 +85,8 @@ export {
   MAX_TIMEOUT,
   MIN_RETRIES,
   MAX_RETRIES,
+  MIN_OUTPUT_DEFAULT_CHAR_LENGTH,
+  MAX_OUTPUT_DEFAULT_CHAR_LENGTH,
 } from './defaults.js';
 
 export { CONFIG_FILE_PATH } from './loader.js';

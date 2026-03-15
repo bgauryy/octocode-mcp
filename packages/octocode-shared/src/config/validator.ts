@@ -12,6 +12,8 @@ import {
   MAX_TIMEOUT,
   MIN_RETRIES,
   MAX_RETRIES,
+  MIN_OUTPUT_DEFAULT_CHAR_LENGTH,
+  MAX_OUTPUT_DEFAULT_CHAR_LENGTH,
 } from './defaults.js';
 
 // ============================================================================
@@ -344,6 +346,40 @@ function validateLsp(lsp: unknown, errors: string[]): void {
   if (configPathError) errors.push(configPathError);
 }
 
+function validateOutput(output: unknown, errors: string[]): void {
+  if (output === undefined || output === null) return;
+
+  if (typeof output !== 'object' || Array.isArray(output)) {
+    errors.push('output: Must be an object');
+    return;
+  }
+
+  const out = output as Record<string, unknown>;
+
+  if (out.format !== undefined) {
+    if (typeof out.format !== 'string') {
+      errors.push('output.format: Must be a string');
+    } else if (!['yaml', 'json'].includes(out.format)) {
+      errors.push('output.format: Must be one of: yaml, json');
+    }
+  }
+
+  if (out.pagination !== undefined && out.pagination !== null) {
+    if (typeof out.pagination !== 'object' || Array.isArray(out.pagination)) {
+      errors.push('output.pagination: Must be an object');
+    } else {
+      const pagination = out.pagination as Record<string, unknown>;
+      const defaultCharLengthError = validateNumberRange(
+        pagination.defaultCharLength,
+        'output.pagination.defaultCharLength',
+        MIN_OUTPUT_DEFAULT_CHAR_LENGTH,
+        MAX_OUTPUT_DEFAULT_CHAR_LENGTH
+      );
+      if (defaultCharLengthError) errors.push(defaultCharLengthError);
+    }
+  }
+}
+
 // ============================================================================
 // MAIN VALIDATOR
 // ============================================================================
@@ -389,6 +425,7 @@ export function validateConfig(config: unknown): ValidationResult {
   validateNetwork(cfg.network, errors);
   validateTelemetry(cfg.telemetry, errors);
   validateLsp(cfg.lsp, errors);
+  validateOutput(cfg.output, errors);
 
   // Check for unknown top-level keys
   const knownKeys = new Set([
@@ -402,6 +439,7 @@ export function validateConfig(config: unknown): ValidationResult {
     'network',
     'telemetry',
     'lsp',
+    'output',
   ]);
 
   for (const key of Object.keys(cfg)) {

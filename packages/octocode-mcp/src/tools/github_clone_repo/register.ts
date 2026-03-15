@@ -40,7 +40,11 @@ export function registerGitHubCloneRepoTool(
     withSecurityValidation(
       TOOL_NAMES.GITHUB_CLONE_REPO,
       async (args, authInfo, sessionId) => {
-        const { queries } = args as { queries: unknown[] };
+        const { queries, responseCharOffset, responseCharLength } = args as {
+          queries: unknown[];
+          responseCharOffset?: number;
+          responseCharLength?: number;
+        };
 
         await invokeCallbackSafely(
           callback,
@@ -50,6 +54,8 @@ export function registerGitHubCloneRepoTool(
 
         return executeCloneRepo({
           queries: queries as Parameters<typeof executeCloneRepo>[0]['queries'],
+          responseCharOffset,
+          responseCharLength,
           authInfo,
           sessionId,
         });

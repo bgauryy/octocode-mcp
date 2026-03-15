@@ -135,7 +135,7 @@ export const ViewStructureQuerySchema = BaseQuerySchemaLocal.extend({
 
   showFileLastModified: z
     .boolean()
-    .default(false)
+    .default(true)
     .describe(LOCAL_VIEW_STRUCTURE.options.showFileLastModified),
 });
 

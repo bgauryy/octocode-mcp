@@ -24,10 +24,6 @@ import { createHash } from 'node:crypto';
 import type { CloneCacheMeta, CacheSource } from './types.js';
 import { getDirectorySizeBytes } from 'octocode-shared';
 
-// ─────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────
-
 /** Default cache TTL: 24 hours in milliseconds */
 const DEFAULT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -45,10 +41,6 @@ const META_FILE_NAME = '.octocode-clone-meta.json';
 
 /** Handle for the periodic GC interval (null when not running) */
 let gcInterval: ReturnType<typeof setInterval> | null = null;
-
-// ─────────────────────────────────────────────────────────────────────
-// Path resolution
-// ─────────────────────────────────────────────────────────────────────
 
 /**
  * Base directory that holds all cloned repos.
@@ -89,10 +81,6 @@ export function getCloneDir(
   return join(getReposBaseDir(octocodeDir), owner, repo, dirName);
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Metadata I/O
-// ─────────────────────────────────────────────────────────────────────
-
 /**
  * Read cache metadata. Returns null if absent or corrupt.
  */
@@ -118,14 +106,9 @@ export function writeCacheMeta(cloneDir: string, meta: CloneCacheMeta): void {
       'utf-8'
     );
   } catch {
-    // Disk full, permission denied, etc. — clone is still usable,
-    // it just won't be cached for next time.
+    /* no-op */
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// Cache validation
-// ─────────────────────────────────────────────────────────────────────
 
 /**
  * Returns true if the cached clone has not expired.
@@ -148,10 +131,6 @@ export function isCacheHit(
   if (!existsSync(cloneDir)) return { hit: false };
   return { hit: true, meta };
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// Cache creation helpers
-// ─────────────────────────────────────────────────────────────────────
 
 /**
  * Resolve the cache TTL from the environment or fall back to 24 hours.
@@ -244,14 +223,9 @@ export function removeCloneDir(cloneDir: string): void {
       rmSync(cloneDir, { recursive: true, force: true });
     }
   } catch {
-    // Permission denied, file in use, etc. — best-effort cleanup.
-    // The git clone step will fail with a clear error if the dir is unusable.
+    /* no-op */
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// Expired cache eviction
-// ─────────────────────────────────────────────────────────────────────
 
 /**
  * Scan all cached clone directories and remove any whose TTL has expired.
@@ -301,7 +275,7 @@ export function evictExpiredClones(octocodeDir: string): number {
           try {
             rmSync(repoDir, { recursive: true, force: true });
           } catch {
-            // skip
+            /* no-op */
           }
         }
       }
@@ -310,13 +284,12 @@ export function evictExpiredClones(octocodeDir: string): number {
         try {
           rmSync(ownerDir, { recursive: true, force: true });
         } catch {
-          // skip
+          /* no-op */
         }
       }
     }
   }
 
-  // Pass 1: remove expired and orphan entries.
   try {
     for (const ownerName of listDir(reposBase)) {
       const ownerDir = join(reposBase, ownerName);
@@ -337,19 +310,17 @@ export function evictExpiredClones(octocodeDir: string): number {
               evicted++;
             }
           } catch {
-            // Skip entries we can't read/delete
+            /* no-op */
           }
         }
       }
     }
   } catch {
-    // reposBase unreadable — nothing to evict
     return evicted;
   }
 
   cleanupEmptyDirectories();
 
-  // Pass 2: enforce size and count limits by evicting oldest clones.
   interface LiveCacheEntry {
     branchDir: string;
     clonedAtMs: number;
@@ -405,7 +376,7 @@ export function evictExpiredClones(octocodeDir: string): number {
         totalSize -= entry.sizeBytes;
         totalCount -= 1;
       } catch {
-        // Best effort: continue evicting other entries
+        /* no-op */
       }
     }
 
@@ -414,10 +385,6 @@ export function evictExpiredClones(octocodeDir: string): number {
 
   return evicted;
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// Periodic garbage collection
-// ─────────────────────────────────────────────────────────────────────
 
 /**
  * Start a periodic sweep that evicts expired clones every 10 minutes.
@@ -429,7 +396,6 @@ export function evictExpiredClones(octocodeDir: string): number {
 export function startCacheGC(octocodeDir: string): void {
   if (gcInterval) return;
 
-  // Immediate sweep on startup
   evictExpiredClones(octocodeDir);
 
   gcInterval = setInterval(() => {

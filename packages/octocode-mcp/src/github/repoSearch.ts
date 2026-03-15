@@ -144,6 +144,7 @@ async function searchGitHubReposAPIInternal(
           repo.open_issues_count > 0 && {
             openIssuesCount: repo.open_issues_count,
           }),
+        ...(repo.language && { language: repo.language }),
       };
     });
 

@@ -236,6 +236,92 @@ describe('GitHub View Repository Structure Tool', () => {
     expect(result.isError).toBe(false);
   });
 
+  it('should add outputPagination for oversized structure payloads and continue with charOffset', async () => {
+    const files = Array.from({ length: 40 }, (_, index) => `file-${index}.ts`);
+
+    mockProvider.getRepoStructure.mockResolvedValue({
+      data: {
+        projectPath: 'test/repo',
+        branch: 'main',
+        path: '',
+        structure: {
+          src: {
+            files,
+            folders: ['nested'],
+          },
+        },
+        summary: {
+          totalFiles: files.length,
+          totalFolders: 1,
+          truncated: false,
+        },
+      },
+      status: 200,
+      provider: 'github',
+    });
+
+    const firstResult = await mockServer.callTool(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            charLength: 320,
+          },
+        ],
+      }
+    );
+
+    const firstStructured = firstResult.structuredContent as {
+      results: Array<{
+        data: {
+          structure?: Record<string, { files?: string[] }>;
+          outputPagination?: {
+            hasMore: boolean;
+            charOffset: number;
+            charLength: number;
+          };
+        };
+      }>;
+    };
+    const firstData = firstStructured.results[0]!.data;
+    const nextOffset =
+      (firstData.outputPagination?.charOffset ?? 0) +
+      (firstData.outputPagination?.charLength ?? 0);
+
+    expect(firstData.structure?.src?.files?.length).toBeLessThan(files.length);
+    expect(firstData.outputPagination?.hasMore).toBe(true);
+
+    const secondResult = await mockServer.callTool(
+      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+      {
+        queries: [
+          {
+            owner: 'test',
+            repo: 'repo',
+            branch: 'main',
+            charOffset: nextOffset,
+            charLength: 320,
+          },
+        ],
+      }
+    );
+
+    const secondStructured = secondResult.structuredContent as {
+      results: Array<{
+        data: {
+          structure?: Record<string, { files?: string[] }>;
+        };
+      }>;
+    };
+
+    expect(secondStructured.results[0]!.data.structure?.src?.files).not.toEqual(
+      firstData.structure?.src?.files
+    );
+  });
+
   it('should handle not found error', async () => {
     mockProvider.getRepoStructure.mockResolvedValue({
       error: 'Repository not found',

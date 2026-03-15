@@ -47,7 +47,6 @@ const CACHE_TTL_CONFIG = {
   default: 86400,
 } as const;
 
-// Track pending requests for deduplication with timestamps
 interface PendingRequest {
   promise: Promise<unknown>;
   startedAt: number;
@@ -102,7 +101,6 @@ function createStableParamString(
     return String(params);
   }
 
-  // Guard: cycle detection prevents infinite recursion on circular refs
   if (visited.has(params as object)) {
     return '"[Circular]"';
   }
@@ -143,22 +141,16 @@ function safeCacheSet(key: string, value: unknown, ttl: number): boolean {
     cacheStats.totalKeys = cache.keys().length;
     return true;
   } catch {
-    // ECACHEFULL — attempt to free space by flushing expired entries
-    // then retry once. If still full, skip caching (result is still valid).
     try {
-      // node-cache internal check removes expired keys on individual get(),
-      // but we can trigger a bulk check by iterating keys
       const keys = cache.keys();
       for (const k of keys) {
-        cache.get(k); // triggers lazy expiry check for this key
+        cache.get(k);
       }
-      // Retry after cleanup
       cache.set(key, value, ttl);
       cacheStats.sets++;
       cacheStats.totalKeys = cache.keys().length;
       return true;
     } catch {
-      // Cache is genuinely full with non-expired entries — skip caching
       return false;
     }
   }
@@ -189,11 +181,10 @@ export async function withDataCache<T>(
         return cached;
       }
     } catch {
-      // Cache read failure - proceed with fresh operation
+      /* no-op */
     }
   }
 
-  // Clean up any stale pending requests periodically
   cleanupStalePendingRequests();
 
   const existingPending = pendingRequests.get(cacheKey);

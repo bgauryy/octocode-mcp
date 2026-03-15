@@ -14,6 +14,36 @@ beforeAll(async () => {
 
 describe('executeBulkOperation', () => {
   describe('Single query scenarios', () => {
+    it('adds query-level outputPagination with structured subsets', async () => {
+      const queries = [{ id: 'q1', charLength: 80 }];
+      const processor = vi.fn().mockResolvedValue({
+        status: 'hasResults' as const,
+        repositories: [
+          { name: 'alpha-repository-with-long-name' },
+          { name: 'beta-repository-with-long-name' },
+          { name: 'gamma-repository-with-long-name' },
+        ],
+      });
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+      });
+
+      const structured = result.structuredContent as {
+        results: Array<{
+          data: {
+            repositories?: Array<{ name: string }>;
+            outputPagination?: { hasMore: boolean; charLength: number };
+          };
+        }>;
+      };
+
+      expect(structured.results[0]?.data.outputPagination).toBeDefined();
+      expect(
+        (structured.results[0]?.data.repositories || []).length
+      ).toBeLessThan(3);
+    });
+
     it('should process single query with hasResults status', async () => {
       const queries = [{ id: 'q1', name: 'test1' }];
       const processor = vi.fn().mockResolvedValue({
@@ -97,6 +127,29 @@ describe('executeBulkOperation', () => {
   });
 
   describe('Multiple queries - same status', () => {
+    it('adds top-level responsePagination with structured bulk subsets', async () => {
+      const queries = [{ id: 'q1' }, { id: 'q2' }, { id: 'q3' }];
+      const processor = vi
+        .fn()
+        .mockImplementation(async (query: { id: string }) => ({
+          status: 'hasResults' as const,
+          repositories: [{ name: `${query.id}-repository-with-long-name` }],
+        }));
+
+      const result = await executeBulkOperation(queries, processor, {
+        toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+        responseCharLength: 120,
+      });
+
+      const structured = result.structuredContent as {
+        results: Array<{ id: string }>;
+        responsePagination?: { hasMore: boolean };
+      };
+
+      expect(structured.responsePagination).toBeDefined();
+      expect(structured.results.length).toBeLessThan(3);
+    });
+
     it('should process multiple queries all with hasResults status', async () => {
       const queries = [
         { id: 'q1', name: 'react' },

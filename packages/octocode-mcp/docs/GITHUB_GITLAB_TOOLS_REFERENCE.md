@@ -69,6 +69,18 @@ Every tool query **requires** three research context fields:
 
 These fields are required on **every query** for all GitHub/GitLab and package tools. They help track research intent and improve result quality.
 
+### Universal Output Pagination
+
+All external-research tools now support the same output-size continuation contract in addition to any tool-specific paging such as `page`, `limit`, `entriesPerPage`, or `prNumber`.
+
+- Query-level pagination: use `charOffset` and `charLength` on a query to continue oversized single-query results. For content tools, these fields page file content. For search/list tools, they page the returned payload after provider pagination is applied.
+- Bulk-response pagination: use top-level `responseCharOffset` and `responseCharLength` on the tool call to page the outer `results[]` array when a multi-query response becomes too large.
+- Response fields:
+  - `pagination`: provider/domain pagination or file-content pagination
+  - `outputPagination`: query-level output-size pagination metadata
+  - `responsePagination`: top-level bulk response pagination metadata
+- Default budget: if you do not pass overrides, Octocode auto-pages oversized responses using `output.pagination.defaultCharLength` from config, which defaults to `8000`.
+
 ---
 
 ## Provider Mapping

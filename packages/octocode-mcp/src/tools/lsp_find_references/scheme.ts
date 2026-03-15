@@ -73,6 +73,19 @@ const LSPFindReferencesBaseSchema = BaseQuerySchemaLocal.extend({
     .optional()
     .default(1)
     .describe(LSP_FIND_REFERENCES.pagination.page),
+  charOffset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe('Character offset for output pagination.'),
+  charLength: z
+    .number()
+    .int()
+    .min(1)
+    .max(50000)
+    .optional()
+    .describe('Character budget for output pagination.'),
 
   includePattern: z
     .array(z.string())

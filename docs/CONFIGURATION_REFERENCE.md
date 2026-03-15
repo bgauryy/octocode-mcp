@@ -123,7 +123,10 @@ New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.octocode"
   },
 
   "output": {
-    "format": "yaml"                         // Response format: "yaml" (default) or "json"
+    "format": "yaml",                        // Response format: "yaml" (default) or "json"
+    "pagination": {
+      "defaultCharLength": 8000             // Default output page budget for auto-pagination
+    }
   }
 }
 ```
@@ -211,13 +214,14 @@ When set, these paths move under the new root:
 | 15 | `OCTOCODE_LSP_CONFIG` | `lsp.configPath` | string | `null` | Custom LSP config file path. Auto-detects `.octocode/lsp-servers.json` when unset. Requires `ENABLE_LOCAL=true`. |
 | | **Output** | | | | |
 | 16 | `OCTOCODE_OUTPUT_FORMAT` | `output.format` | string | `yaml` | Response serialization format. `yaml` (default, token-efficient) or `json` (raw JSON). |
+| 17 | `OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH` | `output.pagination.defaultCharLength` | number | `8000` | Default output page budget for automatic pagination. Used by all tools unless a request overrides it with `charLength` or `responseCharLength`. |
 | | **Authentication** (env only) | | | | |
-| 17 | `OCTOCODE_TOKEN` | — | string | — | GitHub token (priority 1). |
-| 18 | `GH_TOKEN` | — | string | — | GitHub CLI token (priority 2). |
-| 19 | `GITHUB_TOKEN` | — | string | — | GitHub Actions token (priority 3). |
-| 20 | `GITLAB_TOKEN` | — | string | — | GitLab personal access token (priority 1). Setting this activates GitLab mode. |
-| 21 | `GL_TOKEN` | — | string | — | GitLab token fallback (priority 2). Setting this activates GitLab mode. |
-| 22 | `BITBUCKET_TOKEN` | — | string | — | Bitbucket app password or OAuth token (priority 1). Setting this activates Bitbucket mode (when no GitLab token is set). |
+| 18 | `OCTOCODE_TOKEN` | — | string | — | GitHub token (priority 1). |
+| 19 | `GH_TOKEN` | — | string | — | GitHub CLI token (priority 2). |
+| 20 | `GITHUB_TOKEN` | — | string | — | GitHub Actions token (priority 3). |
+| 21 | `GITLAB_TOKEN` | — | string | — | GitLab personal access token (priority 1). Setting this activates GitLab mode. |
+| 22 | `GL_TOKEN` | — | string | — | GitLab token fallback (priority 2). Setting this activates GitLab mode. |
+| 23 | `BITBUCKET_TOKEN` | — | string | — | Bitbucket app password or OAuth token (priority 1). Setting this activates Bitbucket mode (when no GitLab token is set). |
 | 23 | `BB_TOKEN` | — | string | — | Bitbucket token fallback (priority 2). |
 | 24 | `BITBUCKET_USERNAME` | — | string | — | Bitbucket username. Set for Basic auth (app passwords); omit for Bearer auth (OAuth). |
 | | **Advanced** (env only) | | | | |

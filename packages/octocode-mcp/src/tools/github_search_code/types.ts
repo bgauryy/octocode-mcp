@@ -5,10 +5,6 @@
 
 import type { GitHubSearchCodeData } from '../../scheme/outputTypes.js';
 
-// ============================================================================
-// INPUT TYPES
-// ============================================================================
-
 /**
  * Query parameters for GitHub code search
  */
@@ -23,13 +19,11 @@ export interface GitHubCodeSearchQuery {
   match?: 'file' | 'path';
   limit?: number;
   page?: number;
+  charOffset?: number;
+  charLength?: number;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
-
-// ============================================================================
-// OUTPUT TYPES
-// ============================================================================
 
 export type SearchResult = GitHubSearchCodeData;

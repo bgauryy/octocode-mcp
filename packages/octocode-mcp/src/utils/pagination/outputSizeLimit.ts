@@ -12,8 +12,21 @@
  */
 
 import { DEFAULTS, RESOURCE_LIMITS } from '../core/constants.js';
+import { getConfigSync } from 'octocode-shared';
 import { applyPagination, createPaginationInfo } from './core.js';
 import type { PaginationInfo } from '../../types.js';
+
+function readConfiguredDefaultCharLength(): number | undefined {
+  const config = getConfigSync() as {
+    output?: {
+      pagination?: {
+        defaultCharLength?: number;
+      };
+    };
+  };
+
+  return config.output?.pagination?.defaultCharLength;
+}
 
 /**
  * Options for applying output size limits
@@ -60,13 +73,23 @@ export function applyOutputSizeLimit(
   content: string,
   options: OutputSizeLimitOptions
 ): OutputSizeLimitResult {
-  const maxOutputChars = options.maxOutputChars ?? DEFAULTS.MAX_OUTPUT_CHARS;
+  let configuredDefaultCharLength: number | undefined;
+  try {
+    configuredDefaultCharLength = readConfiguredDefaultCharLength();
+  } catch {
+    configuredDefaultCharLength = undefined;
+  }
+  const maxOutputChars =
+    options.maxOutputChars ??
+    configuredDefaultCharLength ??
+    DEFAULTS.MAX_OUTPUT_CHARS;
   const recommendedCharLength =
-    options.recommendedCharLength ?? RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH;
+    options.recommendedCharLength ??
+    configuredDefaultCharLength ??
+    RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH;
 
   const warnings: string[] = [];
 
-  // Explicit pagination requested via charOffset or charLength
   if (options.charLength !== undefined || options.charOffset !== undefined) {
     const effectiveCharLength = options.charLength ?? recommendedCharLength;
     const effectiveCharOffset = options.charOffset ?? 0;
@@ -88,7 +111,6 @@ export function applyOutputSizeLimit(
     };
   }
 
-  // Auto-pagination: check if content exceeds threshold
   if (content.length > maxOutputChars) {
     warnings.push(
       `Auto-paginated: Output (${content.length} chars) exceeds ${maxOutputChars} char limit. Use charOffset/charLength to navigate.`
@@ -111,7 +133,6 @@ export function applyOutputSizeLimit(
     };
   }
 
-  // Content fits within limits — no pagination needed
   return {
     content,
     wasLimited: false,

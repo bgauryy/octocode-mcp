@@ -43,6 +43,23 @@ export const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
     .optional()
     .default(1)
     .describe(GITHUB_SEARCH_REPOS.pagination.page),
+  charOffset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      'Character offset for output pagination after domain pagination has been applied.'
+    ),
+  charLength: z
+    .number()
+    .int()
+    .min(1)
+    .max(50000)
+    .optional()
+    .describe(
+      'Character budget for output pagination after domain pagination has been applied.'
+    ),
 }).refine(
   data =>
     (data.keywordsToSearch && data.keywordsToSearch.length > 0) ||

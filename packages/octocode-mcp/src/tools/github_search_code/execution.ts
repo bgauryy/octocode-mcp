@@ -17,7 +17,7 @@ import {
 export async function searchMultipleGitHubCode(
   args: ToolExecutionArgs<GitHubCodeSearchQuery>
 ): Promise<CallToolResult> {
-  const { queries, authInfo } = args;
+  const { queries, authInfo, responseCharOffset, responseCharLength } = args;
   let providerContext:
     | ReturnType<typeof createProviderExecutionContext>
     | undefined;
@@ -68,6 +68,8 @@ export async function searchMultipleGitHubCode(
     {
       toolName: TOOL_NAMES.GITHUB_SEARCH_CODE,
       keysPriority: ['files', 'pagination', 'repositoryContext', 'error'],
+      responseCharOffset,
+      responseCharLength,
     }
   );
 }

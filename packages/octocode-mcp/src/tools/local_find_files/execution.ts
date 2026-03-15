@@ -15,7 +15,7 @@ import type { ToolExecutionArgs } from '../../types/execution.js';
 export async function executeFindFiles(
   args: ToolExecutionArgs<FindFilesQuery>
 ): Promise<CallToolResult> {
-  const { queries } = args;
+  const { queries, responseCharOffset, responseCharLength } = args;
 
   return executeBulkOperation(
     queries || [],
@@ -27,6 +27,10 @@ export async function executeFindFiles(
       }
       return findFiles(query);
     },
-    { toolName: TOOL_NAMES.LOCAL_FIND_FILES }
+    {
+      toolName: TOOL_NAMES.LOCAL_FIND_FILES,
+      responseCharOffset,
+      responseCharLength,
+    }
   );
 }

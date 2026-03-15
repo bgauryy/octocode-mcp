@@ -24,7 +24,6 @@ export const LOCAL_RIPGREP_DESCRIPTION = DESCRIPTIONS[TOOL_NAMES.LOCAL_RIPGREP];
  * Optimized based on performance research
  */
 export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
-  // REQUIRED FIELDS
   pattern: z.string().min(1).max(2000).describe(LOCAL_RIPGREP.search.pattern),
   path: z
     .string()
@@ -35,20 +34,17 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     })
     .describe(LOCAL_RIPGREP.search.path),
 
-  // WORKFLOW MODE (recommended presets)
   mode: z
     .enum(['discovery', 'paginated', 'detailed'])
     .optional()
     .describe(LOCAL_RIPGREP.search.mode),
 
-  // PATTERN MODES (mutually exclusive - validated at runtime)
   fixedString: z
     .boolean()
     .optional()
     .describe(LOCAL_RIPGREP.options.fixedString),
   perlRegex: z.boolean().optional().describe(LOCAL_RIPGREP.options.perlRegex),
 
-  // CASE SENSITIVITY (smart case recommended)
   smartCase: z
     .boolean()
     .optional()
@@ -63,14 +59,12 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .optional()
     .describe(LOCAL_RIPGREP.options.caseSensitive),
 
-  // MATCH BEHAVIOR
   wholeWord: z.boolean().optional().describe(LOCAL_RIPGREP.options.wholeWord),
   invertMatch: z
     .boolean()
     .optional()
     .describe(LOCAL_RIPGREP.options.invertMatch),
 
-  // FILE FILTERING (optimized strategies)
   type: z.string().optional().describe(LOCAL_RIPGREP.filters.type),
   include: z
     .array(z.string().max(256))
@@ -88,7 +82,6 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .optional()
     .describe(LOCAL_RIPGREP.filters.excludeDir),
 
-  // IGNORE CONTROL (gitignore behavior)
   noIgnore: z.boolean().optional().describe(LOCAL_RIPGREP.filters.noIgnore),
   hidden: z.boolean().optional().describe(LOCAL_RIPGREP.filters.hidden),
   followSymlinks: z
@@ -96,7 +89,6 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .optional()
     .describe(LOCAL_RIPGREP.filters.followSymlinks),
 
-  // OUTPUT CONTROL (critical for performance)
   filesOnly: z.boolean().optional().describe(LOCAL_RIPGREP.output.filesOnly),
   filesWithoutMatch: z
     .boolean()
@@ -108,7 +100,6 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .optional()
     .describe(LOCAL_RIPGREP.output.countMatches),
 
-  // CONTEXT & LINE CONTROL (semantic: defines WHAT to extract)
   contextLines: z
     .number()
     .int()
@@ -145,7 +136,6 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .describe(LOCAL_RIPGREP.context.lineNumbers),
   column: z.boolean().optional().describe(LOCAL_RIPGREP.context.column),
 
-  // MATCH LIMITING (prevents output explosion)
   maxMatchesPerFile: z
     .number()
     .int()
@@ -161,7 +151,6 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .optional()
     .describe(LOCAL_RIPGREP.pagination.maxFiles),
 
-  // TWO-LEVEL PAGINATION (file-level + per-file matches)
   filesPerPage: z
     .number()
     .int()
@@ -185,8 +174,24 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .optional()
     .default(10)
     .describe(LOCAL_RIPGREP.pagination.matchesPerPage),
+  charOffset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      'Character offset for output pagination after file/match pagination has been applied.'
+    ),
+  charLength: z
+    .number()
+    .int()
+    .min(1)
+    .max(50000)
+    .optional()
+    .describe(
+      'Character budget for output pagination after file/match pagination has been applied.'
+    ),
 
-  // ADVANCED FEATURES (use with caution)
   multiline: z.boolean().optional().describe(LOCAL_RIPGREP.options.multiline),
   multilineDotall: z
     .boolean()
@@ -198,7 +203,6 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .default('without-match')
     .describe(LOCAL_RIPGREP.filters.binaryFiles),
 
-  // OUTPUT FORMAT & METADATA
   includeStats: z
     .boolean()
     .optional()
@@ -215,7 +219,6 @@ export const RipgrepQuerySchema = BaseQuerySchemaLocal.extend({
     .default(true)
     .describe(LOCAL_RIPGREP.output.includeDistribution),
 
-  // ADVANCED OPTIONS
   threads: z
     .number()
     .int()
@@ -276,22 +279,17 @@ export function applyWorkflowMode(query: RipgrepQuery): RipgrepQuery {
 
   switch (query.mode) {
     case 'discovery':
-      // Workflow A: Fast file discovery with per-file match counts
-      // Uses -c (count) instead of -l (filesOnly) to get accurate matchCount per file
-      // Performance is nearly identical to -l since ripgrep still skips match content
       modeDefaults.count = true;
       modeDefaults.smartCase = true;
       break;
 
     case 'paginated':
-      // Workflow B: Paginated content with sensible limits
       modeDefaults.filesPerPage = 10;
       modeDefaults.matchesPerPage = 10;
       modeDefaults.smartCase = true;
       break;
 
     case 'detailed':
-      // Full matches with context
       modeDefaults.contextLines = 3;
       modeDefaults.filesPerPage = 10;
       modeDefaults.matchesPerPage = 20;
@@ -299,7 +297,6 @@ export function applyWorkflowMode(query: RipgrepQuery): RipgrepQuery {
       break;
   }
 
-  // Apply mode defaults, but allow explicit parameters to override
   return {
     ...modeDefaults,
     ...query,
@@ -317,7 +314,6 @@ export function validateRipgrepQuery(query: RipgrepQuery): {
   const warnings: string[] = [];
   const errors: string[] = [];
 
-  // Mutual exclusivity checks
   if (query.fixedString && query.perlRegex) {
     errors.push(
       'fixedString and perlRegex are mutually exclusive. Choose one.'
@@ -353,7 +349,6 @@ export function validateRipgrepQuery(query: RipgrepQuery): {
     );
   }
 
-  // Warn about invertMatch semantics
   if (query.invertMatch && !query.filesWithoutMatch) {
     warnings.push(
       'invertMatch inverts at LINE level (shows non-matching lines). ' +
@@ -362,7 +357,6 @@ export function validateRipgrepQuery(query: RipgrepQuery): {
     );
   }
 
-  // Case sensitivity
   const caseModes = [
     query.caseInsensitive,
     query.caseSensitive,

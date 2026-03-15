@@ -369,6 +369,142 @@ describe(FLOW_CATALOG.localImpactAnalysis.id, () => {
 
     expect(impactedFileResult.content).toContain('computeScore');
   });
+
+  it('continues impact-analysis flow across query-level output pagination', async () => {
+    const searchResponse = await harness.callTool('localSearchCode', {
+      queries: [
+        {
+          id: 'search_compute_score_definition',
+          pattern: 'export function computeScore',
+          path: fixtureSourcePath,
+          include: ['*.ts'],
+          researchGoal: 'Find the computeScore definition',
+          reasoning:
+            'Need the definition line before output-paginated reference analysis',
+        },
+      ],
+    });
+
+    const searchResult = expectHasResultsData(
+      LocalSearchCodeOutputSchema,
+      LocalSearchCodeDataSchema,
+      searchResponse
+    );
+    const definitionFile = searchResult.files?.[0];
+    const definitionMatch = definitionFile?.matches?.[0];
+
+    const firstReferencesResponse = await harness.callTool(
+      'lspFindReferences',
+      {
+        queries: [
+          {
+            id: 'references_output_page_1',
+            uri: definitionFile!.path,
+            symbolName: 'computeScore',
+            lineHint: definitionMatch!.line,
+            includeDeclaration: false,
+            charLength: 250,
+            researchGoal: 'Read the first output page of impacted call sites',
+            reasoning:
+              'Verify query-level output pagination on semantic references',
+          },
+        ],
+      }
+    );
+
+    const firstReferences = expectHasResultsData(
+      LspFindReferencesOutputSchema,
+      LspFindReferencesDataSchema,
+      firstReferencesResponse
+    );
+
+    expect(firstReferences.outputPagination?.hasMore).toBe(true);
+    expect(firstReferences.locations?.length).toBe(1);
+
+    const secondReferencesResponse = await harness.callTool(
+      'lspFindReferences',
+      {
+        queries: [
+          {
+            id: 'references_output_page_2',
+            uri: definitionFile!.path,
+            symbolName: 'computeScore',
+            lineHint: definitionMatch!.line,
+            includeDeclaration: false,
+            charLength: 250,
+            charOffset:
+              (firstReferences.outputPagination?.charOffset ?? 0) +
+              (firstReferences.outputPagination?.charLength ?? 0),
+            researchGoal: 'Read the next output page of impacted call sites',
+            reasoning:
+              'Resume the same reference query from outputPagination metadata',
+          },
+        ],
+      }
+    );
+
+    const secondReferences = expectHasResultsData(
+      LspFindReferencesOutputSchema,
+      LspFindReferencesDataSchema,
+      secondReferencesResponse
+    );
+
+    expect(
+      secondReferences.locations?.[0]?.uri !==
+        firstReferences.locations?.[0]?.uri ||
+        secondReferences.locations?.[0]?.content !==
+          firstReferences.locations?.[0]?.content
+    ).toBe(true);
+
+    const hierarchyResponse = await harness.callTool('lspCallHierarchy', {
+      queries: [
+        {
+          id: 'incoming_compute_score_calls_after_output_resume',
+          uri: definitionFile!.path,
+          symbolName: 'computeScore',
+          lineHint: definitionMatch!.line,
+          direction: 'incoming',
+          researchGoal:
+            'Trace impacted callers after resuming paginated references',
+          reasoning:
+            'Verify outputPagination does not break downstream hierarchy analysis',
+        },
+      ],
+    });
+
+    const hierarchyResult = expectHasResultsData(
+      LspCallHierarchyOutputSchema,
+      LspCallHierarchyDataSchema,
+      hierarchyResponse
+    );
+
+    expect(hierarchyResult.incomingCalls?.length).toBeGreaterThan(0);
+
+    const impactedLocation = secondReferences.locations?.[0];
+    expect(impactedLocation).toBeDefined();
+
+    const impactedFileResponse = await harness.callTool('localGetFileContent', {
+      queries: [
+        {
+          id: 'inspect_impacted_call_site_after_output_resume',
+          path: impactedLocation!.uri,
+          matchString: 'computeScore',
+          researchGoal:
+            'Inspect an impacted call site after resuming pagination',
+          reasoning:
+            'Verify paginated references still hand off to file inspection',
+        },
+      ],
+    });
+
+    const impactedFileResult = expectHasResultsData(
+      LocalGetFileContentOutputSchema,
+      LocalGetFileContentDataSchema,
+      impactedFileResponse
+    );
+
+    expect(impactedFileResult.content).toContain('computeScore');
+  });
 });
 
 function configureImpactFlowRuntime(repoPath: string): void {

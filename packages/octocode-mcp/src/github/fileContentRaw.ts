@@ -218,12 +218,18 @@ export async function fetchRawGitHubFileContent(
         };
       }
 
+      if (!actualBranch && !branch) {
+        try {
+          actualBranch = await resolveDefaultBranch(owner, repo, authInfo);
+        } catch {
+          // Fall through — HEAD is acceptable as last resort
+        }
+      }
+
       return {
         data: {
           rawContent: decodedContent,
-          // Only set branch when we know the actual branch name (not a SHA)
           branch: actualBranch || undefined,
-          // resolvedRef is what was actually used to fetch - either the resolved branch or the original request
           resolvedRef: actualBranch || branch || 'HEAD',
         },
         status: 200,

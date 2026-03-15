@@ -100,9 +100,16 @@ export interface LspConfigOptions {
 /**
  * Output format configuration
  */
+export interface OutputPaginationConfigOptions {
+  /** Default character budget for automatic payload pagination (default: 8000) */
+  defaultCharLength?: number;
+}
+
 export interface OutputConfigOptions {
   /** Response serialization format: 'yaml' (token-efficient) or 'json' (raw) */
   format?: 'yaml' | 'json';
+  /** Shared pagination defaults for tool outputs */
+  pagination?: OutputPaginationConfigOptions;
 }
 
 // ============================================================================
@@ -179,8 +186,13 @@ export interface RequiredLspConfig {
   configPath: string | undefined;
 }
 
+export interface RequiredOutputPaginationConfig {
+  defaultCharLength: number;
+}
+
 export interface RequiredOutputConfig {
   format: 'yaml' | 'json';
+  pagination: RequiredOutputPaginationConfig;
 }
 
 /**

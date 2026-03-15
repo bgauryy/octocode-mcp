@@ -4,10 +4,6 @@
  * @module lsp/types
  */
 
-// ============================================================================
-// Configuration Types
-// ============================================================================
-
 /**
  * Language server configuration for spawning a server
  */
@@ -59,10 +55,6 @@ export interface LanguageServerCommand {
   /** Environment variable to override the command */
   envVar: string;
 }
-
-// ============================================================================
-// Position & Range Types
-// ============================================================================
 
 /**
  * Fuzzy position for symbol resolution

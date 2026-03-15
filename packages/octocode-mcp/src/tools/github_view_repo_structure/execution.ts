@@ -45,7 +45,7 @@ function filterStructure(
 export async function exploreMultipleRepositoryStructures(
   args: ToolExecutionArgs<GitHubViewRepoStructureQuery>
 ): Promise<CallToolResult> {
-  const { queries, authInfo } = args;
+  const { queries, authInfo, responseCharOffset, responseCharLength } = args;
   let providerContext:
     | ReturnType<typeof createProviderExecutionContext>
     | undefined;
@@ -127,6 +127,8 @@ export async function exploreMultipleRepositoryStructures(
         'structure',
         'error',
       ] satisfies Array<keyof RepoStructureResult>,
+      responseCharOffset,
+      responseCharLength,
     }
   );
 }

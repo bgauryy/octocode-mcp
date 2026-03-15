@@ -102,9 +102,10 @@ export function transformPullRequestResult(
     })
   );
 
-  const { owner, repo } = query.projectId
+  const { owner: projectOwner, repo } = query.projectId
     ? parseProjectId(query.projectId)
     : { owner: undefined, repo: undefined };
+  const owner = projectOwner || query.owner;
 
   return {
     items,
@@ -130,9 +131,10 @@ export async function searchPullRequests(
     repo?: string;
   } = parseGitHubProjectId
 ): Promise<ProviderResponse<PullRequestSearchResult>> {
-  const { owner, repo } = query.projectId
+  const { owner: projectOwner, repo } = query.projectId
     ? parseProjectId(query.projectId)
     : { owner: undefined, repo: undefined };
+  const owner = projectOwner || query.owner;
 
   const githubParams: GitHubPullRequestsSearchParams = {
     owner,

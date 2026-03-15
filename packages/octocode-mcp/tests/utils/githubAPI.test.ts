@@ -658,6 +658,7 @@ describe('GitHub API Utils', () => {
                 updatedAt: '2023-12-01T10:00:00Z',
                 pushedAt: '2023-12-01T08:00:00Z',
                 visibility: undefined,
+                language: 'JavaScript',
               },
             ],
             pagination: {

@@ -202,7 +202,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'HEAD',
+          branch: 'main',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
         },
       });
@@ -219,7 +219,26 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'HEAD',
+          branch: 'main',
+          content: 'line 1\nline 2\nline 3\nline 4\nline 5',
+        },
+      });
+    });
+
+    it('should resolve to "master" when repo default branch is master and no branch specified', async () => {
+      mockResolveDefaultBranch.mockResolvedValue('master');
+
+      const params = createTestParams();
+
+      const result = await fetchGitHubFileContentAPI(params);
+
+      expect(result).toEqual({
+        status: 200,
+        data: {
+          owner: 'test',
+          repo: 'repo',
+          path: 'test.txt',
+          branch: 'master',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
         },
       });
@@ -239,7 +258,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'HEAD',
+          branch: 'main',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
         },
       });
@@ -260,7 +279,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'HEAD',
+          branch: 'main',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
         },
       });
@@ -281,7 +300,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
           owner: 'test',
           repo: 'repo',
           path: 'test.txt',
-          branch: 'HEAD',
+          branch: 'main',
           content: 'line 1\nline 2\nline 3\nline 4\nline 5',
         },
       });

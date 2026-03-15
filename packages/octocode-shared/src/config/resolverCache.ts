@@ -57,7 +57,8 @@ function buildResolvedConfig(
     process.env.MAX_RETRIES !== undefined ||
     process.env.LOG !== undefined ||
     process.env.OCTOCODE_LSP_CONFIG !== undefined ||
-    process.env.OCTOCODE_OUTPUT_FORMAT !== undefined;
+    process.env.OCTOCODE_OUTPUT_FORMAT !== undefined ||
+    process.env.OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH !== undefined;
 
   // Determine source
   let source: ResolvedConfig['source'];

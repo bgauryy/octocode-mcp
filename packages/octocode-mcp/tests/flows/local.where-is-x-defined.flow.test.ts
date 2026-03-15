@@ -162,4 +162,112 @@ describe(FLOW_CATALOG.localWhereIsXDefined.id, () => {
       errorType: 'symbol_not_found',
     });
   });
+
+  it('continues local where-is-x-defined across bulk response pagination', async () => {
+    const pagedSearchResponse = await harness.callTool('localSearchCode', {
+      queries: [
+        {
+          id: 'search_page_one',
+          pattern: 'export function computeScore',
+          path: fixtureSourcePath,
+          include: ['*.ts'],
+          researchGoal: 'Find the computeScore definition (page 1)',
+          reasoning: 'First query in a bulk response pagination flow',
+        },
+        {
+          id: 'search_page_two',
+          pattern: 'export function computeScore',
+          path: fixtureSourcePath,
+          include: ['*.ts'],
+          researchGoal: 'Find the computeScore definition (page 2)',
+          reasoning: 'Second query in a bulk response pagination flow',
+        },
+      ],
+      responseCharLength: 200,
+    });
+
+    const pagedSearchOutput = LocalSearchCodeOutputSchema.parse(
+      pagedSearchResponse.structuredContent
+    );
+
+    expect(pagedSearchOutput.responsePagination?.hasMore).toBe(true);
+    expect(pagedSearchOutput.results).toHaveLength(1);
+    expect(pagedSearchOutput.results[0]?.id).toBe('search_page_one');
+
+    const resumedSearchResponse = await harness.callTool('localSearchCode', {
+      queries: [
+        {
+          id: 'search_page_one',
+          pattern: 'export function computeScore',
+          path: fixtureSourcePath,
+          include: ['*.ts'],
+          researchGoal: 'Find the computeScore definition (page 1)',
+          reasoning: 'First query in a bulk response pagination flow',
+        },
+        {
+          id: 'search_page_two',
+          pattern: 'export function computeScore',
+          path: fixtureSourcePath,
+          include: ['*.ts'],
+          researchGoal: 'Find the computeScore definition (page 2)',
+          reasoning: 'Second query in a bulk response pagination flow',
+        },
+      ],
+      responseCharLength: 200,
+      responseCharOffset:
+        (pagedSearchOutput.responsePagination?.charOffset ?? 0) +
+        (pagedSearchOutput.responsePagination?.charLength ?? 0),
+    });
+
+    const resumedSearchResult = expectHasResultsData(
+      LocalSearchCodeOutputSchema,
+      LocalSearchCodeDataSchema,
+      resumedSearchResponse
+    );
+    const definitionFile = resumedSearchResult.files?.[0];
+    const definitionMatch = definitionFile?.matches?.[0];
+
+    expect(definitionFile?.path.endsWith('/src/score.ts')).toBe(true);
+
+    const gotoResponse = await harness.callTool('lspGotoDefinition', {
+      queries: [
+        {
+          id: 'goto_compute_score_definition_after_bulk_resume',
+          uri: definitionFile!.path,
+          symbolName: 'computeScore',
+          lineHint: definitionMatch!.line,
+          researchGoal: 'Resolve the computeScore definition after bulk resume',
+          reasoning: 'Use the result returned on the second bulk response page',
+        },
+      ],
+    });
+
+    const gotoResult = expectHasResultsData(
+      LspGotoDefinitionOutputSchema,
+      LspGotoDefinitionDataSchema,
+      gotoResponse
+    );
+    const location = gotoResult.locations?.[0];
+
+    const fileContentResponse = await harness.callTool('localGetFileContent', {
+      queries: [
+        {
+          id: 'fetch_compute_score_definition_after_bulk_resume',
+          path: location!.uri,
+          matchString: 'export function computeScore',
+          researchGoal: 'Read the resumed computeScore implementation',
+          reasoning:
+            'Verify bulk response pagination preserves the handoff chain',
+        },
+      ],
+    });
+
+    const fileContentResult = expectHasResultsData(
+      LocalGetFileContentOutputSchema,
+      LocalGetFileContentDataSchema,
+      fileContentResponse
+    );
+
+    expect(fileContentResult.content).toContain('normalizeScore');
+  });
 });

@@ -43,12 +43,16 @@ export const TOOL_NAME = TOOL_NAMES.LSP_GOTO_DEFINITION;
 export async function executeGotoDefinition(
   args: ToolExecutionArgs<LSPGotoDefinitionQuery>
 ): Promise<CallToolResult> {
-  const { queries } = args;
+  const { queries, responseCharOffset, responseCharLength } = args;
 
   return executeBulkOperation(
     queries || [],
     async (query: LSPGotoDefinitionQuery) => gotoDefinition(query),
-    { toolName: TOOL_NAME }
+    {
+      toolName: TOOL_NAME,
+      responseCharOffset,
+      responseCharLength,
+    }
   );
 }
 
@@ -69,7 +73,6 @@ async function gotoDefinition(
 
     const absolutePath = pathValidation.sanitizedPath!;
 
-    // Read file content
     let content: string;
     try {
       content = await readFile(absolutePath, 'utf-8');
@@ -84,7 +87,6 @@ async function gotoDefinition(
       }) as GotoDefinitionResult;
     }
 
-    // Resolve fuzzy position to exact position
     const resolver = new SymbolResolver({ lineSearchRadius: 5 });
     let resolvedSymbol;
     try {
@@ -121,7 +123,6 @@ async function gotoDefinition(
       throw error;
     }
 
-    // Try to use LSP for semantic definition lookup
     const workspaceRoot = resolveWorkspaceRoot();
 
     if (await isLanguageServerAvailable(absolutePath)) {
@@ -135,12 +136,10 @@ async function gotoDefinition(
         );
         if (result) return applyGotoDefinitionOutputLimit(result, query);
       } catch {
-        // LSP failed — fall back to text resolution silently
+        /* no-op */
       }
     }
 
-    // Fallback: Return the resolved position as the "definition"
-    // This is less accurate but works without a language server
     return applyGotoDefinitionOutputLimit(
       createFallbackResult(
         query,
@@ -236,13 +235,6 @@ async function gotoDefinitionWithLSP(
       };
     }
 
-    // Auto-chain through imports: if the result points to an import/re-export
-    // in the same file, perform one additional hop to follow the import to the source definition.
-    //
-    // Known limitation: TypeScript projects using .js extension imports (ESM) cause
-    // the LSP to return the import declaration line as the "definition" rather than
-    // following to the source file. The second LSP hop would use the same (file, position)
-    // and loop. We detect this and fall back to manual module-path resolution.
     let followedImport = false;
     if (locations.length === 1) {
       const loc = locations[0]!;
@@ -265,8 +257,6 @@ async function gotoDefinitionWithLSP(
               ),
             };
 
-            // Try LSP chaining: ask the language server to follow the import.
-            // This works when TypeScript is properly configured (non-.js imports).
             let chainedToSource = false;
             const chainedLocations = await client.gotoDefinition(
               loc.uri,
@@ -283,10 +273,6 @@ async function gotoDefinitionWithLSP(
               }
             }
 
-            // Fallback: LSP chaining returned the same file (TypeScript ESM .js→.ts
-            // limitation — the LSP cannot cross from the import declaration to the
-            // source file). Resolve the module path manually and text-search for the
-            // exported symbol in the .ts source file.
             if (!chainedToSource) {
               const manualLocation = await resolveDefinitionViaModulePath(
                 targetLine,
@@ -300,12 +286,11 @@ async function gotoDefinitionWithLSP(
             }
           }
         } catch {
-          // If chaining fails, continue with original result
+          /* no-op */
         }
       }
     }
 
-    // Enhance snippets with context lines
     const contextLines = query.contextLines ?? 5;
     const enhancedLocations: CodeSnippet[] = [];
 
@@ -340,7 +325,6 @@ async function gotoDefinitionWithLSP(
           content: numberedContent,
         });
       } catch {
-        // Keep original if we can't read the file
         enhancedLocations.push(loc);
       }
     }
@@ -395,12 +379,11 @@ async function resolveDefinitionViaModulePath(
   if (!fromMatch?.[1]) return null;
 
   const modulePath = fromMatch[1];
-  if (!modulePath.startsWith('.')) return null; // only relative imports
+  if (!modulePath.startsWith('.')) return null;
 
   const sourceDir = dirname(sourceFileUri);
   let resolvedPath = resolvePath(sourceDir, modulePath);
 
-  // TypeScript ESM: imports use .js extension but source files are .ts
   if (resolvedPath.endsWith('.js')) {
     resolvedPath = resolvedPath.replace(/\.js$/, '.ts');
   }
@@ -415,8 +398,6 @@ async function resolveDefinitionViaModulePath(
       const charIdx = line.indexOf(symbolName);
       return {
         uri: resolvedPath,
-        // content is a placeholder — the caller's location-enhancing loop
-        // will re-read the file and replace this with the proper snippet
         content: '',
         range: {
           start: { line: i, character: charIdx },

@@ -15,6 +15,7 @@ import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
+import { formatFileSize } from '../../utils/file/size.js';
 import type {
   FindFilesQuery,
   FindFilesResult,
@@ -156,7 +157,10 @@ export async function findFiles(
         type: f.type,
       };
       if (details) {
-        if (f.size !== undefined) result.size = f.size;
+        if (f.size !== undefined) {
+          result.size = f.size;
+          result.sizeFormatted = formatFileSize(f.size);
+        }
         if (f.permissions) result.permissions = f.permissions;
       }
       if (showLastModified && f.modified) {

@@ -855,8 +855,8 @@ describe('localGetFileContent', () => {
     });
 
     it('should auto-paginate when matchString result exceeds MAX_OUTPUT_CHARS without charLength (lines 206-212)', async () => {
-      // ~30 matches, each line ~100 chars = ~3000 chars > 2000 (MAX_OUTPUT_CHARS)
-      const lineContent = 'x'.repeat(100);
+      // Build enough extracted context to exceed the shared 8000-char budget.
+      const lineContent = 'x'.repeat(500);
       const lines = Array.from({ length: 50 }, (_, i) =>
         i % 2 === 0 ? lineContent : 'MATCH'
       );
@@ -870,7 +870,7 @@ describe('localGetFileContent', () => {
         path: 'large-matches.txt',
         matchString: 'MATCH',
         matchStringContextLines: 2,
-        // No charLength - triggers auto-pagination when content > 2000
+        // No charLength - triggers auto-pagination when content > 8000
       });
 
       expect(result.status).toBe('hasResults');

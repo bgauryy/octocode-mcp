@@ -21,10 +21,6 @@ import {
   LSP_TOOL_LIST,
 } from '../../hints/localToolUsageHints.js';
 
-// ─────────────────────────────────────────────────────────────────────
-// Hints
-// ─────────────────────────────────────────────────────────────────────
-
 /** Hints for full clones */
 const FULL_CLONE_HINTS: string[] = [
   'Repository cloned locally (full, shallow depth=1).',
@@ -47,14 +43,10 @@ const SPARSE_CLONE_HINTS: string[] = [
 const CACHE_HIT_HINT =
   'Served from 24-hour cache (no network call). To force refresh, set forceRefresh: true in the query.';
 
-// ─────────────────────────────────────────────────────────────────────
-// Handler
-// ─────────────────────────────────────────────────────────────────────
-
 export async function executeCloneRepo(
   args: ToolExecutionArgs<CloneRepoQuery>
 ): Promise<CallToolResult> {
-  const { queries, authInfo } = args;
+  const { queries, authInfo, responseCharOffset, responseCharLength } = args;
   let providerContext:
     | ReturnType<typeof createProviderExecutionContext>
     | undefined;
@@ -78,7 +70,6 @@ export async function executeCloneRepo(
 
         const result = await cloneRepo(query, authInfo, providerContext.token);
 
-        // ── Build result data ──────────────────────────────────
         const resultData: Record<string, unknown> = {
           localPath: result.localPath,
           ...(result.cached ? { cached: true } : {}),
@@ -87,7 +78,6 @@ export async function executeCloneRepo(
             : {}),
         };
 
-        // ── Pick contextual hints ──────────────────────────────
         const baseHints = result.sparse_path
           ? [...SPARSE_CLONE_HINTS]
           : [...FULL_CLONE_HINTS];
@@ -115,6 +105,8 @@ export async function executeCloneRepo(
     {
       toolName: TOOL_NAMES.GITHUB_CLONE_REPO,
       keysPriority: ['resolvedBranch', 'localPath', 'cached', 'error'],
+      responseCharOffset,
+      responseCharLength,
     }
   );
 }
