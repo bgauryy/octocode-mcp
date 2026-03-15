@@ -184,6 +184,8 @@ async function handleFileFetch(
 
   const paginationHints = providerResult.response.hints || [];
   const isLarge = providerResult.response.data.size > 50000;
+  const isPartial = providerResult.response.data.isPartial;
+  const endLine = providerResult.response.data.endLine;
 
   return createSuccessResult(
     query,
@@ -191,7 +193,7 @@ async function handleFileFetch(
     hasContent,
     TOOL_NAMES.GITHUB_FETCH_CONTENT,
     {
-      hintContext: { isLarge },
+      hintContext: { isLarge, isPartial, endLine },
       extraHints: paginationHints,
     }
   );

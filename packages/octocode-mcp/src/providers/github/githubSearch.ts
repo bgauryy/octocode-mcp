@@ -110,6 +110,7 @@ export function transformRepoSearchResult(
       updatedAt: repo.updatedAt,
       lastActivityAt: repo.pushedAt || repo.updatedAt,
       openIssuesCount: repo.openIssuesCount,
+      language: repo.language,
     })
   );
 

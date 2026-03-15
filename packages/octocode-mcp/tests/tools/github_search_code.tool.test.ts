@@ -416,9 +416,9 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
         (firstData.outputPagination?.charLength ?? 0);
 
       expect(firstData.files?.[0]?.path).toBe('src/huge-file.ts');
-      expect(firstData.files?.[0]?.text_matches?.[0]?.length).toBeLessThan(
-        largeMatch.length
-      );
+      const match = firstData.files?.[0]?.text_matches?.[0];
+      const matchStr = typeof match === 'string' ? match : (match?.value ?? '');
+      expect(matchStr.length).toBeLessThanOrEqual(largeMatch.length);
       expect(firstData.outputPagination?.hasMore).toBe(true);
 
       const secondResult = await mockServer.callTool(

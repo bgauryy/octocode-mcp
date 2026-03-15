@@ -10,10 +10,15 @@ export const TOOL_NAME = 'githubGetFileContent';
 
 export const hints: ToolHintGenerators = {
   hasResults: (ctx: HintContext = {}) => {
-    // Only add context-aware hints, static hints come from content.json
     const hints: (string | undefined)[] = [];
     if (ctx.isLarge) {
       hints.push(...getMetadataDynamicHints(TOOL_NAME, 'largeFile'));
+    }
+    const c = ctx as Record<string, unknown>;
+    if (c.isPartial && typeof c.endLine === 'number') {
+      hints.push(
+        `Partial content ends at line ${c.endLine}. Use startLine=${c.endLine + 1} to continue.`
+      );
     }
     return hints;
   },

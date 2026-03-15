@@ -59,7 +59,7 @@ describe('providerMappers', () => {
         path: 'src/index.ts',
         owner: 'owner',
         repo: 'repo',
-        text_matches: ['const test = 1;'],
+        text_matches: [{ value: 'const test = 1;' }],
       }),
     ]);
   });

@@ -28,10 +28,12 @@ export interface NpmPackageResult {
   lastPublished?: string;
   owner?: string;
   repo?: string;
-  // Extended metadata (available when npmFetchMetadata=true)
+  // Lightweight metadata (always included)
   description?: string;
-  keywords?: string[];
   license?: string;
+  weeklyDownloads?: number;
+  // Extended metadata (available when npmFetchMetadata=true)
+  keywords?: string[];
   homepage?: string;
   author?: string;
   engines?: Record<string, string>;

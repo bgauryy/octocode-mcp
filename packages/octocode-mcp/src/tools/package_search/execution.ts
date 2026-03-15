@@ -165,6 +165,12 @@ function generateSuccessHints(
       : `Install: pip install ${name}`
   );
 
+  if (result.packages.length > 1) {
+    hints.push(
+      'Compare: Check weeklyDownloads, lastPublished, license for best fit'
+    );
+  }
+
   return hints;
 }
 

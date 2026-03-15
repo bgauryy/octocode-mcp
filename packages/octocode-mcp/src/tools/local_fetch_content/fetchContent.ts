@@ -319,7 +319,19 @@ export async function fetchContent(
       effectiveCharLength
     );
 
-    const baseHints = getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'hasResults');
+    const hasMoreContent =
+      isPartial ||
+      pagination.hasMore ||
+      (actualEndLine !== undefined && actualEndLine < totalLines);
+
+    const baseHints = getHints(TOOL_NAMES.LOCAL_FETCH_CONTENT, 'hasResults', {
+      hasMoreContent,
+      isPartial,
+      endLine: actualEndLine,
+      totalLines,
+      nextCharOffset: pagination.nextCharOffset,
+      totalChars: pagination.totalChars,
+    });
     // Generate pagination hints when explicitly requested OR when auto-paginated
     const paginationHints =
       effectiveCharLength || autoPaginated
@@ -340,6 +352,7 @@ export async function fetchContent(
           endLine: actualEndLine,
           ...(matchRanges !== undefined && { matchRanges }),
         }),
+      ...(fileStats.mtime && { modified: fileStats.mtime.toISOString() }),
       // Include pagination info when explicitly requested OR auto-paginated
       ...((effectiveCharLength || autoPaginated) && {
         pagination: createPaginationInfo(pagination),

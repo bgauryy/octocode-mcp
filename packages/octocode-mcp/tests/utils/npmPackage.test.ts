@@ -498,7 +498,8 @@ describe('mapToResult - extended metadata coverage', () => {
     mockFetchWithRetries.mockResolvedValue({
       name: 'test-pkg',
       version: '1.0.0',
-      description: 'Should not be included',
+      description: 'Always included',
+      license: 'MIT',
       author: 'Should not be included',
       peerDependencies: { react: '^18.0.0' },
     });
@@ -508,7 +509,10 @@ describe('mapToResult - extended metadata coverage', () => {
     expect('packages' in result).toBe(true);
     if ('packages' in result) {
       const pkg = result.packages[0] as NpmPackageResult;
-      expect(pkg.description).toBeUndefined();
+      // description and license are always included (lightweight metadata)
+      expect(pkg.description).toBe('Always included');
+      expect(pkg.license).toBe('MIT');
+      // author and peerDependencies require fetchMetadata=true
       expect(pkg.author).toBeUndefined();
       expect(pkg.peerDependencies).toBeUndefined();
     }

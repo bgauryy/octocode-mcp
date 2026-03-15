@@ -340,13 +340,30 @@ export const GitHubDirectoryFileEntrySchema = z
   })
   .strict();
 
+export const GitHubCodeSearchMatchIndexSchema = z
+  .object({
+    start: z.number().int().nonnegative().describe('Start offset of match'),
+    end: z.number().int().nonnegative().describe('End offset of match'),
+  })
+  .strict();
+
+export const GitHubCodeSearchTextMatchSchema = z
+  .object({
+    value: z.string().describe('Matched code snippet context'),
+    matchIndices: z
+      .array(GitHubCodeSearchMatchIndexSchema)
+      .optional()
+      .describe('Character offset positions of matches within the snippet'),
+  })
+  .strict();
+
 export const GitHubCodeSearchFileSchema = z
   .object({
     path: z.string().describe('Path of the matching file in the repository'),
     owner: z.string().optional().describe('Repository owner'),
     repo: z.string().optional().describe('Repository name'),
     text_matches: z
-      .array(z.string())
+      .array(z.union([z.string(), GitHubCodeSearchTextMatchSchema]))
       .optional()
       .describe('Matched code snippets when searching file content'),
     lastModifiedAt: z
@@ -475,6 +492,10 @@ export const GitHubRepositoryOutputSchema = z
       .nonnegative()
       .optional()
       .describe('Open issues count'),
+    language: z
+      .string()
+      .optional()
+      .describe('Primary programming language of the repository'),
   })
   .strict();
 
@@ -563,6 +584,12 @@ export const PackageSearchPackageSchema = z
       .describe('Type definition entry point for NPM packages'),
     lastPublished: z.string().optional().describe('Last published timestamp'),
     license: z.string().optional().describe('Package license'),
+    weeklyDownloads: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe('Weekly download count from npm registry'),
     author: z.string().optional().describe('Package author'),
     keywords: z.array(z.string()).optional().describe('Package keywords'),
     engines: z
@@ -645,6 +672,10 @@ export const LocalFindFilesEntrySchema = z
       .nonnegative()
       .optional()
       .describe('Entry size in bytes'),
+    sizeFormatted: z
+      .string()
+      .optional()
+      .describe('Human-readable file size (e.g. "1.5KB", "3.2MB")'),
     modified: z.string().optional().describe('Last modified timestamp'),
     permissions: z.string().optional().describe('POSIX permissions string'),
   })
@@ -961,6 +992,10 @@ export const LocalGetFileContentDataSchema = z
       .array(LocalMatchRangeSchema)
       .optional()
       .describe('Matched line ranges when using matchString'),
+    modified: z
+      .string()
+      .optional()
+      .describe('Last modified timestamp of the file (ISO 8601)'),
     pagination: ContentPaginationSchema.optional().describe(
       'Pagination info for large files or matchString results'
     ),

@@ -513,8 +513,11 @@ describe('searchPackage - NPM (CLI)', () => {
       // version IS present now
       expect(pkg.version).toBe('1.6.0');
 
-      // description and keywords are REMOVED
-      expect('description' in pkg).toBe(false);
+      // description is now always included (lightweight metadata)
+      expect(pkg.description).toBe(
+        'Promise based HTTP client for the browser and node.js'
+      );
+      // keywords still require npmFetchMetadata=true
       expect('keywords' in pkg).toBe(false);
 
       expect(result.ecosystem).toBe('npm');
@@ -1728,8 +1731,9 @@ describe('Package search response structure', () => {
       expect(pkg).toHaveProperty('repoUrl');
       expect(pkg).toHaveProperty('version');
 
-      // Without npmFetchMetadata, description/keywords are not included
-      expect(pkg).not.toHaveProperty('description');
+      // description is now always included (lightweight metadata)
+      expect(pkg).toHaveProperty('description', 'Fast web framework');
+      // keywords still require npmFetchMetadata=true
       expect(pkg).not.toHaveProperty('keywords');
     }
   });

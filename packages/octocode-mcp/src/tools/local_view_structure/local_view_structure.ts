@@ -132,10 +132,19 @@ export async function viewStructure(
     const status = totalEntries > 0 ? 'hasResults' : 'empty';
     const entryPaginationHints = [
       `Page ${entryPageNumber}/${totalPages} (showing ${paginatedEntries.length} of ${totalEntries})`,
-      entryPaginationInfo.hasMore
-        ? `Next: entryPageNumber=${entryPageNumber + 1}`
-        : 'Final page',
     ];
+
+    if (entryPaginationInfo.hasMore) {
+      const nextPagePreview = filteredEntries
+        .slice(endIdx, endIdx + 3)
+        .map(e => e.name)
+        .join(', ');
+      entryPaginationHints.push(
+        `Next: entryPageNumber=${entryPageNumber + 1}${nextPagePreview ? ` (starts with: ${nextPagePreview}...)` : ''}`
+      );
+    } else {
+      entryPaginationHints.push('Final page');
+    }
 
     const pagination = {
       currentPage: entryPaginationInfo.currentPage,
@@ -280,10 +289,19 @@ async function viewStructureRecursive(
 
   const entryPaginationHints = [
     `Page ${entryPageNumber}/${totalPages} (showing ${paginatedEntries.length} of ${totalEntries})`,
-    entryPaginationInfo.hasMore
-      ? `Next: entryPageNumber=${entryPageNumber + 1}`
-      : 'Final page',
   ];
+
+  if (entryPaginationInfo.hasMore) {
+    const nextPagePreview = filteredEntries
+      .slice(endIdx, endIdx + 3)
+      .map(e => e.name)
+      .join(', ');
+    entryPaginationHints.push(
+      `Next: entryPageNumber=${entryPageNumber + 1}${nextPagePreview ? ` (starts with: ${nextPagePreview}...)` : ''}`
+    );
+  } else {
+    entryPaginationHints.push('Final page');
+  }
 
   const pagination = {
     currentPage: entryPaginationInfo.currentPage,

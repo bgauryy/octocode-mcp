@@ -720,10 +720,19 @@ function paginateGitHubSearchCodeFile(
     {
       field: 'text_matches',
       kind: 'array',
-      itemPaginator: (item, nestedRequest) =>
-        typeof item === 'string'
-          ? paginateStringValue(item, nestedRequest)
-          : null,
+      itemPaginator: (item, nestedRequest) => {
+        if (typeof item === 'string') {
+          return paginateStringValue(item, nestedRequest);
+        }
+        if (isPlainObject(item)) {
+          return paginateObjectStringField(
+            item as Record<string, unknown>,
+            'value',
+            nestedRequest
+          );
+        }
+        return null;
+      },
     },
   ]);
 }

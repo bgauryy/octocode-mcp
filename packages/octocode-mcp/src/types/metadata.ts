@@ -103,6 +103,16 @@ export interface HintContext {
   depth?: number;
   /** Whether there is more content available (pagination) */
   hasMoreContent?: boolean;
+  /** Whether content is a partial view of the full result */
+  isPartial?: boolean;
+  /** End line number of current content window */
+  endLine?: number;
+  /** Total number of lines in the file */
+  totalLines?: number;
+  /** Next character offset for pagination */
+  nextCharOffset?: number;
+  /** Total content size in characters */
+  totalChars?: number;
 }
 
 /**
