@@ -132,9 +132,9 @@ describe('mapToResult - time object parsing', () => {
 
   it('should fallback to fetchLastPublished when time object is absent', async () => {
     mockFetchWithRetries
-      .mockResolvedValueOnce({ name: 'test-pkg', version: '1.0.0' })
-      .mockResolvedValueOnce({ downloads: 500 })
-      .mockResolvedValueOnce({ modified: '2024-03-01T09:00:00.000Z' });
+      .mockResolvedValueOnce({ name: 'test-pkg', version: '1.0.0' }) // main /latest
+      .mockResolvedValueOnce({ downloads: 500 }) // weekly downloads
+      .mockResolvedValueOnce({ modified: '2024-03-01T09:00:00.000Z' }); // abbreviated metadata
 
     const result = await searchNpmPackage('test-pkg', 1, false);
 
@@ -143,7 +143,31 @@ describe('mapToResult - time object parsing', () => {
       expect((result.packages[0] as NpmPackageResult).lastPublished).toBe(
         '2024-03-01T09:00:00.000Z'
       );
-      expect((result.packages[0] as NpmPackageResult).weeklyDownloads).toBe(500);
+      expect((result.packages[0] as NpmPackageResult).weeklyDownloads).toBe(
+        500
+      );
+    }
+  });
+
+  it('should fallback to full doc when abbreviated metadata lacks modified', async () => {
+    mockFetchWithRetries
+      .mockResolvedValueOnce({ name: 'test-pkg', version: '1.0.0' }) // main /latest
+      .mockResolvedValueOnce({ downloads: 200 }) // weekly downloads
+      .mockResolvedValueOnce({}) // abbreviated - no modified field
+      .mockResolvedValueOnce({
+        time: { modified: '2024-05-10T08:00:00.000Z' },
+      }); // full doc fallback
+
+    const result = await searchNpmPackage('test-pkg', 1, false);
+
+    expect('packages' in result).toBe(true);
+    if ('packages' in result) {
+      expect((result.packages[0] as NpmPackageResult).lastPublished).toBe(
+        '2024-05-10T08:00:00.000Z'
+      );
+      expect((result.packages[0] as NpmPackageResult).weeklyDownloads).toBe(
+        200
+      );
     }
   });
 

@@ -56,6 +56,9 @@ function parseRepoInfo(repoUrl: string | null | undefined): {
   return {};
 }
 
+// TODO: packageSearch does not yet support result-level pagination (e.g. lastPublished enrichment
+// for search results with searchLimit > 1). Currently only exact-match lookups (searchLimit=1)
+// go through fetchPackageDetailsWithError which enriches lastPublished + weeklyDownloads.
 export async function searchPackages(
   args: ToolExecutionArgs<PackageSearchQuery>
 ): Promise<CallToolResult> {

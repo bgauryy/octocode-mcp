@@ -121,9 +121,10 @@ async function fetchWeeklyDownloads(
   try {
     const url = `${NPM_DOWNLOADS_API}/${encodeURIComponent(packageName)}`;
     const data = (await fetchWithRetries(url, {
-      maxRetries: 1,
+      maxRetries: 0,
       initialDelayMs: 300,
       headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(8000),
     })) as { downloads?: number } | null;
     return typeof data?.downloads === 'number' ? data.downloads : undefined;
   } catch {
@@ -233,12 +234,29 @@ async function fetchLastPublished(
     const registryUrl = await getNpmRegistryUrl();
     const urlName = encodeRegistryPackageName(packageName);
     const url = `${registryUrl}/${urlName}`;
+    const signal = AbortSignal.timeout(8000);
+
+    // Try abbreviated metadata first (smaller response)
+    try {
+      const data = (await fetchWithRetries(url, {
+        maxRetries: 0,
+        initialDelayMs: 300,
+        headers: { Accept: 'application/vnd.npm.install-v1+json' },
+        signal,
+      })) as { modified?: string } | null;
+      if (data?.modified) return data.modified;
+    } catch {
+      // Abbreviated endpoint may not be supported by all registries
+    }
+
+    // Fallback: fetch full document and extract time.modified
     const data = (await fetchWithRetries(url, {
-      maxRetries: 1,
+      maxRetries: 0,
       initialDelayMs: 300,
-      headers: { Accept: 'application/vnd.npm.install-v1+json' },
-    })) as { modified?: string } | null;
-    return data?.modified || undefined;
+      headers: { Accept: 'application/json' },
+      signal,
+    })) as { time?: { modified?: string } } | null;
+    return data?.time?.modified || undefined;
   } catch {
     return undefined;
   }
@@ -285,7 +303,9 @@ async function fetchPackageDetailsWithError(
 
     const [downloads, lastPublished] = await Promise.all([
       fetchWeeklyDownloads(packageName),
-      pkg.lastPublished ? Promise.resolve(undefined) : fetchLastPublished(packageName),
+      pkg.lastPublished
+        ? Promise.resolve(undefined)
+        : fetchLastPublished(packageName),
     ]);
     if (downloads !== undefined) {
       pkg.weeklyDownloads = downloads;
