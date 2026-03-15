@@ -666,6 +666,81 @@ describe('localViewStructure', () => {
 
       expect(result.status).toBe('hasResults');
     });
+
+    it('should default showFileLastModified to true when not specified (non-recursive)', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: 'file.txt',
+        stderr: '',
+      });
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date('2024-01-15T12:00:00Z'),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.entries).toBeDefined();
+      expect(result.entries!.length).toBeGreaterThan(0);
+      expect(result.entries![0].modified).toBe('2024-01-15T12:00:00.000Z');
+    });
+
+    it('should default showFileLastModified to true when not specified (recursive)', async () => {
+      mockReaddir.mockResolvedValue(['file.txt']);
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date('2024-06-15T12:00:00Z'),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        depth: 1,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.entries).toBeDefined();
+      expect(result.entries!.length).toBeGreaterThan(0);
+      expect(result.entries![0].modified).toBe('2024-06-15T12:00:00.000Z');
+    });
+
+    it('should NOT include modified when showFileLastModified is explicitly false', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: 'file.txt',
+        stderr: '',
+      });
+
+      mockLstat.mockResolvedValue({
+        isDirectory: () => false,
+        isFile: () => true,
+        isSymbolicLink: () => false,
+        size: 1024,
+        mtime: new Date('2024-01-15T12:00:00Z'),
+      } as Stats);
+
+      const result = await viewStructure({
+        path: '/test/path',
+        showFileLastModified: false,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.entries).toBeDefined();
+      expect(result.entries!.length).toBeGreaterThan(0);
+      expect(result.entries![0].modified).toBeUndefined();
+    });
   });
 
   describe('Hidden files', () => {

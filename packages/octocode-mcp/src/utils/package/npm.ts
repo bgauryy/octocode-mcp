@@ -226,6 +226,24 @@ function encodeRegistryPackageName(packageName: string): string {
   return packageName;
 }
 
+async function fetchLastPublished(
+  packageName: string
+): Promise<string | undefined> {
+  try {
+    const registryUrl = await getNpmRegistryUrl();
+    const urlName = encodeRegistryPackageName(packageName);
+    const url = `${registryUrl}/${urlName}`;
+    const data = (await fetchWithRetries(url, {
+      maxRetries: 1,
+      initialDelayMs: 300,
+      headers: { Accept: 'application/vnd.npm.install-v1+json' },
+    })) as { modified?: string } | null;
+    return data?.modified || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function fetchPackageDetailsWithError(
   packageName: string,
   includeExtendedMetadata: boolean = false
@@ -265,9 +283,15 @@ async function fetchPackageDetailsWithError(
       includeExtendedMetadata
     );
 
-    const downloads = await fetchWeeklyDownloads(packageName);
+    const [downloads, lastPublished] = await Promise.all([
+      fetchWeeklyDownloads(packageName),
+      pkg.lastPublished ? Promise.resolve(undefined) : fetchLastPublished(packageName),
+    ]);
     if (downloads !== undefined) {
       pkg.weeklyDownloads = downloads;
+    }
+    if (lastPublished && !pkg.lastPublished) {
+      pkg.lastPublished = lastPublished;
     }
 
     return { pkg };

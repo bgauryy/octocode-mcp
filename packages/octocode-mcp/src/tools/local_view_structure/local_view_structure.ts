@@ -38,11 +38,13 @@ export async function viewStructure(
     }
 
     // For recursive mode, we use Node.js fs directly (no external command needed)
+    const effectiveShowModified = query.showFileLastModified ?? true;
+
     if (query.depth || query.recursive) {
       return await viewStructureRecursive(
         query,
         pathValidation.sanitizedPath!,
-        query.showFileLastModified
+        effectiveShowModified
       );
     }
 
@@ -87,7 +89,7 @@ export async function viewStructure(
       : await parseLsSimple(
           result.stdout,
           pathValidation.sanitizedPath!,
-          query.showFileLastModified
+          effectiveShowModified
         );
 
     let filteredEntries = applyEntryFilters(entries, query);

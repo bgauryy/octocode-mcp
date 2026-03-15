@@ -129,6 +129,43 @@ describe('mapToResult - time object parsing', () => {
       ).toBeUndefined();
     }
   });
+
+  it('should fallback to fetchLastPublished when time object is absent', async () => {
+    mockFetchWithRetries
+      .mockResolvedValueOnce({ name: 'test-pkg', version: '1.0.0' })
+      .mockResolvedValueOnce({ downloads: 500 })
+      .mockResolvedValueOnce({ modified: '2024-03-01T09:00:00.000Z' });
+
+    const result = await searchNpmPackage('test-pkg', 1, false);
+
+    expect('packages' in result).toBe(true);
+    if ('packages' in result) {
+      expect((result.packages[0] as NpmPackageResult).lastPublished).toBe(
+        '2024-03-01T09:00:00.000Z'
+      );
+      expect((result.packages[0] as NpmPackageResult).weeklyDownloads).toBe(500);
+    }
+  });
+
+  it('should not call fetchLastPublished when time object already provides lastPublished', async () => {
+    mockFetchWithRetries
+      .mockResolvedValueOnce({
+        name: 'test-pkg',
+        version: '2.0.0',
+        time: { '2.0.0': '2024-02-15T10:00:00.000Z' },
+      })
+      .mockResolvedValueOnce({ downloads: 1000 });
+
+    const result = await searchNpmPackage('test-pkg', 1, false);
+
+    expect('packages' in result).toBe(true);
+    if ('packages' in result) {
+      expect((result.packages[0] as NpmPackageResult).lastPublished).toBe(
+        '2024-02-15T10:00:00.000Z'
+      );
+    }
+    expect(mockFetchWithRetries).toHaveBeenCalledTimes(2);
+  });
 });
 
 // fetchPackageDetails — HTTP error handling
