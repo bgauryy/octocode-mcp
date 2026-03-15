@@ -662,7 +662,7 @@ describe('Public Schema Exports', () => {
       expect(result.entriesPerPage).toBe(20);
       expect(result.entryPageNumber).toBe(1);
       expect(result.summary).toBe(true);
-      expect(result.showFileLastModified).toBe(false);
+      expect(result.showFileLastModified).toBe(true);
     });
 
     it('LSPCallHierarchyQuerySchema should apply default values', () => {
