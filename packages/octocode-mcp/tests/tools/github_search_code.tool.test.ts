@@ -364,6 +364,91 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       expect(responseText).toContain('file.ts');
     });
 
+    it('should add outputPagination for oversized matches and resume with charOffset', async () => {
+      const largeMatch = 'match-'.repeat(600);
+
+      mockProvider.searchCode.mockResolvedValue({
+        data: {
+          items: [
+            {
+              path: 'src/huge-file.ts',
+              repository: { id: '1', name: 'test/repo', url: '' },
+              matches: [{ context: largeMatch, positions: [] }],
+              url: '',
+            },
+          ],
+          totalCount: 1,
+          pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+        },
+        status: 200,
+        provider: 'github',
+      });
+
+      const firstResult = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['huge'],
+              owner: 'test',
+              repo: 'repo',
+              charLength: 350,
+            },
+          ],
+        }
+      );
+
+      const firstStructured = firstResult.structuredContent as {
+        results: Array<{
+          data: {
+            files?: Array<{ path: string; text_matches?: string[] }>;
+            outputPagination?: {
+              hasMore: boolean;
+              charOffset: number;
+              charLength: number;
+            };
+          };
+        }>;
+      };
+      const firstData = firstStructured.results[0]!.data;
+      const nextOffset =
+        (firstData.outputPagination?.charOffset ?? 0) +
+        (firstData.outputPagination?.charLength ?? 0);
+
+      expect(firstData.files?.[0]?.path).toBe('src/huge-file.ts');
+      expect(firstData.files?.[0]?.text_matches?.[0]?.length).toBeLessThan(
+        largeMatch.length
+      );
+      expect(firstData.outputPagination?.hasMore).toBe(true);
+
+      const secondResult = await mockServer.callTool(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        {
+          queries: [
+            {
+              keywordsToSearch: ['huge'],
+              owner: 'test',
+              repo: 'repo',
+              charOffset: nextOffset,
+              charLength: 350,
+            },
+          ],
+        }
+      );
+
+      const secondStructured = secondResult.structuredContent as {
+        results: Array<{
+          data: {
+            files?: Array<{ text_matches?: string[] }>;
+          };
+        }>;
+      };
+
+      expect(
+        secondStructured.results[0]!.data.files?.[0]?.text_matches?.[0]
+      ).not.toBe(firstData.files?.[0]?.text_matches?.[0]);
+    });
+
     it('should include repositoryContext.branch when API returns it', async () => {
       mockProvider.searchCode.mockResolvedValue({
         data: {
@@ -538,6 +623,73 @@ describe('GitHub Search Code Tool - Tool Layer Integration', () => {
       });
 
       expect(result.isError).toBe(false);
+    });
+  });
+
+  describe('Owner-only search (no repo)', () => {
+    it('should pass owner to provider when only owner is specified', async () => {
+      mockProvider.searchCode.mockResolvedValue({
+        data: {
+          items: [
+            {
+              path: 'src/widget.ts',
+              repository: { id: '1', name: 'wix-private/payments', url: '' },
+              matches: [{ context: 'refund widget', positions: [] }],
+              url: '',
+            },
+          ],
+          totalCount: 1,
+          pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+        },
+        status: 200,
+        provider: 'github',
+      });
+
+      await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [
+          {
+            keywordsToSearch: ['refund', 'widget'],
+            owner: 'wix-private',
+          },
+        ],
+      });
+
+      expect(mockProvider.searchCode).toHaveBeenCalledTimes(1);
+      const providerQuery = mockProvider.searchCode.mock.calls[0]?.[0];
+      expect(providerQuery.owner).toBe('wix-private');
+    });
+
+    it('should return results when searching by owner only', async () => {
+      mockProvider.searchCode.mockResolvedValue({
+        data: {
+          items: [
+            {
+              path: 'src/refund.ts',
+              repository: { id: '1', name: 'wix-private/billing', url: '' },
+              matches: [{ context: 'process refund', positions: [] }],
+              url: '',
+            },
+          ],
+          totalCount: 1,
+          pagination: { currentPage: 1, totalPages: 1, hasMore: false },
+        },
+        status: 200,
+        provider: 'github',
+      });
+
+      const result = await mockServer.callTool(TOOL_NAMES.GITHUB_SEARCH_CODE, {
+        queries: [
+          {
+            keywordsToSearch: ['refund'],
+            owner: 'wix-private',
+          },
+        ],
+      });
+
+      expect(result.isError).toBe(false);
+      const responseText = getTextContent(result.content);
+      expect(responseText).toContain('hasResults');
+      expect(responseText).toContain('src/refund.ts');
     });
   });
 

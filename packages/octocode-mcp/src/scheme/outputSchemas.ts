@@ -108,6 +108,9 @@ function createBulkOutputSchema(successDataSchema: z.ZodType<object>) {
         .describe(
           'Array of results, one per input query, discriminated by status'
         ),
+      responsePagination: CharPaginationSchema.optional().describe(
+        'Pagination metadata for top-level bulk response pagination across results[]'
+      ),
     })
     .strict();
 }
@@ -760,6 +763,9 @@ export const GitHubSearchCodeDataSchema = z
     pagination: SearchPaginationSchema.optional().describe(
       'Pagination info for navigating through search results'
     ),
+    outputPagination: CharPaginationSchema.optional().describe(
+      'Payload pagination metadata when the result body was size-paginated'
+    ),
     hints: HintsSchema,
   })
   .strict();
@@ -802,6 +808,9 @@ export const GitHubSearchRepositoriesDataSchema = z
     pagination: SearchPaginationSchema.optional().describe(
       'Pagination info for navigating through repository results'
     ),
+    outputPagination: CharPaginationSchema.optional().describe(
+      'Payload pagination metadata when the result body was size-paginated'
+    ),
     hints: HintsSchema,
   })
   .strict();
@@ -829,6 +838,9 @@ export const GitHubViewRepoStructureDataSchema = z
     pagination: EntriesPaginationSchema.optional().describe(
       'Pagination info for large directory listings'
     ),
+    outputPagination: CharPaginationSchema.optional().describe(
+      'Payload pagination metadata when the structure payload was size-paginated'
+    ),
     hints: HintsSchema,
   })
   .strict();
@@ -854,6 +866,9 @@ export const GitHubCloneRepoDataSchema = z
       .describe(
         'Whether the clone was served from cache instead of a fresh clone'
       ),
+    outputPagination: CharPaginationSchema.optional().describe(
+      'Payload pagination metadata when the clone result body was size-paginated'
+    ),
     hints: HintsSchema,
   })
   .strict();
@@ -871,6 +886,9 @@ export const PackageSearchDataSchema = z
       .nonnegative()
       .optional()
       .describe('Total number of packages matching the search query'),
+    outputPagination: CharPaginationSchema.optional().describe(
+      'Payload pagination metadata when the package list was size-paginated'
+    ),
     hints: HintsSchema,
   })
   .strict();
@@ -898,6 +916,9 @@ export const LocalSearchCodeDataSchema = z
       .describe(
         'Warnings about skipped files, permission errors, or truncated results'
       ),
+    outputPagination: CharPaginationSchema.optional().describe(
+      'Payload pagination metadata when the result body was size-paginated'
+    ),
     hints: HintsSchema,
   })
   .strict();
@@ -964,8 +985,11 @@ export const LocalFindFilesDataSchema = z
     pagination: FilesPaginationSchema.optional().describe(
       'Pagination info for navigating through file results'
     ),
+    outputPagination: ContentPaginationSchema.optional().describe(
+      'Payload pagination metadata when the result body was size-paginated'
+    ),
     charPagination: ContentPaginationSchema.optional().describe(
-      'Character-based pagination info when output-size limits apply'
+      'Legacy compatibility alias for outputPagination'
     ),
     hints: HintsSchema,
   })
@@ -992,6 +1016,9 @@ export const LocalViewStructureDataSchema = z
       .array(z.string())
       .optional()
       .describe('Warnings about skipped or inaccessible entries'),
+    outputPagination: CharPaginationSchema.optional().describe(
+      'Payload pagination metadata when the result body was size-paginated'
+    ),
     hints: HintsSchema,
   })
   .strict();
@@ -1047,6 +1074,9 @@ export const LspFindReferencesDataSchema = z
       .boolean()
       .optional()
       .describe('Whether references span multiple files'),
+    outputPagination: CharPaginationSchema.optional().describe(
+      'Payload pagination metadata when the result body was size-paginated'
+    ),
     hints: HintsSchema,
   })
   .strict();

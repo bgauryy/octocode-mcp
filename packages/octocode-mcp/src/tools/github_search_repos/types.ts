@@ -8,10 +8,6 @@ import type {
   GitHubSearchRepositoriesData,
 } from '../../scheme/outputTypes.js';
 
-// ============================================================================
-// INPUT TYPES
-// ============================================================================
-
 /**
  * Query parameters for searching GitHub repositories
  */
@@ -28,14 +24,12 @@ export interface GitHubReposSearchQuery {
   sort?: 'forks' | 'stars' | 'updated' | 'best-match';
   limit?: number;
   page?: number;
+  charOffset?: number;
+  charLength?: number;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
-
-// ============================================================================
-// OUTPUT TYPES
-// ============================================================================
 
 export type SimplifiedRepository = GitHubRepositoryOutput;
 

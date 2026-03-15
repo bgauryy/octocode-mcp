@@ -59,13 +59,12 @@ function parseRepoInfo(repoUrl: string | null | undefined): {
 export async function searchPackages(
   args: ToolExecutionArgs<PackageSearchQuery>
 ): Promise<CallToolResult> {
-  const { queries } = args;
+  const { queries, responseCharOffset, responseCharLength } = args;
 
   return executeBulkOperation(
     queries,
     async (query: PackageSearchQuery, _index: number) => {
       try {
-        // Type guard: ensure required fields exist
         if (!query.ecosystem || !query.name) {
           return createErrorResult(
             'Both ecosystem and name are required for package search',
@@ -103,12 +102,10 @@ export async function searchPackages(
           );
         }
 
-        // Generate context-specific hints for package search
         const extraHints = hasContent
           ? generateSuccessHints(result, query.ecosystem, deprecationInfo)
           : generateEmptyHints(query);
 
-        // Use unified pattern with extraHints for package-specific guidance
         return createSuccessResult(
           query,
           result,
@@ -123,6 +120,8 @@ export async function searchPackages(
     {
       toolName: TOOL_NAMES.PACKAGE_SEARCH,
       keysPriority: ['packages', 'totalFound', 'error'],
+      responseCharOffset,
+      responseCharLength,
     }
   );
 }

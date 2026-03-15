@@ -116,10 +116,6 @@ export async function loadUserConfig(
   return {};
 }
 
-// ============================================================================
-// Server Resolution
-// ============================================================================
-
 /**
  * Resolve language server command from env vars or bundled packages
  *
@@ -170,10 +166,6 @@ export function resolveLanguageServer(config: {
 
   return { command: config.command, args: config.args };
 }
-
-// ============================================================================
-// Language Detection
-// ============================================================================
 
 /**
  * Detect language ID from file extension

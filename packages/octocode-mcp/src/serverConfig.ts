@@ -244,10 +244,6 @@ export async function getTokenSource(): Promise<TokenSourceType> {
   return result.source;
 }
 
-// ============================================================================
-// ACTIVE PROVIDER CONFIGURATION
-// ============================================================================
-
 /**
  * Get the active provider based on environment configuration.
  * Priority: GITLAB_TOKEN → 'gitlab', BITBUCKET_TOKEN → 'bitbucket', otherwise → 'github' (default)

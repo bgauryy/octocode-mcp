@@ -14,10 +14,6 @@ import type {
   GitHubCloneRepoToolResult,
 } from '../../scheme/outputTypes.js';
 
-// ─────────────────────────────────────────────────────────────────────
-// Query
-// ─────────────────────────────────────────────────────────────────────
-
 /**
  * Single query for cloning / fetching a repository.
  */
@@ -49,11 +45,11 @@ export interface CloneRepoQuery {
    * even if a valid cached copy exists.
    */
   forceRefresh?: boolean;
+  /** Character offset for output pagination */
+  charOffset?: number;
+  /** Character budget for output pagination */
+  charLength?: number;
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// Cache metadata
-// ─────────────────────────────────────────────────────────────────────
 
 /**
  * Metadata persisted alongside a cloned repo for cache management.
@@ -94,10 +90,6 @@ export interface CloneCacheMeta {
   /** Approximate on-disk size in bytes, recorded at clone time for fast GC. */
   sizeBytes?: number;
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// Result
-// ─────────────────────────────────────────────────────────────────────
 
 /**
  * Result returned for a single clone / fetch query.

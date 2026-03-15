@@ -33,6 +33,8 @@ export function registerSearchGitHubPullRequestsTool(
       async (
         args: {
           queries: GitHubPullRequestSearchQuery[];
+          responseCharOffset?: number;
+          responseCharLength?: number;
         },
         authInfo,
         sessionId
@@ -47,6 +49,8 @@ export function registerSearchGitHubPullRequestsTool(
 
         return searchMultipleGitHubPullRequests({
           queries,
+          responseCharOffset: args.responseCharOffset,
+          responseCharLength: args.responseCharLength,
           authInfo,
           sessionId,
         });

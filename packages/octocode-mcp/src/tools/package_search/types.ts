@@ -17,10 +17,6 @@ import type {
   DeprecationInfo as CommonDeprecationInfo,
 } from '../../utils/package/common.js';
 
-// ============================================================================
-// INPUT TYPES
-// ============================================================================
-
 /**
  * Base query for package search
  */
@@ -28,6 +24,8 @@ interface PackageSearchBaseQuery {
   id?: string;
   name: string;
   searchLimit?: number;
+  charOffset?: number;
+  charLength?: number;
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
@@ -55,10 +53,6 @@ export interface PythonPackageSearchQuery extends PackageSearchBaseQuery {
 export type PackageSearchQuery =
   | NpmPackageSearchQuery
   | PythonPackageSearchQuery;
-
-// ============================================================================
-// OUTPUT TYPES
-// ============================================================================
 
 export type MinimalPackageResult = CommonMinimalPackageResult;
 

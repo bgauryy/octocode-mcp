@@ -45,10 +45,6 @@ const SERVER_CONFIG: Implementation = {
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
 
-// =============================================================================
-// Shutdown Handler
-// =============================================================================
-
 function createShutdownHandler(
   server: McpServer,
   getLogger: () => Logger | null,
@@ -68,23 +64,18 @@ function createShutdownHandler(
         state.timeout = null;
       }
 
-      // Force-exit safety net: if cleanup hangs, exit after timeout
       state.timeout = setTimeout(() => process.exit(1), SHUTDOWN_TIMEOUT_MS);
 
-      // Stop periodic cache GC
       stopCacheGC();
-
-      // Cleanup all caches and instances
       clearAllCache();
       clearOctokitInstances();
       clearProviderCache();
       cleanup();
 
-      // Close server transport — after this, logger calls are no-ops
       try {
         await server.close();
       } catch {
-        // Server close may fail if already disconnected - safe to ignore
+        /* no-op */
       }
 
       if (state.timeout) {
@@ -103,10 +94,6 @@ function createShutdownHandler(
   };
 }
 
-// =============================================================================
-// Process Signal Handlers
-// =============================================================================
-
 function setupProcessHandlers(
   gracefulShutdown: (signal?: string) => Promise<void>,
   getLogger: () => Logger | null
@@ -117,7 +104,6 @@ function setupProcessHandlers(
   process.stdin.once('close', () => gracefulShutdown('STDIN_CLOSE'));
 
   process.once('uncaughtException', error => {
-    // Resolve logger lazily — may be null if crash is during startup
     getLogger()?.error('Uncaught exception', { error: error.message });
     logSessionError('startup', STARTUP_ERRORS.UNCAUGHT_EXCEPTION.code).catch(
       () => {}
@@ -133,10 +119,6 @@ function setupProcessHandlers(
     gracefulShutdown('UNHANDLED_REJECTION');
   });
 }
-
-// =============================================================================
-// Tool Registration
-// =============================================================================
 
 export async function registerAllTools(
   server: McpServer,
@@ -178,9 +160,7 @@ export async function registerAllTools(
   }
 }
 
-// =============================================================================
 // Server Initialization
-// =============================================================================
 
 async function createServer(content: CompleteMetadata): Promise<McpServer> {
   const capabilities: {
@@ -277,9 +257,7 @@ async function startServer() {
   }
 }
 
-// =============================================================================
 // Entry Point
-// =============================================================================
 
 startServer().catch((error: unknown) => {
   const message =

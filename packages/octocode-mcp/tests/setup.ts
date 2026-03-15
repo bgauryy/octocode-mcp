@@ -73,6 +73,9 @@ const mockDefaultConfig = {
   },
   output: {
     format: 'yaml',
+    pagination: {
+      defaultCharLength: 8000,
+    },
   },
   source: 'defaults',
   configPath: undefined,

@@ -31,6 +31,8 @@ export interface CodeSearchQuery extends BaseProviderQuery {
    * - GitLab: numeric ID or 'group/project'
    */
   projectId?: string;
+  /** Owner/organization filter (used when searching without a specific repo) */
+  owner?: string;
   /** Filter by file path pattern */
   path?: string;
   /** Filter by filename */
@@ -121,6 +123,8 @@ export interface PullRequestQuery extends BaseProviderQuery {
    * - GitLab: numeric ID or 'group/project'
    */
   projectId?: string;
+  /** Owner/organization filter (used when searching without a specific repo) */
+  owner?: string;
   /**
    * PR/MR number within the project:
    * - GitHub: PR number

@@ -102,6 +102,18 @@ All local and LSP tools require research context fields (same as GitHub/GitLab t
 
 These are **required** on every query for all local and LSP tools. They help track research intent and improve result quality.
 
+## Universal Output Pagination
+
+All local and LSP tools support the same size-aware continuation contract.
+
+- Query-level pagination: use `charOffset` and `charLength` on a query. For `localGetFileContent`, these fields page file content. For search/list/LSP tools, they page the structured result payload after any native tool pagination is applied.
+- Bulk-response pagination: use top-level `responseCharOffset` and `responseCharLength` to continue oversized multi-query `results[]` payloads.
+- Response fields:
+  - `pagination`: tool-native pagination metadata
+  - `outputPagination`: query-level output-size pagination metadata
+  - `responsePagination`: top-level bulk response pagination metadata
+- Default budget: oversized responses auto-page at `output.pagination.defaultCharLength`, which defaults to `8000` unless overridden in config or per request.
+
 ## Tools at a Glance
 
 ### Local Tools

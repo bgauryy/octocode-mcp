@@ -14,11 +14,15 @@ export const TOOL_NAME = TOOL_NAMES.LSP_FIND_REFERENCES;
 export async function executeFindReferences(
   args: ToolExecutionArgs<LSPFindReferencesQuery>
 ): Promise<CallToolResult> {
-  const { queries } = args;
+  const { queries, responseCharOffset, responseCharLength } = args;
 
   return executeBulkOperation(
     queries || [],
     async (query: LSPFindReferencesQuery) => findReferences(query),
-    { toolName: TOOL_NAME }
+    {
+      toolName: TOOL_NAME,
+      responseCharOffset,
+      responseCharLength,
+    }
   );
 }

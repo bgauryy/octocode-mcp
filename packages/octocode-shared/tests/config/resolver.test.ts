@@ -47,6 +47,8 @@ describe('config/resolver', () => {
     delete process.env.MAX_RETRIES;
     delete process.env.LOG;
     delete process.env.OCTOCODE_LSP_CONFIG;
+    delete process.env.OCTOCODE_OUTPUT_FORMAT;
+    delete process.env.OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH;
   });
 
   afterEach(() => {
@@ -64,6 +66,7 @@ describe('config/resolver', () => {
       expect(config.version).toBe(DEFAULT_CONFIG.version);
       expect(config.github.apiUrl).toBe(DEFAULT_CONFIG.github.apiUrl);
       expect(config.local.enabled).toBe(DEFAULT_CONFIG.local.enabled);
+      expect(config.output.pagination.defaultCharLength).toBe(8000);
       expect(config.source).toBe('defaults');
     });
 
@@ -95,12 +98,28 @@ describe('config/resolver', () => {
 
       process.env.GITHUB_API_URL = 'https://env.github.com/api/v3';
       process.env.ENABLE_LOCAL = 'true';
+      process.env.OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH = '9000';
 
       const config = resolveConfigSync();
 
       expect(config.github.apiUrl).toBe('https://env.github.com/api/v3');
       expect(config.local.enabled).toBe(true);
+      expect(config.output.pagination.defaultCharLength).toBe(9000);
       expect(config.source).toBe('mixed');
+    });
+
+    it('loads output pagination defaults from file config', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({
+          output: { pagination: { defaultCharLength: 9000 } },
+        })
+      );
+
+      const config = resolveConfigSync();
+
+      expect(config.output.pagination.defaultCharLength).toBe(9000);
+      expect(config.source).toBe('file');
     });
 
     it('env vars override defaults when no file', () => {
@@ -252,6 +271,25 @@ describe('config/resolver', () => {
         process.env.WORKSPACE_ROOT = '/custom/workspace';
         const config = resolveConfigSync();
         expect(config.local.workspaceRoot).toBe('/custom/workspace');
+      });
+
+      it('parses OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH', () => {
+        process.env.OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH = '12000';
+        const config = resolveConfigSync();
+        expect(config.output.pagination.defaultCharLength).toBe(12000);
+      });
+
+      it('clamps OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH to valid range', () => {
+        process.env.OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH = '10';
+        expect(resolveConfigSync().output.pagination.defaultCharLength).toBe(
+          1000
+        );
+
+        _resetConfigCache();
+        process.env.OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH = '999999';
+        expect(resolveConfigSync().output.pagination.defaultCharLength).toBe(
+          50000
+        );
       });
 
       it('trims whitespace from WORKSPACE_ROOT', () => {

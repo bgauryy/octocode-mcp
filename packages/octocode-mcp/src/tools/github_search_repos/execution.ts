@@ -186,7 +186,7 @@ function generateSearchSpecificHints(
 export async function searchMultipleGitHubRepos(
   args: ToolExecutionArgs<GitHubReposSearchQuery>
 ): Promise<CallToolResult> {
-  const { queries, authInfo } = args;
+  const { queries, authInfo, responseCharOffset, responseCharLength } = args;
   let providerContext:
     | ReturnType<typeof createProviderExecutionContext>
     | undefined;
@@ -292,6 +292,8 @@ export async function searchMultipleGitHubRepos(
     {
       toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
       keysPriority: ['repositories', 'pagination', 'error'] satisfies string[],
+      responseCharOffset,
+      responseCharLength,
     }
   );
 }

@@ -178,6 +178,8 @@ describe('Public Schema Exports', () => {
         researchGoal: 'Locate login implementations',
         reasoning: 'Need to understand auth flow',
         keywordsToSearch: ['authenticate'],
+        charOffset: 100,
+        charLength: 1200,
       };
 
       const result = GitHubCodeSearchQuerySchema.safeParse(validQuery);
@@ -186,6 +188,8 @@ describe('Public Schema Exports', () => {
 
     it('GitHubCodeSearchBulkQuerySchema should accept queries array', () => {
       const validBulk = {
+        responseCharOffset: 100,
+        responseCharLength: 2000,
         queries: [
           {
             id: 'github_code_bulk_query',
@@ -198,6 +202,22 @@ describe('Public Schema Exports', () => {
       };
 
       const result = GitHubCodeSearchBulkQuerySchema.safeParse(validBulk);
+      expect(result.success).toBe(true);
+    });
+
+    it('LSPFindReferencesQuerySchema should accept output pagination fields', () => {
+      const validQuery = {
+        id: 'refs_query',
+        researchGoal: 'Find symbol usages',
+        reasoning: 'Need follow-up references',
+        uri: '/tmp/file.ts',
+        symbolName: 'foo',
+        lineHint: 1,
+        charOffset: 50,
+        charLength: 1000,
+      };
+
+      const result = LSPFindReferencesQuerySchema.safeParse(validQuery);
       expect(result.success).toBe(true);
     });
 

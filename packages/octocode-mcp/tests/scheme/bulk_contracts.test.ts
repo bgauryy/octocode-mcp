@@ -32,6 +32,24 @@ import {
 } from '../../src/scheme/outputSchemas.js';
 
 describe('Bulk Tool Contracts', () => {
+  it('bulk input schemas accept top-level response pagination controls', () => {
+    const result = GitHubCodeSearchBulkQuerySchema.safeParse({
+      responseCharOffset: 400,
+      responseCharLength: 1200,
+      queries: [
+        {
+          id: 'search_hooks',
+          mainResearchGoal: 'Find code patterns',
+          researchGoal: 'Locate hook definitions',
+          reasoning: 'Need representative implementation sites',
+          keywordsToSearch: ['useEffect'],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   describe('Input schemas require query ids', () => {
     const bulkInputSchemas = [
       {
@@ -264,6 +282,22 @@ describe('Bulk Tool Contracts', () => {
         expect(result.success).toBe(false);
       }
     );
+  });
+
+  it('bulk output schema accepts responsePagination', () => {
+    const result = BulkToolOutputSchema.safeParse({
+      results: [],
+      responsePagination: {
+        currentPage: 1,
+        totalPages: 2,
+        hasMore: true,
+        charOffset: 0,
+        charLength: 8000,
+        totalChars: 16000,
+      },
+    });
+
+    expect(result.success).toBe(true);
   });
 
   describe('Output schemas expose only the results envelope', () => {

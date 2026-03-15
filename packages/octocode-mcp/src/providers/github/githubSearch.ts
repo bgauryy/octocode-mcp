@@ -136,8 +136,8 @@ export async function searchCode(
     repo?: string;
   } = parseGitHubProjectId
 ): Promise<ProviderResponse<CodeSearchResult>> {
-  // Transform unified query to GitHub format
-  const { owner, repo } = parseProjectId(query.projectId);
+  const { owner: projectOwner, repo } = parseProjectId(query.projectId);
+  const owner = projectOwner || query.owner;
 
   const githubQuery: GitHubCodeSearchQuery = {
     keywordsToSearch: query.keywords,
@@ -156,7 +156,6 @@ export async function searchCode(
 
   const result = await searchGitHubCodeAPI(githubQuery, authInfo);
 
-  // Check for error using type guard - no type assertions needed
   if (isGitHubAPIError(result)) {
     return {
       error: result.error,
@@ -166,7 +165,6 @@ export async function searchCode(
     };
   }
 
-  // Transform result - after type guard, result is narrowed to success type
   if (!result.data) {
     return {
       error: 'No data returned from GitHub API',

@@ -33,6 +33,8 @@ export function registerFetchGitHubFileContentTool(
       async (
         args: {
           queries: FileContentQuery[];
+          responseCharOffset?: number;
+          responseCharLength?: number;
         },
         authInfo,
         sessionId
@@ -47,6 +49,8 @@ export function registerFetchGitHubFileContentTool(
 
         return fetchMultipleGitHubFileContents({
           queries,
+          responseCharOffset: args.responseCharOffset,
+          responseCharLength: args.responseCharLength,
           authInfo,
           sessionId,
         });

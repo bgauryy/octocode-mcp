@@ -1,4 +1,5 @@
 import { readFile, stat } from 'fs/promises';
+import { getConfigSync } from 'octocode-shared';
 import { getHints } from '../../hints/index.js';
 import { applyMinification } from './contentMinifier.js';
 import { extractMatchingLines } from './contentExtractor.js';
@@ -7,7 +8,7 @@ import {
   generatePaginationHints,
   createPaginationInfo,
 } from '../../utils/pagination/index.js';
-import { RESOURCE_LIMITS, DEFAULTS } from '../../utils/core/constants.js';
+import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
 import { TOOL_NAMES } from '../toolMetadata/index.js';
 import {
   validateToolPath,
@@ -19,9 +20,28 @@ import type {
 } from '../../utils/core/types.js';
 import { ToolErrors, LOCAL_TOOL_ERROR_CODES } from '../../errorCodes.js';
 
+function readConfiguredDefaultCharLength(): number {
+  const config = getConfigSync() as {
+    output?: {
+      pagination?: {
+        defaultCharLength?: number;
+      };
+    };
+  };
+
+  return config.output?.pagination?.defaultCharLength ?? 8000;
+}
+
 export async function fetchContent(
   query: FetchContentQuery
 ): Promise<FetchContentResult> {
+  let defaultOutputCharLength = 8000;
+  try {
+    defaultOutputCharLength = readConfiguredDefaultCharLength();
+  } catch {
+    defaultOutputCharLength = 8000;
+  }
+
   try {
     const pathValidation = validateToolPath(
       query,
@@ -199,14 +219,11 @@ export async function fetchContent(
         };
       }
 
-      if (
-        !query.charLength &&
-        resultContent.length > DEFAULTS.MAX_OUTPUT_CHARS
-      ) {
+      if (!query.charLength && resultContent.length > defaultOutputCharLength) {
         const autoPagination = applyPagination(
           resultContent,
           0,
-          RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH
+          defaultOutputCharLength
         );
 
         return {
@@ -287,12 +304,12 @@ export async function fetchContent(
     let effectiveCharLength = query.charLength;
     let autoPaginated = false;
 
-    if (!query.charLength && resultContent.length > DEFAULTS.MAX_OUTPUT_CHARS) {
+    if (!query.charLength && resultContent.length > defaultOutputCharLength) {
       // Auto-apply recommended pagination instead of returning error
-      effectiveCharLength = RESOURCE_LIMITS.RECOMMENDED_CHAR_LENGTH;
+      effectiveCharLength = defaultOutputCharLength;
       autoPaginated = true;
       warnings.push(
-        `Auto-paginated: Content (${resultContent.length} chars) exceeds ${DEFAULTS.MAX_OUTPUT_CHARS} char limit`
+        `Auto-paginated: Content (${resultContent.length} chars) exceeds ${defaultOutputCharLength} char limit`
       );
     }
 

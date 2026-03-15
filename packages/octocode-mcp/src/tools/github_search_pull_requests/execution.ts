@@ -28,7 +28,7 @@ import {
 export async function searchMultipleGitHubPullRequests(
   args: ToolExecutionArgs<GitHubPullRequestSearchQuery>
 ): Promise<CallToolResult> {
-  const { queries, authInfo } = args;
+  const { queries, authInfo, responseCharOffset, responseCharLength } = args;
   let providerContext:
     | ReturnType<typeof createProviderExecutionContext>
     | undefined;
@@ -91,14 +91,12 @@ export async function searchMultipleGitHubPullRequests(
             )
           : [];
 
-        // Apply output size limits for large responses
         const serialized = serializeForPagination(resultData, true);
         const sizeLimitResult = applyOutputSizeLimit(serialized, {
           charOffset: query.charOffset,
           charLength: query.charLength,
         });
 
-        // Add outputPagination if output was limited
         let outputLimitData: Record<string, unknown> = resultData;
         if (sizeLimitResult.wasLimited && sizeLimitResult.pagination) {
           const pg = sizeLimitResult.pagination;
@@ -172,6 +170,8 @@ export async function searchMultipleGitHubPullRequests(
         'total_count',
         'error',
       ] satisfies Array<keyof PullRequestSearchResult>,
+      responseCharOffset,
+      responseCharLength,
     }
   );
 }

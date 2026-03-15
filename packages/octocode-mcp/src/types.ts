@@ -26,15 +26,7 @@
 
 import type { GitHubAPIError } from './github/githubAPI.js';
 
-// ============================================================================
-// COMMON QUERY STATUS
-// ============================================================================
-
 export type QueryStatus = 'hasResults' | 'empty' | 'error';
-
-// ============================================================================
-// TOOL RESULT TYPES
-// ============================================================================
 
 interface ToolResult {
   status: QueryStatus;
@@ -50,10 +42,6 @@ export interface ToolErrorResult extends ToolResult {
 export interface ToolSuccessResult extends ToolResult {
   status: 'hasResults' | 'empty';
 }
-
-// ============================================================================
-// PAGINATION
-// ============================================================================
 
 /**
  * Common pagination information used across tools
@@ -75,10 +63,6 @@ export interface PaginationInfo {
   matchesPerPage?: number;
   totalMatches?: number;
 }
-
-// ============================================================================
-// TOOL OPERATIONS - Bulk processing, caching, and execution utilities
-// ============================================================================
 
 /**
  * Optional callback invoked when a tool is called with queries
@@ -114,6 +98,8 @@ export interface QueryError {
 export interface BulkResponseConfig {
   toolName: string;
   keysPriority?: string[];
+  responseCharOffset?: number;
+  responseCharLength?: number;
   /**
    * Maximum number of concurrent requests during bulk operations.
    * Lower values reduce rate limiting risk, higher values improve throughput.
@@ -149,11 +135,8 @@ export interface StructuredToolResponse {
 /** Bulk response format */
 export interface BulkToolResponse {
   results: FlatQueryResult[];
+  responsePagination?: PaginationInfo;
 }
-
-// ============================================================================
-// SECURITY TYPES
-// ============================================================================
 
 /** Pattern definition for detecting sensitive data */
 export interface SensitiveDataPattern {
@@ -179,10 +162,6 @@ export interface ValidationResult {
   hasSecrets: boolean;
   warnings: string[];
 }
-
-// ============================================================================
-// SERVER CONFIGURATION
-// ============================================================================
 
 /**
  * Token source types for tracking where the GitHub token came from.
@@ -264,10 +243,6 @@ export interface ServerConfig {
   /** Bitbucket configuration (optional) */
   bitbucket?: BitbucketConfig;
 }
-
-// ============================================================================
-// SESSION MANAGEMENT
-// ============================================================================
 
 /** Session data for tracking tool usage */
 export interface SessionData {

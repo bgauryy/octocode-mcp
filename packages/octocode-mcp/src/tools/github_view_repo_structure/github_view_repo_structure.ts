@@ -33,6 +33,8 @@ export function registerViewGitHubRepoStructureTool(
       async (
         args: {
           queries: GitHubViewRepoStructureQuery[];
+          responseCharOffset?: number;
+          responseCharLength?: number;
         },
         authInfo,
         sessionId
@@ -47,6 +49,8 @@ export function registerViewGitHubRepoStructureTool(
 
         return exploreMultipleRepositoryStructures({
           queries,
+          responseCharOffset: args.responseCharOffset,
+          responseCharLength: args.responseCharLength,
           authInfo,
           sessionId,
         });

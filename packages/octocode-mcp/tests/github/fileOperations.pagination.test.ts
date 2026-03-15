@@ -7,6 +7,8 @@ import * as minifierModule from '../../src/utils/minifier/index.js';
 vi.mock('../../src/github/client.js');
 vi.mock('../../src/utils/minifier/index.js');
 
+const DEFAULT_OUTPUT_CHAR_LENGTH = 8000;
+
 describe('GitHub File Operations - Pagination', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -36,7 +38,7 @@ describe('GitHub File Operations - Pagination', () => {
   }
 
   describe('auto-pagination', () => {
-    it('should NOT paginate small files (< 20K chars)', async () => {
+    it('should NOT paginate small files below the shared output budget', async () => {
       const smallContent = 'x'.repeat(5000); // 5K chars
       const mockOctokit = createMockOctokit(smallContent);
 
@@ -64,7 +66,7 @@ describe('GitHub File Operations - Pagination', () => {
       }
     });
 
-    it('should auto-paginate large files (> 20K chars)', async () => {
+    it('should auto-paginate large files exceeding the shared output budget', async () => {
       const largeContent = 'x'.repeat(70000); // 70K chars
       const mockOctokit = createMockOctokit(largeContent);
 
@@ -91,13 +93,15 @@ describe('GitHub File Operations - Pagination', () => {
         expect(result.data.pagination?.currentPage).toBe(1);
         expect(result.data.pagination?.hasMore).toBe(true);
         expect(result.data.pagination?.charOffset).toBe(0);
-        expect(result.data.pagination?.charLength).toBe(20000);
+        expect(result.data.pagination?.charLength).toBe(
+          DEFAULT_OUTPUT_CHAR_LENGTH
+        );
         expect(result.data.pagination?.totalChars).toBe(70000);
-        expect(result.data.pagination?.totalPages).toBe(4);
+        expect(result.data.pagination?.totalPages).toBe(9);
       }
     });
 
-    it('should return page 2 with charOffset=20000', async () => {
+    it('should return page 2 with charOffset=8000', async () => {
       const largeContent = 'x'.repeat(70000);
       const mockOctokit = createMockOctokit(largeContent);
 
@@ -116,18 +120,20 @@ describe('GitHub File Operations - Pagination', () => {
         owner: 'test',
         repo: 'repo',
         path: 'large.ts',
-        charOffset: 20000,
+        charOffset: DEFAULT_OUTPUT_CHAR_LENGTH,
       });
 
       expect(result).toHaveProperty('data');
       if ('data' in result && result.data && !('error' in result.data)) {
         expect(result.data.pagination?.currentPage).toBe(2);
-        expect(result.data.pagination?.charOffset).toBe(20000);
+        expect(result.data.pagination?.charOffset).toBe(
+          DEFAULT_OUTPUT_CHAR_LENGTH
+        );
         expect(result.data.pagination?.hasMore).toBe(true);
       }
     });
 
-    it('should indicate last page correctly (charOffset=60000)', async () => {
+    it('should indicate last page correctly (charOffset=64000)', async () => {
       const largeContent = 'x'.repeat(70000);
       const mockOctokit = createMockOctokit(largeContent);
 
@@ -146,14 +152,14 @@ describe('GitHub File Operations - Pagination', () => {
         owner: 'test',
         repo: 'repo',
         path: 'large.ts',
-        charOffset: 60000,
+        charOffset: DEFAULT_OUTPUT_CHAR_LENGTH * 8,
       });
 
       expect(result).toHaveProperty('data');
       if ('data' in result && result.data && !('error' in result.data)) {
-        expect(result.data.pagination?.currentPage).toBe(4);
+        expect(result.data.pagination?.currentPage).toBe(9);
         expect(result.data.pagination?.hasMore).toBe(false);
-        expect(result.data.pagination?.charLength).toBe(10000); // Remaining
+        expect(result.data.pagination?.charLength).toBe(6000); // Remaining
       }
     });
   });
@@ -217,7 +223,9 @@ describe('GitHub File Operations - Pagination', () => {
           result.data.hints?.some(h => h.includes('TO GET NEXT PAGE'))
         ).toBe(true);
         expect(
-          result.data.hints?.some(h => h.includes('charOffset=20000'))
+          result.data.hints?.some(h =>
+            h.includes(`charOffset=${DEFAULT_OUTPUT_CHAR_LENGTH}`)
+          )
         ).toBe(true);
       }
     });
@@ -241,7 +249,7 @@ describe('GitHub File Operations - Pagination', () => {
         owner: 'test',
         repo: 'repo',
         path: 'large.ts',
-        charOffset: 60000,
+        charOffset: DEFAULT_OUTPUT_CHAR_LENGTH * 8,
       });
 
       expect(result).toHaveProperty('data');
@@ -256,7 +264,7 @@ describe('GitHub File Operations - Pagination', () => {
 
   describe('boundary conditions', () => {
     it('should handle charOffset at exactly content boundary', async () => {
-      const content = 'x'.repeat(40000); // Exactly 2 pages
+      const content = 'x'.repeat(40000); // Exactly 5 pages at the shared default
       const mockOctokit = createMockOctokit(content);
 
       vi.mocked(getOctokit).mockResolvedValue(
@@ -272,12 +280,12 @@ describe('GitHub File Operations - Pagination', () => {
         owner: 'test',
         repo: 'repo',
         path: 'boundary.ts',
-        charOffset: 20000,
+        charOffset: DEFAULT_OUTPUT_CHAR_LENGTH * 4,
       });
 
       expect(result).toHaveProperty('data');
       if ('data' in result && result.data && !('error' in result.data)) {
-        expect(result.data.pagination?.currentPage).toBe(2);
+        expect(result.data.pagination?.currentPage).toBe(5);
         expect(result.data.pagination?.hasMore).toBe(false);
       }
     });

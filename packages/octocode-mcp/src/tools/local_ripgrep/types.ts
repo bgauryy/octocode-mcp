@@ -11,10 +11,6 @@ import type {
   LocalSearchCodeToolResult,
 } from '../../scheme/outputTypes.js';
 
-// ============================================================================
-// INPUT TYPES
-// ============================================================================
-
 /**
  * Query parameters for local code search via ripgrep
  */
@@ -52,6 +48,8 @@ export interface RipgrepSearchQuery {
   filesPerPage?: number;
   filePageNumber?: number;
   matchesPerPage?: number;
+  charOffset?: number;
+  charLength?: number;
   includeStats?: boolean;
   includeDistribution?: boolean;
   showFileLastModified?: boolean;
@@ -59,10 +57,6 @@ export interface RipgrepSearchQuery {
   researchGoal?: string;
   reasoning?: string;
 }
-
-// ============================================================================
-// OUTPUT TYPES
-// ============================================================================
 
 export type RipgrepMatch = LocalSearchCodeMatch;
 

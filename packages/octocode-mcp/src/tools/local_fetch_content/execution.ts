@@ -15,7 +15,7 @@ import type { ToolExecutionArgs } from '../../types/execution.js';
 export async function executeFetchContent(
   args: ToolExecutionArgs<FetchContentQuery>
 ): Promise<CallToolResult> {
-  const { queries } = args;
+  const { queries, responseCharOffset, responseCharLength } = args;
 
   return executeBulkOperation(
     queries || [],
@@ -27,6 +27,10 @@ export async function executeFetchContent(
       }
       return fetchContent(query);
     },
-    { toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT }
+    {
+      toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+      responseCharOffset,
+      responseCharLength,
+    }
   );
 }

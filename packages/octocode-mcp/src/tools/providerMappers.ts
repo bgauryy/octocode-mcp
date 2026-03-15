@@ -67,6 +67,7 @@ export function mapCodeSearchToolQuery(query: GitHubCodeSearchQuery) {
   return {
     keywords: query.keywordsToSearch,
     projectId: toProviderProjectId(query.owner, query.repo),
+    owner: query.owner,
     path: query.path,
     filename: query.filename,
     extension: query.extension,
@@ -206,6 +207,7 @@ export function mapRepoSearchProviderRepositories(
 export function mapPullRequestToolQuery(query: GitHubPullRequestSearchQuery) {
   return {
     projectId: toProviderProjectId(query.owner, query.repo),
+    owner: query.owner,
     number: query.prNumber,
     state: query.state as 'open' | 'closed' | 'merged' | 'all' | undefined,
     author: query.author,

@@ -1,7 +1,6 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeWithErrorIsolation } from '../core/promise.js';
 import { createResponseFormat } from '../../responses.js';
-import { applyOutputSizeLimit } from '../pagination/index.js';
 import type {
   ProcessedBulkResult,
   FlatQueryResult,
@@ -10,6 +9,10 @@ import type {
   BulkToolResponse,
   PromiseResult,
 } from '../../types.js';
+import {
+  applyBulkResponsePagination,
+  applyQueryOutputPagination,
+} from './structuredPagination.js';
 
 /** Default concurrency for bulk operations */
 const DEFAULT_BULK_CONCURRENCY = 3;
@@ -88,24 +91,24 @@ function createBulkResponse<TQuery extends object>(
     (query): query is FlatQueryResult => query !== undefined
   );
 
-  const responseData: BulkToolResponse = {
-    results: flatQueries,
-  };
-
-  let text = createResponseFormat(responseData, fullKeysPriority);
-
-  const sizeLimitResult = applyOutputSizeLimit(text, {});
-  if (sizeLimitResult.wasLimited) {
-    const paginationSuffix = [
-      ...sizeLimitResult.warnings,
-      ...sizeLimitResult.paginationHints,
-    ]
-      .filter(s => s.length > 0)
-      .join('\n');
-    text =
-      sizeLimitResult.content +
-      (paginationSuffix ? '\n' + paginationSuffix : '');
-  }
+  const queryPaginatedResults = flatQueries.map((queryResult, index) =>
+    applyQueryOutputPagination(
+      queryResult,
+      (queries[index] as Record<string, unknown>) ?? {},
+      config.toolName
+    )
+  );
+  const responseData: BulkToolResponse = applyBulkResponsePagination(
+    {
+      results: queryPaginatedResults,
+    },
+    {
+      offset: config.responseCharOffset,
+      length: config.responseCharLength,
+    },
+    config.toolName
+  );
+  const text = createResponseFormat(responseData, fullKeysPriority);
 
   return {
     content: [

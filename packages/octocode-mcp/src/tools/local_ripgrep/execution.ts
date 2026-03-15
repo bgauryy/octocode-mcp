@@ -14,7 +14,7 @@ import type { ToolExecutionArgs } from '../../types/execution.js';
 export async function executeRipgrepSearch(
   args: ToolExecutionArgs<RipgrepQuery>
 ): Promise<CallToolResult> {
-  const { queries } = args;
+  const { queries, responseCharOffset, responseCharLength } = args;
 
   return executeBulkOperation(
     queries || [],
@@ -26,6 +26,10 @@ export async function executeRipgrepSearch(
       }
       return searchContentRipgrep(query);
     },
-    { toolName: TOOL_NAMES.LOCAL_RIPGREP }
+    {
+      toolName: TOOL_NAMES.LOCAL_RIPGREP,
+      responseCharOffset,
+      responseCharLength,
+    }
   );
 }

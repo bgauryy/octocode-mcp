@@ -61,6 +61,23 @@ export const GitHubViewRepoStructureQuerySchema = BaseQuerySchema.extend({
     .optional()
     .default(1)
     .describe(GITHUB_VIEW_REPO_STRUCTURE.pagination.entryPageNumber),
+  charOffset: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      'Character offset for output pagination after entry pagination has been applied.'
+    ),
+  charLength: z
+    .number()
+    .int()
+    .min(1)
+    .max(50000)
+    .optional()
+    .describe(
+      'Character budget for output pagination after entry pagination has been applied.'
+    ),
 });
 
 export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(

@@ -28,6 +28,8 @@ import {
   MAX_TIMEOUT,
   MIN_RETRIES,
   MAX_RETRIES,
+  MIN_OUTPUT_DEFAULT_CHAR_LENGTH,
+  MAX_OUTPUT_DEFAULT_CHAR_LENGTH,
 } from './defaults.js';
 
 // ============================================================================
@@ -269,12 +271,26 @@ export function resolveOutput(
   fileConfig?: OctocodeConfig['output']
 ): RequiredOutputConfig {
   const envFormat = process.env.OCTOCODE_OUTPUT_FORMAT?.trim().toLowerCase();
+  const envDefaultCharLength = parseIntEnv(
+    process.env.OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH
+  );
   const resolved =
     envFormat || fileConfig?.format || DEFAULT_OUTPUT_CONFIG.format;
+  const configuredDefaultCharLength =
+    envDefaultCharLength ??
+    fileConfig?.pagination?.defaultCharLength ??
+    DEFAULT_OUTPUT_CONFIG.pagination.defaultCharLength;
+  const clampedDefaultCharLength = Math.max(
+    MIN_OUTPUT_DEFAULT_CHAR_LENGTH,
+    Math.min(MAX_OUTPUT_DEFAULT_CHAR_LENGTH, configuredDefaultCharLength)
+  );
 
   return {
     format: VALID_OUTPUT_FORMATS.has(resolved)
       ? (resolved as 'yaml' | 'json')
       : DEFAULT_OUTPUT_CONFIG.format,
+    pagination: {
+      defaultCharLength: clampedDefaultCharLength,
+    },
   };
 }

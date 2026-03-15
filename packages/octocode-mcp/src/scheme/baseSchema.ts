@@ -65,6 +65,23 @@ export function createBulkQuerySchema<T extends z.ZodType<object>>(
         .min(1)
         .max(maxQueries)
         .describe(description),
+      responseCharOffset: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe(
+          'Character offset for top-level bulk response pagination across results[]. Use when a multi-query response was auto-paginated.'
+        ),
+      responseCharLength: z
+        .number()
+        .int()
+        .min(1)
+        .max(50000)
+        .optional()
+        .describe(
+          'Character budget for top-level bulk response pagination across results[]. Overrides the shared default for this call.'
+        ),
     })
     .superRefine((value, ctx) => {
       const seenIds = new Set<string>();

@@ -145,6 +145,8 @@ export async function searchCode(
     const parsed = parseBitbucketProjectId(query.projectId);
     workspace = parsed.workspace;
     repoSlug = parsed.repoSlug;
+  } else if (query.owner) {
+    workspace = query.owner;
   }
 
   if (!workspace) {

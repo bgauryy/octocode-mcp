@@ -46,6 +46,12 @@ describe('config/validator', () => {
         lsp: {
           configPath: '~/.octocode/lsp-servers.json',
         },
+        output: {
+          format: 'yaml',
+          pagination: {
+            defaultCharLength: 8000,
+          },
+        },
       });
 
       expect(result.valid).toBe(true);
@@ -284,6 +290,35 @@ describe('config/validator', () => {
         expect(result.errors.some(e => e.includes('lsp.configPath'))).toBe(
           true
         );
+      });
+    });
+
+    describe('output validation', () => {
+      it('rejects invalid output format', () => {
+        const result = validateConfig({
+          output: { format: 'xml' },
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors.some(e => e.includes('output.format'))).toBe(true);
+      });
+
+      it('rejects invalid output pagination defaultCharLength', () => {
+        const result = validateConfig({
+          output: { pagination: { defaultCharLength: 999999 } },
+        });
+        expect(result.valid).toBe(false);
+        expect(
+          result.errors.some(e =>
+            e.includes('output.pagination.defaultCharLength')
+          )
+        ).toBe(true);
+      });
+
+      it('accepts valid output pagination config', () => {
+        const result = validateConfig({
+          output: { pagination: { defaultCharLength: 12000 } },
+        });
+        expect(result.valid).toBe(true);
       });
     });
 

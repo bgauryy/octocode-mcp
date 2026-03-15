@@ -33,6 +33,8 @@ export function registerGitHubSearchCodeTool(
       async (
         args: {
           queries: GitHubCodeSearchQuery[];
+          responseCharOffset?: number;
+          responseCharLength?: number;
         },
         authInfo,
         sessionId
@@ -45,7 +47,13 @@ export function registerGitHubSearchCodeTool(
           queries
         );
 
-        return searchMultipleGitHubCode({ queries, authInfo, sessionId });
+        return searchMultipleGitHubCode({
+          queries,
+          responseCharOffset: args.responseCharOffset,
+          responseCharLength: args.responseCharLength,
+          authInfo,
+          sessionId,
+        });
       }
     )
   );
