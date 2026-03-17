@@ -9,7 +9,7 @@ describe('parseArgs', () => {
         expect(opts.emitTree).toBe(true);
         expect(opts.graph).toBe(false);
         expect(opts.parser).toBe('auto');
-        expect(opts.findingsLimit).toBe(250);
+        expect(opts.findingsLimit).toBe(Infinity);
         expect(opts.minFunctionStatements).toBe(6);
         expect(opts.minFlowStatements).toBe(6);
         expect(opts.criticalComplexityThreshold).toBe(30);

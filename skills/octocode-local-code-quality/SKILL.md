@@ -37,7 +37,11 @@ All commands start with `node <SKILL_BASE_DIRECTORY>/scripts/index.js`:
 | Situation | Flags |
 |---|---|
 | Default scan | _(none)_ |
-| Deep scan | `--findings-limit 1000` |
+| Cap findings | `--findings-limit 500` |
+| Architecture only | `--features=architecture` |
+| Dead code only | `--features=dead-code` |
+| Single category | `--features=cognitive-complexity` |
+| Mix pillars + categories | `--features=dead-code,dependency-cycle` |
 | Include tests | `--include-tests` |
 | Architecture graph | `--graph` |
 | Strict complexity | `--critical-complexity-threshold 20 --cognitive-complexity-threshold 10` |
@@ -113,11 +117,11 @@ Each scan writes to `.octocode/scan/<timestamp>/`:
 ### Reading `summary.md` (fixed section order — read top-down, stop when enough)
 
 1. **Scan Scope** — files, functions, flows, packages
-2. **Findings Overview** — severity table (the single most important number)
-3. **Architecture Health** — dep graph metrics + per-category counts
+2. **Findings Overview** — severity table + truncation/features-filter notices
+3. **Architecture Health** — dep graph metrics + all 11 categories with counts (0 = clean, `skipped` = filtered out by `--features`)
 4. **Change Risk Hotspots** — top 15 riskiest files (riskScore, fanIn, fanOut, complexity, cycle/critical-path flags)
-5. **Code Quality** — per-category counts for 14 categories
-6. **Dead Code & Hygiene** — per-category counts for 8 categories
+5. **Code Quality** — all 14 categories with counts
+6. **Dead Code & Hygiene** — all 8 categories with counts
 7. **Top Recommendations** — 10 highest-severity findings
 8. **Output Files** — table with sizes
 
@@ -292,6 +296,6 @@ Try `localSearchCode` first. If it fails → Octocode not installed or `ENABLE_L
 
 **Cyclomatic Density**: `CC / LOC`. >0.5 means every other line is a branch.
 
-**Reachability**: BFS from entrypoints (`index`, `main`, `app`, `server`, `cli`). Stricter than `dead-file` (checks transitive paths, not just direct edges).
+**Reachability**: BFS from entrypoints (`index`, `main`, `app`, `server`, `cli`, `public`, `*.config.*`). Stricter than `dead-file` (checks transitive paths, not just direct edges).
 
 **Package Boundaries**: `packages/A/` should import from `packages/B/src/index.ts` (public API), never `packages/B/src/internal/bar.ts`.

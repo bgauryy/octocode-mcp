@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from 'typescript';
-import { SEVERITY_ORDER } from './types.js';
+import { SEVERITY_ORDER, PILLAR_CATEGORIES } from './types.js';
 import { parseArgs } from './cli.js';
 import { canonicalScriptKind, isTestFile, renderTreesText } from './utils.js';
 import { collectDependencyProfile, dependencyProfileToRecord } from './dependencies.js';
@@ -18,25 +18,10 @@ import { collectFiles, safeRead, listWorkspacePackages, fileSummaryWithFindings 
 import { analyzeSourceFile, buildDependencyCriticality } from './ts-analyzer.js';
 import { analyzeTreeSitterFile, resolveTreeSitter } from './tree-sitter-analyzer.js';
 import { detectSdpViolations, detectHighCoupling, detectGodModuleCoupling, detectOrphanModules, detectUnreachableModules, detectUnusedNpmDeps, detectBoundaryViolations, detectBarrelExplosion, detectGodModules, detectGodFunctions, detectCognitiveComplexity, detectLayerViolations, detectLowCohesion, detectInferredLayerViolations, computeHotFiles, detectExcessiveParameters, detectEmptyCatchBlocks, detectSwitchNoDefault, detectHighCyclomaticDensity, detectUnsafeAny, detectMagicNumbers, detectHighHalsteadEffort, detectLowMaintainability, } from './architecture.js';
-// ─── Output Category Groups ─────────────────────────────────────────────────
-export const ARCHITECTURE_CATEGORIES = new Set([
-    'dependency-cycle', 'dependency-critical-path', 'dependency-test-only',
-    'architecture-sdp-violation', 'high-coupling', 'god-module-coupling',
-    'orphan-module', 'unreachable-module', 'layer-violation',
-    'low-cohesion', 'inferred-layer-violation',
-]);
-export const CODE_QUALITY_CATEGORIES = new Set([
-    'duplicate-function-body', 'duplicate-flow-structure', 'function-optimization',
-    'cognitive-complexity', 'god-module', 'god-function',
-    'halstead-effort', 'low-maintainability', 'high-cyclomatic-density',
-    'excessive-parameters', 'magic-number', 'unsafe-any',
-    'empty-catch', 'switch-no-default',
-]);
-export const DEAD_CODE_CATEGORIES = new Set([
-    'dead-file', 'dead-export', 'dead-re-export', 're-export-duplication',
-    're-export-shadowed', 'unused-npm-dependency', 'package-boundary-violation',
-    'barrel-explosion',
-]);
+// ─── Output Category Groups (single source of truth: PILLAR_CATEGORIES) ─────
+export const ARCHITECTURE_CATEGORIES = new Set(PILLAR_CATEGORIES['architecture']);
+export const CODE_QUALITY_CATEGORIES = new Set(PILLAR_CATEGORIES['code-quality']);
+export const DEAD_CODE_CATEGORIES = new Set(PILLAR_CATEGORIES['dead-code']);
 // ─── Dependency Graph Analysis ───────────────────────────────────────────────
 function buildDependencySummary(dependencyState, fileCriticalityByPath, options) {
     const allFiles = [...dependencyState.files].sort();
@@ -252,6 +237,8 @@ function findImportLineForEdge(state, fromFile, toFile) {
 export function buildIssueCatalog(duplicates, controlDuplicates, fileSummaries, dependencySummary, dependencyState, options, pkgJsonDeps = {}, pkgJsonDevDeps = {}) {
     const rawFindings = [];
     const addFinding = (finding) => {
+        if (options.features && !options.features.has(finding.category))
+            return;
         rawFindings.push(finding);
     };
     for (const group of duplicates) {
@@ -850,7 +837,7 @@ export function writeMultiFileReport(dir, report, options, dependencyState, depe
         outputFiles,
     };
     writeJson('summary.json', summaryJsonData);
-    const summaryMd = generateSummaryMd(dir, report, outputFiles, architectureFindings, codeQualityFindings, deadCodeFindings, hotFiles);
+    const summaryMd = generateSummaryMd(dir, report, outputFiles, architectureFindings, codeQualityFindings, deadCodeFindings, hotFiles, options.features);
     fs.writeFileSync(path.join(dir, 'summary.md'), summaryMd, 'utf8');
     outputFiles.summaryMd = 'summary.md';
     writeJson('summary.json', { ...summaryJsonData, outputFiles });
@@ -875,7 +862,7 @@ function formatFileSize(bytes) {
         return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-export function generateSummaryMd(dir, report, outputFiles, architectureFindings, codeQualityFindings, deadCodeFindings, hotFiles = []) {
+export function generateSummaryMd(dir, report, outputFiles, architectureFindings, codeQualityFindings, deadCodeFindings, hotFiles = [], activeFeatures = null) {
     const allFindings = report.optimizationFindings || [];
     const sev = severityBreakdown(allFindings);
     const summary = report.summary;
@@ -912,6 +899,26 @@ export function generateSummaryMd(dir, report, outputFiles, architectureFindings
         }
         lines.push('');
     }
+    if (activeFeatures) {
+        lines.push(`> **Features filter**: \`--features=${[...activeFeatures].join(',')}\``);
+        lines.push('');
+    }
+    const renderPillarCategories = (pillarKey, findings) => {
+        const breakdown = categoryBreakdown(findings);
+        const pillarCats = PILLAR_CATEGORIES[pillarKey] || [];
+        const isFiltered = activeFeatures !== null;
+        for (const cat of pillarCats) {
+            const count = breakdown[cat] || 0;
+            const skipped = isFiltered && !activeFeatures.has(cat);
+            if (skipped) {
+                lines.push(`- \`${cat}\`: — *(skipped)*`);
+            }
+            else {
+                lines.push(`- \`${cat}\`: ${count}`);
+            }
+        }
+        lines.push('');
+    };
     lines.push('## Architecture Health\n');
     lines.push(`> ${architectureFindings.length} findings — see [\`architecture.json\`](./architecture.json)\n`);
     if (depGraph) {
@@ -927,13 +934,7 @@ export function generateSummaryMd(dir, report, outputFiles, architectureFindings
         lines.push(`| Unresolved imports | ${depGraph.unresolvedEdgeCount} |`);
         lines.push('');
     }
-    const archCats = categoryBreakdown(architectureFindings);
-    if (Object.keys(archCats).length > 0) {
-        for (const [cat, count] of Object.entries(archCats).sort((a, b) => b[1] - a[1])) {
-            lines.push(`- \`${cat}\`: ${count}`);
-        }
-        lines.push('');
-    }
+    renderPillarCategories('architecture', architectureFindings);
     if (hotFiles.length > 0) {
         lines.push('## Change Risk Hotspots\n');
         lines.push('Files most dangerous to change — high fan-in, complexity, or cycle membership.\n');
@@ -946,22 +947,10 @@ export function generateSummaryMd(dir, report, outputFiles, architectureFindings
     }
     lines.push('## Code Quality\n');
     lines.push(`> ${codeQualityFindings.length} findings — see [\`code-quality.json\`](./code-quality.json)\n`);
-    const qualCats = categoryBreakdown(codeQualityFindings);
-    if (Object.keys(qualCats).length > 0) {
-        for (const [cat, count] of Object.entries(qualCats).sort((a, b) => b[1] - a[1])) {
-            lines.push(`- \`${cat}\`: ${count}`);
-        }
-        lines.push('');
-    }
+    renderPillarCategories('code-quality', codeQualityFindings);
     lines.push('## Dead Code & Hygiene\n');
     lines.push(`> ${deadCodeFindings.length} findings — see [\`dead-code.json\`](./dead-code.json)\n`);
-    const deadCats = categoryBreakdown(deadCodeFindings);
-    if (Object.keys(deadCats).length > 0) {
-        for (const [cat, count] of Object.entries(deadCats).sort((a, b) => b[1] - a[1])) {
-            lines.push(`- \`${cat}\`: ${count}`);
-        }
-        lines.push('');
-    }
+    renderPillarCategories('dead-code', deadCodeFindings);
     const topRecs = (agentOutput?.topRecommendations ?? []);
     if (topRecs.length > 0) {
         lines.push('## Top Recommendations\n');

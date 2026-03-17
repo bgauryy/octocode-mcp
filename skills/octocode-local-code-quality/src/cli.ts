@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { AnalysisOptions } from './types.js';
-import { DEFAULT_OPTS } from './types.js';
+import { DEFAULT_OPTS, PILLAR_CATEGORIES, ALL_CATEGORIES } from './types.js';
 
 export function parseArgs(argv: string[]): AnalysisOptions {
   const opts: AnalysisOptions = { ...DEFAULT_OPTS };
@@ -172,6 +172,24 @@ export function parseArgs(argv: string[]): AnalysisOptions {
       continue;
     }
 
+    if (arg === '--features' || arg.startsWith('--features=')) {
+      const val = arg.startsWith('--features=') ? arg.slice('--features='.length) : argv[++i];
+      const tokens = val.split(',').map((s) => s.trim()).filter(Boolean);
+      const resolved = new Set<string>();
+      for (const token of tokens) {
+        if (PILLAR_CATEGORIES[token]) {
+          for (const cat of PILLAR_CATEGORIES[token]) resolved.add(cat);
+        } else if (ALL_CATEGORIES.has(token)) {
+          resolved.add(token);
+        } else {
+          console.error(`Unknown feature: "${token}". Use pillar names (${Object.keys(PILLAR_CATEGORIES).join(', ')}) or category names.`);
+          process.exit(1);
+        }
+      }
+      opts.features = resolved;
+      continue;
+    }
+
     if (arg === '--help' || arg === '-h') {
       printHelp();
       process.exit(0);
@@ -230,7 +248,7 @@ Options:
   --min-flow-statements N        Minimum control-flow statement count for duplicate matching (default 6)
   --critical-complexity-threshold N
                                 Complexity threshold for HIGH complexity findings and critical path weighting.
-  --findings-limit N            Maximum findings written to the report (default 250)
+  --findings-limit N            Cap findings in the report (default: no limit)
   --deep-link-topn N            Max number of critical dependency paths to report (default 12)
   --tree-depth N                AST tree depth when tree snapshots are emitted (default 4)
   --coupling-threshold N        Ca+Ce threshold for high-coupling findings (default 15)
@@ -253,6 +271,11 @@ Options:
   --magic-number-threshold N    Max magic number occurrences per file before flagging (default 3)
   --flow-dup-threshold N        Min occurrences for a repeated flow to become a finding (default 3)
   --max-recs-per-category N     Max findings per category in top recommendations (default 2)
+  --features=X,Y,Z              Run only selected features. Accepts pillar names (architecture,
+                                code-quality, dead-code) or individual category names. Comma-separated.
+                                Examples: --features=architecture
+                                          --features=dead-code,cognitive-complexity
+                                          --features=dependency-cycle,dead-export
   --help                        Show this message
 `);
 }

@@ -41,6 +41,7 @@ export interface AnalysisOptions {
   magicNumberThreshold: number;
   flowDupThreshold: number;
   maxRecsPerCategory: number;
+  features: Set<string> | null;
 }
 
 export interface Location {
@@ -409,7 +410,7 @@ export const DEFAULT_OPTS: AnalysisOptions = {
   graph: false,
   out: null,
   treeDepth: 4,
-  findingsLimit: 250,
+  findingsLimit: Infinity,
   parser: 'auto',
   criticalComplexityThreshold: 30,
   deepLinkTopN: 12,
@@ -442,7 +443,30 @@ export const DEFAULT_OPTS: AnalysisOptions = {
   magicNumberThreshold: 3,
   flowDupThreshold: 3,
   maxRecsPerCategory: 2,
+  features: null,
 };
+
+export const PILLAR_CATEGORIES: Record<string, string[]> = {
+  architecture: [
+    'dependency-cycle', 'dependency-critical-path', 'dependency-test-only',
+    'architecture-sdp-violation', 'high-coupling', 'god-module-coupling',
+    'orphan-module', 'unreachable-module', 'layer-violation', 'low-cohesion',
+    'inferred-layer-violation',
+  ],
+  'code-quality': [
+    'duplicate-function-body', 'duplicate-flow-structure', 'function-optimization',
+    'cognitive-complexity', 'god-module', 'god-function', 'halstead-effort',
+    'low-maintainability', 'high-cyclomatic-density', 'excessive-parameters',
+    'magic-number', 'unsafe-any', 'empty-catch', 'switch-no-default',
+  ],
+  'dead-code': [
+    'dead-file', 'dead-export', 'dead-re-export', 're-export-duplication',
+    're-export-shadowed', 'unused-npm-dependency', 'package-boundary-violation',
+    'barrel-explosion',
+  ],
+};
+
+export const ALL_CATEGORIES = new Set(Object.values(PILLAR_CATEGORIES).flat());
 export const ALLOWED_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 export const IMPORT_RESOLVE_EXTS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.d.ts'];
 
