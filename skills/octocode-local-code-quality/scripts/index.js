@@ -17,6 +17,7 @@ import { collectDependencyProfile, dependencyProfileToRecord } from './dependenc
 import { collectFiles, safeRead, listWorkspacePackages, fileSummaryWithFindings } from './discovery.js';
 import { analyzeSourceFile, buildDependencyCriticality } from './ts-analyzer.js';
 import { analyzeTreeSitterFile, resolveTreeSitter } from './tree-sitter-analyzer.js';
+import { detectSdpViolations, detectHighCoupling, detectGodModuleCoupling, detectOrphanModules, detectUnreachableModules, detectUnusedNpmDeps, detectBoundaryViolations, detectBarrelExplosion, detectGodModules, detectGodFunctions, detectCognitiveComplexity, detectLayerViolations, } from './architecture.js';
 // ─── Dependency Graph Analysis ───────────────────────────────────────────────
 function buildDependencySummary(dependencyState, fileCriticalityByPath, options) {
     const allFiles = [...dependencyState.files].sort();
@@ -202,7 +203,11 @@ function makeIssue(location, props) {
         ...props,
     };
 }
-function buildIssueCatalog(duplicates, controlDuplicates, fileSummaries, dependencySummary, options) {
+function isLikelyEntrypoint(filePath) {
+    const normalized = filePath.toLowerCase();
+    return /(^|\/)(index|main|app|server|cli)\.[mc]?[jt]sx?$/.test(normalized);
+}
+function buildIssueCatalog(duplicates, controlDuplicates, fileSummaries, dependencySummary, dependencyState, options, pkgJsonDeps = {}, pkgJsonDevDeps = {}) {
     const findings = [];
     const perFileIssues = new Map();
     const addFinding = (finding) => {
@@ -367,6 +372,203 @@ function buildIssueCatalog(duplicates, controlDuplicates, fileSummaries, depende
                 impact: 'Critical refactor opportunities; shorter chains reduce blast radius of change.',
             });
         }
+    }
+    const consumedFromModule = new Map();
+    for (const [file, imports] of dependencyState.importedSymbolsByFile.entries()) {
+        if (isTestFile(file))
+            continue;
+        for (const symbol of imports) {
+            const target = symbol.resolvedModule;
+            if (!target)
+                continue;
+            if (!consumedFromModule.has(target))
+                consumedFromModule.set(target, new Set());
+            consumedFromModule.get(target).add(symbol.importedName);
+        }
+    }
+    for (const [file, reexports] of dependencyState.reExportsByFile.entries()) {
+        if (isTestFile(file))
+            continue;
+        for (const reexport of reexports) {
+            const target = reexport.resolvedModule;
+            if (!target)
+                continue;
+            if (!consumedFromModule.has(target))
+                consumedFromModule.set(target, new Set());
+            consumedFromModule.get(target).add(reexport.importedName);
+        }
+    }
+    for (const file of dependencySummary.roots || []) {
+        if (isTestFile(file))
+            continue;
+        if (isLikelyEntrypoint(file))
+            continue;
+        const incomingCount = (dependencyState.incoming.get(file) || new Set()).size;
+        const outgoingCount = (dependencyState.outgoing.get(file) || new Set()).size;
+        if (incomingCount !== 0)
+            continue;
+        if (outgoingCount > 0)
+            continue;
+        addFinding({
+            severity: 'medium',
+            category: 'dead-file',
+            file,
+            lineStart: 1,
+            lineEnd: 1,
+            title: `Potential dead file: ${file}`,
+            reason: 'File has no inbound imports and no outbound dependencies. It may be stale or orphaned.',
+            files: [file],
+            suggestedFix: {
+                strategy: 'Validate ownership and remove if truly unused.',
+                steps: [
+                    'Confirm the file is not an explicit runtime entrypoint.',
+                    'Search runtime config/router/bootstrap references for this file path.',
+                    'Delete file if confirmed dead and re-run scan.',
+                ],
+            },
+            impact: 'Reduces dead surface area and maintenance overhead.',
+        });
+    }
+    for (const [file, exportsList] of dependencyState.declaredExportsByFile.entries()) {
+        if (isTestFile(file))
+            continue;
+        if (isLikelyEntrypoint(file))
+            continue;
+        const consumed = consumedFromModule.get(file) || new Set();
+        const hasNamespaceUse = consumed.has('*');
+        for (const exported of exportsList) {
+            if (exported.name === 'default' && isLikelyEntrypoint(file))
+                continue;
+            if (hasNamespaceUse || consumed.has(exported.name))
+                continue;
+            addFinding({
+                severity: exported.kind === 'type' ? 'medium' : 'high',
+                category: 'dead-export',
+                file,
+                lineStart: exported.lineStart || 1,
+                lineEnd: exported.lineEnd || exported.lineStart || 1,
+                title: `Unused export: ${exported.name}`,
+                reason: `Exported symbol "${exported.name}" has no observed import or re-export usage in production files.`,
+                files: [`${file}:${exported.lineStart || 1}-${exported.lineEnd || exported.lineStart || 1}`],
+                suggestedFix: {
+                    strategy: 'Remove or internalize unused exports.',
+                    steps: [
+                        'Confirm symbol is not part of intentional public API surface.',
+                        'Remove export modifier or delete symbol if truly unused.',
+                        'Re-run scan and tests to ensure no hidden runtime usage.',
+                    ],
+                },
+                impact: 'Shrinks public API surface and reduces accidental coupling.',
+            });
+        }
+    }
+    for (const [barrelFile, reexports] of dependencyState.reExportsByFile.entries()) {
+        if (isTestFile(barrelFile))
+            continue;
+        const consumed = consumedFromModule.get(barrelFile) || new Set();
+        const hasNamespaceUse = consumed.has('*');
+        const sourceByExportedAs = new Map();
+        const localExportNames = new Set((dependencyState.declaredExportsByFile.get(barrelFile) || []).map((entry) => entry.name));
+        for (const ref of reexports) {
+            const exportedAs = ref.exportedAs;
+            if (!sourceByExportedAs.has(exportedAs))
+                sourceByExportedAs.set(exportedAs, new Set());
+            sourceByExportedAs.get(exportedAs).add(ref.resolvedModule || ref.sourceModule);
+            const isUsed = hasNamespaceUse || consumed.has(exportedAs) || (ref.isStar && consumed.size > 0);
+            if (!isUsed) {
+                addFinding({
+                    severity: 'medium',
+                    category: 'dead-re-export',
+                    file: barrelFile,
+                    lineStart: ref.lineStart || 1,
+                    lineEnd: ref.lineEnd || ref.lineStart || 1,
+                    title: `Unused re-export: ${exportedAs}`,
+                    reason: `Re-exported symbol "${exportedAs}" from ${ref.sourceModule} has no observed downstream imports from this module.`,
+                    files: [`${barrelFile}:${ref.lineStart || 1}-${ref.lineEnd || ref.lineStart || 1}`],
+                    suggestedFix: {
+                        strategy: 'Remove stale barrel re-exports.',
+                        steps: [
+                            'Verify no dynamic import/runtime reflection depends on this export.',
+                            'Remove the re-export clause.',
+                            'Re-run scan to confirm barrel surface is still complete.',
+                        ],
+                    },
+                    impact: 'Keeps barrel modules focused and easier to reason about.',
+                });
+            }
+        }
+        for (const [name, sources] of sourceByExportedAs.entries()) {
+            if (sources.size > 1) {
+                addFinding({
+                    severity: 'medium',
+                    category: 're-export-duplication',
+                    file: barrelFile,
+                    lineStart: 1,
+                    lineEnd: 1,
+                    title: `Duplicate re-export paths: ${name}`,
+                    reason: `Symbol "${name}" is re-exported from multiple sources in the same barrel.`,
+                    files: [barrelFile],
+                    suggestedFix: {
+                        strategy: 'Keep one canonical re-export source per symbol.',
+                        steps: [
+                            'Select a canonical module for the symbol.',
+                            'Remove duplicate re-export paths.',
+                            'Document intended public export map for the barrel.',
+                        ],
+                    },
+                    impact: 'Reduces API ambiguity and import inconsistency.',
+                });
+            }
+            if (name !== '*' && localExportNames.has(name)) {
+                addFinding({
+                    severity: 'high',
+                    category: 're-export-shadowed',
+                    file: barrelFile,
+                    lineStart: 1,
+                    lineEnd: 1,
+                    title: `Shadowed export in barrel: ${name}`,
+                    reason: `Barrel exports "${name}" both locally and through re-export, which can hide origin and create ambiguity.`,
+                    files: [barrelFile],
+                    suggestedFix: {
+                        strategy: 'Disambiguate local vs re-exported symbol ownership.',
+                        steps: [
+                            'Pick a single source of truth for the symbol in this barrel.',
+                            'Rename or remove the conflicting export path.',
+                            'Update import call-sites to use the canonical export.',
+                        ],
+                    },
+                    impact: 'Prevents subtle API conflicts and shadowing confusion.',
+                });
+            }
+        }
+    }
+    // ─── Phase 2: Architecture Metrics ──────────────────────────────────────
+    for (const f of detectSdpViolations(dependencyState))
+        addFinding(f);
+    for (const f of detectHighCoupling(dependencyState, options.couplingThreshold))
+        addFinding(f);
+    for (const f of detectGodModuleCoupling(dependencyState, options.fanInThreshold, options.fanOutThreshold))
+        addFinding(f);
+    for (const f of detectOrphanModules(dependencyState))
+        addFinding(f);
+    for (const f of detectUnreachableModules(dependencyState))
+        addFinding(f);
+    // ─── Phase 3: Structural Hygiene ──────────────────────────────────────
+    for (const f of detectUnusedNpmDeps(dependencyState.externalCounts, pkgJsonDeps, pkgJsonDevDeps))
+        addFinding(f);
+    for (const f of detectBoundaryViolations(dependencyState))
+        addFinding(f);
+    for (const f of detectBarrelExplosion(dependencyState, options.barrelSymbolThreshold))
+        addFinding(f);
+    for (const f of detectGodModules(fileSummaries, dependencyState, options.godModuleStatements, options.godModuleExports))
+        addFinding(f);
+    for (const f of detectGodFunctions(fileSummaries, options.godFunctionStatements))
+        addFinding(f);
+    for (const f of detectCognitiveComplexity(fileSummaries, options.cognitiveComplexityThreshold))
+        addFinding(f);
+    if (options.layerOrder.length >= 2) {
+        for (const f of detectLayerViolations(dependencyState, options.layerOrder))
+            addFinding(f);
     }
     const sortedFindings = [...findings].sort((a, b) => {
         const bySeverity = SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity];
@@ -549,6 +751,9 @@ async function main() {
         incomingFromProduction: new Map(),
         externalCounts: new Map(),
         unresolvedCounts: new Map(),
+        declaredExportsByFile: new Map(),
+        importedSymbolsByFile: new Map(),
+        reExportsByFile: new Map(),
     };
     const packageFileStats = Object.fromEntries(packages.map((pkg) => ([pkg.name, {
             fileCount: 0,
@@ -559,6 +764,16 @@ async function main() {
             functions: [],
             flows: [],
         }])));
+    const allPkgJsonDeps = {};
+    const allPkgJsonDevDeps = {};
+    for (const pkg of packages) {
+        try {
+            const manifest = JSON.parse(fs.readFileSync(path.join(pkg.dir, 'package.json'), 'utf8'));
+            Object.assign(allPkgJsonDeps, manifest.dependencies || {});
+            Object.assign(allPkgJsonDevDeps, manifest.devDependencies || {});
+        }
+        catch { /* skip unreadable */ }
+    }
     for (const pkg of packages) {
         let packageStats = packageFileStats[pkg.name];
         if (!packageStats) {
@@ -643,7 +858,6 @@ async function main() {
                 summary.totalFunctions += fileSummary.functions.length;
                 summary.totalFlows += fileSummary.flows.length;
                 fileSummaries.push(fileSummary);
-                packageStats.fileCount += 1;
             }
             catch (error) {
                 parseErrors.push({
@@ -712,7 +926,7 @@ async function main() {
         }
     }
     for (const [index, flow] of redundantFlows.slice(0, 100).entries()) {
-        if (flow.occurrences > CONTROL_KIND_DUP_THRESHOLD) {
+        if (flow.occurrences >= CONTROL_KIND_DUP_THRESHOLD) {
             duplicateFlowHints.push({
                 type: 'repeated-flow',
                 message: `Repeated ${flow.kind} control structure`,
@@ -727,7 +941,7 @@ async function main() {
     }
     const fileCriticalityByPath = new Map(fileSummaries.map((item) => [item.file, buildDependencyCriticality(item, options)]));
     const dependencySummary = buildDependencySummary(dependencyState, fileCriticalityByPath, options);
-    const { findings, byFile } = buildIssueCatalog(duplicateFunctions, redundantFlows, fileSummaries, dependencySummary, options);
+    const { findings, byFile } = buildIssueCatalog(duplicateFunctions, redundantFlows, fileSummaries, dependencySummary, dependencyState, options, allPkgJsonDeps, allPkgJsonDevDeps);
     const enhancedFileSummaries = fileSummaryWithFindings(fileSummaries, byFile);
     const report = {
         generatedAt: new Date().toISOString(),

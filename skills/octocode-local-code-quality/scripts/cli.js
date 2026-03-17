@@ -69,6 +69,42 @@ export function parseArgs(argv) {
             opts.treeDepth = parseInt(argv[++i], 10);
             continue;
         }
+        if (arg === '--coupling-threshold') {
+            opts.couplingThreshold = parseInt(argv[++i], 10);
+            continue;
+        }
+        if (arg === '--fan-in-threshold') {
+            opts.fanInThreshold = parseInt(argv[++i], 10);
+            continue;
+        }
+        if (arg === '--fan-out-threshold') {
+            opts.fanOutThreshold = parseInt(argv[++i], 10);
+            continue;
+        }
+        if (arg === '--god-module-statements') {
+            opts.godModuleStatements = parseInt(argv[++i], 10);
+            continue;
+        }
+        if (arg === '--god-module-exports') {
+            opts.godModuleExports = parseInt(argv[++i], 10);
+            continue;
+        }
+        if (arg === '--god-function-statements') {
+            opts.godFunctionStatements = parseInt(argv[++i], 10);
+            continue;
+        }
+        if (arg === '--cognitive-complexity-threshold') {
+            opts.cognitiveComplexityThreshold = parseInt(argv[++i], 10);
+            continue;
+        }
+        if (arg === '--barrel-symbol-threshold') {
+            opts.barrelSymbolThreshold = parseInt(argv[++i], 10);
+            continue;
+        }
+        if (arg === '--layer-order') {
+            opts.layerOrder = argv[++i].split(',').map((s) => s.trim());
+            continue;
+        }
         if (arg === '--help' || arg === '-h') {
             printHelp();
             process.exit(0);
@@ -89,6 +125,22 @@ export function parseArgs(argv) {
     if (Number.isNaN(opts.deepLinkTopN)) {
         opts.deepLinkTopN = DEFAULT_OPTS.deepLinkTopN;
     }
+    if (Number.isNaN(opts.couplingThreshold))
+        opts.couplingThreshold = DEFAULT_OPTS.couplingThreshold;
+    if (Number.isNaN(opts.fanInThreshold))
+        opts.fanInThreshold = DEFAULT_OPTS.fanInThreshold;
+    if (Number.isNaN(opts.fanOutThreshold))
+        opts.fanOutThreshold = DEFAULT_OPTS.fanOutThreshold;
+    if (Number.isNaN(opts.godModuleStatements))
+        opts.godModuleStatements = DEFAULT_OPTS.godModuleStatements;
+    if (Number.isNaN(opts.godModuleExports))
+        opts.godModuleExports = DEFAULT_OPTS.godModuleExports;
+    if (Number.isNaN(opts.godFunctionStatements))
+        opts.godFunctionStatements = DEFAULT_OPTS.godFunctionStatements;
+    if (Number.isNaN(opts.cognitiveComplexityThreshold))
+        opts.cognitiveComplexityThreshold = DEFAULT_OPTS.cognitiveComplexityThreshold;
+    if (Number.isNaN(opts.barrelSymbolThreshold))
+        opts.barrelSymbolThreshold = DEFAULT_OPTS.barrelSymbolThreshold;
     return opts;
 }
 export function printHelp() {
@@ -113,6 +165,16 @@ Options:
   --findings-limit N            Maximum findings written to the report (default 250)
   --deep-link-topn N            Max number of critical dependency paths to report (default 12)
   --tree-depth N                AST tree depth when tree snapshots are emitted (default 4)
+  --coupling-threshold N        Ca+Ce threshold for high-coupling findings (default 15)
+  --fan-in-threshold N          Fan-in threshold for god-module-coupling (default 20)
+  --fan-out-threshold N         Fan-out threshold for god-module-coupling (default 15)
+  --god-module-statements N     Statement threshold for god-module findings (default 500)
+  --god-module-exports N        Export threshold for god-module findings (default 20)
+  --god-function-statements N   Statement threshold for god-function findings (default 100)
+  --cognitive-complexity-threshold N
+                                Cognitive complexity threshold for findings (default 15)
+  --barrel-symbol-threshold N   Re-export count threshold for barrel-explosion (default 30)
+  --layer-order <layers>        Comma-separated layer names for violation detection (e.g. ui,service,repository)
   --help                        Show this message
 `);
 }

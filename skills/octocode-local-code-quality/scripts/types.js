@@ -27,6 +27,15 @@ export const DEFAULT_OPTS = {
         'coverage',
         'out',
     ]),
+    couplingThreshold: 15,
+    fanInThreshold: 20,
+    fanOutThreshold: 15,
+    godModuleStatements: 500,
+    godModuleExports: 20,
+    godFunctionStatements: 100,
+    cognitiveComplexityThreshold: 15,
+    barrelSymbolThreshold: 30,
+    layerOrder: [],
 };
 export const CONTROL_KIND_DUP_THRESHOLD = 3;
 export const ALLOWED_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);

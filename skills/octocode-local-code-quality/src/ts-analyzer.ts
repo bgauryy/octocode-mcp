@@ -7,6 +7,7 @@ import type {
 } from './types.js';
 import { TS_CONTROL_KINDS } from './types.js';
 import { getLineAndCharacter, makeFingerprint, hashString, buildNodeTree, increment } from './utils.js';
+import { computeCognitiveComplexity } from './architecture.js';
 
 export function isFunctionLike(node: ts.Node): boolean {
   return ts.isFunctionDeclaration(node)
@@ -271,6 +272,7 @@ export function analyzeSourceFile(
         calls: metrics.calls,
         loops: metrics.loops,
         lengthLines: countLinesInNode(sourceFile, node),
+        cognitiveComplexity: body ? computeCognitiveComplexity(body) : 0,
       };
 
       if (ts.isFunctionDeclaration(node)) {

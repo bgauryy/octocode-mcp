@@ -1,5 +1,5 @@
 {
-  "name": "octocode-local-code-scan",
+  "name": "octocode-local-code-quality",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -19,6 +19,8 @@
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "analyze": "node scripts/index.js",
     "analyze:json": "node scripts/index.js --json --out .octocode/scan/scan.json",
     "analyze:full": "node scripts/index.js --include-tests --findings-limit 500 --deep-link-topn 30 --out .octocode/scan/scan.json",
@@ -30,7 +32,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
   },
   "engines": {
     "node": ">=18.0.0"

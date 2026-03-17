@@ -24,6 +24,15 @@ export interface AnalysisOptions {
   deepLinkTopN: number;
   packageRoot: string;
   ignoreDirs: Set<string>;
+  couplingThreshold: number;
+  fanInThreshold: number;
+  fanOutThreshold: number;
+  godModuleStatements: number;
+  godModuleExports: number;
+  godFunctionStatements: number;
+  cognitiveComplexityThreshold: number;
+  barrelSymbolThreshold: number;
+  layerOrder: string[];
 }
 
 export interface Location {
@@ -66,6 +75,7 @@ export interface FunctionEntry {
   calls: number;
   loops: number;
   lengthLines: number;
+  cognitiveComplexity: number;
   declared?: boolean;
   params?: number;
   source?: string;
@@ -94,8 +104,38 @@ export interface DependencyProfile {
   internalDependencies: string[];
   externalDependencies: string[];
   unresolvedDependencies: string[];
+  declaredExports: ExportSymbol[];
+  importedSymbols: ImportedSymbolRef[];
+  reExports: ReExportRef[];
   package?: string;
   file?: string;
+}
+
+export interface ExportSymbol {
+  name: string;
+  kind: 'value' | 'type' | 'unknown';
+  isDefault?: boolean;
+  lineStart?: number;
+  lineEnd?: number;
+}
+
+export interface ImportedSymbolRef {
+  sourceModule: string;
+  resolvedModule?: string;
+  importedName: string;
+  localName: string;
+  isTypeOnly: boolean;
+}
+
+export interface ReExportRef {
+  sourceModule: string;
+  resolvedModule?: string;
+  exportedAs: string;
+  importedName: string;
+  isStar: boolean;
+  isTypeOnly: boolean;
+  lineStart?: number;
+  lineEnd?: number;
 }
 
 export interface DependencyState {
@@ -106,6 +146,9 @@ export interface DependencyState {
   incomingFromProduction: Map<string, Set<string>>;
   externalCounts: Map<string, Set<string>>;
   unresolvedCounts: Map<string, Set<string>>;
+  declaredExportsByFile: Map<string, ExportSymbol[]>;
+  importedSymbolsByFile: Map<string, ImportedSymbolRef[]>;
+  reExportsByFile: Map<string, ReExportRef[]>;
 }
 
 export interface DependencyRecord {
@@ -331,6 +374,15 @@ export const DEFAULT_OPTS: AnalysisOptions = {
     'coverage',
     'out',
   ]),
+  couplingThreshold: 15,
+  fanInThreshold: 20,
+  fanOutThreshold: 15,
+  godModuleStatements: 500,
+  godModuleExports: 20,
+  godFunctionStatements: 100,
+  cognitiveComplexityThreshold: 15,
+  barrelSymbolThreshold: 30,
+  layerOrder: [],
 };
 
 export const CONTROL_KIND_DUP_THRESHOLD = 3;

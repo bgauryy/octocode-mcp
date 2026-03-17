@@ -199,6 +199,7 @@ export function analyzeTreeSitterFile(filePath: string, sourceText: string, opti
         awaits: metrics.awaits,
         calls: metrics.calls,
         loops: metrics.loops,
+        cognitiveComplexity: 0,
         source: 'tree-sitter',
       };
 

@@ -163,6 +163,7 @@ export function analyzeTreeSitterFile(filePath, sourceText, options, packageName
                 awaits: metrics.awaits,
                 calls: metrics.calls,
                 loops: metrics.loops,
+                cognitiveComplexity: 0,
                 source: 'tree-sitter',
             };
             fileEntry.functions.push(entry);
