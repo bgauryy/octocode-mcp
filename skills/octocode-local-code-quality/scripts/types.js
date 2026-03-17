@@ -36,6 +36,12 @@ export const DEFAULT_OPTS = {
     cognitiveComplexityThreshold: 15,
     barrelSymbolThreshold: 30,
     layerOrder: [],
+    parameterThreshold: 5,
+    halsteadEffortThreshold: 500_000,
+    maintainabilityIndexThreshold: 20,
+    cyclomaticDensityThreshold: 0.5,
+    anyThreshold: 5,
+    magicNumberThreshold: 3,
 };
 export const CONTROL_KIND_DUP_THRESHOLD = 3;
 export const ALLOWED_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);

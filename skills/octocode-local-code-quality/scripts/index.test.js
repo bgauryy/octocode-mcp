@@ -466,6 +466,7 @@ describe('category group constants', () => {
         'dependency-cycle', 'dependency-critical-path', 'dependency-test-only',
         'architecture-sdp-violation', 'high-coupling', 'god-module-coupling',
         'orphan-module', 'unreachable-module', 'layer-violation',
+        'low-cohesion', 'inferred-layer-violation',
         'duplicate-function-body', 'duplicate-flow-structure', 'function-optimization',
         'cognitive-complexity', 'god-module', 'god-function',
         'dead-file', 'dead-export', 'dead-re-export', 're-export-duplication',
@@ -490,15 +491,15 @@ describe('category group constants', () => {
             expect(DEAD_CODE_CATEGORIES.has(cat)).toBe(false);
         }
     });
-    it('all 23 categories are covered', () => {
+    it('all 33 categories are covered', () => {
         const total = ARCHITECTURE_CATEGORIES.size + CODE_QUALITY_CATEGORIES.size + DEAD_CODE_CATEGORIES.size;
-        expect(total).toBe(23);
+        expect(total).toBe(33);
     });
-    it('architecture group has 9 categories', () => {
-        expect(ARCHITECTURE_CATEGORIES.size).toBe(9);
+    it('architecture group has 11 categories', () => {
+        expect(ARCHITECTURE_CATEGORIES.size).toBe(11);
     });
-    it('code quality group has 6 categories', () => {
-        expect(CODE_QUALITY_CATEGORIES.size).toBe(6);
+    it('code quality group has 14 categories', () => {
+        expect(CODE_QUALITY_CATEGORIES.size).toBe(14);
     });
     it('dead code group has 8 categories', () => {
         expect(DEAD_CODE_CATEGORIES.size).toBe(8);
@@ -600,11 +601,25 @@ describe('writeMultiFileReport', () => {
         writeMultiFileReport(outDir, makeReport(), { ...DEFAULT_OPTS, graph: true }, emptyState(), minimalDepSummary(), new Map());
         expect(fs.existsSync(path.join(outDir, 'graph.md'))).toBe(true);
     });
-    it('includes ast-trees.json when astTrees are present', () => {
+    it('includes ast-trees.txt in compact text format when astTrees are present', () => {
         const outDir = path.join(tmpDir, 'scan-trees');
-        const report = makeReport({ astTrees: [{ package: 'test', file: 'a.ts', tree: { kind: 'SourceFile', startLine: 1, endLine: 10, children: [] } }] });
+        const tree = { kind: 'SourceFile', startLine: 1, endLine: 10, children: [
+                { kind: 'ImportDeclaration', startLine: 1, endLine: 1, children: [] },
+                { kind: 'FunctionDeclaration', startLine: 3, endLine: 8, children: [
+                        { kind: 'Block', startLine: 3, endLine: 8, children: [], truncated: true },
+                    ] },
+            ] };
+        const report = makeReport({ astTrees: [{ package: 'test', file: 'a.ts', tree }] });
         writeMultiFileReport(outDir, report, { ...DEFAULT_OPTS }, emptyState(), minimalDepSummary(), new Map());
-        expect(fs.existsSync(path.join(outDir, 'ast-trees.json'))).toBe(true);
+        const txtPath = path.join(outDir, 'ast-trees.txt');
+        expect(fs.existsSync(txtPath)).toBe(true);
+        const content = fs.readFileSync(txtPath, 'utf8');
+        expect(content).toContain('## test — a.ts');
+        expect(content).toContain('SourceFile[1:10]');
+        expect(content).toContain('  ImportDeclaration[1]');
+        expect(content).toContain('  FunctionDeclaration[3:8]');
+        expect(content).toContain('    Block[3:8] ...');
+        expect(content).not.toContain('"kind"');
     });
     it('routes architecture findings into architecture.json', () => {
         const findings = makeFindings({ category: 'dependency-cycle', severity: 'high' }, { category: 'architecture-sdp-violation', severity: 'medium' }, { category: 'dead-export', severity: 'high' });
@@ -708,6 +723,7 @@ describe('writeMultiFileReport', () => {
 });
 // ─── generateSummaryMd ─────────────────────────────────────────────────────
 describe('generateSummaryMd', () => {
+    const fakeDir = '/tmp/nonexistent-scan-dir';
     function makeReportForMd(overrides = {}) {
         return {
             generatedAt: '2026-03-17T00:00:00.000Z',
@@ -736,7 +752,7 @@ describe('generateSummaryMd', () => {
         };
     }
     it('produces markdown with all major sections', () => {
-        const md = generateSummaryMd(makeReportForMd(), { summary: 'summary.json' }, [], [], []);
+        const md = generateSummaryMd(fakeDir, makeReportForMd(), { summary: 'summary.json' }, [], [], []);
         expect(md).toContain('# Code Quality Scan Report');
         expect(md).toContain('## Scan Scope');
         expect(md).toContain('## Findings Overview');
@@ -746,7 +762,7 @@ describe('generateSummaryMd', () => {
         expect(md).toContain('## Output Files');
     });
     it('includes file counts from summary', () => {
-        const md = generateSummaryMd(makeReportForMd(), {}, [], [], []);
+        const md = generateSummaryMd(fakeDir, makeReportForMd(), {}, [], [], []);
         expect(md).toContain('42');
         expect(md).toContain('318');
         expect(md).toContain('1204');
@@ -756,13 +772,13 @@ describe('generateSummaryMd', () => {
             { id: '1', severity: 'high', category: 'dependency-cycle', file: 'a', lineStart: 1, lineEnd: 1, title: 't', reason: 'r', files: [], suggestedFix: { strategy: 's', steps: [] } },
             { id: '2', severity: 'medium', category: 'dead-export', file: 'b', lineStart: 1, lineEnd: 1, title: 't', reason: 'r', files: [], suggestedFix: { strategy: 's', steps: [] } },
         ];
-        const md = generateSummaryMd(makeReportForMd({ optimizationFindings: findings }), {}, [findings[0]], [], [findings[1]]);
+        const md = generateSummaryMd(fakeDir, makeReportForMd({ optimizationFindings: findings }), {}, [findings[0]], [], [findings[1]]);
         expect(md).toContain('| High | 1 |');
         expect(md).toContain('| Medium | 1 |');
         expect(md).toContain('| **Total** | **2** |');
     });
     it('includes dependency graph metrics', () => {
-        const md = generateSummaryMd(makeReportForMd(), {}, [], [], []);
+        const md = generateSummaryMd(fakeDir, makeReportForMd(), {}, [], [], []);
         expect(md).toContain('| Modules | 42 |');
         expect(md).toContain('| Import edges | 187 |');
         expect(md).toContain('| Cycles | 1 |');
@@ -773,32 +789,46 @@ describe('generateSummaryMd', () => {
             { category: 'dependency-cycle', severity: 'high' },
             { category: 'high-coupling', severity: 'medium' },
         ];
-        const md = generateSummaryMd(makeReportForMd(), {}, archFindings, [], []);
+        const md = generateSummaryMd(fakeDir, makeReportForMd(), {}, archFindings, [], []);
         expect(md).toContain('`dependency-cycle`: 2');
         expect(md).toContain('`high-coupling`: 1');
     });
     it('includes top recommendations', () => {
-        const md = generateSummaryMd(makeReportForMd(), {}, [], [], []);
+        const md = generateSummaryMd(fakeDir, makeReportForMd(), {}, [], [], []);
         expect(md).toContain('## Top Recommendations');
         expect(md).toContain('Fix cycle');
         expect(md).toContain('src/a.ts');
     });
     it('includes parse errors when present', () => {
         const report = makeReportForMd({ parseErrors: [{ file: 'bad.ts', message: 'Unexpected token' }] });
-        const md = generateSummaryMd(report, {}, [], [], []);
+        const md = generateSummaryMd(fakeDir, report, {}, [], [], []);
         expect(md).toContain('## Parse Errors');
         expect(md).toContain('bad.ts');
         expect(md).toContain('Unexpected token');
     });
     it('does not include parse errors section when none exist', () => {
-        const md = generateSummaryMd(makeReportForMd(), {}, [], [], []);
+        const md = generateSummaryMd(fakeDir, makeReportForMd(), {}, [], [], []);
         expect(md).not.toContain('## Parse Errors');
     });
     it('links output files in the table', () => {
         const outputFiles = { summary: 'summary.json', architecture: 'architecture.json', summaryMd: 'summary.md' };
-        const md = generateSummaryMd(makeReportForMd(), outputFiles, [], [], []);
+        const md = generateSummaryMd(fakeDir, makeReportForMd(), outputFiles, [], [], []);
         expect(md).toContain('[`summary.json`](./summary.json)');
         expect(md).toContain('[`architecture.json`](./architecture.json)');
         expect(md).toContain('[`summary.md`](./summary.md)');
+    });
+    it('shows file sizes when files exist', () => {
+        const realDir = fs.mkdtempSync(path.join(os.tmpdir(), 'summary-size-'));
+        try {
+            fs.writeFileSync(path.join(realDir, 'architecture.json'), '{"x":1}', 'utf8');
+            fs.writeFileSync(path.join(realDir, 'big.json'), 'x'.repeat(2048), 'utf8');
+            const outputFiles = { architecture: 'architecture.json', big: 'big.json' };
+            const md = generateSummaryMd(realDir, makeReportForMd(), outputFiles, [], [], []);
+            expect(md).toContain('| Size |');
+            expect(md).toMatch(/\d+(\.\d+)?\s*(B|KB|MB)/);
+        }
+        finally {
+            fs.rmSync(realDir, { recursive: true, force: true });
+        }
     });
 });

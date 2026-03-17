@@ -33,6 +33,12 @@ export interface AnalysisOptions {
   cognitiveComplexityThreshold: number;
   barrelSymbolThreshold: number;
   layerOrder: string[];
+  parameterThreshold: number;
+  halsteadEffortThreshold: number;
+  maintainabilityIndexThreshold: number;
+  cyclomaticDensityThreshold: number;
+  anyThreshold: number;
+  magicNumberThreshold: number;
 }
 
 export interface Location {
@@ -51,6 +57,30 @@ export interface Metrics {
   awaits: number;
   calls: number;
   loops: number;
+}
+
+export interface HalsteadMetrics {
+  operators: number;
+  operands: number;
+  distinctOperators: number;
+  distinctOperands: number;
+  vocabulary: number;
+  length: number;
+  volume: number;
+  difficulty: number;
+  effort: number;
+  time: number;
+  estimatedBugs: number;
+}
+
+export interface CodeLocation {
+  file: string;
+  lineStart: number;
+  lineEnd: number;
+}
+
+export interface MagicNumberEntry extends CodeLocation {
+  value: number;
 }
 
 export interface TreeSitterMetrics extends Metrics {
@@ -76,6 +106,8 @@ export interface FunctionEntry {
   loops: number;
   lengthLines: number;
   cognitiveComplexity: number;
+  halstead?: HalsteadMetrics;
+  maintainabilityIndex?: number;
   declared?: boolean;
   params?: number;
   source?: string;
@@ -224,6 +256,17 @@ export interface CriticalModule extends DependencyRecord {
   [key: string]: unknown;
 }
 
+export interface HotFile {
+  file: string;
+  riskScore: number;
+  fanIn: number;
+  fanOut: number;
+  complexityScore: number;
+  exportCount: number;
+  inCycle: boolean;
+  onCriticalPath: boolean;
+}
+
 export interface TestOnlyModule extends DependencyRecord {
   lineStart?: number;
   lineEnd?: number;
@@ -279,6 +322,10 @@ export interface FileEntry {
   functions: FunctionEntry[];
   flows: FlowEntry[];
   dependencyProfile: DependencyProfile;
+  emptyCatches?: CodeLocation[];
+  switchesWithoutDefault?: CodeLocation[];
+  anyCount?: number;
+  magicNumbers?: MagicNumberEntry[];
   treeSitterNodeCount?: number;
   treeSitterError?: string;
   parserFallback?: string;
@@ -383,6 +430,12 @@ export const DEFAULT_OPTS: AnalysisOptions = {
   cognitiveComplexityThreshold: 15,
   barrelSymbolThreshold: 30,
   layerOrder: [],
+  parameterThreshold: 5,
+  halsteadEffortThreshold: 500_000,
+  maintainabilityIndexThreshold: 20,
+  cyclomaticDensityThreshold: 0.5,
+  anyThreshold: 5,
+  magicNumberThreshold: 3,
 };
 
 export const CONTROL_KIND_DUP_THRESHOLD = 3;

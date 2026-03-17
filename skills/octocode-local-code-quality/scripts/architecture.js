@@ -595,3 +595,445 @@ export function detectLayerViolations(dependencyState, layerOrder) {
     }
     return findings;
 }
+// ─── Low Cohesion Detection (LCOM via export consumer overlap) ─────────────
+export function detectLowCohesion(dependencyState, minExports = 3) {
+    const findings = [];
+    for (const file of dependencyState.files) {
+        if (isTestFile(file) || isLikelyEntrypoint(file))
+            continue;
+        const exports = dependencyState.declaredExportsByFile.get(file);
+        if (!exports || exports.length < minExports)
+            continue;
+        const exportNames = new Set(exports.map(e => e.name));
+        const symbolConsumers = new Map();
+        for (const [consumer, imports] of dependencyState.importedSymbolsByFile.entries()) {
+            for (const imp of imports) {
+                if (imp.resolvedModule !== file)
+                    continue;
+                if (!exportNames.has(imp.importedName))
+                    continue;
+                if (!symbolConsumers.has(imp.importedName))
+                    symbolConsumers.set(imp.importedName, new Set());
+                symbolConsumers.get(imp.importedName).add(consumer);
+            }
+        }
+        const consumedSymbols = [...symbolConsumers.keys()];
+        if (consumedSymbols.length < 2)
+            continue;
+        const adj = new Map();
+        for (const sym of consumedSymbols)
+            adj.set(sym, new Set());
+        for (const [consumer, imports] of dependencyState.importedSymbolsByFile.entries()) {
+            const fromThisFile = imports
+                .filter(i => i.resolvedModule === file && exportNames.has(i.importedName))
+                .map(i => i.importedName);
+            for (let i = 0; i < fromThisFile.length; i++) {
+                for (let j = i + 1; j < fromThisFile.length; j++) {
+                    adj.get(fromThisFile[i])?.add(fromThisFile[j]);
+                    adj.get(fromThisFile[j])?.add(fromThisFile[i]);
+                }
+            }
+        }
+        const visited = new Set();
+        let components = 0;
+        for (const sym of consumedSymbols) {
+            if (visited.has(sym))
+                continue;
+            components++;
+            const queue = [sym];
+            while (queue.length > 0) {
+                const curr = queue.pop();
+                if (visited.has(curr))
+                    continue;
+                visited.add(curr);
+                for (const neighbor of adj.get(curr) || []) {
+                    if (!visited.has(neighbor))
+                        queue.push(neighbor);
+                }
+            }
+        }
+        if (components > 1) {
+            findings.push({
+                severity: components >= 4 ? 'high' : 'medium',
+                category: 'low-cohesion',
+                file,
+                lineStart: 1,
+                lineEnd: 1,
+                title: `Low cohesion: ${file} (LCOM=${components})`,
+                reason: `Module exports ${consumedSymbols.length} consumed symbols that form ${components} independent groups. Consumers never import symbols across groups — the module serves unrelated purposes.`,
+                files: [file],
+                suggestedFix: {
+                    strategy: `Split into ${components} focused modules, one per cohesion group.`,
+                    steps: [
+                        'Identify which exports belong to each independent group.',
+                        'Create a new module for each group with a descriptive name.',
+                        'Move exports and their dependencies to the appropriate module.',
+                        'Update consumer imports to point to the new modules.',
+                    ],
+                },
+                impact: 'Higher cohesion = easier navigation, focused testing, and smaller change blast radius.',
+            });
+        }
+    }
+    return findings;
+}
+// ─── Inferred Layer Violations (auto-detect from directory structure) ───────
+const INFERRED_LAYERS = [
+    { level: 0, patterns: ['types', 'constants', 'interfaces', 'contracts', 'schema', 'schemas'] },
+    { level: 1, patterns: ['utils', 'helpers', 'lib', 'common', 'shared', 'core'] },
+    { level: 2, patterns: ['services', 'service', 'api', 'domain', 'repositories', 'repository', 'store', 'stores', 'providers'] },
+    { level: 3, patterns: ['features', 'modules', 'pages', 'routes', 'components', 'views', 'handlers', 'controllers'] },
+];
+export function getInferredLayer(filePath) {
+    const parts = filePath.split('/');
+    for (const part of parts) {
+        const lower = part.toLowerCase();
+        for (const layer of INFERRED_LAYERS) {
+            if (layer.patterns.includes(lower))
+                return layer.level;
+        }
+    }
+    return -1;
+}
+const LAYER_NAMES = ['foundation', 'utility', 'service', 'feature'];
+export function detectInferredLayerViolations(dependencyState) {
+    const findings = [];
+    for (const file of dependencyState.files) {
+        if (isTestFile(file))
+            continue;
+        const srcLayer = getInferredLayer(file);
+        if (srcLayer === -1)
+            continue;
+        for (const dep of (dependencyState.outgoing.get(file) || new Set())) {
+            if (!dependencyState.files.has(dep) || isTestFile(dep))
+                continue;
+            const depLayer = getInferredLayer(dep);
+            if (depLayer === -1)
+                continue;
+            if (depLayer > srcLayer) {
+                findings.push({
+                    severity: 'high',
+                    category: 'inferred-layer-violation',
+                    file,
+                    lineStart: 1,
+                    lineEnd: 1,
+                    title: `Layer violation: ${LAYER_NAMES[srcLayer]} → ${LAYER_NAMES[depLayer]}`,
+                    reason: `"${file}" (${LAYER_NAMES[srcLayer]} layer) imports "${dep}" (${LAYER_NAMES[depLayer]} layer). Lower layers must not depend on higher layers.`,
+                    files: [file, dep],
+                    suggestedFix: {
+                        strategy: 'Invert the dependency or extract shared contracts to a lower layer.',
+                        steps: [
+                            'Define an interface/type in the lower layer.',
+                            'Have the higher layer implement or provide the concrete dependency.',
+                            'Inject via parameter, factory, or configuration rather than direct import.',
+                        ],
+                    },
+                    impact: 'Maintains clean architecture boundaries and prevents upward coupling.',
+                });
+            }
+        }
+    }
+    return findings;
+}
+// ─── Hot Files (Change Risk Hotspots) ──────────────────────────────────────
+export function computeHotFiles(dependencyState, dependencySummary, fileCriticalityByPath, maxResults = 20) {
+    const cycleFiles = new Set();
+    for (const cycle of dependencySummary.cycles) {
+        for (const node of cycle.path)
+            cycleFiles.add(node);
+    }
+    const criticalPathFiles = new Set();
+    for (const cp of dependencySummary.criticalPaths) {
+        for (const node of cp.path)
+            criticalPathFiles.add(node);
+    }
+    const results = [];
+    for (const file of dependencyState.files) {
+        if (isTestFile(file))
+            continue;
+        const fanIn = (dependencyState.incoming.get(file) || new Set()).size;
+        const fanOut = (dependencyState.outgoing.get(file) || new Set()).size;
+        const crit = fileCriticalityByPath.get(file);
+        const complexityScore = crit?.score ?? 0;
+        const exportCount = (dependencyState.declaredExportsByFile.get(file) || []).length;
+        const inCycle = cycleFiles.has(file);
+        const onCriticalPath = criticalPathFiles.has(file);
+        const riskScore = Math.round(fanIn * 3
+            + complexityScore * 0.5
+            + exportCount * 1.5
+            + fanOut * 0.5
+            + (inCycle ? 20 : 0)
+            + (onCriticalPath ? 10 : 0));
+        if (riskScore > 0) {
+            results.push({ file, riskScore, fanIn, fanOut, complexityScore, exportCount, inCycle, onCriticalPath });
+        }
+    }
+    results.sort((a, b) => b.riskScore - a.riskScore);
+    return results.slice(0, maxResults);
+}
+// ─── Excessive Parameters ──────────────────────────────────────────────────
+export function detectExcessiveParameters(fileSummaries, threshold = 5) {
+    const findings = [];
+    for (const entry of fileSummaries) {
+        if (isTestFile(entry.file))
+            continue;
+        for (const fn of entry.functions) {
+            if (fn.params == null || fn.params <= threshold)
+                continue;
+            findings.push({
+                severity: fn.params > 7 ? 'high' : 'medium',
+                category: 'excessive-parameters',
+                file: entry.file,
+                lineStart: fn.lineStart,
+                lineEnd: fn.lineEnd,
+                title: `Excessive parameters: ${fn.name} (${fn.params} params)`,
+                reason: `Function has ${fn.params} parameters (threshold: ${threshold}). High parameter counts make call sites hard to read and signal the function may be doing too much.`,
+                files: [`${entry.file}:${fn.lineStart}-${fn.lineEnd}`],
+                suggestedFix: {
+                    strategy: 'Introduce a parameter object or split the function.',
+                    steps: [
+                        'Group related parameters into an options/config object.',
+                        'Use destructuring at the function signature for clarity.',
+                        'Consider splitting into smaller, focused functions if params serve different concerns.',
+                    ],
+                },
+                impact: 'Improves call-site readability and makes the API easier to evolve.',
+            });
+        }
+    }
+    return findings;
+}
+// ─── Empty Catch Blocks ────────────────────────────────────────────────────
+export function detectEmptyCatchBlocks(fileSummaries) {
+    const findings = [];
+    for (const entry of fileSummaries) {
+        if (isTestFile(entry.file))
+            continue;
+        if (!entry.emptyCatches || entry.emptyCatches.length === 0)
+            continue;
+        for (const loc of entry.emptyCatches) {
+            findings.push({
+                severity: 'medium',
+                category: 'empty-catch',
+                file: entry.file,
+                lineStart: loc.lineStart,
+                lineEnd: loc.lineEnd,
+                title: `Empty catch block silently swallows errors`,
+                reason: `Catch block at line ${loc.lineStart} has no statements — errors are silently ignored.`,
+                files: [`${entry.file}:${loc.lineStart}-${loc.lineEnd}`],
+                suggestedFix: {
+                    strategy: 'Log, re-throw, or handle the error explicitly.',
+                    steps: [
+                        'Add error logging (console.error or a logger) at minimum.',
+                        'Re-throw if the caller should handle the error.',
+                        'Add a comment explaining why swallowing is intentional, if it truly is.',
+                    ],
+                },
+                impact: 'Prevents silent failures that are extremely hard to debug in production.',
+            });
+        }
+    }
+    return findings;
+}
+// ─── Switch Without Default ────────────────────────────────────────────────
+export function detectSwitchNoDefault(fileSummaries) {
+    const findings = [];
+    for (const entry of fileSummaries) {
+        if (isTestFile(entry.file))
+            continue;
+        if (!entry.switchesWithoutDefault || entry.switchesWithoutDefault.length === 0)
+            continue;
+        for (const loc of entry.switchesWithoutDefault) {
+            findings.push({
+                severity: 'low',
+                category: 'switch-no-default',
+                file: entry.file,
+                lineStart: loc.lineStart,
+                lineEnd: loc.lineEnd,
+                title: `Switch statement missing default case`,
+                reason: `Switch at line ${loc.lineStart} has no default clause — unexpected values fall through silently.`,
+                files: [`${entry.file}:${loc.lineStart}-${loc.lineEnd}`],
+                suggestedFix: {
+                    strategy: 'Add a default case with error handling or exhaustive check.',
+                    steps: [
+                        'Add a default clause that throws an unreachable error for exhaustiveness.',
+                        'Or log a warning for unexpected values.',
+                        'In TypeScript, use `never` type assertion for compile-time exhaustive checks.',
+                    ],
+                },
+                impact: 'Catches unexpected values early and prevents silent logic bugs.',
+            });
+        }
+    }
+    return findings;
+}
+// ─── High Cyclomatic Density ───────────────────────────────────────────────
+export function detectHighCyclomaticDensity(fileSummaries, threshold = 0.5) {
+    const findings = [];
+    for (const entry of fileSummaries) {
+        if (isTestFile(entry.file))
+            continue;
+        for (const fn of entry.functions) {
+            if (fn.statementCount < 5)
+                continue;
+            const density = fn.complexity / fn.statementCount;
+            if (density <= threshold)
+                continue;
+            findings.push({
+                severity: density > 1.0 ? 'high' : 'medium',
+                category: 'high-cyclomatic-density',
+                file: entry.file,
+                lineStart: fn.lineStart,
+                lineEnd: fn.lineEnd,
+                title: `High cyclomatic density: ${fn.name} (${density.toFixed(2)})`,
+                reason: `Function has ${fn.complexity} branches across ${fn.statementCount} statements (density=${density.toFixed(2)}, threshold: ${threshold}). Nearly every line is a decision point.`,
+                files: [`${entry.file}:${fn.lineStart}-${fn.lineEnd}`],
+                suggestedFix: {
+                    strategy: 'Extract conditional logic into guard clauses or helper predicates.',
+                    steps: [
+                        'Convert nested if-else chains into early returns.',
+                        'Extract boolean expressions into named predicate functions.',
+                        'Consider a lookup table or strategy pattern for dense switch/if logic.',
+                    ],
+                },
+                impact: 'Reduces the mental model needed to understand each function.',
+            });
+        }
+    }
+    return findings;
+}
+// ─── Unsafe `any` Usage ────────────────────────────────────────────────────
+export function detectUnsafeAny(fileSummaries, threshold = 5) {
+    const findings = [];
+    for (const entry of fileSummaries) {
+        if (isTestFile(entry.file))
+            continue;
+        if (entry.anyCount == null || entry.anyCount <= threshold)
+            continue;
+        findings.push({
+            severity: entry.anyCount > 10 ? 'high' : 'medium',
+            category: 'unsafe-any',
+            file: entry.file,
+            lineStart: 1,
+            lineEnd: 1,
+            title: `Excessive \`any\` usage: ${entry.file} (${entry.anyCount} occurrences)`,
+            reason: `File uses \`any\` type ${entry.anyCount} times (threshold: ${threshold}). Each \`any\` disables type checking and allows silent runtime errors.`,
+            files: [entry.file],
+            suggestedFix: {
+                strategy: 'Replace `any` with specific types, `unknown`, or generics.',
+                steps: [
+                    'Replace `any` with `unknown` and add type guards where needed.',
+                    'Use generics for functions that operate on multiple types.',
+                    'Define proper interfaces for complex data shapes.',
+                    'Use `as const` assertions instead of `as any` where possible.',
+                ],
+            },
+            impact: 'Restores TypeScript safety and catches bugs at compile time instead of runtime.',
+        });
+    }
+    return findings;
+}
+// ─── Magic Numbers ─────────────────────────────────────────────────────────
+export function detectMagicNumbers(fileSummaries, threshold = 3) {
+    const findings = [];
+    for (const entry of fileSummaries) {
+        if (isTestFile(entry.file))
+            continue;
+        if (!entry.magicNumbers || entry.magicNumbers.length <= threshold)
+            continue;
+        const sample = entry.magicNumbers.slice(0, 5).map(m => `${m.value} (line ${m.lineStart})`).join(', ');
+        findings.push({
+            severity: entry.magicNumbers.length > 8 ? 'high' : 'medium',
+            category: 'magic-number',
+            file: entry.file,
+            lineStart: entry.magicNumbers[0].lineStart,
+            lineEnd: entry.magicNumbers[0].lineEnd,
+            title: `Magic numbers: ${entry.file} (${entry.magicNumbers.length} occurrences)`,
+            reason: `File contains ${entry.magicNumbers.length} magic number literals (threshold: ${threshold}). Examples: ${sample}.`,
+            files: [entry.file],
+            suggestedFix: {
+                strategy: 'Extract magic numbers into named constants.',
+                steps: [
+                    'Create named constants with descriptive names (e.g. MAX_RETRY_COUNT = 3).',
+                    'Group related constants in a config object or enum.',
+                    'Replace inline literals with the named constant references.',
+                ],
+            },
+            impact: 'Named constants make code self-documenting and easier to update consistently.',
+        });
+    }
+    return findings;
+}
+// ─── High Halstead Effort ──────────────────────────────────────────────────
+export function detectHighHalsteadEffort(fileSummaries, effortThreshold = 500_000, bugThreshold = 2.0) {
+    const findings = [];
+    for (const entry of fileSummaries) {
+        if (isTestFile(entry.file))
+            continue;
+        for (const fn of entry.functions) {
+            if (!fn.halstead)
+                continue;
+            const { effort, estimatedBugs, volume } = fn.halstead;
+            if (effort <= effortThreshold && estimatedBugs <= bugThreshold)
+                continue;
+            const reasons = [];
+            if (effort > effortThreshold)
+                reasons.push(`effort=${Math.round(effort)} (threshold: ${effortThreshold})`);
+            if (estimatedBugs > bugThreshold)
+                reasons.push(`estimatedBugs=${estimatedBugs.toFixed(2)} (threshold: ${bugThreshold})`);
+            findings.push({
+                severity: effort > effortThreshold * 2 || estimatedBugs > 5 ? 'high' : 'medium',
+                category: 'halstead-effort',
+                file: entry.file,
+                lineStart: fn.lineStart,
+                lineEnd: fn.lineEnd,
+                title: `High Halstead complexity: ${fn.name}`,
+                reason: `Function has high implementation complexity: ${reasons.join('; ')}. Volume=${Math.round(volume)}.`,
+                files: [`${entry.file}:${fn.lineStart}-${fn.lineEnd}`],
+                suggestedFix: {
+                    strategy: 'Reduce operator/operand count by extracting helpers and simplifying expressions.',
+                    steps: [
+                        'Extract complex sub-expressions into named intermediate variables.',
+                        'Split into smaller functions with fewer unique operators/operands.',
+                        'Replace imperative loops with declarative array methods where clearer.',
+                    ],
+                },
+                impact: 'Lower Halstead effort correlates with fewer bugs and faster comprehension.',
+            });
+        }
+    }
+    return findings;
+}
+// ─── Low Maintainability Index ─────────────────────────────────────────────
+export function detectLowMaintainability(fileSummaries, threshold = 20) {
+    const findings = [];
+    for (const entry of fileSummaries) {
+        if (isTestFile(entry.file))
+            continue;
+        for (const fn of entry.functions) {
+            if (fn.maintainabilityIndex == null || fn.maintainabilityIndex >= threshold)
+                continue;
+            findings.push({
+                severity: fn.maintainabilityIndex < 10 ? 'critical' : 'high',
+                category: 'low-maintainability',
+                file: entry.file,
+                lineStart: fn.lineStart,
+                lineEnd: fn.lineEnd,
+                title: `Low maintainability: ${fn.name} (MI=${fn.maintainabilityIndex.toFixed(1)})`,
+                reason: `Maintainability Index is ${fn.maintainabilityIndex.toFixed(1)} (threshold: ${threshold}, scale 0-100). Combines Halstead volume, cyclomatic complexity, and lines of code.`,
+                files: [`${entry.file}:${fn.lineStart}-${fn.lineEnd}`],
+                suggestedFix: {
+                    strategy: 'Reduce complexity, shorten the function, and simplify expressions.',
+                    steps: [
+                        'Split into smaller functions to reduce LOC and cyclomatic complexity.',
+                        'Extract complex expressions to reduce Halstead volume.',
+                        'Convert nested logic to early returns and guard clauses.',
+                        'Consider if parts of the function belong in separate modules.',
+                    ],
+                },
+                impact: 'Higher MI directly predicts lower maintenance cost and defect rate.',
+            });
+        }
+    }
+    return findings;
+}

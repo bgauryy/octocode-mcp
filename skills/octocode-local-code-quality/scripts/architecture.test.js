@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as ts from 'typescript';
-import { computeInstability, detectSdpViolations, detectHighCoupling, detectGodModuleCoupling, detectOrphanModules, detectUnreachableModules, detectUnusedNpmDeps, detectBoundaryViolations, computeBarrelDepth, detectBarrelExplosion, detectGodModules, detectGodFunctions, computeCognitiveComplexity, detectCognitiveComplexity, detectLayerViolations, } from './architecture.js';
+import { computeInstability, detectSdpViolations, detectHighCoupling, detectGodModuleCoupling, detectOrphanModules, detectUnreachableModules, detectUnusedNpmDeps, detectBoundaryViolations, computeBarrelDepth, detectBarrelExplosion, detectGodModules, detectGodFunctions, computeCognitiveComplexity, detectCognitiveComplexity, detectLayerViolations, detectLowCohesion, detectInferredLayerViolations, getInferredLayer, computeHotFiles, } from './architecture.js';
 function emptyState() {
     return {
         files: new Set(),
@@ -584,5 +584,239 @@ describe('detectLayerViolations', () => {
         addEdge(state, 'src/service/api.ts', 'src/ui/button.ts');
         const findings = detectLayerViolations(state, ['ui', 'service', 'repository']);
         expect(findings.length).toBe(2);
+    });
+});
+// ─── Low Cohesion (LCOM) ───────────────────────────────────────────────────
+describe('detectLowCohesion', () => {
+    it('returns empty when file has few exports', () => {
+        const state = emptyState();
+        state.files.add('src/small.ts');
+        state.declaredExportsByFile.set('src/small.ts', [
+            { name: 'a', kind: 'value' },
+            { name: 'b', kind: 'value' },
+        ]);
+        expect(detectLowCohesion(state)).toEqual([]);
+    });
+    it('returns empty for entrypoint files', () => {
+        const state = emptyState();
+        state.files.add('src/index.ts');
+        state.declaredExportsByFile.set('src/index.ts', [
+            { name: 'a', kind: 'value' }, { name: 'b', kind: 'value' },
+            { name: 'c', kind: 'value' }, { name: 'd', kind: 'value' },
+        ]);
+        expect(detectLowCohesion(state)).toEqual([]);
+    });
+    it('returns empty when all consumers import the same symbols', () => {
+        const state = emptyState();
+        state.files.add('src/lib.ts');
+        state.files.add('src/a.ts');
+        state.files.add('src/b.ts');
+        state.declaredExportsByFile.set('src/lib.ts', [
+            { name: 'x', kind: 'value' }, { name: 'y', kind: 'value' },
+            { name: 'z', kind: 'value' }, { name: 'w', kind: 'value' },
+        ]);
+        state.importedSymbolsByFile.set('src/a.ts', [
+            { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'x', localName: 'x', isTypeOnly: false },
+            { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'y', localName: 'y', isTypeOnly: false },
+        ]);
+        state.importedSymbolsByFile.set('src/b.ts', [
+            { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'x', localName: 'x', isTypeOnly: false },
+            { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'y', localName: 'y', isTypeOnly: false },
+        ]);
+        expect(detectLowCohesion(state)).toEqual([]);
+    });
+    it('detects low cohesion when consumers import non-overlapping symbols', () => {
+        const state = emptyState();
+        state.files.add('src/junkdrawer.ts');
+        state.files.add('src/a.ts');
+        state.files.add('src/b.ts');
+        state.declaredExportsByFile.set('src/junkdrawer.ts', [
+            { name: 'alpha', kind: 'value' }, { name: 'beta', kind: 'value' },
+            { name: 'gamma', kind: 'value' }, { name: 'delta', kind: 'value' },
+        ]);
+        state.importedSymbolsByFile.set('src/a.ts', [
+            { sourceModule: './junkdrawer', resolvedModule: 'src/junkdrawer.ts', importedName: 'alpha', localName: 'alpha', isTypeOnly: false },
+            { sourceModule: './junkdrawer', resolvedModule: 'src/junkdrawer.ts', importedName: 'beta', localName: 'beta', isTypeOnly: false },
+        ]);
+        state.importedSymbolsByFile.set('src/b.ts', [
+            { sourceModule: './junkdrawer', resolvedModule: 'src/junkdrawer.ts', importedName: 'gamma', localName: 'gamma', isTypeOnly: false },
+            { sourceModule: './junkdrawer', resolvedModule: 'src/junkdrawer.ts', importedName: 'delta', localName: 'delta', isTypeOnly: false },
+        ]);
+        const findings = detectLowCohesion(state);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('low-cohesion');
+        expect(findings[0].file).toBe('src/junkdrawer.ts');
+    });
+    it('reports LCOM component count in reason', () => {
+        const state = emptyState();
+        state.files.add('src/utils.ts');
+        state.files.add('src/a.ts');
+        state.files.add('src/b.ts');
+        state.files.add('src/c.ts');
+        state.declaredExportsByFile.set('src/utils.ts', [
+            { name: 'e1', kind: 'value' }, { name: 'e2', kind: 'value' },
+            { name: 'e3', kind: 'value' }, { name: 'e4', kind: 'value' },
+        ]);
+        state.importedSymbolsByFile.set('src/a.ts', [
+            { sourceModule: './utils', resolvedModule: 'src/utils.ts', importedName: 'e1', localName: 'e1', isTypeOnly: false },
+        ]);
+        state.importedSymbolsByFile.set('src/b.ts', [
+            { sourceModule: './utils', resolvedModule: 'src/utils.ts', importedName: 'e2', localName: 'e2', isTypeOnly: false },
+        ]);
+        state.importedSymbolsByFile.set('src/c.ts', [
+            { sourceModule: './utils', resolvedModule: 'src/utils.ts', importedName: 'e3', localName: 'e3', isTypeOnly: false },
+        ]);
+        const findings = detectLowCohesion(state);
+        expect(findings.length).toBe(1);
+        expect(findings[0].reason).toContain('3');
+    });
+    it('skips test files', () => {
+        const state = emptyState();
+        state.files.add('src/utils.test.ts');
+        state.declaredExportsByFile.set('src/utils.test.ts', [
+            { name: 'a', kind: 'value' }, { name: 'b', kind: 'value' },
+            { name: 'c', kind: 'value' }, { name: 'd', kind: 'value' },
+        ]);
+        expect(detectLowCohesion(state)).toEqual([]);
+    });
+});
+// ─── Inferred Layer Violations ─────────────────────────────────────────────
+describe('getInferredLayer', () => {
+    it('returns foundation layer for types/ directory', () => {
+        expect(getInferredLayer('src/types/models.ts')).toBe(0);
+    });
+    it('returns utility layer for utils/ directory', () => {
+        expect(getInferredLayer('src/utils/helpers.ts')).toBe(1);
+    });
+    it('returns service layer for services/ directory', () => {
+        expect(getInferredLayer('src/services/api.ts')).toBe(2);
+    });
+    it('returns feature layer for features/ directory', () => {
+        expect(getInferredLayer('src/features/auth/login.ts')).toBe(3);
+    });
+    it('returns feature layer for components/ directory', () => {
+        expect(getInferredLayer('src/components/Button.tsx')).toBe(3);
+    });
+    it('returns -1 for unrecognized directory', () => {
+        expect(getInferredLayer('src/random/foo.ts')).toBe(-1);
+    });
+});
+describe('detectInferredLayerViolations', () => {
+    it('returns empty when no inferred layers match', () => {
+        const state = emptyState();
+        addEdge(state, 'src/random/a.ts', 'src/other/b.ts');
+        expect(detectInferredLayerViolations(state)).toEqual([]);
+    });
+    it('allows higher layers importing from lower layers', () => {
+        const state = emptyState();
+        addEdge(state, 'src/features/auth.ts', 'src/services/api.ts');
+        addEdge(state, 'src/services/api.ts', 'src/utils/fetch.ts');
+        addEdge(state, 'src/utils/fetch.ts', 'src/types/models.ts');
+        expect(detectInferredLayerViolations(state)).toEqual([]);
+    });
+    it('detects foundation layer importing from feature layer', () => {
+        const state = emptyState();
+        addEdge(state, 'src/types/models.ts', 'src/features/auth.ts');
+        const findings = detectInferredLayerViolations(state);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('inferred-layer-violation');
+    });
+    it('detects utility layer importing from service layer', () => {
+        const state = emptyState();
+        addEdge(state, 'src/utils/helpers.ts', 'src/services/api.ts');
+        const findings = detectInferredLayerViolations(state);
+        expect(findings.length).toBe(1);
+        expect(findings[0].severity).toBe('high');
+    });
+    it('skips test files', () => {
+        const state = emptyState();
+        addEdge(state, 'src/types/models.test.ts', 'src/features/auth.ts');
+        expect(detectInferredLayerViolations(state)).toEqual([]);
+    });
+});
+// ─── Hot Files (Change Risk) ───────────────────────────────────────────────
+describe('computeHotFiles', () => {
+    function minimalDepSummary(overrides = {}) {
+        return {
+            totalModules: 0, totalEdges: 0, unresolvedEdgeCount: 0,
+            externalDependencyFiles: 0, rootsCount: 0, leavesCount: 0,
+            roots: [], leaves: [], criticalModules: [], testOnlyModules: [],
+            unresolvedSample: [], outgoingTop: [], inboundTop: [],
+            cycles: [], criticalPaths: [], ...overrides,
+        };
+    }
+    it('returns empty for empty input', () => {
+        const result = computeHotFiles(emptyState(), minimalDepSummary(), new Map());
+        expect(result).toEqual([]);
+    });
+    it('scores files by fan-in + complexity', () => {
+        const state = emptyState();
+        const hub = 'src/hub.ts';
+        state.files.add(hub);
+        for (let i = 0; i < 10; i++) {
+            const f = `src/c${i}.ts`;
+            state.files.add(f);
+            addEdge(state, f, hub);
+        }
+        const critMap = new Map();
+        critMap.set(hub, { file: hub, complexityRisk: 5, highComplexityFunctions: 3, functionCount: 8, flows: 20, score: 50 });
+        const result = computeHotFiles(state, minimalDepSummary(), critMap);
+        expect(result.length).toBeGreaterThan(0);
+        expect(result[0].file).toBe(hub);
+        expect(result[0].riskScore).toBeGreaterThan(0);
+        expect(result[0].fanIn).toBe(10);
+    });
+    it('boosts score for files in cycles', () => {
+        const state = emptyState();
+        state.files.add('src/a.ts');
+        state.files.add('src/b.ts');
+        addEdge(state, 'src/a.ts', 'src/b.ts');
+        addEdge(state, 'src/b.ts', 'src/a.ts');
+        const depSummary = minimalDepSummary({
+            cycles: [{ path: ['src/a.ts', 'src/b.ts', 'src/a.ts'], nodeCount: 2 }],
+        });
+        const critMap = new Map();
+        critMap.set('src/a.ts', { file: 'src/a.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 10 });
+        critMap.set('src/b.ts', { file: 'src/b.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 10 });
+        const result = computeHotFiles(state, depSummary, critMap);
+        expect(result.some(f => f.inCycle)).toBe(true);
+    });
+    it('returns files sorted by riskScore descending', () => {
+        const state = emptyState();
+        state.files.add('src/hot.ts');
+        state.files.add('src/cold.ts');
+        for (let i = 0; i < 10; i++)
+            addEdge(state, `src/dep${i}.ts`, 'src/hot.ts');
+        const critMap = new Map();
+        critMap.set('src/hot.ts', { file: 'src/hot.ts', complexityRisk: 5, highComplexityFunctions: 3, functionCount: 10, flows: 20, score: 100 });
+        critMap.set('src/cold.ts', { file: 'src/cold.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 5 });
+        const result = computeHotFiles(state, minimalDepSummary(), critMap);
+        if (result.length >= 2) {
+            expect(result[0].riskScore).toBeGreaterThanOrEqual(result[1].riskScore);
+        }
+    });
+    it('limits results to top 20', () => {
+        const state = emptyState();
+        for (let i = 0; i < 50; i++) {
+            const f = `src/file${i}.ts`;
+            state.files.add(f);
+            addEdge(state, `src/consumer${i}.ts`, f);
+        }
+        const critMap = new Map();
+        for (const f of state.files) {
+            critMap.set(f, { file: f, complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 5 });
+        }
+        const result = computeHotFiles(state, minimalDepSummary(), critMap);
+        expect(result.length).toBeLessThanOrEqual(20);
+    });
+    it('skips test files', () => {
+        const state = emptyState();
+        state.files.add('src/a.test.ts');
+        for (let i = 0; i < 10; i++)
+            addEdge(state, `src/c${i}.ts`, 'src/a.test.ts');
+        const critMap = new Map();
+        critMap.set('src/a.test.ts', { file: 'src/a.test.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 50 });
+        const result = computeHotFiles(state, minimalDepSummary(), critMap);
+        expect(result.some(f => f.file === 'src/a.test.ts')).toBe(false);
     });
 });

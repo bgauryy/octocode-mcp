@@ -132,6 +132,36 @@ export function parseArgs(argv: string[]): AnalysisOptions {
       continue;
     }
 
+    if (arg === '--parameter-threshold') {
+      opts.parameterThreshold = parseInt(argv[++i], 10);
+      continue;
+    }
+
+    if (arg === '--halstead-effort-threshold') {
+      opts.halsteadEffortThreshold = parseInt(argv[++i], 10);
+      continue;
+    }
+
+    if (arg === '--maintainability-index-threshold') {
+      opts.maintainabilityIndexThreshold = parseInt(argv[++i], 10);
+      continue;
+    }
+
+    if (arg === '--cyclomatic-density-threshold') {
+      opts.cyclomaticDensityThreshold = parseFloat(argv[++i]);
+      continue;
+    }
+
+    if (arg === '--any-threshold') {
+      opts.anyThreshold = parseInt(argv[++i], 10);
+      continue;
+    }
+
+    if (arg === '--magic-number-threshold') {
+      opts.magicNumberThreshold = parseInt(argv[++i], 10);
+      continue;
+    }
+
     if (arg === '--help' || arg === '-h') {
       printHelp();
       process.exit(0);
@@ -158,6 +188,12 @@ export function parseArgs(argv: string[]): AnalysisOptions {
   if (Number.isNaN(opts.godFunctionStatements)) opts.godFunctionStatements = DEFAULT_OPTS.godFunctionStatements;
   if (Number.isNaN(opts.cognitiveComplexityThreshold)) opts.cognitiveComplexityThreshold = DEFAULT_OPTS.cognitiveComplexityThreshold;
   if (Number.isNaN(opts.barrelSymbolThreshold)) opts.barrelSymbolThreshold = DEFAULT_OPTS.barrelSymbolThreshold;
+  if (Number.isNaN(opts.parameterThreshold)) opts.parameterThreshold = DEFAULT_OPTS.parameterThreshold;
+  if (Number.isNaN(opts.halsteadEffortThreshold)) opts.halsteadEffortThreshold = DEFAULT_OPTS.halsteadEffortThreshold;
+  if (Number.isNaN(opts.maintainabilityIndexThreshold)) opts.maintainabilityIndexThreshold = DEFAULT_OPTS.maintainabilityIndexThreshold;
+  if (Number.isNaN(opts.cyclomaticDensityThreshold)) opts.cyclomaticDensityThreshold = DEFAULT_OPTS.cyclomaticDensityThreshold;
+  if (Number.isNaN(opts.anyThreshold)) opts.anyThreshold = DEFAULT_OPTS.anyThreshold;
+  if (Number.isNaN(opts.magicNumberThreshold)) opts.magicNumberThreshold = DEFAULT_OPTS.magicNumberThreshold;
 
   return opts;
 }
@@ -195,6 +231,14 @@ Options:
                                 Cognitive complexity threshold for findings (default 15)
   --barrel-symbol-threshold N   Re-export count threshold for barrel-explosion (default 30)
   --layer-order <layers>        Comma-separated layer names for violation detection (e.g. ui,service,repository)
+  --parameter-threshold N       Max function parameters before flagging (default 5)
+  --halstead-effort-threshold N Halstead effort threshold for findings (default 500000)
+  --maintainability-index-threshold N
+                                MI below this triggers a finding (default 20, scale 0-100)
+  --cyclomatic-density-threshold N
+                                Cyclomatic/LOC ratio threshold (default 0.5)
+  --any-threshold N             Max \`any\` type usages per file before flagging (default 5)
+  --magic-number-threshold N    Max magic number occurrences per file before flagging (default 3)
   --help                        Show this message
 `);
 }

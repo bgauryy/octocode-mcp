@@ -20,7 +20,7 @@ import type {
 } from './types.js';
 import { SEVERITY_ORDER, CONTROL_KIND_DUP_THRESHOLD } from './types.js';
 import { parseArgs } from './cli.js';
-import { canonicalScriptKind, isTestFile } from './utils.js';
+import { canonicalScriptKind, isTestFile, renderTreesText } from './utils.js';
 import { collectDependencyProfile, dependencyProfileToRecord } from './dependencies.js';
 import { collectFiles, safeRead, listWorkspacePackages, fileSummaryWithFindings } from './discovery.js';
 import { analyzeSourceFile, buildDependencyCriticality } from './ts-analyzer.js';
@@ -38,6 +38,17 @@ import {
   detectGodFunctions,
   detectCognitiveComplexity,
   detectLayerViolations,
+  detectLowCohesion,
+  detectInferredLayerViolations,
+  computeHotFiles,
+  detectExcessiveParameters,
+  detectEmptyCatchBlocks,
+  detectSwitchNoDefault,
+  detectHighCyclomaticDensity,
+  detectUnsafeAny,
+  detectMagicNumbers,
+  detectHighHalsteadEffort,
+  detectLowMaintainability,
 } from './architecture.js';
 
 // ─── Output Category Groups ─────────────────────────────────────────────────
@@ -46,11 +57,15 @@ export const ARCHITECTURE_CATEGORIES = new Set([
   'dependency-cycle', 'dependency-critical-path', 'dependency-test-only',
   'architecture-sdp-violation', 'high-coupling', 'god-module-coupling',
   'orphan-module', 'unreachable-module', 'layer-violation',
+  'low-cohesion', 'inferred-layer-violation',
 ]);
 
 export const CODE_QUALITY_CATEGORIES = new Set([
   'duplicate-function-body', 'duplicate-flow-structure', 'function-optimization',
   'cognitive-complexity', 'god-module', 'god-function',
+  'halstead-effort', 'low-maintainability', 'high-cyclomatic-density',
+  'excessive-parameters', 'magic-number', 'unsafe-any',
+  'empty-catch', 'switch-no-default',
 ]);
 
 export const DEAD_CODE_CATEGORIES = new Set([
@@ -628,6 +643,18 @@ export function buildIssueCatalog(
   if (options.layerOrder.length >= 2) {
     for (const f of detectLayerViolations(dependencyState, options.layerOrder)) addFinding(f);
   }
+  for (const f of detectLowCohesion(dependencyState)) addFinding(f);
+  for (const f of detectInferredLayerViolations(dependencyState)) addFinding(f);
+
+  // ─── Phase 4: Code Quality Metrics ──────────────────────────────────
+  for (const f of detectExcessiveParameters(fileSummaries, options.parameterThreshold)) addFinding(f);
+  for (const f of detectEmptyCatchBlocks(fileSummaries)) addFinding(f);
+  for (const f of detectSwitchNoDefault(fileSummaries)) addFinding(f);
+  for (const f of detectHighCyclomaticDensity(fileSummaries, options.cyclomaticDensityThreshold)) addFinding(f);
+  for (const f of detectUnsafeAny(fileSummaries, options.anyThreshold)) addFinding(f);
+  for (const f of detectMagicNumbers(fileSummaries, options.magicNumberThreshold)) addFinding(f);
+  for (const f of detectHighHalsteadEffort(fileSummaries, options.halsteadEffortThreshold)) addFinding(f);
+  for (const f of detectLowMaintainability(fileSummaries, options.maintainabilityIndexThreshold)) addFinding(f);
 
   const sortedFindings = [...findings].sort((a, b) => {
     const bySeverity = SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity];
@@ -820,6 +847,8 @@ export function writeMultiFileReport(
     findings: 'findings.json',
   };
 
+  const hotFiles = computeHotFiles(dependencyState, dependencySummary, fileCriticalityByPath);
+
   writeJson('architecture.json', {
     generatedAt: report.generatedAt,
     dependencyGraph: report.dependencyGraph,
@@ -828,6 +857,7 @@ export function writeMultiFileReport(
     findingsCount: architectureFindings.length,
     severityBreakdown: severityBreakdown(architectureFindings),
     categoryBreakdown: categoryBreakdown(architectureFindings),
+    hotFiles,
   });
 
   writeJson('code-quality.json', {
@@ -867,18 +897,11 @@ export function writeMultiFileReport(
   }
 
   if (report.astTrees) {
-    writeJson('ast-trees.json', {
-      generatedAt: report.generatedAt,
-      astTrees: report.astTrees,
-    });
-    outputFiles.astTrees = 'ast-trees.json';
+    fs.writeFileSync(path.join(dir, 'ast-trees.txt'), renderTreesText(report.astTrees, report.generatedAt), 'utf8');
+    outputFiles.astTrees = 'ast-trees.txt';
   }
 
-  const summaryMd = generateSummaryMd(report, outputFiles, architectureFindings, codeQualityFindings, deadCodeFindings);
-  fs.writeFileSync(path.join(dir, 'summary.md'), summaryMd, 'utf8');
-  outputFiles.summaryMd = 'summary.md';
-
-  writeJson('summary.json', {
+  const summaryJsonData = {
     generatedAt: report.generatedAt,
     repoRoot: report.repoRoot,
     options: report.options,
@@ -887,7 +910,14 @@ export function writeMultiFileReport(
     agentOutput: report.agentOutput,
     parseErrors: report.parseErrors,
     outputFiles,
-  });
+  };
+  writeJson('summary.json', summaryJsonData);
+
+  const summaryMd = generateSummaryMd(dir, report, outputFiles, architectureFindings, codeQualityFindings, deadCodeFindings, hotFiles);
+  fs.writeFileSync(path.join(dir, 'summary.md'), summaryMd, 'utf8');
+  outputFiles.summaryMd = 'summary.md';
+
+  writeJson('summary.json', { ...summaryJsonData, outputFiles });
 
   return outputFiles;
 }
@@ -904,12 +934,20 @@ export function categoryBreakdown(findings: Finding[]): Record<string, number> {
   return counts;
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function generateSummaryMd(
+  dir: string,
   report: FullReport,
   outputFiles: Record<string, string>,
   architectureFindings: Finding[],
   codeQualityFindings: Finding[],
   deadCodeFindings: Finding[],
+  hotFiles: import('./types.js').HotFile[] = [],
 ): string {
   const allFindings = report.optimizationFindings || [];
   const sev = severityBreakdown(allFindings);
@@ -965,6 +1003,17 @@ export function generateSummaryMd(
     lines.push('');
   }
 
+  if (hotFiles.length > 0) {
+    lines.push('## Change Risk Hotspots\n');
+    lines.push('Files most dangerous to change — high fan-in, complexity, or cycle membership.\n');
+    lines.push('| File | Risk | Fan-In | Fan-Out | Complexity | Exports | Cycle | Critical Path |');
+    lines.push('|------|------|--------|---------|------------|---------|-------|---------------|');
+    for (const hf of hotFiles.slice(0, 15)) {
+      lines.push(`| \`${hf.file}\` | ${hf.riskScore} | ${hf.fanIn} | ${hf.fanOut} | ${hf.complexityScore} | ${hf.exportCount} | ${hf.inCycle ? 'Y' : '-'} | ${hf.onCriticalPath ? 'Y' : '-'} |`);
+    }
+    lines.push('');
+  }
+
   lines.push('## Code Quality\n');
   lines.push(`> ${codeQualityFindings.length} findings — see [\`code-quality.json\`](./code-quality.json)\n`);
   const qualCats = categoryBreakdown(codeQualityFindings);
@@ -994,9 +1043,32 @@ export function generateSummaryMd(
     lines.push('');
   }
 
+  if (outputFiles.astTrees) {
+    lines.push('## AST Trees (`ast-trees.txt`)\n');
+    lines.push('Compact indented text format — each node is `Kind[startLine:endLine]`, nesting = indentation.\n');
+    lines.push('```');
+    lines.push('SourceFile[1:152]');
+    lines.push('  ImportDeclaration[1]');
+    lines.push('  FunctionDeclaration[3:20]');
+    lines.push('    Block[4:19]');
+    lines.push('      IfStatement[5:12] ...');
+    lines.push('```\n');
+    lines.push('**Smart navigation:**\n');
+    lines.push('| Goal | Command |');
+    lines.push('|------|---------|');
+    lines.push('| List all files | `grep "^##" ast-trees.txt` |');
+    lines.push('| Find functions | `grep -E "FunctionDeclaration\\|function_declaration\\|ArrowFunction\\|arrow_function" ast-trees.txt` |');
+    lines.push('| Find classes | `grep -E "ClassDeclaration\\|class_declaration" ast-trees.txt` |');
+    lines.push('| Find control flow | `grep -E "IfStatement\\|SwitchStatement\\|ForStatement\\|WhileStatement" ast-trees.txt` |');
+    lines.push('| Deep nesting (>3) | `grep -E "^\\s{8,}" ast-trees.txt` |');
+    lines.push('| Truncated subtrees | `grep "\\.\\.\\.$" ast-trees.txt` |');
+    lines.push('| Large spans (regex) | Use pattern `\\[(\\d+):(\\d+)\\]` — subtract to find span size |');
+    lines.push('');
+  }
+
   lines.push('## Output Files\n');
-  lines.push('| File | Description |');
-  lines.push('|------|-------------|');
+  lines.push('| File | Size | Description |');
+  lines.push('|------|------|-------------|');
   const descriptions: Record<string, string> = {
     summary: 'Scan metadata, agent output, parse errors',
     architecture: 'Dependency graph, cycles, critical paths, architecture findings',
@@ -1005,11 +1077,13 @@ export function generateSummaryMd(
     fileInventory: 'Per-file function/flow/dependency details',
     findings: 'All findings across all categories (master list)',
     graph: 'Mermaid dependency graph',
-    astTrees: 'AST tree snapshots',
+    astTrees: 'AST tree snapshots (compact indented text — grep/regex friendly)',
     summaryMd: 'This file — human-readable overview',
   };
   for (const [key, file] of Object.entries(outputFiles)) {
-    lines.push(`| [\`${file}\`](./${file}) | ${descriptions[key] || key} |`);
+    let size = '—';
+    try { size = formatFileSize(fs.statSync(path.join(dir, file)).size); } catch {}
+    lines.push(`| [\`${file}\`](./${file}) | ${size} | ${descriptions[key] || key} |`);
   }
   lines.push('');
 

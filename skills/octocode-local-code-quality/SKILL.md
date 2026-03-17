@@ -14,29 +14,34 @@ The scan is step one. Use **Octocode MCP local & LSP tools** to validate finding
 ### Three Analysis Pillars
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                    octocode-local-code-quality                │
-│                                                              │
-│  ┌──────────────────┐ ┌────────────────┐ ┌────────────────┐ │
-│  │  Architecture     │ │  Code Quality  │ │  Dead Code     │ │
-│  │  Risk (7 types)   │ │  (5 types)     │ │  Hygiene       │ │
-│  │                   │ │                │ │  (11 types)    │ │
-│  │ • Dep cycles      │ │ • Duplicates   │ │ • Dead files   │ │
-│  │ • Critical paths  │ │ • Complexity   │ │ • Dead exports │ │
-│  │ • SDP violations  │ │ • Cognitive    │ │ • Dead re-exp  │ │
-│  │ • High coupling   │ │ • God modules  │ │ • Unused npm   │ │
-│  │ • Fan-in/fan-out  │ │ • God functions│ │ • Orphans      │ │
-│  │ • Orphan modules  │ │                │ │ • Unreachable  │ │
-│  │ • Unreachable     │ │                │ │ • Boundaries   │ │
-│  │ • Layer violations│ │                │ │ • Barrel bloat │ │
-│  └──────────────────┘ └────────────────┘ └────────────────┘ │
-│                                                              │
-│            Severity-ranked • file:line precision              │
-│            Fix strategies • MCP/LSP playbooks                │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                     octocode-local-code-quality                  │
+│                                                                 │
+│  ┌──────────────────┐  ┌─────────────────┐  ┌────────────────┐ │
+│  │  Architecture     │  │  Code Quality   │  │  Dead Code     │ │
+│  │  Risk (11 types)  │  │  (14 types)     │  │  Hygiene       │ │
+│  │                   │  │                 │  │  (8 types)     │ │
+│  │ • Dep cycles      │  │ • Duplicates    │  │ • Dead files   │ │
+│  │ • Critical paths  │  │ • Complexity    │  │ • Dead exports │ │
+│  │ • SDP violations  │  │ • Cognitive     │  │ • Dead re-exp  │ │
+│  │ • High coupling   │  │ • God modules   │  │ • Unused npm   │ │
+│  │ • Fan-in/fan-out  │  │ • God functions │  │ • Orphans      │ │
+│  │ • Orphan modules  │  │ • Halstead      │  │ • Unreachable  │ │
+│  │ • Unreachable     │  │ • Maintain. Idx │  │ • Boundaries   │ │
+│  │ • Layer violations│  │ • Cyclo density │  │ • Barrel bloat │ │
+│  │ • Low cohesion    │  │ • Excess params │  │                │ │
+│  │ • Inferred layers │  │ • Magic numbers │  │                │ │
+│  │ • Test-only deps  │  │ • Unsafe `any`  │  │                │ │
+│  │                   │  │ • Empty catch   │  │                │ │
+│  │                   │  │ • Switch no-def │  │                │ │
+│  └──────────────────┘  └─────────────────┘  └────────────────┘ │
+│                                                                 │
+│             Severity-ranked • file:line precision                │
+│             Fix strategies • MCP/LSP playbooks                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### All 23 Finding Categories
+### All 33 Finding Categories
 
 | # | Category | Severity | What It Detects |
 |---|----------|----------|-----------------|
@@ -63,6 +68,16 @@ The scan is step one. Use **Octocode MCP local & LSP tools** to validate finding
 | 21 | `package-boundary-violation` | medium — high | Cross-package import bypassing public API (index) |
 | 22 | `barrel-explosion` | medium — high | Barrel with >30 re-exports or >2 chain levels deep |
 | 23 | `layer-violation` | high | Import going backwards in configured layer order |
+| 24 | `low-cohesion` | medium — high | Module exports serve unrelated purposes (LCOM > 1) |
+| 25 | `inferred-layer-violation` | medium — high | Auto-detected layer boundary crossed (foundation/utility/service/feature) |
+| 26 | `excessive-parameters` | medium — high | Function with >5 parameters (configurable via `--parameter-threshold`) |
+| 27 | `empty-catch` | medium | Empty catch block silently swallows errors |
+| 28 | `switch-no-default` | low | Switch statement missing default case |
+| 29 | `high-cyclomatic-density` | medium — high | Cyclomatic complexity / LOC ratio > 0.5 (every other line is a branch) |
+| 30 | `unsafe-any` | medium — high | File uses `any` type >5 times (configurable via `--any-threshold`) |
+| 31 | `magic-number` | medium — high | File contains >3 magic number literals (configurable via `--magic-number-threshold`) |
+| 32 | `halstead-effort` | medium — high | Function with Halstead effort > 500K or estimated bugs > 2.0 |
+| 33 | `low-maintainability` | high — critical | Function with Maintainability Index < 20 (scale 0-100) |
 
 ---
 
@@ -84,7 +99,7 @@ If Octocode MCP is not installed or `ENABLE_LOCAL` is not `"true"`, fall back to
 node <SKILL_BASE_DIRECTORY>/scripts/index.js
 ```
 
-255 tests passing. Only run `scripts/index.js` (the single entry point; all other files in `scripts/` are internal modules).
+297 tests passing. Only run `scripts/index.js` (the single entry point; all other files in `scripts/` are internal modules).
 
 By default the scan creates a **timestamped directory** under `.octocode/scan/<timestamp>/` with separate files per feature area. To write a single monolithic JSON instead (legacy mode), pass `--out path/to/file.json`.
 
@@ -226,13 +241,13 @@ Each scan writes to `.octocode/scan/<timestamp>/`:
 .octocode/scan/2026-03-17T10-30-00-000Z/
 ├── summary.md            # Human/agent-readable overview with stats (READ THIS FIRST)
 ├── summary.json          # Metadata, counters, parser info, top recommendations
-├── architecture.json     # Dependency graph, cycles, critical paths, SDP, coupling findings
+├── architecture.json     # Dependency graph, cycles, critical paths, SDP, coupling, cohesion, hot files
 ├── code-quality.json     # Duplicates, function optimization, god modules, cognitive complexity
 ├── dead-code.json        # Dead files/exports/re-exports, unused npm deps, boundary violations
 ├── file-inventory.json   # Per-file summaries with linked issue IDs
 ├── findings.json         # All findings across all categories, sorted by severity
 ├── graph.md              # Mermaid dependency graph (only with --graph)
-└── ast-trees.json        # AST trees (only with --emit-tree)
+└── ast-trees.txt         # AST trees in compact indented text (only with --emit-tree)
 ```
 
 ### Output Files by Feature
@@ -241,12 +256,41 @@ Each scan writes to `.octocode/scan/<timestamp>/`:
 |------|----------|-------------|
 | `summary.md` | Human-readable overview: scope, severity table, per-feature category breakdown, top recommendations, output file index | **Always first** — fastest way to understand the scan |
 | `summary.json` | Scan metadata, `agentOutput` (counters + top 20 recommendations), `parseErrors`, `outputFiles` index | Programmatic access to summary data |
-| `architecture.json` | `dependencyGraph`, `dependencyFindings`, architecture-category findings | Investigating cycles, coupling, SDP, critical paths |
+| `architecture.json` | `dependencyGraph`, `dependencyFindings`, architecture-category findings, `hotFiles` (change risk ranking) | Investigating cycles, coupling, SDP, cohesion, layer violations, critical paths, change risk |
 | `code-quality.json` | `duplicateFlows`, `optimizationOpportunities`, quality-category findings | Investigating duplicates, complexity, god modules |
 | `dead-code.json` | Dead-code/hygiene-category findings | Cleaning up dead exports, unused deps, boundary violations |
 | `file-inventory.json` | `fileInventory[]` — per-file functions, flows, dependency profiles, linked issue IDs | Deep-diving into specific files |
-| `findings.json` | `optimizationFindings[]` — ALL findings sorted by severity (23 categories) | Full findings list when needed |
+| `findings.json` | `optimizationFindings[]` — ALL findings sorted by severity (33 categories) | Full findings list when needed |
 | `graph.md` | Mermaid dependency graph | Visual architecture review |
+| `ast-trees.txt` | Compact indented AST tree per file | Structural overview, grep for node kinds |
+
+#### Navigating `ast-trees.txt`
+
+The file uses a compact indented text format — one line per AST node, nesting via indentation:
+
+```
+## package-name — src/utils.ts
+SourceFile[1:152]
+  ImportDeclaration[1]
+  FunctionDeclaration[3:20]
+    Block[4:19]
+      IfStatement[5:12] ...
+      ReturnStatement[17:18]
+  ExportDeclaration[22]
+```
+
+Each node is `Kind[startLine:endLine]` (or `Kind[line]` for single-line nodes). Truncated subtrees end with `...`.
+
+**Quick navigation commands:**
+
+| Goal | Command |
+|------|---------|
+| List all files | `grep "^##" ast-trees.txt` |
+| Find functions | `grep -E "FunctionDeclaration\|function_declaration\|ArrowFunction\|arrow_function" ast-trees.txt` |
+| Find classes | `grep -E "ClassDeclaration\|class_declaration" ast-trees.txt` |
+| Find control flow | `grep -E "IfStatement\|SwitchStatement\|ForStatement\|WhileStatement" ast-trees.txt` |
+| Deep nesting (>3 levels) | `grep -E "^\s{8,}" ast-trees.txt` |
+| Truncated subtrees | `grep "\.\.\.$" ast-trees.txt` |
 
 ### Legacy Single-File Mode
 
@@ -259,7 +303,7 @@ Pass `--out path/to/file.json` to get the original monolithic report format:
 | `duplicateFlows` | Duplicate function body + control-flow groups |
 | `dependencyGraph` | Modules, edges, roots, leaves, cycles, critical paths, hubs |
 | `dependencyFindings[]` | Cycle, critical-path, test-only findings |
-| `optimizationFindings[]` | ALL findings sorted by severity (23 categories) |
+| `optimizationFindings[]` | ALL findings sorted by severity (33 categories) |
 | `agentOutput` | Summary counters, top recommendations, per-file issue mapping |
 | `parseErrors[]` | Files that failed to parse |
 
@@ -328,6 +372,27 @@ Before investigating, check if Octocode MCP local tools are available:
 1. Check `reason` for source and target layer names.
 2. `lspGotoDefinition(lineHint=N)` on the violating import.
 3. Fix: extract shared contracts to a lower layer, or use dependency inversion.
+
+**`low-cohesion`** — Module exports serve unrelated purposes (LCOM > 1)
+1. Read `reason` for LCOM component count — each component is an independent group of exports.
+2. `lspFindReferences(lineHint=N)` on each exported symbol to map consumer clusters.
+3. Fix: split module into N focused modules (one per cohesion group), update consumer imports.
+
+**`inferred-layer-violation`** — Auto-detected layer boundary crossed
+1. Read `reason` for inferred layer names (foundation/utility/service/feature).
+2. Layers are auto-detected from directory names: `types/` → foundation, `utils/` → utility, `services/` → service, `features/` → feature.
+3. `lspGotoDefinition(lineHint=N)` on the violating import.
+4. Fix: same as `layer-violation` — invert dependency or extract shared contracts.
+
+### Change Risk Hotspots
+
+The `architecture.json` output includes a `hotFiles` array ranking the "most dangerous files to change":
+- **riskScore**: composite of fan-in, complexity, export count, cycle/critical-path membership.
+- **fanIn**: how many modules depend on this file (blast radius of a change).
+- **inCycle / onCriticalPath**: flags for structural risk.
+- Surface in `summary.md` as the "Change Risk Hotspots" table.
+
+Use hotspots to prioritize refactoring — these files have the highest blast radius.
 
 ### Code Quality Findings
 
@@ -404,7 +469,7 @@ Before investigating, check if Octocode MCP local tools are available:
 
 When Octocode MCP is not installed or `ENABLE_LOCAL` is not `"true"`, the scan script still works standalone:
 
-1. Run `scripts/index.js` as usual — all 23 finding categories are fully functional without MCP.
+1. Run `scripts/index.js` as usual — all 33 finding categories are fully functional without MCP.
 2. Trust scan report and category evidence first.
 3. Validate with targeted file reads only (no broad refactors without LSP confirmation).
 4. Mark confidence explicitly (`high` if scan evidence is strong, `medium` if ambiguous, `low` if needs LSP).
