@@ -103,6 +103,7 @@ describe('validateLSPServerPath', () => {
 
       expect(result.isValid).toBe(false);
       expect(result.error).toContain('not found');
+      expect(result.error).not.toContain(binPath);
     });
 
     it('should return error for symlink loop (ELOOP)', () => {
@@ -139,6 +140,7 @@ describe('validateLSPServerPath', () => {
 
       expect(result.isValid).toBe(false);
       expect(result.error).toContain('Cannot resolve');
+      expect(result.error).not.toContain(binPath);
     });
   });
 
@@ -169,6 +171,7 @@ describe('validateLSPServerPath', () => {
 
       expect(result.isValid).toBe(false);
       expect(result.error).toContain('Cannot stat');
+      expect(result.error).not.toContain(binPath);
     });
   });
 

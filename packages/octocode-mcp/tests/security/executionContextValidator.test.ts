@@ -54,9 +54,10 @@ describe('executionContextValidator', () => {
       const result = validateExecutionContext(parentDir);
       expect(result.isValid).toBe(false);
       expect(result.error).toContain(
-        'Can only execute commands within workspace directory'
+        'configured workspace directory'
       );
-      expect(result.error).toContain(workspaceRoot);
+      expect(result.error).not.toContain(parentDir);
+      expect(result.error).not.toContain(workspaceRoot);
     });
 
     it('should reject sibling directory with similar prefix (path traversal attack)', () => {
@@ -66,7 +67,7 @@ describe('executionContextValidator', () => {
       const result = validateExecutionContext(siblingPath);
       expect(result.isValid).toBe(false);
       expect(result.error).toContain(
-        'Can only execute commands within workspace directory'
+        'configured workspace directory'
       );
     });
 
@@ -75,7 +76,7 @@ describe('executionContextValidator', () => {
       const result = validateExecutionContext(similarPath);
       expect(result.isValid).toBe(false);
       expect(result.error).toContain(
-        'Can only execute commands within workspace directory'
+        'configured workspace directory'
       );
     });
 
@@ -83,7 +84,7 @@ describe('executionContextValidator', () => {
       const result = validateExecutionContext('../');
       expect(result.isValid).toBe(false);
       expect(result.error).toContain(
-        'Can only execute commands within workspace directory'
+        'configured workspace directory'
       );
     });
 
@@ -91,7 +92,7 @@ describe('executionContextValidator', () => {
       const result = validateExecutionContext('../../../../');
       expect(result.isValid).toBe(false);
       expect(result.error).toContain(
-        'Can only execute commands within workspace directory'
+        'configured workspace directory'
       );
     });
 
@@ -99,7 +100,7 @@ describe('executionContextValidator', () => {
       const result = validateExecutionContext('/etc');
       expect(result.isValid).toBe(false);
       expect(result.error).toContain(
-        'Can only execute commands within workspace directory'
+        'configured workspace directory'
       );
     });
 
@@ -107,7 +108,7 @@ describe('executionContextValidator', () => {
       const result = validateExecutionContext('/');
       expect(result.isValid).toBe(false);
       expect(result.error).toContain(
-        'Can only execute commands within workspace directory'
+        'configured workspace directory'
       );
     });
 
@@ -117,7 +118,7 @@ describe('executionContextValidator', () => {
         const result = validateExecutionContext(homeDir);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain(
-          'Can only execute commands within workspace directory'
+          'configured workspace directory'
         );
       }
     });
@@ -141,7 +142,7 @@ describe('executionContextValidator', () => {
       const result = validateExecutionContext(invalidPath, customRoot);
       expect(result.isValid).toBe(false);
       expect(result.error).toContain(
-        'Can only execute commands within workspace directory'
+        'configured workspace directory'
       );
     });
 
@@ -200,7 +201,7 @@ describe('executionContextValidator', () => {
           const result = validateExecutionContext(symlinkPath);
           expect(result.isValid).toBe(false);
           expect(result.error).toContain('Symlink target');
-          expect(result.error).toContain('outside workspace');
+          expect(result.error).toContain('configured workspace directory');
 
           // Clean up
           fs.rmSync(tmpDir, { recursive: true, force: true });

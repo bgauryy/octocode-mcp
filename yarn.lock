@@ -2041,6 +2041,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/node@npm:^20.0.0":
+  version: 20.19.37
+  resolution: "@types/node@npm:20.19.37"
+  dependencies:
+    undici-types: "npm:~6.21.0"
+  checksum: 10c0/8420353aee776ae5c1e9720058949909a0e908fa2af85501e9db2645bb9f9acd7d767890f8aaee34d375e6f8b5f550a9a169e908d2d8cf7d5daf63dce64092a0
+  languageName: node
+  linkType: hard
+
 "@types/node@npm:^22.15.29":
   version: 22.19.3
   resolution: "@types/node@npm:22.19.3"
@@ -5745,12 +5754,32 @@ __metadata:
   languageName: node
   linkType: hard
 
+"node-addon-api@npm:^8.2.2, node-addon-api@npm:^8.3.0":
+  version: 8.6.0
+  resolution: "node-addon-api@npm:8.6.0"
+  dependencies:
+    node-gyp: "npm:latest"
+  checksum: 10c0/869fe4fd13aef4feed3e4ca042136fd677675c061b13cde3b720dcd8e60439efe2538fbab841ed273ab8d5b077e1a0af66011141796589a5db0b5e6b183e2191
+  languageName: node
+  linkType: hard
+
 "node-cache@npm:^5.1.2":
   version: 5.1.2
   resolution: "node-cache@npm:5.1.2"
   dependencies:
     clone: "npm:2.x"
   checksum: 10c0/2f91907510a1276415ae5898269d0765934d5a4f3682c8b1b19964694a9b841c8bd791e1a125d1f89050f412e1da5dd982179d714252b3a7223abb05b8cb24d5
+  languageName: node
+  linkType: hard
+
+"node-gyp-build@npm:^4.8.2, node-gyp-build@npm:^4.8.4":
+  version: 4.8.4
+  resolution: "node-gyp-build@npm:4.8.4"
+  bin:
+    node-gyp-build: bin.js
+    node-gyp-build-optional: optional.js
+    node-gyp-build-test: build-test.js
+  checksum: 10c0/444e189907ece2081fe60e75368784f7782cfddb554b60123743dfb89509df89f1f29c03bbfa16b3a3e0be3f48799a4783f487da6203245fa5bed239ba7407e1
   languageName: node
   linkType: hard
 
@@ -5855,6 +5884,17 @@ __metadata:
     vitest: "npm:^4.0.16"
   bin:
     octocode-cli: ./out/octocode-cli.js
+  languageName: unknown
+  linkType: soft
+
+"octocode-local-code-scan@workspace:skills/octocode-local-code-scan":
+  version: 0.0.0-use.local
+  resolution: "octocode-local-code-scan@workspace:skills/octocode-local-code-scan"
+  dependencies:
+    "@types/node": "npm:^20.0.0"
+    tree-sitter: "npm:^0.25.0"
+    tree-sitter-typescript: "npm:^0.23.2"
+    typescript: "npm:^5.9.3"
   languageName: unknown
   linkType: soft
 
@@ -7594,6 +7634,50 @@ __metadata:
   bin:
     tree-kill: cli.js
   checksum: 10c0/7b1b7c7f17608a8f8d20a162e7957ac1ef6cd1636db1aba92f4e072dc31818c2ff0efac1e3d91064ede67ed5dc57c565420531a8134090a12ac10cf792ab14d2
+  languageName: node
+  linkType: hard
+
+"tree-sitter-javascript@npm:^0.23.1":
+  version: 0.23.1
+  resolution: "tree-sitter-javascript@npm:0.23.1"
+  dependencies:
+    node-addon-api: "npm:^8.2.2"
+    node-gyp: "npm:latest"
+    node-gyp-build: "npm:^4.8.2"
+  peerDependencies:
+    tree-sitter: ^0.21.1
+  peerDependenciesMeta:
+    tree-sitter:
+      optional: true
+  checksum: 10c0/0b5cefcf4d072bbd5807603355cd87b349a0e2423d76ff64a39b24a150690d1f30424e537f8f6c11c2ac62613abe37d7f06f513e1dee8f07b04f714aba4cec40
+  languageName: node
+  linkType: hard
+
+"tree-sitter-typescript@npm:^0.23.2":
+  version: 0.23.2
+  resolution: "tree-sitter-typescript@npm:0.23.2"
+  dependencies:
+    node-addon-api: "npm:^8.2.2"
+    node-gyp: "npm:latest"
+    node-gyp-build: "npm:^4.8.2"
+    tree-sitter-javascript: "npm:^0.23.1"
+  peerDependencies:
+    tree-sitter: ^0.21.0
+  peerDependenciesMeta:
+    tree-sitter:
+      optional: true
+  checksum: 10c0/bfee4884952fa9446e117ba4683348f805b6c9f1eb8013d45decc2ba6193ed0e984df3e920890a82157efa611d43bcd581613bd757b087336f44a8617ce4c7b4
+  languageName: node
+  linkType: hard
+
+"tree-sitter@npm:^0.25.0":
+  version: 0.25.0
+  resolution: "tree-sitter@npm:0.25.0"
+  dependencies:
+    node-addon-api: "npm:^8.3.0"
+    node-gyp: "npm:latest"
+    node-gyp-build: "npm:^4.8.4"
+  checksum: 10c0/ba994a4be081863e29f90e25658a8b63870193555245edbd3366cc5a4a2400492eea1e41dffaac961648f137274efb3ddb16f05c2896ce049749f0397e0319f4
   languageName: node
   linkType: hard
 
