@@ -1,5 +1,7 @@
 # Octocode: Research Driven Development for AI
 
+[![AgentRank](https://agentrank-ai.com/api/badge/tool/bgauryy--octocode-mcp)](https://agentrank-ai.com/tool/bgauryy--octocode-mcp/)
+
 <div align="center">
   <img src="https://github.com/bgauryy/octocode-mcp/raw/main/packages/octocode-mcp/assets/logo_white.png" width="400px" alt="Octocode Logo">
   
