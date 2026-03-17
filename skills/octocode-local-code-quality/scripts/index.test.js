@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { DEFAULT_OPTS } from './types.js';
-import { detectDependencyCycles, computeDependencyCriticalPaths, buildIssueCatalog, isLikelyEntrypoint, } from './index.js';
+import { detectDependencyCycles, computeDependencyCriticalPaths, buildIssueCatalog, isLikelyEntrypoint, ARCHITECTURE_CATEGORIES, CODE_QUALITY_CATEGORIES, DEAD_CODE_CATEGORIES, writeMultiFileReport, severityBreakdown, categoryBreakdown, generateSummaryMd, } from './index.js';
 function emptyState() {
     return {
         files: new Set(),
@@ -455,5 +458,347 @@ describe('buildIssueCatalog', () => {
             const { findings } = buildIssueCatalog([], [], [], minimalDepSummary(), state, testOpts);
             expect(findings.some((f) => f.category === 'orphan-module')).toBe(true);
         });
+    });
+});
+// ─── Category Group Constants ───────────────────────────────────────────────
+describe('category group constants', () => {
+    const ALL_CATEGORIES = [
+        'dependency-cycle', 'dependency-critical-path', 'dependency-test-only',
+        'architecture-sdp-violation', 'high-coupling', 'god-module-coupling',
+        'orphan-module', 'unreachable-module', 'layer-violation',
+        'duplicate-function-body', 'duplicate-flow-structure', 'function-optimization',
+        'cognitive-complexity', 'god-module', 'god-function',
+        'dead-file', 'dead-export', 'dead-re-export', 're-export-duplication',
+        're-export-shadowed', 'unused-npm-dependency', 'package-boundary-violation',
+        'barrel-explosion',
+    ];
+    it('every known category belongs to exactly one group', () => {
+        for (const cat of ALL_CATEGORIES) {
+            const inArch = ARCHITECTURE_CATEGORIES.has(cat);
+            const inQual = CODE_QUALITY_CATEGORIES.has(cat);
+            const inDead = DEAD_CODE_CATEGORIES.has(cat);
+            const count = [inArch, inQual, inDead].filter(Boolean).length;
+            expect(count).toBe(1);
+        }
+    });
+    it('groups have no overlap', () => {
+        for (const cat of ARCHITECTURE_CATEGORIES) {
+            expect(CODE_QUALITY_CATEGORIES.has(cat)).toBe(false);
+            expect(DEAD_CODE_CATEGORIES.has(cat)).toBe(false);
+        }
+        for (const cat of CODE_QUALITY_CATEGORIES) {
+            expect(DEAD_CODE_CATEGORIES.has(cat)).toBe(false);
+        }
+    });
+    it('all 23 categories are covered', () => {
+        const total = ARCHITECTURE_CATEGORIES.size + CODE_QUALITY_CATEGORIES.size + DEAD_CODE_CATEGORIES.size;
+        expect(total).toBe(23);
+    });
+    it('architecture group has 9 categories', () => {
+        expect(ARCHITECTURE_CATEGORIES.size).toBe(9);
+    });
+    it('code quality group has 6 categories', () => {
+        expect(CODE_QUALITY_CATEGORIES.size).toBe(6);
+    });
+    it('dead code group has 8 categories', () => {
+        expect(DEAD_CODE_CATEGORIES.size).toBe(8);
+    });
+});
+// ─── severityBreakdown ──────────────────────────────────────────────────────
+describe('severityBreakdown', () => {
+    it('returns zero counts for empty findings', () => {
+        const result = severityBreakdown([]);
+        expect(result).toEqual({ critical: 0, high: 0, medium: 0, low: 0, info: 0 });
+    });
+    it('counts each severity correctly', () => {
+        const findings = [
+            { severity: 'high' },
+            { severity: 'high' },
+            { severity: 'medium' },
+            { severity: 'critical' },
+        ];
+        const result = severityBreakdown(findings);
+        expect(result.critical).toBe(1);
+        expect(result.high).toBe(2);
+        expect(result.medium).toBe(1);
+        expect(result.low).toBe(0);
+    });
+});
+// ─── categoryBreakdown ──────────────────────────────────────────────────────
+describe('categoryBreakdown', () => {
+    it('returns empty object for empty findings', () => {
+        expect(categoryBreakdown([])).toEqual({});
+    });
+    it('counts each category correctly', () => {
+        const findings = [
+            { category: 'dead-export' },
+            { category: 'dead-export' },
+            { category: 'dependency-cycle' },
+        ];
+        const result = categoryBreakdown(findings);
+        expect(result['dead-export']).toBe(2);
+        expect(result['dependency-cycle']).toBe(1);
+    });
+});
+// ─── writeMultiFileReport ───────────────────────────────────────────────────
+describe('writeMultiFileReport', () => {
+    let tmpDir;
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scan-test-'));
+    });
+    afterEach(() => {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+    function makeReport(overrides = {}) {
+        return {
+            generatedAt: '2026-03-17T00:00:00.000Z',
+            repoRoot: '/repo',
+            options: {},
+            parser: { requested: 'auto', effective: 'typescript' },
+            summary: { totalFiles: 10, totalFunctions: 50, totalFlows: 200, totalDependencyFiles: 12, totalPackages: 2 },
+            fileInventory: [],
+            duplicateFlows: { duplicatedFunctions: [], duplicatedControlFlow: [], totalFunctionGroups: 0, totalFlowGroups: 0 },
+            dependencyGraph: minimalDepSummary(),
+            dependencyFindings: [],
+            agentOutput: { totalFindings: 0, highPriority: 0, mediumPriority: 0, lowPriority: 0, topRecommendations: [], filesWithIssues: [] },
+            optimizationOpportunities: [],
+            optimizationFindings: [],
+            parseErrors: [],
+            ...overrides,
+        };
+    }
+    function makeFindings(...categories) {
+        return categories.map((c, i) => ({
+            id: `AST-ISSUE-${i}`,
+            category: c.category,
+            severity: c.severity,
+            file: `src/file${i}.ts`,
+            lineStart: 1,
+            lineEnd: 10,
+            title: `Finding: ${c.category}`,
+            reason: 'test reason',
+            files: [`src/file${i}.ts`],
+            suggestedFix: { strategy: 'fix it', steps: ['step 1'] },
+        }));
+    }
+    it('creates all 7 expected files (6 json + summary.md)', () => {
+        const outDir = path.join(tmpDir, 'scan');
+        writeMultiFileReport(outDir, makeReport(), { ...DEFAULT_OPTS, graph: false }, emptyState(), minimalDepSummary(), new Map());
+        const files = fs.readdirSync(outDir).sort();
+        expect(files).toEqual([
+            'architecture.json',
+            'code-quality.json',
+            'dead-code.json',
+            'file-inventory.json',
+            'findings.json',
+            'summary.json',
+            'summary.md',
+        ]);
+    });
+    it('includes graph.md when graph option is true', () => {
+        const outDir = path.join(tmpDir, 'scan-graph');
+        writeMultiFileReport(outDir, makeReport(), { ...DEFAULT_OPTS, graph: true }, emptyState(), minimalDepSummary(), new Map());
+        expect(fs.existsSync(path.join(outDir, 'graph.md'))).toBe(true);
+    });
+    it('includes ast-trees.json when astTrees are present', () => {
+        const outDir = path.join(tmpDir, 'scan-trees');
+        const report = makeReport({ astTrees: [{ package: 'test', file: 'a.ts', tree: { kind: 'SourceFile', startLine: 1, endLine: 10, children: [] } }] });
+        writeMultiFileReport(outDir, report, { ...DEFAULT_OPTS }, emptyState(), minimalDepSummary(), new Map());
+        expect(fs.existsSync(path.join(outDir, 'ast-trees.json'))).toBe(true);
+    });
+    it('routes architecture findings into architecture.json', () => {
+        const findings = makeFindings({ category: 'dependency-cycle', severity: 'high' }, { category: 'architecture-sdp-violation', severity: 'medium' }, { category: 'dead-export', severity: 'high' });
+        const outDir = path.join(tmpDir, 'scan-arch');
+        writeMultiFileReport(outDir, makeReport({ optimizationFindings: findings }), DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+        const archData = JSON.parse(fs.readFileSync(path.join(outDir, 'architecture.json'), 'utf8'));
+        expect(archData.findingsCount).toBe(2);
+        expect(archData.findings.every((f) => ARCHITECTURE_CATEGORIES.has(f.category))).toBe(true);
+    });
+    it('routes code quality findings into code-quality.json', () => {
+        const findings = makeFindings({ category: 'function-optimization', severity: 'high' }, { category: 'cognitive-complexity', severity: 'medium' }, { category: 'dead-file', severity: 'medium' });
+        const outDir = path.join(tmpDir, 'scan-qual');
+        writeMultiFileReport(outDir, makeReport({ optimizationFindings: findings }), DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+        const qualData = JSON.parse(fs.readFileSync(path.join(outDir, 'code-quality.json'), 'utf8'));
+        expect(qualData.findingsCount).toBe(2);
+        expect(qualData.findings.every((f) => CODE_QUALITY_CATEGORIES.has(f.category))).toBe(true);
+    });
+    it('routes dead code findings into dead-code.json', () => {
+        const findings = makeFindings({ category: 'dead-export', severity: 'high' }, { category: 'unused-npm-dependency', severity: 'low' }, { category: 'barrel-explosion', severity: 'medium' }, { category: 'dependency-cycle', severity: 'high' });
+        const outDir = path.join(tmpDir, 'scan-dead');
+        writeMultiFileReport(outDir, makeReport({ optimizationFindings: findings }), DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+        const deadData = JSON.parse(fs.readFileSync(path.join(outDir, 'dead-code.json'), 'utf8'));
+        expect(deadData.findingsCount).toBe(3);
+        expect(deadData.findings.every((f) => DEAD_CODE_CATEGORIES.has(f.category))).toBe(true);
+    });
+    it('findings.json contains ALL findings', () => {
+        const findings = makeFindings({ category: 'dependency-cycle', severity: 'high' }, { category: 'dead-export', severity: 'medium' }, { category: 'function-optimization', severity: 'high' });
+        const outDir = path.join(tmpDir, 'scan-all');
+        writeMultiFileReport(outDir, makeReport({ optimizationFindings: findings }), DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+        const findingsData = JSON.parse(fs.readFileSync(path.join(outDir, 'findings.json'), 'utf8'));
+        expect(findingsData.totalFindings).toBe(3);
+    });
+    it('summary.json contains outputFiles index', () => {
+        const outDir = path.join(tmpDir, 'scan-idx');
+        writeMultiFileReport(outDir, makeReport(), DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+        const summaryData = JSON.parse(fs.readFileSync(path.join(outDir, 'summary.json'), 'utf8'));
+        expect(summaryData.outputFiles).toBeDefined();
+        expect(summaryData.outputFiles.summary).toBe('summary.json');
+        expect(summaryData.outputFiles.architecture).toBe('architecture.json');
+        expect(summaryData.outputFiles.deadCode).toBe('dead-code.json');
+        expect(summaryData.outputFiles.summaryMd).toBe('summary.md');
+    });
+    it('file-inventory.json contains fileInventory and fileCount', () => {
+        const fileEntries = [makeFile({ file: 'src/a.ts' }), makeFile({ file: 'src/b.ts' })];
+        const outDir = path.join(tmpDir, 'scan-inv');
+        writeMultiFileReport(outDir, makeReport({ fileInventory: fileEntries }), DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+        const invData = JSON.parse(fs.readFileSync(path.join(outDir, 'file-inventory.json'), 'utf8'));
+        expect(invData.fileCount).toBe(2);
+        expect(invData.fileInventory.length).toBe(2);
+    });
+    it('architecture.json includes severityBreakdown and categoryBreakdown', () => {
+        const findings = makeFindings({ category: 'dependency-cycle', severity: 'high' }, { category: 'dependency-cycle', severity: 'high' }, { category: 'high-coupling', severity: 'medium' });
+        const outDir = path.join(tmpDir, 'scan-arch-meta');
+        writeMultiFileReport(outDir, makeReport({ optimizationFindings: findings }), DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+        const archData = JSON.parse(fs.readFileSync(path.join(outDir, 'architecture.json'), 'utf8'));
+        expect(archData.severityBreakdown.high).toBe(2);
+        expect(archData.severityBreakdown.medium).toBe(1);
+        expect(archData.categoryBreakdown['dependency-cycle']).toBe(2);
+        expect(archData.categoryBreakdown['high-coupling']).toBe(1);
+    });
+    it('code-quality.json includes severityBreakdown and categoryBreakdown', () => {
+        const findings = makeFindings({ category: 'function-optimization', severity: 'high' }, { category: 'god-module', severity: 'high' }, { category: 'cognitive-complexity', severity: 'medium' });
+        const outDir = path.join(tmpDir, 'scan-qual-meta');
+        writeMultiFileReport(outDir, makeReport({ optimizationFindings: findings }), DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+        const qualData = JSON.parse(fs.readFileSync(path.join(outDir, 'code-quality.json'), 'utf8'));
+        expect(qualData.severityBreakdown.high).toBe(2);
+        expect(qualData.categoryBreakdown['function-optimization']).toBe(1);
+        expect(qualData.categoryBreakdown['god-module']).toBe(1);
+    });
+    it('dead-code.json includes severityBreakdown and categoryBreakdown', () => {
+        const findings = makeFindings({ category: 'dead-export', severity: 'high' }, { category: 'dead-export', severity: 'medium' }, { category: 'unused-npm-dependency', severity: 'low' });
+        const outDir = path.join(tmpDir, 'scan-dead-meta');
+        writeMultiFileReport(outDir, makeReport({ optimizationFindings: findings }), DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+        const deadData = JSON.parse(fs.readFileSync(path.join(outDir, 'dead-code.json'), 'utf8'));
+        expect(deadData.severityBreakdown.high).toBe(1);
+        expect(deadData.severityBreakdown.medium).toBe(1);
+        expect(deadData.severityBreakdown.low).toBe(1);
+        expect(deadData.categoryBreakdown['dead-export']).toBe(2);
+        expect(deadData.categoryBreakdown['unused-npm-dependency']).toBe(1);
+    });
+    it('all json files have generatedAt timestamp', () => {
+        const outDir = path.join(tmpDir, 'scan-ts');
+        writeMultiFileReport(outDir, makeReport(), DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+        for (const file of ['summary.json', 'architecture.json', 'code-quality.json', 'dead-code.json', 'file-inventory.json', 'findings.json']) {
+            const data = JSON.parse(fs.readFileSync(path.join(outDir, file), 'utf8'));
+            expect(data.generatedAt).toBe('2026-03-17T00:00:00.000Z');
+        }
+    });
+    it('returns correct outputFiles mapping', () => {
+        const outDir = path.join(tmpDir, 'scan-ret');
+        const result = writeMultiFileReport(outDir, makeReport(), { ...DEFAULT_OPTS, graph: true }, emptyState(), minimalDepSummary(), new Map());
+        expect(result.summary).toBe('summary.json');
+        expect(result.architecture).toBe('architecture.json');
+        expect(result.codeQuality).toBe('code-quality.json');
+        expect(result.deadCode).toBe('dead-code.json');
+        expect(result.fileInventory).toBe('file-inventory.json');
+        expect(result.findings).toBe('findings.json');
+        expect(result.graph).toBe('graph.md');
+        expect(result.summaryMd).toBe('summary.md');
+    });
+});
+// ─── generateSummaryMd ─────────────────────────────────────────────────────
+describe('generateSummaryMd', () => {
+    function makeReportForMd(overrides = {}) {
+        return {
+            generatedAt: '2026-03-17T00:00:00.000Z',
+            repoRoot: '/repo',
+            options: {},
+            parser: { requested: 'auto', effective: 'typescript' },
+            summary: { totalFiles: 42, totalFunctions: 318, totalFlows: 1204, totalDependencyFiles: 50, totalPackages: 3 },
+            fileInventory: [],
+            duplicateFlows: {},
+            dependencyGraph: minimalDepSummary({ totalModules: 42, totalEdges: 187, cycles: [{ path: ['a', 'b', 'a'], nodeCount: 2 }], criticalPaths: [] }),
+            dependencyFindings: [],
+            agentOutput: {
+                totalFindings: 5,
+                highPriority: 2,
+                mediumPriority: 2,
+                lowPriority: 1,
+                topRecommendations: [
+                    { severity: 'high', title: 'Fix cycle', file: 'src/a.ts', category: 'dependency-cycle' },
+                ],
+                filesWithIssues: [],
+            },
+            optimizationOpportunities: [],
+            optimizationFindings: [],
+            parseErrors: [],
+            ...overrides,
+        };
+    }
+    it('produces markdown with all major sections', () => {
+        const md = generateSummaryMd(makeReportForMd(), { summary: 'summary.json' }, [], [], []);
+        expect(md).toContain('# Code Quality Scan Report');
+        expect(md).toContain('## Scan Scope');
+        expect(md).toContain('## Findings Overview');
+        expect(md).toContain('## Architecture Health');
+        expect(md).toContain('## Code Quality');
+        expect(md).toContain('## Dead Code & Hygiene');
+        expect(md).toContain('## Output Files');
+    });
+    it('includes file counts from summary', () => {
+        const md = generateSummaryMd(makeReportForMd(), {}, [], [], []);
+        expect(md).toContain('42');
+        expect(md).toContain('318');
+        expect(md).toContain('1204');
+    });
+    it('includes severity counts', () => {
+        const findings = [
+            { id: '1', severity: 'high', category: 'dependency-cycle', file: 'a', lineStart: 1, lineEnd: 1, title: 't', reason: 'r', files: [], suggestedFix: { strategy: 's', steps: [] } },
+            { id: '2', severity: 'medium', category: 'dead-export', file: 'b', lineStart: 1, lineEnd: 1, title: 't', reason: 'r', files: [], suggestedFix: { strategy: 's', steps: [] } },
+        ];
+        const md = generateSummaryMd(makeReportForMd({ optimizationFindings: findings }), {}, [findings[0]], [], [findings[1]]);
+        expect(md).toContain('| High | 1 |');
+        expect(md).toContain('| Medium | 1 |');
+        expect(md).toContain('| **Total** | **2** |');
+    });
+    it('includes dependency graph metrics', () => {
+        const md = generateSummaryMd(makeReportForMd(), {}, [], [], []);
+        expect(md).toContain('| Modules | 42 |');
+        expect(md).toContain('| Import edges | 187 |');
+        expect(md).toContain('| Cycles | 1 |');
+    });
+    it('includes category breakdowns per section', () => {
+        const archFindings = [
+            { category: 'dependency-cycle', severity: 'high' },
+            { category: 'dependency-cycle', severity: 'high' },
+            { category: 'high-coupling', severity: 'medium' },
+        ];
+        const md = generateSummaryMd(makeReportForMd(), {}, archFindings, [], []);
+        expect(md).toContain('`dependency-cycle`: 2');
+        expect(md).toContain('`high-coupling`: 1');
+    });
+    it('includes top recommendations', () => {
+        const md = generateSummaryMd(makeReportForMd(), {}, [], [], []);
+        expect(md).toContain('## Top Recommendations');
+        expect(md).toContain('Fix cycle');
+        expect(md).toContain('src/a.ts');
+    });
+    it('includes parse errors when present', () => {
+        const report = makeReportForMd({ parseErrors: [{ file: 'bad.ts', message: 'Unexpected token' }] });
+        const md = generateSummaryMd(report, {}, [], [], []);
+        expect(md).toContain('## Parse Errors');
+        expect(md).toContain('bad.ts');
+        expect(md).toContain('Unexpected token');
+    });
+    it('does not include parse errors section when none exist', () => {
+        const md = generateSummaryMd(makeReportForMd(), {}, [], [], []);
+        expect(md).not.toContain('## Parse Errors');
+    });
+    it('links output files in the table', () => {
+        const outputFiles = { summary: 'summary.json', architecture: 'architecture.json', summaryMd: 'summary.md' };
+        const md = generateSummaryMd(makeReportForMd(), outputFiles, [], [], []);
+        expect(md).toContain('[`summary.json`](./summary.json)');
+        expect(md).toContain('[`architecture.json`](./architecture.json)');
+        expect(md).toContain('[`summary.md`](./summary.md)');
     });
 });

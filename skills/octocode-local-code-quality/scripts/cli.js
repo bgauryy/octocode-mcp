@@ -150,7 +150,8 @@ Usage:
 
 Options:
   --root <path>                 Analyze a different repo root (default: cwd)
-  --out <path>                  Write full report JSON to path
+  --out <path>                  Output directory for split report files (timestamped dir by default).
+                                If path ends with .json, writes single monolithic file (legacy mode).
   --json                        Print report JSON to stdout
   --include-tests               Include *.test* and *.spec* files
   --parser <auto|typescript|tree-sitter>

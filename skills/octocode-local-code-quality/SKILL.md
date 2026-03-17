@@ -78,18 +78,23 @@ If Octocode MCP is not installed or `ENABLE_LOCAL` is not `"true"`, fall back to
 
 ### 1. Run the scan
 
-All scripts are pre-built in `scripts/` — no build step needed. 250 tests passing. Only run `scripts/index.js` (the single entry point; all other scripts are internal modules).
+> **IMPORTANT**: Scripts are **pre-built** in `scripts/` — do NOT run `npm install`, `npm build`, or any setup. Do NOT execute source files from `src/`. Just run the entry point directly:
 
 ```bash
-node <SKILL_BASE_DIRECTORY>/scripts/index.js --out .octocode/scan/scan.json
+node <SKILL_BASE_DIRECTORY>/scripts/index.js
 ```
+
+255 tests passing. Only run `scripts/index.js` (the single entry point; all other files in `scripts/` are internal modules).
+
+By default the scan creates a **timestamped directory** under `.octocode/scan/<timestamp>/` with separate files per feature area. To write a single monolithic JSON instead (legacy mode), pass `--out path/to/file.json`.
 
 ### 2. Present results to user
 
-Always present in this exact structure:
+Read `summary.md` first — it contains a complete human-readable overview with stats, severity breakdown, per-feature category counts, top recommendations, and links to all output files. Then drill into feature JSON files as needed. Always present in this structure:
 
 ```markdown
 ## Scan Summary
+- **Output**: `.octocode/scan/<timestamp>/` (<n> files)
 - **Scope**: <n> files, <n> functions, <n> flows, <n> dependency edges
 - **Findings**: <n> total — <n> critical, <n> high, <n> medium, <n> low
 
@@ -101,11 +106,14 @@ Always present in this exact structure:
 ### Medium (top 5)
 - ...
 
-## Architecture Health
+## Architecture Health (from architecture.json)
 - Cycles: <n>, Critical paths: <n>, SDP violations: <n>
 - Coupling hotspots: <n>, Unreachable modules: <n>, Orphan modules: <n>
 
-## Dead Code Summary
+## Code Quality (from code-quality.json)
+- Duplicates: <n>, Complex functions: <n>, God modules: <n>
+
+## Dead Code Summary (from dead-code.json)
 - Dead exports: <n>, Dead re-exports: <n>, Dead files: <n>
 - Unused npm deps: <n>, Boundary violations: <n>
 
@@ -135,20 +143,26 @@ See [Investigation Playbooks](#investigation-playbooks) for per-category recipes
 
 ## CLI Reference
 
-Run `node <SKILL_BASE_DIRECTORY>/scripts/index.js --help` for the full flag reference with all defaults.
+Run directly — no install or build required:
+
+```bash
+node <SKILL_BASE_DIRECTORY>/scripts/index.js --help
+```
 
 ### Command Presets
 
 | Situation | Command |
 |---|---|
-| Default scan | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --out .octocode/scan/scan.json` |
-| Deep scan (more findings) | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --findings-limit 1000 --out .octocode/scan/scan.json` |
-| Include test files | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --include-tests --out .octocode/scan/scan.json` |
-| Architecture graph (Mermaid) | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --graph --out .octocode/scan/scan.json` |
-| Strict complexity | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --critical-complexity-threshold 20 --cognitive-complexity-threshold 10 --out .octocode/scan/scan.json` |
-| Layer enforcement | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --layer-order ui,service,repository --out .octocode/scan/scan.json` |
-| After fixes (verify) | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --out .octocode/scan/scan-after.json` |
-| User asks about one topic | Same scan, then filter & present only selected categories from the JSON |
+| Default scan | `node <SKILL_BASE_DIRECTORY>/scripts/index.js` |
+| Deep scan (more findings) | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --findings-limit 1000` |
+| Include test files | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --include-tests` |
+| Architecture graph (Mermaid) | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --graph` |
+| Strict complexity | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --critical-complexity-threshold 20 --cognitive-complexity-threshold 10` |
+| Layer enforcement | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --layer-order ui,service,repository` |
+| Custom output dir | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --out .octocode/scan/my-scan` |
+| Legacy single-file | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --out .octocode/scan/scan.json` |
+| After fixes (verify) | `node <SKILL_BASE_DIRECTORY>/scripts/index.js` (compare with previous scan dir) |
+| User asks about one topic | Same scan, then read only the relevant feature file (e.g. `dead-code.json`) |
 
 ### Parser Modes
 
@@ -186,7 +200,14 @@ Agent Findings: 34
   - fix: Break cycle with shared contracts or dependency inversion
 
 Parser engine used: typescript
-Full report written to .octocode/scan/scan.json
+
+Report written to .octocode/scan/2026-03-17T10-30-00-000Z/
+  summary: summary.json
+  architecture: architecture.json
+  codeQuality: code-quality.json
+  deadCode: dead-code.json
+  fileInventory: file-inventory.json
+  findings: findings.json
 ```
 
 ### JSON mode (`--json`)
@@ -195,16 +216,41 @@ Full structured JSON to stdout. No human-readable text.
 
 ### Graph mode (`--graph`)
 
-Default mode output + writes `.octocode/scan/scan-graph.md` (Mermaid dependency graph).
+Default mode output + writes `graph.md` (Mermaid dependency graph) inside the scan directory.
 
-### Output Files
+### Output Directory Structure
 
-| Flag | File Written |
-|------|-------------|
-| `--out <path>` | `<path>` — Full JSON report (always) |
-| `--graph` | `<path>` with `.json` replaced by `-graph.md` — Mermaid graph |
+Each scan writes to `.octocode/scan/<timestamp>/`:
 
-### JSON Report Structure
+```
+.octocode/scan/2026-03-17T10-30-00-000Z/
+├── summary.md            # Human/agent-readable overview with stats (READ THIS FIRST)
+├── summary.json          # Metadata, counters, parser info, top recommendations
+├── architecture.json     # Dependency graph, cycles, critical paths, SDP, coupling findings
+├── code-quality.json     # Duplicates, function optimization, god modules, cognitive complexity
+├── dead-code.json        # Dead files/exports/re-exports, unused npm deps, boundary violations
+├── file-inventory.json   # Per-file summaries with linked issue IDs
+├── findings.json         # All findings across all categories, sorted by severity
+├── graph.md              # Mermaid dependency graph (only with --graph)
+└── ast-trees.json        # AST trees (only with --emit-tree)
+```
+
+### Output Files by Feature
+
+| File | Contents | When to Read |
+|------|----------|-------------|
+| `summary.md` | Human-readable overview: scope, severity table, per-feature category breakdown, top recommendations, output file index | **Always first** — fastest way to understand the scan |
+| `summary.json` | Scan metadata, `agentOutput` (counters + top 20 recommendations), `parseErrors`, `outputFiles` index | Programmatic access to summary data |
+| `architecture.json` | `dependencyGraph`, `dependencyFindings`, architecture-category findings | Investigating cycles, coupling, SDP, critical paths |
+| `code-quality.json` | `duplicateFlows`, `optimizationOpportunities`, quality-category findings | Investigating duplicates, complexity, god modules |
+| `dead-code.json` | Dead-code/hygiene-category findings | Cleaning up dead exports, unused deps, boundary violations |
+| `file-inventory.json` | `fileInventory[]` — per-file functions, flows, dependency profiles, linked issue IDs | Deep-diving into specific files |
+| `findings.json` | `optimizationFindings[]` — ALL findings sorted by severity (23 categories) | Full findings list when needed |
+| `graph.md` | Mermaid dependency graph | Visual architecture review |
+
+### Legacy Single-File Mode
+
+Pass `--out path/to/file.json` to get the original monolithic report format:
 
 | Key | Contents |
 |-----|----------|
@@ -428,7 +474,9 @@ Always follow the funnel: **search → locate → analyze → read**.
 
 ## Guardrails
 
-- Run only `scripts/index.js` — never execute internal source files or other scripts directly.
+- **No install, no build**: scripts are pre-built. Do NOT run `npm install`, `yarn`, `npm run build`, or any setup command. Run `scripts/index.js` directly.
+- **Never execute `src/` files**: the `src/` directory contains TypeScript source — only `scripts/` contains runnable JS.
+- Run only `scripts/index.js` — never execute other scripts in `scripts/` directly (they are internal modules).
 - Never present findings without `file:line` references.
 - Never use LSP tools without `lineHint` from `localSearchCode`.
 - Let the user choose which findings to address before making broad refactors.

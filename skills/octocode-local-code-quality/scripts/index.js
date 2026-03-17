@@ -18,6 +18,21 @@ import { collectFiles, safeRead, listWorkspacePackages, fileSummaryWithFindings 
 import { analyzeSourceFile, buildDependencyCriticality } from './ts-analyzer.js';
 import { analyzeTreeSitterFile, resolveTreeSitter } from './tree-sitter-analyzer.js';
 import { detectSdpViolations, detectHighCoupling, detectGodModuleCoupling, detectOrphanModules, detectUnreachableModules, detectUnusedNpmDeps, detectBoundaryViolations, detectBarrelExplosion, detectGodModules, detectGodFunctions, detectCognitiveComplexity, detectLayerViolations, } from './architecture.js';
+// ─── Output Category Groups ─────────────────────────────────────────────────
+export const ARCHITECTURE_CATEGORIES = new Set([
+    'dependency-cycle', 'dependency-critical-path', 'dependency-test-only',
+    'architecture-sdp-violation', 'high-coupling', 'god-module-coupling',
+    'orphan-module', 'unreachable-module', 'layer-violation',
+]);
+export const CODE_QUALITY_CATEGORIES = new Set([
+    'duplicate-function-body', 'duplicate-flow-structure', 'function-optimization',
+    'cognitive-complexity', 'god-module', 'god-function',
+]);
+export const DEAD_CODE_CATEGORIES = new Set([
+    'dead-file', 'dead-export', 'dead-re-export', 're-export-duplication',
+    're-export-shadowed', 'unused-npm-dependency', 'package-boundary-violation',
+    'barrel-explosion',
+]);
 // ─── Dependency Graph Analysis ───────────────────────────────────────────────
 function buildDependencySummary(dependencyState, fileCriticalityByPath, options) {
     const allFiles = [...dependencyState.files].sort();
@@ -704,12 +719,208 @@ function generateMermaidGraph(dependencyState, dependencySummary, _fileCriticali
     }
     return lines.join('\n');
 }
+export function writeMultiFileReport(dir, report, options, dependencyState, dependencySummary, fileCriticalityByPath) {
+    fs.mkdirSync(dir, { recursive: true });
+    const writeJson = (name, data) => {
+        fs.writeFileSync(path.join(dir, name), JSON.stringify(data, null, 2), 'utf8');
+    };
+    const allFindings = report.optimizationFindings || [];
+    const architectureFindings = allFindings.filter(f => ARCHITECTURE_CATEGORIES.has(f.category));
+    const codeQualityFindings = allFindings.filter(f => CODE_QUALITY_CATEGORIES.has(f.category));
+    const deadCodeFindings = allFindings.filter(f => DEAD_CODE_CATEGORIES.has(f.category));
+    const outputFiles = {
+        summary: 'summary.json',
+        architecture: 'architecture.json',
+        codeQuality: 'code-quality.json',
+        deadCode: 'dead-code.json',
+        fileInventory: 'file-inventory.json',
+        findings: 'findings.json',
+    };
+    writeJson('architecture.json', {
+        generatedAt: report.generatedAt,
+        dependencyGraph: report.dependencyGraph,
+        dependencyFindings: report.dependencyFindings,
+        findings: architectureFindings,
+        findingsCount: architectureFindings.length,
+        severityBreakdown: severityBreakdown(architectureFindings),
+        categoryBreakdown: categoryBreakdown(architectureFindings),
+    });
+    writeJson('code-quality.json', {
+        generatedAt: report.generatedAt,
+        duplicateFlows: report.duplicateFlows,
+        optimizationOpportunities: report.optimizationOpportunities,
+        findings: codeQualityFindings,
+        findingsCount: codeQualityFindings.length,
+        severityBreakdown: severityBreakdown(codeQualityFindings),
+        categoryBreakdown: categoryBreakdown(codeQualityFindings),
+    });
+    writeJson('dead-code.json', {
+        generatedAt: report.generatedAt,
+        findings: deadCodeFindings,
+        findingsCount: deadCodeFindings.length,
+        severityBreakdown: severityBreakdown(deadCodeFindings),
+        categoryBreakdown: categoryBreakdown(deadCodeFindings),
+    });
+    writeJson('file-inventory.json', {
+        generatedAt: report.generatedAt,
+        fileInventory: report.fileInventory,
+        fileCount: report.fileInventory?.length || 0,
+    });
+    writeJson('findings.json', {
+        generatedAt: report.generatedAt,
+        optimizationFindings: report.optimizationFindings,
+        totalFindings: report.optimizationFindings?.length || 0,
+    });
+    if (options.graph) {
+        const graphMd = generateMermaidGraph(dependencyState, dependencySummary, fileCriticalityByPath);
+        fs.writeFileSync(path.join(dir, 'graph.md'), graphMd, 'utf8');
+        outputFiles.graph = 'graph.md';
+    }
+    if (report.astTrees) {
+        writeJson('ast-trees.json', {
+            generatedAt: report.generatedAt,
+            astTrees: report.astTrees,
+        });
+        outputFiles.astTrees = 'ast-trees.json';
+    }
+    const summaryMd = generateSummaryMd(report, outputFiles, architectureFindings, codeQualityFindings, deadCodeFindings);
+    fs.writeFileSync(path.join(dir, 'summary.md'), summaryMd, 'utf8');
+    outputFiles.summaryMd = 'summary.md';
+    writeJson('summary.json', {
+        generatedAt: report.generatedAt,
+        repoRoot: report.repoRoot,
+        options: report.options,
+        parser: report.parser,
+        summary: report.summary,
+        agentOutput: report.agentOutput,
+        parseErrors: report.parseErrors,
+        outputFiles,
+    });
+    return outputFiles;
+}
+export function severityBreakdown(findings) {
+    const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+    for (const f of findings)
+        counts[f.severity] = (counts[f.severity] || 0) + 1;
+    return counts;
+}
+export function categoryBreakdown(findings) {
+    const counts = {};
+    for (const f of findings)
+        counts[f.category] = (counts[f.category] || 0) + 1;
+    return counts;
+}
+export function generateSummaryMd(report, outputFiles, architectureFindings, codeQualityFindings, deadCodeFindings) {
+    const allFindings = report.optimizationFindings || [];
+    const sev = severityBreakdown(allFindings);
+    const summary = report.summary;
+    const agentOutput = report.agentOutput;
+    const depGraph = report.dependencyGraph;
+    const lines = [];
+    lines.push('# Code Quality Scan Report\n');
+    lines.push(`**Generated**: ${report.generatedAt}  `);
+    lines.push(`**Root**: \`${report.repoRoot}\`\n`);
+    lines.push('## Scan Scope\n');
+    lines.push(`| Metric | Count |`);
+    lines.push(`|--------|-------|`);
+    lines.push(`| Files analyzed | ${summary.totalFiles ?? '—'} |`);
+    lines.push(`| Functions | ${summary.totalFunctions ?? '—'} |`);
+    lines.push(`| Flow nodes | ${summary.totalFlows ?? '—'} |`);
+    lines.push(`| Dependency files | ${summary.totalDependencyFiles ?? '—'} |`);
+    lines.push(`| Packages | ${summary.totalPackages ?? '—'} |`);
+    lines.push('');
+    lines.push('## Findings Overview\n');
+    lines.push(`| Severity | Count |`);
+    lines.push(`|----------|-------|`);
+    lines.push(`| Critical | ${sev.critical} |`);
+    lines.push(`| High | ${sev.high} |`);
+    lines.push(`| Medium | ${sev.medium} |`);
+    lines.push(`| Low | ${sev.low} |`);
+    lines.push(`| **Total** | **${allFindings.length}** |`);
+    lines.push('');
+    lines.push('## Architecture Health\n');
+    lines.push(`> ${architectureFindings.length} findings — see [\`architecture.json\`](./architecture.json)\n`);
+    if (depGraph) {
+        lines.push(`| Metric | Value |`);
+        lines.push(`|--------|-------|`);
+        lines.push(`| Modules | ${depGraph.totalModules} |`);
+        lines.push(`| Import edges | ${depGraph.totalEdges} |`);
+        lines.push(`| Cycles | ${depGraph.cycles?.length ?? 0} |`);
+        lines.push(`| Critical paths | ${depGraph.criticalPaths?.length ?? 0} |`);
+        lines.push(`| Root modules | ${depGraph.rootsCount} |`);
+        lines.push(`| Leaf modules | ${depGraph.leavesCount} |`);
+        lines.push(`| Test-only modules | ${depGraph.testOnlyModules?.length ?? 0} |`);
+        lines.push(`| Unresolved imports | ${depGraph.unresolvedEdgeCount} |`);
+        lines.push('');
+    }
+    const archCats = categoryBreakdown(architectureFindings);
+    if (Object.keys(archCats).length > 0) {
+        for (const [cat, count] of Object.entries(archCats).sort((a, b) => b[1] - a[1])) {
+            lines.push(`- \`${cat}\`: ${count}`);
+        }
+        lines.push('');
+    }
+    lines.push('## Code Quality\n');
+    lines.push(`> ${codeQualityFindings.length} findings — see [\`code-quality.json\`](./code-quality.json)\n`);
+    const qualCats = categoryBreakdown(codeQualityFindings);
+    if (Object.keys(qualCats).length > 0) {
+        for (const [cat, count] of Object.entries(qualCats).sort((a, b) => b[1] - a[1])) {
+            lines.push(`- \`${cat}\`: ${count}`);
+        }
+        lines.push('');
+    }
+    lines.push('## Dead Code & Hygiene\n');
+    lines.push(`> ${deadCodeFindings.length} findings — see [\`dead-code.json\`](./dead-code.json)\n`);
+    const deadCats = categoryBreakdown(deadCodeFindings);
+    if (Object.keys(deadCats).length > 0) {
+        for (const [cat, count] of Object.entries(deadCats).sort((a, b) => b[1] - a[1])) {
+            lines.push(`- \`${cat}\`: ${count}`);
+        }
+        lines.push('');
+    }
+    const topRecs = (agentOutput?.topRecommendations ?? []);
+    if (topRecs.length > 0) {
+        lines.push('## Top Recommendations\n');
+        for (const rec of topRecs.slice(0, 10)) {
+            lines.push(`- **[${rec.severity.toUpperCase()}]** \`${rec.file}\` — ${rec.title}`);
+        }
+        lines.push('');
+    }
+    lines.push('## Output Files\n');
+    lines.push('| File | Description |');
+    lines.push('|------|-------------|');
+    const descriptions = {
+        summary: 'Scan metadata, agent output, parse errors',
+        architecture: 'Dependency graph, cycles, critical paths, architecture findings',
+        codeQuality: 'Duplicate detection, complexity, god modules/functions',
+        deadCode: 'Dead files/exports/re-exports, unused deps, boundary violations',
+        fileInventory: 'Per-file function/flow/dependency details',
+        findings: 'All findings across all categories (master list)',
+        graph: 'Mermaid dependency graph',
+        astTrees: 'AST tree snapshots',
+        summaryMd: 'This file — human-readable overview',
+    };
+    for (const [key, file] of Object.entries(outputFiles)) {
+        lines.push(`| [\`${file}\`](./${file}) | ${descriptions[key] || key} |`);
+    }
+    lines.push('');
+    if (report.parseErrors?.length > 0) {
+        lines.push('## Parse Errors\n');
+        lines.push(`${report.parseErrors.length} file(s) failed to parse:\n`);
+        for (const err of report.parseErrors.slice(0, 10)) {
+            lines.push(`- \`${err.file}\`: ${err.message}`);
+        }
+        lines.push('');
+    }
+    return lines.join('\n');
+}
 // ─── Main ────────────────────────────────────────────────────────────────────
 async function main() {
     const options = parseArgs(process.argv.slice(2));
-    const reportDir = path.join(options.root, '.octocode', 'scan');
-    const defaultOut = path.join(reportDir, `scan-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
-    const outputPath = options.out || defaultOut;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const isLegacyMode = options.out?.endsWith('.json');
+    const outputDir = isLegacyMode ? null : (options.out || path.join(options.root, '.octocode', 'scan', timestamp));
+    const outputPath = isLegacyMode ? options.out : null;
     const packages = listWorkspacePackages(options.root, options.packageRoot);
     if (!packages.length) {
         console.error(`No packages found in ${options.packageRoot}`);
@@ -1031,17 +1242,29 @@ async function main() {
         }
         console.log(`\nParser engine used: ${report.parser.effective}`);
     }
-    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    fs.writeFileSync(outputPath, JSON.stringify(report, null, 2), 'utf8');
-    if (!options.json) {
-        console.log(`\nFull report written to ${path.relative(options.root, outputPath)}`);
-    }
-    if (options.graph) {
-        const graphMd = generateMermaidGraph(dependencyState, dependencySummary, fileCriticalityByPath);
-        const graphPath = outputPath.replace(/\.json$/, '-graph.md');
-        fs.writeFileSync(graphPath, graphMd, 'utf8');
+    if (isLegacyMode && outputPath) {
+        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+        fs.writeFileSync(outputPath, JSON.stringify(report, null, 2), 'utf8');
         if (!options.json) {
-            console.log(`Dependency graph written to ${path.relative(options.root, graphPath)}`);
+            console.log(`\nFull report written to ${path.relative(options.root, outputPath)}`);
+        }
+        if (options.graph) {
+            const graphMd = generateMermaidGraph(dependencyState, dependencySummary, fileCriticalityByPath);
+            const graphPath = outputPath.replace(/\.json$/, '-graph.md');
+            fs.writeFileSync(graphPath, graphMd, 'utf8');
+            if (!options.json) {
+                console.log(`Dependency graph written to ${path.relative(options.root, graphPath)}`);
+            }
+        }
+    }
+    else if (outputDir) {
+        const outputFiles = writeMultiFileReport(outputDir, report, options, dependencyState, dependencySummary, fileCriticalityByPath);
+        if (!options.json) {
+            const relDir = path.relative(options.root, outputDir);
+            console.log(`\nReport written to ${relDir}/`);
+            for (const [key, file] of Object.entries(outputFiles)) {
+                console.log(`  ${key}: ${file}`);
+            }
         }
     }
 }
