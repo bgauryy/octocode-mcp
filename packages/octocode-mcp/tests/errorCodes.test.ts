@@ -479,6 +479,21 @@ describe('errorCodes', () => {
       expect(redactPath(`${cwd}/src/test-file.ts`)).toBe('src/test-file.ts');
     });
 
+    it('ignores missing WORKSPACE_ROOT and preserves normal fallback behavior', () => {
+      const originalWorkspaceRoot = process.env.WORKSPACE_ROOT;
+      const cwd = process.cwd();
+      try {
+        process.env.WORKSPACE_ROOT = `${cwd}/__missing_workspace_root__`;
+        expect(redactPath(`${cwd}/src/test-file.ts`)).toBe('src/test-file.ts');
+      } finally {
+        if (originalWorkspaceRoot) {
+          process.env.WORKSPACE_ROOT = originalWorkspaceRoot;
+        } else {
+          delete process.env.WORKSPACE_ROOT;
+        }
+      }
+    });
+
     it('auto-resolves for nested paths without explicit workspace', () => {
       const cwd = process.cwd();
       expect(redactPath(`${cwd}/packages/octocode-mcp/src/errorCodes.ts`)).toBe(
@@ -488,6 +503,7 @@ describe('errorCodes', () => {
 
     it('auto-resolves workspaceRoot from config when set', () => {
       const mockedGetConfig = vi.mocked(getConfigSync);
+      const cwd = process.cwd();
       // Override config to return a custom workspaceRoot
       mockedGetConfig.mockReturnValueOnce({
         ...mockedGetConfig(),
@@ -495,10 +511,10 @@ describe('errorCodes', () => {
           enabled: true,
           enableClone: false,
           allowedPaths: [],
-          workspaceRoot: '/custom/root',
+          workspaceRoot: cwd,
         },
       });
-      expect(redactPath('/custom/root/src/file.ts')).toBe('src/file.ts');
+      expect(redactPath(`${cwd}/src/file.ts`)).toBe('src/file.ts');
     });
   });
 });

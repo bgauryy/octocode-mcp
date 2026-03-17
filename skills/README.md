@@ -13,6 +13,7 @@ Specialized AI agent skills that extend OctoCode's capabilities.
 | Plan implementation steps before coding | **Plan** | "Plan this refactor", "Research & plan this feature" |
 | Technical decisions requiring formal RFC with alternatives | **RFC** | "Create RFC for caching", "Design doc for API v2", "How should we build X?" |
 | Review a pull request or local changes | **PR Reviewer** | "Review PR #123", "Review my changes", "Is this PR safe to merge?" |
+| Repo-wide code quality scan (duplicates, complexity, cycles) | **Local Code Scan** | "Analyze code quality", "Find duplicates", "Find dependency cycles", "Scan for tech debt" |
 | Brutal code criticism with fixes | **Roast** | "Roast my code", "Find code sins", "What's wrong with this?" |
 | Strengthen prompts / agent instructions | **Prompt Optimizer** | "Optimize this SKILL.md", "Agent skips steps" |
 | Generate repo documentation | **Documentation Writer** | "Document this project", "Create developer docs" |
@@ -110,7 +111,21 @@ Brutal code critique with file:line citations. Severity: gentle → nuclear. Sin
 
 ---
 
-### 8. OctoCode Pull Request & Code Reviewer
+### 8. OctoCode Local Code Scan
+**Location:** `octocode-local-code-scan/`
+
+AST-based repo-wide code quality scanner. Detects duplicate function bodies, repeated control-flow patterns, high-complexity functions, dependency cycles, critical dependency chains, and dead modules. Produces a prioritized JSON report with file:line references and suggested fixes. Optionally uses tree-sitter for richer metadata. Pairs with Octocode MCP local + LSP tools for investigation.
+
+| When | Example |
+|------|---------|
+| Code quality audit | "Analyze code quality", "Scan for tech debt" |
+| Duplicate detection | "Find duplicate code", "Find repeated patterns" |
+| Dependency analysis | "Find dependency cycles", "Show critical paths" |
+| Complexity check | "Check complexity", "Find oversized functions" |
+
+---
+
+### 9. OctoCode Pull Request & Code Reviewer
 **Location:** `octocode-pull-request-reviewer/`
 
 Holistic code review via Octocode MCP: bugs, security, architecture, flow impact. Supports both **remote PRs** and **local changes** (staged/unstaged). 7 domains, LSP-powered flow tracing, evidence-backed, user checkpoint before deep dive.

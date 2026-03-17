@@ -74,7 +74,7 @@ describe('resolveWorkspaceRoot', () => {
           enabled: false,
           enableClone: false,
           allowedPaths: [],
-          workspaceRoot: path.join(cwd, 'config-root'),
+          workspaceRoot: cwd,
         },
         tools: {
           enabled: null,
@@ -95,7 +95,7 @@ describe('resolveWorkspaceRoot', () => {
     });
 
     it('should use env var when no explicit parameter, even if config is set', () => {
-      const envRoot = path.join(cwd, 'env-root');
+      const envRoot = cwd;
       process.env.WORKSPACE_ROOT = envRoot;
       vi.mocked(getConfigSync).mockReturnValue({
         version: 1,
@@ -106,7 +106,7 @@ describe('resolveWorkspaceRoot', () => {
           enabled: false,
           enableClone: false,
           allowedPaths: [],
-          workspaceRoot: path.join(cwd, 'config-root'),
+          workspaceRoot: cwd,
         },
         tools: {
           enabled: null,
@@ -127,7 +127,7 @@ describe('resolveWorkspaceRoot', () => {
     });
 
     it('should use config when no explicit or env var', () => {
-      const configRoot = path.join(cwd, 'config-root');
+      const configRoot = cwd;
       vi.mocked(getConfigSync).mockReturnValue({
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
@@ -191,21 +191,21 @@ describe('resolveWorkspaceRoot', () => {
 
   describe('WORKSPACE_ROOT env var', () => {
     it('should resolve absolute env path', () => {
-      process.env.WORKSPACE_ROOT = '/opt/workspace';
+      process.env.WORKSPACE_ROOT = cwd;
       const result = resolveWorkspaceRoot();
-      expect(result).toBe(path.resolve('/opt/workspace'));
+      expect(result).toBe(path.resolve(cwd));
     });
 
-    it('should resolve relative env path against cwd', () => {
+    it('should ignore relative env path when target does not exist', () => {
       process.env.WORKSPACE_ROOT = './relative-workspace';
       const result = resolveWorkspaceRoot();
-      expect(result).toBe(path.resolve('./relative-workspace'));
+      expect(result).toBe(cwd);
     });
 
     it('should trim whitespace from env value', () => {
-      process.env.WORKSPACE_ROOT = '  /opt/workspace  ';
+      process.env.WORKSPACE_ROOT = `  ${cwd}  `;
       const result = resolveWorkspaceRoot();
-      expect(result).toBe(path.resolve('/opt/workspace'));
+      expect(result).toBe(path.resolve(cwd));
     });
 
     it('should ignore empty string env value (treat as unset)', () => {
@@ -219,6 +219,12 @@ describe('resolveWorkspaceRoot', () => {
       const result = resolveWorkspaceRoot();
       expect(result).toBe(cwd);
     });
+
+    it('should ignore non-existent WORKSPACE_ROOT and fall back to cwd', () => {
+      process.env.WORKSPACE_ROOT = path.join(cwd, '__does_not_exist__');
+      const result = resolveWorkspaceRoot();
+      expect(result).toBe(cwd);
+    });
   });
 
   // =========================================================================
@@ -227,7 +233,7 @@ describe('resolveWorkspaceRoot', () => {
 
   describe('config file', () => {
     it('should use config workspaceRoot when env is not set', () => {
-      const configRoot = '/home/user/project';
+      const configRoot = cwd;
       vi.mocked(getConfigSync).mockReturnValue({
         version: 1,
         github: { apiUrl: 'https://api.github.com' },
@@ -314,9 +320,9 @@ describe('resolveWorkspaceRoot', () => {
     });
 
     it('should return resolved path from env', () => {
-      process.env.WORKSPACE_ROOT = '/foo/bar/../baz';
+      process.env.WORKSPACE_ROOT = path.join(cwd, 'packages', '..');
       const result = resolveWorkspaceRoot();
-      expect(result).toBe(path.resolve('/foo/baz'));
+      expect(result).toBe(path.resolve(cwd));
     });
 
     it('should return a string (never undefined or null)', () => {
@@ -339,11 +345,11 @@ describe('resolveWorkspaceRoot', () => {
     });
 
     it('should return same value for PathValidator and LSP tools (env set)', () => {
-      process.env.WORKSPACE_ROOT = '/opt/workspace';
+      process.env.WORKSPACE_ROOT = cwd;
       const call1 = resolveWorkspaceRoot();
       const call2 = resolveWorkspaceRoot();
       expect(call1).toBe(call2);
-      expect(call1).toBe(path.resolve('/opt/workspace'));
+      expect(call1).toBe(path.resolve(cwd));
     });
 
     it('should return same value for PathValidator and LSP tools (config set)', () => {
@@ -356,7 +362,7 @@ describe('resolveWorkspaceRoot', () => {
           enabled: true,
           enableClone: false,
           allowedPaths: [],
-          workspaceRoot: '/home/user/project',
+          workspaceRoot: cwd,
         },
         tools: {
           enabled: null,
@@ -375,7 +381,7 @@ describe('resolveWorkspaceRoot', () => {
       const call1 = resolveWorkspaceRoot();
       const call2 = resolveWorkspaceRoot();
       expect(call1).toBe(call2);
-      expect(call1).toBe(path.resolve('/home/user/project'));
+      expect(call1).toBe(path.resolve(cwd));
     });
 
     it('explicit param should override all other sources consistently', () => {
@@ -421,11 +427,10 @@ describe('resolveWorkspaceRoot', () => {
   // =========================================================================
 
   describe('security - path traversal via env', () => {
-    it('should resolve traversal attempts in env (no escape)', () => {
-      process.env.WORKSPACE_ROOT = '/opt/workspace/../../etc';
+    it('should ignore traversal env root when resolved path does not exist', () => {
+      process.env.WORKSPACE_ROOT = path.join(cwd, '..', '..', '__missing__');
       const result = resolveWorkspaceRoot();
-      expect(result).toBe(path.resolve('/etc'));
-      expect(result).not.toContain('..');
+      expect(result).toBe(cwd);
     });
 
     it('should resolve traversal attempts in explicit param', () => {

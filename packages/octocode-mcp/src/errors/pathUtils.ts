@@ -5,7 +5,7 @@
 
 import path from 'path';
 import os from 'os';
-import { getConfigSync } from 'octocode-shared';
+import { resolveWorkspaceRoot as resolveSecurityWorkspaceRoot } from '../security/workspaceRoot.js';
 
 /**
  * Normalizes a path for consistent cross-platform comparison.
@@ -40,24 +40,6 @@ function getRelativeIfChild(child: string, parent: string): string | null {
 const HOME_DIR = normalizePath(os.homedir());
 
 /**
- * Resolves the workspace root: explicit arg > config > CWD.
- * Local tools always operate within workspace, so this ensures
- * meaningful project-relative paths in error messages.
- */
-function resolveWorkspaceRoot(explicit?: string): string {
-  if (explicit) return explicit;
-
-  try {
-    const configRoot = getConfigSync().local.workspaceRoot;
-    if (configRoot) return configRoot;
-  } catch {
-    // Config not loaded yet, fall through
-  }
-
-  return process.cwd();
-}
-
-/**
  * Redacts a filesystem path for safe inclusion in error messages.
  *
  * Resolution order:
@@ -79,7 +61,8 @@ export function redactPath(
   if (!absolutePath) return '';
 
   const normalized = normalizePath(absolutePath);
-  const root = normalizePath(resolveWorkspaceRoot(workspaceRoot));
+  const rootSource = workspaceRoot ?? resolveSecurityWorkspaceRoot();
+  const root = normalizePath(rootSource);
 
   // Primary: show project-relative path
   const relative = getRelativeIfChild(normalized, root);

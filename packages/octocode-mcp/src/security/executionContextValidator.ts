@@ -53,7 +53,8 @@ export function validateExecutionContext(
   if (!isInAllowedRoot) {
     return {
       isValid: false,
-      error: `Can only execute commands within workspace directory: ${workspace}. Attempted execution in: ${absoluteCwd}`,
+      error:
+        'Can only execute commands within the configured workspace directory',
     };
   }
 
@@ -67,7 +68,7 @@ export function validateExecutionContext(
     if (!isRealPathAllowed) {
       return {
         isValid: false,
-        error: `Symlink target '${realPath}' is outside workspace directory: ${workspace}`,
+        error: 'Symlink target is outside the configured workspace directory',
       };
     }
   } catch (error) {
@@ -84,7 +85,7 @@ export function validateExecutionContext(
     }
     return {
       isValid: false,
-      error: `Cannot validate execution context: ${error instanceof Error ? error.message : String(error)}`,
+      error: `Cannot validate execution context: ${error instanceof Error ? error.name : 'unknown error'}`,
     };
   }
 

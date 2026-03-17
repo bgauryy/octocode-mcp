@@ -1,0 +1,46 @@
+{
+  "name": "octocode-local-code-quality",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AST-based code quality analysis with duplicate detection, complexity metrics, and dependency graph intelligence",
+  "author": "Guy Bary <bgauryy@octocodeai.com>",
+  "homepage": "https://octocode.ai",
+  "repository": "bgauryy/octocode-mcp.git",
+  "license": "MIT",
+  "keywords": [
+    "agent-skill",
+    "ast-analysis",
+    "code-quality",
+    "tree-sitter",
+    "dependency-graph",
+    "octocode"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "analyze": "node scripts/index.js",
+    "analyze:json": "node scripts/index.js --json --out .octocode/scan/scan.json",
+    "analyze:full": "node scripts/index.js --include-tests --findings-limit 500 --deep-link-topn 30 --out .octocode/scan/scan.json",
+    "analyze:graph": "node scripts/index.js --graph --out .octocode/scan/scan.json"
+  },
+  "dependencies": {
+    "tree-sitter": "^0.25.0",
+    "tree-sitter-typescript": "^0.23.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.27.0",
+    "@types/node": "^20.0.0",
+    "eslint": "^9.27.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.32.0",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -10,7 +10,16 @@
  */
 
 import path from 'path';
+import fs from 'fs';
 import { getConfigSync } from 'octocode-shared';
+
+function isExistingDirectory(candidate: string): boolean {
+  try {
+    return fs.statSync(candidate).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 export function resolveWorkspaceRoot(explicit?: string): string {
   if (explicit) {
@@ -19,13 +28,19 @@ export function resolveWorkspaceRoot(explicit?: string): string {
 
   const envRoot = process.env.WORKSPACE_ROOT?.trim();
   if (envRoot) {
-    return path.resolve(envRoot);
+    const resolvedEnvRoot = path.resolve(envRoot);
+    if (isExistingDirectory(resolvedEnvRoot)) {
+      return resolvedEnvRoot;
+    }
   }
 
   try {
     const configRoot = getConfigSync().local.workspaceRoot;
     if (configRoot) {
-      return path.resolve(configRoot);
+      const resolvedConfigRoot = path.resolve(configRoot);
+      if (isExistingDirectory(resolvedConfigRoot)) {
+        return resolvedConfigRoot;
+      }
     }
   } catch {
     // Config not loaded yet, fall through

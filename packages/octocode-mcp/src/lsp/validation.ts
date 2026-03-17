@@ -56,7 +56,7 @@ export function validateLSPServerPath(
     if (!normalizedPath.startsWith(baseDir)) {
       return {
         isValid: false,
-        error: `LSP server path escapes base directory: ${binPath}`,
+        error: 'LSP server path escapes base directory',
       };
     }
   }
@@ -70,18 +70,18 @@ export function validateLSPServerPath(
     if (nodeError.code === 'ENOENT') {
       return {
         isValid: false,
-        error: `LSP server binary not found: ${absolutePath}`,
+        error: 'LSP server binary not found',
       };
     }
     if (nodeError.code === 'ELOOP') {
       return {
         isValid: false,
-        error: `Symlink loop detected in LSP server path: ${absolutePath}`,
+        error: 'Symlink loop detected in LSP server path',
       };
     }
     return {
       isValid: false,
-      error: `Cannot resolve LSP server path: ${absolutePath}`,
+      error: 'Cannot resolve LSP server path',
     };
   }
 
@@ -91,13 +91,13 @@ export function validateLSPServerPath(
     if (!stats.isFile()) {
       return {
         isValid: false,
-        error: `LSP server path is not a file: ${realPath}`,
+        error: 'LSP server path is not a file',
       };
     }
   } catch {
     return {
       isValid: false,
-      error: `Cannot stat LSP server binary: ${realPath}`,
+      error: 'Cannot stat LSP server binary',
     };
   }
 

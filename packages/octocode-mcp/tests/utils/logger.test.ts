@@ -169,6 +169,39 @@ describe('Logger', () => {
       });
     });
 
+    it('should redact path-like fields from log payloads', async () => {
+      const logger = new OctocodeLogger(mockServer as McpServer, 'test');
+
+      await logger.info('Path log', {
+        cwd: '/Users/dev/project',
+        nested: { filePath: 'src/security/pathValidator.ts' },
+      });
+
+      expect(mockServer.sendLoggingMessage).toHaveBeenCalledWith({
+        level: 'info',
+        logger: expect.any(String),
+        data: expect.objectContaining({
+          message: 'Path log',
+          cwd: '[REDACTED_LOCAL_PATH]',
+          nested: { filePath: '[REDACTED_LOCAL_PATH]' },
+        }),
+      });
+    });
+
+    it('should redact path-like text embedded in message', async () => {
+      const logger = new OctocodeLogger(mockServer as McpServer, 'test');
+
+      await logger.error('Cannot open /Users/dev/private/file.txt');
+
+      expect(mockServer.sendLoggingMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            message: expect.not.stringContaining('/Users/dev/private/file.txt'),
+          }),
+        })
+      );
+    });
+
     it('should handle all log levels', async () => {
       const logger = new OctocodeLogger(mockServer as McpServer, 'test');
 
