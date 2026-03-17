@@ -3,8 +3,6 @@ import type {
   DependencyState,
   FileEntry,
   Finding,
-  ReExportRef,
-  AnalysisOptions,
 } from './types.js';
 import { isTestFile } from './utils.js';
 

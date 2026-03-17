@@ -1,13 +1,15 @@
 ---
 name: octocode-local-code-quality
-description: The most comprehensive single-scan code quality tool for TS/JS monorepos. Combines architecture analysis (instability/SDP, coupling, cycles, reachability), code quality (duplicates, complexity, cognitive complexity, god modules), and dead-code hygiene (dead files, exports, re-exports, unused npm deps) — all in one agent-friendly scan with severity-ranked, actionable findings. Run scripts/index.js, present prioritized findings, then investigate with MCP/LSP before fixing.
+description: Scan TS/JS monorepo for architecture issues, code quality problems, and dead code. Use when asked to check architecture, audit code/repo quality, trace code flows, find cycles, unused exports, complexity, or dead files. Produces severity-ranked findings with file:line locations — validate with Octocode MCP local & LSP tools before fixing.
 ---
 
 # Octocode Local Code Quality — Full-Stack Code Analysis
 
 ## What This Skill Does
 
-This is the **only tool that combines architecture risk analysis + code quality + dead-code hygiene** in a single lightweight scan. It analyzes every TS/JS file in your monorepo `packages/` directory and produces **severity-ranked, actionable findings** with exact `file:line` locations and step-by-step fix strategies.
+Single-scan code analysis for TS/JS monorepos that combines architecture risk, code quality, and dead-code hygiene into one report. Analyzes every file under `packages/` and produces **severity-ranked findings** with exact `file:line` locations and fix strategies.
+
+The scan is step one. Use **Octocode MCP local & LSP tools** to validate findings semantically — confirm dead exports have zero consumers via `lspFindReferences`, trace dependency chains with `lspCallHierarchy`, verify cycles with `lspGotoDefinition` — before changing any code.
 
 ### Three Analysis Pillars
 
@@ -47,7 +49,7 @@ This is the **only tool that combines architecture risk analysis + code quality 
 | 7 | `dependency-cycle` | high | Circular import chains |
 | 8 | `dependency-critical-path` | high — critical | High-weight transitive dependency chains (blast radius) |
 | 9 | `dependency-test-only` | medium | Production modules imported only from tests |
-| 10 | `architecture-sdp-violation` | medium — high | Stable module depends on unstable module (Stable Dependencies Principle: I = Ce/(Ca+Ce)) |
+| 10 | `architecture-sdp-violation` | medium — high | Stable module depends on unstable module (I = Ce/(Ca+Ce)) |
 | 11 | `high-coupling` | medium — high | Module with excessive Ca + Ce total connections |
 | 12 | `god-module-coupling` | medium — high | High fan-in (bottleneck) or high fan-out (knows too much) |
 | 13 | `orphan-module` | medium | Module with zero inbound AND zero outbound dependencies |
@@ -64,55 +66,78 @@ This is the **only tool that combines architecture risk analysis + code quality 
 
 ---
 
-## TL;DR for Agents
+## How to Use
 
-- Run exactly one executable: `scripts/index.js`.
-- Default command (from workspace root): `node <SKILL_BASE_DIRECTORY>/scripts/index.js --out .octocode/scan/scan.json`.
-- Present results in this order: **Summary → Top Findings (severity first) → Architecture Highlights → Ask what to fix first**.
-- Severity order: `critical` > `high` > `medium` > `low` > `info`.
-- Prefer MCP + LSP validation before code fixes when available.
-- Every finding includes file:line, severity, reason, and `suggestedFix` with strategy + steps.
-
-## Prime Directive
+This skill uses **two complementary tools together**: the scan script finds issues statically, and Octocode MCP local & LSP tools validate them semantically. Always use both when available.
 
 ```
-SCAN → ANALYZE → PRIORITIZE → INVESTIGATE → FIX
+SCAN (scripts/index.js) → PRESENT → VALIDATE (Octocode local/LSP) → FIX → RE-SCAN
 ```
 
-1. **Data-driven**: every finding has location, severity, reason, and fix strategy.
-2. **Prioritized**: highest-risk findings first.
-3. **Actionable**: concrete, ordered remediation steps.
-4. **Validated**: investigate with MCP/LSP before changing code.
+If Octocode MCP is not installed or `ENABLE_LOCAL` is not `"true"`, fall back to the scan script alone — see [Fallback Policy](#fallback-policy-when-mcplsp-is-unavailable).
 
----
+### 1. Run the scan
 
-## Quick Start
-
-### Step 1: Discover
-
-1. Confirm workspace root contains `packages/`.
-2. Confirm `<SKILL_BASE_DIRECTORY>/scripts/index.js` exists.
-3. Detect whether Octocode MCP local/LSP tools are available.
-
-### Step 2: Run
+All scripts are pre-built in `scripts/` — no build step needed. 250 tests passing. Only run `scripts/index.js` (the single entry point; all other scripts are internal modules).
 
 ```bash
 node <SKILL_BASE_DIRECTORY>/scripts/index.js --out .octocode/scan/scan.json
 ```
 
-### Step 3: Present
+### 2. Present results to user
 
-Always use this structure:
+Always present in this exact structure:
 
-1. **Summary**: files, functions, flows, dependency edges, finding counts by severity.
-2. **Top Findings**: highest severity first, grouped by category.
-3. **Architecture Highlights**: cycles, critical paths, SDP violations, coupling hotspots, unreachable modules.
-4. **Dead Code Highlights**: dead exports, unused npm deps, orphan modules.
-5. **Next Step**: ask which findings to fix first.
+```markdown
+## Scan Summary
+- **Scope**: <n> files, <n> functions, <n> flows, <n> dependency edges
+- **Findings**: <n> total — <n> critical, <n> high, <n> medium, <n> low
+
+## Top Findings (by severity)
+### Critical
+- `<file>:<line>` — <title> — <reason>
+### High
+- `<file>:<line>` — <title> — <reason>
+### Medium (top 5)
+- ...
+
+## Architecture Health
+- Cycles: <n>, Critical paths: <n>, SDP violations: <n>
+- Coupling hotspots: <n>, Unreachable modules: <n>, Orphan modules: <n>
+
+## Dead Code Summary
+- Dead exports: <n>, Dead re-exports: <n>, Dead files: <n>
+- Unused npm deps: <n>, Boundary violations: <n>
+
+## Next Step
+Which findings should I investigate first?
+```
+
+Severity order: `critical` > `high` > `medium` > `low` > `info`.
+
+### 3. Validate findings with Octocode local & LSP tools
+
+**Do not fix based on scan output alone.** Use Octocode MCP tools to confirm each finding semantically — this catches false positives and reveals the true blast radius:
+
+```
+localSearchCode(pattern) → get lineHint
+  → lspGotoDefinition(lineHint)    — trace to source
+  → lspFindReferences(lineHint)    — confirm zero/few consumers
+  → lspCallHierarchy(lineHint)     — map caller/callee impact
+  → localGetFileContent             — read context (last)
+```
+
+If Octocode MCP is unavailable (`ENABLE_LOCAL` not set), skip this step and follow the [Fallback Policy](#fallback-policy-when-mcplsp-is-unavailable).
+
+See [Investigation Playbooks](#investigation-playbooks) for per-category recipes. After fixes, re-run scan to verify finding count decreased.
 
 ---
 
-## Command Presets
+## CLI Reference
+
+Run `node <SKILL_BASE_DIRECTORY>/scripts/index.js --help` for the full flag reference with all defaults.
+
+### Command Presets
 
 | Situation | Command |
 |---|---|
@@ -125,20 +150,85 @@ Always use this structure:
 | After fixes (verify) | `node <SKILL_BASE_DIRECTORY>/scripts/index.js --out .octocode/scan/scan-after.json` |
 | User asks about one topic | Same scan, then filter & present only selected categories from the JSON |
 
+### Parser Modes
+
+| Mode | Behavior |
+|---|---|
+| `auto` (default) | TypeScript primary analysis, optional tree-sitter node enrichment |
+| `typescript` | TypeScript only |
+| `tree-sitter` | Tree-sitter primary for functions/flows/complexity, TypeScript for dependencies; falls back if needed |
+
+---
+
+## Expected Output
+
+### Default mode (no `--json`)
+
+Human-readable terminal summary:
+
+```
+AST analysis complete: 42 files, 318 functions, 1204 flow nodes
+Duplicate function bodies: 5
+- function "parseConfig" occurs 3x in 2 file(s)
+
+Repeated control-flow structures: 12
+- IfStatement appears 4x across 3 file(s)
+
+Dependency graph: 42 modules, 187 import edges
+- Critical chains: 8 (showing top 8)
+- Root modules: 3, Leaf modules: 11
+- Test-only modules: 2
+- Cycles: 1
+
+Agent Findings: 34
+- [HIGH] dependency-cycle — ...
+  - Circular import chain between moduleA → moduleB → moduleA
+  - fix: Break cycle with shared contracts or dependency inversion
+
+Parser engine used: typescript
+Full report written to .octocode/scan/scan.json
+```
+
+### JSON mode (`--json`)
+
+Full structured JSON to stdout. No human-readable text.
+
+### Graph mode (`--graph`)
+
+Default mode output + writes `.octocode/scan/scan-graph.md` (Mermaid dependency graph).
+
+### Output Files
+
+| Flag | File Written |
+|------|-------------|
+| `--out <path>` | `<path>` — Full JSON report (always) |
+| `--graph` | `<path>` with `.json` replaced by `-graph.md` — Mermaid graph |
+
+### JSON Report Structure
+
+| Key | Contents |
+|-----|----------|
+| `summary` | File, function, flow, package counts |
+| `fileInventory[]` | Per-file: functions, flows, dependency profile, linked issue IDs |
+| `duplicateFlows` | Duplicate function body + control-flow groups |
+| `dependencyGraph` | Modules, edges, roots, leaves, cycles, critical paths, hubs |
+| `dependencyFindings[]` | Cycle, critical-path, test-only findings |
+| `optimizationFindings[]` | ALL findings sorted by severity (23 categories) |
+| `agentOutput` | Summary counters, top recommendations, per-file issue mapping |
+| `parseErrors[]` | Files that failed to parse |
+
 ---
 
 ## Investigation Playbooks
 
 Use when user chooses specific findings to act on. Always validate with MCP/LSP before changing code.
 
-### MCP Discovery
-
 <mcp_discovery>
-Before deep investigation, detect research tooling.
-
-If Octocode local tools return empty, suggest: "Add `ENABLE_LOCAL=true` to your Octocode MCP config."
-
-If Octocode MCP is not installed, suggest setup once and continue with available tools.
+Before investigating, check if Octocode MCP local tools are available:
+1. Try a quick `localSearchCode` call. If it works → use the full scan + Octocode workflow.
+2. If it fails or returns an MCP error → Octocode is not installed or `ENABLE_LOCAL` is not `"true"`.
+   - Suggest once: "Enable local tools by setting `ENABLE_LOCAL=true` in your Octocode MCP config."
+   - Continue with scan-only mode (script findings + targeted file reads). Do not block on MCP.
 </mcp_discovery>
 
 ### General Investigation Loop
@@ -266,117 +356,18 @@ If Octocode MCP is not installed, suggest setup once and continue with available
 
 ## Fallback Policy (When MCP/LSP Is Unavailable)
 
-1. Trust scan report and category evidence first.
-2. Validate with targeted file reads only (no broad refactors).
-3. Mark confidence explicitly (`high`, `medium`, `low`).
-4. Recommend minimal-risk fixes and request user confirmation before wide changes.
+When Octocode MCP is not installed or `ENABLE_LOCAL` is not `"true"`, the scan script still works standalone:
 
----
-
-## Response Template
-
-```markdown
-## Scan Summary
-- **Scope**: <n> files, <n> functions, <n> flows, <n> dependency edges
-- **Findings**: <n> total — <n> critical, <n> high, <n> medium, <n> low
-
-## Top Findings (by severity)
-
-### Critical
-- `<file>:<line>` — <title> — <reason>
-
-### High
-- `<file>:<line>` — <title> — <reason>
-
-### Medium (top 5)
-- ...
-
-## Architecture Health
-- Cycles: <n>, Critical paths: <n>, SDP violations: <n>
-- Coupling hotspots: <n>, Unreachable modules: <n>
-- Orphan modules: <n>
-
-## Dead Code Summary
-- Dead exports: <n>, Dead re-exports: <n>, Dead files: <n>
-- Unused npm deps: <n>, Boundary violations: <n>
-
-## Next Step
-Which findings should I investigate first?
-```
-
----
-
-## Report Reference
-
-Primary JSON output: `.octocode/scan/scan.json`
-
-Key sections:
-- `summary` — file, function, flow, package counts
-- `fileInventory[]` — per-file: functions, flows, dependency profile, linked issue IDs
-- `duplicateFlows` — duplicate function body + control-flow groups
-- `dependencyGraph` — modules, edges, roots, leaves, cycles, critical paths, hubs
-- `dependencyFindings[]` — cycle, critical-path, test-only findings
-- `optimizationFindings[]` — ALL findings sorted by severity (23 categories)
-- `agentOutput` — summary counters, top recommendations, per-file issue mapping
-- `parseErrors[]` — files that failed to parse
-
----
-
-## Parser Modes
-
-| Mode | Behavior |
-|---|---|
-| `auto` (default) | TypeScript primary analysis, optional tree-sitter node enrichment |
-| `typescript` | TypeScript only |
-| `tree-sitter` | Tree-sitter primary for functions/flows/complexity, TypeScript for dependencies; falls back if needed |
-
----
-
-## Full CLI Reference
-
-```
-node scripts/index.js [options]
-
-Core:
-  --root <path>                       Repo root directory (default: cwd)
-  --out <path>                        Write JSON report to file
-  --json                              Print JSON report to stdout
-  --include-tests                     Include test files in scan
-  --parser <auto|typescript|tree-sitter>  Parser engine (default: auto)
-  --graph                             Emit Mermaid dependency graph alongside JSON
-  --findings-limit N                  Max findings in report (default: 250)
-
-Complexity:
-  --critical-complexity-threshold N   Cyclomatic complexity for HIGH findings (default: 30)
-  --cognitive-complexity-threshold N  Cognitive complexity threshold (default: 15)
-  --min-function-statements N         Min body statements for duplicate matching (default: 6)
-  --min-flow-statements N             Min control-flow statements for matching (default: 6)
-
-Architecture:
-  --coupling-threshold N              Ca+Ce threshold for high-coupling (default: 15)
-  --fan-in-threshold N                Fan-in threshold for god-module-coupling (default: 20)
-  --fan-out-threshold N               Fan-out threshold for god-module-coupling (default: 15)
-  --layer-order <layers>              Comma-separated layer order (e.g. ui,service,repository)
-
-Module size:
-  --god-module-statements N           Statement threshold for god-module (default: 500)
-  --god-module-exports N              Export threshold for god-module (default: 20)
-  --god-function-statements N         Statement threshold for god-function (default: 100)
-  --barrel-symbol-threshold N         Re-export count for barrel-explosion (default: 30)
-
-Output:
-  --deep-link-topn N                  Max critical dependency paths reported (default: 12)
-  --tree-depth N                      AST tree snapshot depth (default: 4)
-  --no-tree                           Skip AST tree snapshots
-  --emit-tree                         Force include AST tree snapshots
-  --help                              Show help
-```
+1. Run `scripts/index.js` as usual — all 23 finding categories are fully functional without MCP.
+2. Trust scan report and category evidence first.
+3. Validate with targeted file reads only (no broad refactors without LSP confirmation).
+4. Mark confidence explicitly (`high` if scan evidence is strong, `medium` if ambiguous, `low` if needs LSP).
+5. Recommend minimal-risk fixes and request user confirmation before wide changes.
+6. Suggest enabling Octocode local tools for deeper validation: `"env": { "ENABLE_LOCAL": "true" }`.
 
 ---
 
 ## Architecture Concepts Reference
-
-These concepts appear in findings and help agents explain results to users.
 
 ### Instability (SDP)
 ```
@@ -402,12 +393,42 @@ In monorepos, `packages/A/src/foo.ts` should import from `packages/B/src/index.t
 
 ---
 
+## Octocode MCP Best Practices
+
+### Tool Chain Order
+Always follow the funnel: **search → locate → analyze → read**.
+1. `localSearchCode(pattern, path)` — get file + `lineHint` (1-indexed). Start here for every investigation.
+2. `lspGotoDefinition(uri, symbolName, lineHint)` — jump to the actual definition.
+3. `lspFindReferences(uri, symbolName, lineHint)` — find all usages (types, variables, exports).
+4. `lspCallHierarchy(uri, symbolName, lineHint, direction)` — trace call flow (`incoming` = callers, `outgoing` = callees). Functions only.
+5. `localGetFileContent` — read implementation details. **Always last**.
+
+### Key Rules
+- **lineHint is mandatory** for all LSP tools. Always run `localSearchCode` first to obtain it.
+- **Paths must be absolute** (e.g. `/Users/.../packages/octocode-mcp/src/foo.ts`).
+- **lspFindReferences vs lspCallHierarchy**: use `lspFindReferences` for types/variables/all usages; use `lspCallHierarchy` for function call relationships only.
+- **Batch queries**: `localSearchCode` supports up to 5 queries per call; LSP tools support 3–5. Batch independent lookups to reduce round-trips.
+- **Chain manually**: use `lspCallHierarchy(depth=1)` and chain on results rather than `depth=3` — faster and more controlled.
+
+### Validation Patterns by Finding Category
+| Finding | Tool Chain |
+|---------|-----------|
+| Dead export | `localSearchCode` → `lspFindReferences(includeDeclaration=false)` — zero non-test results = confirmed dead |
+| Dependency cycle | `localSearchCode(pattern="import.*from")` on cycle files → `lspGotoDefinition` on circular import |
+| Unused function | `localSearchCode` → `lspCallHierarchy(incoming)` — zero callers = confirmed unused |
+| High coupling | `localSearchCode` → `lspFindReferences` on key exports → count unique consumer files |
+| Complex function | `localSearchCode` → `lspCallHierarchy(outgoing)` to understand responsibilities before splitting |
+
+### Common Pitfalls
+- LSP returns 0-indexed lines; `localSearchCode` returns 1-indexed. Use the 1-indexed value for `lineHint`.
+- If LSP returns empty, try broader `localSearchCode` variants (synonyms, regex) before concluding.
+- For external packages, switch to `packageSearch` → `githubSearchCode` — LSP only works on local code.
+
+---
+
 ## Guardrails
 
-- Run only `scripts/index.js` — do not execute internal source files.
-- Never skip the summary before presenting detailed findings.
+- Run only `scripts/index.js` — never execute internal source files or other scripts directly.
 - Never present findings without `file:line` references.
 - Never use LSP tools without `lineHint` from `localSearchCode`.
-- Prefer MCP validation before fixing when available; use fallback policy when not.
 - Let the user choose which findings to address before making broad refactors.
-- After fixes, re-run scan to verify regression count.

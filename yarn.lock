@@ -6235,10 +6235,13 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "octocode-local-code-quality@workspace:skills/octocode-local-code-quality"
   dependencies:
+    "@eslint/js": "npm:^9.27.0"
     "@types/node": "npm:^20.0.0"
+    eslint: "npm:^9.27.0"
     tree-sitter: "npm:^0.25.0"
     tree-sitter-typescript: "npm:^0.23.2"
     typescript: "npm:^5.9.3"
+    typescript-eslint: "npm:^8.32.0"
     vitest: "npm:^4.1.0"
   languageName: unknown
   linkType: soft

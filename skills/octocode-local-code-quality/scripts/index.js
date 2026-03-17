@@ -82,7 +82,7 @@ function buildDependencySummary(dependencyState, fileCriticalityByPath, options)
         criticalPaths: criticalPaths.slice(0, Math.max(1, options.deepLinkTopN)),
     };
 }
-function detectDependencyCycles(dependencyState) {
+export function detectDependencyCycles(dependencyState) {
     const cycles = [];
     const visited = new Set();
     const visiting = new Set();
@@ -134,7 +134,7 @@ function detectDependencyCycles(dependencyState) {
     }
     return cycles.sort((a, b) => b.nodeCount - a.nodeCount);
 }
-function computeDependencyCriticalPaths(dependencyState, fileCriticalityByPath, options) {
+export function computeDependencyCriticalPaths(dependencyState, fileCriticalityByPath, options) {
     const memo = new Map();
     const visiting = new Set();
     const nodeScore = (file) => {
@@ -203,11 +203,11 @@ function makeIssue(location, props) {
         ...props,
     };
 }
-function isLikelyEntrypoint(filePath) {
+export function isLikelyEntrypoint(filePath) {
     const normalized = filePath.toLowerCase();
     return /(^|\/)(index|main|app|server|cli)\.[mc]?[jt]sx?$/.test(normalized);
 }
-function buildIssueCatalog(duplicates, controlDuplicates, fileSummaries, dependencySummary, dependencyState, options, pkgJsonDeps = {}, pkgJsonDevDeps = {}) {
+export function buildIssueCatalog(duplicates, controlDuplicates, fileSummaries, dependencySummary, dependencyState, options, pkgJsonDeps = {}, pkgJsonDevDeps = {}) {
     const findings = [];
     const perFileIssues = new Map();
     const addFinding = (finding) => {
@@ -1045,7 +1045,11 @@ async function main() {
         }
     }
 }
-main().catch((error) => {
-    console.error(error);
-    process.exit(1);
-});
+const isDirectRun = process.argv[1] && (import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'))
+    || import.meta.url.endsWith('/scripts/index.js'));
+if (isDirectRun) {
+    main().catch((error) => {
+        console.error(error);
+        process.exit(1);
+    });
+}

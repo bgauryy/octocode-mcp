@@ -113,7 +113,7 @@ function buildDependencySummary(dependencyState: DependencyState, fileCriticalit
   };
 }
 
-function detectDependencyCycles(dependencyState: DependencyState): Cycle[] {
+export function detectDependencyCycles(dependencyState: DependencyState): Cycle[] {
   const cycles: Cycle[] = [];
   const visited = new Set<string>();
   const visiting = new Set<string>();
@@ -172,7 +172,7 @@ function detectDependencyCycles(dependencyState: DependencyState): Cycle[] {
   return cycles.sort((a, b) => b.nodeCount - a.nodeCount);
 }
 
-function computeDependencyCriticalPaths(dependencyState: DependencyState, fileCriticalityByPath: Map<string, FileCriticality>, options: AnalysisOptions): CriticalPath[] {
+export function computeDependencyCriticalPaths(dependencyState: DependencyState, fileCriticalityByPath: Map<string, FileCriticality>, options: AnalysisOptions): CriticalPath[] {
   const memo = new Map<string, WalkResult>();
   const visiting = new Set<string>();
 
@@ -248,12 +248,12 @@ function makeIssue(location: object, props: object): Omit<Finding, 'id'> {
   } as Omit<Finding, 'id'>;
 }
 
-function isLikelyEntrypoint(filePath: string): boolean {
+export function isLikelyEntrypoint(filePath: string): boolean {
   const normalized = filePath.toLowerCase();
   return /(^|\/)(index|main|app|server|cli)\.[mc]?[jt]sx?$/.test(normalized);
 }
 
-function buildIssueCatalog(
+export function buildIssueCatalog(
   duplicates: DuplicateGroup[],
   controlDuplicates: RedundantFlowGroup[],
   fileSummaries: FileEntry[],
@@ -1145,7 +1145,14 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error);
-  process.exit(1);
-});
+const isDirectRun = process.argv[1] && (
+  import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'))
+  || import.meta.url.endsWith('/scripts/index.js')
+);
+
+if (isDirectRun) {
+  main().catch((error: unknown) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
