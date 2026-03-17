@@ -162,6 +162,16 @@ export function parseArgs(argv: string[]): AnalysisOptions {
       continue;
     }
 
+    if (arg === '--flow-dup-threshold') {
+      opts.flowDupThreshold = parseInt(argv[++i], 10);
+      continue;
+    }
+
+    if (arg === '--max-recs-per-category') {
+      opts.maxRecsPerCategory = parseInt(argv[++i], 10);
+      continue;
+    }
+
     if (arg === '--help' || arg === '-h') {
       printHelp();
       process.exit(0);
@@ -194,6 +204,8 @@ export function parseArgs(argv: string[]): AnalysisOptions {
   if (Number.isNaN(opts.cyclomaticDensityThreshold)) opts.cyclomaticDensityThreshold = DEFAULT_OPTS.cyclomaticDensityThreshold;
   if (Number.isNaN(opts.anyThreshold)) opts.anyThreshold = DEFAULT_OPTS.anyThreshold;
   if (Number.isNaN(opts.magicNumberThreshold)) opts.magicNumberThreshold = DEFAULT_OPTS.magicNumberThreshold;
+  if (Number.isNaN(opts.flowDupThreshold)) opts.flowDupThreshold = DEFAULT_OPTS.flowDupThreshold;
+  if (Number.isNaN(opts.maxRecsPerCategory)) opts.maxRecsPerCategory = DEFAULT_OPTS.maxRecsPerCategory;
 
   return opts;
 }
@@ -239,6 +251,8 @@ Options:
                                 Cyclomatic/LOC ratio threshold (default 0.5)
   --any-threshold N             Max \`any\` type usages per file before flagging (default 5)
   --magic-number-threshold N    Max magic number occurrences per file before flagging (default 3)
+  --flow-dup-threshold N        Min occurrences for a repeated flow to become a finding (default 3)
+  --max-recs-per-category N     Max findings per category in top recommendations (default 2)
   --help                        Show this message
 `);
 }

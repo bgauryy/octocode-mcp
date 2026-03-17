@@ -39,6 +39,8 @@ export interface AnalysisOptions {
   cyclomaticDensityThreshold: number;
   anyThreshold: number;
   magicNumberThreshold: number;
+  flowDupThreshold: number;
+  maxRecsPerCategory: number;
 }
 
 export interface Location {
@@ -157,6 +159,8 @@ export interface ImportedSymbolRef {
   importedName: string;
   localName: string;
   isTypeOnly: boolean;
+  lineStart?: number;
+  lineEnd?: number;
 }
 
 export interface ReExportRef {
@@ -436,9 +440,9 @@ export const DEFAULT_OPTS: AnalysisOptions = {
   cyclomaticDensityThreshold: 0.5,
   anyThreshold: 5,
   magicNumberThreshold: 3,
+  flowDupThreshold: 3,
+  maxRecsPerCategory: 2,
 };
-
-export const CONTROL_KIND_DUP_THRESHOLD = 3;
 export const ALLOWED_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 export const IMPORT_RESOLVE_EXTS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.d.ts'];
 

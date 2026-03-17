@@ -18,7 +18,7 @@ import type {
   FileCriticality, ModuleCount, Cycle, CriticalPath, CriticalModule,
   WalkResult,
 } from './types.js';
-import { SEVERITY_ORDER, CONTROL_KIND_DUP_THRESHOLD } from './types.js';
+import { SEVERITY_ORDER } from './types.js';
 import { parseArgs } from './cli.js';
 import { canonicalScriptKind, isTestFile, renderTreesText } from './utils.js';
 import { collectDependencyProfile, dependencyProfileToRecord } from './dependencies.js';
@@ -284,7 +284,29 @@ function makeIssue(location: object, props: object): Omit<Finding, 'id'> {
 
 export function isLikelyEntrypoint(filePath: string): boolean {
   const normalized = filePath.toLowerCase();
-  return /(^|\/)(index|main|app|server|cli)\.[mc]?[jt]sx?$/.test(normalized);
+  if (/(^|\/)(index|main|app|server|cli|public)\.[mc]?[jt]sx?$/.test(normalized)) return true;
+  if (/\.(config)\.[mc]?[jt]sx?$/.test(normalized)) return true;
+  return false;
+}
+
+function findImportLineForEdge(state: DependencyState, fromFile: string, toFile: string): { lineStart: number; lineEnd: number } {
+  const imports = state.importedSymbolsByFile.get(fromFile);
+  if (imports) {
+    for (const ref of imports) {
+      if (ref.resolvedModule === toFile && ref.lineStart) {
+        return { lineStart: ref.lineStart, lineEnd: ref.lineEnd ?? ref.lineStart };
+      }
+    }
+  }
+  const reexports = state.reExportsByFile.get(fromFile);
+  if (reexports) {
+    for (const ref of reexports) {
+      if (ref.resolvedModule === toFile && ref.lineStart) {
+        return { lineStart: ref.lineStart, lineEnd: ref.lineEnd ?? ref.lineStart };
+      }
+    }
+  }
+  return { lineStart: 1, lineEnd: 1 };
 }
 
 export function buildIssueCatalog(
@@ -296,20 +318,11 @@ export function buildIssueCatalog(
   options: AnalysisOptions,
   pkgJsonDeps: Record<string, string> = {},
   pkgJsonDevDeps: Record<string, string> = {},
-): { findings: Finding[]; byFile: Map<string, string[]> } {
-  const findings: Finding[] = [];
-  const perFileIssues = new Map<string, string[]>();
+): { findings: Finding[]; byFile: Map<string, string[]>; totalBeforeTruncation: number; droppedCategories: string[] } {
+  const rawFindings: Array<Omit<Finding, 'id'>> = [];
 
   const addFinding = (finding: Omit<Finding, 'id'>): void => {
-    if (findings.length >= options.findingsLimit) return;
-    const id = `AST-ISSUE-${String(findings.length + 1).padStart(4, '0')}`;
-    const fullFinding: Finding = { id, ...finding };
-    findings.push(fullFinding);
-
-    if (fullFinding.file) {
-      if (!perFileIssues.has(fullFinding.file)) perFileIssues.set(fullFinding.file, []);
-      perFileIssues.get(fullFinding.file)!.push(id);
-    }
+    rawFindings.push(finding);
   };
 
   for (const group of duplicates) {
@@ -337,7 +350,7 @@ export function buildIssueCatalog(
   }
 
   for (const group of controlDuplicates) {
-    if (group.occurrences < CONTROL_KIND_DUP_THRESHOLD) continue;
+    if (group.occurrences < options.flowDupThreshold) continue;
 
     const sample = group.locations[0];
     const reason = `${group.kind} structure appears ${group.occurrences} times across ${group.filesCount} file(s).`;
@@ -418,12 +431,13 @@ export function buildIssueCatalog(
 
   if (dependencySummary.cycles?.length > 0) {
     for (const cycle of dependencySummary.cycles.slice(0, 15)) {
+      const cycleLine = findImportLineForEdge(dependencyState, cycle.path[0], cycle.path[1]);
       addFinding({
         severity: 'high',
         category: 'dependency-cycle',
         file: cycle.path[0],
-        lineStart: 1,
-        lineEnd: 1,
+        lineStart: cycleLine.lineStart,
+        lineEnd: cycleLine.lineEnd,
         title: `Dependency cycle detected (${cycle.nodeCount} node cycle)`,
         reason: `Import cycle exists across: ${cycle.path.join(' -> ')}`,
         files: cycle.path,
@@ -443,12 +457,13 @@ export function buildIssueCatalog(
   if (dependencySummary.criticalPaths?.length > 0) {
     for (const pathEntry of dependencySummary.criticalPaths.slice(0, 10)) {
       if (pathEntry.score < (options.criticalComplexityThreshold * 3)) continue;
+      const chainLine = findImportLineForEdge(dependencyState, pathEntry.path[0], pathEntry.path[1]);
       addFinding({
         severity: pathEntry.score >= options.criticalComplexityThreshold * 6 ? 'critical' : 'high',
         category: 'dependency-critical-path',
         file: pathEntry.path[0],
-        lineStart: 1,
-        lineEnd: 1,
+        lineStart: chainLine.lineStart,
+        lineEnd: chainLine.lineEnd,
         title: `Critical dependency chain risk: ${pathEntry.length} files`,
         reason: `Potentially high-change surface: ${pathEntry.path.join(' -> ')} (${pathEntry.score} weight).`,
         files: pathEntry.path,
@@ -656,7 +671,7 @@ export function buildIssueCatalog(
   for (const f of detectHighHalsteadEffort(fileSummaries, options.halsteadEffortThreshold)) addFinding(f);
   for (const f of detectLowMaintainability(fileSummaries, options.maintainabilityIndexThreshold)) addFinding(f);
 
-  const sortedFindings = [...findings].sort((a, b) => {
+  const sorted = rawFindings.sort((a, b) => {
     const bySeverity = SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity];
     if (bySeverity !== 0) return bySeverity;
     if (a.category < b.category) return -1;
@@ -664,7 +679,25 @@ export function buildIssueCatalog(
     return 0;
   });
 
-  return { findings: sortedFindings, byFile: perFileIssues };
+  const totalBeforeTruncation = sorted.length;
+  const allCategoriesBefore = new Set(sorted.map((f) => f.category));
+  const truncated = sorted.slice(0, options.findingsLimit);
+  const categoriesAfter = new Set(truncated.map((f) => f.category));
+  const droppedCategories = [...allCategoriesBefore].filter((c) => !categoriesAfter.has(c));
+
+  const findings: Finding[] = [];
+  const perFileIssues = new Map<string, string[]>();
+  for (const [i, raw] of truncated.entries()) {
+    const id = `AST-ISSUE-${String(i + 1).padStart(4, '0')}`;
+    const full: Finding = { id, ...raw };
+    findings.push(full);
+    if (full.file) {
+      if (!perFileIssues.has(full.file)) perFileIssues.set(full.file, []);
+      perFileIssues.get(full.file)!.push(id);
+    }
+  }
+
+  return { findings, byFile: perFileIssues, totalBeforeTruncation, droppedCategories };
 }
 
 // ─── Mermaid Graph Generation ────────────────────────────────────────────────
@@ -980,6 +1013,16 @@ export function generateSummaryMd(
   lines.push(`| **Total** | **${allFindings.length}** |`);
   lines.push('');
 
+  const totalBefore = (agentOutput as Record<string, unknown>)?.totalBeforeTruncation as number | undefined;
+  const dropped = (agentOutput as Record<string, unknown>)?.droppedCategories as string[] | undefined;
+  if (totalBefore && totalBefore > allFindings.length) {
+    lines.push(`> **Truncated**: Showing ${allFindings.length} of ${totalBefore} findings (\`--findings-limit ${allFindings.length}\`).`);
+    if (dropped && dropped.length > 0) {
+      lines.push(`> Dropped categories: ${dropped.map((c) => `\`${c}\``).join(', ')}`);
+    }
+    lines.push('');
+  }
+
   lines.push('## Architecture Health\n');
   lines.push(`> ${architectureFindings.length} findings — see [\`architecture.json\`](./architecture.json)\n`);
   if (depGraph) {
@@ -1097,6 +1140,21 @@ export function generateSummaryMd(
   }
 
   return lines.join('\n');
+}
+
+// ─── Top Recommendations (category-diverse) ─────────────────────────────────
+
+export function diverseTopRecommendations(findings: Finding[], limit: number = 20, maxPerCategory: number = 2): Finding[] {
+  const result: Finding[] = [];
+  const countByCategory = new Map<string, number>();
+  for (const f of findings) {
+    const catCount = countByCategory.get(f.category) || 0;
+    if (catCount >= maxPerCategory) continue;
+    result.push(f);
+    countByCategory.set(f.category, catCount + 1);
+    if (result.length >= limit) break;
+  }
+  return result;
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -1349,7 +1407,7 @@ async function main(): Promise<void> {
   }
 
   for (const [index, flow] of redundantFlows.slice(0, 100).entries()) {
-    if (flow.occurrences >= CONTROL_KIND_DUP_THRESHOLD) {
+    if (flow.occurrences >= options.flowDupThreshold) {
       duplicateFlowHints.push({
         type: 'repeated-flow',
         message: `Repeated ${flow.kind} control structure`,
@@ -1367,7 +1425,7 @@ async function main(): Promise<void> {
   );
   const dependencySummary = buildDependencySummary(dependencyState, fileCriticalityByPath, options);
 
-  const { findings, byFile } = buildIssueCatalog(
+  const { findings, byFile, totalBeforeTruncation, droppedCategories } = buildIssueCatalog(
     duplicateFunctions,
     redundantFlows,
     fileSummaries,
@@ -1405,10 +1463,12 @@ async function main(): Promise<void> {
     dependencyFindings: findings.filter((item) => item.category?.startsWith('dependency')),
     agentOutput: {
       totalFindings: findings.length,
+      totalBeforeTruncation,
+      droppedCategories,
       highPriority: findings.filter((f) => f.severity === 'high' || f.severity === 'critical').length,
       mediumPriority: findings.filter((f) => f.severity === 'medium').length,
       lowPriority: findings.filter((f) => f.severity === 'low' || f.severity === 'info').length,
-      topRecommendations: findings.slice(0, 20).map((f) => ({
+      topRecommendations: diverseTopRecommendations(findings, 20, options.maxRecsPerCategory).map((f) => ({
         id: f.id,
         file: f.file,
         severity: f.severity,

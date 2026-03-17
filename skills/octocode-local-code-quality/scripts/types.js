@@ -42,8 +42,9 @@ export const DEFAULT_OPTS = {
     cyclomaticDensityThreshold: 0.5,
     anyThreshold: 5,
     magicNumberThreshold: 3,
+    flowDupThreshold: 3,
+    maxRecsPerCategory: 2,
 };
-export const CONTROL_KIND_DUP_THRESHOLD = 3;
 export const ALLOWED_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 export const IMPORT_RESOLVE_EXTS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.d.ts'];
 export const TS_CONTROL_KINDS = new Set([

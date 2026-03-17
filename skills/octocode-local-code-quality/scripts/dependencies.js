@@ -40,10 +40,16 @@ export function collectModuleDependencies(sourceFile, filePath, repoRoot) {
         internal.add(relativeResolved);
         return relativeResolved;
     };
+    const importLine = (node) => {
+        const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+        const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+        return { lineStart: start.line + 1, lineEnd: end.line + 1 };
+    };
     const visit = (node) => {
         if (ts.isImportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
             const sourceModule = node.moduleSpecifier.text;
             const resolvedModule = resolveSpecifier(sourceModule) ?? undefined;
+            const loc = importLine(node);
             const clause = node.importClause;
             if (clause) {
                 if (clause.name) {
@@ -53,6 +59,7 @@ export function collectModuleDependencies(sourceFile, filePath, repoRoot) {
                         importedName: 'default',
                         localName: clause.name.text,
                         isTypeOnly: clause.isTypeOnly,
+                        ...loc,
                     });
                 }
                 if (clause.namedBindings) {
@@ -63,6 +70,7 @@ export function collectModuleDependencies(sourceFile, filePath, repoRoot) {
                             importedName: '*',
                             localName: clause.namedBindings.name.text,
                             isTypeOnly: clause.isTypeOnly,
+                            ...loc,
                         });
                     }
                     else {
@@ -73,6 +81,7 @@ export function collectModuleDependencies(sourceFile, filePath, repoRoot) {
                                 importedName: element.propertyName?.text ?? element.name.text,
                                 localName: element.name.text,
                                 isTypeOnly: clause.isTypeOnly || element.isTypeOnly,
+                                ...loc,
                             });
                         }
                     }
@@ -187,6 +196,7 @@ export function collectModuleDependencies(sourceFile, filePath, repoRoot) {
                 importedName: '*',
                 localName: 'require',
                 isTypeOnly: false,
+                ...importLine(node),
             });
         }
         ts.forEachChild(node, visit);

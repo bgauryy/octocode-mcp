@@ -1,8 +1,31 @@
 import * as ts from 'typescript';
 import { isTestFile } from './utils.js';
-function isLikelyEntrypoint(filePath) {
+function findImportLine(state, fromFile, toFile) {
+    const imports = state.importedSymbolsByFile.get(fromFile);
+    if (imports) {
+        for (const ref of imports) {
+            if (ref.resolvedModule === toFile && ref.lineStart) {
+                return { lineStart: ref.lineStart, lineEnd: ref.lineEnd ?? ref.lineStart };
+            }
+        }
+    }
+    const reexports = state.reExportsByFile.get(fromFile);
+    if (reexports) {
+        for (const ref of reexports) {
+            if (ref.resolvedModule === toFile && ref.lineStart) {
+                return { lineStart: ref.lineStart, lineEnd: ref.lineEnd ?? ref.lineStart };
+            }
+        }
+    }
+    return { lineStart: 1, lineEnd: 1 };
+}
+export function isLikelyEntrypoint(filePath) {
     const normalized = filePath.toLowerCase();
-    return /(^|\/)(index|main|app|server|cli)\.[mc]?[jt]sx?$/.test(normalized);
+    if (/(^|\/)(index|main|app|server|cli|public)\.[mc]?[jt]sx?$/.test(normalized))
+        return true;
+    if (/\.(config)\.[mc]?[jt]sx?$/.test(normalized))
+        return true;
+    return false;
 }
 // ─── 2A: Instability Metric (SDP) ──────────────────────────────────────────
 export function computeInstability(inboundCount, outboundCount) {
@@ -34,12 +57,13 @@ export function detectSdpViolations(dependencyState, minDelta = 0.15) {
             const iTgt = getI(dep);
             const delta = iTgt - iSrc;
             if (delta > minDelta && iSrc < 0.5) {
+                const importRef = findImportLine(dependencyState, file, dep);
                 findings.push({
                     severity: delta > 0.3 ? 'high' : 'medium',
                     category: 'architecture-sdp-violation',
                     file,
-                    lineStart: 1,
-                    lineEnd: 1,
+                    lineStart: importRef.lineStart,
+                    lineEnd: importRef.lineEnd,
                     title: `SDP violation: stable module depends on unstable module`,
                     reason: `"${file}" (I=${iSrc.toFixed(2)}) depends on "${dep}" (I=${iTgt.toFixed(2)}). Delta=${delta.toFixed(2)}.`,
                     files: [file, dep],

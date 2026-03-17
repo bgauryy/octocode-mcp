@@ -56,10 +56,17 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
     return relativeResolved;
   };
 
+  const importLine = (node: ts.Node): { lineStart: number; lineEnd: number } => {
+    const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
+    return { lineStart: start.line + 1, lineEnd: end.line + 1 };
+  };
+
   const visit = (node: ts.Node): void => {
     if (ts.isImportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
       const sourceModule = node.moduleSpecifier.text;
       const resolvedModule = resolveSpecifier(sourceModule) ?? undefined;
+      const loc = importLine(node);
       const clause = node.importClause;
       if (clause) {
         if (clause.name) {
@@ -69,6 +76,7 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
             importedName: 'default',
             localName: clause.name.text,
             isTypeOnly: clause.isTypeOnly,
+            ...loc,
           });
         }
         if (clause.namedBindings) {
@@ -79,6 +87,7 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
               importedName: '*',
               localName: clause.namedBindings.name.text,
               isTypeOnly: clause.isTypeOnly,
+              ...loc,
             });
           } else {
             for (const element of clause.namedBindings.elements) {
@@ -88,6 +97,7 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
                 importedName: element.propertyName?.text ?? element.name.text,
                 localName: element.name.text,
                 isTypeOnly: clause.isTypeOnly || element.isTypeOnly,
+                ...loc,
               });
             }
           }
@@ -212,6 +222,7 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
         importedName: '*',
         localName: 'require',
         isTypeOnly: false,
+        ...importLine(node),
       });
     }
 
