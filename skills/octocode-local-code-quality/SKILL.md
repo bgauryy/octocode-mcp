@@ -40,8 +40,10 @@ All commands start with `node <SKILL_BASE_DIRECTORY>/scripts/index.js`:
 | Cap findings | `--findings-limit 500` |
 | Architecture only | `--features=architecture` |
 | Dead code only | `--features=dead-code` |
+| Everything except dead code | `--exclude=dead-code` |
 | Single category | `--features=cognitive-complexity` |
 | Mix pillars + categories | `--features=dead-code,dependency-cycle` |
+| Exclude specific categories | `--exclude=dead-export,magic-number` |
 | Include tests | `--include-tests` |
 | Architecture graph | `--graph` |
 | Strict complexity | `--critical-complexity-threshold 20 --cognitive-complexity-threshold 10` |
@@ -50,9 +52,13 @@ All commands start with `node <SKILL_BASE_DIRECTORY>/scripts/index.js`:
 | Layer enforcement | `--layer-order ui,service,repository` |
 | Sensitive flow dups | `--flow-dup-threshold 2 --min-flow-statements 4` |
 | Diverse top recs | `--max-recs-per-category 1` |
+| Force full re-parse | `--no-cache` |
+| Clear cache | `--clear-cache` |
 | JSON to stdout | `--json` |
 
 Parser modes: `auto` (default — TS primary + optional tree-sitter), `typescript`, `tree-sitter`.
+
+Caching: Results are cached in `.octocode/scan/.cache/`. Subsequent runs skip unchanged files (~4x faster). Use `--no-cache` to force full re-parse or `--clear-cache` to reset.
 
 ---
 

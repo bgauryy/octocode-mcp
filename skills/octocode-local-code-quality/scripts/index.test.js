@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { DEFAULT_OPTS } from './types.js';
-import { detectDependencyCycles, computeDependencyCriticalPaths, buildIssueCatalog, isLikelyEntrypoint, ARCHITECTURE_CATEGORIES, CODE_QUALITY_CATEGORIES, DEAD_CODE_CATEGORIES, writeMultiFileReport, severityBreakdown, categoryBreakdown, generateSummaryMd, } from './index.js';
+import { computeDependencyCycles, computeDependencyCriticalPaths, buildIssueCatalog, isLikelyEntrypoint, ARCHITECTURE_CATEGORIES, CODE_QUALITY_CATEGORIES, DEAD_CODE_CATEGORIES, writeMultiFileReport, severityBreakdown, categoryBreakdown, generateSummaryMd, diverseTopRecommendations, } from './index.js';
 function emptyState() {
     return {
         files: new Set(),
@@ -92,18 +92,18 @@ describe('isLikelyEntrypoint', () => {
     });
 });
 // ─── detectDependencyCycles ─────────────────────────────────────────────────
-describe('detectDependencyCycles', () => {
+describe('computeDependencyCycles', () => {
     it('returns empty for acyclic graph', () => {
         const state = emptyState();
         addEdge(state, 'a.ts', 'b.ts');
         addEdge(state, 'b.ts', 'c.ts');
-        expect(detectDependencyCycles(state)).toEqual([]);
+        expect(computeDependencyCycles(state)).toEqual([]);
     });
     it('detects simple 2-node cycle', () => {
         const state = emptyState();
         addEdge(state, 'a.ts', 'b.ts');
         addEdge(state, 'b.ts', 'a.ts');
-        const cycles = detectDependencyCycles(state);
+        const cycles = computeDependencyCycles(state);
         expect(cycles.length).toBe(1);
         expect(cycles[0].nodeCount).toBe(2);
     });
@@ -112,7 +112,7 @@ describe('detectDependencyCycles', () => {
         addEdge(state, 'a.ts', 'b.ts');
         addEdge(state, 'b.ts', 'c.ts');
         addEdge(state, 'c.ts', 'a.ts');
-        const cycles = detectDependencyCycles(state);
+        const cycles = computeDependencyCycles(state);
         expect(cycles.length).toBe(1);
         expect(cycles[0].nodeCount).toBe(3);
     });
@@ -122,14 +122,14 @@ describe('detectDependencyCycles', () => {
         addEdge(state, 'b.ts', 'a.ts');
         addEdge(state, 'c.ts', 'd.ts');
         addEdge(state, 'd.ts', 'c.ts');
-        const cycles = detectDependencyCycles(state);
+        const cycles = computeDependencyCycles(state);
         expect(cycles.length).toBe(2);
     });
     it('deduplicates same cycle found from different start', () => {
         const state = emptyState();
         addEdge(state, 'a.ts', 'b.ts');
         addEdge(state, 'b.ts', 'a.ts');
-        const cycles = detectDependencyCycles(state);
+        const cycles = computeDependencyCycles(state);
         expect(cycles.length).toBe(1);
     });
     it('returns cycles sorted by nodeCount descending', () => {
@@ -139,7 +139,7 @@ describe('detectDependencyCycles', () => {
         addEdge(state, 'x.ts', 'y.ts');
         addEdge(state, 'y.ts', 'z.ts');
         addEdge(state, 'z.ts', 'x.ts');
-        const cycles = detectDependencyCycles(state);
+        const cycles = computeDependencyCycles(state);
         expect(cycles[0].nodeCount).toBeGreaterThanOrEqual(cycles[cycles.length - 1].nodeCount);
     });
 });
@@ -434,6 +434,37 @@ describe('buildIssueCatalog', () => {
             expect(byFile.get('src/hot.ts')?.length).toBeGreaterThan(0);
         });
     });
+    describe('features filtering', () => {
+        it('filters findings by features set', () => {
+            const depSummary = minimalDepSummary({
+                cycles: [{ path: ['a.ts', 'b.ts', 'a.ts'], nodeCount: 2 }],
+                testOnlyModules: [{
+                        file: 'src/t.ts', outboundCount: 0, inboundCount: 1,
+                        inboundFromProduction: 0, inboundFromTests: 1,
+                        externalDependencyCount: 0, unresolvedDependencyCount: 0,
+                    }],
+            });
+            const state = emptyState();
+            state.files.add('src/lib.ts');
+            state.declaredExportsByFile.set('src/lib.ts', [
+                { name: 'deadFn', kind: 'value', lineStart: 10, lineEnd: 15 },
+            ]);
+            const files = [makeFile({
+                    functions: [makeFn({ complexity: 40, name: 'complexFn' })],
+                })];
+            const optsAll = { ...testOpts, features: null };
+            const optsArchOnly = { ...testOpts, features: new Set(['dependency-cycle', 'dependency-test-only']) };
+            const { findings: allFindings } = buildIssueCatalog([], [], files, depSummary, state, optsAll);
+            const { findings: filteredFindings } = buildIssueCatalog([], [], files, depSummary, state, optsArchOnly);
+            expect(allFindings.some(f => f.category === 'dependency-cycle')).toBe(true);
+            expect(allFindings.some(f => f.category === 'dependency-test-only')).toBe(true);
+            expect(allFindings.some(f => f.category === 'dead-export')).toBe(true);
+            expect(allFindings.some(f => f.category === 'function-optimization')).toBe(true);
+            expect(filteredFindings.every(f => f.category === 'dependency-cycle' || f.category === 'dependency-test-only')).toBe(true);
+            expect(filteredFindings.some(f => f.category === 'dead-export')).toBe(false);
+            expect(filteredFindings.some(f => f.category === 'function-optimization')).toBe(false);
+        });
+    });
     describe('architecture integration', () => {
         it('includes SDP violation findings from architecture module', () => {
             const state = emptyState();
@@ -539,6 +570,56 @@ describe('categoryBreakdown', () => {
         const result = categoryBreakdown(findings);
         expect(result['dead-export']).toBe(2);
         expect(result['dependency-cycle']).toBe(1);
+    });
+});
+// ─── diverseTopRecommendations ──────────────────────────────────────────────
+describe('diverseTopRecommendations', () => {
+    const makeFinding = (id, severity, category) => ({
+        id,
+        severity: severity,
+        category,
+        file: 'test.ts',
+        lineStart: 1,
+        lineEnd: 1,
+        title: `Test ${id}`,
+        reason: 'test',
+        files: ['test.ts'],
+        suggestedFix: { strategy: 'test', steps: ['step1'] },
+        impact: 'test',
+    });
+    it('limits findings per category', () => {
+        const findings = [
+            makeFinding('1', 'high', 'dead-export'),
+            makeFinding('2', 'high', 'dead-export'),
+            makeFinding('3', 'high', 'dead-export'),
+            makeFinding('4', 'high', 'cognitive-complexity'),
+            makeFinding('5', 'high', 'cognitive-complexity'),
+            makeFinding('6', 'high', 'cognitive-complexity'),
+        ];
+        const result = diverseTopRecommendations(findings, 10, 2);
+        expect(result).toHaveLength(4);
+        expect(result.filter(f => f.category === 'dead-export')).toHaveLength(2);
+        expect(result.filter(f => f.category === 'cognitive-complexity')).toHaveLength(2);
+    });
+    it('respects total limit', () => {
+        const findings = Array.from({ length: 30 }, (_, i) => makeFinding(`${i}`, 'high', `cat-${i % 10}`));
+        const result = diverseTopRecommendations(findings, 5, 2);
+        expect(result).toHaveLength(5);
+    });
+    it('returns empty for empty input', () => {
+        expect(diverseTopRecommendations([], 10, 2)).toHaveLength(0);
+    });
+    it('uses maxPerCategory=1 to force maximum diversity', () => {
+        const findings = [
+            makeFinding('1', 'critical', 'a'),
+            makeFinding('2', 'critical', 'a'),
+            makeFinding('3', 'high', 'b'),
+            makeFinding('4', 'high', 'b'),
+            makeFinding('5', 'medium', 'c'),
+        ];
+        const result = diverseTopRecommendations(findings, 10, 1);
+        expect(result).toHaveLength(3);
+        expect(new Set(result.map(f => f.category)).size).toBe(3);
     });
 });
 // ─── writeMultiFileReport ───────────────────────────────────────────────────
@@ -831,4 +912,57 @@ describe('generateSummaryMd', () => {
             fs.rmSync(realDir, { recursive: true, force: true });
         }
     });
+});
+// ─── end-to-end output validation ───────────────────────────────────────────
+describe('end-to-end output validation', () => {
+    it('produces valid summary.md with all sections', async () => {
+        const { execSync } = await import('node:child_process');
+        const dir = '/tmp/cq-test-' + Date.now();
+        const scriptPath = path.join(process.cwd(), 'scripts', 'index.js');
+        const monorepoRoot = path.join(process.cwd(), '..', '..');
+        try {
+            execSync(`node "${scriptPath}" --root "${monorepoRoot}" --out "${dir}" --no-tree`, { cwd: process.cwd(), encoding: 'utf8', timeout: 30000 });
+            expect(fs.existsSync(`${dir}/summary.md`)).toBe(true);
+            expect(fs.existsSync(`${dir}/summary.json`)).toBe(true);
+            expect(fs.existsSync(`${dir}/architecture.json`)).toBe(true);
+            expect(fs.existsSync(`${dir}/code-quality.json`)).toBe(true);
+            expect(fs.existsSync(`${dir}/dead-code.json`)).toBe(true);
+            expect(fs.existsSync(`${dir}/findings.json`)).toBe(true);
+            expect(fs.existsSync(`${dir}/file-inventory.json`)).toBe(true);
+            const summary = fs.readFileSync(`${dir}/summary.md`, 'utf8');
+            expect(summary).toContain('## Scan Scope');
+            expect(summary).toContain('## Findings Overview');
+            expect(summary).toContain('## Architecture Health');
+            expect(summary).toContain('## Code Quality');
+            expect(summary).toContain('## Dead Code & Hygiene');
+            expect(summary).toContain('## Output Files');
+            expect(summary).toContain('`dependency-cycle`');
+            expect(summary).toContain('`dead-export`');
+            expect(summary).toContain('`cognitive-complexity`');
+            const findingsData = JSON.parse(fs.readFileSync(`${dir}/findings.json`, 'utf8'));
+            expect(findingsData.optimizationFindings).toBeDefined();
+            expect(Array.isArray(findingsData.optimizationFindings)).toBe(true);
+            for (const f of findingsData.optimizationFindings.slice(0, 10)) {
+                expect(f.id).toBeDefined();
+                expect(f.severity).toBeDefined();
+                expect(f.category).toBeDefined();
+                expect(f.file).toBeDefined();
+                expect(f.lineStart).toBeDefined();
+                expect(f.lineEnd).toBeDefined();
+                expect(f.title).toBeDefined();
+                expect(f.reason).toBeDefined();
+                expect(f.suggestedFix).toBeDefined();
+                expect(f.suggestedFix.strategy).toBeDefined();
+                expect(f.suggestedFix.steps).toBeDefined();
+            }
+        }
+        finally {
+            try {
+                execSync(`rm -rf "${dir}"`, { encoding: 'utf8' });
+            }
+            catch {
+                // ignore cleanup errors
+            }
+        }
+    }, 30000);
 });

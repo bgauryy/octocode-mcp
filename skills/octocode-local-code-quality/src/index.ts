@@ -20,12 +20,22 @@ import type {
 } from './types.js';
 import { SEVERITY_ORDER, PILLAR_CATEGORIES } from './types.js';
 import { parseArgs } from './cli.js';
-import { canonicalScriptKind, isTestFile, renderTreesText } from './utils.js';
+import { canonicalScriptKind, increment, isTestFile, renderTreesText } from './utils.js';
+import {
+  loadCache,
+  saveCache,
+  clearCache,
+  createEmptyCache,
+  isCacheHit,
+  getCachedResult,
+  setCacheEntry,
+} from './cache.js';
 import { collectDependencyProfile, dependencyProfileToRecord } from './dependencies.js';
 import { collectFiles, safeRead, listWorkspacePackages, fileSummaryWithFindings } from './discovery.js';
 import { analyzeSourceFile, buildDependencyCriticality } from './ts-analyzer.js';
 import { analyzeTreeSitterFile, resolveTreeSitter } from './tree-sitter-analyzer.js';
 import {
+  buildConsumedFromModule,
   detectSdpViolations,
   detectHighCoupling,
   detectGodModuleCoupling,
@@ -49,6 +59,15 @@ import {
   detectMagicNumbers,
   detectHighHalsteadEffort,
   detectLowMaintainability,
+  detectDuplicateFunctionBodies,
+  detectDuplicateFlowStructures,
+  detectFunctionOptimization,
+  detectTestOnlyModules,
+  detectDependencyCycles,
+  detectCriticalPaths,
+  detectDeadFiles,
+  detectDeadExports,
+  detectDeadReExports,
 } from './architecture.js';
 
 // ─── Output Category Groups (single source of truth: PILLAR_CATEGORIES) ─────
@@ -108,7 +127,7 @@ function buildDependencySummary(dependencyState: DependencyState, fileCriticalit
       riskBand: (node.score || 0) >= 60 ? 'high' : (node.score || 0) >= 30 ? 'medium' : 'low',
     }));
 
-  const cycles = detectDependencyCycles(dependencyState);
+  const cycles = computeDependencyCycles(dependencyState);
   const criticalPaths = computeDependencyCriticalPaths(dependencyState, fileCriticalityByPath, options);
 
   return {
@@ -130,7 +149,7 @@ function buildDependencySummary(dependencyState: DependencyState, fileCriticalit
   };
 }
 
-export function detectDependencyCycles(dependencyState: DependencyState): Cycle[] {
+export function computeDependencyCycles(dependencyState: DependencyState): Cycle[] {
   const cycles: Cycle[] = [];
   const visited = new Set<string>();
   const visiting = new Set<string>();
@@ -258,39 +277,7 @@ export function computeDependencyCriticalPaths(dependencyState: DependencyState,
 
 // ─── Issue Catalog ───────────────────────────────────────────────────────────
 
-function makeIssue(location: object, props: object): Omit<Finding, 'id'> {
-  return {
-    ...location,
-    ...props,
-  } as Omit<Finding, 'id'>;
-}
-
-export function isLikelyEntrypoint(filePath: string): boolean {
-  const normalized = filePath.toLowerCase();
-  if (/(^|\/)(index|main|app|server|cli|public)\.[mc]?[jt]sx?$/.test(normalized)) return true;
-  if (/\.(config)\.[mc]?[jt]sx?$/.test(normalized)) return true;
-  return false;
-}
-
-function findImportLineForEdge(state: DependencyState, fromFile: string, toFile: string): { lineStart: number; lineEnd: number } {
-  const imports = state.importedSymbolsByFile.get(fromFile);
-  if (imports) {
-    for (const ref of imports) {
-      if (ref.resolvedModule === toFile && ref.lineStart) {
-        return { lineStart: ref.lineStart, lineEnd: ref.lineEnd ?? ref.lineStart };
-      }
-    }
-  }
-  const reexports = state.reExportsByFile.get(fromFile);
-  if (reexports) {
-    for (const ref of reexports) {
-      if (ref.resolvedModule === toFile && ref.lineStart) {
-        return { lineStart: ref.lineStart, lineEnd: ref.lineEnd ?? ref.lineStart };
-      }
-    }
-  }
-  return { lineStart: 1, lineEnd: 1 };
-}
+export { isLikelyEntrypoint } from './architecture.js';
 
 export function buildIssueCatalog(
   duplicates: DuplicateGroup[],
@@ -309,323 +296,19 @@ export function buildIssueCatalog(
     rawFindings.push(finding);
   };
 
-  for (const group of duplicates) {
-    const sample = group.locations[0];
-    const reason = `Same ${group.kind} body shape appears in ${group.occurrences} places (` +
-      `${group.filesCount} file${group.filesCount > 1 ? 's' : ''}).`;
-    const severity: Finding['severity'] = group.occurrences >= 6 ? 'high' : group.occurrences >= 3 ? 'medium' : 'low';
-    addFinding(makeIssue(sample, {
-      severity,
-      category: 'duplicate-function-body',
-      title: `Deduplicate function body: ${group.signature}`,
-      reason,
-      files: group.locations.map((loc) => `${loc.file}:${loc.lineStart}-${loc.lineEnd}`),
-      suggestedFix: {
-        strategy: 'Create a shared helper function once and replace duplicate call sites.',
-        steps: [
-          'Extract one function to a dedicated utility module.',
-          'Keep behavior unchanged by passing function-specific differences as params.',
-          'Replace duplicated blocks with calls to the shared helper.',
-          'Add/extend tests around each entry point that previously used duplicates.',
-        ],
-      },
-      impact: `Lower maintenance cost and reduce regression risk when behavior changes.`,
-    }));
-  }
+  // Build consumed-from-module map (needed by dead-code detectors)
+  const consumedFromModule = buildConsumedFromModule(dependencyState);
 
-  for (const group of controlDuplicates) {
-    if (group.occurrences < options.flowDupThreshold) continue;
-
-    const sample = group.locations[0];
-    const reason = `${group.kind} structure appears ${group.occurrences} times across ${group.filesCount} file(s).`;
-    const severity: Finding['severity'] = group.occurrences >= 10 ? 'high' : 'medium';
-    addFinding(makeIssue(sample, {
-      severity,
-      category: 'duplicate-flow-structure',
-      title: `Extract repeated flow structure: ${group.kind}`,
-      reason,
-      files: group.locations.map((loc) => `${loc.file}:${loc.lineStart}-${loc.lineEnd}`),
-      suggestedFix: {
-        strategy: 'Extract a reusable flow helper around the repeated structure.',
-        steps: [
-          'Create one clear helper that accepts varying inputs as parameters.',
-          'Call helper from each repeated site.',
-          'Keep variable names aligned and add local adapter logic where needed.',
-          'Document expected invariants for the shared flow.',
-        ],
-      },
-      impact: `Reduces duplicate control branches and normalizes edge-case handling.`,
-    }));
-  }
-
-  for (const fileEntry of fileSummaries) {
-    for (const fn of fileEntry.functions) {
-      const alerts: string[] = [];
-      if (fn.complexity >= options.criticalComplexityThreshold) alerts.push(`Cyclomatic-like complexity is high (>=${options.criticalComplexityThreshold}).`);
-      if (fn.maxBranchDepth >= 7) alerts.push('Branch depth is very deep and hard to reason about.');
-      if (fn.maxLoopDepth >= 4) alerts.push('Nested loops are high and likely expensive.');
-      if (fn.statementCount >= 24) alerts.push('Function body is large and may be doing multiple responsibilities.');
-
-      if (alerts.length === 0) continue;
-
-      const isHigh = fn.complexity >= options.criticalComplexityThreshold || fn.maxBranchDepth >= 7 || fn.maxLoopDepth >= 4;
-      addFinding(makeIssue(fn, {
-        severity: isHigh ? 'high' : 'medium',
-        category: 'function-optimization',
-        title: `Potential function refactor: ${fn.name}`,
-        reason: alerts.join(' '),
-        files: [`${fn.file}:${fn.lineStart}-${fn.lineEnd}`],
-        suggestedFix: {
-          strategy: 'Refactor for readability and testability.',
-          steps: [
-            'Split into smaller subroutines with single responsibilities.',
-            'Convert deeply nested branches into guard clauses when safe.',
-            'Replace loops with intent-specific helpers if one loop owns most lines.',
-            'Add unit coverage for each extracted piece before deleting old logic.',
-          ],
-        },
-        impact: 'Cleaner flow, easier review and safer refactors.',
-      }));
-    }
-  }
-
-  if (dependencySummary.testOnlyModules?.length > 0) {
-    for (const file of dependencySummary.testOnlyModules.slice(0, 25)) {
-      addFinding({
-        severity: 'medium',
-        category: 'dependency-test-only',
-        file: file.file,
-        lineStart: file.lineStart || 1,
-        lineEnd: file.lineEnd || 1,
-        title: `Module imported only from tests: ${file.file}`,
-        reason: 'No production file imports this module, but tests do. Verify if this module belongs in test fixtures/helpers.',
-        files: [file.file],
-        suggestedFix: {
-          strategy: 'Move test-only utilities to test scope or make production usage explicit.',
-          steps: [
-            'Re-run import scanning after moving test-only modules to __tests__ or helper folders.',
-            'If this is shared production utility, add a non-test entrypoint/import.',
-            'Remove dead or stale production references and delete unused module if confirmed.',
-          ],
-        },
-        impact: 'Reduces shipping of non-production-only modules and clarifies ownership boundaries.',
-      });
-    }
-  }
-
-  if (dependencySummary.cycles?.length > 0) {
-    for (const cycle of dependencySummary.cycles.slice(0, 15)) {
-      const cycleLine = findImportLineForEdge(dependencyState, cycle.path[0], cycle.path[1]);
-      addFinding({
-        severity: 'high',
-        category: 'dependency-cycle',
-        file: cycle.path[0],
-        lineStart: cycleLine.lineStart,
-        lineEnd: cycleLine.lineEnd,
-        title: `Dependency cycle detected (${cycle.nodeCount} node cycle)`,
-        reason: `Import cycle exists across: ${cycle.path.join(' -> ')}`,
-        files: cycle.path,
-        suggestedFix: {
-          strategy: 'Break the cycle with a lower-level abstraction or interface module.',
-          steps: [
-            'Extract shared contracts/types to a dedicated contract/shared package.',
-            'Move implementation in one direction using dependency inversion.',
-            'Split stateful modules into protocol and runtime layers.',
-          ],
-        },
-        impact: 'Cycles increase coupling and make incremental loading/debugging and refactors riskier.',
-      });
-    }
-  }
-
-  if (dependencySummary.criticalPaths?.length > 0) {
-    for (const pathEntry of dependencySummary.criticalPaths.slice(0, 10)) {
-      if (pathEntry.score < (options.criticalComplexityThreshold * 3)) continue;
-      const chainLine = findImportLineForEdge(dependencyState, pathEntry.path[0], pathEntry.path[1]);
-      addFinding({
-        severity: pathEntry.score >= options.criticalComplexityThreshold * 6 ? 'critical' : 'high',
-        category: 'dependency-critical-path',
-        file: pathEntry.path[0],
-        lineStart: chainLine.lineStart,
-        lineEnd: chainLine.lineEnd,
-        title: `Critical dependency chain risk: ${pathEntry.length} files`,
-        reason: `Potentially high-change surface: ${pathEntry.path.join(' -> ')} (${pathEntry.score} weight).`,
-        files: pathEntry.path,
-        suggestedFix: {
-          strategy: 'Reduce chain length and isolate high-complexity hotspots.',
-          steps: [
-            'Split module responsibilities so high-impact file is not transitively coupled to many modules.',
-            'Add explicit interfaces for deep dependency boundaries.',
-            'Cache or memoize heavy intermediate computation in chain nodes where possible.',
-          ],
-        },
-        impact: 'Critical refactor opportunities; shorter chains reduce blast radius of change.',
-      });
-    }
-  }
-
-  const consumedFromModule = new Map<string, Set<string>>();
-  for (const [file, imports] of dependencyState.importedSymbolsByFile.entries()) {
-    if (isTestFile(file)) continue;
-    for (const symbol of imports) {
-      const target = symbol.resolvedModule;
-      if (!target) continue;
-      if (!consumedFromModule.has(target)) consumedFromModule.set(target, new Set());
-      consumedFromModule.get(target)!.add(symbol.importedName);
-    }
-  }
-
-  for (const [file, reexports] of dependencyState.reExportsByFile.entries()) {
-    if (isTestFile(file)) continue;
-    for (const reexport of reexports) {
-      const target = reexport.resolvedModule;
-      if (!target) continue;
-      if (!consumedFromModule.has(target)) consumedFromModule.set(target, new Set());
-      consumedFromModule.get(target)!.add(reexport.importedName);
-    }
-  }
-
-  for (const file of dependencySummary.roots || []) {
-    if (isTestFile(file)) continue;
-    if (isLikelyEntrypoint(file)) continue;
-    const incomingCount = (dependencyState.incoming.get(file) || new Set()).size;
-    const outgoingCount = (dependencyState.outgoing.get(file) || new Set()).size;
-    if (incomingCount !== 0) continue;
-    if (outgoingCount > 0) continue;
-    addFinding({
-      severity: 'medium',
-      category: 'dead-file',
-      file,
-      lineStart: 1,
-      lineEnd: 1,
-      title: `Potential dead file: ${file}`,
-      reason: 'File has no inbound imports and no outbound dependencies. It may be stale or orphaned.',
-      files: [file],
-      suggestedFix: {
-        strategy: 'Validate ownership and remove if truly unused.',
-        steps: [
-          'Confirm the file is not an explicit runtime entrypoint.',
-          'Search runtime config/router/bootstrap references for this file path.',
-          'Delete file if confirmed dead and re-run scan.',
-        ],
-      },
-      impact: 'Reduces dead surface area and maintenance overhead.',
-    });
-  }
-
-  for (const [file, exportsList] of dependencyState.declaredExportsByFile.entries()) {
-    if (isTestFile(file)) continue;
-    if (isLikelyEntrypoint(file)) continue;
-    const consumed = consumedFromModule.get(file) || new Set<string>();
-    const hasNamespaceUse = consumed.has('*');
-    for (const exported of exportsList) {
-      if (exported.name === 'default' && isLikelyEntrypoint(file)) continue;
-      if (hasNamespaceUse || consumed.has(exported.name)) continue;
-      addFinding({
-        severity: exported.kind === 'type' ? 'medium' : 'high',
-        category: 'dead-export',
-        file,
-        lineStart: exported.lineStart || 1,
-        lineEnd: exported.lineEnd || exported.lineStart || 1,
-        title: `Unused export: ${exported.name}`,
-        reason: `Exported symbol "${exported.name}" has no observed import or re-export usage in production files.`,
-        files: [`${file}:${exported.lineStart || 1}-${exported.lineEnd || exported.lineStart || 1}`],
-        suggestedFix: {
-          strategy: 'Remove or internalize unused exports.',
-          steps: [
-            'Confirm symbol is not part of intentional public API surface.',
-            'Remove export modifier or delete symbol if truly unused.',
-            'Re-run scan and tests to ensure no hidden runtime usage.',
-          ],
-        },
-        impact: 'Shrinks public API surface and reduces accidental coupling.',
-      });
-    }
-  }
-
-  for (const [barrelFile, reexports] of dependencyState.reExportsByFile.entries()) {
-    if (isTestFile(barrelFile)) continue;
-    const consumed = consumedFromModule.get(barrelFile) || new Set<string>();
-    const hasNamespaceUse = consumed.has('*');
-    const sourceByExportedAs = new Map<string, Set<string>>();
-    const localExportNames = new Set((dependencyState.declaredExportsByFile.get(barrelFile) || []).map((entry) => entry.name));
-
-    for (const ref of reexports) {
-      const exportedAs = ref.exportedAs;
-      if (!sourceByExportedAs.has(exportedAs)) sourceByExportedAs.set(exportedAs, new Set());
-      sourceByExportedAs.get(exportedAs)!.add(ref.resolvedModule || ref.sourceModule);
-
-      const isUsed = hasNamespaceUse || consumed.has(exportedAs) || (ref.isStar && consumed.size > 0);
-      if (!isUsed) {
-        addFinding({
-          severity: 'medium',
-          category: 'dead-re-export',
-          file: barrelFile,
-          lineStart: ref.lineStart || 1,
-          lineEnd: ref.lineEnd || ref.lineStart || 1,
-          title: `Unused re-export: ${exportedAs}`,
-          reason: `Re-exported symbol "${exportedAs}" from ${ref.sourceModule} has no observed downstream imports from this module.`,
-          files: [`${barrelFile}:${ref.lineStart || 1}-${ref.lineEnd || ref.lineStart || 1}`],
-          suggestedFix: {
-            strategy: 'Remove stale barrel re-exports.',
-            steps: [
-              'Verify no dynamic import/runtime reflection depends on this export.',
-              'Remove the re-export clause.',
-              'Re-run scan to confirm barrel surface is still complete.',
-            ],
-          },
-          impact: 'Keeps barrel modules focused and easier to reason about.',
-        });
-      }
-    }
-
-    for (const [name, sources] of sourceByExportedAs.entries()) {
-      if (sources.size > 1) {
-        addFinding({
-          severity: 'medium',
-          category: 're-export-duplication',
-          file: barrelFile,
-          lineStart: 1,
-          lineEnd: 1,
-          title: `Duplicate re-export paths: ${name}`,
-          reason: `Symbol "${name}" is re-exported from multiple sources in the same barrel.`,
-          files: [barrelFile],
-          suggestedFix: {
-            strategy: 'Keep one canonical re-export source per symbol.',
-            steps: [
-              'Select a canonical module for the symbol.',
-              'Remove duplicate re-export paths.',
-              'Document intended public export map for the barrel.',
-            ],
-          },
-          impact: 'Reduces API ambiguity and import inconsistency.',
-        });
-      }
-      if (name !== '*' && localExportNames.has(name)) {
-        addFinding({
-          severity: 'high',
-          category: 're-export-shadowed',
-          file: barrelFile,
-          lineStart: 1,
-          lineEnd: 1,
-          title: `Shadowed export in barrel: ${name}`,
-          reason: `Barrel exports "${name}" both locally and through re-export, which can hide origin and create ambiguity.`,
-          files: [barrelFile],
-          suggestedFix: {
-            strategy: 'Disambiguate local vs re-exported symbol ownership.',
-            steps: [
-              'Pick a single source of truth for the symbol in this barrel.',
-              'Rename or remove the conflicting export path.',
-              'Update import call-sites to use the canonical export.',
-            ],
-          },
-          impact: 'Prevents subtle API conflicts and shadowing confusion.',
-        });
-      }
-    }
-  }
-
-  // ─── Phase 2: Architecture Metrics ──────────────────────────────────────
+  // All detectors - uniform pattern
+  for (const f of detectDuplicateFunctionBodies(duplicates)) addFinding(f);
+  for (const f of detectDuplicateFlowStructures(controlDuplicates, options.flowDupThreshold)) addFinding(f);
+  for (const f of detectFunctionOptimization(fileSummaries, options.criticalComplexityThreshold)) addFinding(f);
+  for (const f of detectTestOnlyModules(dependencySummary)) addFinding(f);
+  for (const f of detectDependencyCycles(dependencySummary, dependencyState)) addFinding(f);
+  for (const f of detectCriticalPaths(dependencySummary, dependencyState, options.criticalComplexityThreshold)) addFinding(f);
+  for (const f of detectDeadFiles(dependencySummary, dependencyState)) addFinding(f);
+  for (const f of detectDeadExports(dependencyState, consumedFromModule)) addFinding(f);
+  for (const f of detectDeadReExports(dependencyState, consumedFromModule)) addFinding(f);
   for (const f of detectSdpViolations(dependencyState)) addFinding(f);
   for (const f of detectHighCoupling(dependencyState, options.couplingThreshold)) addFinding(f);
   for (const f of detectGodModuleCoupling(dependencyState, options.fanInThreshold, options.fanOutThreshold)) addFinding(f);
@@ -1152,6 +835,13 @@ export function diverseTopRecommendations(findings: Finding[], limit: number = 2
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+
+  if (options.clearCache) {
+    clearCache(options.root);
+    console.error('Cache cleared.');
+    return;
+  }
+
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const isLegacyMode = options.out?.endsWith('.json');
   const outputDir = isLegacyMode ? null : (options.out || path.join(options.root, '.octocode', 'scan', timestamp));
@@ -1195,6 +885,10 @@ async function main(): Promise<void> {
   const controlMap = new Map<string, ControlMapEntry[]>();
   const trees: TreeEntry[] = [];
   const fileSummaries: FileEntry[] = [];
+
+  const cache = options.noCache ? null : loadCache(options.root);
+  const newCache = createEmptyCache(options.root);
+  let cacheHits = 0;
   const parseErrors: { file: string; message: string }[] = [];
   const dependencyState: DependencyState = {
     files: new Set(),
@@ -1266,14 +960,60 @@ async function main(): Promise<void> {
         const dependencyProfile = collectDependencyProfile(source, filePath, pkg.name, options, dependencyState);
         if (!analysisFileSet.has(filePath)) continue;
 
+        const relPath = path.relative(options.root, filePath);
+        const stat = fs.statSync(filePath);
+        const statKey = { mtimeMs: stat.mtimeMs, size: stat.size };
+
+        type CachedResult = {
+          fileEntry: FileEntry;
+          flowMapEntries: [string, FlowMapEntry[]][];
+          controlMapEntries: [string, ControlMapEntry[]][];
+          treeEntry?: TreeEntry;
+        };
+
+        if (cache && isCacheHit(cache, relPath, statKey)) {
+          const raw = getCachedResult(cache, relPath) as CachedResult | undefined;
+          if (raw?.fileEntry) {
+            for (const [key, entries] of raw.flowMapEntries ?? []) {
+              for (const entry of entries) increment(flowMap, key, entry);
+            }
+            for (const [key, entries] of raw.controlMapEntries ?? []) {
+              for (const entry of entries) increment(controlMap, key, entry);
+            }
+            const fileSummary: FileEntry = { ...raw.fileEntry, dependencyProfile };
+            packageStats.fileCount += 1;
+            packageStats.nodeCount += fileSummary.nodeCount;
+            packageStats.functionCount += fileSummary.functions.length;
+            packageStats.flowCount += fileSummary.flows.length;
+            for (const [k, count] of Object.entries(fileSummary.kindCounts)) {
+              packageStats.kindCounts[k] = (packageStats.kindCounts[k] || 0) + count;
+            }
+            for (const fn of fileSummary.functions) packageStats.functions.push(fn);
+            if (raw.treeEntry) trees.push(raw.treeEntry);
+
+            summary.totalFiles += 1;
+            summary.totalNodes += fileSummary.nodeCount;
+            summary.totalFunctions += fileSummary.functions.length;
+            summary.totalFlows += fileSummary.flows.length;
+            fileSummaries.push(fileSummary);
+
+            setCacheEntry(newCache, relPath, statKey, raw);
+            cacheHits++;
+            continue;
+          }
+        }
+
+        const fileFlowMap = new Map<string, FlowMapEntry[]>();
+        const fileControlMap = new Map<string, ControlMapEntry[]>();
+
         const treeSitterPrimary = useTreeSitter && options.parser === 'tree-sitter';
 
         let fileSummary: FileEntry;
 
         if (treeSitterPrimary) {
-          const treeSitterEntry = analyzeTreeSitterFile(filePath, text, options, pkg.name, { flowMap, controlMap });
+          const treeSitterEntry = analyzeTreeSitterFile(filePath, text, options, pkg.name, { flowMap: fileFlowMap, controlMap: fileControlMap });
           if (!treeSitterEntry) {
-            const fallback = analyzeSourceFile(source, pkg.name, packageStats, options, { flowMap, controlMap }, trees, dependencyProfile);
+            const fallback = analyzeSourceFile(source, pkg.name, packageStats, options, { flowMap: fileFlowMap, controlMap: fileControlMap }, trees, dependencyProfile);
             fallback.parserFallback = 'typescript (tree-sitter failed)';
             fileSummary = fallback;
           } else {
@@ -1305,7 +1045,7 @@ async function main(): Promise<void> {
             pkg.name,
             packageStats,
             options,
-            { flowMap, controlMap },
+            { flowMap: fileFlowMap, controlMap: fileControlMap },
             trees,
             dependencyProfile,
           );
@@ -1321,6 +1061,22 @@ async function main(): Promise<void> {
             }
           }
         }
+
+        for (const [key, entries] of fileFlowMap) {
+          for (const entry of entries) increment(flowMap, key, entry);
+        }
+        for (const [key, entries] of fileControlMap) {
+          for (const entry of entries) increment(controlMap, key, entry);
+        }
+
+        const treeEntry = options.emitTree ? trees.find((t) => t.file === relPath) : undefined;
+        const toCache: CachedResult = {
+          fileEntry: fileSummary,
+          flowMapEntries: [...fileFlowMap.entries()],
+          controlMapEntries: [...fileControlMap.entries()],
+          ...(treeEntry && { treeEntry }),
+        };
+        setCacheEntry(newCache, relPath, statKey, toCache);
 
         summary.totalFiles += 1;
         summary.totalNodes += fileSummary.nodeCount;
@@ -1345,6 +1101,13 @@ async function main(): Promise<void> {
         .slice(0, 8),
       rootPath: pkg.folder,
     };
+  }
+
+  if (!options.noCache) {
+    saveCache(options.root, newCache);
+  }
+  if (cacheHits > 0 && !options.json) {
+    console.error(`Cache: ${cacheHits} hits, ${fileSummaries.length - cacheHits} misses`);
   }
 
   summary.totalDependencyFiles = dependencyState.files.size;

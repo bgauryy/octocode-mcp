@@ -45,6 +45,8 @@ export const DEFAULT_OPTS = {
     flowDupThreshold: 3,
     maxRecsPerCategory: 2,
     features: null,
+    noCache: false,
+    clearCache: false,
 };
 export const PILLAR_CATEGORIES = {
     architecture: [

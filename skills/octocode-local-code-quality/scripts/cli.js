@@ -2,6 +2,7 @@ import path from 'node:path';
 import { DEFAULT_OPTS, PILLAR_CATEGORIES, ALL_CATEGORIES } from './types.js';
 export function parseArgs(argv) {
     const opts = { ...DEFAULT_OPTS };
+    let excludeSet = null;
     for (let i = 0; i < argv.length; i++) {
         const arg = argv[i];
         if (arg === '--json') {
@@ -157,6 +158,33 @@ export function parseArgs(argv) {
             opts.features = resolved;
             continue;
         }
+        if (arg === '--exclude' || arg.startsWith('--exclude=')) {
+            const val = arg.startsWith('--exclude=') ? arg.slice('--exclude='.length) : argv[++i];
+            const tokens = val.split(',').map((s) => s.trim()).filter(Boolean);
+            excludeSet = new Set();
+            for (const token of tokens) {
+                if (PILLAR_CATEGORIES[token]) {
+                    for (const cat of PILLAR_CATEGORIES[token])
+                        excludeSet.add(cat);
+                }
+                else if (ALL_CATEGORIES.has(token)) {
+                    excludeSet.add(token);
+                }
+                else {
+                    console.error(`Unknown exclude: "${token}". Use pillar names (${Object.keys(PILLAR_CATEGORIES).join(', ')}) or category names.`);
+                    process.exit(1);
+                }
+            }
+            continue;
+        }
+        if (arg === '--no-cache') {
+            opts.noCache = true;
+            continue;
+        }
+        if (arg === '--clear-cache') {
+            opts.clearCache = true;
+            continue;
+        }
         if (arg === '--help' || arg === '-h') {
             printHelp();
             process.exit(0);
@@ -209,6 +237,13 @@ export function parseArgs(argv) {
         opts.flowDupThreshold = DEFAULT_OPTS.flowDupThreshold;
     if (Number.isNaN(opts.maxRecsPerCategory))
         opts.maxRecsPerCategory = DEFAULT_OPTS.maxRecsPerCategory;
+    if (opts.features !== null && excludeSet !== null) {
+        console.error('--features and --exclude are mutually exclusive. Use one or the other.');
+        process.exit(1);
+    }
+    if (excludeSet !== null) {
+        opts.features = new Set([...ALL_CATEGORIES].filter((c) => !excludeSet.has(c)));
+    }
     return opts;
 }
 export function printHelp() {
@@ -259,6 +294,12 @@ Options:
                                 Examples: --features=architecture
                                           --features=dead-code,cognitive-complexity
                                           --features=dependency-cycle,dead-export
+  --exclude=X,Y,Z               Run everything EXCEPT the given pillars or categories. Mutually
+                                exclusive with --features. Same pillar/category names as --features.
+                                Examples: --exclude=architecture
+                                          --exclude=dead-export,magic-number
+  --no-cache                    Disable incremental cache; re-parse all files
+  --clear-cache                 Delete the analysis cache and exit (no scan)
   --help                        Show this message
 `);
 }

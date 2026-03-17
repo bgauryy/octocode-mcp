@@ -42,6 +42,8 @@ export interface AnalysisOptions {
   flowDupThreshold: number;
   maxRecsPerCategory: number;
   features: Set<string> | null;
+  noCache: boolean;
+  clearCache: boolean;
 }
 
 export interface Location {
@@ -444,6 +446,8 @@ export const DEFAULT_OPTS: AnalysisOptions = {
   flowDupThreshold: 3,
   maxRecsPerCategory: 2,
   features: null,
+  noCache: false,
+  clearCache: false,
 };
 
 export const PILLAR_CATEGORIES: Record<string, string[]> = {
