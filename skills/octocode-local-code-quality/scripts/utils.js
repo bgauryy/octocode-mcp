@@ -135,6 +135,24 @@ export function buildTreeSitterTree(node, _sourceFileText, depth, maxNodes, seen
     }
     return base;
 }
+export function renderNodeText(node, indent = 0) {
+    const pad = '  '.repeat(indent);
+    const span = node.startLine === node.endLine ? `${node.startLine}` : `${node.startLine}:${node.endLine}`;
+    const trunc = node.truncated ? ' ...' : '';
+    let line = `${pad}${node.kind}[${span}]${trunc}\n`;
+    for (const child of node.children) {
+        line += renderNodeText(child, indent + 1);
+    }
+    return line;
+}
+export function renderTreesText(entries, generatedAt) {
+    const lines = [`# AST Trees — ${generatedAt}`, ''];
+    for (const entry of entries) {
+        lines.push(`## ${entry.package} — ${entry.file}`);
+        lines.push(renderNodeText(entry.tree));
+    }
+    return lines.join('\n');
+}
 export function isTestFile(filePath) {
     return (/(?:^|[\\/])(?:__tests__|__test__|tests)(?:[\\/]|$)/.test(filePath) ||
         /(?:\.test|_test|\.spec)\.(?:ts|tsx|js|jsx|mjs|cjs)$/.test(filePath));

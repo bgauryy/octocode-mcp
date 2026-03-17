@@ -9,7 +9,7 @@ describe('parseArgs', () => {
         expect(opts.emitTree).toBe(true);
         expect(opts.graph).toBe(false);
         expect(opts.parser).toBe('auto');
-        expect(opts.findingsLimit).toBe(250);
+        expect(opts.findingsLimit).toBe(Infinity);
         expect(opts.minFunctionStatements).toBe(6);
         expect(opts.minFlowStatements).toBe(6);
         expect(opts.criticalComplexityThreshold).toBe(30);
@@ -90,6 +90,49 @@ describe('parseArgs', () => {
     it('trims whitespace in --layer-order values', () => {
         const opts = parseArgs(['--layer-order', ' ui , service , repo ']);
         expect(opts.layerOrder).toEqual(['ui', 'service', 'repo']);
+    });
+    // --features parsing
+    it('parses --features with pillar name', () => {
+        const opts = parseArgs(['--features=architecture']);
+        expect(opts.features).toBeInstanceOf(Set);
+        expect(opts.features.has('dependency-cycle')).toBe(true);
+        expect(opts.features.has('dead-export')).toBe(false);
+    });
+    it('parses --features with individual category', () => {
+        const opts = parseArgs(['--features=cognitive-complexity']);
+        expect(opts.features).toBeInstanceOf(Set);
+        expect(opts.features.size).toBe(1);
+        expect(opts.features.has('cognitive-complexity')).toBe(true);
+    });
+    it('parses --features with mixed pillar and category', () => {
+        const opts = parseArgs(['--features=architecture,empty-catch']);
+        expect(opts.features).toBeInstanceOf(Set);
+        expect(opts.features.has('dependency-cycle')).toBe(true);
+        expect(opts.features.has('empty-catch')).toBe(true);
+        expect(opts.features.has('dead-export')).toBe(false);
+    });
+    it('parses --features with space separator', () => {
+        const opts = parseArgs(['--features', 'dead-code']);
+        expect(opts.features).toBeInstanceOf(Set);
+        expect(opts.features.has('dead-export')).toBe(true);
+    });
+    it('defaults features to null (all enabled)', () => {
+        const opts = parseArgs([]);
+        expect(opts.features).toBeNull();
+    });
+    // --exclude parsing
+    it('parses --exclude with pillar name', () => {
+        const opts = parseArgs(['--exclude=architecture']);
+        expect(opts.features).toBeInstanceOf(Set);
+        expect(opts.features.has('dependency-cycle')).toBe(false);
+        expect(opts.features.has('dead-export')).toBe(true);
+        expect(opts.features.has('cognitive-complexity')).toBe(true);
+    });
+    it('parses --exclude with individual category', () => {
+        const opts = parseArgs(['--exclude=dead-export']);
+        expect(opts.features).toBeInstanceOf(Set);
+        expect(opts.features.has('dead-export')).toBe(false);
+        expect(opts.features.has('dead-re-export')).toBe(true);
     });
     it('falls back to defaults for NaN numeric args', () => {
         const opts = parseArgs([

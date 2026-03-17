@@ -94,6 +94,77 @@ export function collectMetrics(rootNode) {
     visit(rootNode, 0, 0);
     return metrics;
 }
+const HALSTEAD_OPERATOR_KINDS = new Set([
+    ts.SyntaxKind.PlusToken, ts.SyntaxKind.MinusToken, ts.SyntaxKind.AsteriskToken,
+    ts.SyntaxKind.SlashToken, ts.SyntaxKind.PercentToken, ts.SyntaxKind.AsteriskAsteriskToken,
+    ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken,
+    ts.SyntaxKind.EqualsToken, ts.SyntaxKind.PlusEqualsToken, ts.SyntaxKind.MinusEqualsToken,
+    ts.SyntaxKind.AsteriskEqualsToken, ts.SyntaxKind.SlashEqualsToken,
+    ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.EqualsEqualsEqualsToken,
+    ts.SyntaxKind.ExclamationEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken,
+    ts.SyntaxKind.LessThanToken, ts.SyntaxKind.GreaterThanToken,
+    ts.SyntaxKind.LessThanEqualsToken, ts.SyntaxKind.GreaterThanEqualsToken,
+    ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken,
+    ts.SyntaxKind.ExclamationToken, ts.SyntaxKind.QuestionQuestionToken,
+    ts.SyntaxKind.IfKeyword, ts.SyntaxKind.ElseKeyword,
+    ts.SyntaxKind.ForKeyword, ts.SyntaxKind.WhileKeyword, ts.SyntaxKind.DoKeyword,
+    ts.SyntaxKind.SwitchKeyword, ts.SyntaxKind.CaseKeyword,
+    ts.SyntaxKind.ReturnKeyword, ts.SyntaxKind.ThrowKeyword,
+    ts.SyntaxKind.NewKeyword, ts.SyntaxKind.DeleteKeyword, ts.SyntaxKind.TypeOfKeyword,
+    ts.SyntaxKind.AwaitKeyword, ts.SyntaxKind.YieldKeyword,
+    ts.SyntaxKind.DotToken, ts.SyntaxKind.OpenParenToken, ts.SyntaxKind.OpenBracketToken,
+    ts.SyntaxKind.EqualsGreaterThanToken, ts.SyntaxKind.DotDotDotToken,
+]);
+export function computeHalstead(node) {
+    const operatorBag = new Map();
+    const operandBag = new Map();
+    const walk = (n) => {
+        if (ts.isIdentifier(n) || ts.isPrivateIdentifier(n)) {
+            const text = n.text;
+            operandBag.set(text, (operandBag.get(text) || 0) + 1);
+        }
+        else if (ts.isNumericLiteral(n) || ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) {
+            const text = n.getText();
+            operandBag.set(text, (operandBag.get(text) || 0) + 1);
+        }
+        else if (ts.isToken(n) && HALSTEAD_OPERATOR_KINDS.has(n.kind)) {
+            const key = ts.SyntaxKind[n.kind];
+            operatorBag.set(key, (operatorBag.get(key) || 0) + 1);
+        }
+        ts.forEachChild(n, walk);
+    };
+    walk(node);
+    const distinctOperators = operatorBag.size;
+    const distinctOperands = operandBag.size;
+    let operators = 0;
+    for (const v of operatorBag.values())
+        operators += v;
+    let operands = 0;
+    for (const v of operandBag.values())
+        operands += v;
+    const vocabulary = distinctOperators + distinctOperands;
+    const length = operators + operands;
+    const volume = vocabulary > 0 ? length * Math.log2(vocabulary) : 0;
+    const difficulty = distinctOperands > 0
+        ? (distinctOperators / 2) * (operands / distinctOperands)
+        : 0;
+    const effort = volume * difficulty;
+    const time = effort / 18;
+    const estimatedBugs = volume / 3000;
+    return {
+        operators, operands, distinctOperators, distinctOperands,
+        vocabulary, length, volume, difficulty, effort, time, estimatedBugs,
+    };
+}
+export function computeMaintainabilityIndex(halsteadVolume, cyclomaticComplexity, linesOfCode) {
+    const safeVolume = Math.max(halsteadVolume, 1);
+    const safeLOC = Math.max(linesOfCode, 1);
+    const raw = 171
+        - 5.2 * Math.log(safeVolume)
+        - 0.23 * cyclomaticComplexity
+        - 16.2 * Math.log(safeLOC);
+    return Math.max(0, raw * 100 / 171);
+}
 export function buildDependencyCriticality(fileSummary, options) {
     if (!fileSummary || !Array.isArray(fileSummary.functions)) {
         return {
@@ -186,12 +257,51 @@ export function analyzeSourceFile(sourceFile, packageName, packageFileSummary, o
         }
     }
     const controlKinds = TS_CONTROL_KINDS;
+    const emptyCatches = [];
+    const switchesWithoutDefault = [];
+    const magicNumbers = [];
+    let anyCount = 0;
+    const MAGIC_EXCLUDED = new Set([0, 1, -1, 2, 100]);
     const visit = (node) => {
         fileEntry.nodeCount += 1;
         packageFileSummary.nodeCount += 1;
         const kind = ts.SyntaxKind[node.kind] || 'UNKNOWN';
         fileEntry.kindCounts[kind] = (fileEntry.kindCounts[kind] || 0) + 1;
         packageFileSummary.kindCounts[kind] = (packageFileSummary.kindCounts[kind] || 0) + 1;
+        if (ts.isCatchClause(node)) {
+            const block = node.block;
+            if (block.statements.length === 0) {
+                const loc = getLineAndCharacter(sourceFile, node);
+                emptyCatches.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+            }
+        }
+        if (ts.isSwitchStatement(node)) {
+            const hasDefault = node.caseBlock.clauses.some(c => c.kind === ts.SyntaxKind.DefaultClause);
+            if (!hasDefault) {
+                const loc = getLineAndCharacter(sourceFile, node);
+                switchesWithoutDefault.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+            }
+        }
+        if (node.kind === ts.SyntaxKind.AnyKeyword) {
+            anyCount += 1;
+        }
+        if (ts.isAsExpression(node) && node.type.kind === ts.SyntaxKind.AnyKeyword) {
+            anyCount += 1;
+        }
+        if (ts.isNumericLiteral(node)) {
+            const value = Number(node.text);
+            if (!MAGIC_EXCLUDED.has(value)) {
+                const parent = node.parent;
+                const inConst = parent && ts.isVariableDeclaration(parent) &&
+                    parent.parent && ts.isVariableDeclarationList(parent.parent) &&
+                    (parent.parent.flags & ts.NodeFlags.Const) !== 0;
+                const inEnum = parent && ts.isEnumMember(parent);
+                if (!inConst && !inEnum) {
+                    const loc = getLineAndCharacter(sourceFile, node);
+                    magicNumbers.push({ value, file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+                }
+            }
+        }
         if (isFunctionLike(node)) {
             const funcNode = node;
             const body = funcNode.body;
@@ -227,6 +337,10 @@ export function analyzeSourceFile(sourceFile, packageName, packageFileSummary, o
                 lengthLines: countLinesInNode(sourceFile, node),
                 cognitiveComplexity: body ? computeCognitiveComplexity(body) : 0,
             };
+            if (body) {
+                entry.halstead = computeHalstead(body);
+                entry.maintainabilityIndex = computeMaintainabilityIndex(entry.halstead.volume, metrics.complexity, entry.lengthLines);
+            }
             if (ts.isFunctionDeclaration(node)) {
                 entry.declared = true;
             }
@@ -270,5 +384,9 @@ export function analyzeSourceFile(sourceFile, packageName, packageFileSummary, o
         ts.forEachChild(node, visit);
     };
     ts.forEachChild(sourceFile, visit);
+    fileEntry.emptyCatches = emptyCatches;
+    fileEntry.switchesWithoutDefault = switchesWithoutDefault;
+    fileEntry.anyCount = anyCount;
+    fileEntry.magicNumbers = magicNumbers;
     return fileEntry;
 }

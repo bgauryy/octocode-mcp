@@ -151,6 +151,26 @@ export function buildTreeSitterTree(node: SyntaxNode, _sourceFileText: string, d
   return base;
 }
 
+export function renderNodeText(node: NodeTree, indent: number = 0): string {
+  const pad = '  '.repeat(indent);
+  const span = node.startLine === node.endLine ? `${node.startLine}` : `${node.startLine}:${node.endLine}`;
+  const trunc = node.truncated ? ' ...' : '';
+  let line = `${pad}${node.kind}[${span}]${trunc}\n`;
+  for (const child of node.children) {
+    line += renderNodeText(child, indent + 1);
+  }
+  return line;
+}
+
+export function renderTreesText(entries: import('./types.js').TreeEntry[], generatedAt: string): string {
+  const lines: string[] = [`# AST Trees — ${generatedAt}`, ''];
+  for (const entry of entries) {
+    lines.push(`## ${entry.package} — ${entry.file}`);
+    lines.push(renderNodeText(entry.tree));
+  }
+  return lines.join('\n');
+}
+
 export function isTestFile(filePath: string): boolean {
   return (
     /(?:^|[\\/])(?:__tests__|__test__|tests)(?:[\\/]|$)/.test(filePath) ||

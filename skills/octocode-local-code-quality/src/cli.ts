@@ -1,9 +1,10 @@
 import path from 'node:path';
 import type { AnalysisOptions } from './types.js';
-import { DEFAULT_OPTS } from './types.js';
+import { DEFAULT_OPTS, PILLAR_CATEGORIES, ALL_CATEGORIES } from './types.js';
 
 export function parseArgs(argv: string[]): AnalysisOptions {
   const opts: AnalysisOptions = { ...DEFAULT_OPTS };
+  let excludeSet: Set<string> | null = null;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
 
@@ -132,6 +133,91 @@ export function parseArgs(argv: string[]): AnalysisOptions {
       continue;
     }
 
+    if (arg === '--parameter-threshold') {
+      opts.parameterThreshold = parseInt(argv[++i], 10);
+      continue;
+    }
+
+    if (arg === '--halstead-effort-threshold') {
+      opts.halsteadEffortThreshold = parseInt(argv[++i], 10);
+      continue;
+    }
+
+    if (arg === '--maintainability-index-threshold') {
+      opts.maintainabilityIndexThreshold = parseInt(argv[++i], 10);
+      continue;
+    }
+
+    if (arg === '--cyclomatic-density-threshold') {
+      opts.cyclomaticDensityThreshold = parseFloat(argv[++i]);
+      continue;
+    }
+
+    if (arg === '--any-threshold') {
+      opts.anyThreshold = parseInt(argv[++i], 10);
+      continue;
+    }
+
+    if (arg === '--magic-number-threshold') {
+      opts.magicNumberThreshold = parseInt(argv[++i], 10);
+      continue;
+    }
+
+    if (arg === '--flow-dup-threshold') {
+      opts.flowDupThreshold = parseInt(argv[++i], 10);
+      continue;
+    }
+
+    if (arg === '--max-recs-per-category') {
+      opts.maxRecsPerCategory = parseInt(argv[++i], 10);
+      continue;
+    }
+
+    if (arg === '--features' || arg.startsWith('--features=')) {
+      const val = arg.startsWith('--features=') ? arg.slice('--features='.length) : argv[++i];
+      const tokens = val.split(',').map((s) => s.trim()).filter(Boolean);
+      const resolved = new Set<string>();
+      for (const token of tokens) {
+        if (PILLAR_CATEGORIES[token]) {
+          for (const cat of PILLAR_CATEGORIES[token]) resolved.add(cat);
+        } else if (ALL_CATEGORIES.has(token)) {
+          resolved.add(token);
+        } else {
+          console.error(`Unknown feature: "${token}". Use pillar names (${Object.keys(PILLAR_CATEGORIES).join(', ')}) or category names.`);
+          process.exit(1);
+        }
+      }
+      opts.features = resolved;
+      continue;
+    }
+
+    if (arg === '--exclude' || arg.startsWith('--exclude=')) {
+      const val = arg.startsWith('--exclude=') ? arg.slice('--exclude='.length) : argv[++i];
+      const tokens = val.split(',').map((s) => s.trim()).filter(Boolean);
+      excludeSet = new Set<string>();
+      for (const token of tokens) {
+        if (PILLAR_CATEGORIES[token]) {
+          for (const cat of PILLAR_CATEGORIES[token]) excludeSet.add(cat);
+        } else if (ALL_CATEGORIES.has(token)) {
+          excludeSet.add(token);
+        } else {
+          console.error(`Unknown exclude: "${token}". Use pillar names (${Object.keys(PILLAR_CATEGORIES).join(', ')}) or category names.`);
+          process.exit(1);
+        }
+      }
+      continue;
+    }
+
+    if (arg === '--no-cache') {
+      opts.noCache = true;
+      continue;
+    }
+
+    if (arg === '--clear-cache') {
+      opts.clearCache = true;
+      continue;
+    }
+
     if (arg === '--help' || arg === '-h') {
       printHelp();
       process.exit(0);
@@ -158,6 +244,22 @@ export function parseArgs(argv: string[]): AnalysisOptions {
   if (Number.isNaN(opts.godFunctionStatements)) opts.godFunctionStatements = DEFAULT_OPTS.godFunctionStatements;
   if (Number.isNaN(opts.cognitiveComplexityThreshold)) opts.cognitiveComplexityThreshold = DEFAULT_OPTS.cognitiveComplexityThreshold;
   if (Number.isNaN(opts.barrelSymbolThreshold)) opts.barrelSymbolThreshold = DEFAULT_OPTS.barrelSymbolThreshold;
+  if (Number.isNaN(opts.parameterThreshold)) opts.parameterThreshold = DEFAULT_OPTS.parameterThreshold;
+  if (Number.isNaN(opts.halsteadEffortThreshold)) opts.halsteadEffortThreshold = DEFAULT_OPTS.halsteadEffortThreshold;
+  if (Number.isNaN(opts.maintainabilityIndexThreshold)) opts.maintainabilityIndexThreshold = DEFAULT_OPTS.maintainabilityIndexThreshold;
+  if (Number.isNaN(opts.cyclomaticDensityThreshold)) opts.cyclomaticDensityThreshold = DEFAULT_OPTS.cyclomaticDensityThreshold;
+  if (Number.isNaN(opts.anyThreshold)) opts.anyThreshold = DEFAULT_OPTS.anyThreshold;
+  if (Number.isNaN(opts.magicNumberThreshold)) opts.magicNumberThreshold = DEFAULT_OPTS.magicNumberThreshold;
+  if (Number.isNaN(opts.flowDupThreshold)) opts.flowDupThreshold = DEFAULT_OPTS.flowDupThreshold;
+  if (Number.isNaN(opts.maxRecsPerCategory)) opts.maxRecsPerCategory = DEFAULT_OPTS.maxRecsPerCategory;
+
+  if (opts.features !== null && excludeSet !== null) {
+    console.error('--features and --exclude are mutually exclusive. Use one or the other.');
+    process.exit(1);
+  }
+  if (excludeSet !== null) {
+    opts.features = new Set([...ALL_CATEGORIES].filter((c) => !excludeSet!.has(c)));
+  }
 
   return opts;
 }
@@ -169,7 +271,8 @@ Usage:
 
 Options:
   --root <path>                 Analyze a different repo root (default: cwd)
-  --out <path>                  Write full report JSON to path
+  --out <path>                  Output directory for split report files (timestamped dir by default).
+                                If path ends with .json, writes single monolithic file (legacy mode).
   --json                        Print report JSON to stdout
   --include-tests               Include *.test* and *.spec* files
   --parser <auto|typescript|tree-sitter>
@@ -181,7 +284,7 @@ Options:
   --min-flow-statements N        Minimum control-flow statement count for duplicate matching (default 6)
   --critical-complexity-threshold N
                                 Complexity threshold for HIGH complexity findings and critical path weighting.
-  --findings-limit N            Maximum findings written to the report (default 250)
+  --findings-limit N            Cap findings in the report (default: no limit)
   --deep-link-topn N            Max number of critical dependency paths to report (default 12)
   --tree-depth N                AST tree depth when tree snapshots are emitted (default 4)
   --coupling-threshold N        Ca+Ce threshold for high-coupling findings (default 15)
@@ -194,6 +297,27 @@ Options:
                                 Cognitive complexity threshold for findings (default 15)
   --barrel-symbol-threshold N   Re-export count threshold for barrel-explosion (default 30)
   --layer-order <layers>        Comma-separated layer names for violation detection (e.g. ui,service,repository)
+  --parameter-threshold N       Max function parameters before flagging (default 5)
+  --halstead-effort-threshold N Halstead effort threshold for findings (default 500000)
+  --maintainability-index-threshold N
+                                MI below this triggers a finding (default 20, scale 0-100)
+  --cyclomatic-density-threshold N
+                                Cyclomatic/LOC ratio threshold (default 0.5)
+  --any-threshold N             Max \`any\` type usages per file before flagging (default 5)
+  --magic-number-threshold N    Max magic number occurrences per file before flagging (default 3)
+  --flow-dup-threshold N        Min occurrences for a repeated flow to become a finding (default 3)
+  --max-recs-per-category N     Max findings per category in top recommendations (default 2)
+  --features=X,Y,Z              Run only selected features. Accepts pillar names (architecture,
+                                code-quality, dead-code) or individual category names. Comma-separated.
+                                Examples: --features=architecture
+                                          --features=dead-code,cognitive-complexity
+                                          --features=dependency-cycle,dead-export
+  --exclude=X,Y,Z               Run everything EXCEPT the given pillars or categories. Mutually
+                                exclusive with --features. Same pillar/category names as --features.
+                                Examples: --exclude=architecture
+                                          --exclude=dead-export,magic-number
+  --no-cache                    Disable incremental cache; re-parse all files
+  --clear-cache                 Delete the analysis cache and exit (no scan)
   --help                        Show this message
 `);
 }

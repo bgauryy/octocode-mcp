@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as ts from 'typescript';
 import { DEFAULT_OPTS } from './types.js';
-import { isFunctionLike, getFunctionName, collectMetrics, buildDependencyCriticality, countLinesInNode, analyzeSourceFile, } from './ts-analyzer.js';
+import { isFunctionLike, getFunctionName, collectMetrics, buildDependencyCriticality, countLinesInNode, analyzeSourceFile, computeHalstead, computeMaintainabilityIndex, } from './ts-analyzer.js';
 function parse(code, fileName = '/repo/src/test.ts') {
     return ts.createSourceFile(fileName, code, ts.ScriptTarget.ESNext, true);
 }
@@ -259,5 +259,123 @@ describe('analyzeSourceFile', () => {
         const summary = emptyPackageSummary();
         const result = analyzeSourceFile(src, 'pkg', summary, testOpts, emptyMaps(), [], emptyProfile);
         expect(result.functions[0].declared).toBe(true);
+    });
+    it('collects empty catch blocks', () => {
+        const src = parse('function f() { try { throw 1; } catch(e) {} }');
+        const summary = emptyPackageSummary();
+        const result = analyzeSourceFile(src, 'pkg', summary, testOpts, emptyMaps(), [], emptyProfile);
+        expect(result.emptyCatches?.length).toBe(1);
+    });
+    it('does not flag non-empty catch blocks', () => {
+        const src = parse('function f() { try {} catch(e) { console.log(e); } }');
+        const summary = emptyPackageSummary();
+        const result = analyzeSourceFile(src, 'pkg', summary, testOpts, emptyMaps(), [], emptyProfile);
+        expect(result.emptyCatches?.length).toBe(0);
+    });
+    it('collects switches without default', () => {
+        const src = parse('function f(x: number) { switch(x) { case 1: break; case 2: break; } }');
+        const summary = emptyPackageSummary();
+        const result = analyzeSourceFile(src, 'pkg', summary, testOpts, emptyMaps(), [], emptyProfile);
+        expect(result.switchesWithoutDefault?.length).toBe(1);
+    });
+    it('does not flag switches with default', () => {
+        const src = parse('function f(x: number) { switch(x) { case 1: break; default: break; } }');
+        const summary = emptyPackageSummary();
+        const result = analyzeSourceFile(src, 'pkg', summary, testOpts, emptyMaps(), [], emptyProfile);
+        expect(result.switchesWithoutDefault?.length).toBe(0);
+    });
+    it('counts any type annotations', () => {
+        const src = parse('const a: any = 1; const b: any = 2; function f(x: any) {}');
+        const summary = emptyPackageSummary();
+        const result = analyzeSourceFile(src, 'pkg', summary, testOpts, emptyMaps(), [], emptyProfile);
+        expect(result.anyCount).toBeGreaterThanOrEqual(3);
+    });
+    it('collects magic numbers', () => {
+        const src = parse('function f() { let x = 42; let y = 99; return x + y + 300; }');
+        const summary = emptyPackageSummary();
+        const result = analyzeSourceFile(src, 'pkg', summary, testOpts, emptyMaps(), [], emptyProfile);
+        expect(result.magicNumbers.length).toBeGreaterThanOrEqual(3);
+    });
+    it('excludes 0 and 1 from magic numbers', () => {
+        const src = parse('function f() { return 0 + 1; }');
+        const summary = emptyPackageSummary();
+        const result = analyzeSourceFile(src, 'pkg', summary, testOpts, emptyMaps(), [], emptyProfile);
+        expect(result.magicNumbers?.length).toBe(0);
+    });
+    it('excludes const declarations from magic numbers', () => {
+        const src = parse('const TIMEOUT = 5000;');
+        const summary = emptyPackageSummary();
+        const result = analyzeSourceFile(src, 'pkg', summary, testOpts, emptyMaps(), [], emptyProfile);
+        expect(result.magicNumbers?.length).toBe(0);
+    });
+    it('computes halstead metrics for functions', () => {
+        const src = parse('function f(a: number, b: number) { return a + b * 2; }');
+        const summary = emptyPackageSummary();
+        const result = analyzeSourceFile(src, 'pkg', summary, testOpts, emptyMaps(), [], emptyProfile);
+        expect(result.functions[0].halstead).toBeDefined();
+        expect(result.functions[0].halstead.volume).toBeGreaterThan(0);
+    });
+    it('computes maintainability index for functions', () => {
+        const src = parse('function f(a: number) { return a + 1; }');
+        const summary = emptyPackageSummary();
+        const result = analyzeSourceFile(src, 'pkg', summary, testOpts, emptyMaps(), [], emptyProfile);
+        expect(result.functions[0].maintainabilityIndex).toBeDefined();
+        expect(result.functions[0].maintainabilityIndex).toBeGreaterThan(0);
+    });
+});
+// ─── computeHalstead ─────────────────────────────────────────────────────────
+describe('computeHalstead', () => {
+    it('returns zeroes for empty body', () => {
+        const src = parse('function f() {}');
+        const fn = firstStatement(src);
+        const h = computeHalstead(fn.body);
+        expect(h.length).toBe(0);
+        expect(h.volume).toBe(0);
+        expect(h.effort).toBe(0);
+    });
+    it('counts operators and operands for simple expression', () => {
+        const src = parse('function f(a: number, b: number) { return a + b; }');
+        const fn = firstStatement(src);
+        const h = computeHalstead(fn.body);
+        expect(h.distinctOperators).toBeGreaterThan(0);
+        expect(h.distinctOperands).toBeGreaterThan(0);
+        expect(h.volume).toBeGreaterThan(0);
+    });
+    it('computes estimated bugs based on volume', () => {
+        const src = parse(`function f(x: number) {
+      const a = x + 1; const b = x - 2; const c = a * b;
+      return c / x + a - b;
+    }`);
+        const fn = firstStatement(src);
+        const h = computeHalstead(fn.body);
+        expect(h.estimatedBugs).toBeGreaterThan(0);
+        expect(h.estimatedBugs).toBe(h.volume / 3000);
+    });
+    it('difficulty increases with repeated operands', () => {
+        const simpleCode = 'function f() { const a = 1; return a; }';
+        const repetitiveCode = 'function f() { const a = 1; const b = a; const c = a; const d = a; return a + b + c + d; }';
+        const simple = computeHalstead(firstStatement(parse(simpleCode)).body);
+        const repetitive = computeHalstead(firstStatement(parse(repetitiveCode)).body);
+        expect(repetitive.difficulty).toBeGreaterThan(simple.difficulty);
+    });
+});
+// ─── computeMaintainabilityIndex ─────────────────────────────────────────────
+describe('computeMaintainabilityIndex', () => {
+    it('returns high MI for simple code', () => {
+        const mi = computeMaintainabilityIndex(10, 1, 5);
+        expect(mi).toBeGreaterThan(50);
+    });
+    it('returns low MI for complex code', () => {
+        const mi = computeMaintainabilityIndex(50000, 50, 500);
+        expect(mi).toBeLessThan(20);
+    });
+    it('clamps to 0 minimum', () => {
+        const mi = computeMaintainabilityIndex(1e12, 1000, 100000);
+        expect(mi).toBe(0);
+    });
+    it('returns max ~100 for trivial code', () => {
+        const mi = computeMaintainabilityIndex(1, 1, 1);
+        expect(mi).toBeGreaterThan(90);
+        expect(mi).toBeLessThanOrEqual(100);
     });
 });
