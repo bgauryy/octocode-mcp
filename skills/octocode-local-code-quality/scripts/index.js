@@ -21,11 +21,18 @@ import { analyzeTreeSitterFile, resolveTreeSitter } from './tree-sitter-analyzer
 import { createSemanticContext, analyzeSemanticProfile, collectAllAbsoluteFiles } from './semantic.js';
 import { runSemanticDetectors } from './semantic-detectors.js';
 import { SEMANTIC_CATEGORIES } from './types.js';
-import { buildConsumedFromModule, detectSdpViolations, detectHighCoupling, detectGodModuleCoupling, detectOrphanModules, detectUnreachableModules, detectUnusedNpmDeps, detectBoundaryViolations, detectBarrelExplosion, detectGodModules, detectGodFunctions, detectCognitiveComplexity, detectLayerViolations, detectLowCohesion, detectInferredLayerViolations, computeHotFiles, detectExcessiveParameters, detectEmptyCatchBlocks, detectSwitchNoDefault, detectHighCyclomaticDensity, detectUnsafeAny, detectMagicNumbers, detectHighHalsteadEffort, detectLowMaintainability, detectDuplicateFunctionBodies, detectDuplicateFlowStructures, detectFunctionOptimization, detectTestOnlyModules, detectDependencyCycles, detectCriticalPaths, detectDeadExports, detectDeadReExports, detectDistanceFromMainSequence, detectFeatureEnvy, detectUntestedCriticalCode, detectTypeAssertionEscape, detectMissingErrorBoundary, detectPromiseMisuse, } from './architecture.js';
+import { buildConsumedFromModule, detectSdpViolations, detectHighCoupling, detectGodModuleCoupling, detectOrphanModules, detectUnreachableModules, detectUnusedNpmDeps, detectBoundaryViolations, detectBarrelExplosion, detectGodModules, detectGodFunctions, detectCognitiveComplexity, detectLayerViolations, detectLowCohesion, detectInferredLayerViolations, computeHotFiles, detectExcessiveParameters, detectEmptyCatchBlocks, detectSwitchNoDefault, detectHighCyclomaticDensity, detectUnsafeAny, detectMagicNumbers, detectHighHalsteadEffort, detectLowMaintainability, detectDuplicateFunctionBodies, detectDuplicateFlowStructures, detectFunctionOptimization, detectTestOnlyModules, detectDependencyCycles, detectCriticalPaths, detectDeadExports, detectDeadReExports, detectDistanceFromMainSequence, detectFeatureEnvy, detectUntestedCriticalCode, detectTypeAssertionEscape, detectMissingErrorBoundary, detectPromiseMisuse, detectAwaitInLoop, detectSyncIo, detectUnclearedTimers, detectListenerLeakRisk, detectUnboundedCollection, detectSimilarFunctionBodies, detectImportSideEffectRisk, } from './architecture.js';
+import { detectHardcodedSecrets, detectEvalUsage, detectUnsafeHtml, detectSqlInjectionRisk, detectUnsafeRegex, detectUnvalidatedInputSink, detectInputPassthroughRisk, detectPrototypePollutionRisk, detectPathTraversalRisk, detectCommandInjectionRisk, } from './security-detectors.js';
+import { detectLowAssertionDensity, detectTestNoAssertion, detectExcessiveMocking, detectSharedMutableState, detectMissingTestCleanup, detectFocusedTests, detectFakeTimersWithoutRestore, detectMissingMockRestoration, } from './test-quality-detectors.js';
+import { buildAdvancedGraphFindings, computeGraphAnalytics } from './graph-analytics.js';
+import { computeReportAnalysisSummary, enrichFileInventoryEntries, enrichFindings } from './report-analysis.js';
+export const REPORT_SCHEMA_VERSION = '1.0.0';
 // ─── Output Category Groups (single source of truth: PILLAR_CATEGORIES) ─────
 export const ARCHITECTURE_CATEGORIES = new Set(PILLAR_CATEGORIES['architecture']);
 export const CODE_QUALITY_CATEGORIES = new Set(PILLAR_CATEGORIES['code-quality']);
 export const DEAD_CODE_CATEGORIES = new Set(PILLAR_CATEGORIES['dead-code']);
+export const SECURITY_CATEGORIES = new Set(PILLAR_CATEGORIES['security']);
+export const TEST_QUALITY_CATEGORIES = new Set(PILLAR_CATEGORIES['test-quality']);
 // ─── Dependency Graph Analysis ───────────────────────────────────────────────
 function buildDependencySummary(dependencyState, fileCriticalityByPath, options) {
     const allFiles = [...dependencyState.files].sort();
@@ -205,8 +212,8 @@ export function computeDependencyCriticalPaths(dependencyState, fileCriticalityB
         .slice(0, Math.max(1, options.deepLinkTopN));
 }
 // ─── Issue Catalog ───────────────────────────────────────────────────────────
-export { isLikelyEntrypoint } from './architecture.js';
-export function buildIssueCatalog(duplicates, controlDuplicates, fileSummaries, dependencySummary, dependencyState, options, pkgJsonDeps = {}, pkgJsonDevDeps = {}, fileCriticalityByPath = new Map(), semanticFindings = []) {
+// dead re-export removed: isLikelyEntrypoint was not consumed by any module
+export function buildIssueCatalog(duplicates, controlDuplicates, fileSummaries, dependencySummary, dependencyState, options, pkgJsonDeps = {}, pkgJsonDevDeps = {}, fileCriticalityByPath = new Map(), semanticFindings = [], flowMap = new Map(), additionalFindings = []) {
     const rawFindings = [];
     const addFinding = (finding) => {
         if (options.features && !options.features.has(finding.category))
@@ -214,7 +221,7 @@ export function buildIssueCatalog(duplicates, controlDuplicates, fileSummaries, 
         rawFindings.push(finding);
     };
     // Build consumed-from-module map (needed by dead-code detectors)
-    const consumedFromModule = buildConsumedFromModule(dependencyState);
+    const { production: consumedFromModule, test: testConsumedFromModule } = buildConsumedFromModule(dependencyState);
     // All detectors - uniform pattern
     for (const f of detectDuplicateFunctionBodies(duplicates))
         addFinding(f);
@@ -228,7 +235,7 @@ export function buildIssueCatalog(duplicates, controlDuplicates, fileSummaries, 
         addFinding(f);
     for (const f of detectCriticalPaths(dependencySummary, dependencyState, options.criticalComplexityThreshold))
         addFinding(f);
-    for (const f of detectDeadExports(dependencyState, consumedFromModule))
+    for (const f of detectDeadExports(dependencyState, consumedFromModule, testConsumedFromModule))
         addFinding(f);
     for (const f of detectDeadReExports(dependencyState, consumedFromModule))
         addFinding(f);
@@ -271,6 +278,9 @@ export function buildIssueCatalog(duplicates, controlDuplicates, fileSummaries, 
     const hotFilesForDetector = computeHotFiles(dependencyState, dependencySummary, fileCriticalityByPath);
     for (const f of detectUntestedCriticalCode(dependencyState, hotFilesForDetector, fileCriticalityByPath))
         addFinding(f);
+    // ─── Phase 3C: Import Side-Effect Risk ────────────────────────────
+    for (const f of detectImportSideEffectRisk(fileSummaries, dependencyState, dependencySummary, hotFilesForDetector))
+        addFinding(f);
     // ─── Phase 4: Code Quality Metrics ──────────────────────────────────
     for (const f of detectExcessiveParameters(fileSummaries, options.parameterThreshold))
         addFinding(f);
@@ -294,8 +304,61 @@ export function buildIssueCatalog(duplicates, controlDuplicates, fileSummaries, 
         addFinding(f);
     for (const f of detectPromiseMisuse(fileSummaries))
         addFinding(f);
+    // ─── Phase 4B: Performance ──────────────────────────────────────
+    for (const f of detectAwaitInLoop(fileSummaries))
+        addFinding(f);
+    for (const f of detectSyncIo(fileSummaries))
+        addFinding(f);
+    for (const f of detectUnclearedTimers(fileSummaries))
+        addFinding(f);
+    for (const f of detectListenerLeakRisk(fileSummaries))
+        addFinding(f);
+    for (const f of detectUnboundedCollection(fileSummaries))
+        addFinding(f);
+    for (const f of detectSimilarFunctionBodies(flowMap, options.similarityThreshold))
+        addFinding(f);
+    // ─── Phase 4C: Security ───────────────────────────────────────────
+    for (const f of detectHardcodedSecrets(fileSummaries))
+        addFinding(f);
+    for (const f of detectEvalUsage(fileSummaries))
+        addFinding(f);
+    for (const f of detectUnsafeHtml(fileSummaries))
+        addFinding(f);
+    for (const f of detectSqlInjectionRisk(fileSummaries))
+        addFinding(f);
+    for (const f of detectUnsafeRegex(fileSummaries))
+        addFinding(f);
+    for (const f of detectUnvalidatedInputSink(fileSummaries))
+        addFinding(f);
+    for (const f of detectInputPassthroughRisk(fileSummaries))
+        addFinding(f);
+    for (const f of detectPrototypePollutionRisk(fileSummaries))
+        addFinding(f);
+    for (const f of detectPathTraversalRisk(fileSummaries))
+        addFinding(f);
+    for (const f of detectCommandInjectionRisk(fileSummaries))
+        addFinding(f);
+    // ─── Phase 4D: Test Quality ───────────────────────────────────────
+    for (const f of detectLowAssertionDensity(fileSummaries))
+        addFinding(f);
+    for (const f of detectTestNoAssertion(fileSummaries))
+        addFinding(f);
+    for (const f of detectExcessiveMocking(fileSummaries, options.mockThreshold))
+        addFinding(f);
+    for (const f of detectSharedMutableState(fileSummaries))
+        addFinding(f);
+    for (const f of detectMissingTestCleanup(fileSummaries))
+        addFinding(f);
+    for (const f of detectFocusedTests(fileSummaries))
+        addFinding(f);
+    for (const f of detectFakeTimersWithoutRestore(fileSummaries))
+        addFinding(f);
+    for (const f of detectMissingMockRestoration(fileSummaries))
+        addFinding(f);
     // ─── Phase 5: Semantic Analysis (--semantic) ──────────────────────
     for (const f of semanticFindings)
+        addFinding(f);
+    for (const f of additionalFindings)
         addFinding(f);
     const sorted = rawFindings.sort((a, b) => {
         const bySeverity = SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity];
@@ -309,7 +372,9 @@ export function buildIssueCatalog(duplicates, controlDuplicates, fileSummaries, 
     });
     const totalBeforeTruncation = sorted.length;
     const allCategoriesBefore = new Set(sorted.map((f) => f.category));
-    const truncated = sorted.slice(0, options.findingsLimit);
+    const truncated = options.noDiversify
+        ? sorted.slice(0, options.findingsLimit)
+        : diversifyFindings(sorted, options.findingsLimit);
     const categoriesAfter = new Set(truncated.map((f) => f.category));
     const droppedCategories = [...allCategoriesBefore].filter((c) => !categoriesAfter.has(c));
     const findings = [];
@@ -453,10 +518,6 @@ export function writeMultiFileReport(dir, report, options, dependencyState, depe
     const writeJson = (name, data) => {
         fs.writeFileSync(path.join(dir, name), JSON.stringify(data, null, 2), 'utf8');
     };
-    const allFindings = report.optimizationFindings || [];
-    const architectureFindings = allFindings.filter(f => ARCHITECTURE_CATEGORIES.has(f.category));
-    const codeQualityFindings = allFindings.filter(f => CODE_QUALITY_CATEGORIES.has(f.category));
-    const deadCodeFindings = allFindings.filter(f => DEAD_CODE_CATEGORIES.has(f.category));
     const outputFiles = {
         summary: 'summary.json',
         architecture: 'architecture.json',
@@ -466,7 +527,17 @@ export function writeMultiFileReport(dir, report, options, dependencyState, depe
         findings: 'findings.json',
     };
     const hotFiles = computeHotFiles(dependencyState, dependencySummary, fileCriticalityByPath);
+    const graphAnalytics = report.graphAnalytics ?? computeGraphAnalytics(dependencyState, dependencySummary, fileCriticalityByPath);
+    const enrichedFileInventory = enrichFileInventoryEntries(report.fileInventory || []);
+    const allFindings = enrichFindings(report.optimizationFindings || [], enrichedFileInventory, hotFiles, graphAnalytics);
+    const architectureFindings = allFindings.filter(f => ARCHITECTURE_CATEGORIES.has(f.category));
+    const codeQualityFindings = allFindings.filter(f => CODE_QUALITY_CATEGORIES.has(f.category));
+    const deadCodeFindings = allFindings.filter(f => DEAD_CODE_CATEGORIES.has(f.category));
+    const securityFindings = allFindings.filter(f => SECURITY_CATEGORIES.has(f.category));
+    const testQualityFindings = allFindings.filter(f => TEST_QUALITY_CATEGORIES.has(f.category));
+    const reportAnalysis = report.reportAnalysis ?? computeReportAnalysisSummary(allFindings, enrichedFileInventory, hotFiles, graphAnalytics);
     writeJson('architecture.json', {
+        schemaVersion: REPORT_SCHEMA_VERSION,
         generatedAt: report.generatedAt,
         dependencyGraph: report.dependencyGraph,
         dependencyFindings: report.dependencyFindings,
@@ -475,8 +546,15 @@ export function writeMultiFileReport(dir, report, options, dependencyState, depe
         severityBreakdown: severityBreakdown(architectureFindings),
         categoryBreakdown: categoryBreakdown(architectureFindings),
         hotFiles,
+        graphSignals: reportAnalysis.graphSignals,
+        chokepoints: graphAnalytics.chokepoints,
+        criticalHubCandidates: graphAnalytics.chokepoints.slice(0, 10),
+        sccClusters: options.graphAdvanced ? graphAnalytics.sccClusters : [],
+        packageGraphSummary: options.graphAdvanced ? graphAnalytics.packageGraphSummary : null,
+        packageHotspots: options.graphAdvanced ? graphAnalytics.packageGraphSummary.hotspots : [],
     });
     writeJson('code-quality.json', {
+        schemaVersion: REPORT_SCHEMA_VERSION,
         generatedAt: report.generatedAt,
         duplicateFlows: report.duplicateFlows,
         optimizationOpportunities: report.optimizationOpportunities,
@@ -486,21 +564,46 @@ export function writeMultiFileReport(dir, report, options, dependencyState, depe
         categoryBreakdown: categoryBreakdown(codeQualityFindings),
     });
     writeJson('dead-code.json', {
+        schemaVersion: REPORT_SCHEMA_VERSION,
         generatedAt: report.generatedAt,
         findings: deadCodeFindings,
         findingsCount: deadCodeFindings.length,
         severityBreakdown: severityBreakdown(deadCodeFindings),
         categoryBreakdown: categoryBreakdown(deadCodeFindings),
     });
+    if (securityFindings.length > 0) {
+        writeJson('security.json', {
+            schemaVersion: REPORT_SCHEMA_VERSION,
+            generatedAt: report.generatedAt,
+            findings: securityFindings,
+            findingsCount: securityFindings.length,
+            severityBreakdown: severityBreakdown(securityFindings),
+            categoryBreakdown: categoryBreakdown(securityFindings),
+        });
+        outputFiles.security = 'security.json';
+    }
+    if (testQualityFindings.length > 0) {
+        writeJson('test-quality.json', {
+            schemaVersion: REPORT_SCHEMA_VERSION,
+            generatedAt: report.generatedAt,
+            findings: testQualityFindings,
+            findingsCount: testQualityFindings.length,
+            severityBreakdown: severityBreakdown(testQualityFindings),
+            categoryBreakdown: categoryBreakdown(testQualityFindings),
+        });
+        outputFiles.testQuality = 'test-quality.json';
+    }
     writeJson('file-inventory.json', {
+        schemaVersion: REPORT_SCHEMA_VERSION,
         generatedAt: report.generatedAt,
-        fileInventory: report.fileInventory,
-        fileCount: report.fileInventory?.length || 0,
+        fileInventory: enrichedFileInventory,
+        fileCount: enrichedFileInventory.length,
     });
     writeJson('findings.json', {
+        schemaVersion: REPORT_SCHEMA_VERSION,
         generatedAt: report.generatedAt,
-        optimizationFindings: report.optimizationFindings,
-        totalFindings: report.optimizationFindings?.length || 0,
+        optimizationFindings: allFindings,
+        totalFindings: allFindings.length,
     });
     if (options.graph) {
         const graphMd = generateMermaidGraph(dependencyState, dependencySummary, fileCriticalityByPath);
@@ -512,17 +615,36 @@ export function writeMultiFileReport(dir, report, options, dependencyState, depe
         outputFiles.astTrees = 'ast-trees.txt';
     }
     const summaryJsonData = {
+        schemaVersion: REPORT_SCHEMA_VERSION,
         generatedAt: report.generatedAt,
         repoRoot: report.repoRoot,
         options: report.options,
         parser: report.parser,
         summary: report.summary,
         agentOutput: report.agentOutput,
+        analysisSummary: {
+            graphSignals: reportAnalysis.graphSignals,
+            astSignals: reportAnalysis.astSignals,
+            strongestGraphSignal: reportAnalysis.strongestGraphSignal,
+            strongestAstSignal: reportAnalysis.strongestAstSignal,
+            combinedSignals: reportAnalysis.combinedSignals,
+        },
+        strongestGraphSignal: reportAnalysis.strongestGraphSignal,
+        strongestAstSignal: reportAnalysis.strongestAstSignal,
+        combinedSignals: reportAnalysis.combinedSignals,
+        investigationPrompts: reportAnalysis.investigationPrompts,
         parseErrors: report.parseErrors,
         outputFiles,
     };
     writeJson('summary.json', summaryJsonData);
-    const summaryMd = generateSummaryMd(dir, report, outputFiles, architectureFindings, codeQualityFindings, deadCodeFindings, hotFiles, options.features, options.scope, options.root, options.scopeSymbols, options.semantic);
+    const summaryMd = generateSummaryMd({
+        dir, report, outputFiles,
+        architectureFindings, codeQualityFindings, deadCodeFindings,
+        hotFiles, activeFeatures: options.features, scope: options.scope,
+        root: options.root, scopeSymbols: options.scopeSymbols,
+        semanticEnabled: options.semantic, securityFindings, testQualityFindings,
+        reportAnalysis,
+    });
     fs.writeFileSync(path.join(dir, 'summary.md'), summaryMd, 'utf8');
     outputFiles.summaryMd = 'summary.md';
     writeJson('summary.json', { ...summaryJsonData, outputFiles });
@@ -570,7 +692,8 @@ function formatFileSize(bytes) {
         return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-export function generateSummaryMd(dir, report, outputFiles, architectureFindings, codeQualityFindings, deadCodeFindings, hotFiles = [], activeFeatures = null, scope = null, root = process.cwd(), scopeSymbols = null, semanticEnabled = false) {
+export function generateSummaryMd(opts) {
+    const { dir, report, outputFiles, architectureFindings, codeQualityFindings, deadCodeFindings, hotFiles = [], activeFeatures = null, scope = null, root = process.cwd(), scopeSymbols = null, semanticEnabled = false, securityFindings = [], testQualityFindings = [], reportAnalysis = null, } = opts;
     const allFindings = report.optimizationFindings || [];
     const sev = severityBreakdown(allFindings);
     const summary = report.summary;
@@ -628,7 +751,7 @@ export function generateSummaryMd(dir, report, outputFiles, architectureFindings
         }
     }
     if (semanticEnabled) {
-        lines.push('> **Semantic analysis**: TypeChecker + LanguageService enabled (10 additional categories)');
+        lines.push('> **Semantic analysis**: TypeChecker + LanguageService enabled (14 additional categories)');
         lines.push('');
     }
     const renderPillarCategories = (pillarKey, findings) => {
@@ -652,6 +775,8 @@ export function generateSummaryMd(dir, report, outputFiles, architectureFindings
     const archHealth = computeHealthScore(architectureFindings, totalFiles);
     const qualHealth = computeHealthScore(codeQualityFindings, totalFiles);
     const deadHealth = computeHealthScore(deadCodeFindings, totalFiles);
+    const secHealth = computeHealthScore(securityFindings, totalFiles);
+    const testHealth = computeHealthScore(testQualityFindings, totalFiles);
     lines.push('## Health Scores\n');
     lines.push('| Pillar | Score | Grade |');
     lines.push('|--------|-------|-------|');
@@ -660,6 +785,10 @@ export function generateSummaryMd(dir, report, outputFiles, architectureFindings
     lines.push(`| Architecture | ${archHealth}/100 | ${grade(archHealth)} |`);
     lines.push(`| Code Quality | ${qualHealth}/100 | ${grade(qualHealth)} |`);
     lines.push(`| Dead Code & Hygiene | ${deadHealth}/100 | ${grade(deadHealth)} |`);
+    if (securityFindings.length > 0)
+        lines.push(`| Security | ${secHealth}/100 | ${grade(secHealth)} |`);
+    if (testQualityFindings.length > 0)
+        lines.push(`| Test Quality | ${testHealth}/100 | ${grade(testHealth)} |`);
     lines.push('');
     const tagCloud = collectTagCloud(allFindings);
     if (tagCloud.length > 0) {
@@ -667,6 +796,25 @@ export function generateSummaryMd(dir, report, outputFiles, architectureFindings
         lines.push('Searchable tags across all findings — use to filter `findings.json` with `jq`.\n');
         for (const { tag, count } of tagCloud.slice(0, 12)) {
             lines.push(`- \`${tag}\`: ${count} findings`);
+        }
+        lines.push('');
+    }
+    if (reportAnalysis) {
+        lines.push('## Analysis Signals\n');
+        lines.push(`- **Graph Signal**: ${reportAnalysis.strongestGraphSignal?.summary || 'No dominant graph signal in this scan.'}`);
+        lines.push(`- **AST Signal**: ${reportAnalysis.strongestAstSignal?.summary || 'No dominant AST signal in this scan.'}`);
+        lines.push(`- **Combined Interpretation**: ${reportAnalysis.combinedInterpretation?.summary || 'No combined interpretation available yet.'}`);
+        lines.push(`- **Confidence**: ${reportAnalysis.combinedInterpretation?.confidence || reportAnalysis.strongestGraphSignal?.confidence || reportAnalysis.strongestAstSignal?.confidence || 'low'}`);
+        const validationSummary = reportAnalysis.combinedInterpretation
+            ? 'Use the recommended validation from the top correlated finding in `findings.json` to confirm this interpretation.'
+            : 'Use Octocode local tools to confirm the strongest signal before presenting it as fact.';
+        lines.push(`- **Recommended Validation**: ${validationSummary}`);
+        if (reportAnalysis.investigationPrompts.length > 0) {
+            lines.push('');
+            lines.push('**Investigation Prompts**');
+            for (const prompt of reportAnalysis.investigationPrompts.slice(0, 4)) {
+                lines.push(`- ${prompt}`);
+            }
         }
         lines.push('');
     }
@@ -702,11 +850,21 @@ export function generateSummaryMd(dir, report, outputFiles, architectureFindings
     lines.push('## Dead Code & Hygiene\n');
     lines.push(`> ${deadCodeFindings.length} findings (score: ${deadHealth}/100) — see [\`dead-code.json\`](./dead-code.json)\n`);
     renderPillarCategories('dead-code', deadCodeFindings);
+    if (securityFindings.length > 0) {
+        lines.push('## Security\n');
+        lines.push(`> ${securityFindings.length} findings (score: ${secHealth}/100) — see [\`security.json\`](./security.json)\n`);
+        renderPillarCategories('security', securityFindings);
+    }
+    if (testQualityFindings.length > 0) {
+        lines.push('## Test Quality\n');
+        lines.push(`> ${testQualityFindings.length} findings (score: ${testHealth}/100) — see [\`test-quality.json\`](./test-quality.json)\n`);
+        renderPillarCategories('test-quality', testQualityFindings);
+    }
     const topRecs = (agentOutput?.topRecommendations ?? []);
     if (topRecs.length > 0) {
         lines.push('## Top Recommendations\n');
         for (const rec of topRecs.slice(0, 10)) {
-            lines.push(`- **[${rec.severity.toUpperCase()}]** \`${rec.file}\` — ${rec.title}`);
+            lines.push(`- **[${rec.severity.toUpperCase()}]** \`${rec.file}\` — ${rec.title} *(${rec.category})* `);
         }
         lines.push('');
     }
@@ -765,6 +923,45 @@ export function generateSummaryMd(dir, report, outputFiles, architectureFindings
     }
     return lines.join('\n');
 }
+export function diversifyFindings(sorted, limit) {
+    if (!Number.isFinite(limit) || limit >= sorted.length)
+        return sorted;
+    // Group by category, preserving severity order within each group
+    const groups = new Map();
+    for (const f of sorted) {
+        const cat = f.category;
+        if (!groups.has(cat))
+            groups.set(cat, []);
+        groups.get(cat).push(f);
+    }
+    // Order category groups by their highest-severity finding
+    const categoryOrder = [...groups.entries()].sort((a, b) => {
+        const aTop = SEVERITY_ORDER[a[1][0].severity] ?? 0;
+        const bTop = SEVERITY_ORDER[b[1][0].severity] ?? 0;
+        return bTop - aTop;
+    });
+    // Round-robin pick from each category group
+    const result = [];
+    const cursors = new Map();
+    for (const [cat] of categoryOrder)
+        cursors.set(cat, 0);
+    while (result.length < limit) {
+        let picked = false;
+        for (const [cat, items] of categoryOrder) {
+            if (result.length >= limit)
+                break;
+            const cursor = cursors.get(cat);
+            if (cursor < items.length) {
+                result.push(items[cursor]);
+                cursors.set(cat, cursor + 1);
+                picked = true;
+            }
+        }
+        if (!picked)
+            break; // all groups exhausted
+    }
+    return result;
+}
 // ─── Top Recommendations (category-diverse) ─────────────────────────────────
 export function diverseTopRecommendations(findings, limit = 20, maxPerCategory = 2) {
     const result = [];
@@ -792,10 +989,25 @@ async function main() {
     const isLegacyMode = options.out?.endsWith('.json');
     const outputDir = isLegacyMode ? null : (options.out || path.join(options.root, '.octocode', 'scan', timestamp));
     const outputPath = isLegacyMode ? options.out : null;
-    const packages = listWorkspacePackages(options.root, options.packageRoot);
+    let packages = listWorkspacePackages(options.root, options.packageRoot);
     if (!packages.length) {
-        console.error(`No packages found in ${options.packageRoot}`);
-        process.exit(1);
+        // Fallback: treat root as a single package if it has a package.json
+        const rootManifest = path.join(options.root, 'package.json');
+        if (fs.existsSync(rootManifest)) {
+            try {
+                const json = JSON.parse(fs.readFileSync(rootManifest, 'utf8'));
+                const name = typeof json.name === 'string' ? json.name : path.basename(options.root);
+                packages = [{ name, dir: options.root, folder: path.basename(options.root) }];
+            }
+            catch {
+                console.error(`No packages found in ${options.packageRoot} and root package.json is unreadable`);
+                process.exit(1);
+            }
+        }
+        else {
+            console.error(`No packages found in ${options.packageRoot} and no package.json in root`);
+            process.exit(1);
+        }
     }
     let effectiveParser = options.parser;
     const parserProbe = options.parser === 'tree-sitter' || options.parser === 'auto' ? await resolveTreeSitter() : { available: false, error: null, parserTs: null, parserTsx: null };
@@ -1094,6 +1306,10 @@ async function main() {
     }
     const fileCriticalityByPath = new Map(fileSummaries.map((item) => [item.file, buildDependencyCriticality(item, options)]));
     const dependencySummary = buildDependencySummary(dependencyState, fileCriticalityByPath, options);
+    const graphAnalytics = computeGraphAnalytics(dependencyState, dependencySummary, fileCriticalityByPath);
+    const advancedGraphFindings = options.graphAdvanced
+        ? buildAdvancedGraphFindings(graphAnalytics, dependencyState, fileSummaries)
+        : [];
     // ─── Semantic Analysis Phase (--semantic) ───────────────────────────
     let semanticFindings = [];
     if (options.semantic) {
@@ -1120,7 +1336,7 @@ async function main() {
             }
         }
     }
-    const catalog = buildIssueCatalog(duplicateFunctions, redundantFlows, fileSummaries, dependencySummary, dependencyState, options, allPkgJsonDeps, allPkgJsonDevDeps, fileCriticalityByPath, semanticFindings);
+    const catalog = buildIssueCatalog(duplicateFunctions, redundantFlows, fileSummaries, dependencySummary, dependencyState, options, allPkgJsonDeps, allPkgJsonDevDeps, fileCriticalityByPath, semanticFindings, flowMap, advancedGraphFindings);
     let findings = catalog.findings;
     let byFile = catalog.byFile;
     const { totalBeforeTruncation, droppedCategories } = catalog;
@@ -1160,7 +1376,11 @@ async function main() {
             }
         }
     }
-    const enhancedFileSummaries = fileSummaryWithFindings(fileSummaries, byFile);
+    const enrichedFileSummaries = enrichFileInventoryEntries(fileSummaries);
+    const hotFiles = computeHotFiles(dependencyState, dependencySummary, fileCriticalityByPath);
+    findings = enrichFindings(findings, enrichedFileSummaries, hotFiles, graphAnalytics);
+    const reportAnalysis = computeReportAnalysisSummary(findings, enrichedFileSummaries, hotFiles, graphAnalytics);
+    const enhancedFileSummaries = fileSummaryWithFindings(enrichedFileSummaries, byFile);
     const report = {
         generatedAt: new Date().toISOString(),
         repoRoot: options.root,
@@ -1188,6 +1408,11 @@ async function main() {
             totalFindings: findings.length,
             totalBeforeTruncation,
             droppedCategories,
+            analysisSummary: {
+                strongestGraphSignal: reportAnalysis.strongestGraphSignal,
+                strongestAstSignal: reportAnalysis.strongestAstSignal,
+                combinedSignals: reportAnalysis.combinedSignals,
+            },
             highPriority: findings.filter((f) => f.severity === 'high' || f.severity === 'critical').length,
             mediumPriority: findings.filter((f) => f.severity === 'medium').length,
             lowPriority: findings.filter((f) => f.severity === 'low' || f.severity === 'info').length,
@@ -1210,6 +1435,8 @@ async function main() {
         optimizationFindings: findings,
         parseErrors,
         astTrees: undefined,
+        graphAnalytics,
+        reportAnalysis,
     };
     if (options.emitTree) {
         report.astTrees = trees;

@@ -43,27 +43,31 @@ export function isLikelyEntrypoint(filePath: string): boolean {
 
 // ─── Consumed-From-Module Map (for dead-code detectors) ──────────────────────
 
-export function buildConsumedFromModule(dependencyState: DependencyState): Map<string, Set<string>> {
-  const consumedFromModule = new Map<string, Set<string>>();
+export function buildConsumedFromModule(dependencyState: DependencyState): {
+  production: Map<string, Set<string>>;
+  test: Map<string, Set<string>>;
+} {
+  const production = new Map<string, Set<string>>();
+  const test = new Map<string, Set<string>>();
   for (const [file, imports] of dependencyState.importedSymbolsByFile.entries()) {
-    if (isTestFile(file)) continue;
+    const targetMap = isTestFile(file) ? test : production;
     for (const symbol of imports) {
       const target = symbol.resolvedModule;
       if (!target) continue;
-      if (!consumedFromModule.has(target)) consumedFromModule.set(target, new Set());
-      consumedFromModule.get(target)!.add(symbol.importedName);
+      if (!targetMap.has(target)) targetMap.set(target, new Set());
+      targetMap.get(target)!.add(symbol.importedName);
     }
   }
   for (const [file, reexports] of dependencyState.reExportsByFile.entries()) {
-    if (isTestFile(file)) continue;
+    const targetMap = isTestFile(file) ? test : production;
     for (const reexport of reexports) {
       const target = reexport.resolvedModule;
       if (!target) continue;
-      if (!consumedFromModule.has(target)) consumedFromModule.set(target, new Set());
-      consumedFromModule.get(target)!.add(reexport.importedName);
+      if (!targetMap.has(target)) targetMap.set(target, new Set());
+      targetMap.get(target)!.add(reexport.importedName);
     }
   }
-  return consumedFromModule;
+  return { production, test };
 }
 
 // ─── Duplicate Function Bodies ──────────────────────────────────────────────
@@ -93,6 +97,15 @@ export function detectDuplicateFunctionBodies(duplicates: DuplicateGroup[]): Fin
       },
       impact: `Lower maintenance cost and reduce regression risk when behavior changes.`,
       tags: ['duplication', 'maintainability', 'dryness'],
+      lspHints: [
+        {
+          tool: 'lspGotoDefinition',
+          symbolName: group.signature,
+          lineHint: sample.lineStart,
+          file: sample.file,
+          expectedResult: `navigate to one instance to compare implementations side-by-side`,
+        },
+      ],
     });
   }
   return findings;
@@ -169,6 +182,15 @@ export function detectFunctionOptimization(
         },
         impact: 'Cleaner flow, easier review and safer refactors.',
         tags: ['complexity', 'readability', 'refactor'],
+        lspHints: [
+          {
+            tool: 'lspCallHierarchy',
+            symbolName: fn.name,
+            lineHint: fn.lineStart,
+            file: fn.file,
+            expectedResult: `inspect callers and callees to plan safe decomposition of ${fn.name}`,
+          },
+        ],
       });
     }
   }
@@ -234,6 +256,15 @@ export function detectDependencyCycles(
       },
       impact: 'Cycles increase coupling and make incremental loading/debugging and refactors riskier.',
       tags: ['cycle', 'coupling', 'dependency', 'change-risk'],
+      lspHints: [
+        {
+          tool: 'lspGotoDefinition',
+          symbolName: cycle.path[1],
+          lineHint: cycleLine.lineStart,
+          file: cycle.path[0],
+          expectedResult: `navigate to the import that creates the cycle edge`,
+        },
+      ],
     });
   }
   return findings;
@@ -241,17 +272,77 @@ export function detectDependencyCycles(
 
 // ─── Critical Path Findings ──────────────────────────────────────────────────
 
+function findChainHotspot(
+  chainPath: string[],
+  dependencyState: DependencyState,
+): { module: string; fanOut: number; fanIn: number } {
+  let best = { module: chainPath[0], fanOut: 0, fanIn: 0 };
+  for (const mod of chainPath) {
+    const fanOut = (dependencyState.outgoing.get(mod) || new Set()).size;
+    const fanIn = (dependencyState.incoming.get(mod) || new Set()).size;
+    if (fanOut > best.fanOut) {
+      best = { module: mod, fanOut, fanIn };
+    }
+  }
+  return best;
+}
+
+export function mergeOverlappingChains(findings: FindingDraft[], overlapThreshold: number = 0.8): FindingDraft[] {
+  if (findings.length <= 1) return findings;
+
+  const merged: FindingDraft[] = [];
+  const consumed = new Set<number>();
+
+  for (let i = 0; i < findings.length; i++) {
+    if (consumed.has(i)) continue;
+    const base = findings[i];
+    const baseSet = new Set(base.files);
+    const entryPoints = [base.file];
+
+    for (let j = i + 1; j < findings.length; j++) {
+      if (consumed.has(j)) continue;
+      const other = findings[j];
+      const otherSet = new Set(other.files);
+      const intersection = [...baseSet].filter((f) => otherSet.has(f)).length;
+      const union = new Set([...baseSet, ...otherSet]).size;
+      const overlap = union > 0 ? intersection / union : 0;
+
+      if (overlap >= overlapThreshold) {
+        consumed.add(j);
+        entryPoints.push(other.file);
+        // Merge files from the other chain into base
+        for (const f of other.files) baseSet.add(f);
+      }
+    }
+
+    if (entryPoints.length > 1) {
+      const allFiles = [...baseSet];
+      merged.push({
+        ...base,
+        title: `Critical dependency chain risk: ${allFiles.length} files (${entryPoints.length} entry points)`,
+        reason: base.reason + ` Also reached from: ${entryPoints.slice(1).join(', ')}.`,
+        files: allFiles,
+      });
+    } else {
+      merged.push(base);
+    }
+  }
+
+  return merged;
+}
+
 export function detectCriticalPaths(
   dependencySummary: DependencySummary,
   dependencyState: DependencyState,
   criticalComplexityThreshold: number,
 ): FindingDraft[] {
-  const findings: FindingDraft[] = [];
-  if (dependencySummary.criticalPaths?.length === 0) return findings;
+  const rawFindings: FindingDraft[] = [];
+  if (dependencySummary.criticalPaths?.length === 0) return rawFindings;
   for (const pathEntry of (dependencySummary.criticalPaths || []).slice(0, 10)) {
     if (pathEntry.score < (criticalComplexityThreshold * 3)) continue;
     const chainLine = findImportLine(dependencyState, pathEntry.path[0], pathEntry.path[1]);
-    findings.push({
+    const hotspot = findChainHotspot(pathEntry.path, dependencyState);
+    rawFindings.push({
       severity: pathEntry.score >= criticalComplexityThreshold * 6 ? 'critical' : 'high',
       category: 'dependency-critical-path',
       file: pathEntry.path[0],
@@ -261,18 +352,18 @@ export function detectCriticalPaths(
       reason: `Potentially high-change surface: ${pathEntry.path.join(' -> ')} (${pathEntry.score} weight).`,
       files: pathEntry.path,
       suggestedFix: {
-        strategy: 'Reduce chain length and isolate high-complexity hotspots.',
+        strategy: `Break chain at \`${hotspot.module}\` (fan-out: ${hotspot.fanOut}, fan-in: ${hotspot.fanIn}).`,
         steps: [
-          'Split module responsibilities so high-impact file is not transitively coupled to many modules.',
-          'Add explicit interfaces for deep dependency boundaries.',
-          'Cache or memoize heavy intermediate computation in chain nodes where possible.',
+          `Extract interface from \`${hotspot.module}\` — it has ${hotspot.fanOut} outbound dependencies.`,
+          'Downstream modules depend on the interface, not the implementation.',
+          'This splits the chain into two independent segments.',
         ],
       },
       impact: 'Critical refactor opportunities; shorter chains reduce blast radius of change.',
       tags: ['change-risk', 'dependency', 'blast-radius'],
     });
   }
-  return findings;
+  return mergeOverlappingChains(rawFindings);
 }
 
 // ─── Dead Files ─────────────────────────────────────────────────────────────
@@ -308,6 +399,15 @@ export function detectDeadFiles(
       },
       impact: 'Reduces dead surface area and maintenance overhead.',
       tags: ['dead-code', 'cleanup', 'hygiene'],
+      lspHints: [
+        {
+          tool: 'lspFindReferences',
+          symbolName: file.split('/').pop() || file,
+          lineHint: 1,
+          file,
+          expectedResult: `confirm zero references exist before deletion`,
+        },
+      ],
     });
   }
   return findings;
@@ -318,16 +418,21 @@ export function detectDeadFiles(
 export function detectDeadExports(
   dependencyState: DependencyState,
   consumedFromModule: Map<string, Set<string>>,
+  testConsumedFromModule?: Map<string, Set<string>>,
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
   for (const [file, exportsList] of dependencyState.declaredExportsByFile.entries()) {
     if (isTestFile(file)) continue;
     if (isLikelyEntrypoint(file)) continue;
     const consumed = consumedFromModule.get(file) || new Set<string>();
+    const testConsumed = testConsumedFromModule?.get(file) || new Set<string>();
     const hasNamespaceUse = consumed.has('*');
+    const hasTestNamespaceUse = testConsumed.has('*');
     for (const exported of exportsList) {
       if (exported.name === 'default' && isLikelyEntrypoint(file)) continue;
       if (hasNamespaceUse || consumed.has(exported.name)) continue;
+      // Check if consumed only by test files — report as low-severity info, not dead
+      if (hasTestNamespaceUse || testConsumed.has(exported.name)) continue;
       findings.push({
         severity: exported.kind === 'type' ? 'medium' : 'high',
         category: 'dead-export',
@@ -335,7 +440,7 @@ export function detectDeadExports(
         lineStart: exported.lineStart || 1,
         lineEnd: exported.lineEnd || exported.lineStart || 1,
         title: `Unused export: ${exported.name}`,
-        reason: `Exported symbol "${exported.name}" has no observed import or re-export usage in production files.`,
+        reason: `Exported symbol "${exported.name}" has no observed import or re-export usage in production or test files.`,
         files: [`${file}:${exported.lineStart || 1}-${exported.lineEnd || exported.lineStart || 1}`],
         suggestedFix: {
           strategy: 'Remove or internalize unused exports.',
@@ -347,6 +452,15 @@ export function detectDeadExports(
         },
         impact: 'Shrinks public API surface and reduces accidental coupling.',
         tags: ['dead-code', 'api-surface', 'cleanup'],
+        lspHints: [
+          {
+            tool: 'lspFindReferences',
+            symbolName: exported.name,
+            lineHint: exported.lineStart || 1,
+            file,
+            expectedResult: `confirm "${exported.name}" has no import references before removing`,
+          },
+        ],
       });
     }
   }
@@ -955,8 +1069,17 @@ export function detectGodModules(
           'Update imports incrementally.',
         ],
       },
-      impact: 'Smaller modules are easier to understand, test, and maintain.',
-      tags: ['complexity', 'responsibility', 'size'],
+        impact: 'Smaller modules are easier to understand, test, and maintain.',
+        tags: ['complexity', 'responsibility', 'size'],
+        lspHints: [
+          {
+            tool: 'lspFindReferences',
+            symbolName: entry.file.split('/').pop() || entry.file,
+            lineHint: 1,
+            file: entry.file,
+            expectedResult: `identify consumer clusters to guide module splitting strategy`,
+          },
+        ],
     });
   }
 
@@ -993,6 +1116,15 @@ export function detectGodFunctions(
           },
           impact: 'Improves readability, testability, and maintenance.',
           tags: ['complexity', 'responsibility', 'size'],
+          lspHints: [
+            {
+              tool: 'lspCallHierarchy',
+              symbolName: fn.name,
+              lineHint: fn.lineStart,
+              file: entry.file,
+              expectedResult: `map callers and callees to identify safe extraction boundaries for ${fn.name}`,
+            },
+          ],
         });
       }
     }
@@ -1084,6 +1216,15 @@ export function detectCognitiveComplexity(
           },
           impact: 'Lower cognitive complexity directly correlates with fewer bugs and faster code reviews.',
           tags: ['complexity', 'readability', 'nesting'],
+          lspHints: [
+            {
+              tool: 'lspCallHierarchy',
+              symbolName: fn.name,
+              lineHint: fn.lineStart,
+              file: entry.file,
+              expectedResult: `understand call graph before simplifying ${fn.name}`,
+            },
+          ],
         });
       }
     }
@@ -1837,6 +1978,22 @@ export function detectFeatureEnvy(
           },
           impact: 'Misplaced logic increases coupling and makes changes ripple across module boundaries.',
           tags: ['coupling', 'responsibility', 'misplaced-logic'],
+          lspHints: [
+            {
+              tool: 'lspCallHierarchy',
+              symbolName: file.split('/').pop() || file,
+              lineHint: importRef.lineStart,
+              file,
+              expectedResult: `trace which functions use imports from ${target} to decide what to move`,
+            },
+            {
+              tool: 'lspGotoDefinition',
+              symbolName: target.split('/').pop() || target,
+              lineHint: importRef.lineStart,
+              file,
+              expectedResult: `inspect target module to evaluate if logic belongs there`,
+            },
+          ],
         });
       }
     }
@@ -1904,8 +2061,9 @@ export function detectMissingErrorBoundary(
     if (!entry.unprotectedAsync) continue;
 
     for (const fn of entry.unprotectedAsync) {
+      const severity = fn.awaitCount >= 4 ? 'high' : fn.awaitCount >= 2 ? 'medium' : 'low';
       findings.push({
-        severity: fn.awaitCount > 2 ? 'high' : 'medium',
+        severity,
         category: 'missing-error-boundary',
         file: entry.file,
         lineStart: fn.lineStart,
@@ -1923,6 +2081,15 @@ export function detectMissingErrorBoundary(
         },
         impact: 'Unhandled promise rejections crash Node.js processes and cause silent failures in browsers.',
         tags: ['error-handling', 'async', 'reliability'],
+        lspHints: [
+          {
+            tool: 'lspCallHierarchy',
+            symbolName: fn.name,
+            lineHint: fn.lineStart,
+            file: entry.file,
+            expectedResult: `check if callers wrap this in try-catch or .catch() — if so, the boundary may exist upstream`,
+          },
+        ],
       });
     }
   }
@@ -1963,6 +2130,371 @@ export function detectPromiseMisuse(
         tags: ['async', 'performance', 'clarity'],
       });
     }
+  }
+
+  return findings;
+}
+
+// ─── Performance: Await in Loop ─────────────────────────────────────────────
+
+export function detectAwaitInLoop(fileSummaries: FileEntry[]): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    for (const loc of entry.awaitInLoopLocations || []) {
+      findings.push({
+        severity: 'high',
+        category: 'await-in-loop',
+        file: entry.file,
+        lineStart: loc.lineStart,
+        lineEnd: loc.lineEnd,
+        title: 'await inside loop — sequential async execution',
+        reason: 'Each await runs serially. For N iterations this takes N * latency instead of max(latency). Use Promise.all() or Promise.allSettled() for parallel execution.',
+        files: [entry.file],
+        suggestedFix: {
+          strategy: 'Collect promises and await them in parallel with Promise.all().',
+          steps: [
+            'Collect all async operations into an array of promises.',
+            'Use await Promise.all(promises) or Promise.allSettled(promises).',
+            'If order matters or rate limiting is needed, use a batching utility.',
+          ],
+        },
+        impact: 'Sequential awaits multiply latency by N iterations — parallelizing can reduce total time to max(single-latency).',
+        tags: ['performance', 'async', 'n-plus-one'],
+        lspHints: [
+          {
+            tool: 'lspGotoDefinition',
+            symbolName: 'await',
+            lineHint: loc.lineStart,
+            file: entry.file,
+            expectedResult: `navigate to the awaited call to check if parallelization is safe`,
+          },
+        ],
+      });
+    }
+  }
+  return findings;
+}
+
+// ─── Performance: Synchronous I/O ───────────────────────────────────────────
+
+export function detectSyncIo(fileSummaries: FileEntry[]): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    for (const call of entry.syncIoCalls || []) {
+      findings.push({
+        severity: 'medium',
+        category: 'sync-io',
+        file: entry.file,
+        lineStart: call.lineStart,
+        lineEnd: call.lineEnd,
+        title: `Synchronous I/O: ${call.name}`,
+        reason: `${call.name} blocks the event loop. In server or UI code this degrades responsiveness for all concurrent operations.`,
+        files: [entry.file],
+        suggestedFix: {
+          strategy: 'Replace with async equivalent.',
+          steps: [
+            `Replace ${call.name} with its async counterpart (e.g. fs.promises.readFile).`,
+            'Sync I/O is acceptable in CLI scripts, build tools, or one-time init code.',
+          ],
+        },
+        impact: 'Synchronous I/O blocks the event loop, stalling all concurrent requests until the operation completes.',
+        tags: ['performance', 'blocking', 'io'],
+        lspHints: [
+          {
+            tool: 'lspCallHierarchy',
+            symbolName: call.name,
+            lineHint: call.lineStart,
+            file: entry.file,
+            expectedResult: `find callers to assess if this sync I/O is in a hot path`,
+          },
+        ],
+      });
+    }
+  }
+  return findings;
+}
+
+// ─── Performance: Uncleared Timers ──────────────────────────────────────────
+
+export function detectUnclearedTimers(fileSummaries: FileEntry[]): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    for (const timer of entry.timerCalls || []) {
+      if (timer.kind === 'setInterval' && !timer.hasCleanup) {
+        findings.push({
+          severity: 'medium',
+          category: 'uncleared-timer',
+          file: entry.file,
+          lineStart: timer.lineStart,
+          lineEnd: timer.lineEnd,
+          title: 'setInterval without clearInterval in scope',
+          reason: 'setInterval without cleanup runs indefinitely, causing memory leaks and unexpected behavior after component unmount or scope exit.',
+          files: [entry.file],
+          suggestedFix: {
+            strategy: 'Store the timer ID and call clearInterval in cleanup.',
+            steps: [
+              'Assign the return value: const id = setInterval(...).',
+              'Call clearInterval(id) in cleanup (useEffect return, componentWillUnmount, or scope exit).',
+            ],
+          },
+          impact: 'Uncleared intervals run indefinitely, leaking memory and CPU cycles after their scope is no longer relevant.',
+          tags: ['performance', 'memory-leak', 'timer'],
+        });
+      }
+    }
+  }
+  return findings;
+}
+
+// ─── Performance: Listener Leak Risk ────────────────────────────────────────
+
+export function detectListenerLeakRisk(fileSummaries: FileEntry[]): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    const regs = entry.listenerRegistrations || [];
+    const removals = entry.listenerRemovals || [];
+    if (regs.length > 0 && removals.length === 0) {
+      findings.push({
+        severity: 'medium',
+        category: 'listener-leak-risk',
+        file: entry.file,
+        lineStart: regs[0].lineStart,
+        lineEnd: regs[regs.length - 1].lineEnd,
+        title: `${regs.length} event listener(s) added without any removal`,
+        reason: 'addEventListener/on without corresponding removeEventListener/off risks memory leaks if the target outlives the subscriber.',
+        files: [entry.file],
+        suggestedFix: {
+          strategy: 'Add corresponding listener removal in cleanup.',
+          steps: [
+            'Store the handler reference in a variable.',
+            'Call removeEventListener/off in cleanup (unmount, dispose, close).',
+            'Or use AbortController signal for automatic cleanup.',
+          ],
+        },
+        impact: 'Listener references prevent garbage collection of the subscriber, causing memory growth proportional to event-target lifetime.',
+        tags: ['performance', 'memory-leak', 'events'],
+      });
+    }
+  }
+  return findings;
+}
+
+// ─── Performance: Unbounded Collection ──────────────────────────────────────
+
+export function detectUnboundedCollection(fileSummaries: FileEntry[]): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    for (const fn of entry.functions) {
+      if (fn.loops >= 2 && fn.calls >= 5 && fn.maxLoopDepth >= 2) {
+        findings.push({
+          severity: 'low',
+          category: 'unbounded-collection',
+          file: entry.file,
+          lineStart: fn.lineStart,
+          lineEnd: fn.lineEnd,
+          title: `Potential unbounded collection growth in ${fn.name}`,
+          reason: `Function "${fn.name}" has ${fn.loops} loops nested ${fn.maxLoopDepth} levels with ${fn.calls} calls. Collections growing inside nested loops without bounds can cause OOM.`,
+          files: [entry.file],
+          suggestedFix: {
+            strategy: 'Add size limits, pagination, or streaming.',
+            steps: [
+              'Add a maximum size check before adding to collections.',
+              'Use pagination or streaming for large datasets.',
+              'Consider using generators for lazy evaluation.',
+            ],
+          },
+          impact: 'Unbounded collection growth inside nested loops can cause out-of-memory crashes under large input.',
+          tags: ['performance', 'memory', 'collection'],
+        });
+      }
+    }
+  }
+  return findings;
+}
+
+// ─── Similar Function Bodies (Type-2 clone detection) ───────────────────────
+
+export function detectSimilarFunctionBodies(
+  flowMap: Map<string, import('./types.js').FlowMapEntry[]>,
+  similarityThreshold: number = 0.85,
+): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+
+  const allEntries: import('./types.js').FlowMapEntry[] = [];
+  for (const entries of flowMap.values()) {
+    for (const e of entries) {
+      if (!isTestFile(e.file)) allEntries.push(e);
+    }
+  }
+
+  const buckets = new Map<string, import('./types.js').FlowMapEntry[]>();
+  for (const entry of allEntries) {
+    const key = `${entry.kind}|${Math.round(entry.statementCount / 3)}`;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key)!.push(entry);
+  }
+
+  for (const [, bucket] of buckets) {
+    if (bucket.length < 2 || bucket.length > 50) continue;
+
+    for (let i = 0; i < bucket.length; i++) {
+      for (let j = i + 1; j < bucket.length; j++) {
+        const a = bucket[i];
+        const b = bucket[j];
+        if (a.hash === b.hash) continue;
+        if (a.file === b.file && a.lineStart === b.lineStart) continue;
+
+        const stmtRatio = Math.min(a.statementCount, b.statementCount) / Math.max(a.statementCount, b.statementCount);
+        if (stmtRatio < 0.8) continue;
+
+        const similarity = computeMetricSimilarity(a, b);
+        if (similarity >= similarityThreshold) {
+          findings.push({
+            severity: similarity >= 0.95 ? 'high' : 'medium',
+            category: 'similar-function-body',
+            file: a.file,
+            lineStart: a.lineStart,
+            lineEnd: a.lineEnd,
+            title: `Similar function: ${a.name} (${(similarity * 100).toFixed(0)}% similar to ${b.name} in ${b.file})`,
+            reason: `"${a.name}" and "${b.name}" have ${(similarity * 100).toFixed(0)}% structural similarity. Near-duplicates diverge over time and should be consolidated.`,
+            files: [a.file, b.file],
+            suggestedFix: {
+              strategy: 'Extract shared logic into a parameterized helper.',
+              steps: [
+                `Compare ${a.file}:${a.lineStart} with ${b.file}:${b.lineStart}.`,
+                'Identify the varying parts and extract them as parameters.',
+                'Create a shared function and call it from both locations.',
+              ],
+            },
+            impact: 'Near-clone functions diverge over time, causing inconsistent behavior and multiplied maintenance cost.',
+            tags: ['duplication', 'maintainability', 'near-clone'],
+          });
+        }
+      }
+    }
+  }
+
+  return findings;
+}
+
+function computeMetricSimilarity(a: import('./types.js').FlowMapEntry, b: import('./types.js').FlowMapEntry): number {
+  const features = [
+    [a.metrics.complexity, b.metrics.complexity],
+    [a.metrics.maxBranchDepth, b.metrics.maxBranchDepth],
+    [a.metrics.maxLoopDepth, b.metrics.maxLoopDepth],
+    [a.metrics.returns, b.metrics.returns],
+    [a.metrics.awaits, b.metrics.awaits],
+    [a.metrics.calls, b.metrics.calls],
+    [a.metrics.loops, b.metrics.loops],
+    [a.statementCount, b.statementCount],
+  ];
+
+  let totalSimilarity = 0;
+  for (const [va, vb] of features) {
+    const max = Math.max(va, vb, 1);
+    totalSimilarity += 1 - Math.abs(va - vb) / max;
+  }
+  return totalSimilarity / features.length;
+}
+
+// ─── Import Side-Effect Risk ────────────────────────────────────────────────
+
+export function detectImportSideEffectRisk(
+  fileSummaries: FileEntry[],
+  dependencyState: DependencyState,
+  dependencySummary: DependencySummary,
+  hotFiles: HotFile[],
+): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+
+  const cycleFiles = new Set<string>();
+  for (const cycle of dependencySummary.cycles) {
+    for (const node of cycle.path) cycleFiles.add(node);
+  }
+  const criticalPathFiles = new Set<string>();
+  for (const cp of dependencySummary.criticalPaths) {
+    for (const node of cp.path) criticalPathFiles.add(node);
+  }
+  const hotFileMap = new Map<string, HotFile>();
+  for (const hf of hotFiles) hotFileMap.set(hf.file, hf);
+
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    const effects = entry.topLevelEffects;
+    if (!effects || effects.length === 0) continue;
+
+    let astBase = 0;
+    for (const eff of effects) astBase += eff.weight;
+
+    const fanIn = (dependencyState.incoming.get(entry.file) || new Set()).size;
+    let impactBoost = 0;
+    if (fanIn >= 20) impactBoost += 8;
+    else if (fanIn >= 8) impactBoost += 4;
+    if (criticalPathFiles.has(entry.file)) impactBoost += 6;
+    if (cycleFiles.has(entry.file)) impactBoost += 3;
+
+    let roleDiscount = 0;
+    if (isLikelyEntrypoint(entry.file)) roleDiscount += 4;
+
+    const totalRisk = astBase + impactBoost - roleDiscount;
+    if (totalRisk < 4) continue;
+
+    const severity: Finding['severity'] =
+      totalRisk >= 18 ? 'critical' :
+      totalRisk >= 12 ? 'high' :
+      totalRisk >= 7 ? 'medium' :
+      'low';
+
+    const highConfidenceEffects = effects.filter(e => e.confidence === 'high');
+    const confidence: 'high' | 'medium' | 'low' =
+      highConfidenceEffects.length > 0 ? 'high' :
+      effects.some(e => e.confidence === 'medium') ? 'medium' :
+      'low';
+
+    const effectDetails = effects.map(e => `${e.detail} (line ${e.lineStart})`).join('; ');
+    const impactDetails: string[] = [];
+    if (fanIn >= 8) impactDetails.push(`fan-in=${fanIn}`);
+    if (criticalPathFiles.has(entry.file)) impactDetails.push('on critical path');
+    if (cycleFiles.has(entry.file)) impactDetails.push('in dependency cycle');
+    if (isLikelyEntrypoint(entry.file)) impactDetails.push('entrypoint (discounted)');
+    const impactSuffix = impactDetails.length > 0 ? ` Architecture context: ${impactDetails.join(', ')}.` : '';
+
+    const firstEffect = effects[0];
+    findings.push({
+      severity,
+      category: 'import-side-effect-risk',
+      file: entry.file,
+      lineStart: firstEffect.lineStart,
+      lineEnd: firstEffect.lineEnd,
+      title: `Import-time side effect${effects.length > 1 ? `s (${effects.length})` : ''}: ${entry.file}`,
+      reason: `Module executes work at import time: ${effectDetails}. Risk score: ${totalRisk} (ast=${astBase}, impact=+${impactBoost}, role=-${roleDiscount}). Confidence: ${confidence}.${impactSuffix}`,
+      files: [entry.file],
+      suggestedFix: {
+        strategy: 'Move import-time side effects behind explicit initialization or lazy loading.',
+        steps: [
+          'Wrap startup logic in an exported init() function instead of running at module scope.',
+          'Replace synchronous I/O with async alternatives called at runtime.',
+          'Guard side-effect imports with dynamic import() behind feature checks.',
+          'If this is an intentional entrypoint, consider adding a suppression comment.',
+        ],
+      },
+      impact: `Importing this module triggers ${effects.length} side effect(s). With fan-in=${fanIn}, unintended imports can degrade startup latency and cause surprising runtime behavior.`,
+      tags: ['import-side-effect', 'startup', 'architecture', 'performance'],
+      lspHints: [
+        {
+          tool: 'lspFindReferences',
+          symbolName: entry.file.split('/').pop()?.replace(/\.[^.]+$/, '') || entry.file,
+          lineHint: 1,
+          file: entry.file,
+          expectedResult: `find all modules that import this file and may trigger side effects`,
+        },
+      ],
+    });
   }
 
   return findings;

@@ -1,7 +1,7 @@
 # CLI Reference
 
 ```bash
-node <SKILL_BASE_DIRECTORY>/scripts/index.js [flags]
+node <SKILL_DIR>/scripts/index.js [flags]
 ```
 
 Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — subsequent runs skip unchanged files (~4x faster).
@@ -19,18 +19,22 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 | Scope to a directory | `--scope=packages/octocode-mcp/src/tools` |
 | Scope to a single file | `--scope=packages/octocode-mcp/src/session.ts` |
 | Scope to a function | `--scope=packages/octocode-mcp/src/session.ts:initSession` |
-| Scope to a variable/export | `--scope=packages/octocode-mcp/src/config.ts:DEFAULT_OPTS` |
 | Scope to multiple areas | `--scope=packages/foo/src/tools,packages/bar/src/ui` |
 | Architecture only | `--features=architecture` |
 | Code quality only | `--features=code-quality` |
 | Dead code only | `--features=dead-code` |
+| Security only | `--features=security` |
+| Test quality only | `--features=test-quality --include-tests` |
 | Single category | `--features=cognitive-complexity` |
 | Mix pillars + categories | `--features=dead-code,dependency-cycle` |
 | Everything except X | `--exclude=architecture` |
 | Exclude specific categories | `--exclude=dead-export,magic-number` |
-| Cap findings | `--findings-limit 500` |
+| Cap findings (diverse) | `--findings-limit 500` |
+| Cap findings (pure severity) | `--findings-limit 500 --no-diversify` |
 | Include tests | `--include-tests` |
 | Architecture graph | `--graph` |
+| Advanced graph overlays | `--graph --graph-advanced` |
+| Flow enrichment | `--flow` |
 | Suppress AST tree output | `--no-tree` |
 | Strict complexity | `--critical-complexity-threshold 20 --cognitive-complexity-threshold 10` |
 | Strict type safety | `--any-threshold 0` |
@@ -42,6 +46,9 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 | Semantic + scope combo | `--semantic --scope=packages/octocode-mcp` |
 | Only semantic categories | `--semantic --features=unused-parameter,shotgun-surgery` |
 | Deep hierarchy threshold | `--semantic --type-hierarchy-threshold 6` |
+| Detect near-clones | `--similarity-threshold 0.8` |
+| Strict security | `--secret-entropy-threshold 4.0 --secret-min-length 16` |
+| Strict test quality | `--mock-threshold 5 --include-tests --features=test-quality` |
 | Force full re-parse | `--no-cache` |
 | Clear cache | `--clear-cache` |
 | JSON to stdout | `--json` |
@@ -52,9 +59,9 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 
 `--scope` focuses on specific paths (comma-separated, relative to root). Use `file:symbol` syntax to drill into a specific function or exported variable — only findings whose line range overlaps with that symbol are returned. The full dependency graph is still built so architecture findings involving scoped files are reported. Combinable with `--features`/`--exclude`.
 
-`--features` and `--exclude` are mutually exclusive. Both accept pillar names (`architecture`, `code-quality`, `dead-code`) and individual category names, comma-separated.
+`--features` and `--exclude` are mutually exclusive. Both accept pillar names (`architecture`, `code-quality`, `dead-code`, `security`, `test-quality`) and individual category names, comma-separated.
 
-`--semantic` enables TypeChecker + LanguageService analysis (13 additional categories). Off by default since it adds ~3-5s. Semantic categories require `--semantic` to appear in results.
+`--semantic` enables TypeChecker + LanguageService analysis (additional categories). Off by default since it adds ~3-5s. Semantic categories require `--semantic` to appear in results.
 
 `--out` changes the output destination. If the path ends with `.json`, writes a single monolithic file (legacy mode). Otherwise, writes to the given directory instead of the default timestamped directory.
 
@@ -77,12 +84,16 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 | `--exclude=X,Y,Z` | _(none)_ | Exclude specific pillars/categories (mutually exclusive with `--features`) |
 | `--findings-limit N` | no limit | Cap total findings in report |
 | `--graph` | off | Emit Mermaid dependency graph (`graph.md`) |
+| `--graph-advanced` | off | Enable SCC clusters, chokepoints, package graph hotspots, and advanced architecture findings |
+| `--flow` | off | Enable lightweight flow enrichment such as `cfgFlags`, `flowTrace`, and richer evidence metadata |
 | `--emit-tree` | **on** | Force include AST tree blocks in output |
 | `--no-tree` | — | Suppress AST tree output (`ast-trees.txt`) |
 | `--parser <engine>` | `auto` | Parse engine: `auto`, `typescript`, `tree-sitter` |
 | `--semantic` | off | Enable semantic analysis (TypeChecker + LanguageService) |
+| `--no-diversify` | off | Disable category-aware diversification when truncating. By default `--findings-limit` interleaves categories so the capped list is diverse. Use this for pure severity ordering. |
 | `--no-cache` | off | Disable incremental cache; re-parse all files |
 | `--clear-cache` | — | Delete the analysis cache and exit (no scan) |
+| `--all` | off | Enable all features: `--include-tests --semantic` |
 | `--help`, `-h` | — | Show help message |
 
 ### Thresholds — Architecture
@@ -113,6 +124,7 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 | `--min-function-statements N` | 6 | Min function body statements for duplicate matching |
 | `--min-flow-statements N` | 6 | Min control-flow statements for duplicate matching |
 | `--flow-dup-threshold N` | 3 | Min occurrences for a repeated flow to become a finding |
+| `--similarity-threshold N` | 0.85 | Jaccard similarity threshold for near-clone detection |
 | `--max-recs-per-category N` | 2 | Max findings per category in top recommendations |
 
 ### Thresholds — Semantic (require `--semantic`)
@@ -121,6 +133,19 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 |------|---------|----------|
 | `--type-hierarchy-threshold N` | 4 | Max inheritance depth before flagging |
 | `--override-chain-threshold N` | 3 | Max method override depth before flagging |
+
+### Thresholds — Security
+
+| Flag | Default | Controls |
+|------|---------|----------|
+| `--secret-entropy-threshold N` | 4.5 | Shannon entropy threshold for high-entropy string detection |
+| `--secret-min-length N` | 20 | Min string length for entropy-based secret detection |
+
+### Thresholds — Test Quality
+
+| Flag | Default | Controls |
+|------|---------|----------|
+| `--mock-threshold N` | 10 | Max mock/spy calls per test file before flagging |
 
 ### Output Tuning
 

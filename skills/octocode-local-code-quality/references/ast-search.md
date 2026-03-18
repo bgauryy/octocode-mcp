@@ -3,7 +3,7 @@
 Structural code search powered by [`@ast-grep/napi`](https://ast-grep.github.io/). Finds code by AST shape, not text — `console.log(x)` matches regardless of whitespace or formatting.
 
 ```bash
-node <SKILL_BASE_DIRECTORY>/scripts/ast-search.js [options]
+node <SKILL_DIR>/scripts/ast-search.js [options]
 ```
 
 ---

@@ -32,6 +32,11 @@ describe('parseArgs', () => {
     it('parses --graph flag', () => {
         expect(parseArgs(['--graph']).graph).toBe(true);
     });
+    it('parses --graph-advanced and --flow flags', () => {
+        const opts = parseArgs(['--graph-advanced', '--flow']);
+        expect(opts.graphAdvanced).toBe(true);
+        expect(opts.flow).toBe(true);
+    });
     it('parses --parser with valid values', () => {
         expect(parseArgs(['--parser', 'typescript']).parser).toBe('typescript');
         expect(parseArgs(['--parser', 'tree-sitter']).parser).toBe('tree-sitter');
@@ -211,5 +216,23 @@ describe('parseArgs', () => {
         const opts = parseArgs(['--type-hierarchy-threshold', 'abc', '--override-chain-threshold', 'xyz']);
         expect(opts.typeHierarchyThreshold).toBe(4);
         expect(opts.overrideChainThreshold).toBe(3);
+    });
+    it('--no-diversify sets noDiversify to true', () => {
+        expect(parseArgs(['--no-diversify']).noDiversify).toBe(true);
+    });
+    it('noDiversify defaults to false', () => {
+        expect(parseArgs([]).noDiversify).toBe(false);
+    });
+    it('--features=test-quality auto-enables includeTests', () => {
+        const opts = parseArgs(['--features=test-quality']);
+        expect(opts.includeTests).toBe(true);
+    });
+    it('--features=low-assertion-density auto-enables includeTests', () => {
+        const opts = parseArgs(['--features=low-assertion-density']);
+        expect(opts.includeTests).toBe(true);
+    });
+    it('--features=architecture does not auto-enable includeTests', () => {
+        const opts = parseArgs(['--features=architecture']);
+        expect(opts.includeTests).toBe(false);
     });
 });

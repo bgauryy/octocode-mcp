@@ -34,13 +34,13 @@
   "dependencies": {
     "@ast-grep/napi": "^0.42.0",
     "tree-sitter": "^0.25.0",
-    "tree-sitter-typescript": "^0.23.2"
+    "tree-sitter-typescript": "^0.23.2",
+    "typescript": "^5.9.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",
     "@types/node": "^20.0.0",
     "eslint": "^9.27.0",
-    "typescript": "^5.9.3",
     "typescript-eslint": "^8.32.0",
     "vitest": "^4.1.0"
   },

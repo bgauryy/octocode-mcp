@@ -307,9 +307,9 @@ describe('collectAllAbsoluteFiles', () => {
     });
 });
 describe('SEMANTIC_CATEGORIES constant', () => {
-    it('has exactly 13 semantic categories', async () => {
+    it('has exactly 14 semantic categories', async () => {
         const { SEMANTIC_CATEGORIES } = await import('./types.js');
-        expect(SEMANTIC_CATEGORIES.size).toBe(13);
+        expect(SEMANTIC_CATEGORIES.size).toBe(14);
     });
 });
 // ═══════════════════════════════════════════════════════════════════════════

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import * as ts from 'typescript';
 import { TS_CONTROL_KINDS } from './types.js';
-import { getLineAndCharacter, makeFingerprint, hashString, buildNodeTree, increment } from './utils.js';
+import { getLineAndCharacter, makeFingerprint, hashString, buildNodeTree, increment, isTestFile } from './utils.js';
 import { computeCognitiveComplexity } from './architecture.js';
 export function isFunctionLike(node) {
     return ts.isFunctionDeclaration(node)
@@ -219,7 +219,7 @@ export function countLinesInNode(sourceFile, node) {
     const loc = getLineAndCharacter(sourceFile, node);
     return Math.max(1, loc.lineEnd - loc.lineStart + 1);
 }
-export function makeLocationFromTs(node, sourceFile, repoRoot) {
+function makeLocationFromTs(node, sourceFile, repoRoot) {
     const loc = getLineAndCharacter(sourceFile, node);
     return {
         file: path.relative(repoRoot, node.getSourceFile().fileName),
@@ -433,11 +433,17 @@ export function analyzeSourceFile(sourceFile, packageName, packageFileSummary, o
             continue;
         let awaitCount = 0;
         let hasTryCatch = false;
+        let hasCatchChain = false;
         const scanBody = (child) => {
             if (ts.isAwaitExpression(child))
                 awaitCount++;
             if (ts.isTryStatement(child))
                 hasTryCatch = true;
+            if (ts.isCallExpression(child) &&
+                ts.isPropertyAccessExpression(child.expression) &&
+                child.expression.name.text === 'catch') {
+                hasCatchChain = true;
+            }
             if (isFunctionLike(child) && child !== fnAstNode)
                 return;
             ts.forEachChild(child, scanBody);
@@ -446,11 +452,811 @@ export function analyzeSourceFile(sourceFile, packageName, packageFileSummary, o
         if (awaitCount === 0) {
             asyncWithoutAwait.push({ name: fn.name, lineStart: fn.lineStart, lineEnd: fn.lineEnd });
         }
-        else if (!hasTryCatch) {
+        else if (!hasTryCatch && !hasCatchChain) {
             unprotectedAsync.push({ name: fn.name, awaitCount, lineStart: fn.lineStart, lineEnd: fn.lineEnd });
         }
     }
     fileEntry.asyncWithoutAwait = asyncWithoutAwait;
     fileEntry.unprotectedAsync = unprotectedAsync;
+    collectSecurityData(sourceFile, fileRelative, fileEntry);
+    if (!isTestFile(fileRelative)) {
+        collectInputSourceProfile(sourceFile, fileRelative, fileEntry);
+    }
+    collectPerformanceData(sourceFile, fileRelative, fileEntry);
+    if (isTestFile(fileRelative)) {
+        collectTestProfile(sourceFile, fileRelative, fileEntry);
+    }
+    if (!isTestFile(fileRelative)) {
+        const topLevelEffects = collectTopLevelEffects(sourceFile, fileRelative);
+        if (topLevelEffects.length > 0) {
+            fileEntry.topLevelEffects = topLevelEffects;
+        }
+        const ppSites = collectPrototypePollutionSites(sourceFile);
+        if (ppSites.length > 0) {
+            fileEntry.prototypePollutionSites = ppSites;
+        }
+    }
     return fileEntry;
+}
+const SECRET_PATTERNS = [
+    /password\s*[:=]\s*['"`]/i,
+    /api[_-]?key\s*[:=]\s*['"`]/i,
+    /secret\s*[:=]\s*['"`]/i,
+    /token\s*[:=]\s*['"`]/i,
+    /-----BEGIN.*KEY/,
+    /private[_-]?key\s*[:=]\s*['"`]/i,
+    /auth[_-]?token\s*[:=]\s*['"`]/i,
+];
+const SQL_KEYWORDS = /\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b/i;
+/** Strings that look like placeholders, not real secrets */
+const PLACEHOLDER_PATTERN = /^(YOUR_|REPLACE_ME|<[a-z_-]+>|\$\{|{{)/i;
+/** UUID pattern: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isInsideRegexLiteral(node) {
+    let current = node.parent;
+    while (current) {
+        if (ts.isRegularExpressionLiteral(current))
+            return true;
+        // Check if inside a new RegExp() call
+        if (ts.isNewExpression(current) && current.expression.getText(node.getSourceFile()) === 'RegExp')
+            return true;
+        current = current.parent;
+    }
+    return false;
+}
+function isPlaceholderOrUuid(value) {
+    return PLACEHOLDER_PATTERN.test(value) || UUID_PATTERN.test(value);
+}
+/** Skip strings inside finding metadata fields (suggestedFix, reason, impact, etc.) */
+const METADATA_PROP_NAMES = new Set([
+    'suggestedFix', 'strategy', 'steps', 'reason', 'impact', 'expectedResult', 'title',
+]);
+function isInsideMetadataProperty(node) {
+    let current = node.parent;
+    while (current) {
+        if (ts.isPropertyAssignment(current) && ts.isIdentifier(current.name)) {
+            if (METADATA_PROP_NAMES.has(current.name.text))
+                return true;
+        }
+        current = current.parent;
+    }
+    return false;
+}
+const NESTED_QUANTIFIER_RE = /(\(.+[+*]\))[+*]|(\(.+\?\))\{/;
+function computeShannonEntropy(s) {
+    const freq = new Map();
+    for (const ch of s)
+        freq.set(ch, (freq.get(ch) || 0) + 1);
+    let entropy = 0;
+    for (const count of freq.values()) {
+        const p = count / s.length;
+        if (p > 0)
+            entropy -= p * Math.log2(p);
+    }
+    return entropy;
+}
+function collectSecurityData(sourceFile, fileRelative, fileEntry) {
+    const evalUsages = [];
+    const unsafeHtmlAssignments = [];
+    const suspiciousStrings = [];
+    const regexLiterals = [];
+    const visit = (node) => {
+        if (ts.isCallExpression(node)) {
+            const text = node.expression.getText(sourceFile);
+            if (text === 'eval' || text === 'Function') {
+                const loc = getLineAndCharacter(sourceFile, node);
+                evalUsages.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+            }
+            if (text === 'new Function') {
+                const loc = getLineAndCharacter(sourceFile, node);
+                evalUsages.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+            }
+            if ((text === 'setTimeout' || text === 'setInterval') && node.arguments.length > 0) {
+                const firstArg = node.arguments[0];
+                if (ts.isStringLiteral(firstArg) || ts.isNoSubstitutionTemplateLiteral(firstArg)) {
+                    const loc = getLineAndCharacter(sourceFile, node);
+                    evalUsages.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+                }
+            }
+            if (text === 'document.write' || text === 'document.writeln') {
+                const loc = getLineAndCharacter(sourceFile, node);
+                unsafeHtmlAssignments.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+            }
+        }
+        if (ts.isNewExpression(node) && node.expression.getText(sourceFile) === 'Function') {
+            const loc = getLineAndCharacter(sourceFile, node);
+            evalUsages.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+        }
+        if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+            if (ts.isPropertyAccessExpression(node.left)) {
+                const prop = node.left.name.getText(sourceFile);
+                if (prop === 'innerHTML' || prop === 'outerHTML') {
+                    const loc = getLineAndCharacter(sourceFile, node);
+                    unsafeHtmlAssignments.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+                }
+            }
+        }
+        if (ts.isJsxAttribute(node) && node.name.getText(sourceFile) === 'dangerouslySetInnerHTML') {
+            const loc = getLineAndCharacter(sourceFile, node);
+            unsafeHtmlAssignments.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+        }
+        if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+            if (!isInsideMetadataProperty(node) && !isInsideRegexLiteral(node)) {
+                const value = node.text;
+                if (!isPlaceholderOrUuid(value)) {
+                    for (const pattern of SECRET_PATTERNS) {
+                        if (pattern.test(value)) {
+                            const loc = getLineAndCharacter(sourceFile, node);
+                            suspiciousStrings.push({ lineStart: loc.lineStart, lineEnd: loc.lineEnd, kind: 'hardcoded-secret', snippet: value.slice(0, 40), context: 'literal' });
+                            break;
+                        }
+                    }
+                    if (value.length >= 20 && computeShannonEntropy(value) > 4.5) {
+                        const loc = getLineAndCharacter(sourceFile, node);
+                        suspiciousStrings.push({ lineStart: loc.lineStart, lineEnd: loc.lineEnd, kind: 'hardcoded-secret', context: 'literal' });
+                    }
+                }
+            }
+        }
+        if (ts.isRegularExpressionLiteral(node)) {
+            // Tag regex-definition context for strings inside regex that match secret patterns
+            const regexText = node.getText(sourceFile);
+            for (const pattern of SECRET_PATTERNS) {
+                if (pattern.test(regexText)) {
+                    // This is a regex that mentions secret keywords — NOT a real secret
+                    // Mark as regex-definition so the detector can skip it
+                    const loc = getLineAndCharacter(sourceFile, node);
+                    suspiciousStrings.push({ lineStart: loc.lineStart, lineEnd: loc.lineEnd, kind: 'hardcoded-secret', snippet: regexText.slice(0, 40), context: 'regex-definition' });
+                    break;
+                }
+            }
+        }
+        if (ts.isTemplateExpression(node)) {
+            if (!isInsideMetadataProperty(node)) {
+                const fullText = node.getText(sourceFile);
+                if (SQL_KEYWORDS.test(fullText) && node.templateSpans.length > 0) {
+                    const loc = getLineAndCharacter(sourceFile, node);
+                    suspiciousStrings.push({ lineStart: loc.lineStart, lineEnd: loc.lineEnd, kind: 'sql-injection', snippet: fullText.slice(0, 60) });
+                }
+            }
+        }
+        if (ts.isRegularExpressionLiteral(node)) {
+            const pattern = node.text;
+            const loc = getLineAndCharacter(sourceFile, node);
+            regexLiterals.push({ lineStart: loc.lineStart, lineEnd: loc.lineEnd, pattern });
+        }
+        ts.forEachChild(node, visit);
+    };
+    ts.forEachChild(sourceFile, visit);
+    fileEntry.evalUsages = evalUsages;
+    fileEntry.unsafeHtmlAssignments = unsafeHtmlAssignments;
+    fileEntry.suspiciousStrings = suspiciousStrings;
+    fileEntry.regexLiterals = regexLiterals;
+}
+const HIGH_CONFIDENCE_PARAM = /^(req|request|body|rawBody|formData|payload|query|headers|params)$/i;
+const MEDIUM_CONFIDENCE_PARAM = /^(input|event|message)$/i;
+const SOURCE_PARAM_PATTERNS = /^(req|request|body|input|payload|data|params|query|headers|event|message|ctx|context|args|rawBody|formData)/i;
+function getParamConfidence(params) {
+    let hasMedium = false;
+    for (const p of params) {
+        if (HIGH_CONFIDENCE_PARAM.test(p))
+            return 'high';
+        if (MEDIUM_CONFIDENCE_PARAM.test(p))
+            hasMedium = true;
+    }
+    return hasMedium ? 'medium' : 'low';
+}
+const SINK_CALL_PATTERNS = [
+    { pattern: /^eval$/, kind: 'eval' },
+    { pattern: /^Function$/, kind: 'eval' },
+    { pattern: /\.exec(Sync)?$/, kind: 'exec' },
+    { pattern: /^child_process\.(exec|spawn|fork)/, kind: 'exec' },
+    { pattern: /^execSync$|^spawnSync$/, kind: 'exec' },
+    { pattern: /^cp\.exec$|^cp\.spawn$/, kind: 'exec' },
+    { pattern: /\.innerHTML$|\.outerHTML$/, kind: 'innerHTML' },
+    { pattern: /dangerouslySetInnerHTML/, kind: 'innerHTML' },
+    { pattern: /\.query$|\.execute$/, kind: 'sql' },
+    { pattern: /\.redirect$/, kind: 'redirect' },
+    { pattern: /\.send$|\.json$|\.write$/, kind: 'response' },
+    { pattern: /fs\.(writeFile|appendFile)/, kind: 'fs-write' },
+    { pattern: /writeFileSync|appendFileSync/, kind: 'fs-write' },
+    // Path traversal sinks
+    { pattern: /fs\.(readFile|readFileSync|createReadStream)/, kind: 'fs-read' },
+    { pattern: /readFileSync|readFile/, kind: 'fs-read' },
+    { pattern: /path\.(resolve|join)/, kind: 'path-resolve' },
+    // SSRF sinks
+    { pattern: /^fetch$/, kind: 'ssrf' },
+    { pattern: /^(http|https)\.(request|get)/, kind: 'ssrf' },
+    { pattern: /axios\.(get|post|put|delete|request)/, kind: 'ssrf' },
+];
+const SCHEMA_VALIDATOR_PATTERNS = /\.(validate|parse|safeParse|parseAsync|check|verify)\s*\(/;
+const VALIDATOR_LIB_PATTERNS = /^(z|zod|Joi|yup|ajv|validator|superstruct|io-ts)\./;
+function collectInputSourceProfile(sourceFile, _fileRelative, fileEntry) {
+    const inputSources = [];
+    const visitFn = (node) => {
+        if (!isFunctionLike(node)) {
+            ts.forEachChild(node, visitFn);
+            return;
+        }
+        const fnNode = node;
+        const params = fnNode.parameters;
+        const sourceParams = [];
+        for (const p of params) {
+            const name = p.name.getText(sourceFile);
+            if (SOURCE_PARAM_PATTERNS.test(name))
+                sourceParams.push(name);
+        }
+        if (sourceParams.length === 0) {
+            ts.forEachChild(node, visitFn);
+            return;
+        }
+        const body = fnNode.body;
+        if (!body) {
+            ts.forEachChild(node, visitFn);
+            return;
+        }
+        const sinkKinds = new Set();
+        let hasValidation = false;
+        const callsWithInputArgs = [];
+        const sourceParamSet = new Set(sourceParams);
+        const walkBody = (child) => {
+            if (isFunctionLike(child) && child !== node)
+                return;
+            if (ts.isCallExpression(child)) {
+                const callText = child.expression.getText(sourceFile);
+                for (const sink of SINK_CALL_PATTERNS) {
+                    if (sink.pattern.test(callText)) {
+                        sinkKinds.add(sink.kind);
+                        break;
+                    }
+                }
+                if (SCHEMA_VALIDATOR_PATTERNS.test(callText) || VALIDATOR_LIB_PATTERNS.test(callText)) {
+                    hasValidation = true;
+                }
+                for (const arg of child.arguments) {
+                    const argText = arg.getText(sourceFile);
+                    for (const sp of sourceParamSet) {
+                        if (argText === sp || argText.startsWith(sp + '.') || argText.startsWith(sp + '[')) {
+                            const loc = getLineAndCharacter(sourceFile, child);
+                            callsWithInputArgs.push({ callee: callText, lineStart: loc.lineStart });
+                            break;
+                        }
+                    }
+                }
+            }
+            if (ts.isTypeOfExpression(child)) {
+                const operand = child.expression.getText(sourceFile);
+                if (sourceParamSet.has(operand))
+                    hasValidation = true;
+            }
+            if (ts.isPrefixUnaryExpression(child) && child.operator === ts.SyntaxKind.ExclamationToken) {
+                const operand = child.operand.getText(sourceFile);
+                if (sourceParamSet.has(operand))
+                    hasValidation = true;
+            }
+            if (ts.isIfStatement(child) || ts.isConditionalExpression(child)) {
+                const cond = ts.isIfStatement(child) ? child.expression : child.condition;
+                const condText = cond.getText(sourceFile);
+                for (const sp of sourceParamSet) {
+                    if (condText.includes(sp)) {
+                        hasValidation = true;
+                        break;
+                    }
+                }
+            }
+            if (ts.isCallExpression(child) && child.expression.getText(sourceFile).endsWith('instanceof')) {
+                hasValidation = true;
+            }
+            if (ts.isBinaryExpression(child) && child.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword) {
+                const leftText = child.left.getText(sourceFile);
+                if (sourceParamSet.has(leftText))
+                    hasValidation = true;
+            }
+            ts.forEachChild(child, walkBody);
+        };
+        ts.forEachChild(body, walkBody);
+        if (ts.isTemplateExpression(body) || ts.isBlock(body)) {
+            const bodyText = body.getText(sourceFile);
+            for (const sp of sourceParamSet) {
+                if (bodyText.includes(sp + '?.')) {
+                    hasValidation = true;
+                    break;
+                }
+            }
+        }
+        const fnLoc = getLineAndCharacter(sourceFile, node);
+        const fnName = getFunctionName(node, sourceFile);
+        inputSources.push({
+            functionName: fnName,
+            lineStart: fnLoc.lineStart,
+            lineEnd: fnLoc.lineEnd,
+            sourceParams,
+            hasSinkInBody: sinkKinds.size > 0,
+            sinkKinds: [...sinkKinds],
+            hasValidation,
+            callsWithInputArgs,
+            paramConfidence: getParamConfidence(sourceParams),
+        });
+        ts.forEachChild(node, visitFn);
+    };
+    ts.forEachChild(sourceFile, visitFn);
+    fileEntry.inputSources = inputSources;
+}
+const SYNC_IO_METHODS = new Set([
+    'readFileSync', 'writeFileSync', 'existsSync', 'mkdirSync', 'readdirSync',
+    'statSync', 'lstatSync', 'unlinkSync', 'rmdirSync', 'renameSync', 'copyFileSync',
+    'accessSync', 'appendFileSync', 'chmodSync', 'chownSync', 'openSync', 'closeSync',
+    'execSync', 'execFileSync', 'spawnSync',
+]);
+function collectPerformanceData(sourceFile, fileRelative, fileEntry) {
+    const awaitInLoopLocations = [];
+    const syncIoCalls = [];
+    const timerCalls = [];
+    const listenerRegistrations = [];
+    const listenerRemovals = [];
+    const isInsideLoop = (node) => {
+        let current = node.parent;
+        while (current) {
+            if (ts.isForStatement(current) || ts.isWhileStatement(current) || ts.isDoStatement(current)
+                || ts.isForOfStatement(current) || ts.isForInStatement(current))
+                return true;
+            if (isFunctionLike(current))
+                return false;
+            current = current.parent;
+        }
+        return false;
+    };
+    const visit = (node) => {
+        if (ts.isAwaitExpression(node) && isInsideLoop(node)) {
+            const loc = getLineAndCharacter(sourceFile, node);
+            awaitInLoopLocations.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+        }
+        if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+            const methodName = node.expression.name.getText(sourceFile);
+            if (SYNC_IO_METHODS.has(methodName)) {
+                const loc = getLineAndCharacter(sourceFile, node);
+                syncIoCalls.push({ name: methodName, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+            }
+            if (methodName === 'addEventListener' || methodName === 'on' || methodName === 'addListener') {
+                const loc = getLineAndCharacter(sourceFile, node);
+                listenerRegistrations.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+            }
+            if (methodName === 'removeEventListener' || methodName === 'off' || methodName === 'removeListener') {
+                const loc = getLineAndCharacter(sourceFile, node);
+                listenerRemovals.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+            }
+        }
+        if (ts.isCallExpression(node)) {
+            const text = node.expression.getText(sourceFile);
+            if (text === 'setInterval' || text === 'setTimeout') {
+                const loc = getLineAndCharacter(sourceFile, node);
+                const clearName = text === 'setInterval' ? 'clearInterval' : 'clearTimeout';
+                const parentBlock = findParentBlock(node);
+                const hasCleanup = parentBlock ? blockContainsCall(parentBlock, sourceFile, clearName) : false;
+                timerCalls.push({
+                    kind: text,
+                    lineStart: loc.lineStart,
+                    lineEnd: loc.lineEnd,
+                    hasCleanup,
+                });
+            }
+        }
+        ts.forEachChild(node, visit);
+    };
+    ts.forEachChild(sourceFile, visit);
+    fileEntry.awaitInLoopLocations = awaitInLoopLocations;
+    fileEntry.syncIoCalls = syncIoCalls;
+    fileEntry.timerCalls = timerCalls;
+    fileEntry.listenerRegistrations = listenerRegistrations;
+    fileEntry.listenerRemovals = listenerRemovals;
+}
+const SYNC_IO_TOP_LEVEL = new Set([
+    'readFileSync', 'writeFileSync', 'existsSync', 'mkdirSync', 'readdirSync',
+    'statSync', 'lstatSync', 'unlinkSync', 'rmdirSync', 'renameSync', 'copyFileSync',
+    'accessSync', 'appendFileSync', 'chmodSync', 'chownSync', 'openSync', 'closeSync',
+]);
+const EXEC_SYNC_TOP_LEVEL = new Set(['execSync', 'execFileSync', 'spawnSync']);
+function collectTopLevelEffects(sourceFile, _fileRelative) {
+    const effects = [];
+    for (const stmt of sourceFile.statements) {
+        if (ts.isImportDeclaration(stmt)) {
+            if (!stmt.importClause) {
+                const spec = stmt.moduleSpecifier;
+                const moduleName = ts.isStringLiteral(spec) ? spec.text : '<unknown>';
+                const loc = getLineAndCharacter(sourceFile, stmt);
+                effects.push({
+                    kind: 'side-effect-import',
+                    lineStart: loc.lineStart,
+                    lineEnd: loc.lineEnd,
+                    detail: `import '${moduleName}'`,
+                    weight: 3,
+                    confidence: 'medium',
+                });
+            }
+            continue;
+        }
+        if (ts.isExportDeclaration(stmt) || ts.isExportAssignment(stmt))
+            continue;
+        if (ts.isTypeAliasDeclaration(stmt) || ts.isInterfaceDeclaration(stmt) || ts.isEnumDeclaration(stmt))
+            continue;
+        if (ts.isModuleDeclaration(stmt))
+            continue;
+        if (isFunctionLike(stmt) || ts.isFunctionDeclaration(stmt) || ts.isClassDeclaration(stmt))
+            continue;
+        if (ts.isVariableStatement(stmt)) {
+            for (const decl of stmt.declarationList.declarations) {
+                if (decl.initializer) {
+                    scanExpressionForEffects(decl.initializer, sourceFile, effects);
+                }
+            }
+            continue;
+        }
+        if (ts.isExpressionStatement(stmt)) {
+            scanExpressionForEffects(stmt.expression, sourceFile, effects);
+            continue;
+        }
+        if (ts.isIfStatement(stmt) || ts.isForStatement(stmt) || ts.isWhileStatement(stmt)
+            || ts.isDoStatement(stmt) || ts.isForOfStatement(stmt) || ts.isForInStatement(stmt)
+            || ts.isSwitchStatement(stmt) || ts.isTryStatement(stmt)) {
+            scanNodeForEffects(stmt, sourceFile, effects);
+        }
+    }
+    return effects;
+}
+function scanExpressionForEffects(expr, sourceFile, effects) {
+    if (ts.isAwaitExpression(expr)) {
+        const loc = getLineAndCharacter(sourceFile, expr);
+        effects.push({
+            kind: 'top-level-await',
+            lineStart: loc.lineStart,
+            lineEnd: loc.lineEnd,
+            detail: 'top-level await',
+            weight: 4,
+            confidence: 'high',
+        });
+        return;
+    }
+    if (ts.isCallExpression(expr)) {
+        classifyCall(expr, sourceFile, effects);
+        return;
+    }
+    if (ts.isNewExpression(expr) && expr.expression.getText(sourceFile) === 'Function') {
+        const loc = getLineAndCharacter(sourceFile, expr);
+        effects.push({
+            kind: 'eval',
+            lineStart: loc.lineStart,
+            lineEnd: loc.lineEnd,
+            detail: 'new Function()',
+            weight: 8,
+            confidence: 'high',
+        });
+        return;
+    }
+    if (ts.isBinaryExpression(expr) && expr.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+        if (ts.isCallExpression(expr.right)) {
+            classifyCall(expr.right, sourceFile, effects);
+        }
+    }
+}
+function classifyCall(call, sourceFile, effects) {
+    const text = call.expression.getText(sourceFile);
+    const loc = getLineAndCharacter(sourceFile, call);
+    if (text === 'eval' || text === 'Function') {
+        effects.push({ kind: 'eval', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: `${text}()`, weight: 8, confidence: 'high' });
+        return;
+    }
+    if (text === 'setInterval' || text === 'setTimeout') {
+        effects.push({ kind: 'timer', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: `${text}()`, weight: 4, confidence: 'high' });
+        return;
+    }
+    if (ts.isPropertyAccessExpression(call.expression)) {
+        const method = call.expression.name.getText(sourceFile);
+        const obj = call.expression.expression.getText(sourceFile);
+        if (EXEC_SYNC_TOP_LEVEL.has(method) || EXEC_SYNC_TOP_LEVEL.has(text)) {
+            effects.push({ kind: 'exec-sync', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: text, weight: 8, confidence: 'high' });
+            return;
+        }
+        if (SYNC_IO_TOP_LEVEL.has(method)) {
+            effects.push({ kind: 'sync-io', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: text, weight: 5, confidence: 'high' });
+            return;
+        }
+        if (obj === 'process' && (method === 'on' || method === 'once' || method === 'addListener')) {
+            effects.push({ kind: 'process-handler', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: `${text}()`, weight: 4, confidence: 'high' });
+            return;
+        }
+        if (method === 'addEventListener' || method === 'on' || method === 'addListener') {
+            effects.push({ kind: 'listener', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: `${text}()`, weight: 4, confidence: 'medium' });
+            return;
+        }
+    }
+    if (ts.isCallExpression(call.expression) || text === 'import') {
+        if (text.startsWith('import(') || (ts.isCallExpression(call) && call.expression.kind === ts.SyntaxKind.ImportKeyword)) {
+            effects.push({ kind: 'dynamic-import', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: 'dynamic import()', weight: 3, confidence: 'medium' });
+        }
+    }
+}
+function scanNodeForEffects(node, sourceFile, effects) {
+    if (isFunctionLike(node) || ts.isClassDeclaration(node))
+        return;
+    if (ts.isCallExpression(node)) {
+        classifyCall(node, sourceFile, effects);
+        return;
+    }
+    if (ts.isAwaitExpression(node)) {
+        const loc = getLineAndCharacter(sourceFile, node);
+        effects.push({ kind: 'top-level-await', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: 'top-level await', weight: 4, confidence: 'high' });
+        return;
+    }
+    if (ts.isNewExpression(node) && node.expression.getText(sourceFile) === 'Function') {
+        const loc = getLineAndCharacter(sourceFile, node);
+        effects.push({ kind: 'eval', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: 'new Function()', weight: 8, confidence: 'high' });
+        return;
+    }
+    ts.forEachChild(node, (child) => scanNodeForEffects(child, sourceFile, effects));
+}
+// ─── Prototype Pollution Risk Sites ─────────────────────────────────────────
+const DEEP_MERGE_NAMES = new Set([
+    'merge', 'deepMerge', 'deepAssign', 'extend', 'deepExtend',
+    'defaults', 'defaultsDeep', 'assign', 'mixin',
+]);
+/** Check if a computed-property-write key comes from a for..of/for..in loop over known internal iteration */
+function isKeyFromInternalIteration(node, sourceFile) {
+    const keyExpr = node.argumentExpression;
+    if (!keyExpr || !ts.isIdentifier(keyExpr))
+        return false;
+    const keyName = keyExpr.getText(sourceFile);
+    // Walk up to find a for-of/for-in loop that declares this key
+    let current = node.parent;
+    while (current) {
+        if (ts.isForOfStatement(current) || ts.isForInStatement(current)) {
+            const init = current.initializer;
+            if (init) {
+                const initText = init.getText(sourceFile);
+                if (initText.includes(keyName)) {
+                    // Check if the iterable is a known-safe internal source
+                    const expr = current.expression.getText(sourceFile);
+                    if (/Object\.(keys|values|entries|getOwnPropertyNames)\(/.test(expr) ||
+                        /\.keys\(\)|\.values\(\)|\.entries\(\)/.test(expr) ||
+                        /Array\.from\(/.test(expr)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        if (isFunctionLike(current))
+            break;
+        current = current.parent;
+    }
+    return false;
+}
+/** Check if the containing block has a __proto__/constructor/prototype key guard */
+function hasProtoKeyGuard(node, sourceFile) {
+    const block = findParentBlock(node);
+    if (!block)
+        return false;
+    const blockText = block.getText(sourceFile);
+    return /__proto__|constructor|prototype/.test(blockText) &&
+        (blockText.includes('===') || blockText.includes('!==') ||
+            blockText.includes('includes(') || blockText.includes('hasOwnProperty'));
+}
+/** Check if the target object was created with Object.create(null) or is Map/Set */
+function isTargetSafeObject(node, sourceFile) {
+    const objText = node.expression.getText(sourceFile);
+    // Walk up to find variable declaration
+    let current = node.parent;
+    while (current) {
+        if (ts.isBlock(current) || ts.isSourceFile(current)) {
+            // Search for Object.create(null) or new Map/Set assignment for this object
+            const text = current.getText(sourceFile);
+            const createNullPattern = new RegExp(`${objText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=\\s*Object\\.create\\(null\\)`);
+            const mapSetPattern = new RegExp(`${objText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=\\s*new\\s+(Map|Set)\\b`);
+            if (createNullPattern.test(text) || mapSetPattern.test(text))
+                return true;
+            break;
+        }
+        current = current.parent;
+    }
+    return false;
+}
+function collectPrototypePollutionSites(sourceFile) {
+    const sites = [];
+    const visit = (node) => {
+        if (ts.isCallExpression(node)) {
+            const text = node.expression.getText(sourceFile);
+            if (text === 'Object.assign' && node.arguments.length >= 2) {
+                const loc = getLineAndCharacter(sourceFile, node);
+                sites.push({ kind: 'object-assign', detail: `Object.assign() merges properties without __proto__ guard`, lineStart: loc.lineStart, lineEnd: loc.lineEnd, guarded: false });
+            }
+            const calleeName = text.split('.').pop() || '';
+            if (DEEP_MERGE_NAMES.has(calleeName) && node.arguments.length >= 1) {
+                const loc = getLineAndCharacter(sourceFile, node);
+                sites.push({ kind: 'deep-merge', detail: `${calleeName}() deep-merges without prototype guard`, lineStart: loc.lineStart, lineEnd: loc.lineEnd, guarded: false });
+            }
+        }
+        if (ts.isElementAccessExpression(node) &&
+            node.argumentExpression &&
+            !ts.isStringLiteral(node.argumentExpression) &&
+            !ts.isNumericLiteral(node.argumentExpression) &&
+            node.parent && ts.isBinaryExpression(node.parent) &&
+            node.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+            node.parent.left === node) {
+            const guarded = isKeyFromInternalIteration(node, sourceFile) ||
+                hasProtoKeyGuard(node, sourceFile) ||
+                isTargetSafeObject(node, sourceFile);
+            const loc = getLineAndCharacter(sourceFile, node);
+            sites.push({ kind: 'computed-property-write', detail: `Dynamic bracket assignment: ${node.getText(sourceFile).slice(0, 40)}`, lineStart: loc.lineStart, lineEnd: loc.lineEnd, guarded });
+        }
+        ts.forEachChild(node, visit);
+    };
+    ts.forEachChild(sourceFile, visit);
+    return sites;
+}
+function findParentBlock(node) {
+    let current = node.parent;
+    while (current) {
+        if (ts.isBlock(current) || ts.isSourceFile(current))
+            return current;
+        current = current.parent;
+    }
+    return null;
+}
+function blockContainsCall(block, sourceFile, callName) {
+    let found = false;
+    const search = (n) => {
+        if (found)
+            return;
+        if (ts.isCallExpression(n) && n.expression.getText(sourceFile) === callName) {
+            found = true;
+            return;
+        }
+        ts.forEachChild(n, search);
+    };
+    ts.forEachChild(block, search);
+    return found;
+}
+const ASSERTION_PATTERNS = new Set(['expect', 'assert', 'should']);
+const MOCK_PATTERNS = ['jest.mock', 'vi.mock', 'sinon.stub', 'jest.spyOn', 'vi.spyOn', 'sinon.mock'];
+const RESTORE_PATTERNS = new Set([
+    'jest.restoreAllMocks',
+    'vi.restoreAllMocks',
+]);
+const SETUP_PATTERNS = new Set(['beforeAll', 'beforeEach', 'afterAll', 'afterEach']);
+const FOCUSED_PATTERNS = new Set(['it.only', 'test.only', 'describe.only', 'it.skip', 'test.skip', 'describe.skip', 'it.todo', 'test.todo']);
+const USE_FAKE_TIMER_PATTERNS = new Set(['jest.useFakeTimers', 'vi.useFakeTimers']);
+const USE_REAL_TIMER_PATTERNS = new Set(['jest.useRealTimers', 'vi.useRealTimers']);
+function getSpyOrStubKind(call, sourceFile) {
+    if (!ts.isPropertyAccessExpression(call.expression))
+        return undefined;
+    const methodName = call.expression.name.getText(sourceFile);
+    const receiver = call.expression.expression.getText(sourceFile);
+    if ((receiver === 'jest' || receiver === 'vi') && methodName === 'spyOn')
+        return 'spy';
+    if (receiver === 'sinon' && (methodName === 'stub' || methodName === 'mock'))
+        return 'stub';
+    return undefined;
+}
+function getMockControlTarget(node, sourceFile) {
+    let current = node;
+    while (current.parent) {
+        const parent = current.parent;
+        if (ts.isVariableDeclaration(parent) && parent.initializer === current && ts.isIdentifier(parent.name)) {
+            return parent.name.getText(sourceFile);
+        }
+        if (ts.isBinaryExpression(parent) && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken && parent.right === current) {
+            return parent.left.getText(sourceFile).trim();
+        }
+        current = parent;
+    }
+    return undefined;
+}
+function getMockRestoreTarget(node, sourceFile) {
+    if (!ts.isPropertyAccessExpression(node.expression))
+        return undefined;
+    return node.expression.expression.getText(sourceFile).trim();
+}
+function collectTestProfile(sourceFile, fileRelative, fileEntry) {
+    const testBlocks = [];
+    const mockCalls = [];
+    const setupCalls = [];
+    const mutableStateDecls = [];
+    const focusedCalls = [];
+    const timerControls = [];
+    const mockRestores = [];
+    const spyOrStubCalls = [];
+    const visit = (node, insideDescribe, insideTest) => {
+        if (ts.isCallExpression(node)) {
+            const callText = node.expression.getText(sourceFile);
+            if (FOCUSED_PATTERNS.has(callText)) {
+                const loc = getLineAndCharacter(sourceFile, node);
+                focusedCalls.push({ kind: callText, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+            }
+            if ((callText === 'it' || callText === 'test' || callText === 'it.only' || callText === 'test.only') && node.arguments.length >= 2) {
+                const nameArg = node.arguments[0];
+                const name = ts.isStringLiteral(nameArg) ? nameArg.text : callText;
+                const body = node.arguments[1];
+                const loc = getLineAndCharacter(sourceFile, node);
+                let assertionCount = 0;
+                const countAssertions = (n) => {
+                    if (ts.isCallExpression(n)) {
+                        const t = n.expression.getText(sourceFile);
+                        if (ASSERTION_PATTERNS.has(t.split('.')[0]) || t.includes('.to.') || t.includes('.should'))
+                            assertionCount++;
+                    }
+                    ts.forEachChild(n, countAssertions);
+                };
+                ts.forEachChild(body, countAssertions);
+                testBlocks.push({ name, lineStart: loc.lineStart, lineEnd: loc.lineEnd, assertionCount });
+                ts.forEachChild(node, (child) => visit(child, insideDescribe, true));
+                return;
+            }
+            if (MOCK_PATTERNS.some((p) => callText === p || callText.startsWith(p + '('))) {
+                const loc = getLineAndCharacter(sourceFile, node);
+                mockCalls.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+                const spyOrStubKind = getSpyOrStubKind(node, sourceFile);
+                if (spyOrStubKind) {
+                    spyOrStubCalls.push({
+                        kind: spyOrStubKind,
+                        file: fileRelative,
+                        lineStart: loc.lineStart,
+                        lineEnd: loc.lineEnd,
+                        target: getMockControlTarget(node, sourceFile),
+                    });
+                }
+            }
+            if (USE_FAKE_TIMER_PATTERNS.has(callText)) {
+                const loc = getLineAndCharacter(sourceFile, node);
+                timerControls.push({ kind: callText, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+            }
+            if (USE_REAL_TIMER_PATTERNS.has(callText)) {
+                const loc = getLineAndCharacter(sourceFile, node);
+                timerControls.push({ kind: callText, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+            }
+            if (RESTORE_PATTERNS.has(callText)) {
+                const loc = getLineAndCharacter(sourceFile, node);
+                mockRestores.push({
+                    kind: 'restoreAll',
+                    file: fileRelative,
+                    lineStart: loc.lineStart,
+                    lineEnd: loc.lineEnd,
+                });
+            }
+            else if (callText.endsWith('.mockRestore')) {
+                const loc = getLineAndCharacter(sourceFile, node);
+                mockRestores.push({
+                    kind: 'restore',
+                    file: fileRelative,
+                    lineStart: loc.lineStart,
+                    lineEnd: loc.lineEnd,
+                    target: getMockRestoreTarget(node, sourceFile),
+                });
+            }
+            if (SETUP_PATTERNS.has(callText)) {
+                const loc = getLineAndCharacter(sourceFile, node);
+                setupCalls.push({ kind: callText, lineStart: loc.lineStart });
+            }
+            if (callText === 'describe' || callText === 'describe.only') {
+                ts.forEachChild(node, (child) => visit(child, true, insideTest));
+                return;
+            }
+        }
+        if (insideDescribe && !insideTest && ts.isVariableStatement(node)) {
+            const decl = node.declarationList;
+            if (decl.flags & ts.NodeFlags.Let || !(decl.flags & ts.NodeFlags.Const)) {
+                const loc = getLineAndCharacter(sourceFile, node);
+                mutableStateDecls.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+            }
+        }
+        ts.forEachChild(node, (child) => visit(child, insideDescribe, insideTest));
+    };
+    ts.forEachChild(sourceFile, (child) => visit(child, false, false));
+    fileEntry.testProfile = {
+        testBlocks,
+        mockCalls,
+        setupCalls,
+        mutableStateDecls,
+        focusedCalls,
+        timerControls,
+        mockRestores,
+        spyOrStubCalls,
+    };
 }

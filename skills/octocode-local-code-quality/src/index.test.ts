@@ -7,20 +7,23 @@ import type {
   FileEntry, FileCriticality, Finding,
   DependencyProfile, FunctionEntry,
 } from './types.js';
-import { DEFAULT_OPTS } from './types.js';
+import { DEFAULT_OPTS, PILLAR_CATEGORIES } from './types.js';
+import { isLikelyEntrypoint } from './architecture.js';
 import {
   computeDependencyCycles,
   computeDependencyCriticalPaths,
   buildIssueCatalog,
-  isLikelyEntrypoint,
   ARCHITECTURE_CATEGORIES,
   CODE_QUALITY_CATEGORIES,
   DEAD_CODE_CATEGORIES,
+  SECURITY_CATEGORIES,
+  TEST_QUALITY_CATEGORIES,
   writeMultiFileReport,
   severityBreakdown,
   categoryBreakdown,
   generateSummaryMd,
   diverseTopRecommendations,
+  diversifyFindings,
   computeHealthScore,
   collectTagCloud,
 } from './index.js';
@@ -608,21 +611,31 @@ describe('category group constants', () => {
     }
   });
 
-  it('all 51 categories are covered', () => {
-    const total = ARCHITECTURE_CATEGORIES.size + CODE_QUALITY_CATEGORIES.size + DEAD_CODE_CATEGORIES.size;
-    expect(total).toBe(51);
+  it('all categories are covered across all pillars', () => {
+    const total = Object.values(PILLAR_CATEGORIES).flat().length;
+    const setTotal = ARCHITECTURE_CATEGORIES.size + CODE_QUALITY_CATEGORIES.size + DEAD_CODE_CATEGORIES.size
+      + SECURITY_CATEGORIES.size + TEST_QUALITY_CATEGORIES.size;
+    expect(setTotal).toBe(total);
   });
 
-  it('architecture group has 19 categories', () => {
-    expect(ARCHITECTURE_CATEGORIES.size).toBe(19);
+  it('architecture group has 25 categories', () => {
+    expect(ARCHITECTURE_CATEGORIES.size).toBe(25);
   });
 
-  it('code quality group has 22 categories', () => {
-    expect(CODE_QUALITY_CATEGORIES.size).toBe(22);
+  it('code quality group has expected categories', () => {
+    expect(CODE_QUALITY_CATEGORIES.size).toBe(28);
   });
 
-  it('dead code group has 10 categories', () => {
-    expect(DEAD_CODE_CATEGORIES.size).toBe(10);
+  it('dead code group has 11 categories', () => {
+    expect(DEAD_CODE_CATEGORIES.size).toBe(11);
+  });
+
+  it('security group has 10 categories', () => {
+    expect(SECURITY_CATEGORIES.size).toBe(10);
+  });
+
+  it('test quality group has 8 categories', () => {
+    expect(TEST_QUALITY_CATEGORIES.size).toBe(8);
   });
 });
 
@@ -665,6 +678,117 @@ describe('categoryBreakdown', () => {
     const result = categoryBreakdown(findings);
     expect(result['dead-export']).toBe(2);
     expect(result['dependency-cycle']).toBe(1);
+  });
+});
+
+// ─── diversifyFindings ──────────────────────────────────────────────────────
+
+describe('diversifyFindings', () => {
+  type DraftFinding = Omit<Finding, 'id'> & { id?: string };
+
+  const makeDraft = (severity: string, category: string, idx: number): DraftFinding => ({
+    severity: severity as Finding['severity'],
+    category,
+    file: `${category}-${idx}.ts`,
+    lineStart: 1,
+    lineEnd: 1,
+    title: `${category} finding ${idx}`,
+    reason: 'test',
+    files: [`${category}-${idx}.ts`],
+    suggestedFix: { strategy: 'test', steps: ['step1'] },
+  });
+
+  it('returns all findings when limit >= length', () => {
+    const input = [makeDraft('high', 'a', 1), makeDraft('high', 'b', 1)];
+    expect(diversifyFindings(input, 10)).toBe(input); // same reference
+    expect(diversifyFindings(input, 2)).toBe(input);
+  });
+
+  it('returns all findings when limit is Infinity', () => {
+    const input = [makeDraft('high', 'a', 1)];
+    expect(diversifyFindings(input, Infinity)).toBe(input);
+  });
+
+  it('round-robins across categories instead of taking all from one', () => {
+    // 10 findings from cat-a (all high), 2 from cat-b (all high)
+    const input = [
+      ...Array.from({ length: 10 }, (_, i) => makeDraft('high', 'await-in-loop', i)),
+      makeDraft('high', 'dead-export', 1),
+      makeDraft('high', 'dead-export', 2),
+    ];
+    const result = diversifyFindings(input, 5);
+    expect(result).toHaveLength(5);
+    // Must include findings from both categories
+    const categories = new Set(result.map(f => f.category));
+    expect(categories.size).toBe(2);
+    expect(categories.has('await-in-loop')).toBe(true);
+    expect(categories.has('dead-export')).toBe(true);
+  });
+
+  it('prioritizes categories by highest severity', () => {
+    const input = [
+      makeDraft('critical', 'security', 1),
+      makeDraft('high', 'quality', 1),
+      makeDraft('high', 'quality', 2),
+      makeDraft('medium', 'dead-code', 1),
+      makeDraft('medium', 'dead-code', 2),
+    ];
+    const result = diversifyFindings(input, 3);
+    expect(result).toHaveLength(3);
+    // First pick from each category: security (critical), quality (high), dead-code (medium)
+    expect(result[0].category).toBe('security');
+    expect(result[1].category).toBe('quality');
+    expect(result[2].category).toBe('dead-code');
+  });
+
+  it('continues round-robin when some categories are exhausted', () => {
+    const input = [
+      makeDraft('high', 'a', 1),
+      makeDraft('high', 'b', 1),
+      makeDraft('high', 'b', 2),
+      makeDraft('high', 'b', 3),
+    ];
+    const result = diversifyFindings(input, 3);
+    expect(result).toHaveLength(3);
+    // Round 1: a-1, b-1. Round 2: a exhausted, b-2
+    expect(result.filter(f => f.category === 'a')).toHaveLength(1);
+    expect(result.filter(f => f.category === 'b')).toHaveLength(2);
+  });
+
+  it('handles empty input', () => {
+    expect(diversifyFindings([], 5)).toEqual([]);
+  });
+
+  it('handles single category (no diversity possible)', () => {
+    const input = Array.from({ length: 10 }, (_, i) => makeDraft('high', 'only-cat', i));
+    const result = diversifyFindings(input, 3);
+    expect(result).toHaveLength(3);
+    expect(result.every(f => f.category === 'only-cat')).toBe(true);
+  });
+
+  it('handles limit of 1', () => {
+    const input = [
+      makeDraft('critical', 'a', 1),
+      makeDraft('high', 'b', 1),
+    ];
+    const result = diversifyFindings(input, 1);
+    expect(result).toHaveLength(1);
+    expect(result[0].severity).toBe('critical');
+  });
+
+  it('preserves severity order within each category', () => {
+    const input = [
+      makeDraft('critical', 'a', 1),
+      makeDraft('high', 'a', 2),
+      makeDraft('medium', 'a', 3),
+      makeDraft('critical', 'b', 1),
+      makeDraft('high', 'b', 2),
+    ];
+    const result = diversifyFindings(input, 4);
+    // Round 1: a-critical, b-critical. Round 2: a-high, b-high
+    const aFindings = result.filter(f => f.category === 'a');
+    expect(aFindings[0].severity).toBe('critical');
+    expect(aFindings[1].severity).toBe('high');
   });
 });
 
@@ -989,7 +1113,7 @@ describe('generateSummaryMd', () => {
   }
 
   it('produces markdown with all major sections', () => {
-    const md = generateSummaryMd(fakeDir, makeReportForMd(), { summary: 'summary.json' }, [], [], []);
+    const md = generateSummaryMd({ dir: fakeDir, report: makeReportForMd(), outputFiles: { summary: 'summary.json' }, architectureFindings: [], codeQualityFindings: [], deadCodeFindings: [] });
     expect(md).toContain('# Code Quality Scan Report');
     expect(md).toContain('## Scan Scope');
     expect(md).toContain('## Findings Overview');
@@ -1001,7 +1125,7 @@ describe('generateSummaryMd', () => {
   });
 
   it('includes file counts from summary', () => {
-    const md = generateSummaryMd(fakeDir, makeReportForMd(), {}, [], [], []);
+    const md = generateSummaryMd({ dir: fakeDir, report: makeReportForMd(), outputFiles: {}, architectureFindings: [], codeQualityFindings: [], deadCodeFindings: [] });
     expect(md).toContain('42');
     expect(md).toContain('318');
     expect(md).toContain('1204');
@@ -1012,14 +1136,14 @@ describe('generateSummaryMd', () => {
       { id: '1', severity: 'high', category: 'dependency-cycle', file: 'a', lineStart: 1, lineEnd: 1, title: 't', reason: 'r', files: [], suggestedFix: { strategy: 's', steps: [] } },
       { id: '2', severity: 'medium', category: 'dead-export', file: 'b', lineStart: 1, lineEnd: 1, title: 't', reason: 'r', files: [], suggestedFix: { strategy: 's', steps: [] } },
     ];
-    const md = generateSummaryMd(fakeDir, makeReportForMd({ optimizationFindings: findings }), {}, [findings[0]], [], [findings[1]]);
+    const md = generateSummaryMd({ dir: fakeDir, report: makeReportForMd({ optimizationFindings: findings }), outputFiles: {}, architectureFindings: [findings[0]], codeQualityFindings: [], deadCodeFindings: [findings[1]] });
     expect(md).toContain('| High | 1 |');
     expect(md).toContain('| Medium | 1 |');
     expect(md).toContain('| **Total** | **2** |');
   });
 
   it('includes dependency graph metrics', () => {
-    const md = generateSummaryMd(fakeDir, makeReportForMd(), {}, [], [], []);
+    const md = generateSummaryMd({ dir: fakeDir, report: makeReportForMd(), outputFiles: {}, architectureFindings: [], codeQualityFindings: [], deadCodeFindings: [] });
     expect(md).toContain('| Modules | 42 |');
     expect(md).toContain('| Import edges | 187 |');
     expect(md).toContain('| Cycles | 1 |');
@@ -1031,13 +1155,13 @@ describe('generateSummaryMd', () => {
       { category: 'dependency-cycle', severity: 'high' },
       { category: 'high-coupling', severity: 'medium' },
     ] as Finding[];
-    const md = generateSummaryMd(fakeDir, makeReportForMd(), {}, archFindings, [], []);
+    const md = generateSummaryMd({ dir: fakeDir, report: makeReportForMd(), outputFiles: {}, architectureFindings: archFindings, codeQualityFindings: [], deadCodeFindings: [] });
     expect(md).toContain('`dependency-cycle`: 2');
     expect(md).toContain('`high-coupling`: 1');
   });
 
   it('includes top recommendations', () => {
-    const md = generateSummaryMd(fakeDir, makeReportForMd(), {}, [], [], []);
+    const md = generateSummaryMd({ dir: fakeDir, report: makeReportForMd(), outputFiles: {}, architectureFindings: [], codeQualityFindings: [], deadCodeFindings: [] });
     expect(md).toContain('## Top Recommendations');
     expect(md).toContain('Fix cycle');
     expect(md).toContain('src/a.ts');
@@ -1045,20 +1169,20 @@ describe('generateSummaryMd', () => {
 
   it('includes parse errors when present', () => {
     const report = makeReportForMd({ parseErrors: [{ file: 'bad.ts', message: 'Unexpected token' }] });
-    const md = generateSummaryMd(fakeDir, report, {}, [], [], []);
+    const md = generateSummaryMd({ dir: fakeDir, report, outputFiles: {}, architectureFindings: [], codeQualityFindings: [], deadCodeFindings: [] });
     expect(md).toContain('## Parse Errors');
     expect(md).toContain('bad.ts');
     expect(md).toContain('Unexpected token');
   });
 
   it('does not include parse errors section when none exist', () => {
-    const md = generateSummaryMd(fakeDir, makeReportForMd(), {}, [], [], []);
+    const md = generateSummaryMd({ dir: fakeDir, report: makeReportForMd(), outputFiles: {}, architectureFindings: [], codeQualityFindings: [], deadCodeFindings: [] });
     expect(md).not.toContain('## Parse Errors');
   });
 
   it('links output files in the table', () => {
     const outputFiles = { summary: 'summary.json', architecture: 'architecture.json', summaryMd: 'summary.md' };
-    const md = generateSummaryMd(fakeDir, makeReportForMd(), outputFiles, [], [], []);
+    const md = generateSummaryMd({ dir: fakeDir, report: makeReportForMd(), outputFiles, architectureFindings: [], codeQualityFindings: [], deadCodeFindings: [] });
     expect(md).toContain('[`summary.json`](./summary.json)');
     expect(md).toContain('[`architecture.json`](./architecture.json)');
     expect(md).toContain('[`summary.md`](./summary.md)');
@@ -1070,7 +1194,7 @@ describe('generateSummaryMd', () => {
       fs.writeFileSync(path.join(realDir, 'architecture.json'), '{"x":1}', 'utf8');
       fs.writeFileSync(path.join(realDir, 'big.json'), 'x'.repeat(2048), 'utf8');
       const outputFiles = { architecture: 'architecture.json', big: 'big.json' };
-      const md = generateSummaryMd(realDir, makeReportForMd(), outputFiles, [], [], []);
+      const md = generateSummaryMd({ dir: realDir, report: makeReportForMd(), outputFiles, architectureFindings: [], codeQualityFindings: [], deadCodeFindings: [] });
       expect(md).toContain('| Size |');
       expect(md).toMatch(/\d+(\.\d+)?\s*(B|KB|MB)/);
     } finally {
@@ -1251,7 +1375,7 @@ describe('new AST detectors via buildIssueCatalog', () => {
   it('detects missing-error-boundary from pre-collected data', () => {
     const entry = makeEntry('src/api.ts', {
       unprotectedAsync: [
-        { name: 'fetchData', awaitCount: 3, lineStart: 10, lineEnd: 20 },
+        { name: 'fetchData', awaitCount: 5, lineStart: 10, lineEnd: 20 },
       ],
     });
     const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
@@ -1286,5 +1410,89 @@ describe('new AST detectors via buildIssueCatalog', () => {
     });
     const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
     expect(findings.filter((f) => ['type-assertion-escape', 'missing-error-boundary', 'promise-misuse'].includes(f.category))).toHaveLength(0);
+  });
+
+  it('detects import-side-effect-risk for shared library with top-level sync-io', () => {
+    const state = emptyState();
+    for (let i = 0; i < 10; i++) {
+      addEdge(state, `src/consumer${i}.ts`, 'src/shared-lib.ts');
+    }
+    const entry = makeEntry('src/shared-lib.ts', {
+      topLevelEffects: [
+        { kind: 'sync-io', lineStart: 5, lineEnd: 5, detail: 'fs.readFileSync()', weight: 5, confidence: 'high' },
+        { kind: 'timer', lineStart: 8, lineEnd: 8, detail: 'setInterval()', weight: 4, confidence: 'high' },
+      ],
+    });
+    const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), state, testOpts);
+    const sideEffects = findings.filter((f) => f.category === 'import-side-effect-risk');
+    expect(sideEffects.length).toBe(1);
+    expect(sideEffects[0].severity).toBe('high');
+    expect(sideEffects[0].reason).toContain('fan-in=10');
+  });
+
+  it('discounts entrypoint role for import-side-effect-risk', () => {
+    const entry = makeEntry('src/index.ts', {
+      topLevelEffects: [
+        { kind: 'process-handler', lineStart: 10, lineEnd: 10, detail: 'process.on()', weight: 4, confidence: 'high' },
+      ],
+    });
+    const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
+    const sideEffects = findings.filter((f) => f.category === 'import-side-effect-risk');
+    expect(sideEffects).toHaveLength(0);
+  });
+
+  it('flags side-effect-only imports in high fan-in modules', () => {
+    const state = emptyState();
+    for (let i = 0; i < 20; i++) {
+      addEdge(state, `src/consumer${i}.ts`, 'src/barrel.ts');
+    }
+    const entry = makeEntry('src/barrel.ts', {
+      topLevelEffects: [
+        { kind: 'side-effect-import', lineStart: 1, lineEnd: 1, detail: "import './init'", weight: 3, confidence: 'medium' },
+        { kind: 'side-effect-import', lineStart: 2, lineEnd: 2, detail: "import './polyfill'", weight: 3, confidence: 'medium' },
+      ],
+    });
+    const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), state, testOpts);
+    const sideEffects = findings.filter((f) => f.category === 'import-side-effect-risk');
+    expect(sideEffects.length).toBe(1);
+    expect(sideEffects[0].reason).toContain('fan-in=20');
+    expect(sideEffects[0].severity).toBe('high');
+  });
+
+  it('skips modules with no top-level effects', () => {
+    const entry = makeEntry('src/clean.ts');
+    const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
+    const sideEffects = findings.filter((f) => f.category === 'import-side-effect-risk');
+    expect(sideEffects).toHaveLength(0);
+  });
+
+  it('detects critical severity for exec-sync at top level with high fan-in', () => {
+    const state = emptyState();
+    for (let i = 0; i < 25; i++) {
+      addEdge(state, `src/consumer${i}.ts`, 'src/danger.ts');
+    }
+    const depSummary = minimalDepSummary({
+      criticalPaths: [{ start: 'src/danger.ts', path: ['src/danger.ts', 'src/core.ts'], score: 100, length: 2, containsCycle: false }],
+    });
+    const entry = makeEntry('src/danger.ts', {
+      topLevelEffects: [
+        { kind: 'exec-sync', lineStart: 3, lineEnd: 3, detail: 'execSync()', weight: 8, confidence: 'high' },
+      ],
+    });
+    const { findings } = buildIssueCatalog([], [], [entry], depSummary, state, testOpts);
+    const sideEffects = findings.filter((f) => f.category === 'import-side-effect-risk');
+    expect(sideEffects.length).toBe(1);
+    expect(sideEffects[0].severity).toBe('critical');
+  });
+
+  it('skips test files for import-side-effect-risk', () => {
+    const entry = makeEntry('src/__tests__/setup.test.ts', {
+      topLevelEffects: [
+        { kind: 'sync-io', lineStart: 1, lineEnd: 1, detail: 'fs.readFileSync()', weight: 5, confidence: 'high' },
+      ],
+    });
+    const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
+    const sideEffects = findings.filter((f) => f.category === 'import-side-effect-risk');
+    expect(sideEffects).toHaveLength(0);
   });
 });

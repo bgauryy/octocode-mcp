@@ -52,6 +52,13 @@ export const DEFAULT_OPTS = {
     semantic: false,
     typeHierarchyThreshold: 4,
     overrideChainThreshold: 3,
+    secretEntropyThreshold: 4.5,
+    secretMinLength: 20,
+    similarityThreshold: 0.85,
+    mockThreshold: 10,
+    noDiversify: false,
+    graphAdvanced: false,
+    flow: false,
 };
 export const PILLAR_CATEGORIES = {
     architecture: [
@@ -63,6 +70,9 @@ export const PILLAR_CATEGORIES = {
         'over-abstraction', 'concrete-dependency',
         'circular-type-dependency',
         'shotgun-surgery', 'leaky-abstraction',
+        'import-side-effect-risk',
+        'cycle-cluster', 'broker-module', 'bridge-module',
+        'package-boundary-chatter', 'startup-risk-hub',
     ],
     'code-quality': [
         'duplicate-function-body', 'duplicate-flow-structure', 'function-optimization',
@@ -73,12 +83,26 @@ export const PILLAR_CATEGORIES = {
         'interface-compliance',
         'type-assertion-escape', 'promise-misuse', 'narrowable-type',
         'missing-error-boundary',
+        'await-in-loop', 'sync-io', 'uncleared-timer', 'listener-leak-risk',
+        'unbounded-collection', 'similar-function-body',
     ],
     'dead-code': [
         'dead-export', 'dead-re-export', 're-export-duplication',
         're-export-shadowed', 'unused-npm-dependency', 'package-boundary-violation',
         'barrel-explosion',
         'unused-import', 'orphan-implementation', 'move-to-caller',
+        'semantic-dead-export',
+    ],
+    security: [
+        'hardcoded-secret', 'eval-usage', 'unsafe-html',
+        'sql-injection-risk', 'unsafe-regex', 'prototype-pollution-risk',
+        'unvalidated-input-sink', 'input-passthrough-risk',
+        'path-traversal-risk', 'command-injection-risk',
+    ],
+    'test-quality': [
+        'low-assertion-density', 'test-no-assertion', 'excessive-mocking',
+        'shared-mutable-state', 'missing-test-cleanup', 'focused-test',
+        'fake-timer-no-restore', 'missing-mock-restoration',
     ],
 };
 export const ALL_CATEGORIES = new Set(Object.values(PILLAR_CATEGORIES).flat());
@@ -88,6 +112,7 @@ export const SEMANTIC_CATEGORIES = new Set([
     'deep-override-chain', 'interface-compliance', 'unused-import',
     'orphan-implementation',
     'shotgun-surgery', 'move-to-caller', 'leaky-abstraction', 'narrowable-type',
+    'semantic-dead-export',
 ]);
 export const ALLOWED_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 export const IMPORT_RESOLVE_EXTS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.d.ts'];

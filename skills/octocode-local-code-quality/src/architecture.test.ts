@@ -29,6 +29,7 @@ import {
   detectTestOnlyModules,
   detectDependencyCycles,
   detectCriticalPaths,
+  mergeOverlappingChains,
   detectDeadFiles,
   detectDeadExports,
   detectDeadReExports,
@@ -981,38 +982,40 @@ describe('computeHotFiles', () => {
 // ─── buildConsumedFromModule ────────────────────────────────────────────────
 
 describe('buildConsumedFromModule', () => {
-  it('returns empty map for no imports', () => {
+  it('returns empty maps for no imports', () => {
     const result = buildConsumedFromModule(emptyState());
-    expect(result.size).toBe(0);
+    expect(result.production.size).toBe(0);
+    expect(result.test.size).toBe(0);
   });
 
-  it('collects consumed symbols per module', () => {
+  it('collects consumed symbols per module in production map', () => {
     const state = emptyState();
     state.importedSymbolsByFile.set('src/a.ts', [
       { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'foo', localName: 'foo', isTypeOnly: false },
       { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'bar', localName: 'bar', isTypeOnly: false },
     ]);
     const result = buildConsumedFromModule(state);
-    expect(result.get('src/lib.ts')?.size).toBe(2);
-    expect(result.get('src/lib.ts')?.has('foo')).toBe(true);
+    expect(result.production.get('src/lib.ts')?.size).toBe(2);
+    expect(result.production.get('src/lib.ts')?.has('foo')).toBe(true);
   });
 
-  it('skips test file imports', () => {
+  it('routes test file imports to the test map', () => {
     const state = emptyState();
     state.importedSymbolsByFile.set('src/a.test.ts', [
       { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'foo', localName: 'foo', isTypeOnly: false },
     ]);
     const result = buildConsumedFromModule(state);
-    expect(result.size).toBe(0);
+    expect(result.production.size).toBe(0);
+    expect(result.test.get('src/lib.ts')?.has('foo')).toBe(true);
   });
 
-  it('collects symbols from re-exports', () => {
+  it('collects symbols from re-exports in production map', () => {
     const state = emptyState();
     state.reExportsByFile.set('src/barrel.ts', [
       { sourceModule: './lib', resolvedModule: 'src/lib.ts', exportedAs: 'X', importedName: 'X', isStar: false, isTypeOnly: false },
     ]);
     const result = buildConsumedFromModule(state);
-    expect(result.get('src/lib.ts')?.has('X')).toBe(true);
+    expect(result.production.get('src/lib.ts')?.has('X')).toBe(true);
   });
 });
 
@@ -1253,6 +1256,163 @@ describe('detectCriticalPaths (detector)', () => {
     });
     const findings = detectCriticalPaths(summary, emptyState(), 30);
     expect(findings[0].severity).toBe('critical');
+  });
+});
+
+// ─── mergeOverlappingChains ─────────────────────────────────────────────────
+
+describe('mergeOverlappingChains', () => {
+  type FindingDraft = Omit<import('./types.js').Finding, 'id'>;
+
+  const makeChainFinding = (file: string, files: string[]): FindingDraft => ({
+    severity: 'high',
+    category: 'dependency-critical-path',
+    file,
+    lineStart: 1,
+    lineEnd: 1,
+    title: `Critical dependency chain risk: ${files.length} files`,
+    reason: `Chain from ${file}.`,
+    files,
+    suggestedFix: { strategy: 'test', steps: ['step1'] },
+  });
+
+  it('returns input unchanged when 0 or 1 findings', () => {
+    expect(mergeOverlappingChains([])).toEqual([]);
+    const single = [makeChainFinding('a.ts', ['a.ts', 'b.ts'])];
+    expect(mergeOverlappingChains(single)).toEqual(single);
+  });
+
+  it('merges chains with >80% overlap', () => {
+    // Chain 1: a,b,c,d,e  Chain 2: x,b,c,d,e  (overlap: 4/6 = 0.67? Let's use more overlap)
+    // Chain 1: a,b,c,d,e  Chain 2: f,b,c,d,e  (intersection=4, union=6, overlap=0.67 — below 0.8)
+    // Use chains with higher overlap:
+    // Chain 1: a,b,c,d,e  Chain 2: x,a,b,c,d,e (intersection=5, union=6, overlap=0.83)
+    const f1 = makeChainFinding('entry1.ts', ['entry1.ts', 'a.ts', 'b.ts', 'c.ts', 'd.ts']);
+    const f2 = makeChainFinding('entry2.ts', ['entry2.ts', 'a.ts', 'b.ts', 'c.ts', 'd.ts']);
+    // intersection: {a,b,c,d} = 4, union: {entry1,entry2,a,b,c,d} = 6, overlap = 4/6 = 0.67 — NOT enough
+    // Let's add more shared files
+    const f3 = makeChainFinding('entry1.ts', ['entry1.ts', 'a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts']);
+    const f4 = makeChainFinding('entry2.ts', ['entry2.ts', 'a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts']);
+    // intersection: {a,b,c,d,e} = 5, union: {entry1,entry2,a,b,c,d,e} = 7, overlap = 5/7 = 0.71 — still below
+    // Need 80%: 10 shared, 2 unique = 10/12 = 0.83
+    const shared = Array.from({ length: 10 }, (_, i) => `shared-${i}.ts`);
+    const chain1 = makeChainFinding('e1.ts', ['e1.ts', ...shared]);
+    const chain2 = makeChainFinding('e2.ts', ['e2.ts', ...shared]);
+    // intersection=10, union=12, overlap=10/12=0.833
+
+    const result = mergeOverlappingChains([chain1, chain2]);
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toContain('2 entry points');
+    expect(result[0].reason).toContain('Also reached from: e2.ts');
+    expect(result[0].files.length).toBeGreaterThanOrEqual(11);
+  });
+
+  it('does NOT merge chains with <80% overlap', () => {
+    const f1 = makeChainFinding('a.ts', ['a.ts', 'shared.ts']);
+    const f2 = makeChainFinding('b.ts', ['b.ts', 'other.ts']);
+    // intersection=0, union=4, overlap=0
+
+    const result = mergeOverlappingChains([f1, f2]);
+    expect(result).toHaveLength(2);
+  });
+
+  it('merges multiple chains into one when overlap stays above threshold', () => {
+    // Use 20 shared files so even after accumulating entry points the Jaccard stays above 0.8
+    // After merging all 3: union = 3 entries + 20 shared = 23, intersection with each new = 20/23 = 0.87 > 0.8
+    const shared = Array.from({ length: 20 }, (_, i) => `m${i}.ts`);
+    const chains = Array.from({ length: 3 }, (_, i) =>
+      makeChainFinding(`entry-${i}.ts`, [`entry-${i}.ts`, ...shared])
+    );
+    const result = mergeOverlappingChains(chains);
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toContain('3 entry points');
+  });
+
+  it('keeps non-overlapping chains separate while merging overlapping ones', () => {
+    const shared = Array.from({ length: 10 }, (_, i) => `s${i}.ts`);
+    const overlap1 = makeChainFinding('o1.ts', ['o1.ts', ...shared]);
+    const overlap2 = makeChainFinding('o2.ts', ['o2.ts', ...shared]);
+    const distinct = makeChainFinding('d.ts', ['d.ts', 'unique1.ts', 'unique2.ts']);
+
+    const result = mergeOverlappingChains([overlap1, overlap2, distinct]);
+    expect(result).toHaveLength(2);
+    expect(result.find(f => f.title.includes('entry points'))).toBeDefined();
+    expect(result.find(f => f.file === 'd.ts')).toBeDefined();
+  });
+});
+
+// ─── detectCriticalPaths — computed suggestedFix & chain merging ─────────────
+
+describe('detectCriticalPaths — computed fix & merging', () => {
+  it('names the highest-fan-out module in suggestedFix.strategy', () => {
+    const state = emptyState();
+    addEdge(state, 'a.ts', 'hub.ts');
+    addEdge(state, 'hub.ts', 'c.ts');
+    addEdge(state, 'hub.ts', 'd.ts');
+    addEdge(state, 'hub.ts', 'e.ts');
+    const summary = minimalDepSummary({
+      criticalPaths: [{
+        start: 'a.ts', path: ['a.ts', 'hub.ts', 'c.ts'],
+        score: 300, length: 3, containsCycle: false,
+      }],
+    });
+    const findings = detectCriticalPaths(summary, state, 30);
+    expect(findings.length).toBe(1);
+    expect(findings[0].suggestedFix.strategy).toContain('hub.ts');
+    expect(findings[0].suggestedFix.strategy).toContain('fan-out: 3');
+    expect(findings[0].suggestedFix.steps[0]).toContain('hub.ts');
+  });
+
+  it('uses first module as hotspot when all have zero fan-out', () => {
+    const state = emptyState();
+    state.files.add('x.ts');
+    state.files.add('y.ts');
+    const summary = minimalDepSummary({
+      criticalPaths: [{
+        start: 'x.ts', path: ['x.ts', 'y.ts'],
+        score: 300, length: 2, containsCycle: false,
+      }],
+    });
+    const findings = detectCriticalPaths(summary, state, 30);
+    expect(findings[0].suggestedFix.strategy).toContain('x.ts');
+    expect(findings[0].suggestedFix.strategy).toContain('fan-out: 0');
+  });
+
+  it('includes fan-in in the hotspot strategy', () => {
+    const state = emptyState();
+    addEdge(state, 'caller1.ts', 'hub.ts');
+    addEdge(state, 'caller2.ts', 'hub.ts');
+    addEdge(state, 'hub.ts', 'dep.ts');
+    addEdge(state, 'hub.ts', 'dep2.ts');
+    addEdge(state, 'hub.ts', 'dep3.ts');
+    const summary = minimalDepSummary({
+      criticalPaths: [{
+        start: 'caller1.ts', path: ['caller1.ts', 'hub.ts', 'dep.ts'],
+        score: 300, length: 3, containsCycle: false,
+      }],
+    });
+    const findings = detectCriticalPaths(summary, state, 30);
+    expect(findings[0].suggestedFix.strategy).toContain('fan-in: 2');
+  });
+
+  it('merges overlapping chain findings', () => {
+    const state = emptyState();
+    const shared = Array.from({ length: 10 }, (_, i) => `m${i}.ts`);
+    for (let i = 0; i < shared.length - 1; i++) {
+      addEdge(state, shared[i], shared[i + 1]);
+    }
+    addEdge(state, 'e1.ts', shared[0]);
+    addEdge(state, 'e2.ts', shared[0]);
+
+    const summary = minimalDepSummary({
+      criticalPaths: [
+        { start: 'e1.ts', path: ['e1.ts', ...shared], score: 300, length: shared.length + 1, containsCycle: false },
+        { start: 'e2.ts', path: ['e2.ts', ...shared], score: 300, length: shared.length + 1, containsCycle: false },
+      ],
+    });
+    const findings = detectCriticalPaths(summary, state, 30);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].title).toContain('entry points');
   });
 });
 

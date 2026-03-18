@@ -4,7 +4,7 @@ import * as ts from 'typescript';
 // ─── Tree-sitter type aliases (official types, zero runtime cost) ────────────
 
 export type SyntaxNode = Parser.SyntaxNode;
-export type TreeSitterTree = Parser.Tree;
+type TreeSitterTree = Parser.Tree;
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -49,6 +49,13 @@ export interface AnalysisOptions {
   semantic: boolean;
   typeHierarchyThreshold: number;
   overrideChainThreshold: number;
+  secretEntropyThreshold: number;
+  secretMinLength: number;
+  similarityThreshold: number;
+  mockThreshold: number;
+  noDiversify: boolean;
+  graphAdvanced: boolean;
+  flow: boolean;
 }
 
 export interface Location {
@@ -244,6 +251,49 @@ export interface CriticalPath {
   containsCycle: boolean;
 }
 
+export interface SccCluster {
+  id: string;
+  files: string[];
+  nodeCount: number;
+  edgeCount: number;
+  entryEdges: number;
+  exitEdges: number;
+  hubFiles: string[];
+}
+
+export interface Chokepoint {
+  file: string;
+  score: number;
+  reasons: string[];
+  fanIn: number;
+  fanOut: number;
+  articulation: boolean;
+  bridgeCount: number;
+  cycleClusterCount: number;
+  onCriticalPath: boolean;
+}
+
+export interface PackageGraphNode {
+  package: string;
+  inbound: number;
+  outbound: number;
+  internalFiles: number;
+}
+
+export interface PackageHotspot {
+  from: string;
+  to: string;
+  edges: number;
+  [key: string]: unknown;
+}
+
+export interface PackageGraphSummary {
+  packageCount: number;
+  edgeCount: number;
+  packages: PackageGraphNode[];
+  hotspots: PackageHotspot[];
+}
+
 export interface DependencySummary {
   totalModules: number;
   totalEdges: number;
@@ -290,17 +340,43 @@ export interface ModuleCount {
   score: number;
 }
 
-export interface SuggestedFix {
+interface SuggestedFix {
   strategy: string;
   steps: string[];
 }
 
-export interface LspHint {
+interface LspHint {
   tool: 'lspFindReferences' | 'lspCallHierarchy' | 'lspGotoDefinition';
   symbolName: string;
   lineHint: number;
   file: string;
   expectedResult: string;
+}
+
+export type AnalysisLens = 'graph' | 'ast' | 'hybrid';
+
+export interface RecommendedValidation {
+  summary: string;
+  tools: string[];
+}
+
+export interface FlowTraceStep {
+  file: string;
+  lineStart: number;
+  lineEnd: number;
+  label: string;
+}
+
+export interface AnalysisSignal {
+  kind: string;
+  lens: AnalysisLens;
+  title: string;
+  summary: string;
+  confidence: 'high' | 'medium' | 'low';
+  score: number;
+  files: string[];
+  categories: string[];
+  evidence: Record<string, unknown>;
 }
 
 export interface Finding {
@@ -319,6 +395,13 @@ export interface Finding {
   columnStart?: number;
   columnEnd?: number;
   lspHints?: LspHint[];
+  ruleId?: string;
+  analysisLens?: AnalysisLens;
+  confidence?: 'high' | 'medium' | 'low';
+  evidence?: Record<string, unknown>;
+  correlatedSignals?: string[];
+  recommendedValidation?: RecommendedValidation;
+  flowTrace?: FlowTraceStep[];
 }
 
 export interface NodeTree {
@@ -333,6 +416,120 @@ export interface TreeEntry {
   package: string;
   file: string;
   tree: NodeTree;
+}
+
+export interface SuspiciousString {
+  lineStart: number;
+  lineEnd: number;
+  kind: 'hardcoded-secret' | 'sql-injection' | 'secret-assignment';
+  snippet?: string;
+  context?: 'literal' | 'regex-definition' | 'template' | 'comment';
+}
+
+export interface TimerCall {
+  kind: 'setInterval' | 'setTimeout';
+  lineStart: number;
+  lineEnd: number;
+  hasCleanup: boolean;
+}
+
+export interface TestBlock {
+  name: string;
+  lineStart: number;
+  lineEnd: number;
+  assertionCount: number;
+}
+
+export interface FocusedTestCall {
+  kind: 'it.only' | 'test.only' | 'describe.only' | 'it.skip' | 'test.skip' | 'describe.skip' | 'it.todo' | 'test.todo';
+  lineStart: number;
+  lineEnd: number;
+}
+
+export interface TimerControlCall {
+  kind: 'jest.useFakeTimers' | 'jest.useRealTimers' | 'vi.useFakeTimers' | 'vi.useRealTimers' | 'other';
+  lineStart: number;
+  lineEnd: number;
+}
+
+export interface MockControlCall extends CodeLocation {
+  kind: 'spy' | 'stub' | 'restore' | 'restoreAll';
+  target?: string;
+}
+
+export interface TestProfile {
+  testBlocks: TestBlock[];
+  mockCalls: CodeLocation[];
+  setupCalls: Array<{ kind: 'beforeAll' | 'beforeEach' | 'afterAll' | 'afterEach'; lineStart: number }>;
+  mutableStateDecls: CodeLocation[];
+  focusedCalls: FocusedTestCall[];
+  timerControls: TimerControlCall[];
+  mockRestores: MockControlCall[];
+  spyOrStubCalls: MockControlCall[];
+}
+
+export interface InputSourceInfo {
+  functionName: string;
+  lineStart: number;
+  lineEnd: number;
+  sourceParams: string[];
+  hasSinkInBody: boolean;
+  sinkKinds: string[];
+  hasValidation: boolean;
+  callsWithInputArgs: Array<{ callee: string; lineStart: number }>;
+  paramConfidence: 'high' | 'medium' | 'low';
+}
+
+// SimilarGroup removed — was exported but never referenced anywhere
+
+export type TopLevelEffectKind =
+  | 'sync-io'
+  | 'exec-sync'
+  | 'eval'
+  | 'timer'
+  | 'listener'
+  | 'process-handler'
+  | 'side-effect-import'
+  | 'top-level-await'
+  | 'dynamic-import';
+
+export interface TopLevelEffect {
+  kind: TopLevelEffectKind;
+  lineStart: number;
+  lineEnd: number;
+  detail: string;
+  weight: number;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface EffectProfile {
+  totalEffects: number;
+  totalWeight: number;
+  byKind: Partial<Record<TopLevelEffectKind, number>>;
+  highestRisk: TopLevelEffectKind | null;
+}
+
+export interface SymbolUsageSummary {
+  declaredExportCount: number;
+  importedSymbolCount: number;
+  internalImportCount: number;
+  externalImportCount: number;
+  reExportCount: number;
+  dominantInternalDependency: string | null;
+}
+
+export interface BoundaryRoleHint {
+  role: string;
+  confidence: 'high' | 'medium' | 'low';
+  reasons: string[];
+}
+
+export interface CfgFlags {
+  hasValidationChecks: boolean;
+  hasCleanupHooks: boolean;
+  exitPointCount: number;
+  asyncBoundaryCount: number;
+  hasTopLevelEffects: boolean;
 }
 
 export interface FileEntry {
@@ -351,9 +548,26 @@ export interface FileEntry {
   typeAssertionEscapes?: { asAny: CodeLocation[]; doubleAssertion: CodeLocation[]; nonNull: CodeLocation[] };
   asyncWithoutAwait?: Array<{ name: string; lineStart: number; lineEnd: number }>;
   unprotectedAsync?: Array<{ name: string; awaitCount: number; lineStart: number; lineEnd: number }>;
+  evalUsages?: CodeLocation[];
+  unsafeHtmlAssignments?: CodeLocation[];
+  suspiciousStrings?: SuspiciousString[];
+  regexLiterals?: Array<{ lineStart: number; lineEnd: number; pattern: string }>;
+  awaitInLoopLocations?: CodeLocation[];
+  syncIoCalls?: Array<{ name: string; lineStart: number; lineEnd: number }>;
+  timerCalls?: TimerCall[];
+  listenerRegistrations?: CodeLocation[];
+  listenerRemovals?: CodeLocation[];
+  testProfile?: TestProfile;
+  inputSources?: InputSourceInfo[];
   treeSitterNodeCount?: number;
   treeSitterError?: string;
   parserFallback?: string;
+  topLevelEffects?: TopLevelEffect[];
+  prototypePollutionSites?: Array<{ kind: string; detail: string; lineStart: number; lineEnd: number; guarded: boolean }>;
+  effectProfile?: EffectProfile;
+  symbolUsageSummary?: SymbolUsageSummary;
+  boundaryRoleHints?: BoundaryRoleHint[];
+  cfgFlags?: CfgFlags;
   issueIds?: string[];
 }
 
@@ -471,6 +685,13 @@ export const DEFAULT_OPTS: AnalysisOptions = {
   semantic: false,
   typeHierarchyThreshold: 4,
   overrideChainThreshold: 3,
+  secretEntropyThreshold: 4.5,
+  secretMinLength: 20,
+  similarityThreshold: 0.85,
+  mockThreshold: 10,
+  noDiversify: false,
+  graphAdvanced: false,
+  flow: false,
 };
 
 export const PILLAR_CATEGORIES: Record<string, string[]> = {
@@ -483,6 +704,9 @@ export const PILLAR_CATEGORIES: Record<string, string[]> = {
     'over-abstraction', 'concrete-dependency',
     'circular-type-dependency',
     'shotgun-surgery', 'leaky-abstraction',
+    'import-side-effect-risk',
+    'cycle-cluster', 'broker-module', 'bridge-module',
+    'package-boundary-chatter', 'startup-risk-hub',
   ],
   'code-quality': [
     'duplicate-function-body', 'duplicate-flow-structure', 'function-optimization',
@@ -493,12 +717,26 @@ export const PILLAR_CATEGORIES: Record<string, string[]> = {
     'interface-compliance',
     'type-assertion-escape', 'promise-misuse', 'narrowable-type',
     'missing-error-boundary',
+    'await-in-loop', 'sync-io', 'uncleared-timer', 'listener-leak-risk',
+    'unbounded-collection', 'similar-function-body',
   ],
   'dead-code': [
     'dead-export', 'dead-re-export', 're-export-duplication',
     're-export-shadowed', 'unused-npm-dependency', 'package-boundary-violation',
     'barrel-explosion',
     'unused-import', 'orphan-implementation', 'move-to-caller',
+    'semantic-dead-export',
+  ],
+  security: [
+    'hardcoded-secret', 'eval-usage', 'unsafe-html',
+    'sql-injection-risk', 'unsafe-regex', 'prototype-pollution-risk',
+    'unvalidated-input-sink', 'input-passthrough-risk',
+    'path-traversal-risk', 'command-injection-risk',
+  ],
+  'test-quality': [
+  'low-assertion-density', 'test-no-assertion', 'excessive-mocking',
+    'shared-mutable-state', 'missing-test-cleanup', 'focused-test',
+    'fake-timer-no-restore', 'missing-mock-restoration',
   ],
 };
 
@@ -510,6 +748,7 @@ export const SEMANTIC_CATEGORIES = new Set([
   'deep-override-chain', 'interface-compliance', 'unused-import',
   'orphan-implementation',
   'shotgun-surgery', 'move-to-caller', 'leaky-abstraction', 'narrowable-type',
+  'semantic-dead-export',
 ]);
 export const ALLOWED_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 export const IMPORT_RESOLVE_EXTS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.d.ts'];
