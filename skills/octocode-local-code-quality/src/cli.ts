@@ -173,6 +173,28 @@ export function parseArgs(argv: string[]): AnalysisOptions {
       continue;
     }
 
+    if (arg === '--scope' || arg.startsWith('--scope=')) {
+      const val = arg.includes('=') ? arg.split('=')[1] : argv[++i];
+      const paths: string[] = [];
+      const symbols = new Map<string, string[]>();
+      for (const token of val.split(',').map((s) => s.trim()).filter(Boolean)) {
+        const colonIdx = token.lastIndexOf(':');
+        if (colonIdx > 0 && !token.substring(0, colonIdx).includes(':')) {
+          const filePart = token.substring(0, colonIdx);
+          const symbolPart = token.substring(colonIdx + 1);
+          const absFile = path.resolve(opts.root, filePart);
+          paths.push(absFile);
+          if (!symbols.has(absFile)) symbols.set(absFile, []);
+          symbols.get(absFile)!.push(symbolPart);
+        } else {
+          paths.push(path.resolve(opts.root, token));
+        }
+      }
+      opts.scope = paths;
+      if (symbols.size > 0) opts.scopeSymbols = symbols;
+      continue;
+    }
+
     if (arg === '--features' || arg.startsWith('--features=')) {
       const val = arg.startsWith('--features=') ? arg.slice('--features='.length) : argv[++i];
       const tokens = val.split(',').map((s) => s.trim()).filter(Boolean);
@@ -205,6 +227,21 @@ export function parseArgs(argv: string[]): AnalysisOptions {
           process.exit(1);
         }
       }
+      continue;
+    }
+
+    if (arg === '--semantic') {
+      opts.semantic = true;
+      continue;
+    }
+
+    if (arg === '--type-hierarchy-threshold') {
+      opts.typeHierarchyThreshold = parseInt(argv[++i], 10);
+      continue;
+    }
+
+    if (arg === '--override-chain-threshold') {
+      opts.overrideChainThreshold = parseInt(argv[++i], 10);
       continue;
     }
 
@@ -252,6 +289,8 @@ export function parseArgs(argv: string[]): AnalysisOptions {
   if (Number.isNaN(opts.magicNumberThreshold)) opts.magicNumberThreshold = DEFAULT_OPTS.magicNumberThreshold;
   if (Number.isNaN(opts.flowDupThreshold)) opts.flowDupThreshold = DEFAULT_OPTS.flowDupThreshold;
   if (Number.isNaN(opts.maxRecsPerCategory)) opts.maxRecsPerCategory = DEFAULT_OPTS.maxRecsPerCategory;
+  if (Number.isNaN(opts.typeHierarchyThreshold)) opts.typeHierarchyThreshold = DEFAULT_OPTS.typeHierarchyThreshold;
+  if (Number.isNaN(opts.overrideChainThreshold)) opts.overrideChainThreshold = DEFAULT_OPTS.overrideChainThreshold;
 
   if (opts.features !== null && excludeSet !== null) {
     console.error('--features and --exclude are mutually exclusive. Use one or the other.');
@@ -307,6 +346,13 @@ Options:
   --magic-number-threshold N    Max magic number occurrences per file before flagging (default 3)
   --flow-dup-threshold N        Min occurrences for a repeated flow to become a finding (default 3)
   --max-recs-per-category N     Max findings per category in top recommendations (default 2)
+  --scope=X,Y,Z                 Limit scan to specific paths, files, or functions. Comma-separated.
+                                Supports file:functionName to drill into a specific function.
+                                Examples: --scope=packages/octocode-mcp
+                                          --scope=packages/octocode-mcp/src/tools
+                                          --scope=packages/octocode-mcp/src/session.ts
+                                          --scope=packages/octocode-mcp/src/session.ts:initSession
+                                          --scope=packages/foo,packages/bar
   --features=X,Y,Z              Run only selected features. Accepts pillar names (architecture,
                                 code-quality, dead-code) or individual category names. Comma-separated.
                                 Examples: --features=architecture
@@ -316,6 +362,13 @@ Options:
                                 exclusive with --features. Same pillar/category names as --features.
                                 Examples: --exclude=architecture
                                           --exclude=dead-export,magic-number
+  --semantic                    Enable semantic analysis phase (TypeChecker + LanguageService).
+                                Adds 10 categories: semantic-dead-export, over-abstraction,
+                                concrete-dependency, circular-type-dependency, unused-parameter,
+                                type-hierarchy-depth, deep-override-chain, interface-compliance,
+                                unused-import, orphan-implementation.
+  --type-hierarchy-threshold N  Max inheritance depth before flagging (default 4, requires --semantic)
+  --override-chain-threshold N  Max method override depth before flagging (default 3, requires --semantic)
   --no-cache                    Disable incremental cache; re-parse all files
   --clear-cache                 Delete the analysis cache and exit (no scan)
   --help                        Show this message

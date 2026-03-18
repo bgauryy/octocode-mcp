@@ -34,6 +34,10 @@ import { collectDependencyProfile, dependencyProfileToRecord } from './dependenc
 import { collectFiles, safeRead, listWorkspacePackages, fileSummaryWithFindings } from './discovery.js';
 import { analyzeSourceFile, buildDependencyCriticality } from './ts-analyzer.js';
 import { analyzeTreeSitterFile, resolveTreeSitter } from './tree-sitter-analyzer.js';
+import { createSemanticContext, analyzeSemanticProfile, collectAllAbsoluteFiles } from './semantic.js';
+import type { SemanticContext, SemanticProfile } from './semantic.js';
+import { runSemanticDetectors } from './semantic-detectors.js';
+import { SEMANTIC_CATEGORIES } from './types.js';
 import {
   buildConsumedFromModule,
   detectSdpViolations,
@@ -65,9 +69,14 @@ import {
   detectTestOnlyModules,
   detectDependencyCycles,
   detectCriticalPaths,
-  detectDeadFiles,
   detectDeadExports,
   detectDeadReExports,
+  detectDistanceFromMainSequence,
+  detectFeatureEnvy,
+  detectUntestedCriticalCode,
+  detectTypeAssertionEscape,
+  detectMissingErrorBoundary,
+  detectPromiseMisuse,
 } from './architecture.js';
 
 // ─── Output Category Groups (single source of truth: PILLAR_CATEGORIES) ─────
@@ -288,6 +297,8 @@ export function buildIssueCatalog(
   options: AnalysisOptions,
   pkgJsonDeps: Record<string, string> = {},
   pkgJsonDevDeps: Record<string, string> = {},
+  fileCriticalityByPath: Map<string, FileCriticality> = new Map(),
+  semanticFindings: Array<Omit<Finding, 'id'>> = [],
 ): { findings: Finding[]; byFile: Map<string, string[]>; totalBeforeTruncation: number; droppedCategories: string[] } {
   const rawFindings: Array<Omit<Finding, 'id'>> = [];
 
@@ -306,7 +317,6 @@ export function buildIssueCatalog(
   for (const f of detectTestOnlyModules(dependencySummary)) addFinding(f);
   for (const f of detectDependencyCycles(dependencySummary, dependencyState)) addFinding(f);
   for (const f of detectCriticalPaths(dependencySummary, dependencyState, options.criticalComplexityThreshold)) addFinding(f);
-  for (const f of detectDeadFiles(dependencySummary, dependencyState)) addFinding(f);
   for (const f of detectDeadExports(dependencyState, consumedFromModule)) addFinding(f);
   for (const f of detectDeadReExports(dependencyState, consumedFromModule)) addFinding(f);
   for (const f of detectSdpViolations(dependencyState)) addFinding(f);
@@ -327,6 +337,12 @@ export function buildIssueCatalog(
   }
   for (const f of detectLowCohesion(dependencyState)) addFinding(f);
   for (const f of detectInferredLayerViolations(dependencyState)) addFinding(f);
+  for (const f of detectDistanceFromMainSequence(dependencyState)) addFinding(f);
+  for (const f of detectFeatureEnvy(dependencyState)) addFinding(f);
+
+  // ─── Phase 3B: Untested Critical Code ──────────────────────────────
+  const hotFilesForDetector = computeHotFiles(dependencyState, dependencySummary, fileCriticalityByPath);
+  for (const f of detectUntestedCriticalCode(dependencyState, hotFilesForDetector, fileCriticalityByPath)) addFinding(f);
 
   // ─── Phase 4: Code Quality Metrics ──────────────────────────────────
   for (const f of detectExcessiveParameters(fileSummaries, options.parameterThreshold)) addFinding(f);
@@ -337,6 +353,12 @@ export function buildIssueCatalog(
   for (const f of detectMagicNumbers(fileSummaries, options.magicNumberThreshold)) addFinding(f);
   for (const f of detectHighHalsteadEffort(fileSummaries, options.halsteadEffortThreshold)) addFinding(f);
   for (const f of detectLowMaintainability(fileSummaries, options.maintainabilityIndexThreshold)) addFinding(f);
+  for (const f of detectTypeAssertionEscape(fileSummaries)) addFinding(f);
+  for (const f of detectMissingErrorBoundary(fileSummaries)) addFinding(f);
+  for (const f of detectPromiseMisuse(fileSummaries)) addFinding(f);
+
+  // ─── Phase 5: Semantic Analysis (--semantic) ──────────────────────
+  for (const f of semanticFindings) addFinding(f);
 
   const sorted = rawFindings.sort((a, b) => {
     const bySeverity = SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity];
@@ -613,7 +635,7 @@ export function writeMultiFileReport(
   };
   writeJson('summary.json', summaryJsonData);
 
-  const summaryMd = generateSummaryMd(dir, report, outputFiles, architectureFindings, codeQualityFindings, deadCodeFindings, hotFiles, options.features);
+  const summaryMd = generateSummaryMd(dir, report, outputFiles, architectureFindings, codeQualityFindings, deadCodeFindings, hotFiles, options.features, options.scope, options.root, options.scopeSymbols, options.semantic);
   fs.writeFileSync(path.join(dir, 'summary.md'), summaryMd, 'utf8');
   outputFiles.summaryMd = 'summary.md';
 
@@ -634,6 +656,28 @@ export function categoryBreakdown(findings: Finding[]): Record<string, number> {
   return counts;
 }
 
+export function computeHealthScore(findings: Finding[], totalFiles: number): number {
+  if (totalFiles === 0) return 100;
+  const weights = { critical: 25, high: 10, medium: 3, low: 1, info: 0 };
+  let penalty = 0;
+  for (const f of findings) penalty += weights[f.severity] || 0;
+  const normalized = (penalty / totalFiles) * 10;
+  return Math.max(0, Math.round(100 - normalized));
+}
+
+export function collectTagCloud(findings: Finding[]): { tag: string; count: number }[] {
+  const tagCounts = new Map<string, number>();
+  for (const f of findings) {
+    if (!f.tags) continue;
+    for (const tag of f.tags) {
+      tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+    }
+  }
+  return [...tagCounts.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -649,6 +693,10 @@ export function generateSummaryMd(
   deadCodeFindings: Finding[],
   hotFiles: import('./types.js').HotFile[] = [],
   activeFeatures: Set<string> | null = null,
+  scope: string[] | null = null,
+  root: string = process.cwd(),
+  scopeSymbols: Map<string, string[]> | null = null,
+  semanticEnabled: boolean = false,
 ): string {
   const allFindings = report.optimizationFindings || [];
   const sev = severityBreakdown(allFindings);
@@ -696,6 +744,28 @@ export function generateSummaryMd(
     lines.push('');
   }
 
+  if (scope && scope.length > 0) {
+    const scopeDisplay = scope.map((s) => path.relative(root, s)).filter(Boolean);
+    if (scopeDisplay.length > 0) {
+      let scopeLabel = scopeDisplay.map((p) => `\`${p}\``).join(', ');
+      if (scopeSymbols && scopeSymbols.size > 0) {
+        const symParts: string[] = [];
+        for (const [absFile, names] of scopeSymbols) {
+          const rel = path.relative(root, absFile);
+          symParts.push(...names.map((n) => `\`${rel}:${n}\``));
+        }
+        scopeLabel = symParts.join(', ');
+      }
+      lines.push(`> **Scoped scan**: Only showing findings for: ${scopeLabel}`);
+      lines.push('');
+    }
+  }
+
+  if (semanticEnabled) {
+    lines.push('> **Semantic analysis**: TypeChecker + LanguageService enabled (10 additional categories)');
+    lines.push('');
+  }
+
   const renderPillarCategories = (
     pillarKey: string,
     findings: Finding[],
@@ -715,8 +785,34 @@ export function generateSummaryMd(
     lines.push('');
   };
 
+  const totalFiles = (summary.totalFiles as number) || 1;
+  const overallHealth = computeHealthScore(allFindings, totalFiles);
+  const archHealth = computeHealthScore(architectureFindings, totalFiles);
+  const qualHealth = computeHealthScore(codeQualityFindings, totalFiles);
+  const deadHealth = computeHealthScore(deadCodeFindings, totalFiles);
+
+  lines.push('## Health Scores\n');
+  lines.push('| Pillar | Score | Grade |');
+  lines.push('|--------|-------|-------|');
+  const grade = (s: number) => s >= 80 ? 'A' : s >= 60 ? 'B' : s >= 40 ? 'C' : s >= 20 ? 'D' : 'F';
+  lines.push(`| **Overall** | **${overallHealth}/100** | **${grade(overallHealth)}** |`);
+  lines.push(`| Architecture | ${archHealth}/100 | ${grade(archHealth)} |`);
+  lines.push(`| Code Quality | ${qualHealth}/100 | ${grade(qualHealth)} |`);
+  lines.push(`| Dead Code & Hygiene | ${deadHealth}/100 | ${grade(deadHealth)} |`);
+  lines.push('');
+
+  const tagCloud = collectTagCloud(allFindings);
+  if (tagCloud.length > 0) {
+    lines.push('## Top Concern Tags\n');
+    lines.push('Searchable tags across all findings — use to filter `findings.json` with `jq`.\n');
+    for (const { tag, count } of tagCloud.slice(0, 12)) {
+      lines.push(`- \`${tag}\`: ${count} findings`);
+    }
+    lines.push('');
+  }
+
   lines.push('## Architecture Health\n');
-  lines.push(`> ${architectureFindings.length} findings — see [\`architecture.json\`](./architecture.json)\n`);
+  lines.push(`> ${architectureFindings.length} findings (score: ${archHealth}/100) — see [\`architecture.json\`](./architecture.json)\n`);
   if (depGraph) {
     lines.push(`| Metric | Value |`);
     lines.push(`|--------|-------|`);
@@ -744,11 +840,11 @@ export function generateSummaryMd(
   }
 
   lines.push('## Code Quality\n');
-  lines.push(`> ${codeQualityFindings.length} findings — see [\`code-quality.json\`](./code-quality.json)\n`);
+  lines.push(`> ${codeQualityFindings.length} findings (score: ${qualHealth}/100) — see [\`code-quality.json\`](./code-quality.json)\n`);
   renderPillarCategories('code-quality', codeQualityFindings);
 
   lines.push('## Dead Code & Hygiene\n');
-  lines.push(`> ${deadCodeFindings.length} findings — see [\`dead-code.json\`](./dead-code.json)\n`);
+  lines.push(`> ${deadCodeFindings.length} findings (score: ${deadHealth}/100) — see [\`dead-code.json\`](./dead-code.json)\n`);
   renderPillarCategories('dead-code', deadCodeFindings);
 
   const topRecs = (agentOutput?.topRecommendations ?? []) as Array<{ severity: string; title: string; file: string; category: string }>;
@@ -941,7 +1037,16 @@ async function main(): Promise<void> {
     }
     const packageFiles = collectFiles(pkg.dir, options);
     const dependencyFiles = collectFiles(pkg.dir, { ...options, includeTests: true });
-    const analysisFileSet = new Set(packageFiles);
+    const scopeMatchesPath = (absPath: string): boolean =>
+      options.scope != null && options.scope.some((s) => {
+        const normScope = path.normalize(s);
+        const normPath = path.normalize(absPath);
+        return normPath === normScope || normPath.startsWith(normScope + path.sep);
+      });
+    const scopedPackageFiles = options.scope
+      ? packageFiles.filter((f) => scopeMatchesPath(f))
+      : packageFiles;
+    const analysisFileSet = new Set(scopedPackageFiles);
 
     for (const filePath of dependencyFiles) {
       const text = safeRead(filePath);
@@ -1179,7 +1284,32 @@ async function main(): Promise<void> {
   );
   const dependencySummary = buildDependencySummary(dependencyState, fileCriticalityByPath, options);
 
-  const { findings, byFile, totalBeforeTruncation, droppedCategories } = buildIssueCatalog(
+  // ─── Semantic Analysis Phase (--semantic) ───────────────────────────
+  let semanticFindings: Array<Omit<Finding, 'id'>> = [];
+  if (options.semantic) {
+    const wantsAnySemantic = !options.features || [...SEMANTIC_CATEGORIES].some((c) => options.features!.has(c));
+    if (wantsAnySemantic) {
+      try {
+        const allAbsFiles = collectAllAbsoluteFiles(fileSummaries, dependencyState, options.root);
+        const semanticCtx = createSemanticContext(allAbsFiles, options.root);
+        const profiles: SemanticProfile[] = [];
+        for (const entry of fileSummaries) {
+          const absPath = path.resolve(options.root, entry.file);
+          try {
+            profiles.push(analyzeSemanticProfile(semanticCtx, absPath, entry, options.includeTests));
+          } catch { /* skip files that fail semantic analysis */ }
+        }
+        semanticFindings = runSemanticDetectors(semanticCtx, profiles, {
+          typeHierarchyThreshold: options.typeHierarchyThreshold,
+          overrideChainThreshold: options.overrideChainThreshold,
+        });
+      } catch (err: unknown) {
+        parseErrors.push({ file: '<semantic>', message: `Semantic analysis failed: ${String((err as Error)?.message || err)}` });
+      }
+    }
+  }
+
+  const catalog = buildIssueCatalog(
     duplicateFunctions,
     redundantFlows,
     fileSummaries,
@@ -1188,7 +1318,58 @@ async function main(): Promise<void> {
     options,
     allPkgJsonDeps,
     allPkgJsonDevDeps,
+    fileCriticalityByPath,
+    semanticFindings,
   );
+  let findings = catalog.findings;
+  let byFile = catalog.byFile;
+  const { totalBeforeTruncation, droppedCategories } = catalog;
+
+  if (options.scope) {
+    const scopeMatchesRel = (file: string): boolean => {
+      const absPath = path.resolve(options.root, file);
+      return options.scope!.some((s) => {
+        const normScope = path.normalize(s);
+        const normPath = path.normalize(absPath);
+        return normPath === normScope || normPath.startsWith(normScope + path.sep);
+      });
+    };
+    findings = findings.filter(
+      (f) => scopeMatchesRel(f.file) || (f.files?.some(scopeMatchesRel) ?? false),
+    );
+    byFile = new Map([...byFile.entries()].filter(([file]) => scopeMatchesRel(file)));
+
+    if (options.scopeSymbols && options.scopeSymbols.size > 0) {
+      const symbolRanges: Array<{ file: string; lineStart: number; lineEnd: number; name: string }> = [];
+      for (const [absFile, symbolNames] of options.scopeSymbols) {
+        const relFile = path.relative(options.root, absFile);
+        const entry = fileSummaries.find((e) => e.file === relFile);
+        if (!entry) continue;
+        for (const sym of symbolNames) {
+          const fn = entry.functions.find((f) => f.name === sym);
+          if (fn) {
+            symbolRanges.push({ file: relFile, lineStart: fn.lineStart, lineEnd: fn.lineEnd, name: sym });
+            continue;
+          }
+          const exp = entry.dependencyProfile?.declaredExports?.find(
+            (e) => e.name === sym && e.lineStart != null && e.lineEnd != null,
+          );
+          if (exp) {
+            symbolRanges.push({ file: relFile, lineStart: exp.lineStart!, lineEnd: exp.lineEnd!, name: sym });
+          }
+        }
+      }
+      if (symbolRanges.length > 0) {
+        const overlaps = (fLineStart: number, fLineEnd: number, rLineStart: number, rLineEnd: number): boolean =>
+          fLineStart <= rLineEnd && fLineEnd >= rLineStart;
+        findings = findings.filter((f) =>
+          symbolRanges.some((r) =>
+            f.file === r.file && overlaps(f.lineStart, f.lineEnd, r.lineStart, r.lineEnd),
+          ),
+        );
+      }
+    }
+  }
 
   const enhancedFileSummaries = fileSummaryWithFindings(fileSummaries, byFile);
 

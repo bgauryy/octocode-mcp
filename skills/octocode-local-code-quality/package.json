@@ -26,9 +26,13 @@
     "analyze": "node scripts/index.js",
     "analyze:json": "node scripts/index.js --json --out .octocode/scan/scan.json",
     "analyze:full": "node scripts/index.js --include-tests --findings-limit 500 --deep-link-topn 30 --out .octocode/scan/scan.json",
-    "analyze:graph": "node scripts/index.js --graph --out .octocode/scan/scan.json"
+    "analyze:graph": "node scripts/index.js --graph --out .octocode/scan/scan.json",
+    "search": "node scripts/ast-search.js",
+    "search:json": "node scripts/ast-search.js --json",
+    "search:presets": "node scripts/ast-search.js --list-presets"
   },
   "dependencies": {
+    "@ast-grep/napi": "^0.42.0",
     "tree-sitter": "^0.25.0",
     "tree-sitter-typescript": "^0.23.2"
   },

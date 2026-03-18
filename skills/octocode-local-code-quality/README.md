@@ -3,8 +3,8 @@
 
   <h1>Octocode Local Code Quality</h1>
 
-  <p><strong>AST-based code quality scanner for TypeScript/JavaScript monorepos</strong></p>
-  <p>33 finding categories · severity-ranked · file:line precision · actionable fix strategies</p>
+  <p><strong>AST + semantic code quality scanner for TypeScript/JavaScript monorepos</strong></p>
+  <p>51 finding categories · severity-ranked · file:line precision · lspHints for validation · actionable fix strategies</p>
 
   [![Skill](https://img.shields.io/badge/skill-agentskills.io-purple)](https://agentskills.io/what-are-skills)
   [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/bgauryy/octocode-mcp/blob/main/LICENSE)
@@ -25,6 +25,8 @@ Most linters catch syntax issues. This scanner catches **architectural rot** —
 - Stable core modules coupled to volatile helpers, violating the Stable Dependencies Principle
 - Entire file subgraphs unreachable from any entrypoint — dead code your IDE can't detect
 - Barrel files re-exporting 80+ symbols, creating import chains 3 levels deep
+
+**With `--semantic`:** TypeChecker + LanguageService upgrade adds 13 more categories — shotgun surgery risk, leaky abstractions, narrowable types, move-to-caller candidates, over-abstraction, DIP violations, unused parameters, deep inheritance, and more. Findings include `lspHints` for instant agent validation.
 
 **Why it's fast:** Incremental caching means the first scan takes ~3s for a 400-file monorepo; subsequent scans take <1s by skipping unchanged files.
 
@@ -65,12 +67,60 @@ node skills/octocode-local-code-quality/scripts/index.js \
   --cognitive-complexity-threshold 10 \
   --any-threshold 0
 
+# Focus on a specific package
+node skills/octocode-local-code-quality/scripts/index.js --scope=packages/octocode-mcp
+
+# Focus on a directory or file
+node skills/octocode-local-code-quality/scripts/index.js --scope=packages/octocode-mcp/src/tools
+node skills/octocode-local-code-quality/scripts/index.js --scope=packages/octocode-mcp/src/session.ts
+
+# Focus on a specific function or exported variable
+node skills/octocode-local-code-quality/scripts/index.js --scope=packages/octocode-mcp/src/session.ts:sendLog
+node skills/octocode-local-code-quality/scripts/index.js --scope=packages/octocode-mcp/src/utils/exec/spawn.ts:spawnWithTimeout
+
+# Combine scope with features
+node skills/octocode-local-code-quality/scripts/index.js --scope=packages/octocode-mcp --features=architecture
+
 # JSON to stdout for piping
 node skills/octocode-local-code-quality/scripts/index.js --json
 
 # Force full re-parse (ignore cache)
 node skills/octocode-local-code-quality/scripts/index.js --no-cache
+
+# Enable semantic analysis (TypeChecker + LanguageService, 10 extra categories)
+node skills/octocode-local-code-quality/scripts/index.js --semantic
+
+# Semantic + scope for targeted deep analysis
+node skills/octocode-local-code-quality/scripts/index.js --semantic --scope=packages/octocode-mcp
+
+# Only semantic categories (e.g. dead exports + unused params)
+node skills/octocode-local-code-quality/scripts/index.js --semantic --features=shotgun-surgery,unused-parameter
 ```
+
+### Drill-Down Workflow
+
+The recommended workflow for investigating a codebase:
+
+```
+1. Full scan        → node scripts/index.js
+                      Read summary.md to identify worst areas
+
+2. Package scope    → node scripts/index.js --scope=packages/worst-package
+                      Get detailed findings for one package
+
+3. Directory scope  → node scripts/index.js --scope=packages/worst-package/src/tools
+                      Narrow to the hotspot directory
+
+4. File scope       → node scripts/index.js --scope=packages/worst-package/src/tools/hub.ts
+                      Single-file analysis (4 findings for a typical file)
+
+5. Function scope   → node scripts/index.js --scope=packages/worst-package/src/tools/hub.ts:processRequest
+                      Only findings within that function's line range
+
+6. Fix & re-scan    → Fix issues, re-run with same --scope, verify count drops
+```
+
+`--scope` accepts comma-separated paths (relative to root). Use `file:symbol` syntax to drill into a specific function or exported variable — only findings whose line range overlaps with that symbol are returned. The full dependency graph is always built, so architecture findings involving scoped files (cycles, critical paths) are still reported.
 
 ---
 
@@ -84,57 +134,75 @@ node skills/octocode-local-code-quality/scripts/index.js --no-cache
 
 ---
 
-## Finding Categories (33)
+## Finding Categories (51)
 
-Every finding includes: severity (`critical`/`high`/`medium`/`low`), exact `file:line`, reason, and `suggestedFix` with strategy + steps.
+Every finding includes: severity (`critical`/`high`/`medium`/`low`), exact `file:line`, reason, `suggestedFix` with strategy + steps, and optional `lspHints[]` for agent validation.
 
-### Architecture Risk (11)
+### Architecture Risk (19)
 
-| Category | Severity | What It Detects |
-|----------|----------|-----------------|
-| `dependency-cycle` | high | Circular import chains between modules |
-| `dependency-critical-path` | high — critical | High-weight transitive dependency chains (blast radius) |
-| `dependency-test-only` | medium | Production modules imported only from tests |
-| `architecture-sdp-violation` | medium — high | Stable module depends on unstable module (`I = Ce/(Ca+Ce)`) |
-| `high-coupling` | medium — high | Excessive total connections (Ca + Ce) |
-| `god-module-coupling` | medium — high | Too many dependents (fan-in) or dependencies (fan-out) |
-| `orphan-module` | medium | Zero inbound and zero outbound dependencies |
-| `unreachable-module` | high | Not reachable from any entrypoint via BFS |
-| `layer-violation` | high | Import backwards in configured layer order |
-| `low-cohesion` | medium — high | Exports serve unrelated purposes (LCOM > 1) |
-| `inferred-layer-violation` | medium — high | Auto-detected layer boundary crossed (`types/`→foundation, `utils/`→utility, `services/`→service) |
+| Category | Severity | What It Detects | Requires |
+|----------|----------|-----------------|----------|
+| `dependency-cycle` | high | Circular import chains between modules | — |
+| `dependency-critical-path` | high — critical | High-weight transitive dependency chains (blast radius) | — |
+| `dependency-test-only` | medium | Production modules imported only from tests | — |
+| `architecture-sdp-violation` | medium — high | Stable module depends on unstable module (`I = Ce/(Ca+Ce)`) | — |
+| `high-coupling` | medium — high | Excessive total connections (Ca + Ce) | — |
+| `god-module-coupling` | medium — high | Too many dependents (fan-in) or dependencies (fan-out) | — |
+| `orphan-module` | medium | Zero inbound and zero outbound dependencies | — |
+| `unreachable-module` | high | Not reachable from any entrypoint via BFS | — |
+| `layer-violation` | high | Import backwards in configured layer order | — |
+| `low-cohesion` | medium — high | Exports serve unrelated purposes (LCOM > 1) | — |
+| `inferred-layer-violation` | medium — high | Auto-detected layer boundary crossed | — |
+| `distance-from-main-sequence` | medium — high | Module far from A + I = 1 ideal | — |
+| `feature-envy` | medium — high | Module imports 60%+ symbols from a single external module | — |
+| `untested-critical-code` | high — critical | High-risk file with zero test imports | — |
+| `over-abstraction` | medium | Interface/abstract with exactly 1 implementor | `--semantic` |
+| `concrete-dependency` | medium | Import resolves to concrete class (DIP violation) | `--semantic` |
+| `circular-type-dependency` | high | Type-level circular references between types | `--semantic` |
+| `shotgun-surgery` | medium — high | Export referenced from 8+ unique files (change amplification risk) | `--semantic` |
+| `leaky-abstraction` | medium | Exported function returns type defined in internal module | `--semantic` |
 
-### Code Quality (14)
+### Code Quality (22)
 
-| Category | Severity | What It Detects |
-|----------|----------|-----------------|
-| `duplicate-function-body` | low — high | Identical function implementations (AST fingerprint) across files |
-| `duplicate-flow-structure` | medium — high | Repeated if/switch/try control-flow patterns |
-| `function-optimization` | medium — high | High cyclomatic complexity, deep nesting, oversized functions |
-| `cognitive-complexity` | medium — high | Nesting-aware complexity (nested branches compound exponentially) |
-| `god-module` | high | Files >500 statements or >20 exports |
-| `god-function` | high | Functions >100 statements |
-| `high-halstead-effort` | medium — high | Halstead effort > 500K or estimated bugs > 2.0 |
-| `low-maintainability` | high — critical | Maintainability Index < 20 (scale 0-100) |
-| `high-cyclomatic-density` | medium — high | Complexity/LOC > 0.5 |
-| `excessive-parameters` | medium — high | Function >5 parameters |
-| `magic-number` | medium — high | >3 magic number literals per file |
-| `unsafe-any` | medium — high | >5 `any` types per file |
-| `empty-catch` | medium | Empty catch block silently swallows errors |
-| `switch-no-default` | low | Switch missing default case |
+| Category | Severity | What It Detects | Requires |
+|----------|----------|-----------------|----------|
+| `duplicate-function-body` | low — high | Identical function implementations (AST fingerprint) | — |
+| `duplicate-flow-structure` | medium — high | Repeated if/switch/try control-flow patterns | — |
+| `function-optimization` | medium — high | High cyclomatic complexity, deep nesting, oversized functions | — |
+| `cognitive-complexity` | medium — high | Nesting-aware complexity score | — |
+| `god-module` | high | Files >500 statements or >20 exports | — |
+| `god-function` | high | Functions >100 statements | — |
+| `halstead-effort` | medium — high | Halstead effort > 500K or estimated bugs > 2.0 | — |
+| `low-maintainability` | high — critical | Maintainability Index < 20 (scale 0-100) | — |
+| `high-cyclomatic-density` | medium — high | Complexity/LOC > 0.5 | — |
+| `excessive-parameters` | medium — high | Function >5 parameters | — |
+| `magic-number` | medium — high | >3 magic number literals per file | — |
+| `unsafe-any` | medium — high | >5 `any` types per file | — |
+| `empty-catch` | medium | Empty catch block silently swallows errors | — |
+| `switch-no-default` | low | Switch missing default case | — |
+| `type-assertion-escape` | medium — high | `as any`, `as unknown as T`, non-null `!` assertions | — |
+| `missing-error-boundary` | medium — high | Async function with await(s) but no try-catch | — |
+| `promise-misuse` | medium | `async` function that never uses `await` | — |
+| `unused-parameter` | medium | Function parameter never referenced in body (semantic) | `--semantic` |
+| `type-hierarchy-depth` | medium — high | Inheritance chain > 4 levels deep | `--semantic` |
+| `deep-override-chain` | medium — high | Method overridden > 3 levels deep in hierarchy | `--semantic` |
+| `interface-compliance` | medium — high | Class `implements I` with missing/any-cast members | `--semantic` |
+| `narrowable-type` | low | Parameter declared broad but all callers pass narrow type | `--semantic` |
 
-### Dead Code & Hygiene (8)
+### Dead Code & Hygiene (10)
 
-| Category | Severity | What It Detects |
-|----------|----------|-----------------|
-| `dead-file` | medium | No inbound imports, no outbound deps, not an entrypoint |
-| `dead-export` | medium — high | Exported symbol with no observed usage |
-| `dead-re-export` | medium | Barrel re-export with no downstream consumers |
-| `re-export-duplication` | medium | Same symbol re-exported from multiple paths |
-| `re-export-shadowed` | high | Local export and re-export name collision in barrel |
-| `unused-npm-dependency` | low — medium | package.json dependency not imported anywhere |
-| `package-boundary-violation` | medium — high | Cross-package import bypassing public API |
-| `barrel-explosion` | medium — high | Barrel >30 re-exports or chain >2 levels deep |
+| Category | Severity | What It Detects | Requires |
+|----------|----------|-----------------|----------|
+| `dead-export` | medium — high | Exported symbol with no observed usage (import matching) | — |
+| `dead-re-export` | medium | Barrel re-export with no downstream consumers | — |
+| `re-export-duplication` | medium | Same symbol re-exported from multiple paths | — |
+| `re-export-shadowed` | high | Local export and re-export name collision in barrel | — |
+| `unused-npm-dependency` | low — medium | package.json dependency not imported anywhere | — |
+| `package-boundary-violation` | medium — high | Cross-package import bypassing public API | — |
+| `barrel-explosion` | medium — high | Barrel >30 re-exports or chain >2 levels deep | — |
+| `unused-import` | low | Imported symbol never semantically used (TypeChecker) | `--semantic` |
+| `orphan-implementation` | medium | Exported class with no external refs and no interface | `--semantic` |
+| `move-to-caller` | low | Exported symbol consumed by exactly 1 file (candidate for inlining) | `--semantic` |
 
 ---
 
@@ -146,11 +214,11 @@ Each scan writes to `.octocode/scan/<timestamp>/`:
 |------|--------------|
 | **`summary.md`** | Start here. Scope, severity breakdown, per-pillar category counts, change risk hotspots, top 10 recommendations, output file index |
 | `summary.json` | Machine-readable counters, `topRecommendations[]`, `parseErrors[]` |
-| `architecture.json` | Dependency graph, 11 arch findings, `hotFiles[]` (riskScore, fanIn, fanOut, inCycle, onCriticalPath) |
-| `code-quality.json` | 14 quality findings with severity/category breakdowns |
-| `dead-code.json` | 8 hygiene findings with severity/category breakdowns |
+| `architecture.json` | Dependency graph, up to 19 arch findings, `hotFiles[]` (riskScore, fanIn, fanOut, inCycle, onCriticalPath) |
+| `code-quality.json` | Up to 22 quality findings with severity/category breakdowns |
+| `dead-code.json` | Up to 10 hygiene findings with severity/category breakdowns |
 | `file-inventory.json` | Per-file: `functions[]` (Halstead, MI, cognitive), `flows[]`, `dependencyProfile`, `issueIds[]` |
-| `findings.json` | ALL findings across all 33 categories, sorted by severity |
+| `findings.json` | ALL findings across all 51 categories, sorted by severity, with `lspHints[]` |
 | `graph.md` | Mermaid dependency graph (with `--graph`) |
 | `ast-trees.txt` | Compact AST snapshots (with `--emit-tree`) |
 
@@ -160,22 +228,30 @@ Each scan writes to `.octocode/scan/<timestamp>/`:
 {
   "id": "AST-ISSUE-0001",
   "severity": "high",
-  "category": "dependency-cycle",
-  "file": "packages/core/src/auth.ts",
-  "lineStart": 3,
-  "lineEnd": 3,
-  "title": "Dependency cycle detected (3 node cycle)",
-  "reason": "Import cycle exists across: auth.ts -> session.ts -> user.ts -> auth.ts",
-  "files": ["packages/core/src/auth.ts", "packages/core/src/session.ts", "packages/core/src/user.ts"],
+  "category": "shotgun-surgery",
+  "file": "packages/core/src/utils.ts",
+  "lineStart": 15,
+  "lineEnd": 15,
+  "title": "Semantically dead export: formatDate",
+  "reason": "Exported symbol \"formatDate\" has zero semantic references across the entire program.",
+  "files": ["packages/core/src/utils.ts"],
   "suggestedFix": {
-    "strategy": "Break the cycle with a lower-level abstraction or interface module.",
+    "strategy": "Remove the export or delete the symbol if unused internally.",
     "steps": [
-      "Extract shared contracts/types to a dedicated contract/shared package.",
-      "Move implementation in one direction using dependency inversion.",
-      "Split stateful modules into protocol and runtime layers."
+      "Verify not used via dynamic imports or runtime reflection.",
+      "Remove the export keyword, or delete the symbol entirely.",
+      "Re-run scan to confirm finding is resolved."
     ]
   },
-  "impact": "Cycles increase coupling and make incremental loading/debugging and refactors riskier."
+  "impact": "Dead exports bloat the public API surface and confuse contributors.",
+  "tags": ["architecture", "dead-code", "semantic"],
+  "lspHints": [{
+    "tool": "lspFindReferences",
+    "symbolName": "formatDate",
+    "lineHint": 15,
+    "file": "packages/core/src/utils.ts",
+    "expectedResult": "zero references confirms dead export"
+  }]
 }
 ```
 
@@ -207,7 +283,7 @@ The scan works standalone, but pairing it with [Octocode MCP local & LSP tools](
 }
 ```
 
-> **No Octocode MCP?** The scan still produces all 33 categories with full detail. You just skip the LSP validation step.
+> **No Octocode MCP?** The scan still produces all 51 categories with full detail. You just skip the LSP validation step. Semantic findings include `lspHints[]` that make Octocode MCP validation a single-step operation.
 
 ---
 
@@ -216,11 +292,14 @@ The scan works standalone, but pairing it with [Octocode MCP local & LSP tools](
 | Metric | Value |
 |--------|-------|
 | Cold scan (400-file monorepo) | ~3s |
+| Cold scan + `--semantic` | ~5-8s |
 | Cached scan (no changes) | <1s |
 | Cache location | `.octocode/scan/.cache/` |
 | Cache key | file path + mtime + size |
 
 Incremental caching stores per-file AST analysis results. On subsequent runs, unchanged files are served from cache. Dependency graph analysis always runs fresh since it depends on cross-file relationships.
+
+`--semantic` adds ~3-5s for TypeChecker + LanguageService program creation. `--scope` limits which files get semantic profiling but the full program is still created for type resolution.
 
 Use `--no-cache` to force a full re-parse. Use `--clear-cache` to delete the cache and exit.
 
@@ -240,12 +319,23 @@ Core:
   --parser <auto|typescript|tree-sitter>  Parser engine (default: auto)
   --graph                             Emit Mermaid dependency graph
 
+Scope:
+  --scope=X,Y,Z                       Focus scan on specific paths (comma-separated, relative to root).
+                                      Accepts packages, directories, files, or file:symbol.
+                                      file:symbol drills into a specific function or variable.
+                                      Full dep graph is still built for architecture findings.
+
 Feature selection:
   --features=X,Y,Z                    Run only selected pillars/categories
                                       Pillars: architecture, code-quality, dead-code
-                                      Categories: any of the 33 category names
+                                      Categories: any of the 51 category names
   --exclude=X,Y,Z                     Run everything EXCEPT the listed pillars/categories
                                       Mutually exclusive with --features
+
+Semantic analysis:
+  --semantic                           Enable TypeChecker + LanguageService (10 extra categories)
+  --type-hierarchy-threshold N         Max inheritance depth (default: 4, requires --semantic)
+  --override-chain-threshold N         Max override depth (default: 3, requires --semantic)
 
 Findings:
   --findings-limit N                  Cap findings in report (default: no limit)
@@ -294,7 +384,7 @@ Output:
 
 ## How It Works
 
-Single-pass analysis through 10 stages:
+Analysis through 11 stages:
 
 ```
  1. DISCOVER     Find packages/ with valid package.json, read npm deps
@@ -310,8 +400,12 @@ Single-pass analysis through 10 stages:
  7. ARCHITECTURE Instability + SDP, coupling metrics, fan-in/fan-out
                  Orphan detection, BFS reachability, layer violations
  8. HYGIENE      Dead files/exports/re-exports, npm deps, barrel explosion
- 9. CATALOG      33-category findings with severity, locations, fix strategies
-10. REPORT       Split files to output dir, summary.md, optional graph
+ 9. SEMANTIC     (--semantic) TypeChecker + LanguageService analysis:
+                 Dead exports, over-abstraction, DIP violations, type cycles,
+                 unused params, deep inheritance, interface compliance,
+                 unused imports, orphan implementations
+10. CATALOG      46-category findings with severity, locations, fix strategies, lspHints
+11. REPORT       Split files to output dir, summary.md, optional graph
 ```
 
 ---
@@ -343,16 +437,17 @@ yarn test          # Run all tests
 yarn test:watch    # Watch mode
 ```
 
-310 tests across 7 test files:
+450 tests across 8 test files:
 
 | Test File | Coverage |
 |-----------|----------|
-| `cli.test.ts` | CLI flags, NaN guards, `--features`/`--exclude` parsing, defaults |
+| `cli.test.ts` | CLI flags, NaN guards, `--features`/`--exclude`/`--semantic` parsing, defaults |
 | `utils.test.ts` | Hash, fingerprint, path normalization, test file detection |
 | `dependencies.test.ts` | Import/export/re-export parsing from AST, edge tracking |
 | `ts-analyzer.test.ts` | Function detection, metric collection, source file analysis |
 | `architecture.test.ts` | All architecture + hygiene detection functions |
 | `index.test.ts` | Cycles, critical paths, issue catalog, dead code, `diverseTopRecommendations`, features filtering, end-to-end output validation |
+| `semantic.test.ts` | SemanticContext creation, all 10 semantic detectors, `SEMANTIC_CATEGORIES`, `collectAllAbsoluteFiles` |
 | `sanity.test.ts` | Basic sanity checks |
 
 ---
@@ -363,17 +458,22 @@ yarn test:watch    # Watch mode
 skills/octocode-local-code-quality/
 ├── src/
 │   ├── index.ts              Orchestrator: scan pipeline + issue catalog
-│   ├── architecture.ts       All 33 detect*() functions (architecture + quality + dead code)
+│   ├── architecture.ts       36 detect*() functions (architecture + quality + dead code)
+│   ├── semantic.ts           SemanticContext, LanguageService, semantic profiling
+│   ├── semantic-detectors.ts 10 detect*() functions for semantic categories
 │   ├── ts-analyzer.ts        TypeScript AST analysis + metric collection
 │   ├── tree-sitter-analyzer.ts  Optional tree-sitter enrichment
 │   ├── dependencies.ts       Import/export/re-export tracking
 │   ├── discovery.ts          File discovery + package listing
+│   ├── ast-search.ts         Structural search CLI (ast-grep powered)
 │   ├── cli.ts                CLI argument parsing
 │   ├── types.ts              Interfaces, constants, PILLAR_CATEGORIES, defaults
 │   ├── utils.ts              Hash, fingerprint, path, helpers
 │   ├── cache.ts              Incremental analysis cache (mtime+size keyed)
-│   └── *.test.ts             Test files (7 files, 310 tests)
+│   └── *.test.ts             Test files (9 files, 500+ tests)
 ├── scripts/                  Compiled JS output (pre-built, ready to run)
+├── references/
+│   └── ast-search.md         AST Search reference (patterns, presets, CLI, API)
 ├── SKILL.md                  Agent workflow protocol
 ├── README.md                 This file
 ├── package.json
@@ -388,6 +488,7 @@ skills/octocode-local-code-quality/
 | Document | Description |
 |----------|-------------|
 | [SKILL.md](./SKILL.md) | Agent workflow: how to run, present, validate, and investigate findings |
+| [AST Search Reference](./references/ast-search.md) | Structural code search: patterns, kinds, 16 presets, raw rules, CLI flags, API |
 | [Local Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) | Octocode MCP local + LSP tools for semantic validation |
 | [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) | Octocode MCP config (`ENABLE_LOCAL=true`) |
 | [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) | Common issues and solutions |

@@ -312,6 +312,9 @@ export function analyzeSourceFile(
   const switchesWithoutDefault: CodeLocation[] = [];
   const magicNumbers: MagicNumberEntry[] = [];
   let anyCount = 0;
+  const asAnyLocs: CodeLocation[] = [];
+  const doubleAssertionLocs: CodeLocation[] = [];
+  const nonNullLocs: CodeLocation[] = [];
   const MAGIC_EXCLUDED = new Set([0, 1, -1, 2, 100]);
 
   const visit = (node: ts.Node): void => {
@@ -342,6 +345,21 @@ export function analyzeSourceFile(
     }
     if (ts.isAsExpression(node) && node.type.kind === ts.SyntaxKind.AnyKeyword) {
       anyCount += 1;
+    }
+
+    if (ts.isAsExpression(node)) {
+      if (node.type.kind === ts.SyntaxKind.AnyKeyword) {
+        const loc = getLineAndCharacter(sourceFile, node);
+        asAnyLocs.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+      }
+      if (ts.isAsExpression(node.expression) && node.expression.type.kind === ts.SyntaxKind.UnknownKeyword) {
+        const loc = getLineAndCharacter(sourceFile, node);
+        doubleAssertionLocs.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+      }
+    }
+    if (ts.isNonNullExpression(node)) {
+      const loc = getLineAndCharacter(sourceFile, node);
+      nonNullLocs.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
     }
 
     if (ts.isNumericLiteral(node)) {
@@ -460,6 +478,45 @@ export function analyzeSourceFile(
   fileEntry.switchesWithoutDefault = switchesWithoutDefault;
   fileEntry.anyCount = anyCount;
   fileEntry.magicNumbers = magicNumbers;
+  fileEntry.typeAssertionEscapes = { asAny: asAnyLocs, doubleAssertion: doubleAssertionLocs, nonNull: nonNullLocs };
+
+  const asyncWithoutAwait: Array<{ name: string; lineStart: number; lineEnd: number }> = [];
+  const unprotectedAsync: Array<{ name: string; awaitCount: number; lineStart: number; lineEnd: number }> = [];
+  for (const fn of fileEntry.functions) {
+    if (fn.awaits === 0) continue;
+    const fnStart = sourceFile.getPositionOfLineAndCharacter(Math.max(0, fn.lineStart - 1), 0);
+    let fnAstNode: ts.Node | undefined;
+    const findFnNode = (node: ts.Node): void => {
+      if (fnAstNode) return;
+      if (isFunctionLike(node) && node.getStart(sourceFile) >= fnStart) {
+        const fnLoc = getLineAndCharacter(sourceFile, node);
+        if (fnLoc.lineStart === fn.lineStart) { fnAstNode = node; return; }
+      }
+      ts.forEachChild(node, findFnNode);
+    };
+    ts.forEachChild(sourceFile, findFnNode);
+    if (!fnAstNode) continue;
+    const isAsync = (fnAstNode as ts.FunctionLikeDeclaration).modifiers?.some((m: ts.ModifierLike) => m.kind === ts.SyntaxKind.AsyncKeyword);
+    if (!isAsync) continue;
+
+    let awaitCount = 0;
+    let hasTryCatch = false;
+    const scanBody = (child: ts.Node): void => {
+      if (ts.isAwaitExpression(child)) awaitCount++;
+      if (ts.isTryStatement(child)) hasTryCatch = true;
+      if (isFunctionLike(child) && child !== fnAstNode) return;
+      ts.forEachChild(child, scanBody);
+    };
+    ts.forEachChild(fnAstNode, scanBody);
+
+    if (awaitCount === 0) {
+      asyncWithoutAwait.push({ name: fn.name, lineStart: fn.lineStart, lineEnd: fn.lineEnd });
+    } else if (!hasTryCatch) {
+      unprotectedAsync.push({ name: fn.name, awaitCount, lineStart: fn.lineStart, lineEnd: fn.lineEnd });
+    }
+  }
+  fileEntry.asyncWithoutAwait = asyncWithoutAwait;
+  fileEntry.unprotectedAsync = unprotectedAsync;
 
   return fileEntry;
 }

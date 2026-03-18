@@ -81,6 +81,7 @@ export function detectDuplicateFunctionBodies(duplicates) {
                 ],
             },
             impact: `Lower maintenance cost and reduce regression risk when behavior changes.`,
+            tags: ['duplication', 'maintainability', 'dryness'],
         });
     }
     return findings;
@@ -111,6 +112,7 @@ export function detectDuplicateFlowStructures(controlDuplicates, flowDupThreshol
                 ],
             },
             impact: `Reduces duplicate control branches and normalizes edge-case handling.`,
+            tags: ['duplication', 'control-flow', 'dryness'],
         });
     }
     return findings;
@@ -149,6 +151,7 @@ export function detectFunctionOptimization(fileSummaries, criticalComplexityThre
                     ],
                 },
                 impact: 'Cleaner flow, easier review and safer refactors.',
+                tags: ['complexity', 'readability', 'refactor'],
             });
         }
     }
@@ -178,6 +181,7 @@ export function detectTestOnlyModules(dependencySummary) {
                 ],
             },
             impact: 'Reduces shipping of non-production-only modules and clarifies ownership boundaries.',
+            tags: ['testing', 'dead-code', 'dependency'],
         });
     }
     return findings;
@@ -207,6 +211,7 @@ export function detectDependencyCycles(dependencySummary, dependencyState) {
                 ],
             },
             impact: 'Cycles increase coupling and make incremental loading/debugging and refactors riskier.',
+            tags: ['cycle', 'coupling', 'dependency', 'change-risk'],
         });
     }
     return findings;
@@ -238,6 +243,7 @@ export function detectCriticalPaths(dependencySummary, dependencyState, critical
                 ],
             },
             impact: 'Critical refactor opportunities; shorter chains reduce blast radius of change.',
+            tags: ['change-risk', 'dependency', 'blast-radius'],
         });
     }
     return findings;
@@ -274,6 +280,7 @@ export function detectDeadFiles(dependencySummary, dependencyState) {
                 ],
             },
             impact: 'Reduces dead surface area and maintenance overhead.',
+            tags: ['dead-code', 'cleanup', 'hygiene'],
         });
     }
     return findings;
@@ -311,6 +318,7 @@ export function detectDeadExports(dependencyState, consumedFromModule) {
                     ],
                 },
                 impact: 'Shrinks public API surface and reduces accidental coupling.',
+                tags: ['dead-code', 'api-surface', 'cleanup'],
             });
         }
     }
@@ -351,6 +359,7 @@ export function detectDeadReExports(dependencyState, consumedFromModule) {
                         ],
                     },
                     impact: 'Keeps barrel modules focused and easier to reason about.',
+                    tags: ['dead-code', 'barrel', 'cleanup'],
                 });
             }
         }
@@ -374,6 +383,7 @@ export function detectDeadReExports(dependencyState, consumedFromModule) {
                         ],
                     },
                     impact: 'Reduces API ambiguity and import inconsistency.',
+                    tags: ['duplication', 'barrel', 'api-surface'],
                 });
             }
             if (name !== '*' && localExportNames.has(name)) {
@@ -395,6 +405,7 @@ export function detectDeadReExports(dependencyState, consumedFromModule) {
                         ],
                     },
                     impact: 'Prevents subtle API conflicts and shadowing confusion.',
+                    tags: ['barrel', 'api-surface', 'ambiguity'],
                 });
             }
         }
@@ -450,6 +461,7 @@ export function detectSdpViolations(dependencyState, minDelta = 0.15) {
                         ],
                     },
                     impact: 'Prevents cascading instability and reduces change propagation risk.',
+                    tags: ['stability', 'coupling', 'architecture', 'sdp'],
                 });
             }
         }
@@ -484,6 +496,7 @@ export function detectHighCoupling(dependencyState, threshold = 15) {
                     ],
                 },
                 impact: 'Lower coupling reduces change ripple effects and improves testability.',
+                tags: ['coupling', 'change-risk', 'architecture'],
             });
         }
     }
@@ -516,6 +529,7 @@ export function detectGodModuleCoupling(dependencyState, fanInThreshold = 20, fa
                     ],
                 },
                 impact: 'Reduces change blast radius and improves parallel development.',
+                tags: ['coupling', 'blast-radius', 'bottleneck'],
             });
         }
         if (fanOut > fanOutThreshold) {
@@ -537,6 +551,7 @@ export function detectGodModuleCoupling(dependencyState, fanInThreshold = 20, fa
                     ],
                 },
                 impact: 'Cleaner architecture and easier testing through reduced dependencies.',
+                tags: ['coupling', 'responsibility', 'sprawl'],
             });
         }
     }
@@ -571,6 +586,7 @@ export function detectOrphanModules(dependencyState) {
                     ],
                 },
                 impact: 'Removes dead surface area and clarifies module ownership.',
+                tags: ['dead-code', 'dependency', 'isolation'],
             });
         }
     }
@@ -624,6 +640,7 @@ export function detectUnreachableModules(dependencyState) {
                 ],
             },
             impact: 'Identifies potentially large sections of dead code missed by direct-import checks.',
+            tags: ['dead-code', 'dependency', 'reachability'],
         });
     }
     return findings;
@@ -658,6 +675,7 @@ export function detectUnusedNpmDeps(externalDeps, packageJsonDeps, devDeps = {})
                     ],
                 },
                 impact: 'Reduces install size and attack surface.',
+                tags: ['dependency', 'hygiene', 'bundle-size'],
             });
         }
     }
@@ -680,6 +698,7 @@ export function detectUnusedNpmDeps(externalDeps, packageJsonDeps, devDeps = {})
                     ],
                 },
                 impact: 'Reduces install size and dependency maintenance burden.',
+                tags: ['dependency', 'hygiene', 'dev-tooling'],
             });
         }
     }
@@ -704,12 +723,13 @@ export function detectBoundaryViolations(dependencyState) {
             const isPublicApi = /^packages\/[^/]+\/(src\/)?index\.[mc]?[jt]sx?$/.test(dep);
             if (!isPublicApi) {
                 const isDeep = dep.includes('/internal/') || dep.includes('/private/');
+                const importRef = findImportLine(dependencyState, file, dep);
                 findings.push({
                     severity: isDeep ? 'high' : 'medium',
                     category: 'package-boundary-violation',
                     file,
-                    lineStart: 1,
-                    lineEnd: 1,
+                    lineStart: importRef.lineStart,
+                    lineEnd: importRef.lineEnd,
                     title: `Cross-package import bypasses public API`,
                     reason: `"${file}" imports "${dep}" directly instead of through the package public entry.`,
                     files: [file, dep],
@@ -722,6 +742,7 @@ export function detectBoundaryViolations(dependencyState) {
                         ],
                     },
                     impact: 'Enforces clean package boundaries and prevents coupling to internals.',
+                    tags: ['boundary', 'coupling', 'encapsulation'],
                 });
             }
         }
@@ -774,6 +795,7 @@ export function detectBarrelExplosion(dependencyState, symbolThreshold = 30) {
                     ],
                 },
                 impact: 'Reduces bundle size and speeds up IDE/tooling.',
+                tags: ['barrel', 'bundle-size', 'tree-shaking'],
             });
         }
         const depth = computeBarrelDepth(file, dependencyState);
@@ -795,6 +817,7 @@ export function detectBarrelExplosion(dependencyState, symbolThreshold = 30) {
                     ],
                 },
                 impact: 'Improves tree-shaking efficiency and import resolution speed.',
+                tags: ['barrel', 'bundle-size', 'tree-shaking'],
             });
         }
     }
@@ -834,6 +857,7 @@ export function detectGodModules(fileSummaries, dependencyState, stmtThreshold =
                 ],
             },
             impact: 'Smaller modules are easier to understand, test, and maintain.',
+            tags: ['complexity', 'responsibility', 'size'],
         });
     }
     return findings;
@@ -864,6 +888,7 @@ export function detectGodFunctions(fileSummaries, stmtThreshold = 100) {
                         ],
                     },
                     impact: 'Improves readability, testability, and maintenance.',
+                    tags: ['complexity', 'responsibility', 'size'],
                 });
             }
         }
@@ -938,6 +963,7 @@ export function detectCognitiveComplexity(fileSummaries, threshold = 15) {
                         ],
                     },
                     impact: 'Lower cognitive complexity directly correlates with fewer bugs and faster code reviews.',
+                    tags: ['complexity', 'readability', 'nesting'],
                 });
             }
         }
@@ -969,12 +995,13 @@ export function detectLayerViolations(dependencyState, layerOrder) {
             if (depLayer === -1)
                 continue;
             if (depLayer < srcLayer) {
+                const importRef = findImportLine(dependencyState, file, dep);
                 findings.push({
                     severity: 'high',
                     category: 'layer-violation',
                     file,
-                    lineStart: 1,
-                    lineEnd: 1,
+                    lineStart: importRef.lineStart,
+                    lineEnd: importRef.lineEnd,
                     title: `Layer violation: ${layerOrder[srcLayer]} imports from ${layerOrder[depLayer]}`,
                     reason: `"${file}" (layer: ${layerOrder[srcLayer]}) imports "${dep}" (layer: ${layerOrder[depLayer]}). Layer order: ${layerOrder.join(' → ')}.`,
                     files: [file, dep],
@@ -987,6 +1014,7 @@ export function detectLayerViolations(dependencyState, layerOrder) {
                         ],
                     },
                     impact: 'Prevents architectural erosion and keeps dependency flow unidirectional.',
+                    tags: ['architecture', 'layering', 'coupling'],
                 });
             }
         }
@@ -1070,6 +1098,7 @@ export function detectLowCohesion(dependencyState, minExports = 3) {
                     ],
                 },
                 impact: 'Higher cohesion = easier navigation, focused testing, and smaller change blast radius.',
+                tags: ['cohesion', 'responsibility', 'architecture'],
             });
         }
     }
@@ -1109,12 +1138,13 @@ export function detectInferredLayerViolations(dependencyState) {
             if (depLayer === -1)
                 continue;
             if (depLayer > srcLayer) {
+                const importRef = findImportLine(dependencyState, file, dep);
                 findings.push({
                     severity: 'high',
                     category: 'inferred-layer-violation',
                     file,
-                    lineStart: 1,
-                    lineEnd: 1,
+                    lineStart: importRef.lineStart,
+                    lineEnd: importRef.lineEnd,
                     title: `Layer violation: ${LAYER_NAMES[srcLayer]} → ${LAYER_NAMES[depLayer]}`,
                     reason: `"${file}" (${LAYER_NAMES[srcLayer]} layer) imports "${dep}" (${LAYER_NAMES[depLayer]} layer). Lower layers must not depend on higher layers.`,
                     files: [file, dep],
@@ -1127,6 +1157,7 @@ export function detectInferredLayerViolations(dependencyState) {
                         ],
                     },
                     impact: 'Maintains clean architecture boundaries and prevents upward coupling.',
+                    tags: ['architecture', 'layering', 'coupling'],
                 });
             }
         }
@@ -1196,6 +1227,7 @@ export function detectExcessiveParameters(fileSummaries, threshold = 5) {
                     ],
                 },
                 impact: 'Improves call-site readability and makes the API easier to evolve.',
+                tags: ['api-design', 'readability', 'refactor'],
             });
         }
     }
@@ -1228,6 +1260,7 @@ export function detectEmptyCatchBlocks(fileSummaries) {
                     ],
                 },
                 impact: 'Prevents silent failures that are extremely hard to debug in production.',
+                tags: ['error-handling', 'reliability', 'silent-failure'],
             });
         }
     }
@@ -1260,6 +1293,7 @@ export function detectSwitchNoDefault(fileSummaries) {
                     ],
                 },
                 impact: 'Catches unexpected values early and prevents silent logic bugs.',
+                tags: ['control-flow', 'exhaustiveness', 'safety'],
             });
         }
     }
@@ -1272,7 +1306,7 @@ export function detectHighCyclomaticDensity(fileSummaries, threshold = 0.5) {
         if (isTestFile(entry.file))
             continue;
         for (const fn of entry.functions) {
-            if (fn.statementCount < 5)
+            if (fn.statementCount < 10)
                 continue;
             const density = fn.complexity / fn.statementCount;
             if (density <= threshold)
@@ -1295,6 +1329,7 @@ export function detectHighCyclomaticDensity(fileSummaries, threshold = 0.5) {
                     ],
                 },
                 impact: 'Reduces the mental model needed to understand each function.',
+                tags: ['complexity', 'density', 'readability'],
             });
         }
     }
@@ -1327,6 +1362,7 @@ export function detectUnsafeAny(fileSummaries, threshold = 5) {
                 ],
             },
             impact: 'Restores TypeScript safety and catches bugs at compile time instead of runtime.',
+            tags: ['type-safety', 'reliability', 'typescript'],
         });
     }
     return findings;
@@ -1358,6 +1394,7 @@ export function detectMagicNumbers(fileSummaries, threshold = 3) {
                 ],
             },
             impact: 'Named constants make code self-documenting and easier to update consistently.',
+            tags: ['readability', 'maintainability', 'self-documenting'],
         });
     }
     return findings;
@@ -1397,6 +1434,7 @@ export function detectHighHalsteadEffort(fileSummaries, effortThreshold = 500_00
                     ],
                 },
                 impact: 'Lower Halstead effort correlates with fewer bugs and faster comprehension.',
+                tags: ['complexity', 'maintainability', 'effort'],
             });
         }
     }
@@ -1430,6 +1468,296 @@ export function detectLowMaintainability(fileSummaries, threshold = 20) {
                     ],
                 },
                 impact: 'Higher MI directly predicts lower maintenance cost and defect rate.',
+                tags: ['maintainability', 'complexity', 'technical-debt'],
+            });
+        }
+    }
+    return findings;
+}
+// ─── Abstractness + Distance from Main Sequence (Robert C. Martin) ─────────
+export function computeAbstractness(exports) {
+    if (exports.length === 0)
+        return 0;
+    const abstractCount = exports.filter(e => e.kind === 'type').length;
+    return abstractCount / exports.length;
+}
+export function detectDistanceFromMainSequence(dependencyState, distanceThreshold = 0.7, minCoupling = 3) {
+    const findings = [];
+    for (const file of dependencyState.files) {
+        if (isTestFile(file))
+            continue;
+        const exports = dependencyState.declaredExportsByFile.get(file);
+        if (!exports || exports.length === 0)
+            continue;
+        const ca = (dependencyState.incoming.get(file) || new Set()).size;
+        const ce = (dependencyState.outgoing.get(file) || new Set()).size;
+        if (ca + ce < minCoupling)
+            continue;
+        const I = computeInstability(ca, ce);
+        const A = computeAbstractness(exports);
+        const D = Math.abs(A + I - 1);
+        if (D < distanceThreshold)
+            continue;
+        const isZoneOfPain = A < 0.2 && I < 0.3;
+        const isZoneOfUselessness = A > 0.7 && I > 0.7;
+        let zone = '';
+        if (isZoneOfPain)
+            zone = 'Zone of Pain (concrete + stable): hard to extend, painful to change.';
+        else if (isZoneOfUselessness)
+            zone = 'Zone of Uselessness (abstract + unstable): over-abstracted and unused.';
+        else
+            zone = `Far from Main Sequence: balance between abstraction and stability is off.`;
+        findings.push({
+            severity: D > 0.85 ? 'high' : 'medium',
+            category: 'distance-from-main-sequence',
+            file,
+            lineStart: 1,
+            lineEnd: 1,
+            title: `Distance from Main Sequence: ${file} (D=${D.toFixed(2)})`,
+            reason: `${zone} A=${A.toFixed(2)}, I=${I.toFixed(2)}, D=${D.toFixed(2)} (threshold: ${distanceThreshold}).`,
+            files: [file],
+            suggestedFix: {
+                strategy: isZoneOfPain
+                    ? 'Add abstractions (interfaces/types) or reduce inbound coupling.'
+                    : isZoneOfUselessness
+                        ? 'Add concrete implementations or remove unused abstractions.'
+                        : 'Rebalance by adjusting abstraction level or dependency direction.',
+                steps: isZoneOfPain
+                    ? [
+                        'Extract interfaces for key behaviors to increase abstractness.',
+                        'Consider splitting into abstract contracts + concrete implementations.',
+                        'Reduce inbound coupling by narrowing the public API surface.',
+                    ]
+                    : isZoneOfUselessness
+                        ? [
+                            'Verify abstractions have concrete implementations.',
+                            'Remove unused interfaces/types that serve no consumer.',
+                            'Consider consolidating with concrete modules.',
+                        ]
+                        : [
+                            'Review the balance between interfaces/types and concrete exports.',
+                            'Adjust dependency direction to move closer to the Main Sequence.',
+                            'Consider splitting responsibilities between abstract and concrete modules.',
+                        ],
+            },
+            impact: 'Modules on the Main Sequence (D≈0) have optimal balance between stability and extensibility.',
+            tags: ['architecture', 'stability', 'abstractness', 'sdp'],
+        });
+    }
+    return findings;
+}
+// ─── Feature Envy (Module-Level) ───────────────────────────────────────────
+// ─── Untested Critical Code Detection ───────────────────────────────────────
+export function detectUntestedCriticalCode(dependencyState, hotFiles, fileCriticalityByPath, criticalityScoreThreshold = 40) {
+    const findings = [];
+    const seen = new Set();
+    const hasTestCoverage = (file) => {
+        const testImporters = dependencyState.incomingFromTests.get(file);
+        return !!testImporters && testImporters.size > 0;
+    };
+    const addFinding = (file, riskScore, reasons) => {
+        if (seen.has(file))
+            return;
+        seen.add(file);
+        if (isTestFile(file))
+            return;
+        if (hasTestCoverage(file))
+            return;
+        const isCritical = riskScore >= 60;
+        findings.push({
+            severity: isCritical ? 'critical' : 'high',
+            category: 'untested-critical-code',
+            file,
+            lineStart: 1,
+            lineEnd: 1,
+            title: `Untested critical code: ${file}`,
+            reason: `High-risk file has no test imports. ${reasons.join('; ')} (risk score: ${riskScore}).`,
+            files: [file],
+            suggestedFix: {
+                strategy: 'Add test coverage for this critical module.',
+                steps: [
+                    'Create a test file that imports and exercises the public API of this module.',
+                    'Focus on the highest-complexity functions and exported behaviors first.',
+                    'Add integration tests if this module sits on a critical dependency path.',
+                    'Consider property-based tests for complex data transformations.',
+                ],
+            },
+            impact: 'Untested critical code is the highest-risk area for regressions and undetected bugs.',
+            tags: ['testing', 'coverage', 'change-risk', 'critical'],
+        });
+    };
+    for (const hf of hotFiles) {
+        const reasons = [];
+        reasons.push(`fan-in=${hf.fanIn}, fan-out=${hf.fanOut}, complexity=${hf.complexityScore}`);
+        if (hf.inCycle)
+            reasons.push('in dependency cycle');
+        if (hf.onCriticalPath)
+            reasons.push('on critical dependency path');
+        addFinding(hf.file, hf.riskScore, reasons);
+    }
+    for (const [file, crit] of fileCriticalityByPath) {
+        if (crit.score < criticalityScoreThreshold)
+            continue;
+        const reasons = [`high complexity score (${crit.score}), ${crit.highComplexityFunctions} high-complexity functions`];
+        addFinding(file, crit.score, reasons);
+    }
+    findings.sort((a, b) => {
+        const sevOrder = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+        return (sevOrder[b.severity] || 0) - (sevOrder[a.severity] || 0);
+    });
+    return findings.slice(0, 25);
+}
+export function detectFeatureEnvy(dependencyState, envyRatio = 0.6, minSymbols = 5) {
+    const findings = [];
+    for (const [file, imports] of dependencyState.importedSymbolsByFile.entries()) {
+        if (isTestFile(file))
+            continue;
+        if (!dependencyState.files.has(file))
+            continue;
+        const internalImports = imports.filter(i => i.resolvedModule && !i.isTypeOnly);
+        if (internalImports.length < minSymbols)
+            continue;
+        const countByTarget = new Map();
+        for (const imp of internalImports) {
+            if (!imp.resolvedModule)
+                continue;
+            countByTarget.set(imp.resolvedModule, (countByTarget.get(imp.resolvedModule) || 0) + 1);
+        }
+        for (const [target, count] of countByTarget) {
+            const ratio = count / internalImports.length;
+            if (ratio >= envyRatio && count >= minSymbols) {
+                const importRef = findImportLine(dependencyState, file, target);
+                findings.push({
+                    severity: ratio > 0.8 ? 'high' : 'medium',
+                    category: 'feature-envy',
+                    file,
+                    lineStart: importRef.lineStart,
+                    lineEnd: importRef.lineEnd,
+                    title: `Feature envy: ${file} → ${target}`,
+                    reason: `Module imports ${count}/${internalImports.length} symbols (${(ratio * 100).toFixed(0)}%) from "${target}". This suggests the logic may belong in or closer to the target module.`,
+                    files: [file, target],
+                    suggestedFix: {
+                        strategy: 'Move dependent logic to the target module or extract a shared module.',
+                        steps: [
+                            'Identify which functions/logic in this file use the imported symbols.',
+                            'Move that logic to the target module if it belongs there.',
+                            'If shared, extract a dedicated module that both can import from.',
+                            'Reduce the import surface by passing data instead of importing behaviors.',
+                        ],
+                    },
+                    impact: 'Misplaced logic increases coupling and makes changes ripple across module boundaries.',
+                    tags: ['coupling', 'responsibility', 'misplaced-logic'],
+                });
+            }
+        }
+    }
+    return findings;
+}
+// ─── Type Assertion Escape ─────────────────────────────────────────────────
+export function detectTypeAssertionEscape(fileSummaries) {
+    const findings = [];
+    for (const entry of fileSummaries) {
+        if (isTestFile(entry.file))
+            continue;
+        const esc = entry.typeAssertionEscapes;
+        if (!esc)
+            continue;
+        const total = esc.asAny.length + esc.doubleAssertion.length + esc.nonNull.length;
+        if (total === 0)
+            continue;
+        const parts = [];
+        if (esc.asAny.length > 0)
+            parts.push(`${esc.asAny.length} \`as any\``);
+        if (esc.doubleAssertion.length > 0)
+            parts.push(`${esc.doubleAssertion.length} double-assertion`);
+        if (esc.nonNull.length > 0)
+            parts.push(`${esc.nonNull.length} non-null \`!\``);
+        const allLines = [...esc.asAny, ...esc.doubleAssertion, ...esc.nonNull].map((l) => l.lineStart);
+        const firstLine = Math.min(...allLines);
+        findings.push({
+            severity: esc.asAny.length + esc.doubleAssertion.length > 3 ? 'high' : 'medium',
+            category: 'type-assertion-escape',
+            file: entry.file,
+            lineStart: firstLine,
+            lineEnd: firstLine,
+            title: `Type-safety escapes in ${entry.file} (${total})`,
+            reason: `Found ${parts.join(', ')}. Each assertion bypasses TypeScript's type checker.`,
+            files: [entry.file],
+            suggestedFix: {
+                strategy: 'Replace type assertions with proper type guards or narrow types.',
+                steps: [
+                    'Replace `as any` with `unknown` and add runtime type checks.',
+                    'Replace `as unknown as T` with proper generic constraints.',
+                    'Replace `!` assertions with explicit null checks.',
+                ],
+            },
+            impact: 'Type assertions silence the compiler — runtime errors go undetected.',
+            tags: ['type-safety', 'assertions', 'code-quality'],
+        });
+    }
+    return findings;
+}
+// ─── Missing Error Boundary ─────────────────────────────────────────────────
+export function detectMissingErrorBoundary(fileSummaries) {
+    const findings = [];
+    for (const entry of fileSummaries) {
+        if (isTestFile(entry.file))
+            continue;
+        if (!entry.unprotectedAsync)
+            continue;
+        for (const fn of entry.unprotectedAsync) {
+            findings.push({
+                severity: fn.awaitCount > 2 ? 'high' : 'medium',
+                category: 'missing-error-boundary',
+                file: entry.file,
+                lineStart: fn.lineStart,
+                lineEnd: fn.lineEnd,
+                title: `Missing error boundary: ${fn.name} (${fn.awaitCount} awaits, no try-catch)`,
+                reason: `Async function "${fn.name}" has ${fn.awaitCount} await(s) but no try-catch. Rejected promises propagate as unhandled rejections.`,
+                files: [entry.file],
+                suggestedFix: {
+                    strategy: 'Wrap await calls in try-catch or add a .catch() handler.',
+                    steps: [
+                        'Add a try-catch block around the await expressions.',
+                        'Handle errors appropriately (log, return default, re-throw with context).',
+                        'If the caller handles errors, document it with a comment.',
+                    ],
+                },
+                impact: 'Unhandled promise rejections crash Node.js processes and cause silent failures in browsers.',
+                tags: ['error-handling', 'async', 'reliability'],
+            });
+        }
+    }
+    return findings;
+}
+// ─── Promise Misuse (async-without-await) ───────────────────────────────────
+export function detectPromiseMisuse(fileSummaries) {
+    const findings = [];
+    for (const entry of fileSummaries) {
+        if (isTestFile(entry.file))
+            continue;
+        if (!entry.asyncWithoutAwait)
+            continue;
+        for (const fn of entry.asyncWithoutAwait) {
+            findings.push({
+                severity: 'medium',
+                category: 'promise-misuse',
+                file: entry.file,
+                lineStart: fn.lineStart,
+                lineEnd: fn.lineEnd,
+                title: `Unnecessary async: ${fn.name} has no await`,
+                reason: `Function "${fn.name}" is declared \`async\` but never uses \`await\`. The \`async\` keyword adds unnecessary Promise wrapping.`,
+                files: [entry.file],
+                suggestedFix: {
+                    strategy: 'Remove the async keyword or add the missing await.',
+                    steps: [
+                        'If the function does not need to be async, remove the `async` keyword.',
+                        'If an `await` was forgotten, add it to the appropriate call.',
+                        'Verify callers handle the return value correctly after the change.',
+                    ],
+                },
+                impact: 'Unnecessary async wrapping adds microtask overhead and misleads readers.',
+                tags: ['async', 'performance', 'clarity'],
             });
         }
     }

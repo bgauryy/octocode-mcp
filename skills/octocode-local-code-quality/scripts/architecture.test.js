@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as ts from 'typescript';
-import { computeInstability, detectSdpViolations, detectHighCoupling, detectGodModuleCoupling, detectOrphanModules, detectUnreachableModules, detectUnusedNpmDeps, detectBoundaryViolations, computeBarrelDepth, detectBarrelExplosion, detectGodModules, detectGodFunctions, computeCognitiveComplexity, detectCognitiveComplexity, detectLayerViolations, detectLowCohesion, detectInferredLayerViolations, getInferredLayer, computeHotFiles, } from './architecture.js';
+import { computeInstability, detectSdpViolations, detectHighCoupling, detectGodModuleCoupling, detectOrphanModules, detectUnreachableModules, detectUnusedNpmDeps, detectBoundaryViolations, computeBarrelDepth, detectBarrelExplosion, detectGodModules, detectGodFunctions, computeCognitiveComplexity, detectCognitiveComplexity, detectLayerViolations, detectLowCohesion, detectInferredLayerViolations, getInferredLayer, computeHotFiles, buildConsumedFromModule, detectDuplicateFunctionBodies, detectDuplicateFlowStructures, detectFunctionOptimization, detectTestOnlyModules, detectDependencyCycles, detectCriticalPaths, detectDeadFiles, detectDeadExports, detectDeadReExports, detectExcessiveParameters, detectEmptyCatchBlocks, detectSwitchNoDefault, detectHighCyclomaticDensity, detectUnsafeAny, detectMagicNumbers, detectHighHalsteadEffort, detectLowMaintainability, detectDistanceFromMainSequence, computeAbstractness, detectFeatureEnvy, detectUntestedCriticalCode, } from './architecture.js';
 function emptyState() {
     return {
         files: new Set(),
@@ -67,6 +67,15 @@ function makeFileEntry(overrides = {}) {
         flows: [],
         dependencyProfile: emptyProfile,
         ...overrides,
+    };
+}
+function minimalDepSummary(overrides = {}) {
+    return {
+        totalModules: 0, totalEdges: 0, unresolvedEdgeCount: 0,
+        externalDependencyFiles: 0, rootsCount: 0, leavesCount: 0,
+        roots: [], leaves: [], criticalModules: [], testOnlyModules: [],
+        unresolvedSample: [], outgoingTop: [], inboundTop: [],
+        cycles: [], criticalPaths: [], ...overrides,
     };
 }
 // ─── 2A: Instability ────────────────────────────────────────────────────────
@@ -818,5 +827,840 @@ describe('computeHotFiles', () => {
         critMap.set('src/a.test.ts', { file: 'src/a.test.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 50 });
         const result = computeHotFiles(state, minimalDepSummary(), critMap);
         expect(result.some(f => f.file === 'src/a.test.ts')).toBe(false);
+    });
+});
+// ─── buildConsumedFromModule ────────────────────────────────────────────────
+describe('buildConsumedFromModule', () => {
+    it('returns empty map for no imports', () => {
+        const result = buildConsumedFromModule(emptyState());
+        expect(result.size).toBe(0);
+    });
+    it('collects consumed symbols per module', () => {
+        const state = emptyState();
+        state.importedSymbolsByFile.set('src/a.ts', [
+            { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'foo', localName: 'foo', isTypeOnly: false },
+            { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'bar', localName: 'bar', isTypeOnly: false },
+        ]);
+        const result = buildConsumedFromModule(state);
+        expect(result.get('src/lib.ts')?.size).toBe(2);
+        expect(result.get('src/lib.ts')?.has('foo')).toBe(true);
+    });
+    it('skips test file imports', () => {
+        const state = emptyState();
+        state.importedSymbolsByFile.set('src/a.test.ts', [
+            { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'foo', localName: 'foo', isTypeOnly: false },
+        ]);
+        const result = buildConsumedFromModule(state);
+        expect(result.size).toBe(0);
+    });
+    it('collects symbols from re-exports', () => {
+        const state = emptyState();
+        state.reExportsByFile.set('src/barrel.ts', [
+            { sourceModule: './lib', resolvedModule: 'src/lib.ts', exportedAs: 'X', importedName: 'X', isStar: false, isTypeOnly: false },
+        ]);
+        const result = buildConsumedFromModule(state);
+        expect(result.get('src/lib.ts')?.has('X')).toBe(true);
+    });
+});
+// ─── detectDuplicateFunctionBodies ──────────────────────────────────────────
+describe('detectDuplicateFunctionBodies', () => {
+    function makeDupGroup(overrides = {}) {
+        return {
+            hash: 'abc123',
+            signature: 'handleError',
+            kind: 'ArrowFunction',
+            occurrences: 3,
+            filesCount: 2,
+            locations: [
+                { kind: 'ArrowFunction', name: 'handleError', nameHint: 'handleError', file: 'src/a.ts', lineStart: 1, lineEnd: 10, columnStart: 1, columnEnd: 1, statementCount: 8, complexity: 3, maxBranchDepth: 1, maxLoopDepth: 0, returns: 1, awaits: 0, calls: 2, loops: 0, lengthLines: 10, cognitiveComplexity: 2, hash: 'abc', metrics: { complexity: 3, maxBranchDepth: 1, maxLoopDepth: 0, returns: 1, awaits: 0, calls: 2, loops: 0 } },
+                { kind: 'ArrowFunction', name: 'handleError', nameHint: 'handleError', file: 'src/b.ts', lineStart: 5, lineEnd: 15, columnStart: 1, columnEnd: 1, statementCount: 8, complexity: 3, maxBranchDepth: 1, maxLoopDepth: 0, returns: 1, awaits: 0, calls: 2, loops: 0, lengthLines: 10, cognitiveComplexity: 2, hash: 'abc', metrics: { complexity: 3, maxBranchDepth: 1, maxLoopDepth: 0, returns: 1, awaits: 0, calls: 2, loops: 0 } },
+            ],
+            ...overrides,
+        };
+    }
+    it('returns empty for empty input', () => {
+        expect(detectDuplicateFunctionBodies([])).toEqual([]);
+    });
+    it('creates finding for duplicate group', () => {
+        const findings = detectDuplicateFunctionBodies([makeDupGroup()]);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('duplicate-function-body');
+        expect(findings[0].title).toContain('handleError');
+    });
+    it('assigns low severity for 2 occurrences', () => {
+        const findings = detectDuplicateFunctionBodies([makeDupGroup({ occurrences: 2 })]);
+        expect(findings[0].severity).toBe('low');
+    });
+    it('assigns medium severity for 3-5 occurrences', () => {
+        const findings = detectDuplicateFunctionBodies([makeDupGroup({ occurrences: 4 })]);
+        expect(findings[0].severity).toBe('medium');
+    });
+    it('assigns high severity for 6+ occurrences', () => {
+        const findings = detectDuplicateFunctionBodies([makeDupGroup({ occurrences: 7 })]);
+        expect(findings[0].severity).toBe('high');
+    });
+    it('includes all file locations in files field', () => {
+        const findings = detectDuplicateFunctionBodies([makeDupGroup()]);
+        expect(findings[0].files.length).toBe(2);
+    });
+});
+// ─── detectDuplicateFlowStructures ──────────────────────────────────────────
+describe('detectDuplicateFlowStructures', () => {
+    function makeFlowGroup(overrides = {}) {
+        return {
+            kind: 'IfStatement',
+            occurrences: 5,
+            filesCount: 3,
+            locations: [
+                { kind: 'IfStatement', file: 'src/a.ts', lineStart: 10, lineEnd: 20, columnStart: 1, columnEnd: 1, statementCount: 5, hash: 'x' },
+                { kind: 'IfStatement', file: 'src/b.ts', lineStart: 15, lineEnd: 25, columnStart: 1, columnEnd: 1, statementCount: 5, hash: 'x' },
+            ],
+            ...overrides,
+        };
+    }
+    it('returns empty for empty input', () => {
+        expect(detectDuplicateFlowStructures([], 3)).toEqual([]);
+    });
+    it('skips groups below threshold', () => {
+        const findings = detectDuplicateFlowStructures([makeFlowGroup({ occurrences: 2 })], 3);
+        expect(findings).toEqual([]);
+    });
+    it('creates finding above threshold', () => {
+        const findings = detectDuplicateFlowStructures([makeFlowGroup()], 3);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('duplicate-flow-structure');
+    });
+    it('assigns high severity for 10+ occurrences', () => {
+        const findings = detectDuplicateFlowStructures([makeFlowGroup({ occurrences: 12 })], 3);
+        expect(findings[0].severity).toBe('high');
+    });
+    it('assigns medium severity for fewer occurrences', () => {
+        const findings = detectDuplicateFlowStructures([makeFlowGroup({ occurrences: 5 })], 3);
+        expect(findings[0].severity).toBe('medium');
+    });
+});
+// ─── detectFunctionOptimization ─────────────────────────────────────────────
+describe('detectFunctionOptimization', () => {
+    it('returns empty for simple functions', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ complexity: 5, maxBranchDepth: 2, maxLoopDepth: 1, statementCount: 10 })] })];
+        expect(detectFunctionOptimization(files, 30)).toEqual([]);
+    });
+    it('flags high complexity', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ complexity: 35, name: 'complexFn' })] })];
+        const findings = detectFunctionOptimization(files, 30);
+        expect(findings.length).toBe(1);
+        expect(findings[0].severity).toBe('high');
+    });
+    it('flags deep branch nesting', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ maxBranchDepth: 8, name: 'deepFn' })] })];
+        const findings = detectFunctionOptimization(files, 30);
+        expect(findings.length).toBe(1);
+        expect(findings[0].reason).toContain('Branch depth');
+    });
+    it('flags deep loop nesting', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ maxLoopDepth: 5, name: 'loopFn' })] })];
+        const findings = detectFunctionOptimization(files, 30);
+        expect(findings.length).toBe(1);
+        expect(findings[0].reason).toContain('Nested loops');
+    });
+    it('flags large function bodies', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ statementCount: 30, name: 'bigFn' })] })];
+        const findings = detectFunctionOptimization(files, 30);
+        expect(findings.length).toBe(1);
+        expect(findings[0].severity).toBe('medium');
+    });
+    it('combines multiple alerts', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ complexity: 40, maxBranchDepth: 8, name: 'badFn' })] })];
+        const findings = detectFunctionOptimization(files, 30);
+        expect(findings[0].reason).toContain('Cyclomatic');
+        expect(findings[0].reason).toContain('Branch depth');
+    });
+});
+// ─── detectTestOnlyModules ──────────────────────────────────────────────────
+describe('detectTestOnlyModules', () => {
+    it('returns empty when no test-only modules', () => {
+        expect(detectTestOnlyModules(minimalDepSummary())).toEqual([]);
+    });
+    it('creates finding for test-only module', () => {
+        const summary = minimalDepSummary({
+            testOnlyModules: [{
+                    file: 'src/test-helper.ts', outboundCount: 0, inboundCount: 1,
+                    inboundFromProduction: 0, inboundFromTests: 1,
+                    externalDependencyCount: 0, unresolvedDependencyCount: 0,
+                }],
+        });
+        const findings = detectTestOnlyModules(summary);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('dependency-test-only');
+        expect(findings[0].severity).toBe('medium');
+    });
+    it('limits to 25 findings', () => {
+        const modules = Array.from({ length: 30 }, (_, i) => ({
+            file: `src/helper${i}.ts`, outboundCount: 0, inboundCount: 1,
+            inboundFromProduction: 0, inboundFromTests: 1,
+            externalDependencyCount: 0, unresolvedDependencyCount: 0,
+        }));
+        const findings = detectTestOnlyModules(minimalDepSummary({ testOnlyModules: modules }));
+        expect(findings.length).toBe(25);
+    });
+});
+// ─── detectDependencyCycles (architecture detector) ─────────────────────────
+describe('detectDependencyCycles (detector)', () => {
+    it('returns empty for no cycles', () => {
+        expect(detectDependencyCycles(minimalDepSummary(), emptyState())).toEqual([]);
+    });
+    it('creates finding per cycle', () => {
+        const state = emptyState();
+        state.files.add('a.ts');
+        state.files.add('b.ts');
+        const summary = minimalDepSummary({
+            cycles: [{ path: ['a.ts', 'b.ts', 'a.ts'], nodeCount: 2 }],
+        });
+        const findings = detectDependencyCycles(summary, state);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('dependency-cycle');
+        expect(findings[0].severity).toBe('high');
+    });
+    it('limits to 15 cycle findings', () => {
+        const cycles = Array.from({ length: 20 }, (_, i) => ({
+            path: [`src/a${i}.ts`, `src/b${i}.ts`, `src/a${i}.ts`], nodeCount: 2,
+        }));
+        const findings = detectDependencyCycles(minimalDepSummary({ cycles }), emptyState());
+        expect(findings.length).toBe(15);
+    });
+});
+// ─── detectCriticalPaths (architecture detector) ────────────────────────────
+describe('detectCriticalPaths (detector)', () => {
+    it('returns empty for no critical paths', () => {
+        expect(detectCriticalPaths(minimalDepSummary(), emptyState(), 30)).toEqual([]);
+    });
+    it('creates finding for high-score path', () => {
+        const state = emptyState();
+        const summary = minimalDepSummary({
+            criticalPaths: [{
+                    start: 'a.ts', path: ['a.ts', 'b.ts', 'c.ts'],
+                    score: 300, length: 3, containsCycle: false,
+                }],
+        });
+        const findings = detectCriticalPaths(summary, state, 30);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('dependency-critical-path');
+    });
+    it('skips paths below score threshold', () => {
+        const summary = minimalDepSummary({
+            criticalPaths: [{
+                    start: 'a.ts', path: ['a.ts', 'b.ts'],
+                    score: 10, length: 2, containsCycle: false,
+                }],
+        });
+        const findings = detectCriticalPaths(summary, emptyState(), 30);
+        expect(findings).toEqual([]);
+    });
+    it('assigns critical severity for very high scores', () => {
+        const summary = minimalDepSummary({
+            criticalPaths: [{
+                    start: 'a.ts', path: ['a.ts', 'b.ts'],
+                    score: 500, length: 2, containsCycle: false,
+                }],
+        });
+        const findings = detectCriticalPaths(summary, emptyState(), 30);
+        expect(findings[0].severity).toBe('critical');
+    });
+});
+// ─── detectDeadFiles ────────────────────────────────────────────────────────
+describe('detectDeadFiles', () => {
+    it('returns empty when no dead files', () => {
+        const state = emptyState();
+        addEdge(state, 'src/a.ts', 'src/b.ts');
+        expect(detectDeadFiles(minimalDepSummary({ roots: ['src/a.ts'] }), state)).toEqual([]);
+    });
+    it('flags root file with zero outgoing', () => {
+        const state = emptyState();
+        state.files.add('src/dead.ts');
+        const findings = detectDeadFiles(minimalDepSummary({ roots: ['src/dead.ts'] }), state);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('dead-file');
+    });
+    it('skips entrypoints', () => {
+        const state = emptyState();
+        state.files.add('src/index.ts');
+        const findings = detectDeadFiles(minimalDepSummary({ roots: ['src/index.ts'] }), state);
+        expect(findings).toEqual([]);
+    });
+    it('skips test files', () => {
+        const state = emptyState();
+        state.files.add('src/foo.test.ts');
+        const findings = detectDeadFiles(minimalDepSummary({ roots: ['src/foo.test.ts'] }), state);
+        expect(findings).toEqual([]);
+    });
+    it('skips roots with outgoing dependencies', () => {
+        const state = emptyState();
+        addEdge(state, 'src/root.ts', 'src/dep.ts');
+        const findings = detectDeadFiles(minimalDepSummary({ roots: ['src/root.ts'] }), state);
+        expect(findings).toEqual([]);
+    });
+});
+// ─── detectDeadExports ──────────────────────────────────────────────────────
+describe('detectDeadExports', () => {
+    it('returns empty when all exports consumed', () => {
+        const state = emptyState();
+        state.files.add('src/lib.ts');
+        state.declaredExportsByFile.set('src/lib.ts', [{ name: 'foo', kind: 'value' }]);
+        const consumed = new Map([['src/lib.ts', new Set(['foo'])]]);
+        expect(detectDeadExports(state, consumed)).toEqual([]);
+    });
+    it('flags unused exports', () => {
+        const state = emptyState();
+        state.files.add('src/lib.ts');
+        state.declaredExportsByFile.set('src/lib.ts', [
+            { name: 'used', kind: 'value' },
+            { name: 'dead', kind: 'value', lineStart: 10 },
+        ]);
+        const consumed = new Map([['src/lib.ts', new Set(['used'])]]);
+        const findings = detectDeadExports(state, consumed);
+        expect(findings.length).toBe(1);
+        expect(findings[0].title).toContain('dead');
+    });
+    it('assigns medium severity for type exports', () => {
+        const state = emptyState();
+        state.files.add('src/lib.ts');
+        state.declaredExportsByFile.set('src/lib.ts', [{ name: 'MyType', kind: 'type' }]);
+        const findings = detectDeadExports(state, new Map());
+        expect(findings[0].severity).toBe('medium');
+    });
+    it('assigns high severity for value exports', () => {
+        const state = emptyState();
+        state.files.add('src/lib.ts');
+        state.declaredExportsByFile.set('src/lib.ts', [{ name: 'myFn', kind: 'value' }]);
+        const findings = detectDeadExports(state, new Map());
+        expect(findings[0].severity).toBe('high');
+    });
+    it('skips namespace-imported modules', () => {
+        const state = emptyState();
+        state.files.add('src/lib.ts');
+        state.declaredExportsByFile.set('src/lib.ts', [{ name: 'foo', kind: 'value' }]);
+        const consumed = new Map([['src/lib.ts', new Set(['*'])]]);
+        expect(detectDeadExports(state, consumed)).toEqual([]);
+    });
+});
+// ─── detectDeadReExports ────────────────────────────────────────────────────
+describe('detectDeadReExports', () => {
+    it('returns empty for consumed re-exports', () => {
+        const state = emptyState();
+        state.reExportsByFile.set('src/index.ts', [
+            { sourceModule: './a', resolvedModule: 'src/a.ts', exportedAs: 'X', importedName: 'X', isStar: false, isTypeOnly: false },
+        ]);
+        const consumed = new Map([['src/index.ts', new Set(['X'])]]);
+        expect(detectDeadReExports(state, consumed)).toEqual([]);
+    });
+    it('flags unused re-exports', () => {
+        const state = emptyState();
+        state.reExportsByFile.set('src/index.ts', [
+            { sourceModule: './a', resolvedModule: 'src/a.ts', exportedAs: 'Dead', importedName: 'Dead', isStar: false, isTypeOnly: false },
+        ]);
+        const findings = detectDeadReExports(state, new Map());
+        expect(findings.some(f => f.category === 'dead-re-export')).toBe(true);
+    });
+    it('detects duplicate re-export sources', () => {
+        const state = emptyState();
+        state.reExportsByFile.set('src/barrel.ts', [
+            { sourceModule: './a', resolvedModule: 'src/a.ts', exportedAs: 'Foo', importedName: 'Foo', isStar: false, isTypeOnly: false },
+            { sourceModule: './b', resolvedModule: 'src/b.ts', exportedAs: 'Foo', importedName: 'Foo', isStar: false, isTypeOnly: false },
+        ]);
+        const consumed = new Map([['src/barrel.ts', new Set(['Foo'])]]);
+        const findings = detectDeadReExports(state, consumed);
+        expect(findings.some(f => f.category === 're-export-duplication')).toBe(true);
+    });
+    it('detects shadowed re-exports', () => {
+        const state = emptyState();
+        state.declaredExportsByFile.set('src/barrel.ts', [{ name: 'Conflict', kind: 'value' }]);
+        state.reExportsByFile.set('src/barrel.ts', [
+            { sourceModule: './a', resolvedModule: 'src/a.ts', exportedAs: 'Conflict', importedName: 'Conflict', isStar: false, isTypeOnly: false },
+        ]);
+        const consumed = new Map([['src/barrel.ts', new Set(['Conflict'])]]);
+        const findings = detectDeadReExports(state, consumed);
+        expect(findings.some(f => f.category === 're-export-shadowed')).toBe(true);
+    });
+});
+// ─── detectExcessiveParameters ──────────────────────────────────────────────
+describe('detectExcessiveParameters', () => {
+    it('returns empty for functions within threshold', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ params: 3 })] })];
+        expect(detectExcessiveParameters(files, 5)).toEqual([]);
+    });
+    it('flags functions exceeding threshold', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ params: 7, name: 'manyArgs' })] })];
+        const findings = detectExcessiveParameters(files, 5);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('excessive-parameters');
+        expect(findings[0].title).toContain('manyArgs');
+    });
+    it('assigns high severity for >7 params', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ params: 9 })] })];
+        const findings = detectExcessiveParameters(files, 5);
+        expect(findings[0].severity).toBe('high');
+    });
+    it('assigns medium severity for 6-7 params', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ params: 6 })] })];
+        const findings = detectExcessiveParameters(files, 5);
+        expect(findings[0].severity).toBe('medium');
+    });
+    it('skips functions with no param count', () => {
+        const files = [makeFileEntry({ functions: [makeFn()] })];
+        expect(detectExcessiveParameters(files, 5)).toEqual([]);
+    });
+    it('skips test files', () => {
+        const files = [makeFileEntry({ file: 'src/a.test.ts', functions: [makeFn({ params: 10 })] })];
+        expect(detectExcessiveParameters(files, 5)).toEqual([]);
+    });
+});
+// ─── detectEmptyCatchBlocks ─────────────────────────────────────────────────
+describe('detectEmptyCatchBlocks', () => {
+    it('returns empty when no empty catches', () => {
+        const files = [makeFileEntry()];
+        expect(detectEmptyCatchBlocks(files)).toEqual([]);
+    });
+    it('flags empty catch blocks', () => {
+        const loc = { file: 'src/file.ts', lineStart: 10, lineEnd: 12 };
+        const files = [makeFileEntry({ emptyCatches: [loc] })];
+        const findings = detectEmptyCatchBlocks(files);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('empty-catch');
+        expect(findings[0].severity).toBe('medium');
+        expect(findings[0].lineStart).toBe(10);
+    });
+    it('creates finding per empty catch', () => {
+        const locs = [
+            { file: 'src/file.ts', lineStart: 10, lineEnd: 12 },
+            { file: 'src/file.ts', lineStart: 30, lineEnd: 32 },
+        ];
+        const files = [makeFileEntry({ emptyCatches: locs })];
+        const findings = detectEmptyCatchBlocks(files);
+        expect(findings.length).toBe(2);
+    });
+    it('skips test files', () => {
+        const loc = { file: 'src/a.test.ts', lineStart: 10, lineEnd: 12 };
+        const files = [makeFileEntry({ file: 'src/a.test.ts', emptyCatches: [loc] })];
+        expect(detectEmptyCatchBlocks(files)).toEqual([]);
+    });
+});
+// ─── detectSwitchNoDefault ──────────────────────────────────────────────────
+describe('detectSwitchNoDefault', () => {
+    it('returns empty when no switches without default', () => {
+        const files = [makeFileEntry()];
+        expect(detectSwitchNoDefault(files)).toEqual([]);
+    });
+    it('flags switch without default', () => {
+        const loc = { file: 'src/file.ts', lineStart: 15, lineEnd: 30 };
+        const files = [makeFileEntry({ switchesWithoutDefault: [loc] })];
+        const findings = detectSwitchNoDefault(files);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('switch-no-default');
+        expect(findings[0].severity).toBe('low');
+    });
+    it('skips test files', () => {
+        const loc = { file: 'src/a.test.ts', lineStart: 15, lineEnd: 30 };
+        const files = [makeFileEntry({ file: 'src/a.test.ts', switchesWithoutDefault: [loc] })];
+        expect(detectSwitchNoDefault(files)).toEqual([]);
+    });
+});
+// ─── detectHighCyclomaticDensity ────────────────────────────────────────────
+describe('detectHighCyclomaticDensity', () => {
+    it('returns empty for low-density functions', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ complexity: 2, statementCount: 20 })] })];
+        expect(detectHighCyclomaticDensity(files, 0.5)).toEqual([]);
+    });
+    it('flags functions above density threshold', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ complexity: 12, statementCount: 15, name: 'branchyFn' })] })];
+        const findings = detectHighCyclomaticDensity(files, 0.5);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('high-cyclomatic-density');
+        expect(findings[0].title).toContain('branchyFn');
+    });
+    it('skips functions with fewer than 10 statements', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ complexity: 8, statementCount: 8 })] })];
+        expect(detectHighCyclomaticDensity(files, 0.5)).toEqual([]);
+    });
+    it('assigns high severity for density > 1.0', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ complexity: 25, statementCount: 20 })] })];
+        const findings = detectHighCyclomaticDensity(files, 0.5);
+        expect(findings[0].severity).toBe('high');
+    });
+    it('assigns medium severity for moderate density', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ complexity: 8, statementCount: 12 })] })];
+        const findings = detectHighCyclomaticDensity(files, 0.5);
+        expect(findings[0].severity).toBe('medium');
+    });
+});
+// ─── detectUnsafeAny ────────────────────────────────────────────────────────
+describe('detectUnsafeAny', () => {
+    it('returns empty for files below threshold', () => {
+        const files = [makeFileEntry({ anyCount: 3 })];
+        expect(detectUnsafeAny(files, 5)).toEqual([]);
+    });
+    it('flags files exceeding threshold', () => {
+        const files = [makeFileEntry({ anyCount: 8 })];
+        const findings = detectUnsafeAny(files, 5);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('unsafe-any');
+    });
+    it('assigns high severity for >10 any usages', () => {
+        const files = [makeFileEntry({ anyCount: 15 })];
+        const findings = detectUnsafeAny(files, 5);
+        expect(findings[0].severity).toBe('high');
+    });
+    it('assigns medium severity for 6-10 any usages', () => {
+        const files = [makeFileEntry({ anyCount: 7 })];
+        const findings = detectUnsafeAny(files, 5);
+        expect(findings[0].severity).toBe('medium');
+    });
+    it('skips files with no anyCount', () => {
+        const files = [makeFileEntry()];
+        expect(detectUnsafeAny(files, 5)).toEqual([]);
+    });
+});
+// ─── detectMagicNumbers ─────────────────────────────────────────────────────
+describe('detectMagicNumbers', () => {
+    it('returns empty for files below threshold', () => {
+        const magic = [{ file: 'src/file.ts', lineStart: 5, lineEnd: 5, value: 42 }];
+        const files = [makeFileEntry({ magicNumbers: magic })];
+        expect(detectMagicNumbers(files, 3)).toEqual([]);
+    });
+    it('flags files exceeding threshold', () => {
+        const magic = Array.from({ length: 5 }, (_, i) => ({
+            file: 'src/file.ts', lineStart: i + 1, lineEnd: i + 1, value: i * 10,
+        }));
+        const files = [makeFileEntry({ magicNumbers: magic })];
+        const findings = detectMagicNumbers(files, 3);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('magic-number');
+    });
+    it('includes sample values in reason', () => {
+        const magic = Array.from({ length: 5 }, (_, i) => ({
+            file: 'src/file.ts', lineStart: i + 1, lineEnd: i + 1, value: (i + 1) * 100,
+        }));
+        const files = [makeFileEntry({ magicNumbers: magic })];
+        const findings = detectMagicNumbers(files, 3);
+        expect(findings[0].reason).toContain('100');
+    });
+    it('assigns high severity for >8 magic numbers', () => {
+        const magic = Array.from({ length: 10 }, (_, i) => ({
+            file: 'src/file.ts', lineStart: i + 1, lineEnd: i + 1, value: i,
+        }));
+        const files = [makeFileEntry({ magicNumbers: magic })];
+        const findings = detectMagicNumbers(files, 3);
+        expect(findings[0].severity).toBe('high');
+    });
+});
+// ─── detectHighHalsteadEffort ───────────────────────────────────────────────
+describe('detectHighHalsteadEffort', () => {
+    it('returns empty for functions below thresholds', () => {
+        const files = [makeFileEntry({ functions: [makeFn({
+                        halstead: { operators: 10, operands: 10, distinctOperators: 5, distinctOperands: 5, vocabulary: 10, length: 20, volume: 100, difficulty: 5, effort: 500, time: 28, estimatedBugs: 0.03 },
+                    })] })];
+        expect(detectHighHalsteadEffort(files)).toEqual([]);
+    });
+    it('flags functions with high effort', () => {
+        const files = [makeFileEntry({ functions: [makeFn({
+                        name: 'heavyFn',
+                        halstead: { operators: 100, operands: 200, distinctOperators: 30, distinctOperands: 50, vocabulary: 80, length: 300, volume: 50000, difficulty: 20, effort: 1_000_000, time: 55556, estimatedBugs: 1.5 },
+                    })] })];
+        const findings = detectHighHalsteadEffort(files);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('halstead-effort');
+        expect(findings[0].title).toContain('heavyFn');
+    });
+    it('flags functions with high estimated bugs', () => {
+        const files = [makeFileEntry({ functions: [makeFn({
+                        halstead: { operators: 50, operands: 100, distinctOperators: 15, distinctOperands: 25, vocabulary: 40, length: 150, volume: 10000, difficulty: 10, effort: 100_000, time: 5556, estimatedBugs: 3.5 },
+                    })] })];
+        const findings = detectHighHalsteadEffort(files, 500_000, 2.0);
+        expect(findings.length).toBe(1);
+        expect(findings[0].reason).toContain('estimatedBugs');
+    });
+    it('skips functions without halstead data', () => {
+        const files = [makeFileEntry({ functions: [makeFn()] })];
+        expect(detectHighHalsteadEffort(files)).toEqual([]);
+    });
+});
+// ─── detectLowMaintainability ───────────────────────────────────────────────
+describe('detectLowMaintainability', () => {
+    it('returns empty for functions above threshold', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ maintainabilityIndex: 50 })] })];
+        expect(detectLowMaintainability(files, 20)).toEqual([]);
+    });
+    it('flags functions below threshold', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ maintainabilityIndex: 15, name: 'hardFn' })] })];
+        const findings = detectLowMaintainability(files, 20);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('low-maintainability');
+        expect(findings[0].title).toContain('hardFn');
+    });
+    it('assigns critical severity for MI < 10', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ maintainabilityIndex: 5 })] })];
+        const findings = detectLowMaintainability(files, 20);
+        expect(findings[0].severity).toBe('critical');
+    });
+    it('assigns high severity for MI 10-19', () => {
+        const files = [makeFileEntry({ functions: [makeFn({ maintainabilityIndex: 15 })] })];
+        const findings = detectLowMaintainability(files, 20);
+        expect(findings[0].severity).toBe('high');
+    });
+    it('skips functions without maintainability index', () => {
+        const files = [makeFileEntry({ functions: [makeFn()] })];
+        expect(detectLowMaintainability(files, 20)).toEqual([]);
+    });
+});
+// ═══════════════════════════════════════════════════════════════════════════
+// NEW ARCHITECTURE DETECTORS
+// ═══════════════════════════════════════════════════════════════════════════
+// ─── computeAbstractness ────────────────────────────────────────────────────
+describe('computeAbstractness', () => {
+    it('returns 0 for file with no type exports', () => {
+        expect(computeAbstractness([
+            { name: 'foo', kind: 'value' },
+            { name: 'bar', kind: 'value' },
+        ])).toBe(0);
+    });
+    it('returns 1 for file with only type exports', () => {
+        expect(computeAbstractness([
+            { name: 'Foo', kind: 'type' },
+            { name: 'Bar', kind: 'type' },
+        ])).toBe(1);
+    });
+    it('returns 0.5 for equal mix', () => {
+        expect(computeAbstractness([
+            { name: 'Foo', kind: 'type' },
+            { name: 'foo', kind: 'value' },
+        ])).toBe(0.5);
+    });
+    it('returns 0 for empty exports', () => {
+        expect(computeAbstractness([])).toBe(0);
+    });
+});
+// ─── detectDistanceFromMainSequence ─────────────────────────────────────────
+describe('detectDistanceFromMainSequence', () => {
+    it('returns empty for no files', () => {
+        expect(detectDistanceFromMainSequence(emptyState())).toEqual([]);
+    });
+    it('flags files in Zone of Pain (concrete + stable)', () => {
+        const state = emptyState();
+        const hub = 'src/hub.ts';
+        state.files.add(hub);
+        state.declaredExportsByFile.set(hub, [
+            { name: 'fn1', kind: 'value' },
+            { name: 'fn2', kind: 'value' },
+            { name: 'fn3', kind: 'value' },
+        ]);
+        for (let i = 0; i < 10; i++) {
+            const f = `src/dep${i}.ts`;
+            state.files.add(f);
+            addEdge(state, f, hub);
+        }
+        const findings = detectDistanceFromMainSequence(state);
+        const hubFinding = findings.find(f => f.file === hub);
+        expect(hubFinding).toBeDefined();
+        expect(hubFinding.category).toBe('distance-from-main-sequence');
+        expect(hubFinding.reason).toContain('Zone of Pain');
+    });
+    it('does not flag files on the main sequence', () => {
+        const state = emptyState();
+        state.files.add('src/a.ts');
+        state.files.add('src/b.ts');
+        state.declaredExportsByFile.set('src/a.ts', [
+            { name: 'MyType', kind: 'type' },
+        ]);
+        addEdge(state, 'src/b.ts', 'src/a.ts');
+        const findings = detectDistanceFromMainSequence(state);
+        expect(findings).toEqual([]);
+    });
+    it('flags files in Zone of Uselessness (abstract + unstable)', () => {
+        const state = emptyState();
+        const file = 'src/unused-abstractions.ts';
+        state.files.add(file);
+        state.declaredExportsByFile.set(file, [
+            { name: 'IFoo', kind: 'type' },
+            { name: 'IBar', kind: 'type' },
+            { name: 'IBaz', kind: 'type' },
+        ]);
+        for (let i = 0; i < 8; i++) {
+            const dep = `src/dep${i}.ts`;
+            state.files.add(dep);
+            addEdge(state, file, dep);
+        }
+        const findings = detectDistanceFromMainSequence(state);
+        const f = findings.find(f => f.file === file);
+        expect(f).toBeDefined();
+        expect(f.reason).toContain('Zone of Uselessness');
+    });
+    it('skips test files', () => {
+        const state = emptyState();
+        state.files.add('src/a.test.ts');
+        state.declaredExportsByFile.set('src/a.test.ts', [{ name: 'fn', kind: 'value' }]);
+        expect(detectDistanceFromMainSequence(state)).toEqual([]);
+    });
+    it('skips files with no exports', () => {
+        const state = emptyState();
+        state.files.add('src/empty.ts');
+        expect(detectDistanceFromMainSequence(state)).toEqual([]);
+    });
+});
+// ─── detectFeatureEnvy ──────────────────────────────────────────────────────
+describe('detectFeatureEnvy', () => {
+    it('returns empty when no envy detected', () => {
+        const state = emptyState();
+        state.files.add('src/a.ts');
+        state.importedSymbolsByFile.set('src/a.ts', [
+            { sourceModule: './b', resolvedModule: 'src/b.ts', importedName: 'x', localName: 'x', isTypeOnly: false },
+            { sourceModule: './c', resolvedModule: 'src/c.ts', importedName: 'y', localName: 'y', isTypeOnly: false },
+        ]);
+        expect(detectFeatureEnvy(state)).toEqual([]);
+    });
+    it('flags file that imports many symbols from single target', () => {
+        const state = emptyState();
+        state.files.add('src/envious.ts');
+        state.files.add('src/target.ts');
+        const imports = Array.from({ length: 8 }, (_, i) => ({
+            sourceModule: './target', resolvedModule: 'src/target.ts',
+            importedName: `sym${i}`, localName: `sym${i}`, isTypeOnly: false,
+        }));
+        imports.push({
+            sourceModule: './other', resolvedModule: 'src/other.ts',
+            importedName: 'z', localName: 'z', isTypeOnly: false,
+        });
+        state.importedSymbolsByFile.set('src/envious.ts', imports);
+        const findings = detectFeatureEnvy(state);
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('feature-envy');
+        expect(findings[0].file).toBe('src/envious.ts');
+        expect(findings[0].reason).toContain('src/target.ts');
+    });
+    it('does not flag when imports are spread evenly', () => {
+        const state = emptyState();
+        state.files.add('src/balanced.ts');
+        const imports = [];
+        for (let m = 0; m < 5; m++) {
+            for (let s = 0; s < 2; s++) {
+                imports.push({
+                    sourceModule: `./mod${m}`, resolvedModule: `src/mod${m}.ts`,
+                    importedName: `fn${s}`, localName: `fn${s}`, isTypeOnly: false,
+                });
+            }
+        }
+        state.importedSymbolsByFile.set('src/balanced.ts', imports);
+        expect(detectFeatureEnvy(state)).toEqual([]);
+    });
+    it('skips test files', () => {
+        const state = emptyState();
+        state.files.add('src/a.test.ts');
+        const imports = Array.from({ length: 10 }, (_, i) => ({
+            sourceModule: './target', resolvedModule: 'src/target.ts',
+            importedName: `sym${i}`, localName: `sym${i}`, isTypeOnly: false,
+        }));
+        state.importedSymbolsByFile.set('src/a.test.ts', imports);
+        expect(detectFeatureEnvy(state)).toEqual([]);
+    });
+    it('requires minimum total imports', () => {
+        const state = emptyState();
+        state.files.add('src/small.ts');
+        state.importedSymbolsByFile.set('src/small.ts', [
+            { sourceModule: './target', resolvedModule: 'src/target.ts', importedName: 'x', localName: 'x', isTypeOnly: false },
+        ]);
+        expect(detectFeatureEnvy(state)).toEqual([]);
+    });
+});
+// ─── detectUntestedCriticalCode ─────────────────────────────────────────────
+describe('detectUntestedCriticalCode', () => {
+    it('returns empty when no hot files provided', () => {
+        const state = emptyState();
+        const findings = detectUntestedCriticalCode(state, [], new Map());
+        expect(findings).toEqual([]);
+    });
+    it('flags hot file with no test imports', () => {
+        const state = emptyState();
+        state.files.add('src/core.ts');
+        state.incomingFromTests.set('src/core.ts', new Set());
+        const hotFiles = [
+            { file: 'src/core.ts', riskScore: 50, fanIn: 10, fanOut: 5, complexityScore: 20, exportCount: 8, inCycle: false, onCriticalPath: true },
+        ];
+        const findings = detectUntestedCriticalCode(state, hotFiles, new Map());
+        expect(findings.length).toBe(1);
+        expect(findings[0].category).toBe('untested-critical-code');
+        expect(findings[0].file).toBe('src/core.ts');
+        expect(findings[0].severity).toBe('high');
+        expect(findings[0].tags).toContain('testing');
+        expect(findings[0].tags).toContain('coverage');
+    });
+    it('does not flag hot file that has test imports', () => {
+        const state = emptyState();
+        state.files.add('src/core.ts');
+        state.incomingFromTests.set('src/core.ts', new Set(['src/core.test.ts']));
+        const hotFiles = [
+            { file: 'src/core.ts', riskScore: 50, fanIn: 10, fanOut: 5, complexityScore: 20, exportCount: 8, inCycle: false, onCriticalPath: true },
+        ];
+        const findings = detectUntestedCriticalCode(state, hotFiles, new Map());
+        expect(findings).toEqual([]);
+    });
+    it('flags critical severity for in-cycle + high risk + untested', () => {
+        const state = emptyState();
+        state.files.add('src/hub.ts');
+        const hotFiles = [
+            { file: 'src/hub.ts', riskScore: 80, fanIn: 20, fanOut: 10, complexityScore: 40, exportCount: 15, inCycle: true, onCriticalPath: true },
+        ];
+        const findings = detectUntestedCriticalCode(state, hotFiles, new Map());
+        expect(findings.length).toBe(1);
+        expect(findings[0].severity).toBe('critical');
+    });
+    it('flags high-complexity files on critical paths even if not in hotFiles list', () => {
+        const state = emptyState();
+        state.files.add('src/deep.ts');
+        const critMap = new Map([
+            ['src/deep.ts', { file: 'src/deep.ts', complexityRisk: 50, highComplexityFunctions: 3, functionCount: 5, flows: 2, score: 60 }],
+        ]);
+        const findings = detectUntestedCriticalCode(state, [], critMap);
+        expect(findings.length).toBe(1);
+        expect(findings[0].file).toBe('src/deep.ts');
+        expect(findings[0].reason).toContain('complexity');
+    });
+    it('skips test files themselves', () => {
+        const state = emptyState();
+        state.files.add('src/core.test.ts');
+        const hotFiles = [
+            { file: 'src/core.test.ts', riskScore: 50, fanIn: 10, fanOut: 5, complexityScore: 20, exportCount: 8, inCycle: false, onCriticalPath: true },
+        ];
+        const findings = detectUntestedCriticalCode(state, hotFiles, new Map());
+        expect(findings).toEqual([]);
+    });
+    it('deduplicates files appearing in both hotFiles and criticality map', () => {
+        const state = emptyState();
+        state.files.add('src/shared.ts');
+        const hotFiles = [
+            { file: 'src/shared.ts', riskScore: 50, fanIn: 10, fanOut: 5, complexityScore: 20, exportCount: 8, inCycle: false, onCriticalPath: false },
+        ];
+        const critMap = new Map([
+            ['src/shared.ts', { file: 'src/shared.ts', complexityRisk: 50, highComplexityFunctions: 3, functionCount: 5, flows: 2, score: 60 }],
+        ]);
+        const findings = detectUntestedCriticalCode(state, hotFiles, critMap);
+        expect(findings.length).toBe(1);
+    });
+    it('includes risk details in reason', () => {
+        const state = emptyState();
+        state.files.add('src/risky.ts');
+        const hotFiles = [
+            { file: 'src/risky.ts', riskScore: 60, fanIn: 15, fanOut: 8, complexityScore: 30, exportCount: 12, inCycle: true, onCriticalPath: false },
+        ];
+        const findings = detectUntestedCriticalCode(state, hotFiles, new Map());
+        expect(findings[0].reason).toContain('risk');
+        expect(findings[0].reason).toContain('60');
+    });
+    it('limits output to top 25 findings', () => {
+        const state = emptyState();
+        const hotFiles = Array.from({ length: 40 }, (_, i) => {
+            const file = `src/mod${i}.ts`;
+            state.files.add(file);
+            return { file, riskScore: 50, fanIn: 10, fanOut: 5, complexityScore: 20, exportCount: 8, inCycle: false, onCriticalPath: true };
+        });
+        const findings = detectUntestedCriticalCode(state, hotFiles, new Map());
+        expect(findings.length).toBeLessThanOrEqual(25);
     });
 });

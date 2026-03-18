@@ -191,4 +191,25 @@ describe('parseArgs', () => {
         expect(opts.packageRoot).toBe('/tmp/myrepo/packages');
         expect(opts.root).toBe('/tmp/myrepo');
     });
+    it('--semantic enables semantic analysis', () => {
+        const opts = parseArgs(['--semantic']);
+        expect(opts.semantic).toBe(true);
+    });
+    it('semantic defaults to false', () => {
+        const opts = parseArgs([]);
+        expect(opts.semantic).toBe(false);
+    });
+    it('--type-hierarchy-threshold sets threshold', () => {
+        const opts = parseArgs(['--type-hierarchy-threshold', '6']);
+        expect(opts.typeHierarchyThreshold).toBe(6);
+    });
+    it('--override-chain-threshold sets threshold', () => {
+        const opts = parseArgs(['--override-chain-threshold', '5']);
+        expect(opts.overrideChainThreshold).toBe(5);
+    });
+    it('NaN guards for semantic thresholds', () => {
+        const opts = parseArgs(['--type-hierarchy-threshold', 'abc', '--override-chain-threshold', 'xyz']);
+        expect(opts.typeHierarchyThreshold).toBe(4);
+        expect(opts.overrideChainThreshold).toBe(3);
+    });
 });

@@ -42,8 +42,13 @@ export interface AnalysisOptions {
   flowDupThreshold: number;
   maxRecsPerCategory: number;
   features: Set<string> | null;
+  scope: string[] | null;
+  scopeSymbols: Map<string, string[]> | null;
   noCache: boolean;
   clearCache: boolean;
+  semantic: boolean;
+  typeHierarchyThreshold: number;
+  overrideChainThreshold: number;
 }
 
 export interface Location {
@@ -290,6 +295,14 @@ export interface SuggestedFix {
   steps: string[];
 }
 
+export interface LspHint {
+  tool: 'lspFindReferences' | 'lspCallHierarchy' | 'lspGotoDefinition';
+  symbolName: string;
+  lineHint: number;
+  file: string;
+  expectedResult: string;
+}
+
 export interface Finding {
   id: string;
   severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
@@ -302,8 +315,10 @@ export interface Finding {
   files: string[];
   suggestedFix: SuggestedFix;
   impact?: string;
+  tags?: string[];
   columnStart?: number;
   columnEnd?: number;
+  lspHints?: LspHint[];
 }
 
 export interface NodeTree {
@@ -333,6 +348,9 @@ export interface FileEntry {
   switchesWithoutDefault?: CodeLocation[];
   anyCount?: number;
   magicNumbers?: MagicNumberEntry[];
+  typeAssertionEscapes?: { asAny: CodeLocation[]; doubleAssertion: CodeLocation[]; nonNull: CodeLocation[] };
+  asyncWithoutAwait?: Array<{ name: string; lineStart: number; lineEnd: number }>;
+  unprotectedAsync?: Array<{ name: string; awaitCount: number; lineStart: number; lineEnd: number }>;
   treeSitterNodeCount?: number;
   treeSitterError?: string;
   parserFallback?: string;
@@ -446,8 +464,13 @@ export const DEFAULT_OPTS: AnalysisOptions = {
   flowDupThreshold: 3,
   maxRecsPerCategory: 2,
   features: null,
+  scope: null,
+  scopeSymbols: null,
   noCache: false,
   clearCache: false,
+  semantic: false,
+  typeHierarchyThreshold: 4,
+  overrideChainThreshold: 3,
 };
 
 export const PILLAR_CATEGORIES: Record<string, string[]> = {
@@ -455,22 +478,39 @@ export const PILLAR_CATEGORIES: Record<string, string[]> = {
     'dependency-cycle', 'dependency-critical-path', 'dependency-test-only',
     'architecture-sdp-violation', 'high-coupling', 'god-module-coupling',
     'orphan-module', 'unreachable-module', 'layer-violation', 'low-cohesion',
-    'inferred-layer-violation',
+    'inferred-layer-violation', 'distance-from-main-sequence', 'feature-envy',
+    'untested-critical-code',
+    'over-abstraction', 'concrete-dependency',
+    'circular-type-dependency',
+    'shotgun-surgery', 'leaky-abstraction',
   ],
   'code-quality': [
     'duplicate-function-body', 'duplicate-flow-structure', 'function-optimization',
     'cognitive-complexity', 'god-module', 'god-function', 'halstead-effort',
     'low-maintainability', 'high-cyclomatic-density', 'excessive-parameters',
     'magic-number', 'unsafe-any', 'empty-catch', 'switch-no-default',
+    'unused-parameter', 'type-hierarchy-depth', 'deep-override-chain',
+    'interface-compliance',
+    'type-assertion-escape', 'promise-misuse', 'narrowable-type',
+    'missing-error-boundary',
   ],
   'dead-code': [
-    'dead-file', 'dead-export', 'dead-re-export', 're-export-duplication',
+    'dead-export', 'dead-re-export', 're-export-duplication',
     're-export-shadowed', 'unused-npm-dependency', 'package-boundary-violation',
     'barrel-explosion',
+    'unused-import', 'orphan-implementation', 'move-to-caller',
   ],
 };
 
 export const ALL_CATEGORIES = new Set(Object.values(PILLAR_CATEGORIES).flat());
+
+export const SEMANTIC_CATEGORIES = new Set([
+  'over-abstraction', 'concrete-dependency',
+  'circular-type-dependency', 'unused-parameter', 'type-hierarchy-depth',
+  'deep-override-chain', 'interface-compliance', 'unused-import',
+  'orphan-implementation',
+  'shotgun-surgery', 'move-to-caller', 'leaky-abstraction', 'narrowable-type',
+]);
 export const ALLOWED_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 export const IMPORT_RESOLVE_EXTS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.d.ts'];
 

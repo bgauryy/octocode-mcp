@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { DEFAULT_OPTS } from './types.js';
-import { computeDependencyCycles, computeDependencyCriticalPaths, buildIssueCatalog, isLikelyEntrypoint, ARCHITECTURE_CATEGORIES, CODE_QUALITY_CATEGORIES, DEAD_CODE_CATEGORIES, writeMultiFileReport, severityBreakdown, categoryBreakdown, generateSummaryMd, diverseTopRecommendations, } from './index.js';
+import { computeDependencyCycles, computeDependencyCriticalPaths, buildIssueCatalog, isLikelyEntrypoint, ARCHITECTURE_CATEGORIES, CODE_QUALITY_CATEGORIES, DEAD_CODE_CATEGORIES, writeMultiFileReport, severityBreakdown, categoryBreakdown, generateSummaryMd, diverseTopRecommendations, computeHealthScore, collectTagCloud, } from './index.js';
 function emptyState() {
     return {
         files: new Set(),
@@ -265,19 +265,19 @@ describe('buildIssueCatalog', () => {
         });
     });
     describe('dead code findings', () => {
-        it('detects dead files (root with no outgoing)', () => {
+        it('detects orphan modules (no inbound or outbound)', () => {
             const state = emptyState();
             state.files.add('src/dead.ts');
             const depSummary = minimalDepSummary({ roots: ['src/dead.ts'] });
             const { findings } = buildIssueCatalog([], [], [], depSummary, state, testOpts);
-            expect(findings.some((f) => f.category === 'dead-file' && f.file === 'src/dead.ts')).toBe(true);
+            expect(findings.some((f) => f.category === 'orphan-module' && f.file === 'src/dead.ts')).toBe(true);
         });
-        it('skips entrypoints from dead-file detection', () => {
+        it('skips entrypoints from orphan-module detection', () => {
             const state = emptyState();
             state.files.add('src/index.ts');
             const depSummary = minimalDepSummary({ roots: ['src/index.ts'] });
             const { findings } = buildIssueCatalog([], [], [], depSummary, state, testOpts);
-            expect(findings.some((f) => f.category === 'dead-file' && f.file === 'src/index.ts')).toBe(false);
+            expect(findings.some((f) => f.category === 'orphan-module' && f.file === 'src/index.ts')).toBe(false);
         });
         it('detects dead exports', () => {
             const state = emptyState();
@@ -499,10 +499,19 @@ describe('category group constants', () => {
         'orphan-module', 'unreachable-module', 'layer-violation',
         'low-cohesion', 'inferred-layer-violation',
         'duplicate-function-body', 'duplicate-flow-structure', 'function-optimization',
-        'cognitive-complexity', 'god-module', 'god-function',
-        'dead-file', 'dead-export', 'dead-re-export', 're-export-duplication',
+        'cognitive-complexity', 'god-module', 'god-function', 'halstead-effort',
+        'low-maintainability', 'high-cyclomatic-density', 'excessive-parameters',
+        'magic-number', 'unsafe-any', 'empty-catch', 'switch-no-default',
+        'dead-export', 'dead-re-export', 're-export-duplication',
         're-export-shadowed', 'unused-npm-dependency', 'package-boundary-violation',
         'barrel-explosion',
+        'distance-from-main-sequence', 'feature-envy',
+        'untested-critical-code',
+        'over-abstraction', 'concrete-dependency', 'circular-type-dependency',
+        'unused-parameter', 'type-hierarchy-depth', 'deep-override-chain',
+        'interface-compliance', 'unused-import', 'orphan-implementation',
+        'shotgun-surgery', 'move-to-caller', 'leaky-abstraction', 'narrowable-type',
+        'type-assertion-escape', 'promise-misuse', 'missing-error-boundary',
     ];
     it('every known category belongs to exactly one group', () => {
         for (const cat of ALL_CATEGORIES) {
@@ -522,18 +531,18 @@ describe('category group constants', () => {
             expect(DEAD_CODE_CATEGORIES.has(cat)).toBe(false);
         }
     });
-    it('all 33 categories are covered', () => {
+    it('all 51 categories are covered', () => {
         const total = ARCHITECTURE_CATEGORIES.size + CODE_QUALITY_CATEGORIES.size + DEAD_CODE_CATEGORIES.size;
-        expect(total).toBe(33);
+        expect(total).toBe(51);
     });
-    it('architecture group has 11 categories', () => {
-        expect(ARCHITECTURE_CATEGORIES.size).toBe(11);
+    it('architecture group has 19 categories', () => {
+        expect(ARCHITECTURE_CATEGORIES.size).toBe(19);
     });
-    it('code quality group has 14 categories', () => {
-        expect(CODE_QUALITY_CATEGORIES.size).toBe(14);
+    it('code quality group has 22 categories', () => {
+        expect(CODE_QUALITY_CATEGORIES.size).toBe(22);
     });
-    it('dead code group has 8 categories', () => {
-        expect(DEAD_CODE_CATEGORIES.size).toBe(8);
+    it('dead code group has 10 categories', () => {
+        expect(DEAD_CODE_CATEGORIES.size).toBe(10);
     });
 });
 // ─── severityBreakdown ──────────────────────────────────────────────────────
@@ -711,7 +720,7 @@ describe('writeMultiFileReport', () => {
         expect(archData.findings.every((f) => ARCHITECTURE_CATEGORIES.has(f.category))).toBe(true);
     });
     it('routes code quality findings into code-quality.json', () => {
-        const findings = makeFindings({ category: 'function-optimization', severity: 'high' }, { category: 'cognitive-complexity', severity: 'medium' }, { category: 'dead-file', severity: 'medium' });
+        const findings = makeFindings({ category: 'function-optimization', severity: 'high' }, { category: 'cognitive-complexity', severity: 'medium' }, { category: 'orphan-module', severity: 'medium' });
         const outDir = path.join(tmpDir, 'scan-qual');
         writeMultiFileReport(outDir, makeReport({ optimizationFindings: findings }), DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
         const qualData = JSON.parse(fs.readFileSync(path.join(outDir, 'code-quality.json'), 'utf8'));
@@ -837,6 +846,7 @@ describe('generateSummaryMd', () => {
         expect(md).toContain('# Code Quality Scan Report');
         expect(md).toContain('## Scan Scope');
         expect(md).toContain('## Findings Overview');
+        expect(md).toContain('## Health Scores');
         expect(md).toContain('## Architecture Health');
         expect(md).toContain('## Code Quality');
         expect(md).toContain('## Dead Code & Hygiene');
@@ -913,6 +923,53 @@ describe('generateSummaryMd', () => {
         }
     });
 });
+// ─── computeHealthScore ─────────────────────────────────────────────────────
+describe('computeHealthScore', () => {
+    it('returns 100 for no findings', () => {
+        expect(computeHealthScore([], 50)).toBe(100);
+    });
+    it('returns 100 for empty repo', () => {
+        expect(computeHealthScore([], 0)).toBe(100);
+    });
+    it('penalizes critical findings heavily', () => {
+        const findings = [
+            { severity: 'critical' },
+            { severity: 'critical' },
+        ];
+        const score = computeHealthScore(findings, 10);
+        expect(score).toBeLessThan(60);
+    });
+    it('penalizes proportional to file count', () => {
+        const findings = [{ severity: 'high' }];
+        const smallRepo = computeHealthScore(findings, 5);
+        const largeRepo = computeHealthScore(findings, 100);
+        expect(largeRepo).toBeGreaterThan(smallRepo);
+    });
+    it('floors at 0', () => {
+        const findings = Array.from({ length: 100 }, () => ({ severity: 'critical' }));
+        expect(computeHealthScore(findings, 1)).toBe(0);
+    });
+});
+// ─── collectTagCloud ────────────────────────────────────────────────────────
+describe('collectTagCloud', () => {
+    it('returns empty for no findings', () => {
+        expect(collectTagCloud([])).toEqual([]);
+    });
+    it('returns empty when findings have no tags', () => {
+        const findings = [{ tags: undefined }];
+        expect(collectTagCloud(findings)).toEqual([]);
+    });
+    it('counts and sorts tags by frequency', () => {
+        const findings = [
+            { tags: ['coupling', 'architecture'] },
+            { tags: ['coupling', 'change-risk'] },
+            { tags: ['dead-code'] },
+        ];
+        const cloud = collectTagCloud(findings);
+        expect(cloud[0]).toEqual({ tag: 'coupling', count: 2 });
+        expect(cloud.length).toBe(4);
+    });
+});
 // ─── end-to-end output validation ───────────────────────────────────────────
 describe('end-to-end output validation', () => {
     it('produces valid summary.md with all sections', async () => {
@@ -965,4 +1022,88 @@ describe('end-to-end output validation', () => {
             }
         }
     }, 30000);
+});
+// ─── New AST Detector Tests ─────────────────────────────────────────────────
+describe('new AST detectors via buildIssueCatalog', () => {
+    const testOpts = { ...DEFAULT_OPTS, findingsLimit: 500, includeTests: false };
+    function makeEntry(file, overrides = {}) {
+        return {
+            package: 'test-pkg', file, parseEngine: 'typescript',
+            nodeCount: 0, kindCounts: {}, functions: [], flows: [],
+            dependencyProfile: {
+                internalDependencies: [], externalDependencies: [],
+                unresolvedDependencies: [], declaredExports: [],
+                importedSymbols: [], reExports: [],
+            },
+            ...overrides,
+        };
+    }
+    it('detects type-assertion-escape from pre-collected data', () => {
+        const entry = makeEntry('src/risky.ts', {
+            typeAssertionEscapes: {
+                asAny: [{ file: 'src/risky.ts', lineStart: 5, lineEnd: 5 }, { file: 'src/risky.ts', lineStart: 10, lineEnd: 10 }],
+                doubleAssertion: [{ file: 'src/risky.ts', lineStart: 15, lineEnd: 15 }],
+                nonNull: [{ file: 'src/risky.ts', lineStart: 20, lineEnd: 20 }],
+            },
+        });
+        const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
+        const escapes = findings.filter((f) => f.category === 'type-assertion-escape');
+        expect(escapes.length).toBe(1);
+        expect(escapes[0].title).toContain('4');
+        expect(escapes[0].severity).toBe('medium');
+    });
+    it('detects high-severity type-assertion-escape', () => {
+        const entry = makeEntry('src/bad.ts', {
+            typeAssertionEscapes: {
+                asAny: [
+                    { file: 'src/bad.ts', lineStart: 1, lineEnd: 1 },
+                    { file: 'src/bad.ts', lineStart: 2, lineEnd: 2 },
+                    { file: 'src/bad.ts', lineStart: 3, lineEnd: 3 },
+                    { file: 'src/bad.ts', lineStart: 4, lineEnd: 4 },
+                ],
+                doubleAssertion: [],
+                nonNull: [],
+            },
+        });
+        const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
+        const escapes = findings.filter((f) => f.category === 'type-assertion-escape');
+        expect(escapes[0].severity).toBe('high');
+    });
+    it('detects missing-error-boundary from pre-collected data', () => {
+        const entry = makeEntry('src/api.ts', {
+            unprotectedAsync: [
+                { name: 'fetchData', awaitCount: 3, lineStart: 10, lineEnd: 20 },
+            ],
+        });
+        const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
+        const errors = findings.filter((f) => f.category === 'missing-error-boundary');
+        expect(errors.length).toBe(1);
+        expect(errors[0].title).toContain('fetchData');
+        expect(errors[0].severity).toBe('high');
+    });
+    it('detects promise-misuse from pre-collected data', () => {
+        const entry = makeEntry('src/svc.ts', {
+            asyncWithoutAwait: [
+                { name: 'doNothing', lineStart: 5, lineEnd: 10 },
+            ],
+        });
+        const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
+        const misuse = findings.filter((f) => f.category === 'promise-misuse');
+        expect(misuse.length).toBe(1);
+        expect(misuse[0].title).toContain('doNothing');
+        expect(misuse[0].severity).toBe('medium');
+    });
+    it('skips test files for all new detectors', () => {
+        const entry = makeEntry('src/__tests__/foo.test.ts', {
+            typeAssertionEscapes: {
+                asAny: [{ file: 'src/__tests__/foo.test.ts', lineStart: 1, lineEnd: 1 }],
+                doubleAssertion: [],
+                nonNull: [],
+            },
+            unprotectedAsync: [{ name: 'testFn', awaitCount: 1, lineStart: 1, lineEnd: 5 }],
+            asyncWithoutAwait: [{ name: 'mockFn', lineStart: 1, lineEnd: 5 }],
+        });
+        const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
+        expect(findings.filter((f) => ['type-assertion-escape', 'missing-error-boundary', 'promise-misuse'].includes(f.category))).toHaveLength(0);
+    });
 });
