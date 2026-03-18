@@ -52,7 +52,7 @@ Present: Scope → Health scores → Findings by severity → Top tags → Ask u
 
 ## 3. Output Files
 
-Each scan writes to `.octocode/scan/<timestamp>/`: `summary.md`, `summary.json`, `architecture.json`, `code-quality.json`, `dead-code.json`, `file-inventory.json`, `findings.json`, and optionally `graph.md`.
+Each scan writes to `.octocode/scan/<timestamp>/`: `summary.md`, `summary.json`, `architecture.json`, `code-quality.json`, `dead-code.json`, `file-inventory.json`, `findings.json`, `ast-trees.txt`, and optionally `graph.md`.
 
 > **Need the full file table or legacy mode details?** → [references/output-files.md](./references/output-files.md)
 
