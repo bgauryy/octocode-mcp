@@ -4,8 +4,10 @@ import {
   searchFile,
   runSearch,
   collectSearchFiles,
+  formatTextOutput,
   PRESETS,
   type AstSearchOptions,
+  type AstSearchResult,
 } from './ast-search.js';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -445,5 +447,124 @@ describe('collectSearchFiles', () => {
     const files = collectSearchFiles(tmpDir, { includeTests: false, ignoreDirs: new Set() });
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(/index\.ts$/);
+  });
+});
+
+// ─── --rule error handling ──────────────────────────────────────────────────
+
+describe('parseSearchArgs --rule error handling', () => {
+  it('throws user-friendly error for invalid JSON', () => {
+    expect(() => parseSearchArgs(['--rule', 'not-json'])).toThrow(/Invalid --rule JSON/);
+  });
+
+  it('includes the bad input in the error message', () => {
+    expect(() => parseSearchArgs(['--rule', '{broken'])).toThrow(/\{broken/);
+  });
+
+  it('handles missing --rule value gracefully', () => {
+    expect(() => parseSearchArgs(['--rule'])).toThrow(/Invalid --rule JSON/);
+  });
+});
+
+// ─── extractMetaVars (via searchFile) ───────────────────────────────────────
+
+describe('meta-variable extraction', () => {
+  it('extracts single $VAR without duplicating variadic $$$VAR', () => {
+    const source = 'console.log("hello");';
+    const matches = searchFile('test.ts', source, 'console.$METHOD($$$ARGS)', 'console.$METHOD($$$ARGS)', 100);
+    expect(matches.length).toBe(1);
+    const vars = matches[0].metaVariables!;
+    expect(vars['$METHOD']).toBe('log');
+    expect(vars['$$$ARGS']).toBe('"hello"');
+    expect(Object.keys(vars)).toHaveLength(2);
+  });
+
+  it('does not produce spurious single-var entries for variadic names', () => {
+    const source = 'fn(1, 2, 3);';
+    const matches = searchFile('test.ts', source, 'fn($$$ITEMS)', 'fn($$$ITEMS)', 100);
+    expect(matches.length).toBe(1);
+    const vars = matches[0].metaVariables!;
+    expect(vars['$$$ITEMS']).toBeDefined();
+    expect(vars['$ITEMS']).toBeUndefined();
+  });
+
+  it('handles pattern with both single and variadic meta-vars', () => {
+    const source = 'import { foo, bar } from "lodash";';
+    const matches = searchFile('test.ts', source, 'import { $$$NAMES } from $MOD', 'import { $$$NAMES } from $MOD', 100);
+    expect(matches.length).toBe(1);
+    const vars = matches[0].metaVariables!;
+    expect(vars['$MOD']).toBe('"lodash"');
+    expect(vars['$$$NAMES']).toBeDefined();
+  });
+});
+
+// ─── --context / -C output ──────────────────────────────────────────────────
+
+describe('formatTextOutput with context', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ast-ctx-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function defaultOpts(overrides: Partial<AstSearchOptions> = {}): AstSearchOptions {
+    return {
+      root: tmpDir,
+      pattern: null,
+      kind: null,
+      preset: null,
+      rule: null,
+      json: false,
+      limit: 500,
+      includeTests: false,
+      ignoreDirs: new Set(['.git', 'node_modules', 'dist']),
+      context: 0,
+      ...overrides,
+    };
+  }
+
+  it('shows context lines around matches when context > 0', () => {
+    const source = 'line1\nline2\nconsole.log("hit");\nline4\nline5\n';
+    const filePath = path.join(tmpDir, 'ctx.ts');
+    fs.writeFileSync(filePath, source, 'utf8');
+
+    const opts = defaultOpts({ pattern: 'console.log($$$A)', context: 1 });
+    const result = runSearch([filePath], opts, tmpDir);
+
+    expect(result._sourceByFile).toBeDefined();
+    expect(result._sourceByFile!.size).toBe(1);
+
+    const output = formatTextOutput(result, opts, tmpDir);
+    expect(output).toContain('line2');
+    expect(output).toContain('console.log("hit")');
+    expect(output).toContain('line4');
+    expect(output).toContain('>');
+  });
+
+  it('does not include _sourceByFile when context is 0', () => {
+    const source = 'console.log("x");\n';
+    const filePath = path.join(tmpDir, 'noctx.ts');
+    fs.writeFileSync(filePath, source, 'utf8');
+
+    const opts = defaultOpts({ pattern: 'console.log($$$A)', context: 0 });
+    const result = runSearch([filePath], opts, tmpDir);
+    expect(result._sourceByFile).toBeUndefined();
+  });
+
+  it('clamps context at file boundaries', () => {
+    const source = 'console.log("first line");\nline2\n';
+    const filePath = path.join(tmpDir, 'edge.ts');
+    fs.writeFileSync(filePath, source, 'utf8');
+
+    const opts = defaultOpts({ pattern: 'console.log($$$A)', context: 5 });
+    const result = runSearch([filePath], opts, tmpDir);
+    const output = formatTextOutput(result, opts, tmpDir);
+    expect(output).toContain('console.log("first line")');
+    expect(output).toContain('line2');
+    expect(output).not.toContain('undefined');
   });
 });

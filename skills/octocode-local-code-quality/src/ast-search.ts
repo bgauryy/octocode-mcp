@@ -10,7 +10,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { ts as astTs, tsx as astTsx, js as astJs, html as astHtml } from '@ast-grep/napi';
+import { ts as astTs, tsx as astTsx, js as astJs } from '@ast-grep/napi';
 import type { SgNode, SgRoot, NapiConfig } from '@ast-grep/napi';
 import { ALLOWED_EXTS } from './types.js';
 
@@ -46,6 +46,8 @@ export interface AstSearchResult {
   totalMatches: number;
   totalFiles: number;
   matches: AstMatch[];
+  /** Source lines keyed by relative file path — only populated when context > 0 */
+  _sourceByFile?: Map<string, string[]>;
 }
 
 // ─── Presets ────────────────────────────────────────────────────────────────
@@ -240,28 +242,27 @@ function parserForExt(ext: string): AstParser {
 
 function extractMetaVars(node: SgNode, pattern: string): Record<string, string> {
   const vars: Record<string, string> = {};
-  const metaVarPattern = /\$([A-Z_][A-Z0-9_]*)/g;
   let match: RegExpExecArray | null;
-  while ((match = metaVarPattern.exec(pattern)) !== null) {
-    const name = match[1];
-    if (name.startsWith('$')) {
-      const multiMatch = node.getMultipleMatches(name.slice(1));
-      if (multiMatch.length > 0) {
-        vars[`$$$${name.slice(1)}`] = multiMatch.map(n => n.text()).join(', ');
-      }
-    } else {
-      const matchNode = node.getMatch(name);
-      if (matchNode) vars[`$${name}`] = matchNode.text();
-    }
-  }
+
   const triplePattern = /\$\$\$([A-Z_][A-Z0-9_]*)/g;
+  const triplNames = new Set<string>();
   while ((match = triplePattern.exec(pattern)) !== null) {
     const name = match[1];
+    triplNames.add(name);
     const multiMatch = node.getMultipleMatches(name);
     if (multiMatch.length > 0) {
       vars[`$$$${name}`] = multiMatch.map(n => n.text()).join(', ');
     }
   }
+
+  const singlePattern = /(?<!\$)\$([A-Z_][A-Z0-9_]*)(?!\$)/g;
+  while ((match = singlePattern.exec(pattern)) !== null) {
+    const name = match[1];
+    if (triplNames.has(name)) continue;
+    const matchNode = node.getMatch(name);
+    if (matchNode) vars[`$${name}`] = matchNode.text();
+  }
+
   return vars;
 }
 
@@ -341,6 +342,7 @@ export function runSearch(files: string[], opts: AstSearchOptions, root: string)
 
   const allMatches: AstMatch[] = [];
   const filesWithMatches = new Set<string>();
+  const sourceByFile = opts.context > 0 ? new Map<string, string[]>() : undefined;
 
   for (const filePath of files) {
     if (allMatches.length >= opts.limit) break;
@@ -356,16 +358,19 @@ export function runSearch(files: string[], opts: AstSearchOptions, root: string)
     if (fileMatches.length > 0) {
       filesWithMatches.add(relFile);
       allMatches.push(...fileMatches);
+      if (sourceByFile) sourceByFile.set(relFile, source.split('\n'));
     }
   }
 
-  return {
+  const result: AstSearchResult = {
     query: queryLabel,
     queryType,
     totalMatches: allMatches.length,
     totalFiles: filesWithMatches.size,
     matches: allMatches,
   };
+  if (sourceByFile) result._sourceByFile = sourceByFile;
+  return result;
 }
 
 // ─── CLI ────────────────────────────────────────────────────────────────────
@@ -401,7 +406,13 @@ export function parseSearchArgs(argv: string[]): ParsedSearchArgs {
     if (arg.startsWith('--kind=')) { opts.kind = arg.slice('--kind='.length); continue; }
     if (arg === '--preset') { opts.preset = argv[++i]; continue; }
     if (arg.startsWith('--preset=')) { opts.preset = arg.slice('--preset='.length); continue; }
-    if (arg === '--rule') { opts.rule = JSON.parse(argv[++i]) as NapiConfig; continue; }
+    if (arg === '--rule') {
+      const raw = argv[++i];
+      try { opts.rule = JSON.parse(raw) as NapiConfig; } catch {
+        throw new Error(`Invalid --rule JSON: ${raw?.slice(0, 100) ?? '(empty)'}`);
+      }
+      continue;
+    }
     if (arg === '--root') { opts.root = path.resolve(argv[++i]); continue; }
     if (arg.startsWith('--root=')) { opts.root = path.resolve(arg.slice('--root='.length)); continue; }
     if (arg === '--json') { opts.json = true; continue; }
@@ -457,16 +468,34 @@ ${Object.entries(PRESETS).map(([name, p]) => `  ${name.padEnd(22)} ${p.descripti
 `);
 }
 
-function formatTextOutput(result: AstSearchResult, opts: AstSearchOptions, root: string): string {
+export function formatTextOutput(result: AstSearchResult, opts: AstSearchOptions, _root: string): string {
   const lines: string[] = [];
   lines.push(`\n🔍 ${result.query}`);
   lines.push(`   ${result.totalMatches} matches across ${result.totalFiles} files\n`);
+
+  const ctx = opts.context;
+  const sourceMap = result._sourceByFile;
 
   let currentFile = '';
   for (const m of result.matches) {
     if (m.file !== currentFile) {
       currentFile = m.file;
       lines.push(`\n── ${currentFile} ──`);
+    }
+
+    if (ctx > 0 && sourceMap) {
+      const srcLines = sourceMap.get(m.file);
+      if (srcLines) {
+        const start = Math.max(0, m.lineStart - 1 - ctx);
+        const end = Math.min(srcLines.length, m.lineEnd + ctx);
+        for (let i = start; i < end; i++) {
+          const lineNum = i + 1;
+          const marker = (lineNum >= m.lineStart && lineNum <= m.lineEnd) ? '>' : ' ';
+          lines.push(`  ${marker} ${String(lineNum).padStart(4)} | ${srcLines[i]}`);
+        }
+        lines.push('');
+        continue;
+      }
     }
 
     const truncatedText = m.text.length > 200

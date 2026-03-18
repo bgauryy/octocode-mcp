@@ -34,7 +34,7 @@ node <SKILL_BASE_DIRECTORY>/scripts/index.js
 
 Output: `.octocode/scan/<timestamp>/`. Cached — re-runs skip unchanged files (~4x faster).
 
-Common flags: `--scope=<path>`, `--features=<pillar|category>`, `--exclude=<pillar|category>`, `--semantic`, `--graph`, `--json`.
+Common flags: `--scope=<path>`, `--features=<pillar|category>`, `--exclude=<pillar|category>`, `--semantic`, `--graph`, `--json`, `--no-cache`.
 
 > **Need flag details, presets, or drill-down workflow?** → [references/cli-reference.md](./references/cli-reference.md)
 
@@ -86,19 +86,75 @@ localSearchCode(pattern) → lineHint → lspGotoDefinition / lspFindReferences 
 
 ## 6. AST Search — Structural Code Search
 
-Targeted structural search powered by `@ast-grep/napi`. Complements the main scan: use `index.js` to find hotspots, then `ast-search.js` to locate specific patterns.
+Finds code by **shape** (AST structure), not text. Use after scan to locate specific patterns, or independently for any structural query.
 
 ```bash
 node <SKILL_BASE_DIRECTORY>/scripts/ast-search.js [options]
 ```
 
-Modes: `--pattern`, `--kind`, `--preset`, `--rule`. 16 built-in presets available (`--list-presets`).
+### When to Use
 
-```
-SCAN (index.js) → SEARCH (ast-search.js) → VALIDATE (Octocode LSP) → FIX
+- Scan flags `unsafe-any` → `--preset any-type --root <package>` to get every location
+- Need all calls to a function → `-p 'fetchData($$$ARGS)' --root ./src --json`
+- Hunt code smells across monorepo → `--preset empty-catch --root ../..`
+- Explore AST structure → `-k function_declaration --root ./src --limit 10`
+- Complex structural query → `--rule '{"rule":{"kind":"if_statement","not":{"has":{"kind":"else_clause"}}}}' --root ./src`
+
+### Search Modes (pick one)
+
+| Mode | Flag | Use when | Example |
+|------|------|----------|---------|
+| Pattern | `-p` | You know the code shape | `-p 'console.$M($$$A)'` |
+| Kind | `-k` | You want all nodes of a type | `-k class_declaration` |
+| Preset | `--preset` | Common code smell | `--preset empty-catch` |
+| Rule | `--rule` | Need negation, regex, or nesting | `--rule '{"rule":{...}}'` |
+
+### Key Flags
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--root <path>` | cwd | Search directory |
+| `--json` | off | Machine-readable output (always use for programmatic consumption) |
+| `--limit N` | 500 | Cap total matches |
+| `--include-tests` | off | Include test files |
+| `-C N` | 0 | Context lines around matches (text mode) |
+| `--list-presets` | — | Show all 16 presets |
+
+### Pattern Wildcards
+
+- `$NAME` — matches **one** AST node (captured in `metaVariables`)
+- `$$$NAME` — matches **zero or more** nodes (variadic)
+- Use `$MOD` for imports to avoid quote-style mismatch (`'x'` vs `"x"`)
+
+### Quick Recipes
+
+```bash
+# Calls
+-p 'console.$METHOD($$$ARGS)'        # any console method
+-p 'JSON.parse($$$A)'                # all JSON.parse
+-p 'process.env.$VAR'                # env access (captures var name)
+
+# Declarations
+-p 'export const $NAME = $VAL'       # exported constants
+-p 'function $NAME($$$P) { $$$B }'   # all functions
+
+# Imports
+-p 'import { $$$N } from $MOD'       # named imports (any module)
+-p 'import type { $$$N } from $MOD'  # type imports
+
+# Security
+--rule '{"rule":{"kind":"string","regex":"password|secret|token"}}'
+-p 'eval($$$A)'
+
+# Negation (requires --rule)
+--rule '{"rule":{"kind":"if_statement","not":{"has":{"kind":"else_clause"}}}}'
 ```
 
-> **Need search modes, presets, pattern composition, or usage examples?** → [references/ast-search.md](./references/ast-search.md)
+### 16 Presets
+
+`empty-catch` · `console-log` · `console-any` · `debugger` · `todo-fixme` · `any-type` · `type-assertion` · `non-null-assertion` · `fat-arrow-body` · `nested-ternary` · `throw-string` · `switch-no-default` · `class-declaration` · `async-function` · `export-default` · `import-star`
+
+> **Full reference**: rule operators, kind table, all presets with descriptions, output format → [references/ast-search.md](./references/ast-search.md)
 
 ---
 

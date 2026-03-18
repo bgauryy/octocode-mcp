@@ -12,7 +12,7 @@ Each scan writes to `.octocode/scan/<timestamp>/`:
 | `file-inventory.json` | Per-file: functions, flows, metrics, `issueIds[]` | Deep-diving a specific file |
 | `findings.json` | ALL findings sorted by severity across all 51 categories with `tags[]` and `lspHints[]` | Complete sorted list |
 | `graph.md` | Mermaid dependency graph (only with `--graph`) | Visual architecture |
-| `ast-trees.txt` | `Kind[startLine:endLine]` per file (only with `--emit-tree`) | Structural overview |
+| `ast-trees.txt` | `Kind[startLine:endLine]` per file (on by default, disable with `--no-tree`) | Structural overview |
 
 ---
 

@@ -199,29 +199,25 @@ function parserForExt(ext) {
 // ─── Core Search ────────────────────────────────────────────────────────────
 function extractMetaVars(node, pattern) {
     const vars = {};
-    const metaVarPattern = /\$([A-Z_][A-Z0-9_]*)/g;
     let match;
-    while ((match = metaVarPattern.exec(pattern)) !== null) {
-        const name = match[1];
-        if (name.startsWith('$')) {
-            const multiMatch = node.getMultipleMatches(name.slice(1));
-            if (multiMatch.length > 0) {
-                vars[`$$$${name.slice(1)}`] = multiMatch.map(n => n.text()).join(', ');
-            }
-        }
-        else {
-            const matchNode = node.getMatch(name);
-            if (matchNode)
-                vars[`$${name}`] = matchNode.text();
-        }
-    }
     const triplePattern = /\$\$\$([A-Z_][A-Z0-9_]*)/g;
+    const triplNames = new Set();
     while ((match = triplePattern.exec(pattern)) !== null) {
         const name = match[1];
+        triplNames.add(name);
         const multiMatch = node.getMultipleMatches(name);
         if (multiMatch.length > 0) {
             vars[`$$$${name}`] = multiMatch.map(n => n.text()).join(', ');
         }
+    }
+    const singlePattern = /(?<!\$)\$([A-Z_][A-Z0-9_]*)(?!\$)/g;
+    while ((match = singlePattern.exec(pattern)) !== null) {
+        const name = match[1];
+        if (triplNames.has(name))
+            continue;
+        const matchNode = node.getMatch(name);
+        if (matchNode)
+            vars[`$${name}`] = matchNode.text();
     }
     return vars;
 }
@@ -298,6 +294,7 @@ export function runSearch(files, opts, root) {
     }
     const allMatches = [];
     const filesWithMatches = new Set();
+    const sourceByFile = opts.context > 0 ? new Map() : undefined;
     for (const filePath of files) {
         if (allMatches.length >= opts.limit)
             break;
@@ -314,15 +311,20 @@ export function runSearch(files, opts, root) {
         if (fileMatches.length > 0) {
             filesWithMatches.add(relFile);
             allMatches.push(...fileMatches);
+            if (sourceByFile)
+                sourceByFile.set(relFile, source.split('\n'));
         }
     }
-    return {
+    const result = {
         query: queryLabel,
         queryType,
         totalMatches: allMatches.length,
         totalFiles: filesWithMatches.size,
         matches: allMatches,
     };
+    if (sourceByFile)
+        result._sourceByFile = sourceByFile;
+    return result;
 }
 export function parseSearchArgs(argv) {
     const opts = {
@@ -368,7 +370,13 @@ export function parseSearchArgs(argv) {
             continue;
         }
         if (arg === '--rule') {
-            opts.rule = JSON.parse(argv[++i]);
+            const raw = argv[++i];
+            try {
+                opts.rule = JSON.parse(raw);
+            }
+            catch {
+                throw new Error(`Invalid --rule JSON: ${raw?.slice(0, 100) ?? '(empty)'}`);
+            }
             continue;
         }
         if (arg === '--root') {
@@ -448,15 +456,31 @@ Presets:
 ${Object.entries(PRESETS).map(([name, p]) => `  ${name.padEnd(22)} ${p.description}`).join('\n')}
 `);
 }
-function formatTextOutput(result, opts, root) {
+export function formatTextOutput(result, opts, _root) {
     const lines = [];
     lines.push(`\n🔍 ${result.query}`);
     lines.push(`   ${result.totalMatches} matches across ${result.totalFiles} files\n`);
+    const ctx = opts.context;
+    const sourceMap = result._sourceByFile;
     let currentFile = '';
     for (const m of result.matches) {
         if (m.file !== currentFile) {
             currentFile = m.file;
             lines.push(`\n── ${currentFile} ──`);
+        }
+        if (ctx > 0 && sourceMap) {
+            const srcLines = sourceMap.get(m.file);
+            if (srcLines) {
+                const start = Math.max(0, m.lineStart - 1 - ctx);
+                const end = Math.min(srcLines.length, m.lineEnd + ctx);
+                for (let i = start; i < end; i++) {
+                    const lineNum = i + 1;
+                    const marker = (lineNum >= m.lineStart && lineNum <= m.lineEnd) ? '>' : ' ';
+                    lines.push(`  ${marker} ${String(lineNum).padStart(4)} | ${srcLines[i]}`);
+                }
+                lines.push('');
+                continue;
+            }
         }
         const truncatedText = m.text.length > 200
             ? m.text.slice(0, 200) + '…'
