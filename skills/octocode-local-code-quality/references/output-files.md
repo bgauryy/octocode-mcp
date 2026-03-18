@@ -10,7 +10,7 @@ Each scan writes to `.octocode/scan/<timestamp>/`:
 | `code-quality.json` | Up to 28 quality findings, severity/category breakdowns | Duplicates, complexity, perf |
 | `dead-code.json` | Up to 10 hygiene findings, severity/category breakdowns | Dead code cleanup |
 | `file-inventory.json` | Per-file: functions, flows, metrics, `issueIds[]` | Deep-diving a specific file |
-| `findings.json` | ALL findings sorted by severity across all 72 categories with `impact`, `tags[]`, and `lspHints[]` | Complete sorted list |
+| `findings.json` | ALL findings sorted by severity with `ruleId`, `analysisLens`, `confidence`, `impact`, `correlatedSignals[]`, `recommendedValidation`, and optional `flowTrace[]` | Complete sorted list |
 | `ast-trees.txt` | `Kind[startLine:endLine]` per file (on by default, disable with `--no-tree`) | Structural overview |
 | `graph.md` | Mermaid dependency graph (only with `--graph`) | Visual architecture |
 
@@ -26,8 +26,8 @@ summary { totalPackages, totalFiles, totalNodes, totalFunctions, totalFlows, tot
 agentOutput { totalFindings, highPriority, mediumPriority, lowPriority,
               topRecommendations[] { id, file, severity, category, title, reason, suggestedFix },
               filesWithIssues[] { file, issueCount, issueIds } },
-analysisSummary { graphSignals[], astSignals[], strongestGraphSignal, strongestAstSignal, combinedSignals[] },
-strongestGraphSignal, strongestAstSignal, combinedSignals[], investigationPrompts[],
+analysisSummary { graphSignals[], astSignals[], strongestGraphSignal, strongestAstSignal, combinedSignals[], recommendedValidation },
+strongestGraphSignal, strongestAstSignal, combinedSignals[], recommendedValidation, investigationPrompts[],
 parseErrors[] { file, message },
 outputFiles { summary, architecture, codeQuality, deadCode, fileInventory, findings, ... }
 ```
@@ -43,8 +43,10 @@ Use `summary.json` to drive the first decision:
 
 ```
 generatedAt,
-optimizationFindings[] { id, severity, category, file, lineStart, lineEnd, title, reason,
-                         files[], suggestedFix { strategy, steps[] }, impact, tags[], lspHints[] },
+optimizationFindings[] { id, ruleId, severity, category, analysisLens, confidence,
+                         file, lineStart, lineEnd, title, reason,
+                         files[], suggestedFix { strategy, steps[] }, impact, tags[],
+                         correlatedSignals[], recommendedValidation, flowTrace[], lspHints[] },
 totalFindings
 ```
 
@@ -66,7 +68,8 @@ dependencyFindings[], findings[], findingsCount,
 severityBreakdown { critical, high, medium, low },
 categoryBreakdown { "dependency-cycle": N, ... },
 hotFiles[] { file, riskScore, fanIn, fanOut, complexityScore, exportCount, inCycle, onCriticalPath },
-graphSignals[], chokepoints[], criticalHubCandidates[], sccClusters[], packageGraphSummary, packageHotspots[]
+graphSignals[], chokepoints[], criticalHubCandidates[],
+sccClusters[] (with `--graph-advanced`), packageGraphSummary (with `--graph-advanced`), packageHotspots[] (with `--graph-advanced`)
 ```
 
 Use `architecture.json` as the graph lens:
@@ -122,7 +125,7 @@ Use `file-inventory.json` as the AST lens:
 - `effectProfile` = summarized import-time risk
 - `symbolUsageSummary` = compact symbol/import/export shape for boundary follow-up
 - `boundaryRoleHints[]` = lightweight role inference for the file
-- `cfgFlags` = lightweight flow clues for validation, cleanup, exit behavior, and async boundaries
+- `cfgFlags` = lightweight flow clues for validation, cleanup, exit behavior, and async boundaries (with `--flow`)
 
 If `architecture.json` names a hotspot, use `file-inventory.json` to explain why that hotspot is structurally hard to change.
 

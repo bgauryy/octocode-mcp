@@ -164,6 +164,7 @@ describe('output contract', () => {
     expect(summaryData).toHaveProperty('strongestGraphSignal');
     expect(summaryData).toHaveProperty('strongestAstSignal');
     expect(Array.isArray(summaryData.combinedSignals)).toBe(true);
+    expect(summaryData.analysisSummary.recommendedValidation || summaryData.recommendedValidation).toBeDefined();
     expect(Array.isArray(summaryData.investigationPrompts)).toBe(true);
   });
 
@@ -180,11 +181,20 @@ describe('output contract', () => {
 
   it('writes additive inventory fields into file-inventory.json', () => {
     const outDir = path.join(tmpDir, 'inventory-analysis');
-    writeMultiFileReport(outDir, makeReport(), { ...DEFAULT_OPTS, graph: false }, emptyDependencyState(), emptyDependencySummary(), new Map());
+    writeMultiFileReport(outDir, makeReport(), { ...DEFAULT_OPTS, graph: false, flow: true }, emptyDependencyState(), emptyDependencySummary(), new Map());
     const inventoryData = JSON.parse(fs.readFileSync(path.join(outDir, 'file-inventory.json'), 'utf8'));
     const first = inventoryData.fileInventory[0];
     expect(first.symbolUsageSummary).toBeDefined();
     expect(first).toHaveProperty('boundaryRoleHints');
+    expect(first).toHaveProperty('cfgFlags');
+  });
+
+  it('keeps flow-only inventory fields behind the --flow flag', () => {
+    const outDir = path.join(tmpDir, 'inventory-no-flow');
+    writeMultiFileReport(outDir, makeReport(), { ...DEFAULT_OPTS, graph: false, flow: false }, emptyDependencyState(), emptyDependencySummary(), new Map());
+    const inventoryData = JSON.parse(fs.readFileSync(path.join(outDir, 'file-inventory.json'), 'utf8'));
+    const first = inventoryData.fileInventory[0];
+    expect(first).not.toHaveProperty('cfgFlags');
   });
 
   it('renders summary.md with stable sections (golden)', () => {
@@ -200,6 +210,7 @@ describe('output contract', () => {
     expect(summary).toContain('## Analysis Signals');
     expect(summary).toContain('**Graph Signal**');
     expect(summary).toContain('**AST Signal**');
+    expect(summary).toContain('**Recommended Validation**');
     expect(summary).toContain('## Architecture Health');
     expect(summary).toContain('## Code Quality');
     expect(summary).toContain('## Dead Code & Hygiene');

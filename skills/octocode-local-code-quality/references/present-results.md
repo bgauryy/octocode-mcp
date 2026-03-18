@@ -30,6 +30,12 @@ Fixed order — read top-down, stop when enough:
 
 The summary is not just a list of findings. Use it to choose the right investigation path.
 
+When the summary is ambiguous:
+
+- rerun with `--graph --graph-advanced` if the question is about cycles, chokepoints, package chatter, or startup risk
+- rerun with `--flow` if the question is about validation paths, cleanup behavior, or path-sensitive evidence
+- if graph and AST signals conflict, present that conflict and recommend a hybrid investigation instead of forcing one explanation
+
 ### Graph-first signals
 
 Use graph-first language when the summary shows:

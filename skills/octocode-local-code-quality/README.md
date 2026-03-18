@@ -22,7 +22,7 @@
 | **Performance** | await-in-loop (N+1), synchronous I/O, uncleared timers, event listener leaks, unbounded collections | "Find performance issues", "check async patterns" |
 | **Security** | Hardcoded secrets, eval/Function injection, innerHTML/XSS, SQL injection risk, catastrophic regex, prototype pollution (Object.assign, deep merge, computed property writes), unvalidated input-to-sink flows, input passthrough with confidence tiers | "Security review", "find secrets", "check for XSS", "check input validation" |
 | **Dead Code** | Dead exports, dead re-exports, semantic dead exports, unused npm deps, package boundary violations, barrel explosion | "Find dead code", "unused exports", "clean up imports" |
-| **Test Quality** | Missing assertions, low assertion density, excessive mocking, shared mutable state, missing cleanup | "Check test quality", "find flaky tests" |
+| **Test Quality** | Missing assertions, low assertion density, excessive mocking, shared mutable state, missing cleanup, focused tests, fake timers without restore, missing mock restoration | "Check test quality", "find flaky tests" |
 | **Semantic** (`--semantic`) | Over-abstraction, DIP violations, type cycles, shotgun surgery, leaky abstractions, unused params, narrowable types | "Deep type analysis", "find design issues" |
 
 ### Smart Output
@@ -49,7 +49,7 @@
 node skills/octocode-local-code-quality/scripts/index.js
 ```
 
-Output goes to `.octocode/scan/<timestamp>/` with structured files. Start with `summary.md`.
+Output goes to `.octocode/scan/<timestamp>/` with structured files. Start with `summary.md`, especially the `Analysis Signals` section.
 
 ### Common Patterns
 
@@ -68,6 +68,12 @@ node scripts/index.js --exclude=dead-code
 
 # Visual dependency graph
 node scripts/index.js --graph
+
+# Advanced graph overlays
+node scripts/index.js --graph --graph-advanced
+
+# Flow-aware evidence enrichment
+node scripts/index.js --flow
 
 # Enforce layer architecture
 node scripts/index.js --layer-order ui,service,repository
@@ -126,21 +132,29 @@ Each scan writes to `.octocode/scan/<timestamp>/`:
 
 | File | What's Inside |
 |------|--------------|
-| **`summary.md`** | Start here. Scope, severity breakdown, per-pillar category counts, health scores, change risk hotspots, top recommendations |
-| `summary.json` | Machine-readable counters, `topRecommendations[]`, `parseErrors[]` |
-| `architecture.json` | Dependency graph, architecture findings, `hotFiles[]` (riskScore, fanIn, fanOut, inCycle, onCriticalPath) |
+| **`summary.md`** | Start here. Scope, severity breakdown, per-pillar category counts, health scores, analysis signals, change risk hotspots, top recommendations |
+| `summary.json` | Machine-readable counters, `topRecommendations[]`, `analysisSummary`, `investigationPrompts[]`, `parseErrors[]` |
+| `architecture.json` | Dependency graph, architecture findings, `hotFiles[]`, `graphSignals[]`, chokepoints, and optional advanced graph overlays |
 | `code-quality.json` | Code quality findings with severity/category breakdowns |
 | `dead-code.json` | Hygiene findings with severity/category breakdowns |
 | `security.json` | Security findings (only if security issues found) |
 | `test-quality.json` | Test quality findings (only if test issues found) |
-| `file-inventory.json` | Per-file: `functions[]` (Halstead, MI, cognitive), `flows[]`, `dependencyProfile`, `issueIds[]` |
-| `findings.json` | ALL findings across all categories, sorted by severity, with `lspHints[]` |
+| `file-inventory.json` | Per-file: `functions[]`, `flows[]`, `dependencyProfile`, `effectProfile`, `symbolUsageSummary`, `boundaryRoleHints[]`, optional `cfgFlags`, `issueIds[]` |
+| `findings.json` | ALL findings across all categories, sorted by severity, with `ruleId`, `analysisLens`, `confidence`, `correlatedSignals[]`, `recommendedValidation`, and optional `flowTrace[]` |
 | `graph.md` | Mermaid dependency graph (with `--graph`) |
 | `ast-trees.txt` | Compact AST snapshots (on by default, disable with `--no-tree`) |
 
 ### How To Read Results Well
 
-Use the outputs with two lenses:
+Use the outputs with this reasoning loop:
+
+- **Choose lens**: graph, AST, or hybrid
+- **Correlate signals**: compare graph and AST evidence before jumping to a conclusion
+- **State confidence**: say whether the evidence is high, medium, or low confidence
+- **Validate**: confirm live-code claims with Octocode local tools when available
+- **Present**: summarize the graph signal, AST signal, combined interpretation, and next validation step
+
+Use the outputs with two main lenses:
 
 - **Graph lens**: `summary.md`, `architecture.json`, and `graph.md`
 - **AST lens**: `file-inventory.json`, `findings.json`, `ast-trees.txt`, and `ast-search.js`
@@ -151,14 +165,18 @@ Good architecture decisions usually come from combining both:
 - If a hotspot also has top-level effects, duplicate orchestration, or heavy control flow, switch to the AST lens
 - If `low-cohesion` and `feature-envy` co-occur, suspect a bad module boundary
 - If `import-side-effect-risk` appears on a high fan-in file, suspect hidden startup or initialization problems
+- If graph and AST signals disagree, do not flatten them into one claim; treat that as a hybrid investigation
 
 ### Each Finding
 
 ```json
 {
   "id": "AST-ISSUE-0001",
+  "ruleId": "performance.await-in-loop",
   "severity": "high",
   "category": "await-in-loop",
+  "analysisLens": "ast",
+  "confidence": "medium",
   "file": "packages/core/src/sync.ts",
   "lineStart": 42,
   "lineEnd": 42,
@@ -174,7 +192,12 @@ Good architecture decisions usually come from combining both:
     ]
   },
   "impact": "Sequential awaits multiply latency by N iterations — parallelizing can reduce total time to max(single-latency).",
+  "correlatedSignals": ["paired:function-optimization"],
   "tags": ["performance", "async", "n-plus-one"],
+  "recommendedValidation": {
+    "summary": "Confirm the awaited call and inspect whether parallel execution is safe.",
+    "tools": ["localSearchCode", "lspGotoDefinition"]
+  },
   "lspHints": [{
     "tool": "lspGotoDefinition",
     "symbolName": "await",
@@ -210,7 +233,7 @@ When Octocode MCP local tools are available, every statement about live code sho
 ### Hybrid Workflow
 
 ```
-1. CLI scan:     node scripts/index.js --features=security      → identify findings
+1. CLI scan:     node scripts/index.js --features=security --flow      → identify findings
 2. CLI search:   node scripts/ast-search.js -p 'eval($$$A)'     → find all instances structurally
 3. MCP locate:   localSearchCode(symbol) → lineHint             → get precise location
 4. MCP confirm:  lspCallHierarchy(incoming) on eval call         → trace how user input reaches it
@@ -240,6 +263,9 @@ Use these as investigation heuristics when reading `summary.md` and `architectur
 - `layer-violation` + `feature-envy` suggests a boundary leak
 - `import-side-effect-risk` + high `fanIn` suggests hidden initialization risk
 - `unreachable-module` + low `fanIn` suggests dead subsystem edges or missing entrypoints
+- `cycle-cluster` + `broker-module` suggests a structural hub inside an SCC, not just an isolated bad import
+- `package-boundary-chatter` + `feature-envy` suggests a subsystem boundary leak
+- `startup-risk-hub` + top-level effects suggests import-time orchestration hidden behind a commonly imported module
 
 Treat these as leads, then validate them with Octocode local tools before presenting them as conclusions.
 

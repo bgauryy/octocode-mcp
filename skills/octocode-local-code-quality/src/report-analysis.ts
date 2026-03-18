@@ -21,6 +21,7 @@ export interface ReportAnalysisSummary {
   strongestGraphSignal: AnalysisSignal | null;
   strongestAstSignal: AnalysisSignal | null;
   combinedInterpretation: AnalysisSignal | null;
+  recommendedValidation: RecommendedValidation | null;
   investigationPrompts: string[];
 }
 
@@ -115,13 +116,17 @@ function buildCfgFlags(entry: FileEntry): CfgFlags | undefined {
   };
 }
 
-export function enrichFileInventoryEntries(fileEntries: FileEntry[]): FileEntry[] {
+export function enrichFileInventoryEntries(
+  fileEntries: FileEntry[],
+  options: { flowEnabled?: boolean } = {},
+): FileEntry[] {
+  const { flowEnabled = false } = options;
   return fileEntries.map((entry) => ({
     ...entry,
     effectProfile: entry.effectProfile || buildEffectProfile(entry),
     symbolUsageSummary: entry.symbolUsageSummary || buildSymbolUsageSummary(entry),
     boundaryRoleHints: entry.boundaryRoleHints || buildBoundaryRoleHints(entry) || [],
-    cfgFlags: entry.cfgFlags || buildCfgFlags(entry),
+    cfgFlags: flowEnabled ? (entry.cfgFlags || buildCfgFlags(entry)) : undefined,
   }));
 }
 
@@ -155,7 +160,8 @@ function defaultConfidence(finding: Finding): Finding['confidence'] {
   return 'low';
 }
 
-function parseFlowTraceSteps(finding: Finding): FlowTraceStep[] | undefined {
+function parseFlowTraceSteps(finding: Finding, flowEnabled: boolean): FlowTraceStep[] | undefined {
+  if (!flowEnabled) return undefined;
   if (finding.flowTrace && finding.flowTrace.length > 0) return finding.flowTrace;
   const raw = finding.evidence?.propagationSteps;
   if (!Array.isArray(raw)) return undefined;
@@ -206,7 +212,9 @@ export function enrichFindings(
   fileEntries: FileEntry[],
   hotFiles: HotFile[],
   graphAnalytics: GraphAnalyticsSummary | null,
+  options: { flowEnabled?: boolean } = {},
 ): Finding[] {
+  const { flowEnabled = false } = options;
   const byFile = new Map(fileEntries.map((entry) => [entry.file, entry]));
   const hotFileSet = new Set(hotFiles.map((entry) => entry.file));
   const cycleFiles = new Set<string>();
@@ -251,7 +259,7 @@ export function enrichFindings(
       evidence,
       correlatedSignals: [...correlatedSignals].slice(0, 8),
       recommendedValidation: finding.recommendedValidation || buildRecommendedValidation({ ...finding, analysisLens }),
-      flowTrace: parseFlowTraceSteps({ ...finding, evidence }),
+      flowTrace: parseFlowTraceSteps({ ...finding, evidence }, flowEnabled),
     };
   });
 }
@@ -413,6 +421,13 @@ export function computeReportAnalysisSummary(
     );
   }
 
+  const relevantFiles = new Set(combinedInterpretation?.files || []);
+  const relevantCategories = new Set(combinedInterpretation?.categories || []);
+  const prioritizedFinding = findings.find((finding) =>
+    relevantFiles.has(finding.file) || relevantCategories.has(finding.category),
+  ) || findings[0];
+  const recommendedValidation = prioritizedFinding?.recommendedValidation || null;
+
   const prompts = new Set<string>();
   if (strongestGraphSignal) {
     prompts.add(`Inspect ${strongestGraphSignal.files[0]} first and validate the graph claim with localSearchCode plus LSP navigation.`);
@@ -436,6 +451,7 @@ export function computeReportAnalysisSummary(
     strongestGraphSignal,
     strongestAstSignal,
     combinedInterpretation,
+    recommendedValidation,
     investigationPrompts: [...prompts],
   };
 }

@@ -26,7 +26,7 @@ import { detectHardcodedSecrets, detectEvalUsage, detectUnsafeHtml, detectSqlInj
 import { detectLowAssertionDensity, detectTestNoAssertion, detectExcessiveMocking, detectSharedMutableState, detectMissingTestCleanup, detectFocusedTests, detectFakeTimersWithoutRestore, detectMissingMockRestoration, } from './test-quality-detectors.js';
 import { buildAdvancedGraphFindings, computeGraphAnalytics } from './graph-analytics.js';
 import { computeReportAnalysisSummary, enrichFileInventoryEntries, enrichFindings } from './report-analysis.js';
-export const REPORT_SCHEMA_VERSION = '1.0.0';
+export const REPORT_SCHEMA_VERSION = '1.1.0';
 // ─── Output Category Groups (single source of truth: PILLAR_CATEGORIES) ─────
 export const ARCHITECTURE_CATEGORIES = new Set(PILLAR_CATEGORIES['architecture']);
 export const CODE_QUALITY_CATEGORIES = new Set(PILLAR_CATEGORIES['code-quality']);
@@ -528,8 +528,8 @@ export function writeMultiFileReport(dir, report, options, dependencyState, depe
     };
     const hotFiles = computeHotFiles(dependencyState, dependencySummary, fileCriticalityByPath);
     const graphAnalytics = report.graphAnalytics ?? computeGraphAnalytics(dependencyState, dependencySummary, fileCriticalityByPath);
-    const enrichedFileInventory = enrichFileInventoryEntries(report.fileInventory || []);
-    const allFindings = enrichFindings(report.optimizationFindings || [], enrichedFileInventory, hotFiles, graphAnalytics);
+    const enrichedFileInventory = enrichFileInventoryEntries(report.fileInventory || [], { flowEnabled: !!options.flow });
+    const allFindings = enrichFindings(report.optimizationFindings || [], enrichedFileInventory, hotFiles, graphAnalytics, { flowEnabled: !!options.flow });
     const architectureFindings = allFindings.filter(f => ARCHITECTURE_CATEGORIES.has(f.category));
     const codeQualityFindings = allFindings.filter(f => CODE_QUALITY_CATEGORIES.has(f.category));
     const deadCodeFindings = allFindings.filter(f => DEAD_CODE_CATEGORIES.has(f.category));
@@ -628,10 +628,12 @@ export function writeMultiFileReport(dir, report, options, dependencyState, depe
             strongestGraphSignal: reportAnalysis.strongestGraphSignal,
             strongestAstSignal: reportAnalysis.strongestAstSignal,
             combinedSignals: reportAnalysis.combinedSignals,
+            recommendedValidation: reportAnalysis.recommendedValidation,
         },
         strongestGraphSignal: reportAnalysis.strongestGraphSignal,
         strongestAstSignal: reportAnalysis.strongestAstSignal,
         combinedSignals: reportAnalysis.combinedSignals,
+        recommendedValidation: reportAnalysis.recommendedValidation,
         investigationPrompts: reportAnalysis.investigationPrompts,
         parseErrors: report.parseErrors,
         outputFiles,
@@ -805,8 +807,8 @@ export function generateSummaryMd(opts) {
         lines.push(`- **AST Signal**: ${reportAnalysis.strongestAstSignal?.summary || 'No dominant AST signal in this scan.'}`);
         lines.push(`- **Combined Interpretation**: ${reportAnalysis.combinedInterpretation?.summary || 'No combined interpretation available yet.'}`);
         lines.push(`- **Confidence**: ${reportAnalysis.combinedInterpretation?.confidence || reportAnalysis.strongestGraphSignal?.confidence || reportAnalysis.strongestAstSignal?.confidence || 'low'}`);
-        const validationSummary = reportAnalysis.combinedInterpretation
-            ? 'Use the recommended validation from the top correlated finding in `findings.json` to confirm this interpretation.'
+        const validationSummary = reportAnalysis.recommendedValidation
+            ? `${reportAnalysis.recommendedValidation.summary} (tools: ${reportAnalysis.recommendedValidation.tools.join(' -> ')})`
             : 'Use Octocode local tools to confirm the strongest signal before presenting it as fact.';
         lines.push(`- **Recommended Validation**: ${validationSummary}`);
         if (reportAnalysis.investigationPrompts.length > 0) {
@@ -1376,9 +1378,9 @@ async function main() {
             }
         }
     }
-    const enrichedFileSummaries = enrichFileInventoryEntries(fileSummaries);
+    const enrichedFileSummaries = enrichFileInventoryEntries(fileSummaries, { flowEnabled: !!options.flow });
     const hotFiles = computeHotFiles(dependencyState, dependencySummary, fileCriticalityByPath);
-    findings = enrichFindings(findings, enrichedFileSummaries, hotFiles, graphAnalytics);
+    findings = enrichFindings(findings, enrichedFileSummaries, hotFiles, graphAnalytics, { flowEnabled: !!options.flow });
     const reportAnalysis = computeReportAnalysisSummary(findings, enrichedFileSummaries, hotFiles, graphAnalytics);
     const enhancedFileSummaries = fileSummaryWithFindings(enrichedFileSummaries, byFile);
     const report = {
@@ -1412,6 +1414,7 @@ async function main() {
                 strongestGraphSignal: reportAnalysis.strongestGraphSignal,
                 strongestAstSignal: reportAnalysis.strongestAstSignal,
                 combinedSignals: reportAnalysis.combinedSignals,
+                recommendedValidation: reportAnalysis.recommendedValidation,
             },
             highPriority: findings.filter((f) => f.severity === 'high' || f.severity === 'critical').length,
             mediumPriority: findings.filter((f) => f.severity === 'medium').length,

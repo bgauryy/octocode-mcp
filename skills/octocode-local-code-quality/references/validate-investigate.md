@@ -4,6 +4,24 @@
 
 ---
 
+## Reasoning Loop
+
+Use this loop before you present a conclusion:
+
+1. `Choose lens` — graph, AST, or hybrid
+2. `Correlate signals` — compare `summary.md`, `architecture.json`, `findings.json`, and `file-inventory.json`
+3. `State confidence` — high / medium / low
+4. `Validate` — confirm the live-code claim with Octocode local tools when available
+5. `Present` — summarize graph signal, AST signal, combined interpretation, and next validation step
+
+If the scan looks ambiguous, escalate deliberately:
+
+- use `--graph --graph-advanced` for SCC clusters, chokepoints, package chatter, and startup-risk hubs
+- use `--flow` for `cfgFlags`, `flowTrace`, and richer evidence on path-sensitive findings
+- if graph and AST signals disagree, say so explicitly and continue the investigation instead of flattening them into one claim
+
+---
+
 ## Statement Validation Policy
 
 When Octocode MCP local tools are available, every statement about live code must be validated with them before it is presented as fact.
@@ -80,14 +98,15 @@ Useful `ast-search` presets: `empty-catch`, `any-type`, `type-assertion`, `non-n
 
 ## Investigation Loop
 
-1. Read finding: `file`, `lineStart`, `category`, `reason`, `impact`, `suggestedFix`
-2. Check `impact` — explains why this finding matters (business/technical consequence)
-3. Check `lspHints[]` — if present, use the suggested tool/symbol/line directly (all detectors now emit hints)
-4. **CLI path**: `ast-search.js` for structural verification
-5. **MCP path**: `localSearchCode` → LSP tools with `lineHint`
-6. Cross-check `fileInventory` and related findings in same file
-7. Follow `suggestedFix.steps`
-8. After fix, re-run scan and compare counts
+1. Read `summary.md` first and note the `Graph Signal`, `AST Signal`, `Combined Interpretation`, `Confidence`, and `Recommended Validation`
+2. Read finding: `file`, `lineStart`, `category`, `reason`, `impact`, `suggestedFix`
+3. Check `impact` — explains why this finding matters (business/technical consequence)
+4. Check `lspHints[]` and `recommendedValidation` — if present, use those before inventing a validation path
+5. **CLI path**: `ast-search.js` for structural verification
+6. **MCP path**: `localSearchCode` → LSP tools with `lineHint`
+7. Cross-check `fileInventory` and related findings in same file
+8. Follow `suggestedFix.steps`
+9. After fix, re-run scan and compare counts
 
 ---
 
