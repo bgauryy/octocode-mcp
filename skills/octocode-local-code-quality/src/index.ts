@@ -126,6 +126,7 @@ export function buildIssueCatalog(
   flowMap: Map<string, FlowMapEntry[]> = new Map(),
   additionalFindings: Array<Omit<Finding, 'id'>> = []
 ): {
+  allFindings: Array<Omit<Finding, 'id'>>;
   findings: Finding[];
   byFile: Map<string, string[]>;
   totalBeforeTruncation: number;
@@ -313,34 +314,68 @@ export function buildIssueCatalog(
     return 0;
   });
 
+  const { findings: truncated, totalBeforeTruncation, droppedCategories } =
+    applyFindingsLimit(sorted, options);
+  const { findings, byFile } = assignFindingIds(truncated);
+
+  return {
+    allFindings: sorted,
+    findings,
+    byFile,
+    totalBeforeTruncation,
+    droppedCategories,
+  };
+}
+
+export function applyFindingsLimit<T extends Omit<Finding, 'id'>>(
+  sorted: T[],
+  options: Pick<AnalysisOptions, 'findingsLimit' | 'noDiversify'>
+): {
+  findings: T[];
+  totalBeforeTruncation: number;
+  droppedCategories: string[];
+} {
   const totalBeforeTruncation = sorted.length;
   const allCategoriesBefore = new Set(sorted.map(f => f.category));
-  const truncated = options.noDiversify
-    ? sorted.slice(0, options.findingsLimit)
-    : diversifyFindings(sorted, options.findingsLimit);
+  const limit = options.findingsLimit;
+  const truncated =
+    !Number.isFinite(limit) || limit == null
+      ? sorted
+      : options.noDiversify
+        ? sorted.slice(0, limit)
+        : diversifyFindings(sorted, limit);
   const categoriesAfter = new Set(truncated.map(f => f.category));
   const droppedCategories = [...allCategoriesBefore].filter(
     c => !categoriesAfter.has(c)
   );
 
+  return {
+    findings: truncated,
+    totalBeforeTruncation,
+    droppedCategories,
+  };
+}
+
+export function assignFindingIds(
+  rawFindings: Array<Omit<Finding, 'id'>>
+): {
+  findings: Finding[];
+  byFile: Map<string, string[]>;
+} {
   const findings: Finding[] = [];
-  const perFileIssues = new Map<string, string[]>();
-  for (const [i, raw] of truncated.entries()) {
+  const byFile = new Map<string, string[]>();
+
+  for (const [i, raw] of rawFindings.entries()) {
     const id = `AST-ISSUE-${String(i + 1).padStart(4, '0')}`;
     const full: Finding = { id, ...raw };
     findings.push(full);
     if (full.file) {
-      if (!perFileIssues.has(full.file)) perFileIssues.set(full.file, []);
-      perFileIssues.get(full.file)!.push(id);
+      if (!byFile.has(full.file)) byFile.set(full.file, []);
+      byFile.get(full.file)!.push(id);
     }
   }
 
-  return {
-    findings,
-    byFile: perFileIssues,
-    totalBeforeTruncation,
-    droppedCategories,
-  };
+  return { findings, byFile };
 }
 
 if (isDirectRun(import.meta.url)) {

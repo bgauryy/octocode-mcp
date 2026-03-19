@@ -56,11 +56,13 @@ How to read `summary.md`:
 Commonly useful outputs:
 
 - `summary.md` for the top-level story, health scores, and severity ordering
-- `findings.json` for the raw finding set
+- `findings.json` for the full prioritized finding queue you will validate and fix against
 - pillar files such as `architecture.json`, `code-quality.json`, `dead-code.json`, `security.json`, or `test-quality.json` for focused investigation
 - `file-inventory.json` to understand hotspots and file-level context
 - `ast-trees.txt` for a searchable AST snapshot you can inspect with the AST-tree CLI before you move to source-level validation
 - `graph.md` when the architecture story depends on dependency structure
+
+Treat `summary.md` + `findings.json` + the relevant pillar JSON as the default solving set. Use the summary to choose priorities, use `findings.json` to build the real work queue, and use pillar files to explain why that queue matters.
 
 Do not jump from a single finding directly to a fix. Use the output files to understand pattern density, related files, and whether multiple signals point to the same area.
 
@@ -94,9 +96,10 @@ At this stage, keep a distinction between:
 Prefer this order when Octocode MCP tools are available:
 
 1. Use CLI output files to understand the finding and the surrounding context.
-2. Use `localSearchCode` to anchor the finding in the current code and get reliable line hints.
-3. Use LSP tools such as `lspGotoDefinition`, `lspFindReferences`, and `lspCallHierarchy` to confirm semantics, usage, and reachability.
-4. Use CLI structural tools again when you need broader pattern confirmation or want to re-scan a narrowed scope after changes.
+2. Use `findings.json` and the relevant pillar JSON to select the exact incidents you plan to act on.
+3. Use `localSearchCode` to anchor the finding in the current code and get reliable line hints.
+4. Use LSP tools such as `lspGotoDefinition`, `lspFindReferences`, and `lspCallHierarchy` to confirm semantics, usage, and reachability.
+5. Use CLI structural tools again when you need broader pattern confirmation or want to re-scan a narrowed scope after changes.
 
 Typical structural follow-up:
 
@@ -157,7 +160,9 @@ The plan should be prioritized and practical:
 3. Structural improvements for recurring patterns or architectural pressure
 4. Re-scan scope and validation steps to confirm the outcome
 
-A good plan names the target files or areas, the reason for each change, the expected benefit, and the evidence level behind it.
+A good plan names the target files or areas, the reason for each change, the expected benefit, the evidence level behind it, and the execution tactic.
+
+When the fix is mechanical or repeated, explicitly prefer fast Linux command workflows such as `rg`, `sed`, `jq`, `mv`, `cp`, and `xargs` before slower manual editing. Use manual edits for nuanced logic changes, but call out command-first refactors in the plan whenever they would make the work faster and safer.
 
 ## Tool Strategy
 

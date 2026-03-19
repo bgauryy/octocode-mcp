@@ -157,13 +157,13 @@ describe('computeHealthScore', () => {
   it('penalizes critical findings (weight 25)', () => {
     const findings = [makeFinding({ severity: 'critical' })];
     const score = computeHealthScore(findings, 10);
-    expect(score).toBe(75); // 100 - (25/10)*10 = 75
+    expect(score).toBe(80);
   });
 
   it('penalizes high findings (weight 10)', () => {
     const findings = [makeFinding({ severity: 'high' })];
     const score = computeHealthScore(findings, 10);
-    expect(score).toBe(90); // 100 - (10/10)*10 = 90
+    expect(score).toBe(91);
   });
 
   it('penalizes medium findings (weight 3)', () => {
@@ -195,7 +195,7 @@ describe('computeHealthScore', () => {
     const findings = Array.from({ length: 10 }, () =>
       makeFinding({ id: `f-${Math.random()}`, severity: 'critical' })
     );
-    expect(computeHealthScore(findings, 1)).toBe(0);
+    expect(computeHealthScore(findings, 1)).toBe(4);
   });
 
   it('rounds score to integer', () => {

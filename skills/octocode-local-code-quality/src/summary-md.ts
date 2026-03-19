@@ -28,12 +28,27 @@ export function computeHealthScore(
   findings: Finding[],
   totalFiles: number
 ): number {
+  return computeHealthScoreFromSeverityBreakdown(
+    severityBreakdown(findings),
+    totalFiles
+  );
+}
+
+function computeHealthScoreFromSeverityBreakdown(
+  breakdown: Record<string, number>,
+  totalFiles: number
+): number {
   if (totalFiles === 0) return 100;
   const weights = { critical: 25, high: 10, medium: 3, low: 1, info: 0 };
   let penalty = 0;
-  for (const f of findings) penalty += weights[f.severity] || 0;
-  const normalized = (penalty / totalFiles) * 10;
-  return Math.max(0, Math.round(100 - normalized));
+  for (const [severity, count] of Object.entries(breakdown)) {
+    penalty += (weights[severity as keyof typeof weights] || 0) * count;
+  }
+  const weightedFindingsPerFile = penalty / totalFiles;
+  return Math.max(
+    0,
+    Math.min(100, Math.round(100 / (1 + weightedFindingsPerFile / 10)))
+  );
 }
 
 export function collectTagCloud(
@@ -55,6 +70,29 @@ export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function summarizeActiveFeatures(activeFeatures: Set<string>): string[] {
+  const remaining = new Set(activeFeatures);
+  const labels: string[] = [];
+
+  for (const [pillar, categories] of Object.entries(PILLAR_CATEGORIES)) {
+    if (categories.length > 0 && categories.every(cat => remaining.has(cat))) {
+      labels.push(pillar);
+      for (const cat of categories) remaining.delete(cat);
+    }
+  }
+
+  return [...labels, ...[...remaining].sort()];
+}
+
+function isPillarActive(
+  pillarKey: string,
+  activeFeatures: Set<string> | null
+): boolean {
+  if (!activeFeatures) return true;
+  const pillarCats = PILLAR_CATEGORIES[pillarKey] || [];
+  return pillarCats.some(cat => activeFeatures.has(cat));
 }
 
 type FindingLike = Omit<Finding, 'id'> & { id?: string };
@@ -156,13 +194,32 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
     reportAnalysis = null,
   } = opts;
   const allFindings = report.optimizationFindings || [];
-  const sev = severityBreakdown(allFindings);
   const summary = report.summary as Record<string, unknown>;
   const agentOutput = report.agentOutput as Record<string, unknown>;
+  const findingStats = (agentOutput?.findingStats ??
+    null) as
+    | {
+        overall?: {
+          totalFindings: number;
+          severityBreakdown: Record<string, number>;
+        };
+        pillars?: Record<
+          string,
+          {
+            totalFindings: number;
+            severityBreakdown: Record<string, number>;
+          }
+        >;
+      }
+    | null;
   const depGraph = report.dependencyGraph;
   const relativeScanDir = path.relative(root, dir) || '.';
   const exampleFileFilter = ((scope?.[0] ?? 'src/index').split(':')[0] || 'src/index')
     .replace(/\\/g, '/');
+  const overallFindingStats = findingStats?.overall ?? {
+    totalFindings: allFindings.length,
+    severityBreakdown: severityBreakdown(allFindings),
+  };
 
   const lines: string[] = [];
   lines.push('# Code Quality Scan Report\n');
@@ -182,14 +239,14 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
   lines.push('## Findings Overview\n');
   lines.push(`| Severity | Count |`);
   lines.push(`|----------|-------|`);
-  lines.push(`| Critical | ${sev.critical} |`);
-  lines.push(`| High | ${sev.high} |`);
-  lines.push(`| Medium | ${sev.medium} |`);
-  lines.push(`| Low | ${sev.low} |`);
-  lines.push(`| **Total** | **${allFindings.length}** |`);
+  lines.push(`| Critical | ${overallFindingStats.severityBreakdown.critical ?? 0} |`);
+  lines.push(`| High | ${overallFindingStats.severityBreakdown.high ?? 0} |`);
+  lines.push(`| Medium | ${overallFindingStats.severityBreakdown.medium ?? 0} |`);
+  lines.push(`| Low | ${overallFindingStats.severityBreakdown.low ?? 0} |`);
+  lines.push(`| **Total** | **${overallFindingStats.totalFindings}** |`);
   lines.push('');
 
-  const totalBefore = (agentOutput as Record<string, unknown>)
+  const totalBefore = overallFindingStats.totalFindings || (agentOutput as Record<string, unknown>)
     ?.totalBeforeTruncation as number | undefined;
   const dropped = (agentOutput as Record<string, unknown>)
     ?.droppedCategories as string[] | undefined;
@@ -206,8 +263,9 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
   }
 
   if (activeFeatures) {
+    const featureLabels = summarizeActiveFeatures(activeFeatures);
     lines.push(
-      `> **Features filter**: \`--features=${[...activeFeatures].join(',')}\``
+      `> **Features filter**: \`--features=${featureLabels.join(',')}\``
     );
     lines.push('');
   }
@@ -256,30 +314,84 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
   };
 
   const totalFiles = (summary.totalFiles as number) || 1;
-  const overallHealth = computeHealthScore(allFindings, totalFiles);
-  const archHealth = computeHealthScore(architectureFindings, totalFiles);
-  const qualHealth = computeHealthScore(codeQualityFindings, totalFiles);
-  const deadHealth = computeHealthScore(deadCodeFindings, totalFiles);
-  const secHealth = computeHealthScore(securityFindings, totalFiles);
-  const testHealth = computeHealthScore(testQualityFindings, totalFiles);
+  const archStats = findingStats?.pillars?.['architecture'];
+  const qualStats = findingStats?.pillars?.['code-quality'];
+  const deadStats = findingStats?.pillars?.['dead-code'];
+  const secStats = findingStats?.pillars?.['security'];
+  const testStats = findingStats?.pillars?.['test-quality'];
+  const overallHealth = computeHealthScoreFromSeverityBreakdown(
+    overallFindingStats.severityBreakdown,
+    totalFiles
+  );
+  const archHealth = computeHealthScoreFromSeverityBreakdown(
+    archStats?.severityBreakdown ?? severityBreakdown(architectureFindings),
+    totalFiles
+  );
+  const qualHealth = computeHealthScoreFromSeverityBreakdown(
+    qualStats?.severityBreakdown ?? severityBreakdown(codeQualityFindings),
+    totalFiles
+  );
+  const deadHealth = computeHealthScoreFromSeverityBreakdown(
+    deadStats?.severityBreakdown ?? severityBreakdown(deadCodeFindings),
+    totalFiles
+  );
+  const secHealth = computeHealthScoreFromSeverityBreakdown(
+    secStats?.severityBreakdown ?? severityBreakdown(securityFindings),
+    totalFiles
+  );
+  const testHealth = computeHealthScoreFromSeverityBreakdown(
+    testStats?.severityBreakdown ?? severityBreakdown(testQualityFindings),
+    totalFiles
+  );
 
   lines.push('## Health Scores\n');
   lines.push('| Pillar | Score | Grade |');
   lines.push('|--------|-------|-------|');
   const grade = (s: number) =>
     s >= 80 ? 'A' : s >= 60 ? 'B' : s >= 40 ? 'C' : s >= 20 ? 'D' : 'F';
+  const pushHealthRow = (label: string, pillarKey: string, score: number): void => {
+    if (!isPillarActive(pillarKey, activeFeatures)) {
+      lines.push(`| ${label} | — | skipped |`);
+      return;
+    }
+    lines.push(`| ${label} | ${score}/100 | ${grade(score)} |`);
+  };
+  const pushPillarSummary = (
+    pillarKey: string,
+    findingsCount: number,
+    score: number,
+    artifactKey?: string,
+    artifactName?: string
+  ): void => {
+    if (!isPillarActive(pillarKey, activeFeatures)) {
+      lines.push('> skipped by feature filter\n');
+      return;
+    }
+
+    if (artifactKey && outputFiles[artifactKey]) {
+      lines.push(
+        `> ${findingsCount} findings (score: ${score}/100) — see [\`${artifactName}\`](./${outputFiles[artifactKey]})\n`
+      );
+      return;
+    }
+
+    if (artifactName) {
+      lines.push(
+        `> ${findingsCount} findings (score: ${score}/100) — no \`${artifactName}\` written for this scan\n`
+      );
+      return;
+    }
+
+    lines.push(`> ${findingsCount} findings (score: ${score}/100)\n`);
+  };
   lines.push(
     `| **Overall** | **${overallHealth}/100** | **${grade(overallHealth)}** |`
   );
-  lines.push(`| Architecture | ${archHealth}/100 | ${grade(archHealth)} |`);
-  lines.push(`| Code Quality | ${qualHealth}/100 | ${grade(qualHealth)} |`);
-  lines.push(
-    `| Dead Code & Hygiene | ${deadHealth}/100 | ${grade(deadHealth)} |`
-  );
-  if (securityFindings.length > 0)
-    lines.push(`| Security | ${secHealth}/100 | ${grade(secHealth)} |`);
-  if (testQualityFindings.length > 0)
-    lines.push(`| Test Quality | ${testHealth}/100 | ${grade(testHealth)} |`);
+  pushHealthRow('Architecture', 'architecture', archHealth);
+  pushHealthRow('Code Quality', 'code-quality', qualHealth);
+  pushHealthRow('Dead Code & Hygiene', 'dead-code', deadHealth);
+  pushHealthRow('Security', 'security', secHealth);
+  pushHealthRow('Test Quality', 'test-quality', testHealth);
   lines.push('');
 
   const tagCloud = collectTagCloud(allFindings);
@@ -329,8 +441,12 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
   }
 
   lines.push('## Architecture Health\n');
-  lines.push(
-    `> ${architectureFindings.length} findings (score: ${archHealth}/100) — see [\`architecture.json\`](./architecture.json)\n`
+  pushPillarSummary(
+    'architecture',
+    archStats?.totalFindings ?? architectureFindings.length,
+    archHealth,
+    'architecture',
+    'architecture.json'
   );
   if (depGraph) {
     lines.push(`| Metric | Value |`);
@@ -369,32 +485,44 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
   }
 
   lines.push('## Code Quality\n');
-  lines.push(
-    `> ${codeQualityFindings.length} findings (score: ${qualHealth}/100) — see [\`code-quality.json\`](./code-quality.json)\n`
+  pushPillarSummary(
+    'code-quality',
+    qualStats?.totalFindings ?? codeQualityFindings.length,
+    qualHealth,
+    'codeQuality',
+    'code-quality.json'
   );
   renderPillarCategories('code-quality', codeQualityFindings);
 
   lines.push('## Dead Code & Hygiene\n');
-  lines.push(
-    `> ${deadCodeFindings.length} findings (score: ${deadHealth}/100) — see [\`dead-code.json\`](./dead-code.json)\n`
+  pushPillarSummary(
+    'dead-code',
+    deadStats?.totalFindings ?? deadCodeFindings.length,
+    deadHealth,
+    'deadCode',
+    'dead-code.json'
   );
   renderPillarCategories('dead-code', deadCodeFindings);
 
-  if (securityFindings.length > 0) {
-    lines.push('## Security\n');
-    lines.push(
-      `> ${securityFindings.length} findings (score: ${secHealth}/100) — see [\`security.json\`](./security.json)\n`
-    );
-    renderPillarCategories('security', securityFindings);
-  }
+  lines.push('## Security\n');
+  pushPillarSummary(
+    'security',
+    secStats?.totalFindings ?? securityFindings.length,
+    secHealth,
+    'security',
+    'security.json'
+  );
+  renderPillarCategories('security', securityFindings);
 
-  if (testQualityFindings.length > 0) {
-    lines.push('## Test Quality\n');
-    lines.push(
-      `> ${testQualityFindings.length} findings (score: ${testHealth}/100) — see [\`test-quality.json\`](./test-quality.json)\n`
-    );
-    renderPillarCategories('test-quality', testQualityFindings);
-  }
+  lines.push('## Test Quality\n');
+  pushPillarSummary(
+    'test-quality',
+    testStats?.totalFindings ?? testQualityFindings.length,
+    testHealth,
+    'testQuality',
+    'test-quality.json'
+  );
+  renderPillarCategories('test-quality', testQualityFindings);
 
   const topRecs = (agentOutput?.topRecommendations ?? []) as Array<{
     severity: string;

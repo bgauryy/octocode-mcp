@@ -28,7 +28,7 @@ import {
   buildAdvancedGraphFindings,
   computeGraphAnalytics,
 } from './graph-analytics.js';
-import { buildIssueCatalog } from './index.js';
+import { applyFindingsLimit, assignFindingIds, buildIssueCatalog } from './index.js';
 import {
   computeReportAnalysisSummary,
   enrichFileInventoryEntries,
@@ -50,7 +50,7 @@ import {
   analyzeSourceFile,
   buildDependencyCriticality,
 } from './ts-analyzer.js';
-import { SEMANTIC_CATEGORIES } from './types.js';
+import { PILLAR_CATEGORIES, SEMANTIC_CATEGORIES } from './types.js';
 import { isDirectRun } from './is-direct-run.js';
 import { canonicalScriptKind, increment } from './utils.js';
 
@@ -599,9 +599,7 @@ async function main(): Promise<void> {
     flowMap,
     advancedGraphFindings
   );
-  let findings = catalog.findings;
-  let byFile = catalog.byFile;
-  const { totalBeforeTruncation, droppedCategories } = catalog;
+  let scopedFindings = catalog.allFindings;
 
   if (options.scope) {
     const scopeMatchesRel = (file: string): boolean => {
@@ -614,11 +612,8 @@ async function main(): Promise<void> {
         );
       });
     };
-    findings = findings.filter(
+    scopedFindings = scopedFindings.filter(
       f => scopeMatchesRel(f.file) || (f.files?.some(scopeMatchesRel) ?? false)
-    );
-    byFile = new Map(
-      [...byFile.entries()].filter(([file]) => scopeMatchesRel(file))
     );
 
     if (options.scopeSymbols && options.scopeSymbols.size > 0) {
@@ -663,7 +658,7 @@ async function main(): Promise<void> {
           rLineStart: number,
           rLineEnd: number
         ): boolean => fLineStart <= rLineEnd && fLineEnd >= rLineStart;
-        findings = findings.filter(f =>
+        scopedFindings = scopedFindings.filter(f =>
           symbolRanges.some(
             r =>
               f.file === r.file &&
@@ -673,6 +668,14 @@ async function main(): Promise<void> {
       }
     }
   }
+
+  const {
+    findings: limitedFindings,
+    totalBeforeTruncation,
+    droppedCategories,
+  } = applyFindingsLimit(scopedFindings, options);
+  let { findings, byFile } = assignFindingIds(limitedFindings);
+  const findingStats = buildFindingStats(scopedFindings);
 
   const enrichedFileSummaries = enrichFileInventoryEntries(fileSummaries, {
     flowEnabled: !!options.flow,
@@ -731,6 +734,7 @@ async function main(): Promise<void> {
       totalFindings: findings.length,
       totalBeforeTruncation,
       droppedCategories,
+      findingStats,
       analysisSummary: {
         strongestGraphSignal: reportAnalysis.strongestGraphSignal,
         strongestAstSignal: reportAnalysis.strongestAstSignal,
@@ -875,6 +879,59 @@ async function main(): Promise<void> {
 }
 
 export { main };
+
+function buildFindingStats(
+  findings: Array<Omit<Finding, 'id'>>
+): {
+  overall: {
+    totalFindings: number;
+    severityBreakdown: Record<string, number>;
+  };
+  pillars: Record<
+    string,
+    {
+      totalFindings: number;
+      severityBreakdown: Record<string, number>;
+    }
+  >;
+} {
+  const makeSeverityBreakdown = (
+    entries: Array<Pick<Finding, 'severity'>>
+  ): Record<string, number> => {
+    const counts: Record<string, number> = {
+      critical: 0,
+      high: 0,
+      medium: 0,
+      low: 0,
+      info: 0,
+    };
+    for (const entry of entries) {
+      counts[entry.severity] = (counts[entry.severity] || 0) + 1;
+    }
+    return counts;
+  };
+
+  const overall = {
+    totalFindings: findings.length,
+    severityBreakdown: makeSeverityBreakdown(findings),
+  };
+
+  const pillars = Object.fromEntries(
+    Object.entries(PILLAR_CATEGORIES).map(([pillar, categories]) => {
+      const categorySet = new Set(categories);
+      const pillarFindings = findings.filter(f => categorySet.has(f.category));
+      return [
+        pillar,
+        {
+          totalFindings: pillarFindings.length,
+          severityBreakdown: makeSeverityBreakdown(pillarFindings),
+        },
+      ];
+    })
+  );
+
+  return { overall, pillars };
+}
 
 if (isDirectRun(import.meta.url)) {
   main().catch((error: unknown) => {
