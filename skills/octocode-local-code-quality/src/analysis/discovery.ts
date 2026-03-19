@@ -6,6 +6,8 @@ import { ALLOWED_EXTS } from '../types/index.js';
 
 import type { AnalysisOptions, FileEntry, PackageInfo } from '../types/index.js';
 
+import type { AnalysisOptions, FileEntry, PackageInfo } from './types.js';
+
 export function collectFiles(rootDir: string, opts: AnalysisOptions): string[] {
   const files: string[] = [];
   const walk = (dir: string): void => {

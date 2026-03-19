@@ -8,6 +8,8 @@ import { IMPORT_RESOLVE_EXTS } from '../types/index.js';
 
 import type { NodeBudget, NodeTree, SyntaxNode } from '../types/index.js';
 
+import type { NodeBudget, NodeTree, SyntaxNode } from './types.js';
+
 export function canonicalScriptKind(ext: string): ts.ScriptKind {
   switch (ext) {
     case '.tsx':
