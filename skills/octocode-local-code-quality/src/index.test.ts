@@ -2145,7 +2145,7 @@ describe('end-to-end output validation', () => {
       try {
         execSync(`rm -rf "${dir}"`, { encoding: 'utf8' });
       } catch {
-        /* ignore cleanup errors */
+        void 0;
       }
     }
   }, 30000);

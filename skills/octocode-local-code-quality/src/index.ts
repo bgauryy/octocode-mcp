@@ -46,6 +46,7 @@ import {
   detectUntestedCriticalCode,
   detectUnusedNpmDeps,
 } from './architecture.js';
+import { isDirectRun } from './is-direct-run.js';
 import {
   detectCommandInjectionRisk,
   detectEvalUsage,
@@ -69,7 +70,6 @@ import {
   detectSharedMutableState,
   detectTestNoAssertion,
 } from './test-quality-detectors.js';
-import { isDirectRun } from './is-direct-run.js';
 import { SEVERITY_ORDER } from './types.js';
 
 import type {

@@ -29,6 +29,7 @@ import {
   computeGraphAnalytics,
 } from './graph-analytics.js';
 import { applyFindingsLimit, assignFindingIds, buildIssueCatalog } from './index.js';
+import { isDirectRun } from './is-direct-run.js';
 import {
   computeReportAnalysisSummary,
   enrichFileInventoryEntries,
@@ -51,7 +52,6 @@ import {
   buildDependencyCriticality,
 } from './ts-analyzer.js';
 import { PILLAR_CATEGORIES, SEMANTIC_CATEGORIES } from './types.js';
-import { isDirectRun } from './is-direct-run.js';
 import { canonicalScriptKind, increment } from './utils.js';
 
 import type { SemanticProfile } from './semantic.js';
@@ -205,7 +205,7 @@ async function main(): Promise<void> {
       Object.assign(allPkgJsonDeps, manifest.dependencies || {});
       Object.assign(allPkgJsonDevDeps, manifest.devDependencies || {});
     } catch {
-      /* skip unreadable */
+      void 0;
     }
   }
 
@@ -570,8 +570,8 @@ async function main(): Promise<void> {
               )
             );
           } catch {
-            /* skip files that fail semantic analysis */
-          }
+      void 0;
+    }
         }
         semanticFindings = runSemanticDetectors(semanticCtx, profiles, {
           overrideChainThreshold: options.overrideChainThreshold,
@@ -623,10 +623,14 @@ async function main(): Promise<void> {
         lineEnd: number;
         name: string;
       }> = [];
+      const unresolvedSymbols: string[] = [];
       for (const [absFile, symbolNames] of options.scopeSymbols) {
         const relFile = path.relative(options.root, absFile);
         const entry = fileSummaries.find(e => e.file === relFile);
-        if (!entry) continue;
+        if (!entry) {
+          for (const sym of symbolNames) unresolvedSymbols.push(`${relFile}:${sym}`);
+          continue;
+        }
         for (const sym of symbolNames) {
           const fn = entry.functions.find(f => f.name === sym);
           if (fn) {
@@ -648,8 +652,15 @@ async function main(): Promise<void> {
               lineEnd: exp.lineEnd!,
               name: sym,
             });
+          } else {
+            unresolvedSymbols.push(`${relFile}:${sym}`);
           }
         }
+      }
+      if (unresolvedSymbols.length > 0) {
+        console.warn(
+          `Warning: symbol scope could not resolve: ${unresolvedSymbols.join(', ')}. Falling back to file-level scope for those entries.`
+        );
       }
       if (symbolRanges.length > 0) {
         const overlaps = (
@@ -674,7 +685,9 @@ async function main(): Promise<void> {
     totalBeforeTruncation,
     droppedCategories,
   } = applyFindingsLimit(scopedFindings, options);
-  let { findings, byFile } = assignFindingIds(limitedFindings);
+  const assigned = assignFindingIds(limitedFindings);
+  let findings = assigned.findings;
+  const byFile = assigned.byFile;
   const findingStats = buildFindingStats(scopedFindings);
 
   const enrichedFileSummaries = enrichFileInventoryEntries(fileSummaries, {

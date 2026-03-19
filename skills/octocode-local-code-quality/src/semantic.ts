@@ -125,7 +125,7 @@ export function createSemanticContext(
     try {
       fileContents.set(f, fs.readFileSync(f, 'utf8'));
     } catch {
-      /* skip unreadable */
+      void 0;
     }
   }
 

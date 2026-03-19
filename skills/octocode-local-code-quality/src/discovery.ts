@@ -69,7 +69,7 @@ export function listWorkspacePackages(
         packages.push({ name: json.name, dir, folder: entry.name });
       }
     } catch {
-      /* ignore invalid manifests */
+      void 0;
     }
   }
 

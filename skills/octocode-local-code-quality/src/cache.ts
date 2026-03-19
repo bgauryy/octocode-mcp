@@ -63,7 +63,7 @@ export function clearCache(root: string): void {
   try {
     fs.unlinkSync(cachePath);
   } catch {
-    /* Cache file may not exist; ignore */
+    void 0;
   }
 }
 
