@@ -1,37 +1,26 @@
 # Playbooks — Validate & Fix by Category
 
-Per-category instructions: which tools to use, what to check, and how to fix.
+Per-category guidance: which tools can help, what to check, and how to fix.
 
-Each playbook shows **two validation paths** — pick based on your setup:
+All Octocode local tools are available — use whichever fits the finding:
 
-- **CLI only** — use `node scripts/ast-search.js` + file reads (no Octocode MCP needed)
-- **Octocode MCP** — use `localSearchCode` → LSP tools for semantic validation
-- **Hybrid** (recommended) — use CLI for broad discovery, Octocode MCP for precise semantic checks
+| Tool | What it gives you |
+|------|------------------|
+| `localSearchCode` | Find patterns, get file + lineHint |
+| `localViewStructure` | Directory layout, project organization |
+| `localFindFiles` | Locate files by name, size, modification time |
+| `localGetFileContent` | Read file content at specific lines or with match strings |
+| `lspGotoDefinition` | Jump to symbol definition |
+| `lspFindReferences` | All usages of a symbol |
+| `lspCallHierarchy` | Incoming/outgoing call chains (functions only) |
 
-Use `--graph-advanced` when you want SCC clusters, chokepoints, bridge modules, and package chatter. Use `--flow` when you want lightweight flow enrichment such as `cfgFlags`, `flowTrace`, and richer evidence metadata.
+CLI scripts (`ast/search.js`, `ast/tree-search.js`, `scripts/index.js --scope`) complement these for broad structural search and re-scanning.
+
+Use `--graph-advanced` for SCC clusters, chokepoints, bridge modules, and package chatter. Use `--flow` for `cfgFlags`, `flowTrace`, and richer evidence.
 
 ---
 
-## Hybrid Validation Pattern
-
-```
-1. CLI: node scripts/index.js --features=<category>    → targeted scan
-2. CLI: node scripts/ast-search.js -p '<pattern>'      → find all instances structurally
-3. MCP: localSearchCode(symbol) → lineHint             → locate in codebase
-4. MCP: lspGotoDefinition / lspFindReferences / lspCallHierarchy → semantic confirmation
-5. CLI: fix → re-scan with same --scope                → verify count drops
-```
-
-**When to use which:**
-
-| Task | CLI (ast-search / scan) | Octocode MCP (LSP) |
-|------|------------------------|---------------------|
-| Find all instances of a pattern | `ast-search -p 'pattern'` | `localSearchCode(pattern)` |
-| Count occurrences across repo | `ast-search --json \| jq length` | `localSearchCode(filesOnly=true)` |
-| Jump to definition | — | `lspGotoDefinition(lineHint)` |
-| Find all references | `ast-search -p 'symbolName'` (text only) | `lspFindReferences(lineHint)` (semantic) |
-| Trace call flow | — | `lspCallHierarchy(incoming/outgoing)` |
-| Read implementation | File read tool | `localGetFileContent(matchString)` |
+The playbook tables below show CLI and Octocode approaches per category. **These are suggestions, not rigid sequences** — pick the tools that answer the question fastest.
 | Confirm dead code | `ast-search -p 'import.*symbolName'` | `lspFindReferences` → 0 refs = confirmed dead |
 
 ---
@@ -196,3 +185,15 @@ When scanning **agentic/MCP tool code**, apply additional scrutiny:
 **Octocode check**: `lspFindReferences` on top hotfile exports → map consumer blast radius.
 
 Prioritize for refactoring.
+
+## Mega-Folder Restructuring
+
+When the scan reports a mega-folder finding (flat directory with many loosely related files):
+
+1. **Map the import graph.** Use `localSearchCode` or `rg` to extract `from './...'` imports. Group files into clusters. Use LSP to confirm boundaries when ambiguous.
+2. **Design target structure.** Name directories after their role (e.g., types → parsing → analysis → detection → reporting).
+3. **Write a migration script.** Disposable Node.js/shell script that moves files and rewrites all relative import paths atomically. Path resolution: same dir → `./name.js`, root→subdir → `./subdir/name.js`, subdir→root → `../name.js`, across subdirs → `../other/name.js`.
+4. **Validate.** Run the project's lint, build, and test scripts after migration (see Project Environment in SKILL.md).
+5. **Delete the migration script.** One-shot tool, not part of the codebase.
+
+Prefer this over manual file-by-file moves when a directory has 15+ files in clearly separable domains.

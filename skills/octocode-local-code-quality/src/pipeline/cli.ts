@@ -258,7 +258,7 @@ export function parseArgs(argv: string[]): AnalysisOptions {
 export function printHelp(): void {
   console.log(`
 Usage:
-  node scripts/run-scan.js [options]
+  node scripts/index.js [options]
 
 Options:
   --root <path>                 Analyze a different repo root (default: cwd)

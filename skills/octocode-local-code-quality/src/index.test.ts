@@ -4062,7 +4062,7 @@ describe('generateSummaryMd comprehensive', () => {
     expect(md).toContain('## AST Trees');
     expect(md).toContain('ast-trees.txt');
     expect(md).toContain('Run these commands from the skill directory.');
-    expect(md).toContain('node scripts/ast-tree-search.js');
+    expect(md).toContain('node scripts/ast/tree-search.js');
     expect(md).toContain(
       '.octocode/scan/2026-03-19T00-00-00-000Z/ast-trees.txt'
     );

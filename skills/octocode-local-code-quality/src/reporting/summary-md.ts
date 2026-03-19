@@ -559,16 +559,16 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
     lines.push('```\n');
     lines.push('**Smart navigation:**\n');
     lines.push(
-      `- Find functions: \`node scripts/ast-tree-search.js -i ${astTreeArg} -k function_declaration --limit 25\``
+      `- Find functions: \`node scripts/ast/tree-search.js -i ${astTreeArg} -k function_declaration --limit 25\``
     );
     lines.push(
-      `- Find classes: \`node scripts/ast-tree-search.js -i ${astTreeArg} -k class_declaration --limit 25\``
+      `- Find classes: \`node scripts/ast/tree-search.js -i ${astTreeArg} -k class_declaration --limit 25\``
     );
     lines.push(
-      `- Find control flow: \`node scripts/ast-tree-search.js -i ${astTreeArg} -p 'IfStatement|SwitchStatement|ForStatement|WhileStatement' --limit 25\``
+      `- Find control flow: \`node scripts/ast/tree-search.js -i ${astTreeArg} -p 'IfStatement|SwitchStatement|ForStatement|WhileStatement' --limit 25\``
     );
     lines.push(
-      `- Narrow to one file: \`node scripts/ast-tree-search.js -i ${astTreeArg} --file "${exampleFileFilter}" -k function_declaration --limit 10\``
+      `- Narrow to one file: \`node scripts/ast/tree-search.js -i ${astTreeArg} --file "${exampleFileFilter}" -k function_declaration --limit 10\``
     );
     lines.push(
       `- Raw text fallback: \`rg 'FunctionDeclaration|IfStatement' ${astTreeArg}\``

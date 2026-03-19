@@ -6,13 +6,13 @@
 
 ## Reasoning Loop
 
-Use this loop before you present a conclusion:
+Before presenting a conclusion:
 
-1. `Choose lens` — graph, AST, or hybrid
-2. `Correlate signals` — compare `summary.md`, `architecture.json`, `findings.json`, and `file-inventory.json`
-3. `State confidence` — high / medium / low
-4. `Validate` — confirm the live-code claim with Octocode local tools when available
-5. `Present` — summarize graph signal, AST signal, combined interpretation, and next validation step
+1. **Choose lens** — graph, AST, or hybrid — based on what the finding needs.
+2. **Correlate signals** — compare `summary.md`, `architecture.json`, `findings.json`, `file-inventory.json`.
+3. **Validate** — use whichever Octocode local tools fit (search, structure, content, LSP). No fixed order.
+4. **State confidence** — high / medium / low.
+5. **Present** — graph signal, AST signal, combined interpretation, remaining gaps.
 
 If the scan looks ambiguous, escalate deliberately:
 
@@ -24,22 +24,33 @@ If the scan looks ambiguous, escalate deliberately:
 
 ## Statement Validation Policy
 
-When Octocode MCP local tools are available, every statement about live code must be validated with them before it is presented as fact.
+When Octocode MCP local tools are available, every statement about live code must be validated before presenting as fact.
 
-- Start with `localSearchCode` to anchor the claim to a concrete file and `lineHint`.
-- Confirm the statement with `lspGotoDefinition`, `lspFindReferences`, or `lspCallHierarchy`.
-- Use `localGetFileContent` only after the exact location is known.
-- If Octocode local tools are unavailable, use CLI validation and mark confidence explicitly.
+Use whichever tools fit the claim — all are available:
+
+| Tool | What it gives you |
+|------|------------------|
+| `localSearchCode` | Find patterns, get file + lineHint |
+| `localViewStructure` | Directory layout, project organization |
+| `localFindFiles` | Locate files by name, size, modification time |
+| `localGetFileContent` | Read file content at specific lines or with match strings |
+| `lspGotoDefinition` | Jump to symbol definition |
+| `lspFindReferences` | All usages of a symbol |
+| `lspCallHierarchy` | Incoming/outgoing call chains (functions only) |
+
+There is no required order. Pick what fits: a dead-export check might only need `lspFindReferences`, a layout question might only need `localViewStructure`, a complex finding might need several tools.
+
+If Octocode local tools are unavailable, use CLI validation and mark confidence explicitly.
 
 ---
 
 ## Validation Modes
 
-| Mode | When to use | Tools |
-|------|------------|-------|
-| **CLI only** | No Octocode MCP installed | `scripts/index.js` (rescan with scope/features) + `scripts/ast-search.js` (structural search) |
-| **Octocode MCP only** | MCP available, quick semantic checks | `localSearchCode` → `lspGotoDefinition` / `lspFindReferences` / `lspCallHierarchy` |
-| **Hybrid** (recommended) | Both available — broadest coverage | CLI for bulk discovery → MCP for semantic precision |
+| Mode | When to use | Available tools |
+|------|------------|----------------|
+| **CLI only** | No Octocode MCP installed | `scripts/index.js` (rescan) + `scripts/ast/search.js` + `scripts/ast/tree-search.js` |
+| **Octocode MCP** | MCP available | All local tools (`localSearchCode`, `localViewStructure`, `localFindFiles`, `localGetFileContent`) + LSP (`lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`) |
+| **Hybrid** (recommended) | Both available | CLI for broad scanning + any Octocode tool for targeted validation |
 
 ---
 
@@ -47,37 +58,30 @@ When Octocode MCP local tools are available, every statement about live code mus
 
 Try `localSearchCode` first. If it fails → Octocode not installed or `ENABLE_LOCAL ≠ "true"`.
 - Suggest once: "Enable local tools by setting `ENABLE_LOCAL=true` in your Octocode MCP config."
-- **Without MCP**: use CLI tools (`ast-search.js` for structural search, rescan with `--scope` for targeted checks), mark confidence (`high`/`medium`/`low`), avoid broad refactors.
+- **Without MCP**: use CLI tools (`ast/search.js` for structural search, rescan with `--scope` for targeted checks), mark confidence (`high`/`medium`/`low`), avoid broad refactors.
 
 ---
 
-## Tool Chain — Hybrid (CLI + Octocode MCP)
+## Hybrid Validation (CLI + Octocode MCP)
 
-```
-1. CLI:   node scripts/index.js --scope=file.ts     → targeted rescan
-2. CLI:   node scripts/ast-search.js -p 'pattern'   → find all instances structurally
-3. MCP:   localSearchCode(pattern) → lineHint        → locate in codebase (1-indexed)
-4. MCP:   lspGotoDefinition(lineHint)                → jump to definition
-5. MCP:   lspFindReferences(lineHint)                → all usages (types, variables, exports)
-6. MCP:   lspCallHierarchy(lineHint, dir)            → call flow (functions: incoming/outgoing)
-7. MCP:   localGetFileContent                        → read implementation (prefer last)
-```
+Both CLI scripts and Octocode tools are available — use whichever fits the task:
 
-**When to use which:**
-
-| Task | CLI approach | Octocode MCP approach |
-|------|-------------|----------------------|
-| Find all instances of a pattern | `ast-search -p 'pattern'` | `localSearchCode(pattern)` |
-| Confirm no references exist | `ast-search -p 'import { sym } from $M'` — 0 hits | `lspFindReferences(lineHint)` — 0 refs |
-| Trace call flow | — (no CLI equivalent) | `lspCallHierarchy(incoming/outgoing)` |
+| Task | CLI option | Octocode option |
+|------|-----------|----------------|
+| Find all instances of a pattern | `ast/search.js -p 'pattern'` | `localSearchCode(pattern)` |
+| Understand project layout | `ast/tree-search.js -k ...` | `localViewStructure(path)` |
+| Find files by name/metadata | — | `localFindFiles(name, path)` |
+| Read specific code section | — | `localGetFileContent(file, matchString)` |
+| Confirm no references exist | `ast/search.js -p 'import { sym } from $M'` → 0 hits | `lspFindReferences(lineHint)` → 0 refs |
+| Trace call flow | — | `lspCallHierarchy(incoming/outgoing)` |
 | Jump to definition | — | `lspGotoDefinition(lineHint)` |
-| Count across repo | `ast-search --json | jq length` | `localSearchCode(filesOnly=true)` |
-| Rescan after fix | `node scripts/index.js --scope=file.ts` | — |
+| Count across repo | `ast/search.js --json \| jq length` | `localSearchCode(filesOnly=true)` |
+| Rescan after fix | `scripts/index.js --scope=file.ts` | — |
 
-**MCP Rules:**
+**Tips:**
 - `lspFindReferences` for types/variables; `lspCallHierarchy` for function calls only
-- Batch tool calls where possible for efficiency
-- Use `lspCallHierarchy(depth=1)` and chain manually
+- `lspCallHierarchy(depth=1)` + chain manually is faster than high depth
+- Batch tool calls where possible
 - External packages: `packageSearch` → `githubSearchCode`
 
 ---
@@ -86,8 +90,8 @@ Try `localSearchCode` first. If it fails → Octocode not installed or `ENABLE_L
 
 ```
 1. node scripts/index.js --scope=file.ts --features=<category>   → targeted rescan
-2. node scripts/ast-search.js -p 'pattern' --root <dir>          → structural search
-3. node scripts/ast-search.js --preset <name> --root <dir>       → use pre-built patterns
+2. node scripts/ast/search.js -p 'pattern' --root <dir>          → structural search
+3. node scripts/ast/search.js --preset <name> --root <dir>       → use pre-built patterns
 4. Read file at finding line range                                → manual inspection
 5. Fix → rescan with same --scope → verify count drops
 ```
@@ -98,15 +102,12 @@ Useful `ast-search` presets: `empty-catch`, `any-type`, `type-assertion`, `non-n
 
 ## Investigation Loop
 
-1. Read `summary.md` first and note the `Graph Signal`, `AST Signal`, `Combined Interpretation`, `Confidence`, and `Recommended Validation`
-2. Read finding: `file`, `lineStart`, `category`, `reason`, `impact`, `suggestedFix`
-3. Check `impact` — explains why this finding matters (business/technical consequence)
-4. Check `lspHints[]` and `recommendedValidation` — if present, use those before inventing a validation path
-5. **CLI path**: `ast-search.js` for structural verification
-6. **MCP path**: `localSearchCode` → LSP tools with `lineHint`
-7. Cross-check `fileInventory` and related findings in same file
-8. Follow `suggestedFix.steps`
-9. After fix, re-run scan and compare counts
+Guide — adapt to the finding, not the other way around:
+
+1. **Understand context**: read `summary.md` signals (Graph, AST, Confidence, Recommended Validation), then the finding itself (`file`, `lineStart`, `category`, `reason`, `impact`).
+2. **Use lspHints first**: if `lspHints[]` or `recommendedValidation` exist on the finding, use those directly — they're pre-computed validation shortcuts.
+3. **Validate with any fitting tool**: use Octocode local tools, CLI AST scripts, or both — pick what answers the question fastest. Cross-check `fileInventory` and related findings in the same file.
+4. **Fix and verify**: follow `suggestedFix.steps`, re-scan with `--scope`, compare counts.
 
 ---
 
@@ -155,26 +156,21 @@ Security findings are **context-sensitive** — unlike structural findings (empt
 
 ### Taint Tracing Workflow
 
-For every security finding:
+For every security finding, trace the data flow from source to sink. Use any Octocode tools that help — common approaches:
 
-```
-1. Read the finding → note source (parameter/variable) and sink (fs/exec/eval)
-2. localSearchCode(sinkFunction) → get lineHint
-3. lspCallHierarchy(incoming) on sink → trace who calls it
-4. For each caller: does the tainted param come from user input?
-   - HIGH confidence: param name matches (req, input, args, payload)
-   - MEDIUM confidence: param passed through from another function
-   - LOW confidence: param is internal/hardcoded
-5. lspFindReferences on the tainted param → check all usages
-6. Look for sanitizers: validation calls between source and sink
-   - Path validation: path.normalize + startsWith + realpathSync
-   - Command validation: allowlist check, no string interpolation
-   - Input validation: schema validation (zod, joi), type guards
-7. Verdict:
-   - TRUE POSITIVE: user input → sink, no sanitizer
-   - FALSE POSITIVE: internal data, or properly sanitized
-   - NEEDS REVIEW: complex call chain, uncertain provenance
-```
+- **Find the sink**: `localSearchCode` or `lspGotoDefinition` to locate it
+- **Trace callers**: `lspCallHierarchy(incoming)` to see who calls the sink
+- **Check the source**: does the tainted param come from user input?
+  - HIGH confidence: param name matches (req, input, args, payload)
+  - MEDIUM confidence: param passed through from another function
+  - LOW confidence: param is internal/hardcoded
+- **Find all usages**: `lspFindReferences` on the tainted param
+- **Read surrounding code**: `localGetFileContent` to look for sanitizers between source and sink
+  - Path: `path.normalize` + `startsWith` + `realpathSync`
+  - Command: allowlist check, `spawn` with array args
+  - Input: schema validation (zod, joi), type guards
+
+**Verdict**: TRUE POSITIVE (user input → sink, no sanitizer), FALSE POSITIVE (internal data or sanitized), NEEDS REVIEW (complex chain, uncertain provenance).
 
 ### Category-Specific Taint Checks
 

@@ -3,7 +3,7 @@
 
   <h1>Octocode Local Code Quality</h1>
 
-  <p><strong>AST + semantic code quality scanner for TypeScript/JavaScript monorepos</strong></p>
+  <p><strong>AI agent skill — AST + semantic code quality scanner for TypeScript/JavaScript</strong></p>
   <p>Architecture · Code Quality · Performance · Security · Dead Code · Test Quality</p>
 
   [![Skill](https://img.shields.io/badge/skill-agentskills.io-purple)](https://agentskills.io/what-are-skills)
@@ -13,434 +13,193 @@
 
 ---
 
-## Why This Skill Exists
+## What Is This
 
-Regular checks are good at local correctness:
+An AI agent skill that scans TypeScript/JavaScript codebases for architecture rot, code quality issues, security risks, dead code, performance patterns, and test quality problems.
 
-- `tsc` tells you whether the code type-checks
-- ESLint tells you whether a rule was violated
-- tests tell you whether behavior still works
+Unlike `tsc`, ESLint, or tests that check local correctness, this skill answers: **where is the codebase getting weak, risky, or hard to change?**
 
-This skill answers a different question:
+It combines **dependency graph analysis**, **AST + semantic analysis**, and **Octocode MCP local tool validation** to produce prioritized, evidence-backed findings with `file:line` locations, confidence levels, and suggested fixes.
 
-**Where is the architecture getting weak, risky, noisy, or hard to change?**
-
-It does that with a hybrid model:
-
-- **Graph analysis** for cycles, chokepoints, layering, reachability, and package chatter
-- **AST + semantic analysis** for code shape, cohesion, feature envy, side effects, duplicated orchestration, and path-sensitive smells
-- **Octocode local + LSP validation** for checking whether a claim about live code is actually true before an agent presents it as fact
-
-`README.md` explains the product for users. [SKILL.md](./SKILL.md) is the actual agent workflow and execution contract.
-
-## What This Skill Does
-
-This skill scans a TypeScript or JavaScript codebase and turns the results into a usable investigation workflow.
-
-At a high level, it helps you:
-
-- find architectural pressure such as cycles, chokepoints, coupling, reachability problems, and boundary leaks
-- surface code-quality issues such as complexity, duplication, maintainability decline, and risky orchestration
-- identify dead code, unused exports, noisy APIs, and dependency hygiene problems
-- flag security and test-quality risks that deserve validation
-- produce structured output that helps you decide what to fix first instead of dumping raw warnings
-
-It is meant for people who want a practical answer to questions like:
-
-- "Why is this repo getting hard to change?"
-- "What should we clean up first?"
-- "Which findings are probably real and which need validation?"
-- "Where should an agent start investigating?"
-
-## Why Use It
-
-Use this skill when you want more than syntax checks, lint rules, or a flat list of findings.
-
-It is especially useful when:
-
-- a repo feels fragile or slow to change and you want to understand why
-- you need a fast architecture or maintainability review
-- you want an agent to investigate code quality without guessing
-- you want one workflow for architecture, cleanup, security triage, and refactor planning
-- you need broad coverage first, then narrower validation before acting
-
-The main value is prioritization. The skill helps separate:
-
-- what is most important
-- what is likely noise
-- what needs semantic validation
-- what can be fixed quickly with mechanical edits
-
-## High-Level Features
-
-This skill combines several lenses instead of relying on one kind of signal:
-
-- **Architecture review**
-  - cycles, critical paths, hotspots, coupling, layering issues, startup-risk modules
-- **Code quality review**
-  - complexity, maintainability risk, duplication, orchestration smells, performance-style issues
-- **Dead code and hygiene**
-  - dead exports, unused dependencies, barrel problems, cleanup opportunities
-- **Security triage**
-  - risky sinks, validation gaps, and unsafe patterns that need confirmation
-- **Test-quality review**
-  - weak assertions, cleanup issues, focused tests, and mocking problems
-- **Structured outputs**
-  - `summary.md`, pillar JSON files, `findings.json`, `file-inventory.json`, `graph.md`, and `ast-trees.txt`
-- **Agent-ready investigation flow**
-  - broad scan first, then narrow with scope, graph analysis, AST readers, Octocode local tools, and LSP validation
-
-## What You Get From a Run
-
-After a run, you do not just get a pass/fail result. You get a map of the repo:
-
-- a user-facing `summary.md` with health scores, hotspots, top recommendations, and analysis signals
-- focused JSON outputs for each pillar so you can drill into one area at a time
-- a complete prioritized incident list in `findings.json`
-- AST and graph artifacts for structure-first exploration
-
-That makes the skill useful for:
-
-- codebase audits
-- refactor planning
-- cleanup campaigns
-- security triage
-- agent-guided investigation
-- architecture review before larger changes
-
-## Why It Feels Different
-
-This is not just “run many linters.”
-
-- It connects **structure** and **code shape** instead of reporting them separately
-- It helps surface **architecture defects fast**: cycle hubs, startup-risk modules, boundary leaks, and hard-to-change files
-- It gives agents a **decision path**, not just findings: what to inspect first, how confident to be, and which Octocode local tool should validate the claim
-- It works well for **agentic systems** where prompt-to-path, prompt-to-command, import-time bootstrapping, and tool boundary mistakes matter
-
-```mermaid
-flowchart LR
-  A["Dependency Graph\ncycles, fan-in, fan-out, chokepoints"] --> D["Hybrid Findings"]
-  B["AST + Semantic\ncohesion, side effects, duplicated orchestration"] --> D
-  C["Octocode Local + LSP\nlocalSearchCode, goto def, refs, call hierarchy"] --> E["Validation"]
-  D --> F["summary.md\nGraph Signal\nAST Signal\nCombined Interpretation"]
-  D --> G["findings.json\nconfidence, evidence,\nrecommendedValidation"]
-  F --> E
-  G --> E
-```
-
-## What It Covers
-
-| Pillar | What it catches | Why it matters |
-|--------|------------------|----------------|
-| **Architecture** | Cycles, critical paths, coupling hotspots, layer violations, cycle clusters, broker/bridge modules, package chatter, startup-risk hubs, cohesion, feature envy | Finds structural defects before they become slow refactors or repeated incidents |
-| **Code Quality** | Complexity, maintainability risk, duplicates, excessive parameters, magic numbers, type-escape patterns | Shows where code is getting harder to read, change, and trust |
-| **Performance** | `await` in loops, sync I/O, uncleared timers, listener leaks, unbounded collections | Catches avoidable latency and runtime pressure patterns |
-| **Security** | Secrets, `eval`, unsafe HTML, SQL injection risk, regex risk, prototype pollution, input-to-sink risk, path traversal, command injection | Useful for quick secure-code review and especially for agentic/tooling code |
-| **Dead Code** | Dead exports, unused deps, dead re-exports, package boundary violations, barrel explosion | Cuts noise, shrink-wraps public APIs, and reduces accidental maintenance surface |
-| **Test Quality** | Missing assertions, excessive mocking, shared mutable state, cleanup gaps, focused tests, timer/mock restore issues | Finds false confidence and flaky-test patterns |
-| **Semantic** (`--semantic`) | Over-abstraction, DIP violations, type cycles, shotgun surgery, leaky abstractions, unused params, narrowable types | Adds type-aware design signals that raw AST checks miss |
-
-## Why It Helps Agents
-
-For agents, this skill is useful because it turns broad repo analysis into a disciplined workflow:
-
-- it tells the agent which **lens** to use first: graph, AST, or hybrid
-- it provides **analysis signals** instead of forcing the agent to infer everything from raw JSON
-- it attaches **confidence**, **evidence**, and **recommended validation**
-- it nudges the agent to use **Octocode local tools** before making strong claims about live code
-- it gives one scan that can support code review, refactoring, debugging, dead-code cleanup, security triage, and agentic-system auditing
-
-### Smart Output
-
-- **Category-diverse truncation** — `--findings-limit` round-robins across categories by severity tier so the capped list represents all detected issue types, not just the noisiest category
-- **Chain deduplication** — overlapping dependency-chain findings are merged so architecture output stays readable
-- **Computed remediation** — critical architecture chains point to the most useful break location, not just the chain itself
-- **Validation hooks** — most findings include `lspHints`, `recommendedValidation`, and lens-aware metadata
-- **Analysis Signals** — `summary.md` highlights the strongest graph signal, strongest AST signal, and their combined interpretation
-
-### When NOT to use it
-
-- **Syntax errors** → use `tsc`
-- **Style-only enforcement** → use ESLint / Prettier
-- **Runtime debugging** → use tests / debugger
-- **Deep taint analysis / SCA** → use Semgrep or a dedicated security stack
+Just ask your AI agent to review your code quality, audit architecture, find dead code, check security, or any related question — the agent uses this skill automatically.
 
 ---
 
-## Quick Start
+## Setup
 
-```bash
-# Run from your monorepo root (runtime bootstrap ensures TypeScript is available)
-node skills/octocode-local-code-quality/scripts/run-scan.js
-```
+### Octocode MCP (recommended)
 
-Output goes to `.octocode/scan/<timestamp>/` with structured files. Start with `summary.md`, especially the `Analysis Signals` section.
-
-### Common Patterns
-
-```bash
-# Full hybrid architecture pass
-node scripts/index.js --graph --graph-advanced --flow
-
-# Architecture issues only
-node scripts/index.js --features=architecture
-
-# Security scan
-node scripts/index.js --features=security
-
-# Test quality (auto-includes test files)
-node scripts/index.js --features=test-quality --include-tests
-
-# Everything except dead-code
-node scripts/index.js --exclude=dead-code
-
-# Visual dependency graph
-node scripts/index.js --graph
-
-# Advanced graph overlays
-node scripts/index.js --graph --graph-advanced
-
-# Flow-aware evidence enrichment
-node scripts/index.js --flow
-
-# Enforce layer architecture
-node scripts/index.js --layer-order ui,service,repository
-
-# Stricter thresholds
-node scripts/index.js --critical-complexity-threshold 20 --any-threshold 0
-
-# Focus on a specific package
-node scripts/index.js --scope=packages/octocode-mcp
-
-# Focus on a function
-node scripts/index.js --scope=packages/octocode-mcp/src/session.ts:initSession
-
-# Enable semantic analysis
-node scripts/index.js --semantic
-
-# Force full re-parse
-node scripts/index.js --no-cache
-```
-
-### Great First Runs
-
-| Goal | Command | What you get |
-|------|---------|--------------|
-| **Fast architecture review** | `node scripts/index.js --graph --graph-advanced --flow` | Graph hotspots, SCC clusters, chokepoints, side-effect context, and better investigation signals |
-| **Deep design review** | `node scripts/index.js --graph --graph-advanced --flow --semantic` | Adds type-aware design findings like DIP issues, type cycles, and leaky abstractions |
-| **Agentic safety review** | `node scripts/index.js --features=security --flow` | Fast pass over prompt-to-path, prompt-to-command, validation, and sink-risk patterns |
-| **Test trustworthiness review** | `node scripts/index.js --features=test-quality --include-tests --flow` | Flaky-test smells, cleanup gaps, focused tests, timer/mock restore issues |
-
-### Especially Useful For Agentic Repos
-
-This skill is unusually good at repos that expose tools, workflows, or MCP surfaces because those codebases often fail at boundaries, not syntax.
-
-- it finds **prompt or tool input reaching risky sinks**
-- it highlights **import-time startup work** hidden in shared modules
-- it surfaces **tool boundary leaks** where orchestration and infra get mixed
-- it helps agents verify claims with **localSearchCode + LSP**, not guesswork
-- it gives one place to review **architecture, safety, cleanup, and dead surface area** together
-
-### Drill-Down Workflow
-
-```
-1. Full scan        → node scripts/index.js
-                      Read summary.md to identify worst areas
-
-2. Package scope    → node scripts/index.js --scope=packages/worst-package
-                      Detailed findings for one package
-
-3. File scope       → node scripts/index.js --scope=packages/worst-package/src/tools/hub.ts
-                      Single-file analysis
-
-4. Function scope   → node scripts/index.js --scope=path/file.ts:functionName
-                      Only findings within that function's line range
-
-5. Fix & re-scan    → Fix issues, re-run with same --scope, verify count drops
-```
-
-`--scope` accepts comma-separated paths (relative to root). Use `file:symbol` to drill into a specific function or exported variable. The full dependency graph is always built, so architecture findings involving scoped files are still reported.
-
----
-
-## What Gets Scanned
-
-| Included | Excluded |
-|----------|----------|
-| `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs` | `.d.ts` declaration files |
-| All files under `packages/*/` | `node_modules/`, `dist/`, `.git/`, `.next/`, `.cache/`, `.octocode/`, `coverage/` |
-| Production code (default) | Test files (unless `--include-tests`) |
-
----
-
-## Output Files
-
-Each scan writes to `.octocode/scan/<timestamp>/`:
-
-| File | What's Inside |
-|------|--------------|
-| **`summary.md`** | Start here. Scope, severity breakdown, per-pillar category counts, health scores, analysis signals, change risk hotspots, top recommendations |
-| `summary.json` | Machine-readable counters, `topRecommendations[]`, `analysisSummary`, `investigationPrompts[]`, `parseErrors[]` |
-| `architecture.json` | Dependency graph, architecture findings, `hotFiles[]`, `graphSignals[]`, chokepoints, and optional advanced graph overlays |
-| `code-quality.json` | Code quality findings with severity/category breakdowns |
-| `dead-code.json` | Hygiene findings with severity/category breakdowns |
-| `security.json` | Security findings (only if security issues found) |
-| `test-quality.json` | Test quality findings (only if test issues found) |
-| `file-inventory.json` | Per-file: `functions[]`, `flows[]`, `dependencyProfile`, `effectProfile`, `symbolUsageSummary`, `boundaryRoleHints[]`, optional `cfgFlags`, `issueIds[]` |
-| `findings.json` | ALL findings across all categories, sorted by severity, with `ruleId`, `analysisLens`, `confidence`, `correlatedSignals[]`, `recommendedValidation`, and optional `flowTrace[]` |
-| `graph.md` | Mermaid dependency graph (with `--graph`) |
-| `ast-trees.txt` | Compact AST snapshots (on by default, disable with `--no-tree`). Query with `ast-tree-search.js` for bounded artifact triage. |
-
-### Artifact Search vs Source Search
-
-- Use `ast-tree-search.js` on `ast-trees.txt` when you want a low-noise, scan-specific AST snapshot for agent triage.
-- Use `ast-search.js` on source files when you already know the structural shape you want to match in live code.
-- Treat AST artifact search as a navigation tool, not proof. Validate code claims with Octocode local and LSP tools before presenting them as facts.
-
-### How To Read Results Well
-
-Use the outputs with this reasoning loop:
-
-- **Choose lens**: graph, AST, or hybrid
-- **Correlate signals**: compare graph and AST evidence before jumping to a conclusion
-- **State confidence**: say whether the evidence is high, medium, or low confidence
-- **Validate**: confirm live-code claims with Octocode local tools when available
-- **Present**: summarize the graph signal, AST signal, combined interpretation, and next validation step
-
-Use the outputs with two main lenses:
-
-- **Graph lens**: `summary.md`, `architecture.json`, and `graph.md`
-- **AST lens**: `file-inventory.json`, `findings.json`, `ast-trees.txt`, `ast-tree-search.js` for artifact triage, and `ast-search.js` for source-level shape matching
-
-Good architecture decisions usually come from combining both:
-
-- If `summary.md` shows cycles, critical paths, and hot files, start with the graph lens
-- If a hotspot also has top-level effects, duplicate orchestration, or heavy control flow, switch to the AST lens
-- If `low-cohesion` and `feature-envy` co-occur, suspect a bad module boundary
-- If `import-side-effect-risk` appears on a high fan-in file, suspect hidden startup or initialization problems
-- If graph and AST signals disagree, do not flatten them into one claim; treat that as a hybrid investigation
-
-### Each Finding
-
-```json
-{
-  "id": "AST-ISSUE-0001",
-  "ruleId": "performance.await-in-loop",
-  "severity": "high",
-  "category": "await-in-loop",
-  "analysisLens": "ast",
-  "confidence": "medium",
-  "file": "packages/core/src/sync.ts",
-  "lineStart": 42,
-  "lineEnd": 42,
-  "title": "await inside loop — sequential async execution",
-  "reason": "Each await runs serially. Use Promise.all() for parallel execution.",
-  "files": ["packages/core/src/sync.ts"],
-  "suggestedFix": {
-    "strategy": "Collect promises and await them in parallel.",
-    "steps": [
-      "Collect all async operations into an array of promises.",
-      "Use await Promise.all(promises).",
-      "If order matters, use a batching utility."
-    ]
-  },
-  "impact": "Sequential awaits multiply latency by N iterations — parallelizing can reduce total time to max(single-latency).",
-  "correlatedSignals": ["paired:function-optimization"],
-  "tags": ["performance", "async", "n-plus-one"],
-  "recommendedValidation": {
-    "summary": "Confirm the awaited call and inspect whether parallel execution is safe.",
-    "tools": ["localSearchCode", "lspGotoDefinition"]
-  },
-  "lspHints": [{
-    "tool": "lspGotoDefinition",
-    "symbolName": "await",
-    "lineHint": 42,
-    "file": "packages/core/src/sync.ts",
-    "expectedResult": "navigate to the awaited call to check if parallelization is safe"
-  }]
-}
-```
-
----
-
-## Hybrid Validation: CLI + Octocode MCP
-
-The scan works standalone, but combining CLI tools with [Octocode MCP local & LSP tools](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) gives the most complete validation — CLI for broad discovery, MCP for precise semantic confirmation.
-
-### Validation Policy
-
-When Octocode MCP local tools are available, every statement about live code should be validated with them before it is presented as fact.
-
-- Start with `localSearchCode` to anchor the statement to a file and `lineHint`
-- Confirm with `lspGotoDefinition`, `lspFindReferences`, or `lspCallHierarchy`
-- Use `localGetFileContent` only after the location is known and the statement to verify is specific
-
-### Three Validation Paths
-
-| Path | When to use | Tools |
-|------|------------|-------|
-| **CLI only** | No Octocode MCP installed | `scripts/index.js` (scan) + `scripts/ast-search.js` (structural search) + file reads |
-| **Octocode MCP only** | MCP available, quick LSP checks | `localSearchCode` → `lspGotoDefinition` / `lspFindReferences` / `lspCallHierarchy` |
-| **Hybrid** (recommended) | Both available — broadest coverage | CLI for bulk discovery → MCP for semantic precision |
-
-### Hybrid Workflow
-
-```
-1. CLI scan:     node scripts/index.js --features=security --flow      → identify findings
-2. CLI search:   node scripts/ast-search.js -p 'eval($$$A)'     → find all instances structurally
-3. MCP locate:   localSearchCode(symbol) → lineHint             → get precise location
-4. MCP confirm:  lspCallHierarchy(incoming) on eval call         → trace how user input reaches it
-5. Fix + rescan: node scripts/index.js --scope=file.ts           → verify count drops
-```
-
-### Quick Reference
-
-| Scan finds | CLI check | Octocode MCP check |
-|------------|-----------|-------------------|
-| Dead export at `file:line` | `ast-search -p 'import { symbol } from $MOD'` — 0 hits | `lspFindReferences` — 0 consumers = confirmed dead |
-| Dependency cycle `A → B → A` | `--graph` → inspect Mermaid cycle edges | `localSearchCode` → `lspGotoDefinition` — traces the circular import |
-| High-complexity function | `--scope=file.ts:fn --features=cognitive-complexity` | `lspCallHierarchy(outgoing)` — maps callees to understand scope |
-| Unused npm dependency | `ast-search -p 'import $$$N from "pkg"'` — 0 hits | `localSearchCode(filesOnly=true)` — no imports? safe to remove |
-| Security finding | `ast-search -p 'eval($$$A)'` + `--preset` patterns | `lspCallHierarchy(incoming)` → verify if user input reaches sink |
-| Import side-effect risk | Check `file-inventory.json` → `topLevelEffects` | `lspFindReferences` on file → confirm fan-in count |
-| Prototype pollution | `ast-search -p 'Object.assign($$$A)'` + `ast-search -p '$O[$K] = $V'` | `lspCallHierarchy(incoming)` → trace if user data reaches site |
-
-Most findings include `impact` (explains *why* it matters) and `lspHints[]` (pre-computed validation instructions for Octocode MCP).
-
-### Architecture Reading Heuristics
-
-Use these as investigation heuristics when reading `summary.md` and `architecture.json`:
-
-- `dependency-cycle` + `critical-path` + high `fanIn` suggests a chokepoint module
-- `low-cohesion` + `feature-envy` suggests a split-brain or misplaced module
-- `layer-violation` + `feature-envy` suggests a boundary leak
-- `import-side-effect-risk` + high `fanIn` suggests hidden initialization risk
-- `unreachable-module` + low `fanIn` suggests dead subsystem edges or missing entrypoints
-- `cycle-cluster` + `broker-module` suggests a structural hub inside an SCC, not just an isolated bad import
-- `package-boundary-chatter` + `feature-envy` suggests a subsystem boundary leak
-- `startup-risk-hub` + top-level effects suggests import-time orchestration hidden behind a commonly imported module
-
-Treat these as leads, then validate them with Octocode local tools before presenting them as conclusions.
-
-**Enable local tools** by setting `ENABLE_LOCAL=true` in your Octocode MCP configuration:
+For full hybrid validation — the agent scans your code with the CLI, then confirms findings with LSP-powered semantic tools — configure Octocode MCP with local tools enabled:
 
 ```json
 {
   "mcpServers": {
     "octocode": {
       "command": "npx",
-      "args": ["-y", "octocode-mcp"],
-      "env": { "ENABLE_LOCAL": "true" }
+      "type": "stdio",
+      "args": [
+        "octocode-mcp@latest"
+      ],
+      "env": {
+        "ENABLE_LOCAL": "true"
+      }
     }
   }
 }
 ```
 
-> **No Octocode MCP?** The scan still produces all categories with full detail. You just skip the LSP validation step. Use `ast-search.js` for structural validation instead. Findings include `lspHints[]` that make Octocode MCP validation a single-step operation when available.
->
-> **Per-category hybrid playbooks:** → [references/playbooks.md](./references/playbooks.md)
->
-> **Upgrade roadmap:** → [references/improvement-roadmap.md](./references/improvement-roadmap.md)
+`ENABLE_LOCAL: true` unlocks local search, file content, directory structure, and LSP tools (go-to-definition, find-references, call-hierarchy) that the agent uses to validate findings against live code before presenting them.
+
+> **Without Octocode MCP**, the skill still works — the agent uses CLI-only mode with structural AST search for validation. Octocode MCP adds semantic precision on top.
+
+---
+
+## What It Detects
+
+**76+ detection categories** across 7 pillars. The agent picks the right ones based on your question.
+
+### Architecture (22 categories)
+
+| Category | What it catches |
+|----------|----------------|
+| `dependency-cycle` | Circular import chains |
+| `dependency-critical-path` | High-weight transitive dependency chains |
+| `dependency-test-only` | Production modules imported only from tests |
+| `architecture-sdp-violation` | Stable module depends on unstable module |
+| `high-coupling` | Excessive afferent + efferent connections |
+| `god-module-coupling` | High fan-in (bottleneck) or fan-out (sprawl) |
+| `orphan-module` | Zero inbound and zero outbound dependencies |
+| `unreachable-module` | Not reachable from any entrypoint |
+| `layer-violation` | Import backwards in configured layer order |
+| `low-cohesion` | Exports serve unrelated purposes (LCOM > 1) |
+| `distance-from-main-sequence` | Module far from ideal abstractness/instability balance |
+| `feature-envy` | Module imports 60%+ symbols from single external module |
+| `untested-critical-code` | Hot/critical-path file with zero test imports |
+| `cycle-cluster` | Strongly connected component large enough to be tangled |
+| `broker-module` | Module concentrating graph pressure |
+| `bridge-module` | Structural articulation point between subsystems |
+| `package-boundary-chatter` | Excessive cross-package dependency edges |
+| `startup-risk-hub` | Import-time side effects on high fan-in hub |
+| `import-side-effect-risk` | Risky work at import time (sync I/O, exec, eval, timers) |
+| `namespace-import` | `import * as X` pulling entire module surface |
+| `commonjs-in-esm` | CommonJS `require()` in ESM codebase |
+| `export-star-leak` / `mixed-module-format` | Leaking internals via `export *` or mixed CJS/ESM |
+
+With `--semantic`: `over-abstraction`, `concrete-dependency` (DIP violation), `circular-type-dependency`, `shotgun-surgery`.
+
+### Code Quality (21 categories)
+
+| Category | What it catches |
+|----------|----------------|
+| `duplicate-function-body` | Identical function implementations across files |
+| `duplicate-flow-structure` | Repeated control-flow patterns |
+| `similar-function-body` | Near-clone functions (renamed vars, different literals) |
+| `function-optimization` | High complexity, deep nesting, oversized functions |
+| `cognitive-complexity` | Nesting-aware complexity score |
+| `god-module` / `god-function` | Files or functions with excessive size |
+| `halstead-effort` | Halstead effort or estimated bugs above threshold |
+| `low-maintainability` | Maintainability Index below threshold |
+| `excessive-parameters` | Function exceeds parameter threshold |
+| `unsafe-any` | Excessive `any` types |
+| `empty-catch` | Empty catch blocks |
+| `switch-no-default` | Switch without default case |
+| `type-assertion-escape` | `as any`, `as unknown as T`, non-null `!` assertions |
+| `missing-error-boundary` | Async function with awaits but no error handling |
+| `promise-misuse` | `async` function that never uses `await` |
+
+With `--semantic`: `unused-parameter`, `deep-override-chain`, `interface-compliance`, `narrowable-type`.
+
+### Performance (5 categories)
+
+| Category | What it catches |
+|----------|----------------|
+| `await-in-loop` | Sequential async in loops (N+1 latency) |
+| `sync-io` | Synchronous I/O calls (`readFileSync`, `execSync`) |
+| `uncleared-timer` | `setInterval` without `clearInterval` |
+| `listener-leak-risk` | Event listeners without removal |
+| `unbounded-collection` | Collection growth in nested loops without size guard |
+
+### Security (9 categories)
+
+| Category | What it catches |
+|----------|----------------|
+| `hardcoded-secret` | Strings matching secret patterns or high-entropy literals |
+| `eval-usage` | `eval()`, `new Function()`, string-based timers |
+| `unsafe-html` | `innerHTML`, `dangerouslySetInnerHTML`, `document.write` |
+| `sql-injection-risk` | Template literals with SQL keywords and interpolation |
+| `unsafe-regex` | Nested quantifiers (ReDoS risk) |
+| `prototype-pollution-risk` | Unsafe `Object.assign`, deep merge, computed bracket writes |
+| `unvalidated-input-sink` | External input reaching dangerous sinks without validation |
+| `path-traversal-risk` | External input flowing into `fs.*` / `path.*` unvalidated |
+| `command-injection-risk` | External input flowing into `exec` / `spawn` |
+
+Especially strong for **agentic/MCP repos**: catches prompt-to-path, prompt-to-command, tool boundary leaks, and import-time orchestration risks.
+
+### Dead Code & Hygiene (11 categories)
+
+| Category | What it catches |
+|----------|----------------|
+| `dead-export` | Exported symbol with no consumers |
+| `dead-re-export` | Barrel re-export with no consumers |
+| `re-export-duplication` / `re-export-shadowed` | Duplicate or shadowed re-exports |
+| `unused-npm-dependency` | package.json dep not imported anywhere |
+| `package-boundary-violation` | Cross-package import bypassing public API |
+| `barrel-explosion` | Barrel with excessive re-exports or chain depth |
+
+With `--semantic`: `unused-import`, `orphan-implementation`, `move-to-caller`, `semantic-dead-export`.
+
+### Test Quality (8 categories)
+
+| Category | What it catches |
+|----------|----------------|
+| `low-assertion-density` | Average < 1 assertion per test block |
+| `test-no-assertion` | Test block with zero assertions |
+| `excessive-mocking` | Too many mocks per test file |
+| `shared-mutable-state` | `let`/`var` at describe scope |
+| `missing-test-cleanup` | `beforeAll`/`beforeEach` without corresponding teardown |
+| `focused-test` | Committed `.only`, `.skip`, or `.todo` |
+| `fake-timer-no-restore` | Fake timers without restore |
+| `missing-mock-restoration` | Spies/stubs without restore cleanup |
+
+---
+
+## What You Get
+
+The agent produces structured output that helps you decide **what to fix first**:
+
+- **Health scores** per pillar (architecture, code quality, etc.) with letter grades
+- **Analysis signals** — the strongest graph signal, strongest AST signal, and combined interpretation
+- **Prioritized findings** with severity, confidence, `file:line` evidence, impact explanation, and suggested fixes
+- **Dependency graph** visualization (Mermaid)
+- **Validation hooks** — each finding includes `lspHints` so the agent can confirm it with Octocode MCP before presenting it as fact
+
+### Smart Output
+
+- **Category-diverse truncation** — capped finding lists represent all detected issue types, not just the noisiest category
+- **Chain deduplication** — overlapping dependency-chain findings are merged
+- **Computed remediation** — architecture chains point to the most useful break location
+- **Architecture heuristics** — signal combinations like `dependency-cycle` + `critical-path` + high `fanIn` are flagged as chokepoint modules
+
+---
+
+## How It Works
+
+```mermaid
+flowchart LR
+  A["Dependency Graph\ncycles, fan-in, fan-out, chokepoints"] --> D["Hybrid Findings"]
+  B["AST + Semantic\ncohesion, side effects, duplicated orchestration"] --> D
+  C["Octocode Local + LSP\nsearch, go-to-def, refs, call hierarchy"] --> E["Validation"]
+  D --> F["summary.md\nHealth scores\nAnalysis signals\nTop recommendations"]
+  D --> G["findings.json\nconfidence, evidence,\nrecommendedValidation"]
+  F --> E
+  G --> E
+```
+
+1. **Scan** — the agent runs the CLI scanner on your codebase (graph analysis + AST + optional semantic)
+2. **Triage** — reads health scores and analysis signals, identifies what matters most
+3. **Validate** — uses Octocode MCP local tools to confirm findings against live code
+4. **Present** — shows you validated findings with evidence, impact, and suggested fixes
+5. **Plan** — asks if you want a prioritized improvement plan, then helps you fix
 
 ---
 
@@ -451,119 +210,24 @@ Treat these as leads, then validate them with Octocode local tools before presen
 | Cold scan (400-file monorepo) | ~3s |
 | Cold scan + `--semantic` | ~5-8s |
 | Cached scan (no changes) | <1s |
-| Cache location | `.octocode/scan/.cache/` |
-| Cache key | file path + mtime + size |
-| Cache invalidation | Schema version mismatch auto-invalidates stale caches |
-| Garbage collection | Entries unused for 7 days are pruned on save |
 
-Incremental caching stores per-file AST analysis results. On subsequent runs, unchanged files are served from cache. Dependency graph analysis always runs fresh since it depends on cross-file relationships. The cache includes a schema version — when the analysis schema changes, the entire cache is automatically invalidated so stale results are never served.
-
-Post-scan processing (category diversification, chain merging, health scoring) is O(n) in finding count — negligible overhead even on large scans.
-
-Use `--no-cache` to force a full re-parse. Use `--clear-cache` to delete the cache and exit.
+Incremental caching stores per-file AST results. Unchanged files are served from cache. Schema version changes auto-invalidate stale caches.
 
 ---
 
-## CLI Reference
+## When to Use / When Not
 
-Run `node scripts/index.js --help` for the full flag list. Key flags:
+**Use when:**
+- A repo feels fragile or slow to change
+- You need architecture, maintainability, or security review
+- You want to find dead code, unused exports, or dependency hygiene issues
+- You want prioritized findings, not a flat list of warnings
 
-```
-Core:
-  --root <path>                 Repo root (default: cwd)
-  --out <path>                  Output directory (timestamped by default)
-  --json                        Print JSON to stdout
-  --include-tests               Include test files in scan
-  --parser <auto|typescript|tree-sitter>
-  --graph                       Emit Mermaid dependency graph
-
-Scope & Filtering:
-  --scope=X,Y,Z                 Focus on specific paths/files/functions
-  --features=X,Y,Z              Run only selected pillars/categories
-  --exclude=X,Y,Z               Exclude pillars/categories (mutually exclusive with --features)
-  --findings-limit N             Cap findings (category-diverse by default)
-
-Semantic:
-  --semantic                    Enable TypeChecker + LanguageService analysis
-
-Thresholds (key):
-  --critical-complexity-threshold N   Complexity for HIGH findings (default: 30)
-  --cognitive-complexity-threshold N  Cognitive complexity limit (default: 15)
-  --coupling-threshold N              Ca+Ce for high-coupling (default: 15)
-  --maintainability-index-threshold N MI below this triggers finding (default: 20)
-  --parameter-threshold N             Max function params (default: 5)
-  --any-threshold N                   Max `any` per file (default: 5)
-  --secret-entropy-threshold N        Shannon entropy threshold (default: 4.5)
-  --secret-min-length N               Min string length for entropy check (default: 20)
-  --mock-threshold N                  Max mocks per test file (default: 10)
-  --similarity-threshold N            Near-clone similarity threshold (default: 0.85)
-  --max-recs-per-category N           Findings per category in top recs (default: 2)
-
-Truncation:
-  --no-diversify                Pure severity ordering when truncating (default: category-diverse)
-  --all                         Enable all features: --include-tests --semantic
-
-Cache:
-  --no-cache                    Force full re-parse
-  --clear-cache                 Delete cache and exit
-```
-
-For all threshold flags, see `--help`.
-
----
-
-## Testing
-
-```bash
-yarn test          # Run all tests
-yarn test:watch    # Watch mode
-```
-
----
-
-## Project Structure
-
-```
-skills/octocode-local-code-quality/
-├── src/
-│   ├── index.ts              Orchestrator: scan pipeline + issue catalog
-│   ├── architecture.ts       Architecture, quality, perf, similarity detectors
-│   ├── security-detectors.ts Security detection categories
-│   ├── test-quality-detectors.ts Test quality detection categories
-│   ├── semantic.ts           SemanticContext, LanguageService, semantic profiling
-│   ├── semantic-detectors.ts Semantic category detectors
-│   ├── ts-analyzer.ts        TypeScript AST analysis + metric collection
-│   ├── tree-sitter-analyzer.ts  Optional tree-sitter enrichment
-│   ├── dependencies.ts       Import/export/re-export tracking
-│   ├── discovery.ts          File discovery + package listing
-│   ├── ast-search.ts         Structural search CLI (ast-grep powered)
-│   ├── cli.ts                CLI argument parsing
-│   ├── types.ts              Interfaces, constants, PILLAR_CATEGORIES, defaults
-│   ├── utils.ts              Hash, fingerprint, path, helpers
-│   ├── cache.ts              Incremental analysis cache (mtime+size keyed, schema-versioned, TTL GC)
-│   └── *.test.ts             Test files
-├── scripts/                  Compiled JS output (pre-built, ready to run)
-├── references/               Detailed reference docs for agent navigation
-├── SKILL.md                  Agent workflow protocol
-├── README.md                 This file
-├── package.json
-├── tsconfig.json
-└── vitest.config.ts
-```
-
----
-
-## References
-
-| Document | Description |
-|----------|-------------|
-| [SKILL.md](./SKILL.md) | Agent workflow: how to run, present, validate, and investigate findings |
-| [Finding Categories](./references/finding-categories.md) | All categories with severity and detection details |
-| [CLI Reference](./references/cli-reference.md) | All flags, presets, scope syntax |
-| [AST Search Reference](./references/ast-search.md) | Structural code search: patterns, kinds, presets, rules |
-| [Playbooks](./references/playbooks.md) | Per-category validate & fix instructions |
-| [Improvement Roadmap](./references/improvement-roadmap.md) | Research-backed upgrade plan for security, test quality, semantic analysis, reporting, and tests |
-| [Local Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) | Octocode MCP local + LSP tools for semantic validation |
+**Don't use for:**
+- Syntax errors → `tsc`
+- Style enforcement → ESLint / Prettier
+- Runtime debugging → tests / debugger
+- Deep taint analysis / SCA → Semgrep or dedicated security tools
 
 ---
 

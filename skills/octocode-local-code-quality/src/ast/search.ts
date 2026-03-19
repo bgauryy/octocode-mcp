@@ -3,9 +3,9 @@
  * AST-aware structural code search powered by @ast-grep/napi.
  *
  * Usage:
- *   node scripts/ast-search.js --pattern 'console.log($$$ARGS)' --root ./src
- *   node scripts/ast-search.js --preset empty-catch --root ./packages
- *   node scripts/ast-search.js --kind function_declaration --root ./src --json
+ *   node scripts/ast/search.js --pattern 'console.log($$$ARGS)' --root ./src
+ *   node scripts/ast/search.js --preset empty-catch --root ./packages
+ *   node scripts/ast/search.js --kind function_declaration --root ./src --json
  */
 
 import fs from 'node:fs';
@@ -508,7 +508,7 @@ function printSearchHelp(): void {
 ast-search — Structural code search powered by ast-grep
 
 Usage:
-  node scripts/ast-search.js [options]
+  node scripts/ast/search.js [options]
 
 Search modes (pick one):
   --pattern, -p <code>     Match code structurally (e.g. 'console.log($$$ARGS)')
@@ -530,12 +530,12 @@ Pattern wildcards:
   $$$NAME                  Match zero or more nodes (variadic)
 
 Examples:
-  node scripts/ast-search.js -p 'console.log($$$ARGS)' --root ./src
-  node scripts/ast-search.js --preset empty-catch --root ./packages
-  node scripts/ast-search.js -k function_declaration --json --limit 20
-  node scripts/ast-search.js --preset todo-fixme --include-tests
-  node scripts/ast-search.js -p 'if ($COND) { return $VAL }' --root ./src
-  node scripts/ast-search.js --rule '{"rule":{"kind":"catch_clause"}}' --root ./src
+  node scripts/ast/search.js -p 'console.log($$$ARGS)' --root ./src
+  node scripts/ast/search.js --preset empty-catch --root ./packages
+  node scripts/ast/search.js -k function_declaration --json --limit 20
+  node scripts/ast/search.js --preset todo-fixme --include-tests
+  node scripts/ast/search.js -p 'if ($COND) { return $VAL }' --root ./src
+  node scripts/ast/search.js --rule '{"rule":{"kind":"catch_clause"}}' --root ./src
 
 Presets:
 ${Object.entries(PRESETS)

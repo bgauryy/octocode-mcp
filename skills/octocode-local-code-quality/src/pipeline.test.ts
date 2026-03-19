@@ -4,11 +4,11 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import * as cache from './cache.js';
-import * as cli from './cli.js';
-import * as discovery from './discovery.js';
-import { main } from './pipeline.js';
-import { DEFAULT_OPTS } from './types.js';
+import * as discovery from './analysis/discovery.js';
+import * as cache from './pipeline/cache.js';
+import * as cli from './pipeline/cli.js';
+import { main } from './pipeline/main.js';
+import { DEFAULT_OPTS } from './types/index.js';
 
 function makeOptions(overrides: Partial<typeof DEFAULT_OPTS> = {}) {
   return {

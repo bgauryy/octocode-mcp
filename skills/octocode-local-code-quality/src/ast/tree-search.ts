@@ -54,7 +54,7 @@ function printAstTreeSearchHelp(): void {
 ast-tree-search — Search generated ast-trees.txt output
 
 Usage:
-  node scripts/ast-tree-search.js [options]
+  node scripts/ast/tree-search.js [options]
 
 Options:
   --input, -i <path>       Path to ast-trees.txt, a scan directory, or .octocode/scan (default: .octocode/scan)
@@ -69,9 +69,9 @@ Options:
   --help, -h               Show this message
 
 Examples:
-  node scripts/ast-tree-search.js -i .octocode/scan -k function_declaration --limit 25
-  node scripts/ast-tree-search.js -i .octocode/scan/2026-03-18T23-43-21-490Z -k ClassDeclaration --file 'src/index'
-  node scripts/ast-tree-search.js -i .octocode/scan -p 'IfStatement|SwitchStatement' --section 'src/'
+  node scripts/ast/tree-search.js -i .octocode/scan -k function_declaration --limit 25
+  node scripts/ast/tree-search.js -i .octocode/scan/2026-03-18T23-43-21-490Z -k ClassDeclaration --file 'src/index'
+  node scripts/ast/tree-search.js -i .octocode/scan -p 'IfStatement|SwitchStatement' --section 'src/'
 `);
 }
 
