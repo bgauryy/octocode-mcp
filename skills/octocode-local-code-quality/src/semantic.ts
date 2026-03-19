@@ -1,8 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
+
 import * as ts from 'typescript';
-import type { FileEntry, ExportSymbol, DependencyState } from './types.js';
+
 import { isTestFile } from './utils.js';
+
+import type { DependencyState, FileEntry } from './types.js';
 
 export interface SemanticContext {
   service: ts.LanguageService;

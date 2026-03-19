@@ -1,25 +1,30 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export interface CacheEntry {
+export const ANALYSIS_SCHEMA_VERSION = '1.1.0'; // Keep in sync with REPORT_SCHEMA_VERSION in index.ts
+
+interface CacheEntry {
   mtimeMs: number;
   sizeBytes: number;
   result: unknown;
+  lastAccessMs: number;
 }
 
-export interface AnalysisCache {
+interface AnalysisCache {
   version: number;
+  schemaVersion: string;
   root: string;
   entries: Record<string, CacheEntry>;
 }
 
 const CACHE_VERSION = 1;
+const DEFAULT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export function loadCache(root: string): AnalysisCache | null {
   const cachePath = path.join(root, '.octocode', 'scan', '.cache', 'analysis-cache.json');
   try {
     const data = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-    if (data.version !== CACHE_VERSION || data.root !== root) return null;
+    if (data.version !== CACHE_VERSION || data.root !== root || data.schemaVersion !== ANALYSIS_SCHEMA_VERSION) return null;
     return data;
   } catch {
     return null;
@@ -57,7 +62,11 @@ export function isCacheHit(
 }
 
 export function getCachedResult(cache: AnalysisCache, relPath: string): unknown {
-  return cache.entries[relPath]?.result;
+  const entry = cache.entries[relPath];
+  if (entry) {
+    entry.lastAccessMs = Date.now();
+  }
+  return entry?.result;
 }
 
 export function setCacheEntry(
@@ -66,9 +75,23 @@ export function setCacheEntry(
   stat: { mtimeMs: number; size: number },
   result: unknown,
 ): void {
-  cache.entries[relPath] = { mtimeMs: stat.mtimeMs, sizeBytes: stat.size, result };
+  cache.entries[relPath] = { mtimeMs: stat.mtimeMs, sizeBytes: stat.size, result, lastAccessMs: Date.now() };
 }
 
 export function createEmptyCache(root: string): AnalysisCache {
-  return { version: CACHE_VERSION, root, entries: {} };
+  return { version: CACHE_VERSION, schemaVersion: ANALYSIS_SCHEMA_VERSION, root, entries: {} };
+}
+
+export function garbageCollect(cache: AnalysisCache, maxAgeMs: number = DEFAULT_MAX_AGE_MS): number {
+  const now = Date.now();
+  const keysToRemove: string[] = [];
+  for (const [key, entry] of Object.entries(cache.entries)) {
+    if (now - entry.lastAccessMs > maxAgeMs) {
+      keysToRemove.push(key);
+    }
+  }
+  for (const key of keysToRemove) {
+    delete cache.entries[key];
+  }
+  return keysToRemove.length;
 }

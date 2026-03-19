@@ -1,51 +1,55 @@
-import { describe, expect, it } from 'vitest';
 import * as ts from 'typescript';
-import type { DependencyState, FileEntry, FunctionEntry, DependencyProfile, DuplicateGroup, RedundantFlowGroup, FlowMapEntry, ControlMapEntry, DependencyRecord } from './types.js';
-import type { FileCriticality, DependencySummary, CodeLocation, MagicNumberEntry, TestOnlyModule } from './types.js';
+import { describe, expect, it } from 'vitest';
+
 import {
-  computeInstability,
-  detectSdpViolations,
-  detectHighCoupling,
-  detectGodModuleCoupling,
-  detectOrphanModules,
-  detectUnreachableModules,
-  detectUnusedNpmDeps,
-  detectBoundaryViolations,
+  buildConsumedFromModule,
+  computeAbstractness,
   computeBarrelDepth,
-  detectBarrelExplosion,
-  detectGodModules,
-  detectGodFunctions,
   computeCognitiveComplexity,
+  computeHotFiles,
+  computeInstability,
+  detectBarrelExplosion,
+  detectBoundaryViolations,
   detectCognitiveComplexity,
+  detectCommonJsInEsm,
+  detectCriticalPaths,
+  detectDeadExports,
+  detectDeadFiles,
+  detectDeadReExports,
+  detectDependencyCycles,
+  detectDistanceFromMainSequence,
+  detectDuplicateFlowStructures,
+  detectDuplicateFunctionBodies,
+  detectEmptyCatchBlocks,
+  detectExcessiveParameters,
+  detectExportStarLeak,
+  detectFeatureEnvy,
+  detectFunctionOptimization,
+  detectGodFunctions,
+  detectGodModuleCoupling,
+  detectGodModules,
+  detectHighCoupling,
+  detectHighHalsteadEffort,
   detectLayerViolations,
   detectLowCohesion,
-  detectInferredLayerViolations,
-  getInferredLayer,
-  computeHotFiles,
-  buildConsumedFromModule,
-  detectDuplicateFunctionBodies,
-  detectDuplicateFlowStructures,
-  detectFunctionOptimization,
-  detectTestOnlyModules,
-  detectDependencyCycles,
-  detectCriticalPaths,
-  mergeOverlappingChains,
-  detectDeadFiles,
-  detectDeadExports,
-  detectDeadReExports,
-  detectExcessiveParameters,
-  detectEmptyCatchBlocks,
-  detectSwitchNoDefault,
-  detectHighCyclomaticDensity,
-  detectUnsafeAny,
-  detectMagicNumbers,
-  detectHighHalsteadEffort,
   detectLowMaintainability,
-  detectDistanceFromMainSequence,
-  computeAbstractness,
-  detectFeatureEnvy,
+  detectMegaFolders,
+  detectNamespaceImport,
+  detectOrphanModules,
+  detectSdpViolations,
+  detectSwitchNoDefault,
+  detectTestOnlyModules,
+  detectUnreachableModules,
+  detectUnsafeAny,
   detectUntestedCriticalCode,
+  detectUnusedNpmDeps,
+  isLikelyEntrypoint,
+  mergeOverlappingChains,
 } from './architecture.js';
+
+import type { DependencyProfile, DependencyState, DuplicateGroup, FileEntry, FunctionEntry, RedundantFlowGroup } from './types.js';
+import type { CodeLocation, DependencySummary, FileCriticality } from './types.js';
+
 
 function emptyState(): DependencyState {
   return {
@@ -127,6 +131,19 @@ function minimalDepSummary(overrides: Partial<DependencySummary> = {}): Dependen
     cycles: [], criticalPaths: [], ...overrides,
   };
 }
+
+// ─── isLikelyEntrypoint ────────────────────────────────────────────────────
+
+describe('isLikelyEntrypoint', () => {
+  it('matches config files', () => {
+    expect(isLikelyEntrypoint('vite.config.ts')).toBe(true);
+    expect(isLikelyEntrypoint('webpack.config.js')).toBe(true);
+  });
+
+  it('matches public entrypoint pattern', () => {
+    expect(isLikelyEntrypoint('src/public.ts')).toBe(true);
+  });
+});
 
 // ─── 2A: Instability ────────────────────────────────────────────────────────
 
@@ -591,6 +608,31 @@ describe('detectGodModules', () => {
   });
 });
 
+describe('detectMegaFolders', () => {
+  it('returns empty when no folder crosses the concentration threshold', () => {
+    const files = [
+      makeFileEntry({ file: 'src/a.ts' }),
+      makeFileEntry({ file: 'src/b.ts' }),
+      makeFileEntry({ file: 'src/feature/c.ts' }),
+      makeFileEntry({ file: 'src/feature/d.ts' }),
+    ];
+    expect(detectMegaFolders(files, 3, 0.6)).toEqual([]);
+  });
+
+  it('flags large concentrated folder and includes decomposition evidence', () => {
+    const files = [
+      ...Array.from({ length: 6 }, (_, i) => makeFileEntry({ file: `src/core/file-${i}.ts` })),
+      makeFileEntry({ file: 'src/feature/a.ts' }),
+      makeFileEntry({ file: 'src/feature/b.ts' }),
+    ];
+    const findings = detectMegaFolders(files, 5, 0.5);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].category).toBe('mega-folder');
+    expect(findings[0].title).toContain('src/core');
+    expect((findings[0].evidence as Record<string, unknown>).fileCount).toBe(6);
+  });
+});
+
 describe('detectGodFunctions', () => {
   it('returns empty for small functions', () => {
     const files: FileEntry[] = [makeFileEntry({ functions: [makeFn({ statementCount: 50 })] })];
@@ -821,72 +863,6 @@ describe('detectLowCohesion', () => {
   });
 });
 
-// ─── Inferred Layer Violations ─────────────────────────────────────────────
-
-describe('getInferredLayer', () => {
-  it('returns foundation layer for types/ directory', () => {
-    expect(getInferredLayer('src/types/models.ts')).toBe(0);
-  });
-
-  it('returns utility layer for utils/ directory', () => {
-    expect(getInferredLayer('src/utils/helpers.ts')).toBe(1);
-  });
-
-  it('returns service layer for services/ directory', () => {
-    expect(getInferredLayer('src/services/api.ts')).toBe(2);
-  });
-
-  it('returns feature layer for features/ directory', () => {
-    expect(getInferredLayer('src/features/auth/login.ts')).toBe(3);
-  });
-
-  it('returns feature layer for components/ directory', () => {
-    expect(getInferredLayer('src/components/Button.tsx')).toBe(3);
-  });
-
-  it('returns -1 for unrecognized directory', () => {
-    expect(getInferredLayer('src/random/foo.ts')).toBe(-1);
-  });
-});
-
-describe('detectInferredLayerViolations', () => {
-  it('returns empty when no inferred layers match', () => {
-    const state = emptyState();
-    addEdge(state, 'src/random/a.ts', 'src/other/b.ts');
-    expect(detectInferredLayerViolations(state)).toEqual([]);
-  });
-
-  it('allows higher layers importing from lower layers', () => {
-    const state = emptyState();
-    addEdge(state, 'src/features/auth.ts', 'src/services/api.ts');
-    addEdge(state, 'src/services/api.ts', 'src/utils/fetch.ts');
-    addEdge(state, 'src/utils/fetch.ts', 'src/types/models.ts');
-    expect(detectInferredLayerViolations(state)).toEqual([]);
-  });
-
-  it('detects foundation layer importing from feature layer', () => {
-    const state = emptyState();
-    addEdge(state, 'src/types/models.ts', 'src/features/auth.ts');
-    const findings = detectInferredLayerViolations(state);
-    expect(findings.length).toBe(1);
-    expect(findings[0].category).toBe('inferred-layer-violation');
-  });
-
-  it('detects utility layer importing from service layer', () => {
-    const state = emptyState();
-    addEdge(state, 'src/utils/helpers.ts', 'src/services/api.ts');
-    const findings = detectInferredLayerViolations(state);
-    expect(findings.length).toBe(1);
-    expect(findings[0].severity).toBe('high');
-  });
-
-  it('skips test files', () => {
-    const state = emptyState();
-    addEdge(state, 'src/types/models.test.ts', 'src/features/auth.ts');
-    expect(detectInferredLayerViolations(state)).toEqual([]);
-  });
-});
-
 // ─── Hot Files (Change Risk) ───────────────────────────────────────────────
 
 describe('computeHotFiles', () => {
@@ -1017,6 +993,15 @@ describe('buildConsumedFromModule', () => {
     const result = buildConsumedFromModule(state);
     expect(result.production.get('src/lib.ts')?.has('X')).toBe(true);
   });
+
+  it('skips re-exports with unresolved target', () => {
+    const state = emptyState();
+    state.reExportsByFile.set('src/barrel.ts', [
+      { sourceModule: './unresolved', exportedAs: 'Y', importedName: 'Y', isStar: false, isTypeOnly: false },
+    ]);
+    const result = buildConsumedFromModule(state);
+    expect(result.production.size).toBe(0);
+  });
 });
 
 // ─── detectDuplicateFunctionBodies ──────────────────────────────────────────
@@ -1066,6 +1051,12 @@ describe('detectDuplicateFunctionBodies', () => {
   it('includes all file locations in files field', () => {
     const findings = detectDuplicateFunctionBodies([makeDupGroup()]);
     expect(findings[0].files.length).toBe(2);
+  });
+
+  it('uses plural "files" in reason when filesCount > 1', () => {
+    const findings = detectDuplicateFunctionBodies([makeDupGroup({ filesCount: 3, occurrences: 4 })]);
+    expect(findings[0].reason).toContain('3 file');
+    expect(findings[0].reason).toContain('s');
   });
 });
 
@@ -1287,12 +1278,8 @@ describe('mergeOverlappingChains', () => {
     // Chain 1: a,b,c,d,e  Chain 2: f,b,c,d,e  (intersection=4, union=6, overlap=0.67 — below 0.8)
     // Use chains with higher overlap:
     // Chain 1: a,b,c,d,e  Chain 2: x,a,b,c,d,e (intersection=5, union=6, overlap=0.83)
-    const f1 = makeChainFinding('entry1.ts', ['entry1.ts', 'a.ts', 'b.ts', 'c.ts', 'd.ts']);
-    const f2 = makeChainFinding('entry2.ts', ['entry2.ts', 'a.ts', 'b.ts', 'c.ts', 'd.ts']);
     // intersection: {a,b,c,d} = 4, union: {entry1,entry2,a,b,c,d} = 6, overlap = 4/6 = 0.67 — NOT enough
     // Let's add more shared files
-    const f3 = makeChainFinding('entry1.ts', ['entry1.ts', 'a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts']);
-    const f4 = makeChainFinding('entry2.ts', ['entry2.ts', 'a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts']);
     // intersection: {a,b,c,d,e} = 5, union: {entry1,entry2,a,b,c,d,e} = 7, overlap = 5/7 = 0.71 — still below
     // Need 80%: 10 shared, 2 unique = 10/12 = 0.83
     const shared = Array.from({ length: 10 }, (_, i) => `shared-${i}.ts`);
@@ -1646,40 +1633,6 @@ describe('detectSwitchNoDefault', () => {
   });
 });
 
-// ─── detectHighCyclomaticDensity ────────────────────────────────────────────
-
-describe('detectHighCyclomaticDensity', () => {
-  it('returns empty for low-density functions', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ complexity: 2, statementCount: 20 })] })];
-    expect(detectHighCyclomaticDensity(files, 0.5)).toEqual([]);
-  });
-
-  it('flags functions above density threshold', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ complexity: 12, statementCount: 15, name: 'branchyFn' })] })];
-    const findings = detectHighCyclomaticDensity(files, 0.5);
-    expect(findings.length).toBe(1);
-    expect(findings[0].category).toBe('high-cyclomatic-density');
-    expect(findings[0].title).toContain('branchyFn');
-  });
-
-  it('skips functions with fewer than 10 statements', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ complexity: 8, statementCount: 8 })] })];
-    expect(detectHighCyclomaticDensity(files, 0.5)).toEqual([]);
-  });
-
-  it('assigns high severity for density > 1.0', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ complexity: 25, statementCount: 20 })] })];
-    const findings = detectHighCyclomaticDensity(files, 0.5);
-    expect(findings[0].severity).toBe('high');
-  });
-
-  it('assigns medium severity for moderate density', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ complexity: 8, statementCount: 12 })] })];
-    const findings = detectHighCyclomaticDensity(files, 0.5);
-    expect(findings[0].severity).toBe('medium');
-  });
-});
-
 // ─── detectUnsafeAny ────────────────────────────────────────────────────────
 
 describe('detectUnsafeAny', () => {
@@ -1710,44 +1663,6 @@ describe('detectUnsafeAny', () => {
   it('skips files with no anyCount', () => {
     const files = [makeFileEntry()];
     expect(detectUnsafeAny(files, 5)).toEqual([]);
-  });
-});
-
-// ─── detectMagicNumbers ─────────────────────────────────────────────────────
-
-describe('detectMagicNumbers', () => {
-  it('returns empty for files below threshold', () => {
-    const magic: MagicNumberEntry[] = [{ file: 'src/file.ts', lineStart: 5, lineEnd: 5, value: 42 }];
-    const files = [makeFileEntry({ magicNumbers: magic })];
-    expect(detectMagicNumbers(files, 3)).toEqual([]);
-  });
-
-  it('flags files exceeding threshold', () => {
-    const magic: MagicNumberEntry[] = Array.from({ length: 5 }, (_, i) => ({
-      file: 'src/file.ts', lineStart: i + 1, lineEnd: i + 1, value: i * 10,
-    }));
-    const files = [makeFileEntry({ magicNumbers: magic })];
-    const findings = detectMagicNumbers(files, 3);
-    expect(findings.length).toBe(1);
-    expect(findings[0].category).toBe('magic-number');
-  });
-
-  it('includes sample values in reason', () => {
-    const magic: MagicNumberEntry[] = Array.from({ length: 5 }, (_, i) => ({
-      file: 'src/file.ts', lineStart: i + 1, lineEnd: i + 1, value: (i + 1) * 100,
-    }));
-    const files = [makeFileEntry({ magicNumbers: magic })];
-    const findings = detectMagicNumbers(files, 3);
-    expect(findings[0].reason).toContain('100');
-  });
-
-  it('assigns high severity for >8 magic numbers', () => {
-    const magic: MagicNumberEntry[] = Array.from({ length: 10 }, (_, i) => ({
-      file: 'src/file.ts', lineStart: i + 1, lineEnd: i + 1, value: i,
-    }));
-    const files = [makeFileEntry({ magicNumbers: magic })];
-    const findings = detectMagicNumbers(files, 3);
-    expect(findings[0].severity).toBe('high');
   });
 });
 
@@ -2100,6 +2015,216 @@ describe('detectUntestedCriticalCode', () => {
     });
     const findings = detectUntestedCriticalCode(state, hotFiles, new Map());
     expect(findings.length).toBeLessThanOrEqual(25);
+  });
+});
+
+// ─── Tree-Shaking / Bundle Hygiene Detectors ────────────────────────────────
+
+describe('detectNamespaceImport', () => {
+  it('flags import * as X from internal module', () => {
+    const state = emptyState();
+    state.files.add('src/consumer.ts');
+    state.files.add('src/utils.ts');
+    state.importedSymbolsByFile.set('src/consumer.ts', [
+      { sourceModule: './utils', resolvedModule: 'src/utils.ts', importedName: '*', localName: 'utils', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+    ]);
+    const findings = detectNamespaceImport(state);
+    expect(findings.length).toBe(1);
+    expect(findings[0].category).toBe('namespace-import');
+    expect(findings[0].title).toContain('import * as utils');
+  });
+
+  it('flags import * as X from external module', () => {
+    const state = emptyState();
+    state.files.add('src/app.ts');
+    state.importedSymbolsByFile.set('src/app.ts', [
+      { sourceModule: 'lodash', importedName: '*', localName: 'lodash', isTypeOnly: false, lineStart: 3, lineEnd: 3 },
+    ]);
+    const findings = detectNamespaceImport(state);
+    expect(findings.length).toBe(1);
+    expect(findings[0].severity).toBe('medium');
+  });
+
+  it('skips type-only namespace imports', () => {
+    const state = emptyState();
+    state.files.add('src/consumer.ts');
+    state.importedSymbolsByFile.set('src/consumer.ts', [
+      { sourceModule: './types', resolvedModule: 'src/types.ts', importedName: '*', localName: 'T', isTypeOnly: true, lineStart: 1, lineEnd: 1 },
+    ]);
+    const findings = detectNamespaceImport(state);
+    expect(findings.length).toBe(0);
+  });
+
+  it('skips require() calls (handled by CJS detector)', () => {
+    const state = emptyState();
+    state.files.add('src/app.ts');
+    state.importedSymbolsByFile.set('src/app.ts', [
+      { sourceModule: 'fs', importedName: '*', localName: 'require', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+    ]);
+    const findings = detectNamespaceImport(state);
+    expect(findings.length).toBe(0);
+  });
+
+  it('skips test files', () => {
+    const state = emptyState();
+    state.files.add('src/app.test.ts');
+    state.importedSymbolsByFile.set('src/app.test.ts', [
+      { sourceModule: './utils', importedName: '*', localName: 'utils', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+    ]);
+    const findings = detectNamespaceImport(state);
+    expect(findings.length).toBe(0);
+  });
+
+  it('escalates severity for high-fan-in internal targets', () => {
+    const state = emptyState();
+    state.files.add('src/consumer.ts');
+    state.files.add('src/shared.ts');
+    state.importedSymbolsByFile.set('src/consumer.ts', [
+      { sourceModule: './shared', resolvedModule: 'src/shared.ts', importedName: '*', localName: 'shared', isTypeOnly: false, lineStart: 2, lineEnd: 2 },
+    ]);
+    const incomingSet = new Set(['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts']);
+    state.incoming.set('src/shared.ts', incomingSet);
+    const findings = detectNamespaceImport(state);
+    expect(findings.length).toBe(1);
+    expect(findings[0].severity).toBe('high');
+  });
+});
+
+describe('detectCommonJsInEsm', () => {
+  it('flags require() as commonjs-in-esm when file has no ESM imports', () => {
+    const state = emptyState();
+    state.files.add('src/legacy.ts');
+    state.importedSymbolsByFile.set('src/legacy.ts', [
+      { sourceModule: 'fs', importedName: '*', localName: 'require', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+    ]);
+    const findings = detectCommonJsInEsm(state);
+    expect(findings.length).toBe(1);
+    expect(findings[0].category).toBe('commonjs-in-esm');
+    expect(findings[0].severity).toBe('medium');
+  });
+
+  it('flags require() as mixed-module-format when file also has ESM imports', () => {
+    const state = emptyState();
+    state.files.add('src/hybrid.ts');
+    state.importedSymbolsByFile.set('src/hybrid.ts', [
+      { sourceModule: 'path', importedName: 'default', localName: 'path', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+      { sourceModule: 'fs', importedName: '*', localName: 'require', isTypeOnly: false, lineStart: 2, lineEnd: 2 },
+    ]);
+    const findings = detectCommonJsInEsm(state);
+    expect(findings.length).toBe(1);
+    expect(findings[0].category).toBe('mixed-module-format');
+    expect(findings[0].severity).toBe('high');
+  });
+
+  it('skips test files', () => {
+    const state = emptyState();
+    state.files.add('src/app.test.ts');
+    state.importedSymbolsByFile.set('src/app.test.ts', [
+      { sourceModule: 'fs', importedName: '*', localName: 'require', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+    ]);
+    const findings = detectCommonJsInEsm(state);
+    expect(findings.length).toBe(0);
+  });
+
+  it('skips files with only named ESM imports', () => {
+    const state = emptyState();
+    state.files.add('src/clean.ts');
+    state.importedSymbolsByFile.set('src/clean.ts', [
+      { sourceModule: 'path', importedName: 'join', localName: 'join', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+    ]);
+    const findings = detectCommonJsInEsm(state);
+    expect(findings.length).toBe(0);
+  });
+
+  it('flags multiple require() calls separately', () => {
+    const state = emptyState();
+    state.files.add('src/legacy.ts');
+    state.importedSymbolsByFile.set('src/legacy.ts', [
+      { sourceModule: 'fs', importedName: '*', localName: 'require', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+      { sourceModule: 'path', importedName: '*', localName: 'require', isTypeOnly: false, lineStart: 2, lineEnd: 2 },
+    ]);
+    const findings = detectCommonJsInEsm(state);
+    expect(findings.length).toBe(2);
+  });
+});
+
+describe('detectExportStarLeak', () => {
+  it('flags export * from internal module', () => {
+    const state = emptyState();
+    state.files.add('src/index.ts');
+    state.files.add('src/utils.ts');
+    state.reExportsByFile.set('src/index.ts', [
+      { sourceModule: './utils', resolvedModule: 'src/utils.ts', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+    ]);
+    state.declaredExportsByFile.set('src/utils.ts', [
+      { name: 'foo', kind: 'value' },
+      { name: 'bar', kind: 'value' },
+    ]);
+    const findings = detectExportStarLeak(state);
+    expect(findings.length).toBe(1);
+    expect(findings[0].category).toBe('export-star-leak');
+    expect(findings[0].reason).toContain('2 symbols');
+  });
+
+  it('escalates severity when target has many exports', () => {
+    const state = emptyState();
+    state.files.add('src/barrel.ts');
+    state.files.add('src/large.ts');
+    state.reExportsByFile.set('src/barrel.ts', [
+      { sourceModule: './large', resolvedModule: 'src/large.ts', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+    ]);
+    const exports = Array.from({ length: 25 }, (_, i) => ({ name: `fn${i}`, kind: 'value' as const }));
+    state.declaredExportsByFile.set('src/large.ts', exports);
+    const findings = detectExportStarLeak(state);
+    expect(findings.length).toBe(1);
+    expect(findings[0].severity).toBe('high');
+  });
+
+  it('escalates severity for chained export-star', () => {
+    const state = emptyState();
+    state.files.add('src/barrel.ts');
+    state.files.add('src/sub-barrel.ts');
+    state.reExportsByFile.set('src/barrel.ts', [
+      { sourceModule: './sub-barrel', resolvedModule: 'src/sub-barrel.ts', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+    ]);
+    state.reExportsByFile.set('src/sub-barrel.ts', [
+      { sourceModule: './deep', resolvedModule: 'src/deep.ts', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+    ]);
+    const findings = detectExportStarLeak(state);
+    const barrelFinding = findings.find((f) => f.file === 'src/barrel.ts');
+    expect(barrelFinding).toBeDefined();
+    expect(barrelFinding!.severity).toBe('high');
+    expect(barrelFinding!.reason).toContain('chains');
+  });
+
+  it('skips type-only export *', () => {
+    const state = emptyState();
+    state.files.add('src/index.ts');
+    state.reExportsByFile.set('src/index.ts', [
+      { sourceModule: './types', resolvedModule: 'src/types.ts', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: true, lineStart: 1, lineEnd: 1 },
+    ]);
+    const findings = detectExportStarLeak(state);
+    expect(findings.length).toBe(0);
+  });
+
+  it('skips test files', () => {
+    const state = emptyState();
+    state.files.add('src/test-utils.test.ts');
+    state.reExportsByFile.set('src/test-utils.test.ts', [
+      { sourceModule: './helpers', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+    ]);
+    const findings = detectExportStarLeak(state);
+    expect(findings.length).toBe(0);
+  });
+
+  it('flags named re-exports as non-leak', () => {
+    const state = emptyState();
+    state.files.add('src/index.ts');
+    state.reExportsByFile.set('src/index.ts', [
+      { sourceModule: './utils', resolvedModule: 'src/utils.ts', exportedAs: 'foo', importedName: 'foo', isStar: false, isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+    ]);
+    const findings = detectExportStarLeak(state);
+    expect(findings.length).toBe(0);
   });
 });
 

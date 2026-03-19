@@ -1,7 +1,9 @@
-import * as ts from 'typescript';
 import path from 'node:path';
-import type { Finding, DependencyState, FileEntry } from './types.js';
+
+import * as ts from 'typescript';
+
 import type { SemanticContext, SemanticProfile } from './semantic.js';
+import type { Finding } from './types.js';
 
 type FindingDraft = Omit<Finding, 'id'>;
 
@@ -317,49 +319,6 @@ export function detectUnusedParameters(
   return findings;
 }
 
-export function detectTypeHierarchyDepth(
-  profiles: SemanticProfile[],
-  threshold: number = 4,
-): FindingDraft[] {
-  const findings: FindingDraft[] = [];
-
-  for (const profile of profiles) {
-    for (const hierarchy of profile.typeHierarchies) {
-      if (hierarchy.depth > threshold) {
-        findings.push({
-          severity: hierarchy.depth > 6 ? 'high' : 'medium',
-          category: 'type-hierarchy-depth',
-          file: profile.file,
-          lineStart: hierarchy.lineStart,
-          lineEnd: hierarchy.lineStart,
-          title: `Deep type hierarchy: ${hierarchy.name} (depth ${hierarchy.depth})`,
-          reason: `Class "${hierarchy.name}" has an inheritance chain ${hierarchy.depth} levels deep (threshold: ${threshold}). Chain: ${hierarchy.chain.join(' → ')}.`,
-          files: [profile.file],
-          suggestedFix: {
-            strategy: 'Flatten the hierarchy using composition over inheritance.',
-            steps: [
-              'Identify which base class behaviors are actually used by this class.',
-              'Extract reusable behaviors into mixin functions or composed utilities.',
-              'Replace deep inheritance with direct composition (has-a instead of is-a).',
-            ],
-          },
-          impact: 'Deep inheritance hierarchies make code harder to understand, increase coupling, and make changes risky.',
-          tags: ['code-quality', 'inheritance', 'complexity', 'semantic'],
-          lspHints: [{
-            tool: 'lspGotoDefinition',
-            symbolName: hierarchy.name,
-            lineHint: hierarchy.lineStart,
-            file: profile.file,
-            expectedResult: `inheritance chain of depth ${hierarchy.depth}`,
-          }],
-        });
-      }
-    }
-  }
-
-  return findings;
-}
-
 export function detectDeepOverrideChain(
   profiles: SemanticProfile[],
   threshold: number = 3,
@@ -663,48 +622,6 @@ export function detectMoveToCaller(
   return findings;
 }
 
-// ─── Leaky Abstraction ──────────────────────────────────────────────────────
-
-export function detectLeakyAbstraction(
-  profiles: SemanticProfile[],
-): FindingDraft[] {
-  const findings: FindingDraft[] = [];
-
-  for (const profile of profiles) {
-    for (const leak of profile.leakyReturns) {
-      findings.push({
-        severity: 'medium',
-        category: 'leaky-abstraction',
-        file: profile.file,
-        lineStart: leak.lineStart,
-        lineEnd: leak.lineStart,
-        title: `Leaky abstraction: ${leak.functionName}() returns ${leak.returnType} from ${leak.sourceFile}`,
-        reason: `Exported function "${leak.functionName}" returns type "${leak.returnType}" defined in internal module "${leak.sourceFile}". Consumers are forced to know about internal implementation details.`,
-        files: [profile.file, leak.sourceFile],
-        suggestedFix: {
-          strategy: 'Re-export the type or define a public interface in the same module.',
-          steps: [
-            'Create a public type alias or interface in this module that wraps the internal type.',
-            'Or re-export the type explicitly so consumers can import it cleanly.',
-            'Alternatively, return a broader interface that hides implementation details.',
-          ],
-        },
-        impact: 'Leaky abstractions couple consumers to internal modules, breaking encapsulation.',
-        tags: ['architecture', 'encapsulation', 'api-surface', 'semantic'],
-        lspHints: [{
-          tool: 'lspGotoDefinition',
-          symbolName: leak.returnType,
-          lineHint: leak.lineStart,
-          file: profile.file,
-          expectedResult: 'definition resolves to internal module, confirming leak',
-        }],
-      });
-    }
-  }
-
-  return findings;
-}
-
 // ─── Narrowable Type ────────────────────────────────────────────────────────
 
 export function detectNarrowableType(
@@ -752,7 +669,7 @@ export function detectNarrowableType(
 export function runSemanticDetectors(
   ctx: SemanticContext,
   profiles: SemanticProfile[],
-  options: { typeHierarchyThreshold?: number; overrideChainThreshold?: number; shotgunThreshold?: number } = {},
+  options: { overrideChainThreshold?: number; shotgunThreshold?: number } = {},
 ): FindingDraft[] {
   const all: FindingDraft[] = [];
 
@@ -760,14 +677,12 @@ export function runSemanticDetectors(
   all.push(...detectConcreteDependency(profiles));
   all.push(...detectCircularTypeDependency(ctx, profiles));
   all.push(...detectUnusedParameters(profiles));
-  all.push(...detectTypeHierarchyDepth(profiles, options.typeHierarchyThreshold ?? 4));
   all.push(...detectDeepOverrideChain(profiles, options.overrideChainThreshold ?? 3));
   all.push(...detectInterfaceCompliance(profiles));
   all.push(...detectUnusedImports(profiles));
   all.push(...detectOrphanImplementation(ctx, profiles));
   all.push(...detectShotgunSurgery(profiles, options.shotgunThreshold ?? 8));
   all.push(...detectMoveToCaller(profiles));
-  all.push(...detectLeakyAbstraction(profiles));
   all.push(...detectNarrowableType(profiles));
 
   return all;

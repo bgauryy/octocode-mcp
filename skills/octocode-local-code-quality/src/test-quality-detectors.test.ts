@@ -1,9 +1,21 @@
-import { describe, expect, it } from 'vitest';
 import * as ts from 'typescript';
-import type { FileEntry, PackageFileSummary, FlowMaps, DependencyProfile, Finding } from './types.js';
-import { DEFAULT_OPTS } from './types.js';
+import { describe, expect, it } from 'vitest';
+
+import {
+  detectExcessiveMocking,
+  detectFakeTimersWithoutRestore,
+  detectFocusedTests,
+  detectLowAssertionDensity,
+  detectMissingMockRestoration,
+  detectMissingTestCleanup,
+  detectSharedMutableState,
+  detectTestNoAssertion,
+} from './test-quality-detectors.js';
 import { analyzeSourceFile } from './ts-analyzer.js';
-import { detectFocusedTests, detectFakeTimersWithoutRestore, detectMissingMockRestoration } from './test-quality-detectors.js';
+import { DEFAULT_OPTS } from './types.js';
+
+import type { DependencyProfile, FileEntry, FlowMaps, PackageFileSummary } from './types.js';
+
 
 function parse(code: string, fileName = '/repo/src/feature.spec.ts'): ts.SourceFile {
   return ts.createSourceFile(fileName, code, ts.ScriptTarget.ESNext, true);
@@ -125,6 +137,181 @@ describe('mock restoration detector', () => {
       // intentionally no restore needed for module-level mock
     });`);
     const findings = detectMissingMockRestoration([file] as [FileEntry]);
+    expect(findings).toHaveLength(0);
+  });
+});
+
+describe('low assertion density detector', () => {
+  it('flags file with tests having <1 assertion per test on average', () => {
+    const file = analyze(`describe('suite', () => {
+  it('test1', () => { doSomething(); });
+  it('test2', () => { doSomething(); });
+  it('test3', () => { expect(1).toBe(1); });
+});`);
+    const findings = detectLowAssertionDensity([file]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].category).toBe('low-assertion-density');
+  });
+
+  it('passes when assertion density >= 1', () => {
+    const file = analyze(`describe('suite', () => {
+  it('test1', () => { expect(1).toBe(1); });
+  it('test2', () => { expect(2).toBe(2); });
+});`);
+    const findings = detectLowAssertionDensity([file]);
+    expect(findings).toHaveLength(0);
+  });
+
+  it('skips non-test files', () => {
+    const src = parse(`describe('suite', () => {
+  it('test1', () => { doSomething(); });
+});`, '/repo/src/feature.ts');
+    const entry = analyzeSourceFile(src, 'pkg', emptySummary(), { ...DEFAULT_OPTS, root: '/repo' }, emptyMaps(), [], emptyProfile);
+    const findings = detectLowAssertionDensity([entry]);
+    expect(findings).toHaveLength(0);
+  });
+
+  it('skips files with no test blocks', () => {
+    const file = analyze(`export function helper() { return 42; }`);
+    const findings = detectLowAssertionDensity([file]);
+    expect(findings).toHaveLength(0);
+  });
+});
+
+describe('test-no-assertion detector', () => {
+  it('flags individual test block with 0 assertions', () => {
+    const file = analyze(`it('no assertion', () => { doSomething(); });`);
+    const findings = detectTestNoAssertion([file]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].category).toBe('test-no-assertion');
+  });
+
+  it('does not flag test blocks with assertions', () => {
+    const file = analyze(`it('has assertion', () => { expect(1).toBe(1); });`);
+    const findings = detectTestNoAssertion([file]);
+    expect(findings).toHaveLength(0);
+  });
+
+  it('flags multiple empty test blocks separately', () => {
+    const file = analyze(`describe('suite', () => {
+  it('test1', () => { doSomething(); });
+  it('test2', () => { doSomethingElse(); });
+});`);
+    const findings = detectTestNoAssertion([file]);
+    expect(findings).toHaveLength(2);
+  });
+
+  it('skips non-test files', () => {
+    const src = parse(`it('test', () => { doSomething(); });`, '/repo/src/feature.ts');
+    const entry = analyzeSourceFile(src, 'pkg', emptySummary(), { ...DEFAULT_OPTS, root: '/repo' }, emptyMaps(), [], emptyProfile);
+    const findings = detectTestNoAssertion([entry]);
+    expect(findings).toHaveLength(0);
+  });
+});
+
+describe('excessive mocking detector', () => {
+  it('flags file exceeding mock threshold', () => {
+    const file = analyze(`test('mocked', () => {
+  jest.mock('a');
+  jest.mock('b');
+  jest.mock('c');
+});`);
+    const findings = detectExcessiveMocking([file], 2);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].category).toBe('excessive-mocking');
+  });
+
+  it('passes when below threshold', () => {
+    const file = analyze(`test('mocked', () => {
+  jest.mock('a');
+});`);
+    const findings = detectExcessiveMocking([file], 2);
+    expect(findings).toHaveLength(0);
+  });
+
+  it('skips non-test files', () => {
+    const src = parse(`jest.mock('a'); jest.mock('b'); jest.mock('c');`, '/repo/src/feature.ts');
+    const entry = analyzeSourceFile(src, 'pkg', emptySummary(), { ...DEFAULT_OPTS, root: '/repo' }, emptyMaps(), [], emptyProfile);
+    const findings = detectExcessiveMocking([entry], 2);
+    expect(findings).toHaveLength(0);
+  });
+});
+
+describe('shared mutable state detector', () => {
+  it('flags let at describe scope', () => {
+    const file = analyze(`describe('suite', () => {
+  let counter = 0;
+  it('test', () => { counter++; expect(counter).toBe(1); });
+});`);
+    const findings = detectSharedMutableState([file]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].category).toBe('shared-mutable-state');
+  });
+
+  it('does not flag const declarations', () => {
+    const file = analyze(`describe('suite', () => {
+  const value = 42;
+  it('test', () => { expect(value).toBe(42); });
+});`);
+    const findings = detectSharedMutableState([file]);
+    expect(findings).toHaveLength(0);
+  });
+
+  it('skips non-test files', () => {
+    const src = parse(`let x = 0;`, '/repo/src/feature.ts');
+    const entry = analyzeSourceFile(src, 'pkg', emptySummary(), { ...DEFAULT_OPTS, root: '/repo' }, emptyMaps(), [], emptyProfile);
+    const findings = detectSharedMutableState([entry]);
+    expect(findings).toHaveLength(0);
+  });
+});
+
+describe('missing test cleanup detector', () => {
+  it('flags beforeAll without afterAll', () => {
+    const file = analyze(`describe('suite', () => {
+  beforeAll(() => { setup(); });
+  it('test', () => { expect(1).toBe(1); });
+});`);
+    const findings = detectMissingTestCleanup([file]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].category).toBe('missing-test-cleanup');
+    expect(findings[0].title).toContain('beforeAll');
+  });
+
+  it('flags beforeEach without afterEach', () => {
+    const file = analyze(`describe('suite', () => {
+  beforeEach(() => { setup(); });
+  it('test', () => { expect(1).toBe(1); });
+});`);
+    const findings = detectMissingTestCleanup([file]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].category).toBe('missing-test-cleanup');
+    expect(findings[0].title).toContain('beforeEach');
+  });
+
+  it('passes when both beforeAll and afterAll present', () => {
+    const file = analyze(`describe('suite', () => {
+  beforeAll(() => { setup(); });
+  afterAll(() => { teardown(); });
+  it('test', () => { expect(1).toBe(1); });
+});`);
+    const findings = detectMissingTestCleanup([file]);
+    expect(findings).toHaveLength(0);
+  });
+
+  it('passes when both beforeEach and afterEach present', () => {
+    const file = analyze(`describe('suite', () => {
+  beforeEach(() => { setup(); });
+  afterEach(() => { teardown(); });
+  it('test', () => { expect(1).toBe(1); });
+});`);
+    const findings = detectMissingTestCleanup([file]);
+    expect(findings).toHaveLength(0);
+  });
+
+  it('skips non-test files', () => {
+    const src = parse(`beforeAll(() => { setup(); });`, '/repo/src/feature.ts');
+    const entry = analyzeSourceFile(src, 'pkg', emptySummary(), { ...DEFAULT_OPTS, root: '/repo' }, emptyMaps(), [], emptyProfile);
+    const findings = detectMissingTestCleanup([entry]);
     expect(findings).toHaveLength(0);
   });
 });

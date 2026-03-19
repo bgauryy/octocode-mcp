@@ -1,16 +1,17 @@
 import * as ts from 'typescript';
+
+import { isTestFile } from './utils.js';
+
 import type {
   DependencyState,
   DependencySummary,
   DuplicateGroup,
-  RedundantFlowGroup,
-  FileEntry,
   FileCriticality,
+  FileEntry,
   Finding,
   HotFile,
-  FunctionEntry,
+  RedundantFlowGroup,
 } from './types.js';
-import { isTestFile } from './utils.js';
 
 type FindingDraft = Omit<Finding, 'id'>;
 
@@ -39,6 +40,12 @@ export function isLikelyEntrypoint(filePath: string): boolean {
   if (/(^|\/)(index|main|app|server|cli|public)\.[mc]?[jt]sx?$/.test(normalized)) return true;
   if (/\.(config)\.[mc]?[jt]sx?$/.test(normalized)) return true;
   return false;
+}
+
+function folderOf(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/');
+  const idx = normalized.lastIndexOf('/');
+  return idx === -1 ? '.' : normalized.slice(0, idx);
 }
 
 // ─── Consumed-From-Module Map (for dead-code detectors) ──────────────────────
@@ -1086,6 +1093,77 @@ export function detectGodModules(
   return findings;
 }
 
+export function detectMegaFolders(
+  fileSummaries: FileEntry[],
+  minFiles: number = 25,
+  concentrationThreshold: number = 0.25,
+): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  const productionFiles = fileSummaries.filter((entry) => !isTestFile(entry.file));
+  if (productionFiles.length === 0) return findings;
+
+  const byFolder = new Map<string, FileEntry[]>();
+  for (const entry of productionFiles) {
+    const folder = folderOf(entry.file);
+    if (!byFolder.has(folder)) byFolder.set(folder, []);
+    byFolder.get(folder)!.push(entry);
+  }
+
+  const sortedFolders = [...byFolder.entries()]
+    .map(([folder, entries]) => ({ folder, entries, count: entries.length }))
+    .filter(({ count }) => count >= minFiles && count / productionFiles.length >= concentrationThreshold)
+    .sort((a, b) => b.count - a.count);
+
+  for (const candidate of sortedFolders) {
+    const concentration = candidate.count / productionFiles.length;
+    const severity: Finding['severity'] = concentration >= 0.5 || candidate.count >= 50 ? 'high' : 'medium';
+    const topFiles = candidate.entries
+      .map((entry) => entry.file)
+      .sort()
+      .slice(0, 8);
+    const representativeFile = candidate.entries[0]?.file ?? candidate.folder;
+
+    findings.push({
+      severity,
+      category: 'mega-folder',
+      file: representativeFile,
+      lineStart: 1,
+      lineEnd: 1,
+      title: `Mega folder: ${candidate.folder} (${candidate.count} files)`,
+      reason: `${candidate.folder} contains ${candidate.count} production files (${(concentration * 100).toFixed(1)}% of the codebase), which usually indicates mixed responsibilities and weak module boundaries.`,
+      files: topFiles,
+      suggestedFix: {
+        strategy: 'Decompose the folder into focused subfolders by domain boundary and runtime role.',
+        steps: [
+          'Group files by bounded context (feature/domain), not by technical convenience.',
+          'Split orchestration, adapters, and pure business logic into separate subfolders.',
+          'Move shared primitives into a dedicated internal shared folder to avoid cross-feature coupling.',
+          'Keep a shallow compatibility barrel only where needed while migrating imports.',
+        ],
+      },
+      impact: 'Improves navigability, ownership boundaries, and change isolation.',
+      tags: ['architecture', 'modularity', 'folder-structure', 'maintainability'],
+      evidence: {
+        folderPath: candidate.folder,
+        fileCount: candidate.count,
+        totalProductionFiles: productionFiles.length,
+        concentration,
+      },
+      lspHints: [
+        {
+          tool: 'lspGotoDefinition',
+          symbolName: candidate.folder,
+          lineHint: 1,
+          file: representativeFile,
+          expectedResult: 'inventory representative modules in this folder before planning decomposition',
+        },
+      ],
+    });
+  }
+
+  return findings;
+}
+
 export function detectGodFunctions(
   fileSummaries: FileEntry[],
   stmtThreshold: number = 100,
@@ -1321,7 +1399,7 @@ export function detectLowCohesion(
     const adj = new Map<string, Set<string>>();
     for (const sym of consumedSymbols) adj.set(sym, new Set());
 
-    for (const [consumer, imports] of dependencyState.importedSymbolsByFile.entries()) {
+    for (const imports of dependencyState.importedSymbolsByFile.values()) {
       const fromThisFile = imports
         .filter(i => i.resolvedModule === file && exportNames.has(i.importedName))
         .map(i => i.importedName);
@@ -1371,72 +1449,6 @@ export function detectLowCohesion(
         impact: 'Higher cohesion = easier navigation, focused testing, and smaller change blast radius.',
         tags: ['cohesion', 'responsibility', 'architecture'],
       });
-    }
-  }
-
-  return findings;
-}
-
-// ─── Inferred Layer Violations (auto-detect from directory structure) ───────
-
-const INFERRED_LAYERS: { level: number; patterns: string[] }[] = [
-  { level: 0, patterns: ['types', 'constants', 'interfaces', 'contracts', 'schema', 'schemas'] },
-  { level: 1, patterns: ['utils', 'helpers', 'lib', 'common', 'shared', 'core'] },
-  { level: 2, patterns: ['services', 'service', 'api', 'domain', 'repositories', 'repository', 'store', 'stores', 'providers'] },
-  { level: 3, patterns: ['features', 'modules', 'pages', 'routes', 'components', 'views', 'handlers', 'controllers'] },
-];
-
-export function getInferredLayer(filePath: string): number {
-  const parts = filePath.split('/');
-  for (const part of parts) {
-    const lower = part.toLowerCase();
-    for (const layer of INFERRED_LAYERS) {
-      if (layer.patterns.includes(lower)) return layer.level;
-    }
-  }
-  return -1;
-}
-
-const LAYER_NAMES = ['foundation', 'utility', 'service', 'feature'];
-
-export function detectInferredLayerViolations(
-  dependencyState: DependencyState,
-): FindingDraft[] {
-  const findings: FindingDraft[] = [];
-
-  for (const file of dependencyState.files) {
-    if (isTestFile(file)) continue;
-    const srcLayer = getInferredLayer(file);
-    if (srcLayer === -1) continue;
-
-    for (const dep of (dependencyState.outgoing.get(file) || new Set())) {
-      if (!dependencyState.files.has(dep) || isTestFile(dep)) continue;
-      const depLayer = getInferredLayer(dep);
-      if (depLayer === -1) continue;
-
-      if (depLayer > srcLayer) {
-        const importRef = findImportLine(dependencyState, file, dep);
-        findings.push({
-          severity: 'high',
-          category: 'inferred-layer-violation',
-          file,
-          lineStart: importRef.lineStart,
-          lineEnd: importRef.lineEnd,
-          title: `Layer violation: ${LAYER_NAMES[srcLayer]} → ${LAYER_NAMES[depLayer]}`,
-          reason: `"${file}" (${LAYER_NAMES[srcLayer]} layer) imports "${dep}" (${LAYER_NAMES[depLayer]} layer). Lower layers must not depend on higher layers.`,
-          files: [file, dep],
-          suggestedFix: {
-            strategy: 'Invert the dependency or extract shared contracts to a lower layer.',
-            steps: [
-              'Define an interface/type in the lower layer.',
-              'Have the higher layer implement or provide the concrete dependency.',
-              'Inject via parameter, factory, or configuration rather than direct import.',
-            ],
-          },
-          impact: 'Maintains clean architecture boundaries and prevents upward coupling.',
-          tags: ['architecture', 'layering', 'coupling'],
-        });
-      }
     }
   }
 
@@ -1599,42 +1611,6 @@ export function detectSwitchNoDefault(
 
 // ─── High Cyclomatic Density ───────────────────────────────────────────────
 
-export function detectHighCyclomaticDensity(
-  fileSummaries: FileEntry[],
-  threshold: number = 0.5,
-): FindingDraft[] {
-  const findings: FindingDraft[] = [];
-  for (const entry of fileSummaries) {
-    if (isTestFile(entry.file)) continue;
-    for (const fn of entry.functions) {
-      if (fn.statementCount < 10) continue;
-      const density = fn.complexity / fn.statementCount;
-      if (density <= threshold) continue;
-      findings.push({
-        severity: density > 1.0 ? 'high' : 'medium',
-        category: 'high-cyclomatic-density',
-        file: entry.file,
-        lineStart: fn.lineStart,
-        lineEnd: fn.lineEnd,
-        title: `High cyclomatic density: ${fn.name} (${density.toFixed(2)})`,
-        reason: `Function has ${fn.complexity} branches across ${fn.statementCount} statements (density=${density.toFixed(2)}, threshold: ${threshold}). Nearly every line is a decision point.`,
-        files: [`${entry.file}:${fn.lineStart}-${fn.lineEnd}`],
-        suggestedFix: {
-          strategy: 'Extract conditional logic into guard clauses or helper predicates.',
-          steps: [
-            'Convert nested if-else chains into early returns.',
-            'Extract boolean expressions into named predicate functions.',
-            'Consider a lookup table or strategy pattern for dense switch/if logic.',
-          ],
-        },
-        impact: 'Reduces the mental model needed to understand each function.',
-        tags: ['complexity', 'density', 'readability'],
-      });
-    }
-  }
-  return findings;
-}
-
 // ─── Unsafe `any` Usage ────────────────────────────────────────────────────
 
 export function detectUnsafeAny(
@@ -1665,41 +1641,6 @@ export function detectUnsafeAny(
       },
       impact: 'Restores TypeScript safety and catches bugs at compile time instead of runtime.',
       tags: ['type-safety', 'reliability', 'typescript'],
-    });
-  }
-  return findings;
-}
-
-// ─── Magic Numbers ─────────────────────────────────────────────────────────
-
-export function detectMagicNumbers(
-  fileSummaries: FileEntry[],
-  threshold: number = 3,
-): FindingDraft[] {
-  const findings: FindingDraft[] = [];
-  for (const entry of fileSummaries) {
-    if (isTestFile(entry.file)) continue;
-    if (!entry.magicNumbers || entry.magicNumbers.length <= threshold) continue;
-    const sample = entry.magicNumbers.slice(0, 5).map(m => `${m.value} (line ${m.lineStart})`).join(', ');
-    findings.push({
-      severity: entry.magicNumbers.length > 8 ? 'high' : 'medium',
-      category: 'magic-number',
-      file: entry.file,
-      lineStart: entry.magicNumbers[0].lineStart,
-      lineEnd: entry.magicNumbers[0].lineEnd,
-      title: `Magic numbers: ${entry.file} (${entry.magicNumbers.length} occurrences)`,
-      reason: `File contains ${entry.magicNumbers.length} magic number literals (threshold: ${threshold}). Examples: ${sample}.`,
-      files: [entry.file],
-      suggestedFix: {
-        strategy: 'Extract magic numbers into named constants.',
-        steps: [
-          'Create named constants with descriptive names (e.g. MAX_RETRY_COUNT = 3).',
-          'Group related constants in a config object or enum.',
-          'Replace inline literals with the named constant references.',
-        ],
-      },
-      impact: 'Named constants make code self-documenting and easier to update consistently.',
-      tags: ['readability', 'maintainability', 'self-documenting'],
     });
   }
   return findings;
@@ -2495,6 +2436,145 @@ export function detectImportSideEffectRisk(
         },
       ],
     });
+  }
+
+  return findings;
+}
+
+// ─── Tree-Shaking / Bundle Hygiene Detectors ────────────────────────────────
+
+export function detectNamespaceImport(
+  dependencyState: DependencyState,
+): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+
+  for (const [file, imports] of dependencyState.importedSymbolsByFile.entries()) {
+    if (isTestFile(file)) continue;
+
+    for (const ref of imports) {
+      if (ref.importedName !== '*') continue;
+      if (ref.isTypeOnly) continue;
+      if (ref.localName === 'require') continue;
+
+      const isInternal = ref.resolvedModule != null;
+      const fanIn = isInternal
+        ? (dependencyState.incoming.get(ref.resolvedModule!) || new Set()).size
+        : 0;
+
+      findings.push({
+        severity: isInternal && fanIn > 5 ? 'high' : 'medium',
+        category: 'namespace-import',
+        file,
+        lineStart: ref.lineStart || 1,
+        lineEnd: ref.lineEnd || ref.lineStart || 1,
+        title: `Namespace import blocks tree-shaking: import * as ${ref.localName}`,
+        reason: `\`import * as ${ref.localName} from '${ref.sourceModule}'\` forces bundlers to include the entire module. Named imports allow dead-code elimination of unused exports.${isInternal ? ` Target module has fan-in=${fanIn}.` : ''}`,
+        files: [`${file}:${ref.lineStart || 1}-${ref.lineEnd || ref.lineStart || 1}`],
+        suggestedFix: {
+          strategy: 'Replace namespace import with named imports for used symbols.',
+          steps: [
+            `Find which properties of \`${ref.localName}\` are actually accessed in this file.`,
+            `Replace \`import * as ${ref.localName}\` with \`import { usedA, usedB } from '${ref.sourceModule}'\`.`,
+            'If many properties are used, consider splitting the source module into smaller modules.',
+          ],
+        },
+        impact: 'Enables bundlers to tree-shake unused exports, reducing bundle size.',
+        tags: ['tree-shaking', 'bundle-size', 'namespace-import'],
+      });
+    }
+  }
+
+  return findings;
+}
+
+export function detectCommonJsInEsm(
+  dependencyState: DependencyState,
+): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+
+  for (const [file, imports] of dependencyState.importedSymbolsByFile.entries()) {
+    if (isTestFile(file)) continue;
+
+    const requireImports = imports.filter((r) => r.localName === 'require' && !r.isTypeOnly);
+    if (requireImports.length === 0) continue;
+
+    const hasEsmImport = imports.some((r) => r.localName !== 'require');
+    const severity = hasEsmImport ? 'high' : 'medium';
+
+    for (const ref of requireImports) {
+      findings.push({
+        severity,
+        category: hasEsmImport ? 'mixed-module-format' : 'commonjs-in-esm',
+        file,
+        lineStart: ref.lineStart || 1,
+        lineEnd: ref.lineEnd || ref.lineStart || 1,
+        title: hasEsmImport
+          ? `Mixed ESM/CJS: require('${ref.sourceModule}') in ESM file`
+          : `CommonJS require blocks tree-shaking: require('${ref.sourceModule}')`,
+        reason: hasEsmImport
+          ? `File uses both ESM \`import\` and CJS \`require()\`. Mixed formats force bundlers to treat the module as CJS, disabling tree-shaking entirely. Found ${requireImports.length} require() call(s).`
+          : `\`require('${ref.sourceModule}')\` is a CommonJS pattern that bundlers cannot statically analyze. ESM \`import\` enables tree-shaking.`,
+        files: [`${file}:${ref.lineStart || 1}-${ref.lineEnd || ref.lineStart || 1}`],
+        suggestedFix: {
+          strategy: 'Convert require() to ESM import.',
+          steps: [
+            `Replace \`const mod = require('${ref.sourceModule}')\` with \`import mod from '${ref.sourceModule}'\` or named imports.`,
+            'If the require is conditional, use dynamic `import()` instead.',
+            'Ensure the target module supports ESM (check package.json "type" or "module" field).',
+          ],
+        },
+        impact: 'ESM imports enable tree-shaking; CJS requires pull the entire module.',
+        tags: ['tree-shaking', 'bundle-size', 'commonjs', 'module-format'],
+      });
+    }
+  }
+
+  return findings;
+}
+
+export function detectExportStarLeak(
+  dependencyState: DependencyState,
+): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+
+  for (const [file, reexports] of dependencyState.reExportsByFile.entries()) {
+    if (isTestFile(file)) continue;
+
+    const starReexports = reexports.filter((r) => r.isStar && !r.isTypeOnly);
+    if (starReexports.length === 0) continue;
+
+    for (const ref of starReexports) {
+      const targetExportCount = ref.resolvedModule
+        ? (dependencyState.declaredExportsByFile.get(ref.resolvedModule) || []).length
+        : 0;
+
+      const targetHasStars = ref.resolvedModule
+        ? (dependencyState.reExportsByFile.get(ref.resolvedModule) || []).some((r) => r.isStar)
+        : false;
+
+      const severity = targetHasStars ? 'high' : targetExportCount > 20 ? 'high' : 'medium';
+
+      findings.push({
+        severity,
+        category: 'export-star-leak',
+        file,
+        lineStart: ref.lineStart || 1,
+        lineEnd: ref.lineEnd || ref.lineStart || 1,
+        title: `export * leaks entire module surface: ${ref.sourceModule}`,
+        reason: `\`export * from '${ref.sourceModule}'\` re-exports every symbol from the source, defeating granular tree-shaking.${targetExportCount > 0 ? ` Target exports ${targetExportCount} symbols.` : ''}${targetHasStars ? ' Target itself contains export-star chains, amplifying the leak.' : ''}`,
+        files: [`${file}:${ref.lineStart || 1}-${ref.lineEnd || ref.lineStart || 1}`],
+        suggestedFix: {
+          strategy: 'Replace export * with explicit named re-exports.',
+          steps: [
+            `List the symbols actually consumed from \`${ref.sourceModule}\` by downstream modules.`,
+            `Replace \`export * from '${ref.sourceModule}'\` with \`export { A, B, C } from '${ref.sourceModule}'\`.`,
+            'This lets bundlers eliminate unused re-exports during tree-shaking.',
+          ],
+        },
+        impact: 'Explicit re-exports enable precise tree-shaking and make the public API surface visible.',
+        tags: ['tree-shaking', 'bundle-size', 'export-star', 'api-surface'],
+      });
+    }
   }
 
   return findings;

@@ -5,9 +5,9 @@ import type {
   FileCriticality,
   FileEntry,
   Finding,
+  PackageGraphNode,
   PackageGraphSummary,
   PackageHotspot,
-  PackageGraphNode,
   SccCluster,
 } from './types.js';
 

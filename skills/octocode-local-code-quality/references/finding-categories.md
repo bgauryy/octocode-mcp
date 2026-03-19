@@ -18,7 +18,6 @@ All categories detected by the scan, grouped by pillar. Categories marked `--sem
 | `unreachable-module` | high | Not reachable from any entrypoint via BFS | — |
 | `layer-violation` | high | Import backwards in configured layer order | — |
 | `low-cohesion` | medium — high | Exports serve unrelated purposes (LCOM > 1) | — |
-| `inferred-layer-violation` | medium — high | Auto-detected layer boundary crossed | — |
 | `distance-from-main-sequence` | medium — high | Module far from A + I = 1 (Zone of Pain / Uselessness) | — |
 | `feature-envy` | medium — high | Module imports 60%+ symbols from single external module | — |
 | `untested-critical-code` | high — critical | Hot/critical-path file with zero test imports | — |
@@ -31,8 +30,11 @@ All categories detected by the scan, grouped by pillar. Categories marked `--sem
 | `concrete-dependency` | medium | Import resolves to concrete class (DIP violation) | `--semantic` |
 | `circular-type-dependency` | high | Type A references Type B, B references A (type-level cycle) | `--semantic` |
 | `shotgun-surgery` | medium — high | Export referenced from 8+ unique files (change amplification risk) | `--semantic` |
-| `leaky-abstraction` | medium | Exported function returns type defined in internal module | `--semantic` |
 | `import-side-effect-risk` | low — critical | Module executes risky work at import time (sync I/O, exec, eval, timers, listeners); scored by AST evidence + architecture context (fan-in, critical path, cycle, entry role) | — |
+| `namespace-import` | medium | Namespace import (`import * as X`) pulling in entire module surface | — |
+| `commonjs-in-esm` | medium | CommonJS `require()` in an ESM-style codebase | — |
+| `export-star-leak` | medium — high | `export * from` re-exports leaking internal symbols | — |
+| `mixed-module-format` | medium | File mixes CommonJS and ESM syntax | — |
 
 ---
 
@@ -49,9 +51,7 @@ All categories detected by the scan, grouped by pillar. Categories marked `--sem
 | `god-function` | high | Functions with excessive statements | — |
 | `halstead-effort` | medium — high | Halstead effort > threshold or estimated bugs > 2.0 | — |
 | `low-maintainability` | high — critical | Maintainability Index below threshold | — |
-| `high-cyclomatic-density` | medium — high | CC/LOC ratio above threshold | — |
 | `excessive-parameters` | medium — high | Function exceeds parameter threshold | — |
-| `magic-number` | medium — high | Excessive magic number literals | — |
 | `unsafe-any` | medium — high | Excessive `any` types | — |
 | `empty-catch` | medium | Empty catch block | — |
 | `switch-no-default` | low | Switch missing default case | — |
@@ -64,7 +64,6 @@ All categories detected by the scan, grouped by pillar. Categories marked `--sem
 | `listener-leak-risk` | medium | Event listeners added without corresponding removal | — |
 | `unbounded-collection` | low | Collection growth inside nested loops without size guard | — |
 | `unused-parameter` | medium | Function parameter never referenced in body (semantic) | `--semantic` |
-| `type-hierarchy-depth` | medium — high | Inheritance chain exceeds depth threshold | `--semantic` |
 | `deep-override-chain` | medium — high | Method overridden beyond depth threshold in class hierarchy | `--semantic` |
 | `interface-compliance` | medium — high | Class `implements I` with missing or any-cast members | `--semantic` |
 | `narrowable-type` | low | Parameter declared broad but all callers pass narrow type | `--semantic` |

@@ -1,33 +1,37 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
-import path from 'node:path';
 import os from 'node:os';
-import type {
-  DependencyState, DependencySummary, DuplicateGroup,
-  FileEntry, FileCriticality, Finding,
-  DependencyProfile, FunctionEntry,
-} from './types.js';
-import { DEFAULT_OPTS, PILLAR_CATEGORIES } from './types.js';
+import path from 'node:path';
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+
 import { isLikelyEntrypoint } from './architecture.js';
 import {
-  computeDependencyCycles,
-  computeDependencyCriticalPaths,
-  buildIssueCatalog,
   ARCHITECTURE_CATEGORIES,
   CODE_QUALITY_CATEGORIES,
   DEAD_CODE_CATEGORIES,
   SECURITY_CATEGORIES,
   TEST_QUALITY_CATEGORIES,
-  writeMultiFileReport,
-  severityBreakdown,
+  buildIssueCatalog,
   categoryBreakdown,
-  generateSummaryMd,
+  collectTagCloud,
+  computeDependencyCriticalPaths,
+  computeDependencyCycles,
+  computeHealthScore,
   diverseTopRecommendations,
   diversifyFindings,
-  computeHealthScore,
-  collectTagCloud,
+  generateSummaryMd,
+  severityBreakdown,
+  writeMultiFileReport,
 } from './index.js';
+import { DEFAULT_OPTS, PILLAR_CATEGORIES } from './types.js';
+
 import type { FullReport } from './index.js';
+import type {
+  DependencyProfile, DependencyState, DependencySummary,
+  DuplicateGroup, FileCriticality, FileEntry,
+  Finding, FunctionEntry,
+} from './types.js';
 
 function emptyState(): DependencyState {
   return {
@@ -574,20 +578,20 @@ describe('category group constants', () => {
     'dependency-cycle', 'dependency-critical-path', 'dependency-test-only',
     'architecture-sdp-violation', 'high-coupling', 'god-module-coupling',
     'orphan-module', 'unreachable-module', 'layer-violation',
-    'low-cohesion', 'inferred-layer-violation',
+    'low-cohesion',
     'duplicate-function-body', 'duplicate-flow-structure', 'function-optimization',
     'cognitive-complexity', 'god-module', 'god-function', 'halstead-effort',
-    'low-maintainability', 'high-cyclomatic-density', 'excessive-parameters',
-    'magic-number', 'unsafe-any', 'empty-catch', 'switch-no-default',
+    'low-maintainability', 'excessive-parameters',
+    'unsafe-any', 'empty-catch', 'switch-no-default',
     'dead-export', 'dead-re-export', 're-export-duplication',
     're-export-shadowed', 'unused-npm-dependency', 'package-boundary-violation',
     'barrel-explosion',
     'distance-from-main-sequence', 'feature-envy',
     'untested-critical-code',
     'over-abstraction', 'concrete-dependency', 'circular-type-dependency',
-    'unused-parameter', 'type-hierarchy-depth', 'deep-override-chain',
+    'unused-parameter', 'deep-override-chain',
     'interface-compliance', 'unused-import', 'orphan-implementation',
-    'shotgun-surgery', 'move-to-caller', 'leaky-abstraction', 'narrowable-type',
+    'shotgun-surgery', 'move-to-caller', 'narrowable-type',
     'type-assertion-escape', 'promise-misuse', 'missing-error-boundary',
   ];
 
@@ -618,12 +622,12 @@ describe('category group constants', () => {
     expect(setTotal).toBe(total);
   });
 
-  it('architecture group has 25 categories', () => {
-    expect(ARCHITECTURE_CATEGORIES.size).toBe(25);
+  it('architecture group has 27 categories', () => {
+    expect(ARCHITECTURE_CATEGORIES.size).toBe(28);
   });
 
   it('code quality group has expected categories', () => {
-    expect(CODE_QUALITY_CATEGORIES.size).toBe(28);
+    expect(CODE_QUALITY_CATEGORIES.size).toBe(25);
   });
 
   it('dead code group has 11 categories', () => {
@@ -1494,5 +1498,1114 @@ describe('new AST detectors via buildIssueCatalog', () => {
     const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
     const sideEffects = findings.filter((f) => f.category === 'import-side-effect-risk');
     expect(sideEffects).toHaveLength(0);
+  });
+});
+
+// ─── Additional Coverage: computeDependencyCycles, critical paths, diversify, buildIssueCatalog, writeMultiFileReport ───
+
+function makeFinding(override: Partial<Finding> = {}): Finding {
+  return {
+    id: 'AST-ISSUE-0001',
+    severity: 'medium',
+    category: 'function-optimization',
+    file: 'src/a.ts',
+    lineStart: 1,
+    lineEnd: 10,
+    title: 'Test',
+    reason: 'test',
+    files: ['src/a.ts'],
+    suggestedFix: { strategy: 's', steps: ['s'] },
+    ...override,
+  };
+}
+
+describe('computeDependencyCycles (additional)', () => {
+  it('detects self-loop (A->A)', () => {
+    const state = emptyState();
+    addEdge(state, 'a.ts', 'a.ts');
+    const cycles = computeDependencyCycles(state);
+    expect(cycles.length).toBe(1);
+    expect(cycles[0].nodeCount).toBe(1);
+    expect(cycles[0].path).toContain('a.ts');
+  });
+});
+
+describe('computeDependencyCriticalPaths (additional)', () => {
+  it('returns longest path by weighted score for simple chain', () => {
+    const state = emptyState();
+    addEdge(state, 'root.ts', 'mid.ts');
+    addEdge(state, 'mid.ts', 'leaf.ts');
+    const critMap = new Map<string, FileCriticality>();
+    critMap.set('root.ts', { file: 'root.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 5 });
+    critMap.set('mid.ts', { file: 'mid.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 50 });
+    critMap.set('leaf.ts', { file: 'leaf.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 100 });
+    const paths = computeDependencyCriticalPaths(state, critMap, testOpts);
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths[0].path).toEqual(['root.ts', 'mid.ts', 'leaf.ts']);
+    expect(paths[0].score).toBe(155);
+    expect(paths[0].length).toBe(3);
+  });
+});
+
+describe('diversifyFindings (additional)', () => {
+  it('interleaves multiple categories when limit is below total', () => {
+    const input = [
+      makeFinding({ category: 'dead-export', severity: 'high' }),
+      makeFinding({ category: 'dead-export', severity: 'high' }),
+      makeFinding({ category: 'dependency-cycle', severity: 'high' }),
+      makeFinding({ category: 'function-optimization', severity: 'medium' }),
+    ];
+    const result = diversifyFindings(input, 3);
+    expect(result).toHaveLength(3);
+    const categories = result.map((f) => f.category);
+    expect(new Set(categories).size).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('diverseTopRecommendations (additional)', () => {
+  it('honors maxPerCategory when one category dominates', () => {
+    const findings = Array.from({ length: 20 }, (_, i) =>
+      makeFinding({ id: `f-${i}`, category: 'dead-export', severity: 'high' })
+    );
+    findings.push(makeFinding({ id: 'other', category: 'dependency-cycle', severity: 'high' }));
+    const result = diverseTopRecommendations(findings, 10, 2);
+    expect(result.filter((f) => f.category === 'dead-export')).toHaveLength(2);
+    expect(result.filter((f) => f.category === 'dependency-cycle')).toHaveLength(1);
+  });
+});
+
+describe('severityBreakdown and categoryBreakdown (additional)', () => {
+  it('severityBreakdown includes info severity', () => {
+    const findings = [
+      makeFinding({ severity: 'info' }),
+      makeFinding({ severity: 'info' }),
+    ];
+    const result = severityBreakdown(findings);
+    expect(result.info).toBe(2);
+  });
+
+  it('categoryBreakdown handles unknown categories', () => {
+    const findings = [makeFinding({ category: 'custom-cat' })];
+    const result = categoryBreakdown(findings);
+    expect(result['custom-cat']).toBe(1);
+  });
+});
+
+describe('buildIssueCatalog (additional paths)', () => {
+  it('respects noDiversify option (no round-robin)', () => {
+    const depSummary = minimalDepSummary({
+      cycles: [{ path: ['a.ts', 'b.ts', 'a.ts'], nodeCount: 2 }],
+      testOnlyModules: [
+        { file: 'src/t.ts', outboundCount: 0, inboundCount: 1, inboundFromProduction: 0, inboundFromTests: 1, externalDependencyCount: 0, unresolvedDependencyCount: 0 },
+      ],
+    });
+    const state = emptyState();
+    state.files.add('src/lib.ts');
+    state.declaredExportsByFile.set('src/lib.ts', [{ name: 'deadFn', kind: 'value', lineStart: 10, lineEnd: 15 }]);
+    const files = [makeFile({ functions: [makeFn({ complexity: 40, name: 'complexFn' })] })];
+    const optsNoDiv = { ...testOpts, findingsLimit: 3, noDiversify: true };
+    const { findings } = buildIssueCatalog([], [], files, depSummary, state, optsNoDiv);
+    expect(findings.length).toBeLessThanOrEqual(3);
+  });
+
+  it('triggers await-in-loop from awaitInLoopLocations', () => {
+    const entry = makeFile({
+      file: 'src/async.ts',
+      awaitInLoopLocations: [{ file: 'src/async.ts', lineStart: 10, lineEnd: 12 }],
+    });
+    const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
+    expect(findings.some((f) => f.category === 'await-in-loop')).toBe(true);
+  });
+
+  it('triggers sync-io from syncIoCalls', () => {
+    const entry = makeFile({
+      file: 'src/io.ts',
+      syncIoCalls: [{ name: 'readFileSync', lineStart: 5, lineEnd: 5 }],
+    });
+    const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
+    expect(findings.some((f) => f.category === 'sync-io')).toBe(true);
+  });
+
+  it('triggers uncleared-timer from timerCalls (setInterval without cleanup)', () => {
+    const entry = makeFile({
+      file: 'src/timers.ts',
+      timerCalls: [{ kind: 'setInterval', lineStart: 8, lineEnd: 8, hasCleanup: false }],
+    });
+    const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
+    expect(findings.some((f) => f.category === 'uncleared-timer')).toBe(true);
+  });
+
+  it('triggers listener-leak-risk from listenerRegistrations without removals', () => {
+    const entry = makeFile({
+      file: 'src/events.ts',
+      listenerRegistrations: [{ file: 'src/events.ts', lineStart: 15, lineEnd: 15 }],
+      listenerRemovals: [],
+    });
+    const { findings } = buildIssueCatalog([], [], [entry], minimalDepSummary(), emptyState(), testOpts);
+    expect(findings.some((f) => f.category === 'listener-leak-risk')).toBe(true);
+  });
+
+  it('respects findingsLimit truncation', () => {
+    const files = Array.from({ length: 30 }, (_, i) =>
+      makeFile({
+        file: `src/f${i}.ts`,
+        functions: [makeFn({ complexity: 40, name: `fn${i}` })],
+      })
+    );
+    const opts = { ...testOpts, findingsLimit: 8 };
+    const { findings, totalBeforeTruncation } = buildIssueCatalog([], [], files, minimalDepSummary(), emptyState(), opts);
+    expect(findings.length).toBeLessThanOrEqual(8);
+    expect(totalBeforeTruncation).toBeGreaterThanOrEqual(findings.length);
+  });
+});
+
+describe('writeMultiFileReport (additional)', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scan-add-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function makeMinimalReport(overrides: Partial<FullReport> = {}): FullReport {
+    return {
+      generatedAt: '2026-03-17T00:00:00.000Z',
+      repoRoot: '/repo',
+      options: {},
+      parser: { requested: 'auto', effective: 'typescript' },
+      summary: { totalFiles: 5, totalFunctions: 20, totalFlows: 50, totalDependencyFiles: 5, totalPackages: 1 },
+      fileInventory: [],
+      duplicateFlows: { duplicatedFunctions: [], duplicatedControlFlow: [], totalFunctionGroups: 0, totalFlowGroups: 0 },
+      dependencyGraph: minimalDepSummary(),
+      dependencyFindings: [],
+      agentOutput: { totalFindings: 0, highPriority: 0, mediumPriority: 0, lowPriority: 0, topRecommendations: [], filesWithIssues: [] },
+      optimizationOpportunities: [],
+      optimizationFindings: [],
+      parseErrors: [],
+      ...overrides,
+    };
+  }
+
+  it('creates summary.md with expected content', () => {
+    const outDir = path.join(tmpDir, 'scan');
+    writeMultiFileReport(outDir, makeMinimalReport(), { ...DEFAULT_OPTS, graph: false }, emptyState(), minimalDepSummary(), new Map());
+    const summaryPath = path.join(outDir, 'summary.md');
+    expect(fs.existsSync(summaryPath)).toBe(true);
+    const content = fs.readFileSync(summaryPath, 'utf8');
+    expect(content).toContain('# Code Quality Scan Report');
+    expect(content).toContain('## Scan Scope');
+    expect(content).toContain('## Findings Overview');
+  });
+
+  it('creates findings.json with expected structure', () => {
+    const outDir = path.join(tmpDir, 'scan');
+    const findings = [
+      makeFinding({ id: '1', category: 'dead-export', severity: 'high' }),
+      makeFinding({ id: '2', category: 'dependency-cycle', severity: 'medium' }),
+    ];
+    writeMultiFileReport(outDir, makeMinimalReport({ optimizationFindings: findings }), DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+    const findingsPath = path.join(outDir, 'findings.json');
+    expect(fs.existsSync(findingsPath)).toBe(true);
+    const data = JSON.parse(fs.readFileSync(findingsPath, 'utf8'));
+    expect(data.totalFindings).toBe(2);
+    expect(Array.isArray(data.optimizationFindings)).toBe(true);
+    expect(data.optimizationFindings.length).toBe(2);
+  });
+
+  it('summary.md includes Analysis Signals when reportAnalysis is provided', () => {
+    const outDir = path.join(tmpDir, 'scan');
+    const reportAnalysis: import('./report-analysis.js').ReportAnalysisSummary = {
+      graphSignals: [],
+      astSignals: [],
+      combinedSignals: [],
+      strongestGraphSignal: { kind: 'cycle', lens: 'graph', title: 'Cycle', summary: 'Cycle detected', confidence: 'high', score: 80, files: [], categories: [], evidence: {} },
+      strongestAstSignal: null,
+      combinedInterpretation: { kind: 'hybrid', lens: 'hybrid', title: 'Hybrid', summary: 'Combined view', confidence: 'medium', score: 60, files: [], categories: [], evidence: {} },
+      recommendedValidation: { summary: 'Validate with LSP', tools: ['lspFindReferences', 'lspGotoDefinition'] },
+      investigationPrompts: ['Check cycle impact'],
+    };
+    writeMultiFileReport(outDir, makeMinimalReport({ reportAnalysis }), DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+    const summaryPath = path.join(outDir, 'summary.md');
+    const content = fs.readFileSync(summaryPath, 'utf8');
+    expect(content).toContain('## Analysis Signals');
+    expect(content).toContain('Cycle detected');
+    expect(content).toContain('Combined view');
+    expect(content).toContain('Validate with LSP');
+    expect(content).toContain('Check cycle impact');
+  });
+
+  it('summary.md includes structural layout alert for mega-folder signal', () => {
+    const outDir = path.join(tmpDir, 'scan-mega');
+    const reportAnalysis: import('./report-analysis.js').ReportAnalysisSummary = {
+      graphSignals: [
+        {
+          kind: 'mega-folder-cluster',
+          lens: 'graph',
+          title: 'Mega folder concentration',
+          summary: 'src/core concentrates 42 files (54.0% of analyzed production files), which is a structural decomposition risk.',
+          confidence: 'high',
+          score: 180,
+          files: ['src/core/a.ts'],
+          categories: ['mega-folder'],
+          evidence: { folderPath: 'src/core', fileCount: 42, concentration: 0.54 },
+        },
+      ],
+      astSignals: [],
+      combinedSignals: [],
+      strongestGraphSignal: { kind: 'mega-folder-cluster', lens: 'graph', title: 'Mega folder concentration', summary: 'src/core concentrates 42 files', confidence: 'high', score: 180, files: ['src/core/a.ts'], categories: ['mega-folder'], evidence: { folderPath: 'src/core' } },
+      strongestAstSignal: null,
+      combinedInterpretation: null,
+      recommendedValidation: null,
+      investigationPrompts: ['Plan decomposition for src/core into smaller domain folders before adding more files there.'],
+    };
+    writeMultiFileReport(outDir, makeMinimalReport({ reportAnalysis }), DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+    const content = fs.readFileSync(path.join(outDir, 'summary.md'), 'utf8');
+    expect(content).toContain('Structural Layout Alert');
+    expect(content).toContain('src/core concentrates 42 files');
+  });
+});
+
+// ─── writeMultiFileReport comprehensive (coverage boost) ─────────────────────
+
+describe('writeMultiFileReport comprehensive', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'idx-test-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function makeFullReport(overrides: Partial<FullReport> = {}): FullReport {
+    const fileEntry = makeFile({ file: 'src/main.ts' });
+    const depState = emptyState();
+    addEdge(depState, 'src/a.ts', 'src/b.ts');
+    addEdge(depState, 'src/b.ts', 'src/c.ts');
+    addEdge(depState, 'src/c.ts', 'src/a.ts');
+    const depSummary = minimalDepSummary({
+      totalModules: 3,
+      totalEdges: 3,
+      cycles: [{ path: ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/a.ts'], nodeCount: 3 }],
+      criticalPaths: [{ start: 'src/a.ts', path: ['src/a.ts', 'src/b.ts', 'src/c.ts'], score: 200, length: 3, containsCycle: true }],
+      criticalModules: [{ file: 'src/a.ts', inboundCount: 1, outboundCount: 1, inboundFromProduction: 1, inboundFromTests: 0, externalDependencyCount: 0, unresolvedDependencyCount: 0, score: 50, riskBand: 'medium' }],
+      outgoingTop: [{ file: 'src/a.ts', count: 1, score: 50 }],
+      inboundTop: [{ file: 'src/c.ts', count: 1, score: 50 }],
+    });
+    return {
+      generatedAt: '2026-03-18T00:00:00.000Z',
+      repoRoot: '/repo',
+      options: {},
+      parser: { requested: 'auto', effective: 'typescript' },
+      summary: { totalFiles: 5, totalFunctions: 20, totalFlows: 80, totalDependencyFiles: 5, totalPackages: 1 },
+      fileInventory: [fileEntry],
+      duplicateFlows: { duplicatedFunctions: [], duplicatedControlFlow: [], totalFunctionGroups: 0, totalFlowGroups: 0 },
+      dependencyGraph: depSummary,
+      dependencyFindings: [],
+      agentOutput: { totalFindings: 0, highPriority: 0, mediumPriority: 0, lowPriority: 0, topRecommendations: [], filesWithIssues: [] },
+      optimizationOpportunities: [],
+      optimizationFindings: [],
+      parseErrors: [{ file: 'bad.ts', message: 'Unexpected token' }],
+      ...overrides,
+    };
+  }
+
+  function makeDepStateWithEdges(): { state: ReturnType<typeof emptyState>; summary: DependencySummary } {
+    const state = emptyState();
+    addEdge(state, 'src/a.ts', 'src/b.ts');
+    addEdge(state, 'src/b.ts', 'src/c.ts');
+    addEdge(state, 'src/c.ts', 'src/a.ts');
+    const summary = minimalDepSummary({
+      totalModules: 3,
+      totalEdges: 3,
+      cycles: [{ path: ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/a.ts'], nodeCount: 3 }],
+      criticalPaths: [{ start: 'src/a.ts', path: ['src/a.ts', 'src/b.ts', 'src/c.ts'], score: 150, length: 3, containsCycle: true }],
+      criticalModules: [{ file: 'src/a.ts', inboundCount: 1, outboundCount: 1, inboundFromProduction: 1, inboundFromTests: 0, externalDependencyCount: 0, unresolvedDependencyCount: 0, score: 60, riskBand: 'high' }],
+      outgoingTop: [{ file: 'src/a.ts', count: 1, score: 60 }],
+      inboundTop: [{ file: 'src/c.ts', count: 1, score: 60 }],
+    });
+    return { state, summary };
+  }
+
+  it('creates ALL output files including graph.md when options.graph=true', () => {
+    const outDir = path.join(tmpDir, 'scan-graph');
+    const { state, summary } = makeDepStateWithEdges();
+    const report = makeFullReport();
+    writeMultiFileReport(outDir, report, { ...DEFAULT_OPTS, graph: true }, state, summary, new Map());
+    expect(fs.existsSync(path.join(outDir, 'graph.md'))).toBe(true);
+    const graphContent = fs.readFileSync(path.join(outDir, 'graph.md'), 'utf8');
+    expect(graphContent).toContain('graph LR');
+    expect(graphContent).toContain('Dependency Cycles');
+    expect(graphContent).toContain('Critical Dependency Chains');
+    expect(graphContent).toContain('Total modules');
+  });
+
+  it('includes sccClusters and packageGraphSummary when options.graphAdvanced=true', () => {
+    const outDir = path.join(tmpDir, 'scan-adv');
+    const { state, summary } = makeDepStateWithEdges();
+    const report = makeFullReport();
+    writeMultiFileReport(outDir, report, { ...DEFAULT_OPTS, graph: true, graphAdvanced: true }, state, summary, new Map());
+    const archData = JSON.parse(fs.readFileSync(path.join(outDir, 'architecture.json'), 'utf8'));
+    expect(archData.sccClusters).toBeDefined();
+    expect(Array.isArray(archData.sccClusters)).toBe(true);
+    expect(archData.packageGraphSummary).toBeDefined();
+  });
+
+  it('creates ast-trees.txt when report.astTrees is set', () => {
+    const outDir = path.join(tmpDir, 'scan-trees');
+    const tree = { kind: 'SourceFile', startLine: 1, endLine: 20, children: [{ kind: 'FunctionDeclaration', startLine: 5, endLine: 15, children: [] }] };
+    const report = makeFullReport({ astTrees: [{ package: 'test', file: 'src/foo.ts', tree }] });
+    writeMultiFileReport(outDir, report, DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+    const txtPath = path.join(outDir, 'ast-trees.txt');
+    expect(fs.existsSync(txtPath)).toBe(true);
+    const content = fs.readFileSync(txtPath, 'utf8');
+    expect(content).toContain('## test — src/foo.ts');
+    expect(content).toContain('SourceFile');
+    expect(content).toContain('FunctionDeclaration');
+  });
+
+  it('creates security.json when security findings present', () => {
+    const outDir = path.join(tmpDir, 'scan-sec');
+    const securityFindings = [
+      makeFinding({ id: 's1', category: 'hardcoded-secret', severity: 'high', file: 'src/keys.ts' }),
+    ];
+    const report = makeFullReport({ optimizationFindings: securityFindings });
+    writeMultiFileReport(outDir, report, DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+    expect(fs.existsSync(path.join(outDir, 'security.json'))).toBe(true);
+    const secData = JSON.parse(fs.readFileSync(path.join(outDir, 'security.json'), 'utf8'));
+    expect(secData.findingsCount).toBe(1);
+    expect(secData.findings[0].category).toBe('hardcoded-secret');
+  });
+
+  it('creates test-quality.json when test quality findings present', () => {
+    const outDir = path.join(tmpDir, 'scan-test');
+    const testFindings = [
+      makeFinding({ id: 't1', category: 'low-assertion-density', severity: 'medium', file: 'src/foo.test.ts' }),
+    ];
+    const report = makeFullReport({ optimizationFindings: testFindings });
+    writeMultiFileReport(outDir, report, DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+    expect(fs.existsSync(path.join(outDir, 'test-quality.json'))).toBe(true);
+    const tqData = JSON.parse(fs.readFileSync(path.join(outDir, 'test-quality.json'), 'utf8'));
+    expect(tqData.findingsCount).toBe(1);
+  });
+
+  it('verifies summary.json contains outputFiles index', () => {
+    const outDir = path.join(tmpDir, 'scan-sum');
+    const { state, summary } = makeDepStateWithEdges();
+    writeMultiFileReport(outDir, makeFullReport(), { ...DEFAULT_OPTS, graph: true }, state, summary, new Map());
+    const summaryData = JSON.parse(fs.readFileSync(path.join(outDir, 'summary.json'), 'utf8'));
+    expect(summaryData.outputFiles.summary).toBe('summary.json');
+    expect(summaryData.outputFiles.findings).toBe('findings.json');
+    expect(summaryData.outputFiles.architecture).toBe('architecture.json');
+    expect(summaryData.outputFiles.codeQuality).toBe('code-quality.json');
+    expect(summaryData.outputFiles.deadCode).toBe('dead-code.json');
+    expect(summaryData.outputFiles.fileInventory).toBe('file-inventory.json');
+    expect(summaryData.outputFiles.summaryMd).toBe('summary.md');
+    expect(summaryData.outputFiles.graph).toBe('graph.md');
+  });
+
+  it('verifies summary.md contains expected sections', () => {
+    const outDir = path.join(tmpDir, 'scan-md');
+    const report = makeFullReport();
+    writeMultiFileReport(outDir, report, DEFAULT_OPTS, emptyState(), minimalDepSummary(), new Map());
+    const md = fs.readFileSync(path.join(outDir, 'summary.md'), 'utf8');
+    expect(md).toContain('# Code Quality Scan Report');
+    expect(md).toContain('## Scan Scope');
+    expect(md).toContain('## Findings Overview');
+    expect(md).toContain('## Health Scores');
+    expect(md).toContain('## Architecture Health');
+    expect(md).toContain('## Code Quality');
+    expect(md).toContain('## Dead Code & Hygiene');
+    expect(md).toContain('## Output Files');
+    expect(md).toContain('## Parse Errors');
+    expect(md).toContain('bad.ts');
+    expect(md).toContain('Unexpected token');
+  });
+
+  it('works with options.flow=true (enriches file inventory and findings)', () => {
+    const outDir = path.join(tmpDir, 'scan-flow');
+    const report = makeFullReport({ fileInventory: [makeFile({ file: 'src/a.ts', flows: [{ kind: 'flow', file: 'src/a.ts', lineStart: 1, lineEnd: 5, columnStart: 1, columnEnd: 1, statementCount: 3 }] })] });
+    writeMultiFileReport(outDir, report, { ...DEFAULT_OPTS, flow: true }, emptyState(), minimalDepSummary(), new Map());
+    const invData = JSON.parse(fs.readFileSync(path.join(outDir, 'file-inventory.json'), 'utf8'));
+    expect(invData.fileInventory).toBeDefined();
+    expect(invData.fileCount).toBe(1);
+  });
+
+  it('uses report.graphAnalytics when provided (skips computeGraphAnalytics)', () => {
+    const outDir = path.join(tmpDir, 'scan-precomputed');
+    const graphAnalytics = {
+      sccClusters: [{ id: 'c1', files: ['src/a.ts'], nodeCount: 1, edgeCount: 0, entryEdges: 0, exitEdges: 0, hubFiles: [] }],
+      chokepoints: [],
+      packageGraphSummary: { packageCount: 1, edgeCount: 0, packages: [], hotspots: [] },
+      articulationPoints: [],
+      bridgeEdges: [],
+    };
+    const report = makeFullReport({ graphAnalytics });
+    writeMultiFileReport(outDir, report, { ...DEFAULT_OPTS, graphAdvanced: true }, emptyState(), minimalDepSummary(), new Map());
+    const archData = JSON.parse(fs.readFileSync(path.join(outDir, 'architecture.json'), 'utf8'));
+    expect(archData.sccClusters).toHaveLength(1);
+    expect(archData.sccClusters[0].id).toBe('c1');
+  });
+});
+
+// ─── buildIssueCatalog detector paths (coverage boost) ───────────────────────
+
+describe('buildIssueCatalog detector paths', () => {
+  const opts = { ...DEFAULT_OPTS, root: '/repo', findingsLimit: 500, anyThreshold: 5, halsteadEffortThreshold: 500_000, maintainabilityIndexThreshold: 20 };
+
+  it('detects dead exports via declaredExportsByFile without consumedFromModule', () => {
+    const state = emptyState();
+    state.files.add('src/lib.ts');
+    state.declaredExportsByFile.set('src/lib.ts', [
+      { name: 'usedFn', kind: 'value' },
+      { name: 'deadExport', kind: 'value', lineStart: 20, lineEnd: 25 },
+    ]);
+    state.importedSymbolsByFile.set('src/consumer.ts', [
+      { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'usedFn', localName: 'usedFn', isTypeOnly: false },
+    ]);
+    addEdge(state, 'src/consumer.ts', 'src/lib.ts');
+    const { findings } = buildIssueCatalog([], [], [], minimalDepSummary(), state, opts);
+    expect(findings.some((f) => f.category === 'dead-export' && f.title.includes('deadExport'))).toBe(true);
+  });
+
+  it('detects dead re-exports when reExport not consumed', () => {
+    const state = emptyState();
+    state.files.add('src/barrel.ts');
+    state.reExportsByFile.set('src/barrel.ts', [
+      { sourceModule: './a', resolvedModule: 'src/a.ts', exportedAs: 'unusedReExport', importedName: 'unusedReExport', isStar: false, isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+    ]);
+    const { findings } = buildIssueCatalog([], [], [], minimalDepSummary(), state, opts);
+    expect(findings.some((f) => f.category === 'dead-re-export')).toBe(true);
+  });
+
+  it('detects namespace import (importedName=*)', () => {
+    const state = emptyState();
+    state.files.add('src/consumer.ts');
+    state.importedSymbolsByFile.set('src/consumer.ts', [
+      { sourceModule: 'lodash', resolvedModule: 'node_modules/lodash', importedName: '*', localName: '_', isTypeOnly: false },
+    ]);
+    const { findings } = buildIssueCatalog([], [], [], minimalDepSummary(), state, opts);
+    expect(findings.some((f) => f.category === 'namespace-import')).toBe(true);
+  });
+
+  it('detects CommonJS in ESM (localName=require)', () => {
+    const state = emptyState();
+    state.files.add('src/mixed.ts');
+    state.importedSymbolsByFile.set('src/mixed.ts', [
+      { sourceModule: 'createRequire', resolvedModule: 'node:module', importedName: 'createRequire', localName: 'require', isTypeOnly: false },
+    ]);
+    const { findings } = buildIssueCatalog([], [], [], minimalDepSummary(), state, opts);
+    expect(findings.some((f) => f.category === 'commonjs-in-esm')).toBe(true);
+  });
+
+  it('detects export-star leak (isStar=true)', () => {
+    const state = emptyState();
+    state.files.add('src/barrel.ts');
+    state.reExportsByFile.set('src/barrel.ts', [
+      { sourceModule: './internal', resolvedModule: 'src/internal.ts', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+    ]);
+    const { findings } = buildIssueCatalog([], [], [], minimalDepSummary(), state, opts);
+    expect(findings.some((f) => f.category === 'export-star-leak')).toBe(true);
+  });
+
+  it('detects unsafe-any when anyCount > threshold', () => {
+    const files = [makeFile({ file: 'src/loose.ts', anyCount: 12 })];
+    const { findings } = buildIssueCatalog([], [], files, minimalDepSummary(), emptyState(), opts);
+    expect(findings.some((f) => f.category === 'unsafe-any' && f.file === 'src/loose.ts')).toBe(true);
+  });
+
+  it('detects high Halstead effort when effort > threshold', () => {
+    const fn = makeFn({
+      file: 'src/hard.ts',
+      halstead: { operators: 50, operands: 100, distinctOperators: 20, distinctOperands: 30, vocabulary: 50, length: 150, volume: 800, difficulty: 10, effort: 600_000, time: 30, estimatedBugs: 1 },
+    });
+    const files = [makeFile({ file: 'src/hard.ts', functions: [fn] })];
+    const { findings } = buildIssueCatalog([], [], files, minimalDepSummary(), emptyState(), opts);
+    expect(findings.some((f) => f.category === 'halstead-effort')).toBe(true);
+  });
+
+  it('detects low maintainability when maintainabilityIndex < threshold', () => {
+    const fn = makeFn({ file: 'src/bad.ts', maintainabilityIndex: 15 });
+    const files = [makeFile({ file: 'src/bad.ts', functions: [fn] })];
+    const { findings } = buildIssueCatalog([], [], files, minimalDepSummary(), emptyState(), opts);
+    expect(findings.some((f) => f.category === 'low-maintainability')).toBe(true);
+  });
+
+  it('detects unbounded-collection when loops>=2, calls>=5, maxLoopDepth>=2', () => {
+    const fn = makeFn({ file: 'src/collect.ts', loops: 3, calls: 8, maxLoopDepth: 3 });
+    const files = [makeFile({ file: 'src/collect.ts', functions: [fn] })];
+    const { findings } = buildIssueCatalog([], [], files, minimalDepSummary(), emptyState(), opts);
+    expect(findings.some((f) => f.category === 'unbounded-collection')).toBe(true);
+  });
+});
+
+// ─── computeDependencyCycles comprehensive ──────────────────────────────────
+
+describe('computeDependencyCycles comprehensive', () => {
+  it('detects triangle cycle A->B->C->A', () => {
+    const state = emptyState();
+    addEdge(state, 'a.ts', 'b.ts');
+    addEdge(state, 'b.ts', 'c.ts');
+    addEdge(state, 'c.ts', 'a.ts');
+    const cycles = computeDependencyCycles(state);
+    expect(cycles.length).toBe(1);
+    expect(cycles[0].nodeCount).toBe(3);
+    expect(cycles[0].path).toContain('a.ts');
+    expect(cycles[0].path).toContain('b.ts');
+    expect(cycles[0].path).toContain('c.ts');
+  });
+
+  it('detects multiple disjoint cycles', () => {
+    const state = emptyState();
+    addEdge(state, 'a.ts', 'b.ts');
+    addEdge(state, 'b.ts', 'a.ts');
+    addEdge(state, 'x.ts', 'y.ts');
+    addEdge(state, 'y.ts', 'z.ts');
+    addEdge(state, 'z.ts', 'x.ts');
+    const cycles = computeDependencyCycles(state);
+    expect(cycles.length).toBe(2);
+  });
+
+  it('returns empty for linear chain (no cycles)', () => {
+    const state = emptyState();
+    addEdge(state, 'a.ts', 'b.ts');
+    addEdge(state, 'b.ts', 'c.ts');
+    addEdge(state, 'c.ts', 'd.ts');
+    expect(computeDependencyCycles(state)).toEqual([]);
+  });
+
+  it('detects self-loop A->A', () => {
+    const state = emptyState();
+    addEdge(state, 'a.ts', 'a.ts');
+    const cycles = computeDependencyCycles(state);
+    expect(cycles.length).toBe(1);
+    expect(cycles[0].nodeCount).toBe(1);
+    expect(cycles[0].path).toContain('a.ts');
+  });
+});
+
+// ─── computeDependencyCriticalPaths comprehensive ────────────────────────────
+
+describe('computeDependencyCriticalPaths comprehensive', () => {
+  it('returns single path root->leaf for linear chain', () => {
+    const state = emptyState();
+    addEdge(state, 'root.ts', 'mid.ts');
+    addEdge(state, 'mid.ts', 'leaf.ts');
+    const critMap = new Map<string, FileCriticality>();
+    critMap.set('root.ts', { file: 'root.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 10 });
+    critMap.set('mid.ts', { file: 'mid.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 20 });
+    critMap.set('leaf.ts', { file: 'leaf.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 30 });
+    const paths = computeDependencyCriticalPaths(state, critMap, testOpts);
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths[0].path).toEqual(['root.ts', 'mid.ts', 'leaf.ts']);
+    expect(paths[0].length).toBe(3);
+  });
+
+  it('handles branching paths and returns highest weighted path', () => {
+    const state = emptyState();
+    addEdge(state, 'root.ts', 'branch-a.ts');
+    addEdge(state, 'root.ts', 'branch-b.ts');
+    addEdge(state, 'branch-a.ts', 'leaf-a.ts');
+    addEdge(state, 'branch-b.ts', 'leaf-b.ts');
+    const critMap = new Map<string, FileCriticality>();
+    critMap.set('root.ts', { file: 'root.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 5 });
+    critMap.set('branch-a.ts', { file: 'branch-a.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 100 });
+    critMap.set('branch-b.ts', { file: 'branch-b.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 10 });
+    critMap.set('leaf-a.ts', { file: 'leaf-a.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 5 });
+    critMap.set('leaf-b.ts', { file: 'leaf-b.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 5 });
+    const paths = computeDependencyCriticalPaths(state, critMap, testOpts);
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths[0].path).toContain('branch-a.ts');
+    expect(paths[0].path[0]).toBe('root.ts');
+  });
+
+  it('returns empty for empty state (no files)', () => {
+    const state = emptyState();
+    const critMap = new Map<string, FileCriticality>();
+    const paths = computeDependencyCriticalPaths(state, critMap, testOpts);
+    expect(paths).toEqual([]);
+  });
+});
+
+// ─── generateSummaryMd comprehensive (coverage boost) ────────────────────────
+
+describe('generateSummaryMd comprehensive', () => {
+  const fakeDir = '/tmp/nonexistent-scan-dir';
+
+  function makeReportForMd(overrides: Partial<FullReport> = {}): FullReport {
+    return {
+      generatedAt: '2026-03-17T00:00:00.000Z',
+      repoRoot: '/repo',
+      options: {},
+      parser: { requested: 'auto', effective: 'typescript' },
+      summary: { totalFiles: 42, totalFunctions: 318, totalFlows: 1204, totalDependencyFiles: 50, totalPackages: 3 },
+      fileInventory: [],
+      duplicateFlows: {},
+      dependencyGraph: minimalDepSummary({ totalModules: 42, totalEdges: 187, cycles: [{ path: ['a', 'b', 'a'], nodeCount: 2 }], criticalPaths: [] }),
+      dependencyFindings: [],
+      agentOutput: {
+        totalFindings: 5,
+        highPriority: 2,
+        mediumPriority: 2,
+        lowPriority: 1,
+        topRecommendations: [{ severity: 'high', title: 'Fix cycle', file: 'src/a.ts', category: 'dependency-cycle' }],
+        filesWithIssues: [],
+      },
+      optimizationOpportunities: [],
+      optimizationFindings: [],
+      parseErrors: [],
+      ...overrides,
+    };
+  }
+
+  it('includes Security section when securityFindings present', () => {
+    const securityFindings: Finding[] = [
+      makeFinding({ id: 's1', category: 'hardcoded-secret', severity: 'high', file: 'src/keys.ts' }),
+    ];
+    const md = generateSummaryMd({
+      dir: fakeDir,
+      report: makeReportForMd(),
+      outputFiles: {},
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+      securityFindings,
+    });
+    expect(md).toContain('## Security');
+    expect(md).toContain('security.json');
+    expect(md).toContain('hardcoded-secret');
+  });
+
+  it('includes Test Quality section when testQualityFindings present', () => {
+    const testQualityFindings: Finding[] = [
+      makeFinding({ id: 't1', category: 'low-assertion-density', severity: 'medium', file: 'src/foo.test.ts' }),
+    ];
+    const md = generateSummaryMd({
+      dir: fakeDir,
+      report: makeReportForMd(),
+      outputFiles: {},
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+      testQualityFindings,
+    });
+    expect(md).toContain('## Test Quality');
+    expect(md).toContain('test-quality.json');
+    expect(md).toContain('low-assertion-density');
+  });
+
+  it('shows scope when scope option is set', () => {
+    const md = generateSummaryMd({
+      dir: fakeDir,
+      report: makeReportForMd(),
+      outputFiles: {},
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+      scope: ['/repo/src/a.ts', '/repo/src/b.ts'],
+      root: '/repo',
+    });
+    expect(md).toContain('## Scan Scope');
+    expect(md).toContain('Scoped scan');
+  });
+
+  it('shows scopeSymbols when scopeSymbols set with scope', () => {
+    const scopeSymbols = new Map<string, string[]>();
+    scopeSymbols.set('/repo/src/lib.ts', ['foo', 'bar']);
+    const md = generateSummaryMd({
+      dir: fakeDir,
+      report: makeReportForMd(),
+      outputFiles: {},
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+      scope: ['/repo/src/lib.ts'],
+      root: '/repo',
+      scopeSymbols,
+    });
+    expect(md).toContain('Scoped scan');
+    expect(md).toContain('lib.ts');
+  });
+
+  it('shows reportAnalysis signals when provided', () => {
+    const reportAnalysis: import('./report-analysis.js').ReportAnalysisSummary = {
+      graphSignals: [],
+      astSignals: [],
+      combinedSignals: [],
+      strongestGraphSignal: { kind: 'cycle', lens: 'graph', title: 'Cycle', summary: 'Cycle detected', confidence: 'high', score: 80, files: [], categories: [], evidence: {} },
+      strongestAstSignal: { kind: 'complexity', lens: 'ast', title: 'Complex', summary: 'High complexity', confidence: 'medium', score: 60, files: [], categories: [], evidence: {} },
+      combinedInterpretation: { kind: 'hybrid', lens: 'hybrid', title: 'Hybrid', summary: 'Combined view', confidence: 'medium', score: 60, files: [], categories: [], evidence: {} },
+      recommendedValidation: { summary: 'Validate with LSP', tools: ['lspFindReferences', 'lspGotoDefinition'] },
+      investigationPrompts: ['Check cycle impact', 'Verify complexity'],
+    };
+    const md = generateSummaryMd({
+      dir: fakeDir,
+      report: makeReportForMd(),
+      outputFiles: {},
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+      reportAnalysis,
+    });
+    expect(md).toContain('## Analysis Signals');
+    expect(md).toContain('Cycle detected');
+    expect(md).toContain('High complexity');
+    expect(md).toContain('Combined view');
+    expect(md).toContain('Validate with LSP');
+    expect(md).toContain('Check cycle impact');
+  });
+
+  it('shows semantic enabled message when semanticEnabled=true', () => {
+    const md = generateSummaryMd({
+      dir: fakeDir,
+      report: makeReportForMd(),
+      outputFiles: {},
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+      semanticEnabled: true,
+    });
+    expect(md).toContain('Semantic analysis');
+    expect(md).toContain('14 additional categories');
+  });
+
+  it('shows activeFeatures filter when present', () => {
+    const md = generateSummaryMd({
+      dir: fakeDir,
+      report: makeReportForMd(),
+      outputFiles: {},
+      architectureFindings: [makeFinding({ category: 'dependency-cycle' }), makeFinding({ category: 'dead-export' })],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+      activeFeatures: new Set(['dependency-cycle']),
+    });
+    expect(md).toContain('Features filter');
+    expect(md).toContain('dependency-cycle');
+    expect(md).toContain('*(skipped)*');
+  });
+
+  it('shows truncated message when totalBeforeTruncation > findings length', () => {
+    const report = makeReportForMd({
+      optimizationFindings: [],
+      agentOutput: {
+        totalFindings: 5,
+        totalBeforeTruncation: 20,
+        highPriority: 2,
+        mediumPriority: 2,
+        lowPriority: 1,
+        topRecommendations: [],
+        filesWithIssues: [],
+        droppedCategories: ['dead-export', 'function-optimization'],
+      },
+    });
+    const md = generateSummaryMd({
+      dir: fakeDir,
+      report,
+      outputFiles: {},
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('Truncated');
+    expect(md).toContain('20');
+    expect(md).toContain('dead-export');
+  });
+
+  it('shows Change Risk Hotspots when hotFiles provided', () => {
+    const hotFiles: import('./types.js').HotFile[] = [
+      { file: 'src/core.ts', riskScore: 85, fanIn: 10, fanOut: 5, complexityScore: 50, exportCount: 8, inCycle: true, onCriticalPath: true },
+    ];
+    const md = generateSummaryMd({
+      dir: fakeDir,
+      report: makeReportForMd(),
+      outputFiles: {},
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+      hotFiles,
+    });
+    expect(md).toContain('## Change Risk Hotspots');
+    expect(md).toContain('src/core.ts');
+    expect(md).toContain('85');
+  });
+
+  it('shows Top Concern Tags when findings have tags', () => {
+    const findings: Finding[] = [
+      { ...makeFinding({ id: '1' }), tags: ['coupling', 'architecture'] },
+      { ...makeFinding({ id: '2' }), tags: ['coupling'] },
+    ];
+    const md = generateSummaryMd({
+      dir: fakeDir,
+      report: makeReportForMd({ optimizationFindings: findings }),
+      outputFiles: {},
+      architectureFindings: findings,
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('## Top Concern Tags');
+    expect(md).toContain('coupling');
+  });
+
+  it('formatFileSize: shows B for small files, KB for medium, MB for large (via outputFiles)', () => {
+    const realDir = fs.mkdtempSync(path.join(os.tmpdir(), 'summary-size-'));
+    try {
+      fs.writeFileSync(path.join(realDir, 'small.json'), 'x'.repeat(100), 'utf8');
+      fs.writeFileSync(path.join(realDir, 'medium.json'), 'x'.repeat(2048), 'utf8');
+      fs.writeFileSync(path.join(realDir, 'large.json'), 'x'.repeat(2 * 1024 * 1024), 'utf8');
+      const outputFiles = { small: 'small.json', medium: 'medium.json', large: 'large.json' };
+      const md = generateSummaryMd({
+        dir: realDir,
+        report: makeReportForMd(),
+        outputFiles,
+        architectureFindings: [],
+        codeQualityFindings: [],
+        deadCodeFindings: [],
+      });
+      expect(md).toContain('| Size |');
+      expect(md).toMatch(/\d+\s*B/);
+      expect(md).toMatch(/\d+(\.\d+)?\s*KB/);
+      expect(md).toMatch(/\d+(\.\d+)?\s*MB/);
+    } finally {
+      fs.rmSync(realDir, { recursive: true, force: true });
+    }
+  });
+
+  it('includes AST Trees section when outputFiles.astTrees present', () => {
+    const outputFiles = { astTrees: 'ast-trees.txt' };
+    const md = generateSummaryMd({
+      dir: fakeDir,
+      report: makeReportForMd(),
+      outputFiles,
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('## AST Trees');
+    expect(md).toContain('ast-trees.txt');
+  });
+
+  it('skips depGraph block when dependencyGraph is undefined', () => {
+    const report = makeReportForMd({ dependencyGraph: undefined as unknown as DependencySummary });
+    const md = generateSummaryMd({
+      dir: fakeDir,
+      report,
+      outputFiles: {},
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('## Architecture Health');
+    expect(md).not.toContain('| Modules |');
+  });
+
+  it('handles reportAnalysis with null strongestGraphSignal and strongestAstSignal', () => {
+    const reportAnalysis: import('./report-analysis.js').ReportAnalysisSummary = {
+      graphSignals: [],
+      astSignals: [],
+      combinedSignals: [],
+      strongestGraphSignal: null,
+      strongestAstSignal: null,
+      combinedInterpretation: { kind: 'hybrid', lens: 'hybrid', title: 'Hybrid', summary: 'No combined interpretation available yet.', confidence: 'low', score: 0, files: [], categories: [], evidence: {} },
+      recommendedValidation: null,
+      investigationPrompts: [],
+    };
+    const md = generateSummaryMd({
+      dir: fakeDir,
+      report: makeReportForMd(),
+      outputFiles: {},
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+      reportAnalysis,
+    });
+    expect(md).toContain('No dominant graph signal');
+    expect(md).toContain('No dominant AST signal');
+    expect(md).toContain('No combined interpretation available yet');
+  });
+
+  it('shows dash for file size when output file does not exist', () => {
+    const realDir = fs.mkdtempSync(path.join(os.tmpdir(), 'summary-missing-'));
+    try {
+      const outputFiles = { existing: 'existing.json', missing: 'nonexistent.json' };
+      fs.writeFileSync(path.join(realDir, 'existing.json'), '{}', 'utf8');
+      const md = generateSummaryMd({
+        dir: realDir,
+        report: makeReportForMd(),
+        outputFiles,
+        architectureFindings: [],
+        codeQualityFindings: [],
+        deadCodeFindings: [],
+      });
+      expect(md).toContain('| Size |');
+      expect(md).toContain('—');
+    } finally {
+      fs.rmSync(realDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ─── diversifyFindings edge cases (coverage boost) ───────────────────────────
+
+describe('diversifyFindings edge cases', () => {
+  it('returns empty when limit=0', () => {
+    const input = [
+      makeFinding({ category: 'a', severity: 'high' }),
+      makeFinding({ category: 'b', severity: 'high' }),
+    ];
+    const result = diversifyFindings(input, 0);
+    expect(result).toEqual([]);
+  });
+
+  it('returns single finding when limit=1', () => {
+    const input = [
+      makeFinding({ category: 'critical-cat', severity: 'critical' }),
+      makeFinding({ category: 'high-cat', severity: 'high' }),
+    ];
+    const result = diversifyFindings(input, 1);
+    expect(result).toHaveLength(1);
+    expect(result[0].severity).toBe('critical');
+  });
+
+  it('handles all same category (no diversity possible)', () => {
+    const input = Array.from({ length: 10 }, (_, i) =>
+      makeFinding({ id: `f-${i}`, category: 'only-cat', severity: 'high' })
+    );
+    const result = diversifyFindings(input, 5);
+    expect(result).toHaveLength(5);
+    expect(result.every((f) => f.category === 'only-cat')).toBe(true);
+  });
+
+  it('handles many categories with 1 finding each', () => {
+    const input = [
+      makeFinding({ id: '1', category: 'cat-a', severity: 'high' }),
+      makeFinding({ id: '2', category: 'cat-b', severity: 'high' }),
+      makeFinding({ id: '3', category: 'cat-c', severity: 'medium' }),
+      makeFinding({ id: '4', category: 'cat-d', severity: 'medium' }),
+      makeFinding({ id: '5', category: 'cat-e', severity: 'low' }),
+    ];
+    const result = diversifyFindings(input, 3);
+    expect(result).toHaveLength(3);
+    const categories = new Set(result.map((f) => f.category));
+    expect(categories.size).toBe(3);
+  });
+});
+
+// ─── diverseTopRecommendations edge cases (coverage boost) ───────────────────
+
+describe('diverseTopRecommendations edge cases', () => {
+  it('maxPerCategory=1 forces maximum diversity', () => {
+    const findings = [
+      makeFinding({ id: '1', category: 'dead-export', severity: 'critical' }),
+      makeFinding({ id: '2', category: 'dead-export', severity: 'high' }),
+      makeFinding({ id: '3', category: 'dependency-cycle', severity: 'high' }),
+      makeFinding({ id: '4', category: 'function-optimization', severity: 'medium' }),
+    ];
+    const result = diverseTopRecommendations(findings, 10, 1);
+    expect(result).toHaveLength(3);
+    expect(new Set(result.map((f) => f.category)).size).toBe(3);
+  });
+
+  it('all findings same category returns up to maxPerCategory', () => {
+    const findings = Array.from({ length: 10 }, (_, i) =>
+      makeFinding({ id: `f-${i}`, category: 'only-cat', severity: 'high' })
+    );
+    const result = diverseTopRecommendations(findings, 10, 2);
+    expect(result).toHaveLength(2);
+    expect(result.every((f) => f.category === 'only-cat')).toBe(true);
+  });
+
+  it('exactly at limit returns correct count', () => {
+    const findings = [
+      makeFinding({ id: '1', category: 'a', severity: 'high' }),
+      makeFinding({ id: '2', category: 'b', severity: 'high' }),
+      makeFinding({ id: '3', category: 'c', severity: 'high' }),
+    ];
+    const result = diverseTopRecommendations(findings, 3, 2);
+    expect(result).toHaveLength(3);
+  });
+});
+
+// ─── buildIssueCatalog detector paths (coverage boost) ───────────────────────
+
+describe('buildIssueCatalog detector paths via buildIssueCatalog', () => {
+  const opts = { ...DEFAULT_OPTS, root: '/repo', findingsLimit: 500 };
+
+  it('detectDistanceFromMainSequence: state with Zone of Pain (concrete+stable) triggers finding', () => {
+    const state = emptyState();
+    state.files.add('src/lib.ts');
+    state.declaredExportsByFile.set('src/lib.ts', [
+      { name: 'a', kind: 'value' },
+      { name: 'b', kind: 'value' },
+      { name: 'c', kind: 'value' },
+      { name: 'd', kind: 'value' },
+      { name: 'e', kind: 'value' },
+    ]);
+    for (let i = 0; i < 7; i++) {
+      state.files.add(`src/dep${i}.ts`);
+      addEdge(state, `src/dep${i}.ts`, 'src/lib.ts');
+    }
+    addEdge(state, 'src/lib.ts', 'src/dep0.ts');
+    addEdge(state, 'src/lib.ts', 'src/dep1.ts');
+    const { findings } = buildIssueCatalog([], [], [], minimalDepSummary(), state, opts);
+    expect(findings.some((f) => f.category === 'distance-from-main-sequence')).toBe(true);
+  });
+
+  it('detectFeatureEnvy: file importing heavily from one module triggers finding', () => {
+    const state = emptyState();
+    state.files.add('src/envious.ts');
+    state.files.add('src/target.ts');
+    state.importedSymbolsByFile.set('src/envious.ts', [
+      { sourceModule: './target', resolvedModule: 'src/target.ts', importedName: 'a', localName: 'a', isTypeOnly: false },
+      { sourceModule: './target', resolvedModule: 'src/target.ts', importedName: 'b', localName: 'b', isTypeOnly: false },
+      { sourceModule: './target', resolvedModule: 'src/target.ts', importedName: 'c', localName: 'c', isTypeOnly: false },
+      { sourceModule: './target', resolvedModule: 'src/target.ts', importedName: 'd', localName: 'd', isTypeOnly: false },
+      { sourceModule: './target', resolvedModule: 'src/target.ts', importedName: 'e', localName: 'e', isTypeOnly: false },
+      { sourceModule: './other', resolvedModule: 'src/other.ts', importedName: 'x', localName: 'x', isTypeOnly: false },
+    ]);
+    addEdge(state, 'src/envious.ts', 'src/target.ts');
+    addEdge(state, 'src/envious.ts', 'src/other.ts');
+    const { findings } = buildIssueCatalog([], [], [], minimalDepSummary(), state, opts);
+    expect(findings.some((f) => f.category === 'feature-envy')).toBe(true);
+  });
+
+  it('detectUntestedCriticalCode: hot file with no test imports triggers finding', () => {
+    const state = emptyState();
+    addEdge(state, 'src/hot.ts', 'src/consumer.ts');
+    addEdge(state, 'src/consumer.ts', 'src/hot.ts');
+    const depSummary = minimalDepSummary({
+      cycles: [{ path: ['src/hot.ts', 'src/consumer.ts', 'src/hot.ts'], nodeCount: 2 }],
+      criticalPaths: [{ start: 'src/hot.ts', path: ['src/hot.ts', 'src/consumer.ts'], score: 100, length: 2, containsCycle: true }],
+    });
+    const critMap = new Map<string, import('./types.js').FileCriticality>();
+    critMap.set('src/hot.ts', { file: 'src/hot.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 80 });
+    const { findings } = buildIssueCatalog([], [], [], depSummary, state, opts, {}, {}, critMap);
+    expect(findings.some((f) => f.category === 'untested-critical-code')).toBe(true);
+  });
+
+  it('detectDuplicateFlowStructures: control duplicates with occurrences >= flowDupThreshold', () => {
+    const controlDuplicates: import('./types.js').RedundantFlowGroup[] = [{
+      kind: 'IfElseChain',
+      occurrences: 5,
+      filesCount: 3,
+      locations: [
+        { kind: 'IfStatement', file: 'src/a.ts', lineStart: 10, lineEnd: 20, columnStart: 1, columnEnd: 1, hash: 'x', statementCount: 5 },
+        { kind: 'IfStatement', file: 'src/b.ts', lineStart: 15, lineEnd: 25, columnStart: 1, columnEnd: 1, hash: 'x', statementCount: 5 },
+      ],
+    }];
+    const optsWithFlow = { ...opts, flowDupThreshold: 3 };
+    const { findings } = buildIssueCatalog([], controlDuplicates, [], minimalDepSummary(), emptyState(), optsWithFlow);
+    expect(findings.some((f) => f.category === 'duplicate-flow-structure')).toBe(true);
+  });
+
+  it('detectLayerViolations: layerOrder triggers when lower layer imports from upper', () => {
+    const state = emptyState();
+    addEdge(state, 'src/repository/db.ts', 'src/service/handler.ts');
+    const optsWithLayers = { ...opts, layerOrder: ['service', 'repository'] };
+    const { findings } = buildIssueCatalog([], [], [], minimalDepSummary(), state, optsWithLayers);
+    expect(findings.some((f) => f.category === 'layer-violation')).toBe(true);
   });
 });

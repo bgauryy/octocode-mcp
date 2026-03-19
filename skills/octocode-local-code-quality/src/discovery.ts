@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AnalysisOptions, PackageInfo, FileEntry } from './types.js';
+
 import { ALLOWED_EXTS } from './types.js';
 import { isTestFile } from './utils.js';
+
+import type { AnalysisOptions, FileEntry, PackageInfo } from './types.js';
 
 export function collectFiles(rootDir: string, opts: AnalysisOptions): string[] {
   const files: string[] = [];

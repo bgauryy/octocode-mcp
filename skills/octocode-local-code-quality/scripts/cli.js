@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { DEFAULT_OPTS, PILLAR_CATEGORIES, ALL_CATEGORIES } from './types.js';
+import { ALL_CATEGORIES, DEFAULT_OPTS, PILLAR_CATEGORIES } from './types.js';
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function parseNumeric(raw, fallback) {
     const n = parseInt(raw ?? '', 10);
@@ -82,17 +82,14 @@ const INT_FLAGS = {
     '--halstead-effort-threshold': 'halsteadEffortThreshold',
     '--maintainability-index-threshold': 'maintainabilityIndexThreshold',
     '--any-threshold': 'anyThreshold',
-    '--magic-number-threshold': 'magicNumberThreshold',
     '--flow-dup-threshold': 'flowDupThreshold',
     '--max-recs-per-category': 'maxRecsPerCategory',
-    '--type-hierarchy-threshold': 'typeHierarchyThreshold',
     '--override-chain-threshold': 'overrideChainThreshold',
     '--secret-min-length': 'secretMinLength',
     '--mock-threshold': 'mockThreshold',
 };
 /** Decimal (float) flags — consume next arg */
 const FLOAT_FLAGS = {
-    '--cyclomatic-density-threshold': 'cyclomaticDensityThreshold',
     '--secret-entropy-threshold': 'secretEntropyThreshold',
     '--similarity-threshold': 'similarityThreshold',
 };
@@ -198,7 +195,7 @@ export function parseArgs(argv) {
 export function printHelp() {
     console.log(`
 Usage:
-  node scripts/index.js [options]
+  node scripts/run-scan.js [options]
 
 Options:
   --root <path>                 Analyze a different repo root (default: cwd)
@@ -234,10 +231,7 @@ Options:
   --halstead-effort-threshold N Halstead effort threshold for findings (default 500000)
   --maintainability-index-threshold N
                                 MI below this triggers a finding (default 20, scale 0-100)
-  --cyclomatic-density-threshold N
-                                Cyclomatic/LOC ratio threshold (default 0.5)
   --any-threshold N             Max \`any\` type usages per file before flagging (default 5)
-  --magic-number-threshold N    Max magic number occurrences per file before flagging (default 3)
   --flow-dup-threshold N        Min occurrences for a repeated flow to become a finding (default 3)
   --max-recs-per-category N     Max findings per category in top recommendations (default 2)
   --scope=X,Y,Z                 Limit scan to specific paths, files, or functions. Comma-separated.
@@ -256,14 +250,13 @@ Options:
   --exclude=X,Y,Z               Run everything EXCEPT the given pillars or categories. Mutually
                                 exclusive with --features. Same pillar/category names as --features.
                                 Examples: --exclude=architecture
-                                          --exclude=dead-export,magic-number
+                                          --exclude=dead-export,unsafe-any
   --semantic                    Enable semantic analysis phase (TypeChecker + LanguageService).
                                 Adds 14 categories: over-abstraction, concrete-dependency,
-                                circular-type-dependency, unused-parameter, type-hierarchy-depth,
+                                circular-type-dependency, unused-parameter,
                                 deep-override-chain, interface-compliance, unused-import,
                                 orphan-implementation, shotgun-surgery, move-to-caller,
-                                leaky-abstraction, narrowable-type, semantic-dead-export.
-  --type-hierarchy-threshold N  Max inheritance depth before flagging (default 4, requires --semantic)
+                                narrowable-type, semantic-dead-export.
   --override-chain-threshold N  Max method override depth before flagging (default 3, requires --semantic)
   --secret-entropy-threshold N  Shannon entropy threshold for secret detection (default 4.5)
   --secret-min-length N         Min string length for entropy-based secret detection (default 20)

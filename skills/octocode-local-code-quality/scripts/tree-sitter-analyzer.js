@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { TS_TREE_SITTER_FUNCTION_TYPES, TS_TREE_SITTER_CONTROL_TYPES } from './types.js';
-import { hashString, makeTreeSitterFingerprint, buildTreeSitterTree, increment } from './utils.js';
+import { TS_TREE_SITTER_CONTROL_TYPES, TS_TREE_SITTER_FUNCTION_TYPES } from './types.js';
+import { buildTreeSitterTree, hashString, increment, makeTreeSitterFingerprint } from './utils.js';
 let treeSitterRuntime = null;
 export function getTreeSitterRuntime() {
     return treeSitterRuntime;

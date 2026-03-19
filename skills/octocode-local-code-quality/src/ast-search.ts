@@ -10,9 +10,12 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { ts as astTs, tsx as astTsx, js as astJs } from '@ast-grep/napi';
-import type { SgNode, SgRoot, NapiConfig } from '@ast-grep/napi';
+
+import { js as astJs, ts as astTs, tsx as astTsx } from '@ast-grep/napi';
+
 import { ALLOWED_EXTS } from './types.js';
+
+import type { NapiConfig, SgNode, SgRoot } from '@ast-grep/napi';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -52,7 +55,7 @@ export interface AstSearchResult {
 
 // ─── Presets ────────────────────────────────────────────────────────────────
 
-export type PresetRule = NapiConfig & { description: string };
+type PresetRule = NapiConfig & { description: string };
 
 export const PRESETS: Record<string, PresetRule> = {
   'empty-catch': {
@@ -375,7 +378,7 @@ export function runSearch(files: string[], opts: AstSearchOptions, root: string)
 
 // ─── CLI ────────────────────────────────────────────────────────────────────
 
-export interface ParsedSearchArgs {
+interface ParsedSearchArgs {
   opts: AstSearchOptions;
   listPresets: boolean;
 }
@@ -429,7 +432,7 @@ export function parseSearchArgs(argv: string[]): ParsedSearchArgs {
   return { opts, listPresets };
 }
 
-export function printSearchHelp(): void {
+function printSearchHelp(): void {
   console.log(`
 ast-search — Structural code search powered by ast-grep
 

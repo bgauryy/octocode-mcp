@@ -13,40 +13,90 @@
 
 ---
 
-## Capabilities
+## Why This Skill Exists
 
-| Pillar | What it finds | When to use |
-|--------|--------------|-------------|
-| **Architecture** | Dependency cycles, SDP violations, coupling hotspots, god modules, unreachable code, layer violations, critical paths (auto-merged overlapping chains with computed break points), untested critical code, import side-effect risk, feature envy, distance from main sequence, cohesion | "Check architecture", "find cycles", "trace dependencies" |
-| **Code Quality** | Complexity (cognitive, Halstead, MI), duplicates (exact + near-clone), excessive parameters, magic numbers, type safety (`any`, assertions) | "Audit code quality", "find complex code", "find duplicates" |
-| **Performance** | await-in-loop (N+1), synchronous I/O, uncleared timers, event listener leaks, unbounded collections | "Find performance issues", "check async patterns" |
-| **Security** | Hardcoded secrets, eval/Function injection, innerHTML/XSS, SQL injection risk, catastrophic regex, prototype pollution (Object.assign, deep merge, computed property writes), unvalidated input-to-sink flows, input passthrough with confidence tiers | "Security review", "find secrets", "check for XSS", "check input validation" |
-| **Dead Code** | Dead exports, dead re-exports, semantic dead exports, unused npm deps, package boundary violations, barrel explosion | "Find dead code", "unused exports", "clean up imports" |
-| **Test Quality** | Missing assertions, low assertion density, excessive mocking, shared mutable state, missing cleanup, focused tests, fake timers without restore, missing mock restoration | "Check test quality", "find flaky tests" |
-| **Semantic** (`--semantic`) | Over-abstraction, DIP violations, type cycles, shotgun surgery, leaky abstractions, unused params, narrowable types | "Deep type analysis", "find design issues" |
+Regular checks are good at local correctness:
+
+- `tsc` tells you whether the code type-checks
+- ESLint tells you whether a rule was violated
+- tests tell you whether behavior still works
+
+This skill answers a different question:
+
+**Where is the architecture getting weak, risky, noisy, or hard to change?**
+
+It does that with a hybrid model:
+
+- **Graph analysis** for cycles, chokepoints, layering, reachability, and package chatter
+- **AST + semantic analysis** for code shape, cohesion, feature envy, side effects, duplicated orchestration, and path-sensitive smells
+- **Octocode local + LSP validation** for checking whether a claim about live code is actually true before an agent presents it as fact
+
+`README.md` explains the product for users. [SKILL.md](./SKILL.md) is the actual agent workflow and execution contract.
+
+## Why It Feels Different
+
+This is not just “run many linters.”
+
+- It connects **structure** and **code shape** instead of reporting them separately
+- It helps surface **architecture defects fast**: cycle hubs, startup-risk modules, boundary leaks, and hard-to-change files
+- It gives agents a **decision path**, not just findings: what to inspect first, how confident to be, and which Octocode local tool should validate the claim
+- It works well for **agentic systems** where prompt-to-path, prompt-to-command, import-time bootstrapping, and tool boundary mistakes matter
+
+```mermaid
+flowchart LR
+  A["Dependency Graph\ncycles, fan-in, fan-out, chokepoints"] --> D["Hybrid Findings"]
+  B["AST + Semantic\ncohesion, side effects, duplicated orchestration"] --> D
+  C["Octocode Local + LSP\nlocalSearchCode, goto def, refs, call hierarchy"] --> E["Validation"]
+  D --> F["summary.md\nGraph Signal\nAST Signal\nCombined Interpretation"]
+  D --> G["findings.json\nconfidence, evidence,\nrecommendedValidation"]
+  F --> E
+  G --> E
+```
+
+## What It Covers
+
+| Pillar | What it catches | Why it matters |
+|--------|------------------|----------------|
+| **Architecture** | Cycles, critical paths, coupling hotspots, layer violations, cycle clusters, broker/bridge modules, package chatter, startup-risk hubs, cohesion, feature envy | Finds structural defects before they become slow refactors or repeated incidents |
+| **Code Quality** | Complexity, maintainability risk, duplicates, excessive parameters, magic numbers, type-escape patterns | Shows where code is getting harder to read, change, and trust |
+| **Performance** | `await` in loops, sync I/O, uncleared timers, listener leaks, unbounded collections | Catches avoidable latency and runtime pressure patterns |
+| **Security** | Secrets, `eval`, unsafe HTML, SQL injection risk, regex risk, prototype pollution, input-to-sink risk, path traversal, command injection | Useful for quick secure-code review and especially for agentic/tooling code |
+| **Dead Code** | Dead exports, unused deps, dead re-exports, package boundary violations, barrel explosion | Cuts noise, shrink-wraps public APIs, and reduces accidental maintenance surface |
+| **Test Quality** | Missing assertions, excessive mocking, shared mutable state, cleanup gaps, focused tests, timer/mock restore issues | Finds false confidence and flaky-test patterns |
+| **Semantic** (`--semantic`) | Over-abstraction, DIP violations, type cycles, shotgun surgery, leaky abstractions, unused params, narrowable types | Adds type-aware design signals that raw AST checks miss |
+
+## Why It Helps Agents
+
+For agents, this skill is useful because it turns broad repo analysis into a disciplined workflow:
+
+- it tells the agent which **lens** to use first: graph, AST, or hybrid
+- it provides **analysis signals** instead of forcing the agent to infer everything from raw JSON
+- it attaches **confidence**, **evidence**, and **recommended validation**
+- it nudges the agent to use **Octocode local tools** before making strong claims about live code
+- it gives one scan that can support code review, refactoring, debugging, dead-code cleanup, security triage, and agentic-system auditing
 
 ### Smart Output
 
-- **Category-diverse truncation** — `--findings-limit` round-robins across categories by severity tier so the capped list represents all detected issue types, not just the noisiest category. Use `--no-diversify` for pure severity ordering.
-- **Chain deduplication** — Critical dependency chain findings that share >80% of their modules are auto-merged into a single finding listing all entry points, reducing noise.
-- **Computed remediation** — Architecture chain findings name the specific module to break at (highest fan-out in the chain) with concrete fan-out/fan-in numbers.
-- **lspHints on most findings** — Pre-computed validation instructions (tool, symbol, lineHint, expectedResult) for one-step Octocode MCP validation.
-- **Category tags in Top Recommendations** — Each recommendation shows its category for disambiguation (e.g., `input-passthrough-risk` vs `unvalidated-input-sink`).
+- **Category-diverse truncation** — `--findings-limit` round-robins across categories by severity tier so the capped list represents all detected issue types, not just the noisiest category
+- **Chain deduplication** — overlapping dependency-chain findings are merged so architecture output stays readable
+- **Computed remediation** — critical architecture chains point to the most useful break location, not just the chain itself
+- **Validation hooks** — most findings include `lspHints`, `recommendedValidation`, and lens-aware metadata
+- **Analysis Signals** — `summary.md` highlights the strongest graph signal, strongest AST signal, and their combined interpretation
 
-### When NOT to use
+### When NOT to use it
 
 - **Syntax errors** → use `tsc`
-- **Code style** → use ESLint / Prettier
-- **Runtime bugs** → use tests / debugger
-- **Security SAST/SCA** → use Semgrep for deep taint analysis
+- **Style-only enforcement** → use ESLint / Prettier
+- **Runtime debugging** → use tests / debugger
+- **Deep taint analysis / SCA** → use Semgrep or a dedicated security stack
 
 ---
 
 ## Quick Start
 
 ```bash
-# Run from your monorepo root (scripts are pre-built — no install needed)
-node skills/octocode-local-code-quality/scripts/index.js
+# Run from your monorepo root (runtime bootstrap ensures TypeScript is available)
+node skills/octocode-local-code-quality/scripts/run-scan.js
 ```
 
 Output goes to `.octocode/scan/<timestamp>/` with structured files. Start with `summary.md`, especially the `Analysis Signals` section.
@@ -54,6 +104,9 @@ Output goes to `.octocode/scan/<timestamp>/` with structured files. Start with `
 ### Common Patterns
 
 ```bash
+# Full hybrid architecture pass
+node scripts/index.js --graph --graph-advanced --flow
+
 # Architecture issues only
 node scripts/index.js --features=architecture
 
@@ -93,6 +146,25 @@ node scripts/index.js --semantic
 # Force full re-parse
 node scripts/index.js --no-cache
 ```
+
+### Great First Runs
+
+| Goal | Command | What you get |
+|------|---------|--------------|
+| **Fast architecture review** | `node scripts/index.js --graph --graph-advanced --flow` | Graph hotspots, SCC clusters, chokepoints, side-effect context, and better investigation signals |
+| **Deep design review** | `node scripts/index.js --graph --graph-advanced --flow --semantic` | Adds type-aware design findings like DIP issues, type cycles, and leaky abstractions |
+| **Agentic safety review** | `node scripts/index.js --features=security --flow` | Fast pass over prompt-to-path, prompt-to-command, validation, and sink-risk patterns |
+| **Test trustworthiness review** | `node scripts/index.js --features=test-quality --include-tests --flow` | Flaky-test smells, cleanup gaps, focused tests, timer/mock restore issues |
+
+### Especially Useful For Agentic Repos
+
+This skill is unusually good at repos that expose tools, workflows, or MCP surfaces because those codebases often fail at boundaries, not syntax.
+
+- it finds **prompt or tool input reaching risky sinks**
+- it highlights **import-time startup work** hidden in shared modules
+- it surfaces **tool boundary leaks** where orchestration and infra get mixed
+- it helps agents verify claims with **localSearchCode + LSP**, not guesswork
+- it gives one place to review **architecture, safety, cleanup, and dead surface area** together
 
 ### Drill-Down Workflow
 
@@ -300,8 +372,10 @@ Treat these as leads, then validate them with Octocode local tools before presen
 | Cached scan (no changes) | <1s |
 | Cache location | `.octocode/scan/.cache/` |
 | Cache key | file path + mtime + size |
+| Cache invalidation | Schema version mismatch auto-invalidates stale caches |
+| Garbage collection | Entries unused for 7 days are pruned on save |
 
-Incremental caching stores per-file AST analysis results. On subsequent runs, unchanged files are served from cache. Dependency graph analysis always runs fresh since it depends on cross-file relationships.
+Incremental caching stores per-file AST analysis results. On subsequent runs, unchanged files are served from cache. Dependency graph analysis always runs fresh since it depends on cross-file relationships. The cache includes a schema version — when the analysis schema changes, the entire cache is automatically invalidated so stale results are never served.
 
 Post-scan processing (category diversification, chain merging, health scoring) is O(n) in finding count — negligible overhead even on large scans.
 
@@ -385,7 +459,7 @@ skills/octocode-local-code-quality/
 │   ├── cli.ts                CLI argument parsing
 │   ├── types.ts              Interfaces, constants, PILLAR_CATEGORIES, defaults
 │   ├── utils.ts              Hash, fingerprint, path, helpers
-│   ├── cache.ts              Incremental analysis cache (mtime+size keyed)
+│   ├── cache.ts              Incremental analysis cache (mtime+size keyed, schema-versioned, TTL GC)
 │   └── *.test.ts             Test files
 ├── scripts/                  Compiled JS output (pre-built, ready to run)
 ├── references/               Detailed reference docs for agent navigation

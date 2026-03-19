@@ -1,6 +1,5 @@
-import * as ts from 'typescript';
-// ─── Constants ───────────────────────────────────────────────────────────────
 import path from 'node:path';
+import * as ts from 'typescript';
 export const DEFAULT_OPTS = {
     minFunctionStatements: 6,
     minFlowStatements: 6,
@@ -39,9 +38,7 @@ export const DEFAULT_OPTS = {
     parameterThreshold: 5,
     halsteadEffortThreshold: 500_000,
     maintainabilityIndexThreshold: 20,
-    cyclomaticDensityThreshold: 0.5,
     anyThreshold: 5,
-    magicNumberThreshold: 3,
     flowDupThreshold: 3,
     maxRecsPerCategory: 2,
     features: null,
@@ -50,7 +47,6 @@ export const DEFAULT_OPTS = {
     noCache: false,
     clearCache: false,
     semantic: false,
-    typeHierarchyThreshold: 4,
     overrideChainThreshold: 3,
     secretEntropyThreshold: 4.5,
     secretMinLength: 20,
@@ -65,21 +61,23 @@ export const PILLAR_CATEGORIES = {
         'dependency-cycle', 'dependency-critical-path', 'dependency-test-only',
         'architecture-sdp-violation', 'high-coupling', 'god-module-coupling',
         'orphan-module', 'unreachable-module', 'layer-violation', 'low-cohesion',
-        'inferred-layer-violation', 'distance-from-main-sequence', 'feature-envy',
+        'mega-folder',
+        'distance-from-main-sequence', 'feature-envy',
         'untested-critical-code',
         'over-abstraction', 'concrete-dependency',
         'circular-type-dependency',
-        'shotgun-surgery', 'leaky-abstraction',
+        'shotgun-surgery',
         'import-side-effect-risk',
         'cycle-cluster', 'broker-module', 'bridge-module',
         'package-boundary-chatter', 'startup-risk-hub',
+        'namespace-import', 'commonjs-in-esm', 'export-star-leak', 'mixed-module-format',
     ],
     'code-quality': [
         'duplicate-function-body', 'duplicate-flow-structure', 'function-optimization',
         'cognitive-complexity', 'god-module', 'god-function', 'halstead-effort',
-        'low-maintainability', 'high-cyclomatic-density', 'excessive-parameters',
-        'magic-number', 'unsafe-any', 'empty-catch', 'switch-no-default',
-        'unused-parameter', 'type-hierarchy-depth', 'deep-override-chain',
+        'low-maintainability', 'excessive-parameters',
+        'unsafe-any', 'empty-catch', 'switch-no-default',
+        'unused-parameter', 'deep-override-chain',
         'interface-compliance',
         'type-assertion-escape', 'promise-misuse', 'narrowable-type',
         'missing-error-boundary',
@@ -108,10 +106,10 @@ export const PILLAR_CATEGORIES = {
 export const ALL_CATEGORIES = new Set(Object.values(PILLAR_CATEGORIES).flat());
 export const SEMANTIC_CATEGORIES = new Set([
     'over-abstraction', 'concrete-dependency',
-    'circular-type-dependency', 'unused-parameter', 'type-hierarchy-depth',
+    'circular-type-dependency', 'unused-parameter',
     'deep-override-chain', 'interface-compliance', 'unused-import',
     'orphan-implementation',
-    'shotgun-surgery', 'move-to-caller', 'leaky-abstraction', 'narrowable-type',
+    'shotgun-surgery', 'move-to-caller', 'narrowable-type',
     'semantic-dead-export',
 ]);
 export const ALLOWED_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);

@@ -1,17 +1,18 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import {
-  parseSearchArgs,
-  searchFile,
-  runSearch,
-  collectSearchFiles,
-  formatTextOutput,
-  PRESETS,
-  type AstSearchOptions,
-  type AstSearchResult,
-} from './ast-search.js';
-import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import {
+  type AstSearchOptions,
+  PRESETS,
+  collectSearchFiles,
+  formatTextOutput,
+  parseSearchArgs,
+  runSearch,
+  searchFile,
+} from './ast-search.js';
 
 // ─── parseSearchArgs ────────────────────────────────────────────────────────
 

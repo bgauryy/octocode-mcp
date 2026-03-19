@@ -48,7 +48,6 @@ Use `--graph-advanced` when you want SCC clusters, chokepoints, bridge modules, 
 | `orphan-module` | `ast-search -p 'import $$$N from "modulePath"'` — 0 hits = orphan | `localSearchCode(fileName, filesOnly=true)` — check runtime config | Delete if disconnected |
 | `unreachable-module` | Same as orphan + check dynamic imports with `ast-search -p 'import($$$A)'` | `localSearchCode(moduleName)` — check dynamic imports | Delete subgraph if confirmed |
 | `layer-violation` | `--features=layer-violation --layer-order ui,service,repo` | `lspGotoDefinition` on violating import | Extract shared contracts to lower layer |
-| `inferred-layer-violation` | Same as `layer-violation` (auto-detected layers) | Same as `layer-violation` | Same fix |
 | `low-cohesion` | Read finding `reason` for LCOM count + groups | `lspFindReferences` per export → map consumer clusters | Split into N focused modules |
 | `distance-from-main-sequence` | Read finding `reason` for A/I/D values + zone | Check `reason` for A/I/D values + zone | Add interfaces (Zone of Pain) or implementations (Zone of Uselessness) |
 | `feature-envy` | Check finding → compare import ratio | `lspCallHierarchy(outgoing)` on envious module → see which functions use target | Move logic to target module or extract shared module |
@@ -59,6 +58,10 @@ Use `--graph-advanced` when you want SCC clusters, chokepoints, bridge modules, 
 | `startup-risk-hub` | `--graph-advanced` + `--features=startup-risk-hub` → inspect `topLevelEffects` + `chokepoints[]` | `lspFindReferences` on the module + `lspCallHierarchy` on effectful calls | Move import-time work behind explicit init or lazy paths |
 | `untested-critical-code` | `ast-search -p 'import $$$N from "modulePath"' --include-tests` — 0 test imports | `localFindFiles(name=*.test.*)` for sibling test → `lspCallHierarchy(incoming)` | Create test file covering public API + complex functions |
 | `import-side-effect-risk` | `--features=import-side-effect-risk` → check `topLevelEffects` in `file-inventory.json` | `lspFindReferences` on file → confirm fan-in; `lspCallHierarchy` on side-effect call → trace callers | Move side effects into explicit init(), wrap in lazy pattern, or guard with feature flags |
+| `namespace-import` | `ast-search -p 'import * as $NAME from $MOD'` | `localSearchCode("import * as")` → check which members are used | Convert to named imports for tree-shaking |
+| `commonjs-in-esm` | `ast-search -p 'require($$$A)'` | `localSearchCode("require(")` → check if ESM alternative exists | Convert to `import` syntax |
+| `export-star-leak` | `ast-search -p 'export * from $MOD'` | `localSearchCode("export * from")` → `lspFindReferences` on re-exported symbols | Replace with explicit named re-exports |
+| `mixed-module-format` | Check finding for mixed CJS/ESM evidence | `localGetFileContent` → confirm mixed `require()` and `import` | Standardize on ESM |
 
 ---
 
@@ -75,10 +78,8 @@ Use `--graph-advanced` when you want SCC clusters, chokepoints, bridge modules, 
 | `god-function` | `--scope=file.ts:functionName` → check statement count | `localGetFileContent(startLine, endLine)` + `lspCallHierarchy` → map callees | Extract steps into named helpers |
 | `halstead-effort` | Read finding `reason` for effort/bugs/volume breakdown | `localGetFileContent` + `lspCallHierarchy(outgoing)` | Split into smaller functions |
 | `low-maintainability` | Read finding `reason` for MI components | Check `reason` for MI components | Reduce LOC, simplify expressions |
-| `high-cyclomatic-density` | `--scope=file.ts:functionName` → check CC/LOC ratio | `localGetFileContent(startLine, endLine)` | Guard clauses, lookup tables |
 | `excessive-parameters` | `ast-search -p 'function $NAME($A, $B, $C, $D, $E, $F)'` | `lspCallHierarchy(incoming)` → check caller diversity | Group into options object |
 | `unsafe-any` | `ast-search --preset any-type --root <package>` | `localSearchCode(": any\|as any")` | `unknown` + type guards, generics |
-| `magic-number` | Read finding for sample values and lines | `localSearchCode(literal value)` | Named `const`, config objects |
 | `empty-catch` | `ast-search --preset empty-catch --root <package>` | `localGetFileContent(startLine, endLine)` | Add logging or re-throw |
 | `switch-no-default` | `ast-search --preset switch-no-default` | `localGetFileContent(startLine, endLine)` | Add `default` with unreachable error |
 | `type-assertion-escape` | `ast-search --preset type-assertion` + `ast-search --preset non-null-assertion` | `localSearchCode("as any")` → review each occurrence | Replace with `unknown` + type guards, proper generics |
@@ -140,7 +141,7 @@ For every security finding, validate before acting:
 
 **False positive dismissal criteria:**
 - `prototype-pollution-risk`: key comes from `Object.keys()` on internal object, or target is `Object.create(null)` / `Map` / `Set` → dismiss
-- `hardcoded-secret`: value is inside a regex definition, is a UUID, placeholder (`YOUR_*`, `<key>`), or used only in tests → dismiss
+- `hardcoded-secret`: value is inside a regex definition, is a UUID, placeholder (`YOUR_*`, `<key>`), or used only in tests → dismiss. Note: error messages and prose strings are now auto-filtered by the scanner, so common false positives like `"Invalid token format"` no longer appear.
 - `path-traversal-risk`: path goes through normalize + prefix check + realpath resolution → dismiss (or downgrade to info)
 - `command-injection-risk`: spawn uses array args without `shell: true` → downgrade to info
 
@@ -176,14 +177,12 @@ When scanning **agentic/MCP tool code**, apply additional scrutiny:
 | `concrete-dependency` | Read finding → check import target is class not interface | `lspGotoDefinition` on import → resolves to class (not interface) | Extract interface, depend on abstraction (DIP) |
 | `circular-type-dependency` | `--features=circular-type-dependency` → read cycle paths | `lspFindReferences` on each type in cycle → see cross-refs | Extract shared types to common file |
 | `unused-parameter` | `ast-search -p 'function $NAME($$$BEFORE, paramName, $$$AFTER)'` → check body references | `lspFindReferences` on param → 0 non-declaration refs | Remove param or prefix with `_` |
-| `type-hierarchy-depth` | Read finding for inheritance chain depth | `lspGotoDefinition` → trace base chain | Flatten with composition over inheritance |
 | `deep-override-chain` | Read finding for override chain depth | `lspGotoDefinition` → trace override chain | Use template method or strategy pattern |
 | `interface-compliance` | Read finding for missing/any-cast members | `lspGotoDefinition` on interface → compare members | Implement missing members; replace `any` with proper types |
 | `unused-import` | `--features=unused-import --semantic` | `lspFindReferences` on import → 0 usages | Remove unused import statement |
 | `orphan-implementation` | `ast-search -p 'import { className } from $MOD'` — 0 hits | `lspFindReferences` on class → 0 external refs | Wire into DI/module graph, or delete if truly dead |
 | `shotgun-surgery` | Read finding for reference count across files | `lspFindReferences(symbolName, lineHint)` → count unique files | Introduce facade/adapter or event-based decoupling |
 | `move-to-caller` | Read finding → confirm 1 consumer | `lspFindReferences(symbolName, lineHint)` → exactly 1 consumer file | Move symbol to consumer file or inline it |
-| `leaky-abstraction` | Read finding → check return type module origin | `lspGotoDefinition` on return type → resolves to internal module | Re-export the type or define a public interface |
 | `narrowable-type` | Read finding for broad vs narrow type info | `lspCallHierarchy(incoming)` → check argument types at all call sites | Narrow param type to match actual usage |
 
 ---

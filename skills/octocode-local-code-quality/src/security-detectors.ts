@@ -1,5 +1,6 @@
-import type { FileEntry, Finding } from './types.js';
 import { isTestFile } from './utils.js';
+
+import type { FileEntry, Finding } from './types.js';
 
 type FindingDraft = Omit<Finding, 'id'>;
 
@@ -22,7 +23,7 @@ export function detectHardcodedSecrets(fileSummaries: FileEntry[]): FindingDraft
   for (const entry of fileSummaries) {
     if (isTestFile(entry.file)) continue;
     const secrets = (entry.suspiciousStrings || []).filter((s) =>
-      s.kind === 'hardcoded-secret' && s.context !== 'regex-definition',
+      s.kind === 'hardcoded-secret' && s.context !== 'regex-definition' && s.context !== 'error-message',
     );
     if (secrets.length === 0) continue;
     for (const s of secrets) {

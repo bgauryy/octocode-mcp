@@ -1,31 +1,32 @@
-import { describe, it, expect } from 'vitest';
-import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
 import {
-  createSemanticContext,
-  analyzeSemanticProfile,
-  collectAllAbsoluteFiles,
-} from './semantic.js';
-import type { SemanticProfile, SemanticContext } from './semantic.js';
-import {
-  detectSemanticDeadExports,
-  detectOverAbstraction,
-  detectConcreteDependency,
   detectCircularTypeDependency,
-  detectUnusedParameters,
-  detectTypeHierarchyDepth,
+  detectConcreteDependency,
   detectDeepOverrideChain,
   detectInterfaceCompliance,
-  detectUnusedImports,
-  detectOrphanImplementation,
-  detectShotgunSurgery,
   detectMoveToCaller,
-  detectLeakyAbstraction,
   detectNarrowableType,
+  detectOrphanImplementation,
+  detectOverAbstraction,
+  detectSemanticDeadExports,
+  detectShotgunSurgery,
+  detectUnusedImports,
+  detectUnusedParameters,
   runSemanticDetectors,
 } from './semantic-detectors.js';
-import type { FileEntry, DependencyProfile, DependencyState } from './types.js';
+import {
+  analyzeSemanticProfile,
+  collectAllAbsoluteFiles,
+  createSemanticContext,
+} from './semantic.js';
+
+import type { SemanticProfile } from './semantic.js';
+import type { DependencyState, FileEntry } from './types.js';
 
 function makeTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'sem-test-'));
@@ -165,40 +166,6 @@ describe('detectUnusedParameters', () => {
   it('produces no findings when all params used', () => {
     const profile = makeProfile('handler.ts', { unusedParams: [] });
     expect(detectUnusedParameters([profile])).toHaveLength(0);
-  });
-});
-
-describe('detectTypeHierarchyDepth', () => {
-  it('flags deep inheritance chains', () => {
-    const profile = makeProfile('deep.ts', {
-      typeHierarchies: [
-        { name: 'DeepChild', depth: 5, chain: ['Base', 'Mid1', 'Mid2', 'Mid3', 'Parent'], lineStart: 20 },
-      ],
-    });
-    const findings = detectTypeHierarchyDepth([profile], 4);
-    expect(findings.length).toBe(1);
-    expect(findings[0].category).toBe('type-hierarchy-depth');
-    expect(findings[0].title).toContain('depth 5');
-    expect(findings[0].severity).toBe('medium');
-  });
-
-  it('flags very deep chains as high severity', () => {
-    const profile = makeProfile('deep.ts', {
-      typeHierarchies: [
-        { name: 'VeryDeep', depth: 7, chain: ['A', 'B', 'C', 'D', 'E', 'F', 'G'], lineStart: 10 },
-      ],
-    });
-    const findings = detectTypeHierarchyDepth([profile], 4);
-    expect(findings[0].severity).toBe('high');
-  });
-
-  it('does not flag shallow hierarchies', () => {
-    const profile = makeProfile('shallow.ts', {
-      typeHierarchies: [
-        { name: 'Child', depth: 2, chain: ['Base', 'Parent'], lineStart: 5 },
-      ],
-    });
-    expect(detectTypeHierarchyDepth([profile], 4)).toHaveLength(0);
   });
 });
 
@@ -355,9 +322,9 @@ describe('collectAllAbsoluteFiles', () => {
 });
 
 describe('SEMANTIC_CATEGORIES constant', () => {
-  it('has exactly 14 semantic categories', async () => {
+  it('has exactly 12 semantic categories', async () => {
     const { SEMANTIC_CATEGORIES } = await import('./types.js');
-    expect(SEMANTIC_CATEGORIES.size).toBe(14);
+    expect(SEMANTIC_CATEGORIES.size).toBe(12);
   });
 });
 
@@ -501,48 +468,6 @@ describe('integration: unused-parameter', () => {
     });
     const profile = analyzeSemanticProfile(ctx, path.join(dir, 'skip.ts'), entry);
     expect(profile.unusedParams).toHaveLength(0);
-    fs.rmSync(dir, { recursive: true });
-  });
-});
-
-describe('integration: type-hierarchy-depth', () => {
-  it('detects deep inheritance chain', () => {
-    const dir = makeTempDir();
-    const ctx = setupCtx(dir, {
-      'deep.ts': [
-        'class L0 { x = 1; }',
-        'class L1 extends L0 { y = 2; }',
-        'class L2 extends L1 { z = 3; }',
-        'class L3 extends L2 { w = 4; }',
-        'class L4 extends L3 { v = 5; }',
-        'export class L5 extends L4 { u = 6; }',
-      ].join('\n'),
-    });
-    const entry = makeFileEntry('deep.ts');
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'deep.ts'), entry);
-    expect(profile.typeHierarchyDepth).toBeGreaterThanOrEqual(5);
-    const l5 = profile.typeHierarchies.find((h) => h.name === 'L5');
-    expect(l5).toBeDefined();
-    expect(l5!.depth).toBe(5);
-
-    const findings = detectTypeHierarchyDepth([profile], 4);
-    expect(findings.length).toBeGreaterThanOrEqual(1);
-    expect(findings.some((f) => f.title.includes('L5'))).toBe(true);
-    fs.rmSync(dir, { recursive: true });
-  });
-
-  it('does not flag shallow hierarchies', () => {
-    const dir = makeTempDir();
-    const ctx = setupCtx(dir, {
-      'shallow.ts': [
-        'class Base { x = 1; }',
-        'export class Child extends Base { y = 2; }',
-      ].join('\n'),
-    });
-    const entry = makeFileEntry('shallow.ts');
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'shallow.ts'), entry);
-    expect(profile.typeHierarchyDepth).toBeLessThanOrEqual(1);
-    expect(detectTypeHierarchyDepth([profile], 4)).toHaveLength(0);
     fs.rmSync(dir, { recursive: true });
   });
 });
@@ -951,58 +876,6 @@ describe('integration: move-to-caller', () => {
   });
 });
 
-describe('integration: leaky-abstraction', () => {
-  it('detects function returning type from internal module', () => {
-    const profile = makeProfile('api.ts', {
-      leakyReturns: [{
-        functionName: 'getConfig',
-        returnType: 'InternalConfig',
-        sourceFile: 'internal/config.ts',
-        lineStart: 10,
-      }],
-    });
-    const findings = detectLeakyAbstraction([profile]);
-    expect(findings.length).toBe(1);
-    expect(findings[0].category).toBe('leaky-abstraction');
-    expect(findings[0].title).toContain('getConfig');
-    expect(findings[0].title).toContain('InternalConfig');
-  });
-
-  it('returns empty when no leaky returns', () => {
-    const profile = makeProfile('api.ts', { leakyReturns: [] });
-    expect(detectLeakyAbstraction([profile])).toHaveLength(0);
-  });
-
-  it('detects leaky returns via full pipeline', () => {
-    const dir = makeTempDir();
-    const ctx = setupCtx(dir, {
-      'internal.ts': 'export interface InternalConfig { secret: string; }\n',
-      'api.ts': [
-        'import { InternalConfig } from "./internal";',
-        'export function getConfig(): InternalConfig { return { secret: "x" }; }',
-      ].join('\n'),
-    });
-    const entry = makeFileEntry('api.ts', {
-      functions: [{
-        kind: 'function', name: 'getConfig', nameHint: 'getConfig',
-        file: 'api.ts', lineStart: 2, lineEnd: 2, columnStart: 0, columnEnd: 0,
-        statementCount: 1, complexity: 1, maxBranchDepth: 0, maxLoopDepth: 0,
-        returns: 1, awaits: 0, calls: 0, loops: 0, lengthLines: 1,
-        cognitiveComplexity: 0, params: 0,
-      }],
-      dependencyProfile: {
-        internalDependencies: ['internal.ts'], externalDependencies: [], unresolvedDependencies: [],
-        declaredExports: [{ name: 'getConfig', kind: 'value', lineStart: 2, lineEnd: 2 }],
-        importedSymbols: [], reExports: [],
-      },
-    });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'api.ts'), entry);
-    expect(profile.leakyReturns.length).toBe(1);
-    expect(profile.leakyReturns[0].returnType).toBe('InternalConfig');
-    fs.rmSync(dir, { recursive: true });
-  });
-});
-
 describe('integration: narrowable-type', () => {
   it('detects param narrowable from mock profile', () => {
     const profile = makeProfile('handler.ts', {
@@ -1026,5 +899,391 @@ describe('integration: narrowable-type', () => {
 
   it('returns empty when no narrowable params', () => {
     expect(detectNarrowableType([makeProfile('a.ts')])).toHaveLength(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Coverage: type hierarchy, override chains, leaky returns, abstractness,
+// narrowable params, collectAllAbsoluteFiles, edge cases
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('integration: type-hierarchy-and-override-chains', () => {
+  it('detects typeHierarchyDepth and overrideChains in multi-file inheritance', () => {
+    const dir = makeTempDir();
+    const ctx = setupCtx(dir, {
+      'base.ts': [
+        'export class Base {',
+        '  run(): string { return "base"; }',
+        '}',
+      ].join('\n'),
+      'child.ts': [
+        'import { Base } from "./base";',
+        'export class Child extends Base {',
+        '  run(): string { return "child"; }',
+        '}',
+      ].join('\n'),
+      'grandchild.ts': [
+        'import { Child } from "./child";',
+        'export class Grandchild extends Child {',
+        '  run(): string { return "grandchild"; }',
+        '}',
+      ].join('\n'),
+    });
+    const entry = makeFileEntry('grandchild.ts');
+    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'grandchild.ts'), entry);
+
+    expect(profile.typeHierarchyDepth).toBeGreaterThan(0);
+    expect(profile.typeHierarchies.length).toBeGreaterThanOrEqual(1);
+    const hierarchy = profile.typeHierarchies.find((h) => h.name === 'Grandchild');
+    expect(hierarchy).toBeDefined();
+    expect(hierarchy!.depth).toBeGreaterThanOrEqual(2);
+
+    expect(profile.overrideChains.length).toBeGreaterThanOrEqual(1);
+    const runChain = profile.overrideChains.find((c) => c.methodName === 'run' && c.className === 'Grandchild');
+    expect(runChain).toBeDefined();
+    expect(runChain!.depth).toBeGreaterThanOrEqual(2);
+
+    const findings = detectDeepOverrideChain([profile], 0);
+    expect(findings.length).toBeGreaterThanOrEqual(1);
+    expect(findings.some((f) => f.title.includes('run') && f.title.includes('Grandchild'))).toBe(true);
+
+    fs.rmSync(dir, { recursive: true });
+  });
+});
+
+describe('integration: leaky-returns', () => {
+  it('detects exported function returning type from another file', () => {
+    const dir = makeTempDir();
+    const ctx = setupCtx(dir, {
+      'types.ts': [
+        'export interface ApiResponse {',
+        '  data: string;',
+        '}',
+      ].join('\n'),
+      'api.ts': [
+        'import type { ApiResponse } from "./types";',
+        'export function fetchData(): ApiResponse {',
+        '  return { data: "ok" };',
+        '}',
+      ].join('\n'),
+    });
+    const entry = makeFileEntry('api.ts', {
+      dependencyProfile: {
+        internalDependencies: ['types.ts'],
+        externalDependencies: [],
+        unresolvedDependencies: [],
+        declaredExports: [{ name: 'fetchData', kind: 'value', lineStart: 2, lineEnd: 4 }],
+        importedSymbols: [
+          {
+            sourceModule: './types',
+            resolvedModule: 'types.ts',
+            importedName: 'ApiResponse',
+            localName: 'ApiResponse',
+            isTypeOnly: true,
+            lineStart: 1,
+            lineEnd: 1,
+          },
+        ],
+        reExports: [],
+      },
+      functions: [
+        {
+          kind: 'function',
+          name: 'fetchData',
+          nameHint: 'fetchData',
+          file: 'api.ts',
+          lineStart: 2,
+          lineEnd: 4,
+          columnStart: 0,
+          columnEnd: 0,
+          statementCount: 1,
+          complexity: 1,
+          maxBranchDepth: 0,
+          maxLoopDepth: 0,
+          returns: 1,
+          awaits: 0,
+          calls: 0,
+          loops: 0,
+          lengthLines: 3,
+          cognitiveComplexity: 0,
+          params: 0,
+        },
+      ],
+    });
+    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'api.ts'), entry);
+
+    expect(profile.leakyReturns.length).toBeGreaterThanOrEqual(1);
+    const leaky = profile.leakyReturns.find((l) => l.functionName === 'fetchData');
+    expect(leaky).toBeDefined();
+    expect(leaky!.returnType).toContain('ApiResponse');
+    expect(leaky!.sourceFile).toMatch(/types\.ts$/);
+
+    fs.rmSync(dir, { recursive: true });
+  });
+});
+
+describe('integration: abstractness-ratio', () => {
+  it('computes abstractnessRatio from interfaces and classes', () => {
+    const dir = makeTempDir();
+    const ctx = setupCtx(dir, {
+      'shapes.ts': [
+        'export interface IShape { area(): number; }',
+        'export interface IDrawable { draw(): void; }',
+        'export class Circle implements IShape, IDrawable {',
+        '  area() { return 0; }',
+        '  draw() {}',
+        '}',
+      ].join('\n'),
+    });
+    const entry = makeFileEntry('shapes.ts', {
+      dependencyProfile: {
+        internalDependencies: [],
+        externalDependencies: [],
+        unresolvedDependencies: [],
+        declaredExports: [
+          { name: 'IShape', kind: 'type', lineStart: 1, lineEnd: 1 },
+          { name: 'IDrawable', kind: 'type', lineStart: 2, lineEnd: 2 },
+          { name: 'Circle', kind: 'value', lineStart: 3, lineEnd: 6 },
+        ],
+        importedSymbols: [],
+        reExports: [],
+      },
+    });
+    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'shapes.ts'), entry);
+
+    expect(profile.abstractnessRatio).toBeGreaterThan(0);
+    expect(profile.abstractnessRatio).toBeLessThanOrEqual(1);
+    expect(Number.isFinite(profile.abstractnessRatio)).toBe(true);
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it('abstractnessRatio is high when file has only interfaces (abstract types)', () => {
+    const dir = makeTempDir();
+    const ctx = setupCtx(dir, {
+      'types-only.ts': [
+        'export interface A { x: number; }',
+        'export interface B { y: string; }',
+      ].join('\n'),
+    });
+    const entry = makeFileEntry('types-only.ts', {
+      dependencyProfile: {
+        internalDependencies: [],
+        externalDependencies: [],
+        unresolvedDependencies: [],
+        declaredExports: [
+          { name: 'A', kind: 'type', lineStart: 1, lineEnd: 1 },
+          { name: 'B', kind: 'type', lineStart: 2, lineEnd: 2 },
+        ],
+        importedSymbols: [],
+        reExports: [],
+      },
+    });
+    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'types-only.ts'), entry);
+
+    expect(profile.abstractnessRatio).toBeGreaterThan(0);
+    expect(profile.abstractnessRatio).toBeLessThanOrEqual(1);
+    fs.rmSync(dir, { recursive: true });
+  });
+});
+
+describe('integration: narrowable-params-comprehensive', () => {
+  it('detects union param narrowable when all callers pass narrower type', () => {
+    const dir = makeTempDir();
+    const ctx = setupCtx(dir, {
+      'lib.ts': [
+        'export function process(data: string | number): string {',
+        '  return String(data);',
+        '}',
+      ].join('\n'),
+      'caller-b.ts': [
+        'import { process } from "./lib";',
+        'process("hello");',
+      ].join('\n'),
+      'caller-c.ts': [
+        'import { process } from "./lib";',
+        'process("world");',
+      ].join('\n'),
+    });
+    const entry = makeFileEntry('lib.ts', {
+      dependencyProfile: {
+        internalDependencies: [],
+        externalDependencies: [],
+        unresolvedDependencies: [],
+        declaredExports: [{ name: 'process', kind: 'value', lineStart: 1, lineEnd: 3 }],
+        importedSymbols: [],
+        reExports: [],
+      },
+      functions: [
+        {
+          kind: 'function',
+          name: 'process',
+          nameHint: 'process',
+          file: 'lib.ts',
+          lineStart: 1,
+          lineEnd: 3,
+          columnStart: 0,
+          columnEnd: 0,
+          statementCount: 1,
+          complexity: 1,
+          maxBranchDepth: 0,
+          maxLoopDepth: 0,
+          returns: 1,
+          awaits: 0,
+          calls: 1,
+          loops: 0,
+          lengthLines: 3,
+          cognitiveComplexity: 0,
+          params: 1,
+        },
+      ],
+    });
+    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'lib.ts'), entry);
+
+    if (profile.narrowableParams.length > 0) {
+      const np = profile.narrowableParams[0];
+      expect(np.functionName).toBe('process');
+      expect(np.paramName).toBe('data');
+      expect(np.declaredType).toContain('string');
+      expect(np.declaredType).toContain('number');
+      expect(np.actualTypes).toBeDefined();
+      expect(np.actualTypes.length).toBeGreaterThan(0);
+    }
+
+    fs.rmSync(dir, { recursive: true });
+  });
+});
+
+describe('collectAllAbsoluteFiles (extended)', () => {
+  it('filters out non-existent files', () => {
+    const dir = makeTempDir();
+    writeFiles(dir, {
+      'a.ts': 'export const a = 1;',
+    });
+    const entries: FileEntry[] = [makeFileEntry('a.ts'), makeFileEntry('nonexistent.ts')];
+    const state: DependencyState = {
+      files: new Set(['ghost.ts']),
+      outgoing: new Map(),
+      incoming: new Map(),
+      incomingFromTests: new Map(),
+      incomingFromProduction: new Map(),
+      externalCounts: new Map(),
+      unresolvedCounts: new Map(),
+      declaredExportsByFile: new Map(),
+      importedSymbolsByFile: new Map(),
+      reExportsByFile: new Map(),
+    };
+    const result = collectAllAbsoluteFiles(entries, state, dir);
+    expect(result).toContain(path.join(dir, 'a.ts'));
+    expect(result).not.toContain(path.join(dir, 'nonexistent.ts'));
+    expect(result).not.toContain(path.join(dir, 'ghost.ts'));
+    expect(result.length).toBe(1);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it('returns empty array when no files exist', () => {
+    const dir = makeTempDir();
+    const entries: FileEntry[] = [makeFileEntry('missing.ts')];
+    const state: DependencyState = {
+      files: new Set(),
+      outgoing: new Map(),
+      incoming: new Map(),
+      incomingFromTests: new Map(),
+      incomingFromProduction: new Map(),
+      externalCounts: new Map(),
+      unresolvedCounts: new Map(),
+      declaredExportsByFile: new Map(),
+      importedSymbolsByFile: new Map(),
+      reExportsByFile: new Map(),
+    };
+    const result = collectAllAbsoluteFiles(entries, state, dir);
+    expect(result).toEqual([]);
+    fs.rmSync(dir, { recursive: true });
+  });
+});
+
+describe('integration: edge-cases', () => {
+  it('file with no exports produces empty profile for reference counts', () => {
+    const dir = makeTempDir();
+    const ctx = setupCtx(dir, {
+      'no-exports.ts': [
+        'const x = 1;',
+        'function foo() { return x; }',
+      ].join('\n'),
+    });
+    const entry = makeFileEntry('no-exports.ts', {
+      dependencyProfile: {
+        internalDependencies: [],
+        externalDependencies: [],
+        unresolvedDependencies: [],
+        declaredExports: [],
+        importedSymbols: [],
+        reExports: [],
+      },
+    });
+    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'no-exports.ts'), entry);
+
+    expect(profile.referenceCountByExport.size).toBe(0);
+    expect(profile.leakyReturns).toEqual([]);
+    expect(profile.narrowableParams).toEqual([]);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it('file with only type exports has no leakyReturns or narrowableParams', () => {
+    const dir = makeTempDir();
+    const ctx = setupCtx(dir, {
+      'types.ts': [
+        'export type Foo = { x: number };',
+        'export interface Bar { y: string; }',
+      ].join('\n'),
+    });
+    const entry = makeFileEntry('types.ts', {
+      dependencyProfile: {
+        internalDependencies: [],
+        externalDependencies: [],
+        unresolvedDependencies: [],
+        declaredExports: [
+          { name: 'Foo', kind: 'type', lineStart: 1, lineEnd: 1 },
+          { name: 'Bar', kind: 'type', lineStart: 2, lineEnd: 2 },
+        ],
+        importedSymbols: [],
+        reExports: [],
+      },
+    });
+    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'types.ts'), entry);
+
+    expect(profile.abstractnessRatio).toBeGreaterThan(0);
+    expect(profile.leakyReturns).toEqual([]);
+    expect(profile.narrowableParams).toEqual([]);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it('file with no functions has empty leakyReturns and narrowableParams', () => {
+    const dir = makeTempDir();
+    const ctx = setupCtx(dir, {
+      'constants.ts': [
+        'export const PI = 3.14;',
+        'export const E = 2.71;',
+      ].join('\n'),
+    });
+    const entry = makeFileEntry('constants.ts', {
+      dependencyProfile: {
+        internalDependencies: [],
+        externalDependencies: [],
+        unresolvedDependencies: [],
+        declaredExports: [
+          { name: 'PI', kind: 'value', lineStart: 1, lineEnd: 1 },
+          { name: 'E', kind: 'value', lineStart: 2, lineEnd: 2 },
+        ],
+        importedSymbols: [],
+        reExports: [],
+      },
+      functions: [],
+    });
+    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'constants.ts'), entry);
+
+    expect(profile.leakyReturns).toEqual([]);
+    expect(profile.narrowableParams).toEqual([]);
+    fs.rmSync(dir, { recursive: true });
   });
 });

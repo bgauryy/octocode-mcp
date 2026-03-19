@@ -1,11 +1,13 @@
 import path from 'node:path';
-import type Parser from 'tree-sitter';
+
+import { TS_TREE_SITTER_CONTROL_TYPES, TS_TREE_SITTER_FUNCTION_TYPES } from './types.js';
+import { buildTreeSitterTree, hashString, increment, makeTreeSitterFingerprint } from './utils.js';
+
 import type {
-  SyntaxNode, AnalysisOptions, TreeSitterMetrics, TreeSitterRuntime,
-  FunctionEntry, FlowEntry, FlowMaps, Location, TreeSitterFileEntry, NodeBudget,
+  AnalysisOptions, FlowEntry, FlowMaps, FunctionEntry,
+  Location, NodeBudget, SyntaxNode, TreeSitterFileEntry, TreeSitterMetrics, TreeSitterRuntime,
 } from './types.js';
-import { TS_TREE_SITTER_FUNCTION_TYPES, TS_TREE_SITTER_CONTROL_TYPES } from './types.js';
-import { hashString, makeTreeSitterFingerprint, buildTreeSitterTree, increment } from './utils.js';
+import type Parser from 'tree-sitter';
 
 let treeSitterRuntime: TreeSitterRuntime | null = null;
 

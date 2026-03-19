@@ -1,15 +1,18 @@
 import path from 'node:path';
+
 import * as ts from 'typescript';
+
+import { addToMapSet, isRelativeImport, isTestFile, normalizeDependencyValue, resolveImportTarget, toRepoPath } from './utils.js';
+
 import type {
   AnalysisOptions,
   DependencyProfile,
-  DependencyState,
   DependencyRecord,
+  DependencyState,
   ExportSymbol,
   ImportedSymbolRef,
   ReExportRef,
 } from './types.js';
-import { isRelativeImport, resolveImportTarget, normalizeDependencyValue, addToMapSet, toRepoPath, isTestFile } from './utils.js';
 
 export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: string, repoRoot: string): DependencyProfile {
   const currentDirectory = path.dirname(filePath);

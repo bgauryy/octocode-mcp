@@ -99,11 +99,11 @@ function inferAnalysisLens(category) {
     if ([
         'dependency-cycle', 'dependency-critical-path', 'architecture-sdp-violation',
         'high-coupling', 'god-module-coupling', 'orphan-module', 'unreachable-module',
-        'cycle-cluster', 'broker-module', 'bridge-module',
+        'cycle-cluster', 'broker-module', 'bridge-module', 'mega-folder',
     ].includes(category))
         return 'graph';
     if ([
-        'layer-violation', 'inferred-layer-violation', 'low-cohesion', 'feature-envy',
+        'layer-violation', 'low-cohesion', 'feature-envy',
         'import-side-effect-risk', 'package-boundary-chatter', 'startup-risk-hub',
         'unvalidated-input-sink', 'input-passthrough-risk', 'missing-test-cleanup',
         'fake-timer-no-restore', 'missing-mock-restoration',
@@ -238,7 +238,6 @@ function makeSignal(kind, lens, title, summary, confidence, score, files, catego
     return { kind, lens, title, summary, confidence, score, files, categories, evidence };
 }
 export function computeReportAnalysisSummary(findings, fileEntries, hotFiles, graphAnalytics) {
-    const byFile = new Map(fileEntries.map((entry) => [entry.file, entry]));
     const categoriesByFile = new Map();
     for (const finding of findings) {
         if (!categoriesByFile.has(finding.file))
@@ -258,6 +257,25 @@ export function computeReportAnalysisSummary(findings, fileEntries, hotFiles, gr
     if (graphAnalytics?.packageGraphSummary.hotspots.length) {
         const hotspot = graphAnalytics.packageGraphSummary.hotspots[0];
         graphSignals.push(makeSignal('package-chatter', 'graph', 'Package boundary chatter', `${hotspot.from} and ${hotspot.to} exchange ${hotspot.edges} cross-package dependency edge(s).`, hotspot.edges >= 8 ? 'high' : 'medium', hotspot.edges * 4, [hotspot.from, hotspot.to], ['package-boundary-chatter'], hotspot));
+    }
+    const megaFolderFindings = findings
+        .filter((finding) => finding.category === 'mega-folder')
+        .sort((a, b) => {
+        const aCount = Number(a.evidence?.fileCount || 0);
+        const bCount = Number(b.evidence?.fileCount || 0);
+        return bCount - aCount;
+    });
+    if (megaFolderFindings.length > 0) {
+        const top = megaFolderFindings[0];
+        const evidence = top.evidence || {};
+        const folderPath = typeof evidence.folderPath === 'string' ? evidence.folderPath : folderOf(top.file);
+        const fileCount = Number(evidence.fileCount || top.files.length || 0);
+        const concentration = Number(evidence.concentration || 0);
+        graphSignals.push(makeSignal('mega-folder-cluster', 'graph', 'Mega folder concentration', `${folderPath} concentrates ${fileCount} files (${(concentration * 100).toFixed(1)}% of analyzed production files), which is a structural decomposition risk.`, concentration >= 0.5 || fileCount >= 50 ? 'high' : 'medium', Math.round(fileCount * 3 + concentration * 100), top.files.length > 0 ? top.files : [top.file], ['mega-folder'], {
+            folderPath,
+            fileCount,
+            concentration,
+        }));
     }
     for (const entry of fileEntries) {
         const categories = categoriesByFile.get(entry.file) || new Set();
@@ -309,6 +327,10 @@ export function computeReportAnalysisSummary(findings, fileEntries, hotFiles, gr
     if (hotFiles.length > 0) {
         prompts.add(`Cross-check the top hotspot ${hotFiles[0].file} with the strongest architecture finding before editing code.`);
     }
+    const megaFolderSignal = graphSignals.find((signal) => signal.kind === 'mega-folder-cluster');
+    if (megaFolderSignal) {
+        prompts.add(`Plan decomposition for ${megaFolderSignal.evidence.folderPath} into smaller domain folders before adding more files there.`);
+    }
     return {
         graphSignals: graphSignals.sort((a, b) => b.score - a.score),
         astSignals: astSignals.sort((a, b) => b.score - a.score),
@@ -319,4 +341,9 @@ export function computeReportAnalysisSummary(findings, fileEntries, hotFiles, gr
         recommendedValidation,
         investigationPrompts: [...prompts],
     };
+}
+function folderOf(filePath) {
+    const normalized = filePath.replace(/\\/g, '/');
+    const idx = normalized.lastIndexOf('/');
+    return idx === -1 ? '.' : normalized.slice(0, idx);
 }

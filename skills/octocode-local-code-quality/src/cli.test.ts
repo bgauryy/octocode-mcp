@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
 import { parseArgs } from './cli.js';
 import { DEFAULT_OPTS } from './types.js';
 
@@ -241,19 +242,13 @@ describe('parseArgs', () => {
     expect(opts.semantic).toBe(false);
   });
 
-  it('--type-hierarchy-threshold sets threshold', () => {
-    const opts = parseArgs(['--type-hierarchy-threshold', '6']);
-    expect(opts.typeHierarchyThreshold).toBe(6);
-  });
-
   it('--override-chain-threshold sets threshold', () => {
     const opts = parseArgs(['--override-chain-threshold', '5']);
     expect(opts.overrideChainThreshold).toBe(5);
   });
 
   it('NaN guards for semantic thresholds', () => {
-    const opts = parseArgs(['--type-hierarchy-threshold', 'abc', '--override-chain-threshold', 'xyz']);
-    expect(opts.typeHierarchyThreshold).toBe(4);
+    const opts = parseArgs(['--override-chain-threshold', 'xyz']);
     expect(opts.overrideChainThreshold).toBe(3);
   });
 
@@ -278,5 +273,171 @@ describe('parseArgs', () => {
   it('--features=architecture does not auto-enable includeTests', () => {
     const opts = parseArgs(['--features=architecture']);
     expect(opts.includeTests).toBe(false);
+  });
+
+  // ─── Additional parseArgs coverage (boolean flags) ──────────────────────────
+  it('parses all boolean flags: --json, --include-tests, --emit-tree, --no-tree, --graph, --semantic, --no-diversify, --no-cache, --clear-cache, --graph-advanced, --flow, --all', () => {
+    const opts = parseArgs([
+      '--json',
+      '--include-tests',
+      '--no-tree',
+      '--graph',
+      '--semantic',
+      '--no-diversify',
+      '--no-cache',
+      '--clear-cache',
+      '--graph-advanced',
+      '--flow',
+      '--all',
+    ]);
+    expect(opts.json).toBe(true);
+    expect(opts.includeTests).toBe(true);
+    expect(opts.emitTree).toBe(false);
+    expect(opts.graph).toBe(true);
+    expect(opts.semantic).toBe(true);
+    expect(opts.noDiversify).toBe(true);
+    expect(opts.noCache).toBe(true);
+    expect(opts.clearCache).toBe(true);
+    expect(opts.graphAdvanced).toBe(true);
+    expect(opts.flow).toBe(true);
+  });
+
+  it('parses --all as shorthand for includeTests and semantic', () => {
+    const opts = parseArgs(['--all']);
+    expect(opts.includeTests).toBe(true);
+    expect(opts.semantic).toBe(true);
+  });
+
+  it('parses --no-cache and --clear-cache', () => {
+    expect(parseArgs(['--no-cache']).noCache).toBe(true);
+    expect(parseArgs(['--clear-cache']).clearCache).toBe(true);
+  });
+
+  // ─── Int flags with specific values ───────────────────────────────────────
+  it('parses --findings-limit 10, --min-function-statements 8, --critical-complexity-threshold 30', () => {
+    const opts = parseArgs([
+      '--findings-limit', '10',
+      '--min-function-statements', '8',
+      '--critical-complexity-threshold', '30',
+    ]);
+    expect(opts.findingsLimit).toBe(10);
+    expect(opts.minFunctionStatements).toBe(8);
+    expect(opts.criticalComplexityThreshold).toBe(30);
+  });
+
+  // ─── Float flags ───────────────────────────────────────────────────────────
+  it('parses --secret-entropy-threshold 4.0 and --similarity-threshold 0.9', () => {
+    const opts = parseArgs([
+      '--secret-entropy-threshold', '4.0',
+      '--similarity-threshold', '0.9',
+    ]);
+    expect(opts.secretEntropyThreshold).toBe(4);
+    expect(opts.similarityThreshold).toBe(0.9);
+  });
+
+  it('parses float flags with decimal values', () => {
+    expect(parseArgs(['--secret-entropy-threshold', '5.5']).secretEntropyThreshold).toBe(5.5);
+    expect(parseArgs(['--similarity-threshold', '0.75']).similarityThreshold).toBe(0.75);
+  });
+
+  // ─── Special flags (parser, root, out, layer-order) ────────────────────────
+  it('parses --parser typescript, --root /some/path, --out result.json, --layer-order ui,service,repo', () => {
+    const opts = parseArgs([
+      '--parser', 'typescript',
+      '--root', '/some/path',
+      '--out', 'result.json',
+      '--layer-order', 'ui,service,repo',
+    ]);
+    expect(opts.parser).toBe('typescript');
+    expect(opts.root).toBe('/some/path');
+    expect(opts.out).toBe('result.json');
+    expect(opts.layerOrder).toEqual(['ui', 'service', 'repo']);
+  });
+
+  // ─── --out= form ───────────────────────────────────────────────────────────
+  it('parses --out=output.json form', () => {
+    const opts = parseArgs(['--out=output.json']);
+    expect(opts.out).toBe('output.json');
+  });
+
+  // ─── --scope: file paths and file:symbol syntax ─────────────────────────────
+  it('parses --scope with file paths', () => {
+    const opts = parseArgs(['--scope', 'packages/foo,packages/bar']);
+    expect(opts.scope).toBeInstanceOf(Array);
+    expect(opts.scope!.length).toBe(2);
+    expect(opts.scope!.every((p) => p.endsWith('packages/foo') || p.endsWith('packages/bar'))).toBe(true);
+  });
+
+  it('parses --scope= with file:symbol syntax', () => {
+    const opts = parseArgs(['--scope=packages/foo/session.ts:initSession']);
+    expect(opts.scope).toBeInstanceOf(Array);
+    expect(opts.scope!.length).toBe(1);
+    expect(opts.scopeSymbols).toBeInstanceOf(Map);
+    expect(opts.scopeSymbols!.size).toBe(1);
+    const symbols = [...opts.scopeSymbols!.values()][0];
+    expect(symbols).toContain('initSession');
+  });
+
+  it('parses --scope with mixed file paths and file:symbol', () => {
+    const opts = parseArgs(['--scope=packages/a,packages/b/utils.ts:helper']);
+    expect(opts.scope!.length).toBe(2);
+    if (opts.scopeSymbols && opts.scopeSymbols.size > 0) {
+      const syms = [...opts.scopeSymbols.values()].flat();
+      expect(syms).toContain('helper');
+    }
+  });
+
+  // ─── --features: pillar and category names ──────────────────────────────────
+  it('parses --features with pillar name architecture', () => {
+    const opts = parseArgs(['--features=architecture']);
+    expect(opts.features).toBeInstanceOf(Set);
+    expect(opts.features!.has('dependency-cycle')).toBe(true);
+    expect(opts.features!.has('dead-export')).toBe(false);
+  });
+
+  it('parses --features with category name dependency-cycle', () => {
+    const opts = parseArgs(['--features=dependency-cycle']);
+    expect(opts.features!.has('dependency-cycle')).toBe(true);
+    expect(opts.features!.size).toBe(1);
+  });
+
+  // ─── --exclude: exclude categories ──────────────────────────────────────────
+  it('parses --exclude with multiple categories', () => {
+    const opts = parseArgs(['--exclude=dead-export,cognitive-complexity']);
+    expect(opts.features!.has('dead-export')).toBe(false);
+    expect(opts.features!.has('cognitive-complexity')).toBe(false);
+    expect(opts.features!.has('dead-re-export')).toBe(true);
+  });
+
+  it('parses --exclude with pillar excludes all its categories', () => {
+    const opts = parseArgs(['--exclude=architecture']);
+    expect(opts.features!.has('dependency-cycle')).toBe(false);
+    expect(opts.features!.has('layer-violation')).toBe(false);
+  });
+
+  // ─── --features auto-enables includeTests for test-quality categories ───────
+  it('--features=excessive-mocking auto-enables includeTests', () => {
+    const opts = parseArgs(['--features=excessive-mocking']);
+    expect(opts.includeTests).toBe(true);
+  });
+
+  it('--features=shared-mutable-state auto-enables includeTests', () => {
+    const opts = parseArgs(['--features=shared-mutable-state']);
+    expect(opts.includeTests).toBe(true);
+  });
+
+  it('throws when --features and --exclude are both provided', () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {}) as never);
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    parseArgs(['--features=architecture', '--exclude=dead-code']);
+    expect(consoleSpy).toHaveBeenCalledWith('--features and --exclude are mutually exclusive. Use one or the other.');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+    consoleSpy.mockRestore();
+  });
+
+  it('auto-enables includeTests when features include any test-quality category', () => {
+    const opts = parseArgs(['--features=missing-mock-restoration']);
+    expect(opts.includeTests).toBe(true);
   });
 });

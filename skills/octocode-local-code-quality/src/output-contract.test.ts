@@ -1,11 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { DependencyState, FileEntry, Finding } from './types.js';
-import { DEFAULT_OPTS } from './types.js';
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+
 import { FullReport, REPORT_SCHEMA_VERSION, writeMultiFileReport } from './index.js';
 import { ARCHITECTURE_CATEGORIES, CODE_QUALITY_CATEGORIES, DEAD_CODE_CATEGORIES } from './index.js';
+import { DEFAULT_OPTS } from './types.js';
+
+import type { DependencyState, FileEntry, Finding } from './types.js';
 
 function makeFile(override: Partial<FileEntry> = {}): FileEntry {
   return {
@@ -215,5 +219,79 @@ describe('output contract', () => {
     expect(summary).toContain('## Code Quality');
     expect(summary).toContain('## Dead Code & Hygiene');
     expect(outputFiles.summary).toBe('summary.json');
+  });
+
+  it('security.json has required structure when security findings exist', () => {
+    const outDir = path.join(tmpDir, 'security-struct');
+    writeMultiFileReport(outDir, makeReport(), { ...DEFAULT_OPTS, graph: false }, emptyDependencyState(), emptyDependencySummary(), new Map());
+    const security = JSON.parse(fs.readFileSync(path.join(outDir, 'security.json'), 'utf8'));
+    expect(security.schemaVersion).toBe(REPORT_SCHEMA_VERSION);
+    expect(Array.isArray(security.findings)).toBe(true);
+    expect(typeof security.findingsCount).toBe('number');
+    expect(typeof security.severityBreakdown).toBe('object');
+    expect(typeof security.categoryBreakdown).toBe('object');
+  });
+
+  it('test-quality.json has required structure when test findings exist', () => {
+    const outDir = path.join(tmpDir, 'tq-struct');
+    writeMultiFileReport(outDir, makeReport(), { ...DEFAULT_OPTS, graph: false }, emptyDependencyState(), emptyDependencySummary(), new Map());
+    const tq = JSON.parse(fs.readFileSync(path.join(outDir, 'test-quality.json'), 'utf8'));
+    expect(tq.schemaVersion).toBe(REPORT_SCHEMA_VERSION);
+    expect(Array.isArray(tq.findings)).toBe(true);
+    expect(typeof tq.findingsCount).toBe('number');
+    expect(typeof tq.severityBreakdown).toBe('object');
+    expect(typeof tq.categoryBreakdown).toBe('object');
+  });
+
+  it('code-quality.json has required internal fields', () => {
+    const outDir = path.join(tmpDir, 'cq-struct');
+    writeMultiFileReport(outDir, makeReport(), { ...DEFAULT_OPTS, graph: false }, emptyDependencyState(), emptyDependencySummary(), new Map());
+    const cq = JSON.parse(fs.readFileSync(path.join(outDir, 'code-quality.json'), 'utf8'));
+    expect(typeof cq.duplicateFlows).toBe('object');
+    expect(Array.isArray(cq.findings)).toBe(true);
+    expect(typeof cq.findingsCount).toBe('number');
+    expect(typeof cq.severityBreakdown).toBe('object');
+    expect(typeof cq.categoryBreakdown).toBe('object');
+  });
+
+  it('does NOT write security.json when no security findings exist', () => {
+    const outDir = path.join(tmpDir, 'no-security');
+    const nonSecurityFindings = [
+      makeFinding([...ARCHITECTURE_CATEGORIES][0]),
+      makeFinding([...CODE_QUALITY_CATEGORIES][0]),
+      makeFinding([...DEAD_CODE_CATEGORIES][0]),
+    ];
+    const report = makeReport({ optimizationFindings: nonSecurityFindings });
+    writeMultiFileReport(outDir, report, { ...DEFAULT_OPTS, graph: false }, emptyDependencyState(), emptyDependencySummary(), new Map());
+    expect(fs.existsSync(path.join(outDir, 'security.json'))).toBe(false);
+  });
+
+  it('does NOT write test-quality.json when no test findings exist', () => {
+    const outDir = path.join(tmpDir, 'no-tq');
+    const nonTestFindings = [
+      makeFinding([...ARCHITECTURE_CATEGORIES][0]),
+      makeFinding([...CODE_QUALITY_CATEGORIES][0]),
+      makeFinding([...DEAD_CODE_CATEGORIES][0]),
+      makeFinding('hardcoded-secret'),
+    ];
+    const report = makeReport({ optimizationFindings: nonTestFindings });
+    writeMultiFileReport(outDir, report, { ...DEFAULT_OPTS, graph: false }, emptyDependencyState(), emptyDependencySummary(), new Map());
+    expect(fs.existsSync(path.join(outDir, 'test-quality.json'))).toBe(false);
+  });
+
+  it('findings have correct types for lineStart, lineEnd, severity, and suggestedFix.steps', () => {
+    const outDir = path.join(tmpDir, 'type-validation');
+    writeMultiFileReport(outDir, makeReport(), { ...DEFAULT_OPTS, graph: false }, emptyDependencyState(), emptyDependencySummary(), new Map());
+    const findingsData = JSON.parse(fs.readFileSync(path.join(outDir, 'findings.json'), 'utf8'));
+    const validSeverities = ['critical', 'high', 'medium', 'low', 'info'];
+    for (const f of findingsData.optimizationFindings as Finding[]) {
+      expect(typeof f.lineStart).toBe('number');
+      expect(typeof f.lineEnd).toBe('number');
+      expect(validSeverities).toContain(f.severity);
+      expect(Array.isArray(f.suggestedFix.steps)).toBe(true);
+      for (const step of f.suggestedFix.steps) {
+        expect(typeof step).toBe('string');
+      }
+    }
   });
 });

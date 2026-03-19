@@ -62,7 +62,7 @@ describe('safeExec execution context security', () => {
       await safeExec('ls', ['-la'], {
         cwd: '../../../../',
       });
-    }).rejects.toThrow('Can only execute commands within workspace directory');
+    }).rejects.toThrow('configured workspace directory');
   });
 
   it('should prevent execution in system directories', async () => {
@@ -71,7 +71,7 @@ describe('safeExec execution context security', () => {
       await safeExec('ls', ['-la'], {
         cwd: '/etc',
       });
-    }).rejects.toThrow('Can only execute commands within workspace directory');
+    }).rejects.toThrow('configured workspace directory');
   });
 
   it('should allow execution with undefined cwd (defaults to safe)', async () => {

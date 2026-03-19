@@ -9,7 +9,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { ts as astTs, tsx as astTsx, js as astJs } from '@ast-grep/napi';
+import { js as astJs, ts as astTs, tsx as astTsx } from '@ast-grep/napi';
 import { ALLOWED_EXTS } from './types.js';
 export const PRESETS = {
     'empty-catch': {
@@ -418,7 +418,7 @@ export function parseSearchArgs(argv) {
         opts.context = 0;
     return { opts, listPresets };
 }
-export function printSearchHelp() {
+function printSearchHelp() {
     console.log(`
 ast-search — Structural code search powered by ast-grep
 

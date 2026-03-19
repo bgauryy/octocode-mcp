@@ -1,5 +1,6 @@
-import type { FileEntry, Finding } from './types.js';
 import { isTestFile } from './utils.js';
+
+import type { FileEntry, Finding } from './types.js';
 
 type FindingDraft = Omit<Finding, 'id'>;
 

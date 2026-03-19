@@ -1,3 +1,4 @@
+import type { GraphAnalyticsSummary } from './graph-analytics.js';
 import type {
   AnalysisLens,
   AnalysisSignal,
@@ -11,8 +12,6 @@ import type {
   RecommendedValidation,
   SymbolUsageSummary,
 } from './types.js';
-import type { GraphAnalyticsSummary } from './graph-analytics.js';
-import { packageKeyForFile } from './graph-analytics.js';
 
 export interface ReportAnalysisSummary {
   graphSignals: AnalysisSignal[];
@@ -134,11 +133,11 @@ function inferAnalysisLens(category: string): AnalysisLens {
   if ([
     'dependency-cycle', 'dependency-critical-path', 'architecture-sdp-violation',
     'high-coupling', 'god-module-coupling', 'orphan-module', 'unreachable-module',
-    'cycle-cluster', 'broker-module', 'bridge-module',
+    'cycle-cluster', 'broker-module', 'bridge-module', 'mega-folder',
   ].includes(category)) return 'graph';
 
   if ([
-    'layer-violation', 'inferred-layer-violation', 'low-cohesion', 'feature-envy',
+    'layer-violation', 'low-cohesion', 'feature-envy',
     'import-side-effect-risk', 'package-boundary-chatter', 'startup-risk-hub',
     'unvalidated-input-sink', 'input-passthrough-risk', 'missing-test-cleanup',
     'fake-timer-no-restore', 'missing-mock-restoration',
@@ -284,7 +283,6 @@ export function computeReportAnalysisSummary(
   hotFiles: HotFile[],
   graphAnalytics: GraphAnalyticsSummary | null,
 ): ReportAnalysisSummary {
-  const byFile = new Map(fileEntries.map((entry) => [entry.file, entry]));
   const categoriesByFile = new Map<string, Set<string>>();
   for (const finding of findings) {
     if (!categoriesByFile.has(finding.file)) categoriesByFile.set(finding.file, new Set());
@@ -336,6 +334,36 @@ export function computeReportAnalysisSummary(
       [hotspot.from, hotspot.to],
       ['package-boundary-chatter'],
       hotspot,
+    ));
+  }
+
+  const megaFolderFindings = findings
+    .filter((finding) => finding.category === 'mega-folder')
+    .sort((a, b) => {
+      const aCount = Number((a.evidence as Record<string, unknown> | undefined)?.fileCount || 0);
+      const bCount = Number((b.evidence as Record<string, unknown> | undefined)?.fileCount || 0);
+      return bCount - aCount;
+    });
+  if (megaFolderFindings.length > 0) {
+    const top = megaFolderFindings[0];
+    const evidence = (top.evidence as Record<string, unknown> | undefined) || {};
+    const folderPath = typeof evidence.folderPath === 'string' ? evidence.folderPath : folderOf(top.file);
+    const fileCount = Number(evidence.fileCount || top.files.length || 0);
+    const concentration = Number(evidence.concentration || 0);
+    graphSignals.push(makeSignal(
+      'mega-folder-cluster',
+      'graph',
+      'Mega folder concentration',
+      `${folderPath} concentrates ${fileCount} files (${(concentration * 100).toFixed(1)}% of analyzed production files), which is a structural decomposition risk.`,
+      concentration >= 0.5 || fileCount >= 50 ? 'high' : 'medium',
+      Math.round(fileCount * 3 + concentration * 100),
+      top.files.length > 0 ? top.files : [top.file],
+      ['mega-folder'],
+      {
+        folderPath,
+        fileCount,
+        concentration,
+      },
     ));
   }
 
@@ -443,6 +471,10 @@ export function computeReportAnalysisSummary(
   if (hotFiles.length > 0) {
     prompts.add(`Cross-check the top hotspot ${hotFiles[0].file} with the strongest architecture finding before editing code.`);
   }
+  const megaFolderSignal = graphSignals.find((signal) => signal.kind === 'mega-folder-cluster');
+  if (megaFolderSignal) {
+    prompts.add(`Plan decomposition for ${megaFolderSignal.evidence.folderPath} into smaller domain folders before adding more files there.`);
+  }
 
   return {
     graphSignals: graphSignals.sort((a, b) => b.score - a.score),
@@ -454,4 +486,10 @@ export function computeReportAnalysisSummary(
     recommendedValidation,
     investigationPrompts: [...prompts],
   };
+}
+
+function folderOf(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/');
+  const idx = normalized.lastIndexOf('/');
+  return idx === -1 ? '.' : normalized.slice(0, idx);
 }

@@ -1,6 +1,6 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import * as ts from 'typescript';
 import { IMPORT_RESOLVE_EXTS } from './types.js';
 export function canonicalScriptKind(ext) {

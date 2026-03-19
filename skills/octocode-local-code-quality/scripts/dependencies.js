@@ -1,6 +1,6 @@
 import path from 'node:path';
 import * as ts from 'typescript';
-import { isRelativeImport, resolveImportTarget, normalizeDependencyValue, addToMapSet, toRepoPath, isTestFile } from './utils.js';
+import { addToMapSet, isRelativeImport, isTestFile, normalizeDependencyValue, resolveImportTarget, toRepoPath } from './utils.js';
 export function collectModuleDependencies(sourceFile, filePath, repoRoot) {
     const currentDirectory = path.dirname(filePath);
     const internal = new Set();

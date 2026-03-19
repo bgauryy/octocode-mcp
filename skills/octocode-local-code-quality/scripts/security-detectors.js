@@ -11,7 +11,7 @@ export function detectHardcodedSecrets(fileSummaries) {
     for (const entry of fileSummaries) {
         if (isTestFile(entry.file))
             continue;
-        const secrets = (entry.suspiciousStrings || []).filter((s) => s.kind === 'hardcoded-secret' && s.context !== 'regex-definition');
+        const secrets = (entry.suspiciousStrings || []).filter((s) => s.kind === 'hardcoded-secret' && s.context !== 'regex-definition' && s.context !== 'error-message');
         if (secrets.length === 0)
             continue;
         for (const s of secrets) {

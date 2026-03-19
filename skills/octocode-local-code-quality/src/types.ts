@@ -1,10 +1,15 @@
-import type Parser from 'tree-sitter';
+import path from 'node:path';
+
 import * as ts from 'typescript';
+
+import type Parser from 'tree-sitter';
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
 
 // ─── Tree-sitter type aliases (official types, zero runtime cost) ────────────
 
 export type SyntaxNode = Parser.SyntaxNode;
-type TreeSitterTree = Parser.Tree;
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -36,9 +41,7 @@ export interface AnalysisOptions {
   parameterThreshold: number;
   halsteadEffortThreshold: number;
   maintainabilityIndexThreshold: number;
-  cyclomaticDensityThreshold: number;
   anyThreshold: number;
-  magicNumberThreshold: number;
   flowDupThreshold: number;
   maxRecsPerCategory: number;
   features: Set<string> | null;
@@ -47,7 +50,6 @@ export interface AnalysisOptions {
   noCache: boolean;
   clearCache: boolean;
   semantic: boolean;
-  typeHierarchyThreshold: number;
   overrideChainThreshold: number;
   secretEntropyThreshold: number;
   secretMinLength: number;
@@ -423,7 +425,7 @@ export interface SuspiciousString {
   lineEnd: number;
   kind: 'hardcoded-secret' | 'sql-injection' | 'secret-assignment';
   snippet?: string;
-  context?: 'literal' | 'regex-definition' | 'template' | 'comment';
+  context?: 'literal' | 'regex-definition' | 'template' | 'comment' | 'error-message';
 }
 
 export interface TimerCall {
@@ -620,7 +622,7 @@ export interface NodeBudget {
   size: number;
 }
 
-export interface SeverityOrder {
+interface SeverityOrder {
   [key: string]: number;
 }
 
@@ -629,10 +631,6 @@ export interface WalkResult {
   score: number;
   containsCycle: boolean;
 }
-
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-import path from 'node:path';
 
 export const DEFAULT_OPTS: AnalysisOptions = {
   minFunctionStatements: 6,
@@ -672,9 +670,7 @@ export const DEFAULT_OPTS: AnalysisOptions = {
   parameterThreshold: 5,
   halsteadEffortThreshold: 500_000,
   maintainabilityIndexThreshold: 20,
-  cyclomaticDensityThreshold: 0.5,
   anyThreshold: 5,
-  magicNumberThreshold: 3,
   flowDupThreshold: 3,
   maxRecsPerCategory: 2,
   features: null,
@@ -683,7 +679,6 @@ export const DEFAULT_OPTS: AnalysisOptions = {
   noCache: false,
   clearCache: false,
   semantic: false,
-  typeHierarchyThreshold: 4,
   overrideChainThreshold: 3,
   secretEntropyThreshold: 4.5,
   secretMinLength: 20,
@@ -699,21 +694,23 @@ export const PILLAR_CATEGORIES: Record<string, string[]> = {
     'dependency-cycle', 'dependency-critical-path', 'dependency-test-only',
     'architecture-sdp-violation', 'high-coupling', 'god-module-coupling',
     'orphan-module', 'unreachable-module', 'layer-violation', 'low-cohesion',
-    'inferred-layer-violation', 'distance-from-main-sequence', 'feature-envy',
+    'mega-folder',
+    'distance-from-main-sequence', 'feature-envy',
     'untested-critical-code',
     'over-abstraction', 'concrete-dependency',
     'circular-type-dependency',
-    'shotgun-surgery', 'leaky-abstraction',
+    'shotgun-surgery',
     'import-side-effect-risk',
     'cycle-cluster', 'broker-module', 'bridge-module',
     'package-boundary-chatter', 'startup-risk-hub',
+    'namespace-import', 'commonjs-in-esm', 'export-star-leak', 'mixed-module-format',
   ],
   'code-quality': [
     'duplicate-function-body', 'duplicate-flow-structure', 'function-optimization',
     'cognitive-complexity', 'god-module', 'god-function', 'halstead-effort',
-    'low-maintainability', 'high-cyclomatic-density', 'excessive-parameters',
-    'magic-number', 'unsafe-any', 'empty-catch', 'switch-no-default',
-    'unused-parameter', 'type-hierarchy-depth', 'deep-override-chain',
+    'low-maintainability', 'excessive-parameters',
+    'unsafe-any', 'empty-catch', 'switch-no-default',
+    'unused-parameter', 'deep-override-chain',
     'interface-compliance',
     'type-assertion-escape', 'promise-misuse', 'narrowable-type',
     'missing-error-boundary',
@@ -744,10 +741,10 @@ export const ALL_CATEGORIES = new Set(Object.values(PILLAR_CATEGORIES).flat());
 
 export const SEMANTIC_CATEGORIES = new Set([
   'over-abstraction', 'concrete-dependency',
-  'circular-type-dependency', 'unused-parameter', 'type-hierarchy-depth',
-  'deep-override-chain', 'interface-compliance', 'unused-import',
-  'orphan-implementation',
-  'shotgun-surgery', 'move-to-caller', 'leaky-abstraction', 'narrowable-type',
+    'circular-type-dependency', 'unused-parameter',
+    'deep-override-chain', 'interface-compliance', 'unused-import',
+    'orphan-implementation',
+    'shotgun-surgery', 'move-to-caller', 'narrowable-type',
   'semantic-dead-export',
 ]);
 export const ALLOWED_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
