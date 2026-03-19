@@ -21,6 +21,18 @@ The scanner is a hypothesis generator, not a source of truth. Start from the CLI
   - `localSearchCode` anchors the claim in the live codebase.
   - LSP tools confirm symbol usage, call paths, and real behavior.
 - Use `--help` and the reference docs for detailed flags, categories, and presets instead of restating them in the response.
+- Never assume the project uses specific tools. Before running lint, build, or test commands, detect the package manager and read `package.json` scripts.
+
+## Project Environment
+
+Before recommending or running any lint, build, or test command, detect the project's actual setup. Do not hardcode tool names like `tsc`, `eslint`, `jest`, `vitest`, or any other tool — the project may use entirely different tools or wrappers.
+
+1. **Detect the package manager.** Check for lock files at the repo root: `yarn.lock` → yarn, `pnpm-lock.yaml` → pnpm, `package-lock.json` → npm. In a monorepo, check both the workspace root and the relevant package directory.
+2. **Read `package.json` scripts.** Check both the root `package.json` and, in monorepos, the relevant package's `package.json`. Look for `scripts.lint`, `scripts.build`, `scripts.test`, `scripts.typecheck`, `scripts.check`, and any related entries. Script names vary across projects.
+3. **Construct commands from what exists.** Use the detected package manager and the actual script names found in `package.json`. If a script does not exist, skip it or note the gap — do not invent a command.
+4. **Respect workspace context.** In monorepos, know whether to run from the workspace root (e.g., `yarn workspace <name> test`) or from the package directory (e.g., `cd packages/foo && yarn test`). Check the root `package.json` for `workspaces` configuration.
+
+This rule applies everywhere: the workflow, the improvement plan, mega-folder restructuring, and any fix verification step.
 
 ## Workflow
 
@@ -199,6 +211,32 @@ Typical command-first operations to mention in the plan:
 - use `jq` to inspect or filter `findings.json`, `summary.json`, or pillar JSON during triage
 
 Prefer these for fast, low-risk mechanical work. Prefer targeted manual edits for control-flow changes, semantic fixes, or anything where broad replacement could hide mistakes.
+
+#### Mega-Folder Restructuring
+
+When the scan reports a mega-folder finding (a flat directory with many loosely related files), treat it as a structural improvement candidate. Instead of manually moving files one by one, use an automated migration approach:
+
+1. **Map the import graph.** Use `localSearchCode` or `rg` to extract all local `from './...'` imports across the directory. Group files into clusters based on what imports what. Use LSP call hierarchy and references to confirm module boundaries when clusters are ambiguous.
+
+2. **Design the target structure.** Identify domain-aligned directories from the clusters. Typical groupings follow the data flow of the codebase (e.g., types → parsing → analysis → detection → reporting → orchestration). Name directories after their role, not their implementation.
+
+3. **Write a migration script.** Create a disposable Node.js or shell script that:
+   - Defines a mapping of old file basenames to `{ dir, name }` targets.
+   - Creates the target directories.
+   - For each file, reads it, resolves every relative import path from the file's old location to each imported module's new location, writes the updated content to the new path, and removes the old file.
+   - Handles both source and test files using the same mapping (strip `.test` suffix to find the source entry).
+
+   The core path resolution logic:
+   - Same directory → `./newName.js`
+   - From root to subdir → `./subdir/newName.js`
+   - From subdir to root → `../name.js`
+   - Across subdirs → `../otherDir/newName.js`
+
+4. **Validate after each phase.** Follow the Project Environment section to detect the package manager and available scripts, then run the project's lint, build, and test scripts after the migration. If a lint auto-fix script exists, use it to clean up residual errors.
+
+5. **Delete the migration script.** It is a one-shot tool, not part of the codebase.
+
+This pattern is faster and safer than manual file-by-file moves because it updates all import paths atomically and catches every cross-reference. Prefer it whenever a directory has 15+ files that belong to clearly separable domains.
 
 ## Tool Strategy
 

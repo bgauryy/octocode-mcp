@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { isLikelyEntrypoint } from './architecture.js';
+import { isLikelyEntrypoint } from './detectors/index.js';
 import {
   ARCHITECTURE_CATEGORIES,
   CODE_QUALITY_CATEGORIES,
@@ -23,7 +23,7 @@ import {
   severityBreakdown,
   writeMultiFileReport,
 } from './index.js';
-import { DEFAULT_OPTS, PILLAR_CATEGORIES } from './types.js';
+import { DEFAULT_OPTS, PILLAR_CATEGORIES } from './types/index.js';
 
 import type { FullReport } from './index.js';
 import type {
@@ -35,7 +35,7 @@ import type {
   FileEntry,
   Finding,
   FunctionEntry,
-} from './types.js';
+} from './types/index.js';
 
 function emptyState(): DependencyState {
   return {
@@ -2840,7 +2840,7 @@ describe('writeMultiFileReport (additional)', () => {
 
   it('summary.md includes Analysis Signals when reportAnalysis is provided', () => {
     const outDir = path.join(tmpDir, 'scan');
-    const reportAnalysis: import('./report-analysis.js').ReportAnalysisSummary =
+    const reportAnalysis: import('./reporting/analysis.js').ReportAnalysisSummary =
       {
         graphSignals: [],
         astSignals: [],
@@ -2893,7 +2893,7 @@ describe('writeMultiFileReport (additional)', () => {
 
   it('summary.md includes structural layout alert for mega-folder signal', () => {
     const outDir = path.join(tmpDir, 'scan-mega');
-    const reportAnalysis: import('./report-analysis.js').ReportAnalysisSummary =
+    const reportAnalysis: import('./reporting/analysis.js').ReportAnalysisSummary =
       {
         graphSignals: [
           {
@@ -3837,7 +3837,7 @@ describe('generateSummaryMd comprehensive', () => {
   });
 
   it('shows reportAnalysis signals when provided', () => {
-    const reportAnalysis: import('./report-analysis.js').ReportAnalysisSummary =
+    const reportAnalysis: import('./reporting/analysis.js').ReportAnalysisSummary =
       {
         graphSignals: [],
         astSignals: [],
@@ -3959,7 +3959,7 @@ describe('generateSummaryMd comprehensive', () => {
   });
 
   it('shows Change Risk Hotspots when hotFiles provided', () => {
-    const hotFiles: import('./types.js').HotFile[] = [
+    const hotFiles: import('./types/index.js').HotFile[] = [
       {
         file: 'src/core.ts',
         riskScore: 85,
@@ -4088,7 +4088,7 @@ describe('generateSummaryMd comprehensive', () => {
   });
 
   it('handles reportAnalysis with null strongestGraphSignal and strongestAstSignal', () => {
-    const reportAnalysis: import('./report-analysis.js').ReportAnalysisSummary =
+    const reportAnalysis: import('./reporting/analysis.js').ReportAnalysisSummary =
       {
         graphSignals: [],
         astSignals: [],
@@ -4339,7 +4339,7 @@ describe('buildIssueCatalog detector paths via buildIssueCatalog', () => {
         },
       ],
     });
-    const critMap = new Map<string, import('./types.js').FileCriticality>();
+    const critMap = new Map<string, import('./types/index.js').FileCriticality>();
     critMap.set('src/hot.ts', {
       file: 'src/hot.ts',
       complexityRisk: 1,
@@ -4365,7 +4365,7 @@ describe('buildIssueCatalog detector paths via buildIssueCatalog', () => {
   });
 
   it('detectDuplicateFlowStructures: control duplicates with occurrences >= flowDupThreshold', () => {
-    const controlDuplicates: import('./types.js').RedundantFlowGroup[] = [
+    const controlDuplicates: import('./types/index.js').RedundantFlowGroup[] = [
       {
         kind: 'IfElseChain',
         occurrences: 5,

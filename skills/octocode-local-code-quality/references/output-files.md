@@ -136,7 +136,7 @@ If `architecture.json` names a hotspot, use `file-inventory.json` to explain why
 Compact indented text — one file per `## package — path` header, each node is `Kind[startLine:endLine]`, nesting depth = indentation level. Truncated subtrees end with `...`.
 
 ```
-## octocode-shared — packages/octocode-shared/src/credentials/storage.ts
+## my-package — packages/my-package/src/services/storage.ts
 SourceFile[18:426]
   ImportDeclaration[18:23]
   FunctionDeclaration[50:80]

@@ -15,10 +15,10 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 | Default scan | _(none)_ |
 | Analyze different repo | `--root /path/to/other/repo` |
 | Legacy single-file output | `--out path/to/report.json` |
-| Scope to one package | `--scope=packages/octocode-mcp` |
-| Scope to a directory | `--scope=packages/octocode-mcp/src/tools` |
-| Scope to a single file | `--scope=packages/octocode-mcp/src/session.ts` |
-| Scope to a function | `--scope=packages/octocode-mcp/src/session.ts:initSession` |
+| Scope to one package | `--scope=packages/my-package` |
+| Scope to a directory | `--scope=packages/my-package/src/tools` |
+| Scope to a single file | `--scope=packages/my-package/src/session.ts` |
+| Scope to a function | `--scope=packages/my-package/src/session.ts:initSession` |
 | Scope to multiple areas | `--scope=packages/foo/src/tools,packages/bar/src/ui` |
 | Architecture only | `--features=architecture` |
 | Code quality only | `--features=code-quality` |
@@ -43,7 +43,7 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 | Sensitive flow dups | `--flow-dup-threshold 2 --min-flow-statements 4` |
 | Diverse top recs | `--max-recs-per-category 1` |
 | Enable semantic analysis | `--semantic` |
-| Semantic + scope combo | `--semantic --scope=packages/octocode-mcp` |
+| Semantic + scope combo | `--semantic --scope=packages/my-package` |
 | Only semantic categories | `--semantic --features=unused-parameter,shotgun-surgery` |
 | Deep hierarchy threshold | `--semantic --type-hierarchy-threshold 6` |
 | Detect near-clones | `--similarity-threshold 0.8` |

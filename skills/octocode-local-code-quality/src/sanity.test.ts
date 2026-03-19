@@ -1,8 +1,8 @@
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-import { parseArgs } from './cli.js';
-import { canonicalScriptKind, hashString, isTestFile } from './utils.js';
+import { canonicalScriptKind, hashString, isTestFile } from './common/utils.js';
+import { parseArgs } from './pipeline/cli.js';
 
 describe('sanity checks', () => {
   it('maps extension to script kind', () => {
