@@ -3,6 +3,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { isDirectRun } from './is-direct-run.js';
+
 export interface AstTreeSearchOptions {
   input: string;
   pattern: string | null;
@@ -385,11 +387,6 @@ async function main(): Promise<void> {
   }
 }
 
-const isDirectRun = process.argv[1] && (
-  import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'))
-  || import.meta.url.endsWith('/scripts/ast-tree-search.js')
-);
-
-if (isDirectRun) {
+if (isDirectRun(import.meta.url)) {
   void main();
 }

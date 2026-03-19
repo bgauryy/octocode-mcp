@@ -69,6 +69,7 @@ import {
   detectSharedMutableState,
   detectTestNoAssertion,
 } from './test-quality-detectors.js';
+import { isDirectRun } from './is-direct-run.js';
 import { SEVERITY_ORDER } from './types.js';
 
 import type {
@@ -342,12 +343,7 @@ export function buildIssueCatalog(
   };
 }
 
-const isDirectRun =
-  process.argv[1] &&
-  (import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/')) ||
-    import.meta.url.endsWith('/scripts/index.js'));
-
-if (isDirectRun) {
+if (isDirectRun(import.meta.url)) {
   import('./pipeline.js')
     .then(m => m.main())
     .catch((error: unknown) => {

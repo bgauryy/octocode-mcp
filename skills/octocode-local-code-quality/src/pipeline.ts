@@ -51,6 +51,7 @@ import {
   buildDependencyCriticality,
 } from './ts-analyzer.js';
 import { SEMANTIC_CATEGORIES } from './types.js';
+import { isDirectRun } from './is-direct-run.js';
 import { canonicalScriptKind, increment } from './utils.js';
 
 import type { SemanticProfile } from './semantic.js';
@@ -875,13 +876,7 @@ async function main(): Promise<void> {
 
 export { main };
 
-const isDirectRun =
-  process.argv[1] &&
-  (import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/')) ||
-    import.meta.url.endsWith('/scripts/index.js') ||
-    import.meta.url.endsWith('/scripts/pipeline.js'));
-
-if (isDirectRun) {
+if (isDirectRun(import.meta.url)) {
   main().catch((error: unknown) => {
     console.error(error);
     process.exit(1);

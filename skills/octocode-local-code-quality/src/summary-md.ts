@@ -161,6 +161,8 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
   const agentOutput = report.agentOutput as Record<string, unknown>;
   const depGraph = report.dependencyGraph;
   const relativeScanDir = path.relative(root, dir) || '.';
+  const exampleFileFilter = ((scope?.[0] ?? 'src/index').split(':')[0] || 'src/index')
+    .replace(/\\/g, '/');
 
   const lines: string[] = [];
   lines.push('# Code Quality Scan Report\n');
@@ -438,7 +440,7 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
       `- Find control flow: \`node scripts/ast-tree-search.js -i ${astTreeArg} -p 'IfStatement|SwitchStatement|ForStatement|WhileStatement' --limit 25\``
     );
     lines.push(
-      `- Narrow to one file: \`node scripts/ast-tree-search.js -i ${astTreeArg} --file "src/index" -k function_declaration --limit 10\``
+      `- Narrow to one file: \`node scripts/ast-tree-search.js -i ${astTreeArg} --file "${exampleFileFilter}" -k function_declaration --limit 10\``
     );
     lines.push(
       `- Raw text fallback: \`rg 'FunctionDeclaration|IfStatement' ${astTreeArg}\``

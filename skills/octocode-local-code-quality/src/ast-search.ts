@@ -13,6 +13,7 @@ import path from 'node:path';
 
 import { js as astJs, ts as astTs, tsx as astTsx } from '@ast-grep/napi';
 
+import { isDirectRun } from './is-direct-run.js';
 import { ALLOWED_EXTS } from './types.js';
 
 import type { NapiConfig, SgNode, SgRoot } from '@ast-grep/napi';
@@ -639,12 +640,7 @@ async function main(): Promise<void> {
   }
 }
 
-const isDirectRun =
-  process.argv[1] &&
-  (import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/')) ||
-    import.meta.url.endsWith('/scripts/ast-search.js'));
-
-if (isDirectRun) {
+if (isDirectRun(import.meta.url)) {
   main().catch((error: unknown) => {
     console.error(error);
     process.exit(1);
