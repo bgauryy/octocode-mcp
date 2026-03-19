@@ -99,7 +99,6 @@ function minimalDepSummary(overrides: Partial<DependencySummary> = {}): Dependen
   };
 }
 
-// ─── isLikelyEntrypoint ─────────────────────────────────────────────────────
 
 describe('isLikelyEntrypoint', () => {
   it('matches index files', () => {
@@ -127,7 +126,6 @@ describe('isLikelyEntrypoint', () => {
   });
 });
 
-// ─── detectDependencyCycles ─────────────────────────────────────────────────
 
 describe('computeDependencyCycles', () => {
   it('returns empty for acyclic graph', () => {
@@ -186,7 +184,6 @@ describe('computeDependencyCycles', () => {
   });
 });
 
-// ─── computeDependencyCriticalPaths ─────────────────────────────────────────
 
 describe('computeDependencyCriticalPaths', () => {
   it('returns empty for isolated files', () => {
@@ -242,7 +239,6 @@ describe('computeDependencyCriticalPaths', () => {
   });
 });
 
-// ─── buildIssueCatalog ──────────────────────────────────────────────────────
 
 describe('buildIssueCatalog', () => {
   describe('duplicate findings', () => {
@@ -571,7 +567,6 @@ describe('buildIssueCatalog', () => {
   });
 });
 
-// ─── Category Group Constants ───────────────────────────────────────────────
 
 describe('category group constants', () => {
   const ALL_CATEGORIES = [
@@ -643,7 +638,6 @@ describe('category group constants', () => {
   });
 });
 
-// ─── severityBreakdown ──────────────────────────────────────────────────────
 
 describe('severityBreakdown', () => {
   it('returns zero counts for empty findings', () => {
@@ -666,7 +660,6 @@ describe('severityBreakdown', () => {
   });
 });
 
-// ─── categoryBreakdown ──────────────────────────────────────────────────────
 
 describe('categoryBreakdown', () => {
   it('returns empty object for empty findings', () => {
@@ -685,7 +678,6 @@ describe('categoryBreakdown', () => {
   });
 });
 
-// ─── diversifyFindings ──────────────────────────────────────────────────────
 
 describe('diversifyFindings', () => {
   type DraftFinding = Omit<Finding, 'id'> & { id?: string };
@@ -714,7 +706,6 @@ describe('diversifyFindings', () => {
   });
 
   it('round-robins across categories instead of taking all from one', () => {
-    // 10 findings from cat-a (all high), 2 from cat-b (all high)
     const input = [
       ...Array.from({ length: 10 }, (_, i) => makeDraft('high', 'await-in-loop', i)),
       makeDraft('high', 'dead-export', 1),
@@ -722,7 +713,6 @@ describe('diversifyFindings', () => {
     ];
     const result = diversifyFindings(input, 5);
     expect(result).toHaveLength(5);
-    // Must include findings from both categories
     const categories = new Set(result.map(f => f.category));
     expect(categories.size).toBe(2);
     expect(categories.has('await-in-loop')).toBe(true);
@@ -739,7 +729,6 @@ describe('diversifyFindings', () => {
     ];
     const result = diversifyFindings(input, 3);
     expect(result).toHaveLength(3);
-    // First pick from each category: security (critical), quality (high), dead-code (medium)
     expect(result[0].category).toBe('security');
     expect(result[1].category).toBe('quality');
     expect(result[2].category).toBe('dead-code');
@@ -754,7 +743,6 @@ describe('diversifyFindings', () => {
     ];
     const result = diversifyFindings(input, 3);
     expect(result).toHaveLength(3);
-    // Round 1: a-1, b-1. Round 2: a exhausted, b-2
     expect(result.filter(f => f.category === 'a')).toHaveLength(1);
     expect(result.filter(f => f.category === 'b')).toHaveLength(2);
   });
@@ -789,14 +777,12 @@ describe('diversifyFindings', () => {
       makeDraft('high', 'b', 2),
     ];
     const result = diversifyFindings(input, 4);
-    // Round 1: a-critical, b-critical. Round 2: a-high, b-high
     const aFindings = result.filter(f => f.category === 'a');
     expect(aFindings[0].severity).toBe('critical');
     expect(aFindings[1].severity).toBe('high');
   });
 });
 
-// ─── diverseTopRecommendations ──────────────────────────────────────────────
 
 describe('diverseTopRecommendations', () => {
   const makeFinding = (id: string, severity: string, category: string): Finding => ({
@@ -854,7 +840,6 @@ describe('diverseTopRecommendations', () => {
   });
 });
 
-// ─── writeMultiFileReport ───────────────────────────────────────────────────
 
 describe('writeMultiFileReport', () => {
   let tmpDir: string;
@@ -1083,7 +1068,6 @@ describe('writeMultiFileReport', () => {
   });
 });
 
-// ─── generateSummaryMd ─────────────────────────────────────────────────────
 
 describe('generateSummaryMd', () => {
   const fakeDir = '/tmp/nonexistent-scan-dir';
@@ -1207,7 +1191,6 @@ describe('generateSummaryMd', () => {
   });
 });
 
-// ─── computeHealthScore ─────────────────────────────────────────────────────
 
 describe('computeHealthScore', () => {
   it('returns 100 for no findings', () => {
@@ -1240,7 +1223,6 @@ describe('computeHealthScore', () => {
   });
 });
 
-// ─── collectTagCloud ────────────────────────────────────────────────────────
 
 describe('collectTagCloud', () => {
   it('returns empty for no findings', () => {
@@ -1264,7 +1246,6 @@ describe('collectTagCloud', () => {
   });
 });
 
-// ─── end-to-end output validation ───────────────────────────────────────────
 
 describe('end-to-end output validation', () => {
   it('produces valid summary.md with all sections', async () => {
@@ -1318,14 +1299,11 @@ describe('end-to-end output validation', () => {
     } finally {
       try {
         execSync(`rm -rf "${dir}"`, { encoding: 'utf8' });
-      } catch {
-        // ignore cleanup errors
-      }
+      } catch { /* ignore cleanup errors */ }
     }
   }, 30000);
 });
 
-// ─── New AST Detector Tests ─────────────────────────────────────────────────
 
 describe('new AST detectors via buildIssueCatalog', () => {
   const testOpts = { ...DEFAULT_OPTS, findingsLimit: 500, includeTests: false };
@@ -1501,7 +1479,6 @@ describe('new AST detectors via buildIssueCatalog', () => {
   });
 });
 
-// ─── Additional Coverage: computeDependencyCycles, critical paths, diversify, buildIssueCatalog, writeMultiFileReport ───
 
 function makeFinding(override: Partial<Finding> = {}): Finding {
   return {
@@ -1768,7 +1745,6 @@ describe('writeMultiFileReport (additional)', () => {
   });
 });
 
-// ─── writeMultiFileReport comprehensive (coverage boost) ─────────────────────
 
 describe('writeMultiFileReport comprehensive', () => {
   let tmpDir: string;
@@ -1952,7 +1928,6 @@ describe('writeMultiFileReport comprehensive', () => {
   });
 });
 
-// ─── buildIssueCatalog detector paths (coverage boost) ───────────────────────
 
 describe('buildIssueCatalog detector paths', () => {
   const opts = { ...DEFAULT_OPTS, root: '/repo', findingsLimit: 500, anyThreshold: 5, halsteadEffortThreshold: 500_000, maintainabilityIndexThreshold: 20 };
@@ -2043,7 +2018,6 @@ describe('buildIssueCatalog detector paths', () => {
   });
 });
 
-// ─── computeDependencyCycles comprehensive ──────────────────────────────────
 
 describe('computeDependencyCycles comprehensive', () => {
   it('detects triangle cycle A->B->C->A', () => {
@@ -2088,7 +2062,6 @@ describe('computeDependencyCycles comprehensive', () => {
   });
 });
 
-// ─── computeDependencyCriticalPaths comprehensive ────────────────────────────
 
 describe('computeDependencyCriticalPaths comprehensive', () => {
   it('returns single path root->leaf for linear chain', () => {
@@ -2131,7 +2104,6 @@ describe('computeDependencyCriticalPaths comprehensive', () => {
   });
 });
 
-// ─── generateSummaryMd comprehensive (coverage boost) ────────────────────────
 
 describe('generateSummaryMd comprehensive', () => {
   const fakeDir = '/tmp/nonexistent-scan-dir';
@@ -2448,7 +2420,6 @@ describe('generateSummaryMd comprehensive', () => {
   });
 });
 
-// ─── diversifyFindings edge cases (coverage boost) ───────────────────────────
 
 describe('diversifyFindings edge cases', () => {
   it('returns empty when limit=0', () => {
@@ -2494,7 +2465,6 @@ describe('diversifyFindings edge cases', () => {
   });
 });
 
-// ─── diverseTopRecommendations edge cases (coverage boost) ───────────────────
 
 describe('diverseTopRecommendations edge cases', () => {
   it('maxPerCategory=1 forces maximum diversity', () => {
@@ -2529,7 +2499,6 @@ describe('diverseTopRecommendations edge cases', () => {
   });
 });
 
-// ─── buildIssueCatalog detector paths (coverage boost) ───────────────────────
 
 describe('buildIssueCatalog detector paths via buildIssueCatalog', () => {
   const opts = { ...DEFAULT_OPTS, root: '/repo', findingsLimit: 500 };

@@ -14,7 +14,6 @@ import {
   searchFile,
 } from './ast-search.js';
 
-// ─── parseSearchArgs ────────────────────────────────────────────────────────
 
 describe('parseSearchArgs', () => {
   it('returns defaults when no args given', () => {
@@ -127,7 +126,6 @@ describe('parseSearchArgs', () => {
   });
 });
 
-// ─── PRESETS ────────────────────────────────────────────────────────────────
 
 describe('PRESETS', () => {
   it('has expected presets defined', () => {
@@ -149,7 +147,6 @@ describe('PRESETS', () => {
   });
 });
 
-// ─── searchFile ─────────────────────────────────────────────────────────────
 
 describe('searchFile', () => {
   it('finds pattern matches in TypeScript', () => {
@@ -309,7 +306,6 @@ function App() {
   });
 });
 
-// ─── runSearch ──────────────────────────────────────────────────────────────
 
 describe('runSearch', () => {
   let tmpDir: string;
@@ -394,7 +390,6 @@ describe('runSearch', () => {
   });
 });
 
-// ─── collectSearchFiles ─────────────────────────────────────────────────────
 
 describe('collectSearchFiles', () => {
   let tmpDir: string;
@@ -451,7 +446,6 @@ describe('collectSearchFiles', () => {
   });
 });
 
-// ─── --rule error handling ──────────────────────────────────────────────────
 
 describe('parseSearchArgs --rule error handling', () => {
   it('throws user-friendly error for invalid JSON', () => {
@@ -467,7 +461,6 @@ describe('parseSearchArgs --rule error handling', () => {
   });
 });
 
-// ─── extractMetaVars (via searchFile) ───────────────────────────────────────
 
 describe('meta-variable extraction', () => {
   it('extracts single $VAR without duplicating variadic $$$VAR', () => {
@@ -499,7 +492,6 @@ describe('meta-variable extraction', () => {
   });
 });
 
-// ─── --context / -C output ──────────────────────────────────────────────────
 
 describe('formatTextOutput with context', () => {
   let tmpDir: string;

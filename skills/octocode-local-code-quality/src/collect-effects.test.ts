@@ -11,7 +11,6 @@ function parse(code: string, fileName = '/repo/src/test.ts'): ts.SourceFile {
   return ts.createSourceFile(fileName, code, ts.ScriptTarget.ESNext, true);
 }
 
-// ─── collectTopLevelEffects ──────────────────────────────────────────────────
 
 describe('collectTopLevelEffects', () => {
   describe('effect kinds', () => {
@@ -399,7 +398,6 @@ describe('collectTopLevelEffects', () => {
   });
 });
 
-// ─── findParentBlock ─────────────────────────────────────────────────────────
 
 describe('findParentBlock', () => {
   it('returns Block when node is inside a block', () => {
@@ -418,7 +416,6 @@ describe('findParentBlock', () => {
 
   it('returns null when node has no parent (e.g. SourceFile)', () => {
     const src = parse('const x = 1;');
-    // SourceFile has no parent; passing it yields null
     expect(findParentBlock(src)).toBe(null);
   });
 
@@ -433,7 +430,6 @@ describe('findParentBlock', () => {
   });
 });
 
-// ─── blockContainsCall ───────────────────────────────────────────────────────
 
 describe('blockContainsCall', () => {
   it('returns true when block contains call with given name', () => {

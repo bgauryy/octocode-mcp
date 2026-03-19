@@ -25,7 +25,6 @@ function isInsideRegexLiteral(node: ts.Node): boolean {
   let current: ts.Node | undefined = node.parent;
   while (current) {
     if (ts.isRegularExpressionLiteral(current)) return true;
-    // Check if inside a new RegExp() call
     if (ts.isNewExpression(current) && current.expression.getText(node.getSourceFile()) === 'RegExp') return true;
     current = current.parent;
   }
@@ -132,12 +131,9 @@ export function collectSecurityData(sourceFile: ts.SourceFile, fileRelative: str
     }
 
     if (ts.isRegularExpressionLiteral(node)) {
-      // Tag regex-definition context for strings inside regex that match secret patterns
       const regexText = node.getText(sourceFile);
       for (const pattern of SECRET_PATTERNS) {
         if (pattern.test(regexText)) {
-          // This is a regex that mentions secret keywords — NOT a real secret
-          // Mark as regex-definition so the detector can skip it
           const loc = getLineAndCharacter(sourceFile, node);
           suspiciousStrings.push({ lineStart: loc.lineStart, lineEnd: loc.lineEnd, kind: 'hardcoded-secret', snippet: regexText.slice(0, 40), context: 'regex-definition' });
           break;

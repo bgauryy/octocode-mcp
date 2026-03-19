@@ -461,7 +461,6 @@ export function analyzeSemanticProfile(
     }
   }
 
-  // ─── Leaky Returns: exported functions returning internal types ─────
   const exportedFns = fileEntry.functions.filter((fn) =>
     fileEntry.dependencyProfile?.declaredExports?.some((e) => e.name === fn.name),
   );
@@ -501,7 +500,6 @@ export function analyzeSemanticProfile(
     }
   }
 
-  // ─── Narrowable Params: broad param types that callers always narrow ─
   for (const fn of exportedFns) {
     if (!fn.params || fn.params < 1) continue;
     const fnPos = sourceFile.getPositionOfLineAndCharacter(Math.max(0, fn.lineStart - 1), 0);

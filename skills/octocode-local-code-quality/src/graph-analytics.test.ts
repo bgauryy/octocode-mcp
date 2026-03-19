@@ -209,7 +209,6 @@ describe('computeChokepoints', () => {
 describe('buildAdvancedGraphFindings - broker-module', () => {
   it('generates broker-module findings for high fan-in/fan-out chokepoints', () => {
     const state = emptyState();
-    // Create a hub with high fan-in (>= 3) and fan-out (>= 3)
     const hub = 'src/hub.ts';
     for (const src of ['src/a.ts', 'src/b.ts', 'src/c.ts']) addEdge(state, src, hub);
     for (const tgt of ['src/x.ts', 'src/y.ts', 'src/z.ts']) addEdge(state, hub, tgt);
@@ -272,7 +271,6 @@ describe('buildAdvancedGraphFindings - import line resolution', () => {
 describe('buildAdvancedGraphFindings - package-boundary-chatter', () => {
   it('generates package-boundary-chatter findings when hotspot edges >= 4', () => {
     const state = emptyState();
-    // Create 4+ cross-package edges from packages/a to packages/b
     for (let i = 0; i < 5; i++) addEdge(state, `packages/a/src/f${i}.ts`, `packages/b/src/g${i}.ts`);
     const criticality = new Map<string, FileCriticality>();
     for (const file of state.files) criticality.set(file, { file, complexityRisk: 0, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 1 });

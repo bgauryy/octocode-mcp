@@ -55,7 +55,6 @@ async function main(): Promise<void> {
 
   let packages = listWorkspacePackages(options.root, options.packageRoot);
   if (!packages.length) {
-    // Fallback: treat root as a single package if it has a package.json
     const rootManifest = path.join(options.root, 'package.json');
     if (fs.existsSync(rootManifest)) {
       try {
@@ -412,7 +411,6 @@ async function main(): Promise<void> {
     ? buildAdvancedGraphFindings(graphAnalytics, dependencyState, fileSummaries)
     : [];
 
-  // ─── Semantic Analysis Phase (--semantic) ───────────────────────────
   let semanticFindings: Array<Omit<Finding, 'id'>> = [];
   if (options.semantic) {
     const wantsAnySemantic = !options.features || [...SEMANTIC_CATEGORIES].some((c) => options.features!.has(c));

@@ -122,7 +122,6 @@ describe('parseArgs', () => {
     expect(opts.layerOrder).toEqual(['ui', 'service', 'repo']);
   });
 
-  // --features parsing
   it('parses --features with pillar name', () => {
     const opts = parseArgs(['--features=architecture']);
     expect(opts.features).toBeInstanceOf(Set);
@@ -156,7 +155,6 @@ describe('parseArgs', () => {
     expect(opts.features).toBeNull();
   });
 
-  // --exclude parsing
   it('parses --exclude with pillar name', () => {
     const opts = parseArgs(['--exclude=architecture']);
     expect(opts.features).toBeInstanceOf(Set);
@@ -275,7 +273,6 @@ describe('parseArgs', () => {
     expect(opts.includeTests).toBe(false);
   });
 
-  // ─── Additional parseArgs coverage (boolean flags) ──────────────────────────
   it('parses all boolean flags: --json, --include-tests, --emit-tree, --no-tree, --graph, --semantic, --no-diversify, --no-cache, --clear-cache, --graph-advanced, --flow, --all', () => {
     const opts = parseArgs([
       '--json',
@@ -313,7 +310,6 @@ describe('parseArgs', () => {
     expect(parseArgs(['--clear-cache']).clearCache).toBe(true);
   });
 
-  // ─── Int flags with specific values ───────────────────────────────────────
   it('parses --findings-limit 10, --min-function-statements 8, --critical-complexity-threshold 30', () => {
     const opts = parseArgs([
       '--findings-limit', '10',
@@ -325,7 +321,6 @@ describe('parseArgs', () => {
     expect(opts.criticalComplexityThreshold).toBe(30);
   });
 
-  // ─── Float flags ───────────────────────────────────────────────────────────
   it('parses --secret-entropy-threshold 4.0 and --similarity-threshold 0.9', () => {
     const opts = parseArgs([
       '--secret-entropy-threshold', '4.0',
@@ -340,7 +335,6 @@ describe('parseArgs', () => {
     expect(parseArgs(['--similarity-threshold', '0.75']).similarityThreshold).toBe(0.75);
   });
 
-  // ─── Special flags (parser, root, out, layer-order) ────────────────────────
   it('parses --parser typescript, --root /some/path, --out result.json, --layer-order ui,service,repo', () => {
     const opts = parseArgs([
       '--parser', 'typescript',
@@ -354,13 +348,11 @@ describe('parseArgs', () => {
     expect(opts.layerOrder).toEqual(['ui', 'service', 'repo']);
   });
 
-  // ─── --out= form ───────────────────────────────────────────────────────────
   it('parses --out=output.json form', () => {
     const opts = parseArgs(['--out=output.json']);
     expect(opts.out).toBe('output.json');
   });
 
-  // ─── --scope: file paths and file:symbol syntax ─────────────────────────────
   it('parses --scope with file paths', () => {
     const opts = parseArgs(['--scope', 'packages/foo,packages/bar']);
     expect(opts.scope).toBeInstanceOf(Array);
@@ -387,7 +379,6 @@ describe('parseArgs', () => {
     }
   });
 
-  // ─── --features: pillar and category names ──────────────────────────────────
   it('parses --features with pillar name architecture', () => {
     const opts = parseArgs(['--features=architecture']);
     expect(opts.features).toBeInstanceOf(Set);
@@ -401,7 +392,6 @@ describe('parseArgs', () => {
     expect(opts.features!.size).toBe(1);
   });
 
-  // ─── --exclude: exclude categories ──────────────────────────────────────────
   it('parses --exclude with multiple categories', () => {
     const opts = parseArgs(['--exclude=dead-export,cognitive-complexity']);
     expect(opts.features!.has('dead-export')).toBe(false);
@@ -415,7 +405,6 @@ describe('parseArgs', () => {
     expect(opts.features!.has('layer-violation')).toBe(false);
   });
 
-  // ─── --features auto-enables includeTests for test-quality categories ───────
   it('--features=excessive-mocking auto-enables includeTests', () => {
     const opts = parseArgs(['--features=excessive-mocking']);
     expect(opts.includeTests).toBe(true);

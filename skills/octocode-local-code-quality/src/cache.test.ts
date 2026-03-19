@@ -38,7 +38,6 @@ describe('cache', () => {
       const cache = createEmptyCache(tmpDir);
       saveCache(tmpDir, cache);
 
-      // Tamper with schemaVersion in the file
       const cachePath = path.join(tmpDir, '.octocode', 'scan', '.cache', 'analysis-cache.json');
       const data = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
       data.schemaVersion = '0.0.0';
@@ -97,7 +96,6 @@ describe('cache', () => {
       const cache = createEmptyCache('/test');
       setCacheEntry(cache, 'b.ts', { mtimeMs: 2, size: 200 }, { data: 1 });
 
-      // Manually set lastAccessMs to an old value
       cache.entries['b.ts'].lastAccessMs = 1000;
 
       const before = Date.now();
@@ -119,7 +117,6 @@ describe('cache', () => {
     it('removes old entries and keeps recent ones', () => {
       const cache = createEmptyCache('/test');
       setCacheEntry(cache, 'old.ts', { mtimeMs: 1, size: 100 }, {});
-      // Manually set lastAccessMs to 8 days ago
       cache.entries['old.ts'].lastAccessMs = Date.now() - 8 * 24 * 60 * 60 * 1000;
 
       setCacheEntry(cache, 'recent.ts', { mtimeMs: 2, size: 200 }, {});

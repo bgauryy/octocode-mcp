@@ -4,7 +4,6 @@ import { ALL_CATEGORIES, DEFAULT_OPTS, PILLAR_CATEGORIES } from './types.js';
 
 import type { AnalysisOptions } from './types.js';
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function parseNumeric(raw: string | undefined, fallback: number): number {
   const n = parseInt(raw ?? '', 10);
@@ -51,11 +50,9 @@ function parseScope(val: string, root: string): { paths: string[]; symbols: Map<
   return { paths, symbols };
 }
 
-// ─── Flag dispatch tables ────────────────────────────────────────────────────
 
 type FlagHandler = (opts: AnalysisOptions, argv: string[], i: number) => number;
 
-/** Boolean flags — no argument consumed */
 const BOOL_FLAGS: Record<string, (opts: AnalysisOptions, value: boolean) => void> = {
   '--json':          (o) => { o.json = true; },
   '--include-tests': (o) => { o.includeTests = true; },
@@ -71,7 +68,6 @@ const BOOL_FLAGS: Record<string, (opts: AnalysisOptions, value: boolean) => void
   '--all':           (o) => { o.includeTests = true; o.semantic = true; },
 };
 
-/** Numeric (int) flags — consume next arg */
 const INT_FLAGS: Record<string, keyof AnalysisOptions> = {
   '--findings-limit':              'findingsLimit',
   '--min-function-statements':     'minFunctionStatements',
@@ -98,13 +94,11 @@ const INT_FLAGS: Record<string, keyof AnalysisOptions> = {
   '--mock-threshold':              'mockThreshold',
 };
 
-/** Decimal (float) flags — consume next arg */
 const FLOAT_FLAGS: Record<string, keyof AnalysisOptions> = {
   '--secret-entropy-threshold':     'secretEntropyThreshold',
   '--similarity-threshold':         'similarityThreshold',
 };
 
-/** Special flags that need custom handling */
 const SPECIAL_FLAGS: Record<string, FlagHandler> = {
   '--parser': (opts, argv, i) => {
     const next = argv[i + 1];
@@ -131,7 +125,6 @@ const SPECIAL_FLAGS: Record<string, FlagHandler> = {
   '-h': () => { printHelp(); return process.exit(0) as never; },
 };
 
-// ─── Main parser ─────────────────────────────────────────────────────────────
 
 export function parseArgs(argv: string[]): AnalysisOptions {
   const opts: AnalysisOptions = { ...DEFAULT_OPTS };
@@ -140,13 +133,11 @@ export function parseArgs(argv: string[]): AnalysisOptions {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
 
-    // Boolean flags
     if (BOOL_FLAGS[arg]) {
       BOOL_FLAGS[arg](opts, true);
       continue;
     }
 
-    // Integer flags
     if (INT_FLAGS[arg]) {
       const key = INT_FLAGS[arg];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -154,7 +145,6 @@ export function parseArgs(argv: string[]): AnalysisOptions {
       continue;
     }
 
-    // Float flags
     if (FLOAT_FLAGS[arg]) {
       const key = FLOAT_FLAGS[arg];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -162,19 +152,16 @@ export function parseArgs(argv: string[]): AnalysisOptions {
       continue;
     }
 
-    // Special flags
     if (SPECIAL_FLAGS[arg]) {
       i = SPECIAL_FLAGS[arg](opts, argv, i);
       continue;
     }
 
-    // --out=value form
     if (arg.startsWith('--out=')) {
       opts.out = arg.slice('--out='.length);
       continue;
     }
 
-    // --scope / --scope=
     if (arg === '--scope' || arg.startsWith('--scope=')) {
       const val = arg.includes('=') ? arg.split('=')[1] : argv[++i];
       const { paths, symbols } = parseScope(val, opts.root);
@@ -183,14 +170,12 @@ export function parseArgs(argv: string[]): AnalysisOptions {
       continue;
     }
 
-    // --features / --features=
     if (arg === '--features' || arg.startsWith('--features=')) {
       const val = arg.startsWith('--features=') ? arg.slice('--features='.length) : argv[++i];
       opts.features = resolveCategories(val, 'feature');
       continue;
     }
 
-    // --exclude / --exclude=
     if (arg === '--exclude' || arg.startsWith('--exclude=')) {
       const val = arg.startsWith('--exclude=') ? arg.slice('--exclude='.length) : argv[++i];
       excludeSet = resolveCategories(val, 'exclude');

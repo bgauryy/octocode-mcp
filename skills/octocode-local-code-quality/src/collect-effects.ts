@@ -168,7 +168,6 @@ function scanNodeForEffects(node: ts.Node, sourceFile: ts.SourceFile, effects: T
   ts.forEachChild(node, (child) => scanNodeForEffects(child, sourceFile, effects));
 }
 
-// ─── Prototype Pollution Risk Sites ─────────────────────────────────────────
 
 
 export function findParentBlock(node: ts.Node): ts.Block | ts.SourceFile | null {

@@ -7,7 +7,6 @@ import type { Finding } from './types.js';
 
 type FindingDraft = Omit<Finding, 'id'>;
 
-// ─── Architecture Risk ──────────────────────────────────────────────────────
 
 export function detectSemanticDeadExports(
   profiles: SemanticProfile[],
@@ -277,7 +276,6 @@ export function detectCircularTypeDependency(
   return findings;
 }
 
-// ─── Code Quality ───────────────────────────────────────────────────────────
 
 export function detectUnusedParameters(
   profiles: SemanticProfile[],
@@ -405,7 +403,6 @@ export function detectInterfaceCompliance(
   return findings;
 }
 
-// ─── Dead Code & Hygiene ────────────────────────────────────────────────────
 
 export function detectUnusedImports(
   profiles: SemanticProfile[],
@@ -531,7 +528,6 @@ export function detectOrphanImplementation(
   return findings;
 }
 
-// ─── Shotgun Surgery ────────────────────────────────────────────────────────
 
 export function detectShotgunSurgery(
   profiles: SemanticProfile[],
@@ -577,7 +573,6 @@ export function detectShotgunSurgery(
   return findings;
 }
 
-// ─── Move-to-Caller (single-consumer export) ────────────────────────────────
 
 export function detectMoveToCaller(
   profiles: SemanticProfile[],
@@ -622,7 +617,6 @@ export function detectMoveToCaller(
   return findings;
 }
 
-// ─── Narrowable Type ────────────────────────────────────────────────────────
 
 export function detectNarrowableType(
   profiles: SemanticProfile[],
@@ -664,7 +658,6 @@ export function detectNarrowableType(
   return findings;
 }
 
-// ─── Orchestrator ───────────────────────────────────────────────────────────
 
 export function runSemanticDetectors(
   ctx: SemanticContext,

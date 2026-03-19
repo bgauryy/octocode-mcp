@@ -4,14 +4,11 @@ import * as ts from 'typescript';
 
 import type Parser from 'tree-sitter';
 
-// ─── Constants ───────────────────────────────────────────────────────────────
 
 
-// ─── Tree-sitter type aliases (official types, zero runtime cost) ────────────
 
 export type SyntaxNode = Parser.SyntaxNode;
 
-// ─── Interfaces ──────────────────────────────────────────────────────────────
 
 export interface AnalysisOptions {
   minFunctionStatements: number;
@@ -482,7 +479,6 @@ export interface InputSourceInfo {
   paramConfidence: 'high' | 'medium' | 'low';
 }
 
-// SimilarGroup removed — was exported but never referenced anywhere
 
 export type TopLevelEffectKind =
   | 'sync-io'

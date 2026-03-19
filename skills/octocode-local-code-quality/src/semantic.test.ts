@@ -328,9 +328,6 @@ describe('SEMANTIC_CATEGORIES constant', () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Integration tests: real TypeScript files → semantic pipeline → detectors
-// ═══════════════════════════════════════════════════════════════════════════
 
 function setupCtx(dir: string, files: Record<string, string>) {
   writeFiles(dir, files);
@@ -822,9 +819,6 @@ describe('integration: full pipeline runSemanticDetectors', () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// New semantic detector tests
-// ═══════════════════════════════════════════════════════════════════════════
 
 describe('integration: shotgun-surgery', () => {
   it('detects export used by many files', () => {
@@ -902,10 +896,6 @@ describe('integration: narrowable-type', () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Coverage: type hierarchy, override chains, leaky returns, abstractness,
-// narrowable params, collectAllAbsoluteFiles, edge cases
-// ═══════════════════════════════════════════════════════════════════════════
 
 describe('integration: type-hierarchy-and-override-chains', () => {
   it('detects typeHierarchyDepth and overrideChains in multi-file inheritance', () => {

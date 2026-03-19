@@ -39,7 +39,6 @@ const emptyProfile: DependencyProfile = {
 
 const testOpts = { ...DEFAULT_OPTS, root: '/repo', emitTree: false };
 
-// ─── isFunctionLike ─────────────────────────────────────────────────────────
 
 describe('isFunctionLike', () => {
   it('matches function declarations', () => {
@@ -73,7 +72,6 @@ describe('isFunctionLike', () => {
   });
 });
 
-// ─── getFunctionName ────────────────────────────────────────────────────────
 
 describe('getFunctionName', () => {
   it('returns name of function declaration', () => {
@@ -95,7 +93,6 @@ describe('getFunctionName', () => {
   });
 });
 
-// ─── collectMetrics ─────────────────────────────────────────────────────────
 
 describe('collectMetrics', () => {
   it('returns base complexity of 1 for empty function', () => {
@@ -174,7 +171,6 @@ describe('collectMetrics', () => {
   });
 });
 
-// ─── buildDependencyCriticality ─────────────────────────────────────────────
 
 describe('buildDependencyCriticality', () => {
   it('returns score of 1 for null input', () => {
@@ -219,7 +215,6 @@ describe('buildDependencyCriticality', () => {
   });
 });
 
-// ─── countLinesInNode ───────────────────────────────────────────────────────
 
 describe('countLinesInNode', () => {
   it('counts lines of single-line node', () => {
@@ -233,7 +228,6 @@ describe('countLinesInNode', () => {
   });
 });
 
-// ─── analyzeSourceFile ──────────────────────────────────────────────────────
 
 describe('analyzeSourceFile', () => {
   it('extracts functions from source file', () => {
@@ -392,7 +386,6 @@ describe('analyzeSourceFile', () => {
   });
 });
 
-// ─── computeHalstead ─────────────────────────────────────────────────────────
 
 describe('computeHalstead', () => {
   it('returns zeroes for empty body', () => {
@@ -433,7 +426,6 @@ describe('computeHalstead', () => {
   });
 });
 
-// ─── computeMaintainabilityIndex ─────────────────────────────────────────────
 
 describe('computeMaintainabilityIndex', () => {
   it('returns high MI for simple code', () => {
@@ -458,7 +450,6 @@ describe('computeMaintainabilityIndex', () => {
   });
 });
 
-// ─── Security Data Collection ────────────────────────────────────────────────
 
 describe('collectSecurityData (via analyzeSourceFile)', () => {
   it('detects eval() usage', () => {
@@ -574,7 +565,6 @@ describe('collectSecurityData (via analyzeSourceFile)', () => {
   });
 });
 
-// ─── Async/Error Pattern Detection ───────────────────────────────────────────
 
 describe('async pattern detection (via analyzeSourceFile)', () => {
   it('detects unprotected async (await without try-catch)', () => {
@@ -603,7 +593,6 @@ describe('async pattern detection (via analyzeSourceFile)', () => {
   });
 });
 
-// ─── Performance Data Collection ─────────────────────────────────────────────
 
 describe('collectPerformanceData (via analyzeSourceFile)', () => {
   it('detects await inside for loop', () => {
@@ -691,7 +680,6 @@ describe('collectPerformanceData (via analyzeSourceFile)', () => {
   });
 });
 
-// ─── Input Source Profile Collection ─────────────────────────────────────────
 
 describe('collectInputSourceProfile (via analyzeSourceFile)', () => {
   it('detects function with req parameter as high-confidence input source', () => {
@@ -746,7 +734,6 @@ describe('collectInputSourceProfile (via analyzeSourceFile)', () => {
   });
 });
 
-// ─── Top-Level Effects Collection ────────────────────────────────────────────
 
 describe('collectTopLevelEffects (via analyzeSourceFile)', () => {
   it('detects side-effect imports', () => {
@@ -810,7 +797,6 @@ describe('collectTopLevelEffects (via analyzeSourceFile)', () => {
   });
 });
 
-// ─── Prototype Pollution Site Collection ─────────────────────────────────────
 
 describe('collectPrototypePollutionSites (via analyzeSourceFile)', () => {
   it('detects Object.assign with 2+ args', () => {
@@ -865,7 +851,6 @@ describe('collectPrototypePollutionSites (via analyzeSourceFile)', () => {
   });
 });
 
-// ─── Test Profile Collection ─────────────────────────────────────────────────
 
 describe('collectTestProfile (via analyzeSourceFile)', () => {
   const testFileName = '/repo/src/feature.test.ts';

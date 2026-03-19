@@ -230,7 +230,6 @@ export function detectPrototypePollutionRisk(fileSummaries: FileEntry[]): Findin
     if (isTestFile(entry.file)) continue;
     if (!entry.prototypePollutionSites || entry.prototypePollutionSites.length === 0) continue;
     for (const site of entry.prototypePollutionSites) {
-      // Use guarded field to downgrade severity: guarded computed-property-writes are low risk
       let severity: Finding['severity'];
       let confidence: 'high' | 'medium' | 'low';
       if (site.kind === 'computed-property-write') {
@@ -397,7 +396,6 @@ export function detectInputPassthroughRisk(fileSummaries: FileEntry[]): FindingD
   return findings;
 }
 
-// ─── Path Traversal Risk ──────────────────────────────────────────────────────
 
 export function detectPathTraversalRisk(fileSummaries: FileEntry[]): FindingDraft[] {
   const findings: FindingDraft[] = [];
@@ -452,7 +450,6 @@ export function detectPathTraversalRisk(fileSummaries: FileEntry[]): FindingDraf
   return findings;
 }
 
-// ─── Command Injection Risk ──────────────────────────────────────────────────
 
 export function detectCommandInjectionRisk(fileSummaries: FileEntry[]): FindingDraft[] {
   const findings: FindingDraft[] = [];
@@ -463,7 +460,6 @@ export function detectCommandInjectionRisk(fileSummaries: FileEntry[]): FindingD
       if (execSinks.length === 0) continue;
       if (src.paramConfidence === 'low') continue;
 
-      // Check callee names to distinguish exec (dangerous) from spawn with array args (safer)
       const execCallees = src.callsWithInputArgs.filter(c =>
         /\.exec\b|^exec$|^execSync$|child_process\.exec/.test(c.callee),
       );
@@ -471,7 +467,6 @@ export function detectCommandInjectionRisk(fileSummaries: FileEntry[]): FindingD
         /\.spawn\b|^spawn$|^spawnSync$|child_process\.spawn/.test(c.callee),
       );
 
-      // exec with string interpolation is critical, spawn with shell:true is high
       if (execCallees.length > 0) {
         const severity: Finding['severity'] = src.paramConfidence === 'high' ? 'critical' : 'high';
         findings.push(toSecurityFinding({
@@ -512,7 +507,6 @@ export function detectCommandInjectionRisk(fileSummaries: FileEntry[]): FindingD
       }
 
       if (spawnCallees.length > 0 && execCallees.length === 0) {
-        // spawn is safer but shell:true makes it equivalent to exec
         findings.push(toSecurityFinding({
           severity: 'high',
           category: 'command-injection-risk',

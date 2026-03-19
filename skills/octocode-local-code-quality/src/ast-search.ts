@@ -17,7 +17,6 @@ import { ALLOWED_EXTS } from './types.js';
 
 import type { NapiConfig, SgNode, SgRoot } from '@ast-grep/napi';
 
-// ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface AstSearchOptions {
   root: string;
@@ -53,7 +52,6 @@ export interface AstSearchResult {
   _sourceByFile?: Map<string, string[]>;
 }
 
-// ─── Presets ────────────────────────────────────────────────────────────────
 
 type PresetRule = NapiConfig & { description: string };
 
@@ -185,7 +183,6 @@ export const PRESETS: Record<string, PresetRule> = {
   },
 };
 
-// ─── File Collection ────────────────────────────────────────────────────────
 
 function isTestFile(filePath: string): boolean {
   const base = path.basename(filePath);
@@ -221,7 +218,6 @@ export function collectSearchFiles(root: string, opts: Pick<AstSearchOptions, 'i
   return files;
 }
 
-// ─── Parser Selection ───────────────────────────────────────────────────────
 
 type AstParser = { parse(src: string): SgRoot };
 
@@ -241,7 +237,6 @@ function parserForExt(ext: string): AstParser {
   }
 }
 
-// ─── Core Search ────────────────────────────────────────────────────────────
 
 function extractMetaVars(node: SgNode, pattern: string): Record<string, string> {
   const vars: Record<string, string> = {};
@@ -376,7 +371,6 @@ export function runSearch(files: string[], opts: AstSearchOptions, root: string)
   return result;
 }
 
-// ─── CLI ────────────────────────────────────────────────────────────────────
 
 interface ParsedSearchArgs {
   opts: AstSearchOptions;

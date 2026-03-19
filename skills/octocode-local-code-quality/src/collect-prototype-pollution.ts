@@ -15,7 +15,6 @@ function isKeyFromInternalIteration(node: ts.ElementAccessExpression, sourceFile
   if (!keyExpr || !ts.isIdentifier(keyExpr)) return false;
   const keyName = keyExpr.getText(sourceFile);
 
-  // Walk up to find a for-of/for-in loop that declares this key
   let current: ts.Node | undefined = node.parent;
   while (current) {
     if (ts.isForOfStatement(current) || ts.isForInStatement(current)) {
@@ -23,7 +22,6 @@ function isKeyFromInternalIteration(node: ts.ElementAccessExpression, sourceFile
       if (init) {
         const initText = init.getText(sourceFile);
         if (initText.includes(keyName)) {
-          // Check if the iterable is a known-safe internal source
           const expr = current.expression.getText(sourceFile);
           if (/Object\.(keys|values|entries|getOwnPropertyNames)\(/.test(expr) ||
               /\.keys\(\)|\.values\(\)|\.entries\(\)/.test(expr) ||
@@ -52,11 +50,9 @@ function hasProtoKeyGuard(node: ts.Node, sourceFile: ts.SourceFile): boolean {
 /** Check if the target object was created with Object.create(null) or is Map/Set */
 function isTargetSafeObject(node: ts.ElementAccessExpression, sourceFile: ts.SourceFile): boolean {
   const objText = node.expression.getText(sourceFile);
-  // Walk up to find variable declaration
   let current: ts.Node | undefined = node.parent;
   while (current) {
     if (ts.isBlock(current) || ts.isSourceFile(current)) {
-      // Search for Object.create(null) or new Map/Set assignment for this object
       const text = current.getText(sourceFile);
       const createNullPattern = new RegExp(`${objText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=\\s*Object\\.create\\(null\\)`);
       const mapSetPattern = new RegExp(`${objText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=\\s*new\\s+(Map|Set)\\b`);

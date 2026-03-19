@@ -35,7 +35,6 @@ function emptyState(): DependencyState {
   };
 }
 
-// ─── collectModuleDependencies ──────────────────────────────────────────────
 
 describe('collectModuleDependencies', () => {
   describe('import detection', () => {
@@ -198,7 +197,6 @@ describe('collectModuleDependencies', () => {
   });
 });
 
-// ─── trackDependencyEdge ────────────────────────────────────────────────────
 
 describe('trackDependencyEdge', () => {
   it('tracks outgoing and incoming edges', () => {
@@ -224,7 +222,6 @@ describe('trackDependencyEdge', () => {
   });
 });
 
-// ─── dependencyProfileToRecord ──────────────────────────────────────────────
 
 describe('dependencyProfileToRecord', () => {
   it('returns zero counts for unknown file', () => {
@@ -277,7 +274,6 @@ describe('dependencyProfileToRecord', () => {
   });
 });
 
-// ─── Additional collectModuleDependencies coverage ───────────────────────────
 
 describe('collectModuleDependencies (extended)', () => {
   it('parses combined default and named imports', () => {
@@ -319,7 +315,6 @@ describe('collectModuleDependencies (extended)', () => {
   });
 });
 
-// ─── trackDependencyEdge (extended) ──────────────────────────────────────────
 
 describe('trackDependencyEdge (extended)', () => {
   it('updates outgoing map with multiple edges from same file', () => {
@@ -348,7 +343,6 @@ describe('trackDependencyEdge (extended)', () => {
   });
 });
 
-// ─── collectDependencyProfile ────────────────────────────────────────────────
 
 describe('collectDependencyProfile', () => {
   it('integrates with TS source and DependencyState', () => {

@@ -134,7 +134,6 @@ describe('mock restoration detector', () => {
   it('skips non-restorable mocks', () => {
     const file = analyze(`test('module mock', () => {
       jest.mock('path');
-      // intentionally no restore needed for module-level mock
     });`);
     const findings = detectMissingMockRestoration([file] as [FileEntry]);
     expect(findings).toHaveLength(0);

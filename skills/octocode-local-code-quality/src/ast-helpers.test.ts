@@ -180,7 +180,6 @@ describe('getFunctionName', () => {
   it('returns <anonymous> for method with computed property name', () => {
     const sf = parse('class C { ["method"]() {} }');
     const node = findFirst(sf, ts.isMethodDeclaration)!;
-    // Computed names are not Identifier, so implementation falls back to <anonymous>
     expect(getFunctionName(node, sf)).toBe('<anonymous>');
   });
 });

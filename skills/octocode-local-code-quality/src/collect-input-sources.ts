@@ -32,11 +32,9 @@ const SINK_CALL_PATTERNS: Array<{ pattern: RegExp; kind: string }> = [
   { pattern: /\.send$|\.json$|\.write$/, kind: 'response' },
   { pattern: /fs\.(writeFile|appendFile)/, kind: 'fs-write' },
   { pattern: /writeFileSync|appendFileSync/, kind: 'fs-write' },
-  // Path traversal sinks
   { pattern: /fs\.(readFile|readFileSync|createReadStream)/, kind: 'fs-read' },
   { pattern: /readFileSync|readFile/, kind: 'fs-read' },
   { pattern: /path\.(resolve|join)/, kind: 'path-resolve' },
-  // SSRF sinks
   { pattern: /^fetch$/, kind: 'ssrf' },
   { pattern: /^(http|https)\.(request|get)/, kind: 'ssrf' },
   { pattern: /axios\.(get|post|put|delete|request)/, kind: 'ssrf' },

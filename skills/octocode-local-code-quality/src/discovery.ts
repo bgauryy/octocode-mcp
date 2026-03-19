@@ -63,9 +63,7 @@ export function listWorkspacePackages(root: string, packageRoot: string): Packag
       if (typeof json.name === 'string') {
         packages.push({ name: json.name, dir, folder: entry.name });
       }
-    } catch {
-      // Ignore invalid package manifests.
-    }
+    } catch { /* ignore invalid manifests */ }
   }
 
   return packages;

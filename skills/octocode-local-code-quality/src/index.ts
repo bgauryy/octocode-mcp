@@ -78,7 +78,6 @@ import type {
   RedundantFlowGroup,
 } from './types.js';
 
-// Re-exports for backward compatibility
 export { buildDependencySummary, computeDependencyCycles, computeDependencyCriticalPaths } from './dependency-summary.js';
 export { REPORT_SCHEMA_VERSION, ARCHITECTURE_CATEGORIES, CODE_QUALITY_CATEGORIES, DEAD_CODE_CATEGORIES, SECURITY_CATEGORIES, TEST_QUALITY_CATEGORIES, writeMultiFileReport, generateMermaidGraph } from './report-writer.js';
 export type { FullReport } from './report-writer.js';
@@ -86,9 +85,7 @@ export { severityBreakdown, categoryBreakdown, computeHealthScore, collectTagClo
 export type { SummaryMdOptions } from './summary-md.js';
 
 
-// ─── Issue Catalog ───────────────────────────────────────────────────────────
 
-// dead re-export removed: isLikelyEntrypoint was not consumed by any module
 
 export function buildIssueCatalog(
   duplicates: DuplicateGroup[],
@@ -111,10 +108,8 @@ export function buildIssueCatalog(
     rawFindings.push(finding);
   };
 
-  // Build consumed-from-module map (needed by dead-code detectors)
   const { production: consumedFromModule, test: testConsumedFromModule } = buildConsumedFromModule(dependencyState);
 
-  // All detectors - uniform pattern
   for (const f of detectDuplicateFunctionBodies(duplicates)) addFinding(f);
   for (const f of detectDuplicateFlowStructures(controlDuplicates, options.flowDupThreshold)) addFinding(f);
   for (const f of detectFunctionOptimization(fileSummaries, options.criticalComplexityThreshold)) addFinding(f);
@@ -129,7 +124,6 @@ export function buildIssueCatalog(
   for (const f of detectOrphanModules(dependencyState)) addFinding(f);
   for (const f of detectUnreachableModules(dependencyState)) addFinding(f);
 
-  // ─── Phase 3: Structural Hygiene ──────────────────────────────────────
   for (const f of detectUnusedNpmDeps(dependencyState.externalCounts, pkgJsonDeps, pkgJsonDevDeps)) addFinding(f);
   for (const f of detectBoundaryViolations(dependencyState)) addFinding(f);
   for (const f of detectBarrelExplosion(dependencyState, options.barrelSymbolThreshold)) addFinding(f);
@@ -144,19 +138,15 @@ export function buildIssueCatalog(
   for (const f of detectDistanceFromMainSequence(dependencyState)) addFinding(f);
   for (const f of detectFeatureEnvy(dependencyState)) addFinding(f);
 
-  // ─── Phase 3B: Untested Critical Code ──────────────────────────────
   const hotFilesForDetector = computeHotFiles(dependencyState, dependencySummary, fileCriticalityByPath);
   for (const f of detectUntestedCriticalCode(dependencyState, hotFilesForDetector, fileCriticalityByPath)) addFinding(f);
 
-  // ─── Phase 3C: Import Side-Effect Risk ────────────────────────────
   for (const f of detectImportSideEffectRisk(fileSummaries, dependencyState, dependencySummary, hotFilesForDetector)) addFinding(f);
 
-  // ─── Phase 3D: Tree-Shaking / Bundle Hygiene ─────────────────────
   for (const f of detectNamespaceImport(dependencyState)) addFinding(f);
   for (const f of detectCommonJsInEsm(dependencyState)) addFinding(f);
   for (const f of detectExportStarLeak(dependencyState)) addFinding(f);
 
-  // ─── Phase 4: Code Quality Metrics ──────────────────────────────────
   for (const f of detectExcessiveParameters(fileSummaries, options.parameterThreshold)) addFinding(f);
   for (const f of detectEmptyCatchBlocks(fileSummaries)) addFinding(f);
   for (const f of detectSwitchNoDefault(fileSummaries)) addFinding(f);
@@ -167,7 +157,6 @@ export function buildIssueCatalog(
   for (const f of detectMissingErrorBoundary(fileSummaries)) addFinding(f);
   for (const f of detectPromiseMisuse(fileSummaries)) addFinding(f);
 
-  // ─── Phase 4B: Performance ──────────────────────────────────────
   for (const f of detectAwaitInLoop(fileSummaries)) addFinding(f);
   for (const f of detectSyncIo(fileSummaries)) addFinding(f);
   for (const f of detectUnclearedTimers(fileSummaries)) addFinding(f);
@@ -175,7 +164,6 @@ export function buildIssueCatalog(
   for (const f of detectUnboundedCollection(fileSummaries)) addFinding(f);
   for (const f of detectSimilarFunctionBodies(flowMap, options.similarityThreshold)) addFinding(f);
 
-  // ─── Phase 4C: Security ───────────────────────────────────────────
   for (const f of detectHardcodedSecrets(fileSummaries)) addFinding(f);
   for (const f of detectEvalUsage(fileSummaries)) addFinding(f);
   for (const f of detectUnsafeHtml(fileSummaries)) addFinding(f);
@@ -187,7 +175,6 @@ export function buildIssueCatalog(
   for (const f of detectPathTraversalRisk(fileSummaries)) addFinding(f);
   for (const f of detectCommandInjectionRisk(fileSummaries)) addFinding(f);
 
-  // ─── Phase 4D: Test Quality ───────────────────────────────────────
   for (const f of detectLowAssertionDensity(fileSummaries)) addFinding(f);
   for (const f of detectTestNoAssertion(fileSummaries)) addFinding(f);
   for (const f of detectExcessiveMocking(fileSummaries, options.mockThreshold)) addFinding(f);
@@ -197,7 +184,6 @@ export function buildIssueCatalog(
   for (const f of detectFakeTimersWithoutRestore(fileSummaries)) addFinding(f);
   for (const f of detectMissingMockRestoration(fileSummaries)) addFinding(f);
 
-  // ─── Phase 5: Semantic Analysis (--semantic) ──────────────────────
   for (const f of semanticFindings) addFinding(f);
   for (const f of additionalFindings) addFinding(f);
 
@@ -231,8 +217,6 @@ export function buildIssueCatalog(
 
   return { findings, byFile: perFileIssues, totalBeforeTruncation, droppedCategories };
 }
-
-// ─── Pipeline: see pipeline.ts for main() entry point
 
 const isDirectRun = process.argv[1] && (
   import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'))

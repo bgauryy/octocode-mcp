@@ -36,7 +36,6 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
   } as Finding;
 }
 
-// ─── report-writer constants ─────────────────────────────────────────────────
 
 describe('report-writer constants', () => {
   it('REPORT_SCHEMA_VERSION is 1.1.0', () => {
@@ -64,7 +63,6 @@ describe('report-writer constants', () => {
   });
 });
 
-// ─── severityBreakdown ───────────────────────────────────────────────────────
 
 describe('severityBreakdown', () => {
   it('returns zero counts for empty findings', () => {
@@ -107,7 +105,6 @@ describe('severityBreakdown', () => {
   });
 });
 
-// ─── categoryBreakdown ────────────────────────────────────────────────────────
 
 describe('categoryBreakdown', () => {
   it('returns empty object for empty findings', () => {
@@ -138,7 +135,6 @@ describe('categoryBreakdown', () => {
   });
 });
 
-// ─── computeHealthScore ──────────────────────────────────────────────────────
 
 describe('computeHealthScore', () => {
   it('returns 100 for 0 totalFiles', () => {
@@ -201,7 +197,6 @@ describe('computeHealthScore', () => {
   });
 });
 
-// ─── collectTagCloud ─────────────────────────────────────────────────────────
 
 describe('collectTagCloud', () => {
   it('returns empty for no findings', () => {
@@ -253,7 +248,6 @@ describe('collectTagCloud', () => {
   });
 });
 
-// ─── formatFileSize ──────────────────────────────────────────────────────────
 
 describe('formatFileSize', () => {
   it('formats bytes as B when < 1024', () => {
@@ -274,7 +268,6 @@ describe('formatFileSize', () => {
   });
 });
 
-// ─── diversifyFindings ───────────────────────────────────────────────────────
 
 describe('diversifyFindings', () => {
   const makeDraft = (
@@ -362,7 +355,6 @@ describe('diversifyFindings', () => {
   });
 });
 
-// ─── diverseTopRecommendations ────────────────────────────────────────────────
 
 describe('diverseTopRecommendations', () => {
   it('limits findings per category (default maxPerCategory=2)', () => {

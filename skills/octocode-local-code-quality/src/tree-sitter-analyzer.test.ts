@@ -22,7 +22,6 @@ function emptyMaps(): FlowMaps {
   return { flowMap: new Map(), controlMap: new Map() };
 }
 
-// ─── resolveTreeSitter ─────────────────────────────────────────────────────
 
 describe('resolveTreeSitter', () => {
   it('returns a TreeSitterRuntime object', async () => {
@@ -58,7 +57,6 @@ describe('resolveTreeSitter', () => {
   });
 });
 
-// ─── getTreeSitterRuntime ───────────────────────────────────────────────────
 
 describe('getTreeSitterRuntime', () => {
   it('returns null before resolveTreeSitter is called', async () => {
@@ -75,7 +73,6 @@ describe('getTreeSitterRuntime', () => {
   });
 });
 
-// ─── analyzeTreeSitterFile when runtime NOT available ────────────────────────
 
 describe('analyzeTreeSitterFile when runtime not available', () => {
   it('returns null when tree-sitter runtime has available: false', async () => {
@@ -102,7 +99,6 @@ describe('analyzeTreeSitterFile when runtime not available', () => {
   });
 });
 
-// ─── analyzeTreeSitterFile when runtime IS available ────────────────────────
 
 describe.skipIf(!TREE_SITTER_AVAILABLE)('analyzeTreeSitterFile when runtime available', () => {
   it('parses a simple function file and extracts function with correct name, lineStart, complexity', () => {

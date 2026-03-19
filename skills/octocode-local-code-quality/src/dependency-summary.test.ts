@@ -38,7 +38,6 @@ function addEdges(state: DependencyState, edges: Array<[string, string, boolean]
   }
 }
 
-// ─── buildDependencySummary ──────────────────────────────────────────────────
 
 describe('buildDependencySummary', () => {
   it('handles empty dependency state (no files)', () => {
@@ -104,7 +103,6 @@ describe('buildDependencySummary', () => {
     const state = makeDependencyState();
     addEdges(state, [
       ['src/foo.test.ts', 'src/helper.ts', true], // test imports helper
-      // helper has no production imports
     ]);
     const criticality = new Map<string, FileCriticality>();
     const summary = buildDependencySummary(state, criticality, DEFAULT_OPTS);
@@ -281,7 +279,6 @@ describe('buildDependencySummary', () => {
   });
 });
 
-// ─── computeDependencyCycles ─────────────────────────────────────────────────
 
 describe('computeDependencyCycles', () => {
   it('returns empty for no cycles (linear chain A→B→C)', () => {
@@ -384,7 +381,6 @@ describe('computeDependencyCycles', () => {
   });
 });
 
-// ─── computeDependencyCriticalPaths ───────────────────────────────────────────
 
 describe('computeDependencyCriticalPaths', () => {
   it('produces one path for linear chain', () => {

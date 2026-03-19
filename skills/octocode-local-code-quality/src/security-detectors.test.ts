@@ -15,7 +15,6 @@ import {
 
 import type { FileEntry, InputSourceInfo } from './types.js';
 
-// ─── Fixture helpers ─────────────────────────────────────────────────────────
 
 function makeFileEntry(override: Partial<FileEntry> = {}): FileEntry {
   return {
@@ -53,7 +52,6 @@ function makeInputSource(override: Partial<InputSourceInfo> = {}): InputSourceIn
   };
 }
 
-// ─── detectHardcodedSecrets ──────────────────────────────────────────────────
 
 describe('detectHardcodedSecrets', () => {
   it('detects a hardcoded secret with literal context', () => {
@@ -143,13 +141,11 @@ describe('detectHardcodedSecrets', () => {
     })];
     const findings = detectHardcodedSecrets(files);
     expect(findings).toHaveLength(1);
-    // Title should contain first 20 chars of snippet + ellipsis
     expect(findings[0].title).toContain('abcdefghijklmnopqrst');
     expect(findings[0].title).toContain('…');
   });
 });
 
-// ─── detectEvalUsage ─────────────────────────────────────────────────────────
 
 describe('detectEvalUsage', () => {
   it('detects eval usage', () => {
@@ -178,7 +174,6 @@ describe('detectEvalUsage', () => {
   });
 });
 
-// ─── detectUnsafeHtml ────────────────────────────────────────────────────────
 
 describe('detectUnsafeHtml', () => {
   it('detects unsafe HTML assignments', () => {
@@ -207,7 +202,6 @@ describe('detectUnsafeHtml', () => {
   });
 });
 
-// ─── detectSqlInjectionRisk ──────────────────────────────────────────────────
 
 describe('detectSqlInjectionRisk', () => {
   it('detects sql-injection kind suspicious string', () => {
@@ -250,7 +244,6 @@ describe('detectSqlInjectionRisk', () => {
   });
 });
 
-// ─── detectUnsafeRegex ───────────────────────────────────────────────────────
 
 describe('detectUnsafeRegex', () => {
   it('detects nested quantifier pattern (a+)+', () => {
@@ -301,7 +294,6 @@ describe('detectUnsafeRegex', () => {
   });
 });
 
-// ─── detectPrototypePollutionRisk ────────────────────────────────────────────
 
 describe('detectPrototypePollutionRisk', () => {
   it('detects unguarded computed-property-write as high severity', () => {
@@ -369,7 +361,6 @@ describe('detectPrototypePollutionRisk', () => {
   });
 });
 
-// ─── detectUnvalidatedInputSink ──────────────────────────────────────────────
 
 describe('detectUnvalidatedInputSink', () => {
   it('detects high severity when hasSinkInBody=true, hasValidation=false, paramConfidence=high', () => {
@@ -449,7 +440,6 @@ describe('detectUnvalidatedInputSink', () => {
   });
 });
 
-// ─── detectInputPassthroughRisk ──────────────────────────────────────────────
 
 describe('detectInputPassthroughRisk', () => {
   it('detects medium severity when paramConfidence=high, callsWithInputArgs non-empty, no sink, no validation', () => {
@@ -535,7 +525,6 @@ describe('detectInputPassthroughRisk', () => {
   });
 });
 
-// ─── detectPathTraversalRisk ─────────────────────────────────────────────────
 
 describe('detectPathTraversalRisk', () => {
   it('detects high severity when fs-read sink, paramConfidence=high, no validation', () => {
@@ -610,7 +599,6 @@ describe('detectPathTraversalRisk', () => {
   });
 });
 
-// ─── detectCommandInjectionRisk ──────────────────────────────────────────────
 
 describe('detectCommandInjectionRisk', () => {
   it('detects critical severity for exec callees with paramConfidence=high', () => {
@@ -688,7 +676,6 @@ describe('detectCommandInjectionRisk', () => {
       })],
     })];
     const findings = detectCommandInjectionRisk(files);
-    // Only exec finding, spawn skipped when exec exists
     expect(findings).toHaveLength(1);
     expect(findings[0].title).toContain('exec');
     expect(findings[0].title).not.toContain('spawn');

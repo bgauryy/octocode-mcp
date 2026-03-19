@@ -76,7 +76,6 @@ describe('collectSecurityData', () => {
   });
 
   it('no false positive for regex in definition context - regex with secret keyword gets regex-definition', () => {
-    // Regex whose source "api_key=\"" matches SECRET_PATTERNS so it gets tagged as regex-definition
     const code = 'const re = /api_key=""/;';
     const sourceFile = parse(code);
     const fileEntry = emptyFileEntry();

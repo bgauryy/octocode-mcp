@@ -167,7 +167,6 @@ describe('computeHalstead', () => {
     const sf = parse('function foo() {}');
     const fn = firstFn(sf);
     const h = computeHalstead(fn);
-    // Function name "foo" may be counted as operand; body is empty
     expect(h.operators).toBe(0);
     expect(h.distinctOperators).toBe(0);
     expect(h.vocabulary).toBeLessThanOrEqual(1);

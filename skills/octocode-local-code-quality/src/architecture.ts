@@ -48,7 +48,6 @@ function folderOf(filePath: string): string {
   return idx === -1 ? '.' : normalized.slice(0, idx);
 }
 
-// ─── Consumed-From-Module Map (for dead-code detectors) ──────────────────────
 
 export function buildConsumedFromModule(dependencyState: DependencyState): {
   production: Map<string, Set<string>>;
@@ -77,7 +76,6 @@ export function buildConsumedFromModule(dependencyState: DependencyState): {
   return { production, test };
 }
 
-// ─── Duplicate Function Bodies ──────────────────────────────────────────────
 
 export function detectDuplicateFunctionBodies(duplicates: DuplicateGroup[]): FindingDraft[] {
   const findings: FindingDraft[] = [];
@@ -118,7 +116,6 @@ export function detectDuplicateFunctionBodies(duplicates: DuplicateGroup[]): Fin
   return findings;
 }
 
-// ─── Duplicate Flow Structures ─────────────────────────────────────────────
 
 export function detectDuplicateFlowStructures(
   controlDuplicates: RedundantFlowGroup[],
@@ -153,7 +150,6 @@ export function detectDuplicateFlowStructures(
   return findings;
 }
 
-// ─── Function Optimization ──────────────────────────────────────────────────
 
 export function detectFunctionOptimization(
   fileSummaries: FileEntry[],
@@ -204,7 +200,6 @@ export function detectFunctionOptimization(
   return findings;
 }
 
-// ─── Test-Only Modules ──────────────────────────────────────────────────────
 
 export function detectTestOnlyModules(dependencySummary: DependencySummary): FindingDraft[] {
   const findings: FindingDraft[] = [];
@@ -234,7 +229,6 @@ export function detectTestOnlyModules(dependencySummary: DependencySummary): Fin
   return findings;
 }
 
-// ─── Dependency Cycle Findings ──────────────────────────────────────────────
 
 export function detectDependencyCycles(
   dependencySummary: DependencySummary,
@@ -277,7 +271,6 @@ export function detectDependencyCycles(
   return findings;
 }
 
-// ─── Critical Path Findings ──────────────────────────────────────────────────
 
 function findChainHotspot(
   chainPath: string[],
@@ -317,7 +310,6 @@ export function mergeOverlappingChains(findings: FindingDraft[], overlapThreshol
       if (overlap >= overlapThreshold) {
         consumed.add(j);
         entryPoints.push(other.file);
-        // Merge files from the other chain into base
         for (const f of other.files) baseSet.add(f);
       }
     }
@@ -373,7 +365,6 @@ export function detectCriticalPaths(
   return mergeOverlappingChains(rawFindings);
 }
 
-// ─── Dead Files ─────────────────────────────────────────────────────────────
 
 export function detectDeadFiles(
   dependencySummary: DependencySummary,
@@ -420,7 +411,6 @@ export function detectDeadFiles(
   return findings;
 }
 
-// ─── Dead Exports ───────────────────────────────────────────────────────────
 
 export function detectDeadExports(
   dependencyState: DependencyState,
@@ -438,7 +428,6 @@ export function detectDeadExports(
     for (const exported of exportsList) {
       if (exported.name === 'default' && isLikelyEntrypoint(file)) continue;
       if (hasNamespaceUse || consumed.has(exported.name)) continue;
-      // Check if consumed only by test files — report as low-severity info, not dead
       if (hasTestNamespaceUse || testConsumed.has(exported.name)) continue;
       findings.push({
         severity: exported.kind === 'type' ? 'medium' : 'high',
@@ -474,7 +463,6 @@ export function detectDeadExports(
   return findings;
 }
 
-// ─── Dead Re-Exports, Re-Export Duplication, Re-Export Shadowed ──────────────
 
 export function detectDeadReExports(
   dependencyState: DependencyState,
@@ -568,7 +556,6 @@ export function detectDeadReExports(
   return findings;
 }
 
-// ─── 2A: Instability Metric (SDP) ──────────────────────────────────────────
 
 export function computeInstability(inboundCount: number, outboundCount: number): number {
   const total = inboundCount + outboundCount;
@@ -631,7 +618,6 @@ export function detectSdpViolations(
   return findings;
 }
 
-// ─── 2B: Afferent/Efferent Coupling ────────────────────────────────────────
 
 export function detectHighCoupling(
   dependencyState: DependencyState,
@@ -672,7 +658,6 @@ export function detectHighCoupling(
   return findings;
 }
 
-// ─── 2C: Fan-In / Fan-Out Thresholds ───────────────────────────────────────
 
 export function detectGodModuleCoupling(
   dependencyState: DependencyState,
@@ -736,7 +721,6 @@ export function detectGodModuleCoupling(
   return findings;
 }
 
-// ─── 2D: Orphan Module Detection ───────────────────────────────────────────
 
 export function detectOrphanModules(
   dependencyState: DependencyState,
@@ -777,7 +761,6 @@ export function detectOrphanModules(
   return findings;
 }
 
-// ─── 2E: Reachability Analysis ─────────────────────────────────────────────
 
 export function detectUnreachableModules(
   dependencyState: DependencyState,
@@ -834,7 +817,6 @@ export function detectUnreachableModules(
   return findings;
 }
 
-// ─── 3A: Unused npm Dependencies ───────────────────────────────────────────
 
 export function detectUnusedNpmDeps(
   externalDeps: Map<string, Set<string>>,
@@ -903,7 +885,6 @@ export function detectUnusedNpmDeps(
   return findings;
 }
 
-// ─── 3B: Package Boundary Violations ───────────────────────────────────────
 
 export function detectBoundaryViolations(
   dependencyState: DependencyState,
@@ -953,7 +934,6 @@ export function detectBoundaryViolations(
   return findings;
 }
 
-// ─── 3C: Barrel Explosion / Depth ──────────────────────────────────────────
 
 export function computeBarrelDepth(
   file: string,
@@ -1039,7 +1019,6 @@ export function detectBarrelExplosion(
   return findings;
 }
 
-// ─── 3D: God Module / God Function ─────────────────────────────────────────
 
 export function detectGodModules(
   fileSummaries: FileEntry[],
@@ -1211,7 +1190,6 @@ export function detectGodFunctions(
   return findings;
 }
 
-// ─── 3E: Cognitive Complexity ──────────────────────────────────────────────
 
 export function computeCognitiveComplexity(node: ts.Node): number {
   let total = 0;
@@ -1311,7 +1289,6 @@ export function detectCognitiveComplexity(
   return findings;
 }
 
-// ─── 3F: Layer Violation Detection ─────────────────────────────────────────
 
 export function detectLayerViolations(
   dependencyState: DependencyState,
@@ -1367,7 +1344,6 @@ export function detectLayerViolations(
   return findings;
 }
 
-// ─── Low Cohesion Detection (LCOM via export consumer overlap) ─────────────
 
 export function detectLowCohesion(
   dependencyState: DependencyState,
@@ -1455,7 +1431,6 @@ export function detectLowCohesion(
   return findings;
 }
 
-// ─── Hot Files (Change Risk Hotspots) ──────────────────────────────────────
 
 export function computeHotFiles(
   dependencyState: DependencyState,
@@ -1503,7 +1478,6 @@ export function computeHotFiles(
   return results.slice(0, maxResults);
 }
 
-// ─── Excessive Parameters ──────────────────────────────────────────────────
 
 export function detectExcessiveParameters(
   fileSummaries: FileEntry[],
@@ -1539,7 +1513,6 @@ export function detectExcessiveParameters(
   return findings;
 }
 
-// ─── Empty Catch Blocks ────────────────────────────────────────────────────
 
 export function detectEmptyCatchBlocks(
   fileSummaries: FileEntry[],
@@ -1574,7 +1547,6 @@ export function detectEmptyCatchBlocks(
   return findings;
 }
 
-// ─── Switch Without Default ────────────────────────────────────────────────
 
 export function detectSwitchNoDefault(
   fileSummaries: FileEntry[],
@@ -1609,9 +1581,7 @@ export function detectSwitchNoDefault(
   return findings;
 }
 
-// ─── High Cyclomatic Density ───────────────────────────────────────────────
 
-// ─── Unsafe `any` Usage ────────────────────────────────────────────────────
 
 export function detectUnsafeAny(
   fileSummaries: FileEntry[],
@@ -1646,7 +1616,6 @@ export function detectUnsafeAny(
   return findings;
 }
 
-// ─── High Halstead Effort ──────────────────────────────────────────────────
 
 export function detectHighHalsteadEffort(
   fileSummaries: FileEntry[],
@@ -1688,7 +1657,6 @@ export function detectHighHalsteadEffort(
   return findings;
 }
 
-// ─── Low Maintainability Index ─────────────────────────────────────────────
 
 export function detectLowMaintainability(
   fileSummaries: FileEntry[],
@@ -1725,7 +1693,6 @@ export function detectLowMaintainability(
   return findings;
 }
 
-// ─── Abstractness + Distance from Main Sequence (Robert C. Martin) ─────────
 
 export function computeAbstractness(exports: { name: string; kind: string }[]): number {
   if (exports.length === 0) return 0;
@@ -1805,9 +1772,7 @@ export function detectDistanceFromMainSequence(
   return findings;
 }
 
-// ─── Feature Envy (Module-Level) ───────────────────────────────────────────
 
-// ─── Untested Critical Code Detection ───────────────────────────────────────
 
 export function detectUntestedCriticalCode(
   dependencyState: DependencyState,
@@ -1943,7 +1908,6 @@ export function detectFeatureEnvy(
   return findings;
 }
 
-// ─── Type Assertion Escape ─────────────────────────────────────────────────
 
 export function detectTypeAssertionEscape(
   fileSummaries: FileEntry[],
@@ -1990,7 +1954,6 @@ export function detectTypeAssertionEscape(
   return findings;
 }
 
-// ─── Missing Error Boundary ─────────────────────────────────────────────────
 
 export function detectMissingErrorBoundary(
   fileSummaries: FileEntry[],
@@ -2038,7 +2001,6 @@ export function detectMissingErrorBoundary(
   return findings;
 }
 
-// ─── Promise Misuse (async-without-await) ───────────────────────────────────
 
 export function detectPromiseMisuse(
   fileSummaries: FileEntry[],
@@ -2076,7 +2038,6 @@ export function detectPromiseMisuse(
   return findings;
 }
 
-// ─── Performance: Await in Loop ─────────────────────────────────────────────
 
 export function detectAwaitInLoop(fileSummaries: FileEntry[]): FindingDraft[] {
   const findings: FindingDraft[] = [];
@@ -2117,7 +2078,6 @@ export function detectAwaitInLoop(fileSummaries: FileEntry[]): FindingDraft[] {
   return findings;
 }
 
-// ─── Performance: Synchronous I/O ───────────────────────────────────────────
 
 export function detectSyncIo(fileSummaries: FileEntry[]): FindingDraft[] {
   const findings: FindingDraft[] = [];
@@ -2157,7 +2117,6 @@ export function detectSyncIo(fileSummaries: FileEntry[]): FindingDraft[] {
   return findings;
 }
 
-// ─── Performance: Uncleared Timers ──────────────────────────────────────────
 
 export function detectUnclearedTimers(fileSummaries: FileEntry[]): FindingDraft[] {
   const findings: FindingDraft[] = [];
@@ -2190,7 +2149,6 @@ export function detectUnclearedTimers(fileSummaries: FileEntry[]): FindingDraft[
   return findings;
 }
 
-// ─── Performance: Listener Leak Risk ────────────────────────────────────────
 
 export function detectListenerLeakRisk(fileSummaries: FileEntry[]): FindingDraft[] {
   const findings: FindingDraft[] = [];
@@ -2224,7 +2182,6 @@ export function detectListenerLeakRisk(fileSummaries: FileEntry[]): FindingDraft
   return findings;
 }
 
-// ─── Performance: Unbounded Collection ──────────────────────────────────────
 
 export function detectUnboundedCollection(fileSummaries: FileEntry[]): FindingDraft[] {
   const findings: FindingDraft[] = [];
@@ -2258,7 +2215,6 @@ export function detectUnboundedCollection(fileSummaries: FileEntry[]): FindingDr
   return findings;
 }
 
-// ─── Similar Function Bodies (Type-2 clone detection) ───────────────────────
 
 export function detectSimilarFunctionBodies(
   flowMap: Map<string, import('./types.js').FlowMapEntry[]>,
@@ -2343,7 +2299,6 @@ function computeMetricSimilarity(a: import('./types.js').FlowMapEntry, b: import
   return totalSimilarity / features.length;
 }
 
-// ─── Import Side-Effect Risk ────────────────────────────────────────────────
 
 export function detectImportSideEffectRisk(
   fileSummaries: FileEntry[],
@@ -2441,7 +2396,6 @@ export function detectImportSideEffectRisk(
   return findings;
 }
 
-// ─── Tree-Shaking / Bundle Hygiene Detectors ────────────────────────────────
 
 export function detectNamespaceImport(
   dependencyState: DependencyState,
