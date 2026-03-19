@@ -59,18 +59,18 @@ Commonly useful outputs:
 - `findings.json` for the raw finding set
 - pillar files such as `architecture.json`, `code-quality.json`, `dead-code.json`, `security.json`, or `test-quality.json` for focused investigation
 - `file-inventory.json` to understand hotspots and file-level context
-- `ast-trees.txt` for a searchable AST snapshot you can inspect with the AST-tree CLI or a simple text search
+- `ast-trees.txt` for a searchable AST snapshot you can inspect with the AST-tree CLI before you move to source-level validation
 - `graph.md` when the architecture story depends on dependency structure
 
 Do not jump from a single finding directly to a fix. Use the output files to understand pattern density, related files, and whether multiple signals point to the same area.
 
-Use `ast-trees.txt` for simple structure-first exploration after it is generated. It is a plain text artifact, so you can search it with the dedicated AST-tree CLI or with a normal CLI text tool such as `rg` to quickly answer questions like:
+Use `ast-trees.txt` for simple structure-first exploration after it is generated. It is a plain text artifact, so you can search it with the dedicated AST-tree CLI first and fall back to `rg` only when you need raw indentation or text checks.
 
 - which files have large or deeply nested trees
 - whether a file contains many functions, classes, or control-flow nodes
 - where a suspicious file deserves deeper source-level validation
 
-Use `ast-tree-search.js` when you want to search the generated `ast-trees.txt` artifact.
+Use `ast-tree-search.js` when you want to search the generated `ast-trees.txt` artifact from a specific scan.
 Use `ast-search.js` when you need structural matching against the actual source code.
 Do not point `ast-search.js` at `.octocode/scan/...` output files like `ast-trees.txt`; it searches source files, not generated AST text artifacts.
 
@@ -107,12 +107,13 @@ node <SKILL_DIR>/scripts/ast-search.js [options]
 Typical AST snapshot queries:
 
 ```bash
-node <SKILL_DIR>/scripts/ast-tree-search.js -i .octocode/scan -k function_declaration
-node <SKILL_DIR>/scripts/ast-tree-search.js -i .octocode/scan/<timestamp> -k ClassDeclaration
-node <SKILL_DIR>/scripts/ast-tree-search.js -i .octocode/scan -p 'IfStatement|SwitchStatement|ForStatement|WhileStatement'
+node <SKILL_DIR>/scripts/ast-tree-search.js -i <CURRENT_SCAN>/ast-trees.txt -k function_declaration --limit 25
+node <SKILL_DIR>/scripts/ast-tree-search.js -i <CURRENT_SCAN>/ast-trees.txt --file 'src/index' -k ClassDeclaration --limit 10
+node <SKILL_DIR>/scripts/ast-tree-search.js -i <CURRENT_SCAN>/ast-trees.txt -p 'IfStatement|SwitchStatement|ForStatement|WhileStatement' --limit 25
 ```
 
-If you only need raw text filtering, `rg` against `ast-trees.txt` is still fine.
+Prefer the current scan path from `summary.md` so you do not accidentally inspect the wrong run.
+If you only need raw text filtering, `rg` against the pinned `ast-trees.txt` path is still fine as a fallback.
 
 Typical narrowed re-scan:
 
@@ -183,6 +184,7 @@ Use these when you need specifics instead of copying detailed reference material
 
 - [CLI reference](./references/cli-reference.md)
 - [Output files](./references/output-files.md)
+- [AST tree search](./references/ast-tree-search.md)
 - [Validation and investigation](./references/validate-investigate.md)
 - [Playbooks](./references/playbooks.md)
 - [Finding categories](./references/finding-categories.md)

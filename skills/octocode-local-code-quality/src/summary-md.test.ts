@@ -36,7 +36,6 @@ function makeFinding(overrides: Partial<Finding> = {}): Finding {
   } as Finding;
 }
 
-
 describe('report-writer constants', () => {
   it('REPORT_SCHEMA_VERSION is 1.1.0', () => {
     expect(REPORT_SCHEMA_VERSION).toBe('1.1.0');
@@ -63,11 +62,16 @@ describe('report-writer constants', () => {
   });
 });
 
-
 describe('severityBreakdown', () => {
   it('returns zero counts for empty findings', () => {
     const result = severityBreakdown([]);
-    expect(result).toEqual({ critical: 0, high: 0, medium: 0, low: 0, info: 0 });
+    expect(result).toEqual({
+      critical: 0,
+      high: 0,
+      medium: 0,
+      low: 0,
+      info: 0,
+    });
   });
 
   it('counts single severity correctly', () => {
@@ -101,10 +105,15 @@ describe('severityBreakdown', () => {
       makeFinding({ id: '5', severity: 'info' }),
     ];
     const result = severityBreakdown(findings);
-    expect(result).toEqual({ critical: 1, high: 1, medium: 1, low: 1, info: 1 });
+    expect(result).toEqual({
+      critical: 1,
+      high: 1,
+      medium: 1,
+      low: 1,
+      info: 1,
+    });
   });
 });
-
 
 describe('categoryBreakdown', () => {
   it('returns empty object for empty findings', () => {
@@ -134,7 +143,6 @@ describe('categoryBreakdown', () => {
     expect(result['custom-category']).toBe(1);
   });
 });
-
 
 describe('computeHealthScore', () => {
   it('returns 100 for 0 totalFiles', () => {
@@ -197,7 +205,6 @@ describe('computeHealthScore', () => {
   });
 });
 
-
 describe('collectTagCloud', () => {
   it('returns empty for no findings', () => {
     expect(collectTagCloud([])).toEqual([]);
@@ -248,7 +255,6 @@ describe('collectTagCloud', () => {
   });
 });
 
-
 describe('formatFileSize', () => {
   it('formats bytes as B when < 1024', () => {
     expect(formatFileSize(0)).toBe('0 B');
@@ -268,7 +274,6 @@ describe('formatFileSize', () => {
   });
 });
 
-
 describe('diversifyFindings', () => {
   const makeDraft = (
     severity: Finding['severity'],
@@ -283,10 +288,7 @@ describe('diversifyFindings', () => {
     });
 
   it('returns all when limit >= sorted.length', () => {
-    const input = [
-      makeDraft('high', 'a', 1),
-      makeDraft('high', 'b', 1),
-    ];
+    const input = [makeDraft('high', 'a', 1), makeDraft('high', 'b', 1)];
     expect(diversifyFindings(input, 10)).toBe(input);
     expect(diversifyFindings(input, 2)).toBe(input);
   });
@@ -298,13 +300,15 @@ describe('diversifyFindings', () => {
 
   it('returns diverse set across categories when limit < length', () => {
     const input = [
-      ...Array.from({ length: 10 }, (_, i) => makeDraft('high', 'await-in-loop', i)),
+      ...Array.from({ length: 10 }, (_, i) =>
+        makeDraft('high', 'await-in-loop', i)
+      ),
       makeDraft('high', 'dead-export', 1),
       makeDraft('high', 'dead-export', 2),
     ];
     const result = diversifyFindings(input, 5);
     expect(result).toHaveLength(5);
-    const categories = new Set(result.map((f) => f.category));
+    const categories = new Set(result.map(f => f.category));
     expect(categories.size).toBe(2);
   });
 
@@ -330,14 +334,11 @@ describe('diversifyFindings', () => {
     );
     const result = diversifyFindings(input, 3);
     expect(result).toHaveLength(3);
-    expect(result.every((f) => f.category === 'only-cat')).toBe(true);
+    expect(result.every(f => f.category === 'only-cat')).toBe(true);
   });
 
   it('handles limit of 1', () => {
-    const input = [
-      makeDraft('critical', 'a', 1),
-      makeDraft('high', 'b', 1),
-    ];
+    const input = [makeDraft('critical', 'a', 1), makeDraft('high', 'b', 1)];
     const result = diversifyFindings(input, 1);
     expect(result).toHaveLength(1);
     expect(result[0].severity).toBe('critical');
@@ -355,7 +356,6 @@ describe('diversifyFindings', () => {
   });
 });
 
-
 describe('diverseTopRecommendations', () => {
   it('limits findings per category (default maxPerCategory=2)', () => {
     const findings = [
@@ -367,8 +367,10 @@ describe('diverseTopRecommendations', () => {
     ];
     const result = diverseTopRecommendations(findings, 10);
     expect(result).toHaveLength(4);
-    expect(result.filter((f) => f.category === 'dead-export')).toHaveLength(2);
-    expect(result.filter((f) => f.category === 'cognitive-complexity')).toHaveLength(2);
+    expect(result.filter(f => f.category === 'dead-export')).toHaveLength(2);
+    expect(
+      result.filter(f => f.category === 'cognitive-complexity')
+    ).toHaveLength(2);
   });
 
   it('respects total limit', () => {
@@ -393,7 +395,7 @@ describe('diverseTopRecommendations', () => {
     ];
     const result = diverseTopRecommendations(findings, 10, 1);
     expect(result).toHaveLength(3);
-    expect(new Set(result.map((f) => f.category)).size).toBe(3);
+    expect(new Set(result.map(f => f.category)).size).toBe(3);
   });
 
   it('returns all when limit exceeds available diverse findings', () => {

@@ -29,7 +29,9 @@ export function packageKeyForFile(file: string): string {
   return top || '<root>';
 }
 
-export function computeSccClusters(dependencyState: DependencyState): SccCluster[] {
+export function computeSccClusters(
+  dependencyState: DependencyState
+): SccCluster[] {
   const nodes = [...dependencyState.files].sort();
   const indexMap = new Map<string, number>();
   const lowLink = new Map<string, number>();
@@ -66,7 +68,9 @@ export function computeSccClusters(dependencyState: DependencyState): SccCluster
       if (current === node) break;
     }
 
-    const hasSelfLoop = (dependencyState.outgoing.get(node) || new Set()).has(node);
+    const hasSelfLoop = (dependencyState.outgoing.get(node) || new Set()).has(
+      node
+    );
     if (component.length <= 1 && !hasSelfLoop) return;
 
     const componentSet = new Set(component);
@@ -74,20 +78,26 @@ export function computeSccClusters(dependencyState: DependencyState): SccCluster
     let entryEdges = 0;
     let exitEdges = 0;
     for (const file of component) {
-      for (const dep of dependencyState.outgoing.get(file) || new Set<string>()) {
+      for (const dep of dependencyState.outgoing.get(file) ||
+        new Set<string>()) {
         if (!dependencyState.files.has(dep)) continue;
         if (componentSet.has(dep)) edgeCount += 1;
         else exitEdges += 1;
       }
-      for (const incoming of dependencyState.incoming.get(file) || new Set<string>()) {
+      for (const incoming of dependencyState.incoming.get(file) ||
+        new Set<string>()) {
         if (!componentSet.has(incoming)) entryEdges += 1;
       }
     }
 
     const hubFiles = [...component]
       .sort((a, b) => {
-        const aScore = ((dependencyState.incoming.get(a) || new Set()).size * 2) + (dependencyState.outgoing.get(a) || new Set()).size;
-        const bScore = ((dependencyState.incoming.get(b) || new Set()).size * 2) + (dependencyState.outgoing.get(b) || new Set()).size;
+        const aScore =
+          (dependencyState.incoming.get(a) || new Set()).size * 2 +
+          (dependencyState.outgoing.get(a) || new Set()).size;
+        const bScore =
+          (dependencyState.incoming.get(b) || new Set()).size * 2 +
+          (dependencyState.outgoing.get(b) || new Set()).size;
         return bScore - aScore;
       })
       .slice(0, 3);
@@ -107,16 +117,26 @@ export function computeSccClusters(dependencyState: DependencyState): SccCluster
     if (!indexMap.has(node)) strongConnect(node);
   }
 
-  return clusters.sort((a, b) => b.nodeCount - a.nodeCount || b.edgeCount - a.edgeCount);
+  return clusters.sort(
+    (a, b) => b.nodeCount - a.nodeCount || b.edgeCount - a.edgeCount
+  );
 }
 
-export function computePackageGraphSummary(dependencyState: DependencyState): PackageGraphSummary {
+export function computePackageGraphSummary(
+  dependencyState: DependencyState
+): PackageGraphSummary {
   const nodeMap = new Map<string, PackageGraphNode>();
   const edgeMap = new Map<string, number>();
 
   for (const file of dependencyState.files) {
     const pkg = packageKeyForFile(file);
-    if (!nodeMap.has(pkg)) nodeMap.set(pkg, { package: pkg, inbound: 0, outbound: 0, internalFiles: 0 });
+    if (!nodeMap.has(pkg))
+      nodeMap.set(pkg, {
+        package: pkg,
+        inbound: 0,
+        outbound: 0,
+        internalFiles: 0,
+      });
     nodeMap.get(pkg)!.internalFiles += 1;
   }
 
@@ -144,7 +164,9 @@ export function computePackageGraphSummary(dependencyState: DependencyState): Pa
   return {
     packageCount: nodeMap.size,
     edgeCount: [...edgeMap.values()].reduce((sum, count) => sum + count, 0),
-    packages: [...nodeMap.values()].sort((a, b) => (b.inbound + b.outbound) - (a.inbound + a.outbound)),
+    packages: [...nodeMap.values()].sort(
+      (a, b) => b.inbound + b.outbound - (a.inbound + a.outbound)
+    ),
     hotspots,
   };
 }
@@ -186,10 +208,14 @@ function computeArticulationAndBridges(dependencyState: DependencyState): {
         dfs(next);
         low.set(node, Math.min(low.get(node)!, low.get(next)!));
 
-        if (parent.get(node) == null && children > 1) articulationPoints.add(node);
-        if (parent.get(node) != null && low.get(next)! >= disc.get(node)!) articulationPoints.add(node);
+        if (parent.get(node) == null && children > 1)
+          articulationPoints.add(node);
+        if (parent.get(node) != null && low.get(next)! >= disc.get(node)!)
+          articulationPoints.add(node);
         if (low.get(next)! > disc.get(node)!) {
-          bridgeEdges.push(node < next ? { from: node, to: next } : { from: next, to: node });
+          bridgeEdges.push(
+            node < next ? { from: node, to: next } : { from: next, to: node }
+          );
         }
       } else if (next !== parent.get(node)) {
         low.set(node, Math.min(low.get(node)!, disc.get(next)!));
@@ -211,9 +237,10 @@ export function computeChokepoints(
   dependencyState: DependencyState,
   dependencySummary: DependencySummary,
   fileCriticalityByPath: Map<string, FileCriticality>,
-  sccClusters: SccCluster[],
+  sccClusters: SccCluster[]
 ): Chokepoint[] {
-  const { articulationPoints, bridgeEdges } = computeArticulationAndBridges(dependencyState);
+  const { articulationPoints, bridgeEdges } =
+    computeArticulationAndBridges(dependencyState);
   const criticalPathFiles = new Set<string>();
   for (const chain of dependencySummary.criticalPaths || []) {
     for (const file of chain.path) criticalPathFiles.add(file);
@@ -233,7 +260,7 @@ export function computeChokepoints(
   }
 
   return [...dependencyState.files]
-    .map((file) => {
+    .map(file => {
       const fanIn = (dependencyState.incoming.get(file) || new Set()).size;
       const fanOut = (dependencyState.outgoing.get(file) || new Set()).size;
       const articulation = articulationPoints.has(file);
@@ -243,21 +270,23 @@ export function computeChokepoints(
       const criticality = fileCriticalityByPath.get(file)?.score || 0;
       const score = Math.round(
         fanIn * 3 +
-        fanOut * 1.2 +
-        criticality / 10 +
-        (articulation ? 12 : 0) +
-        bridgeCount * 4 +
-        cycleClusterCount * 6 +
-        (onCriticalPath ? 8 : 0),
+          fanOut * 1.2 +
+          criticality / 10 +
+          (articulation ? 12 : 0) +
+          bridgeCount * 4 +
+          cycleClusterCount * 6 +
+          (onCriticalPath ? 8 : 0)
       );
       const reasons: string[] = [];
       if (fanIn >= 8) reasons.push(`high fan-in (${fanIn})`);
       if (fanOut >= 6) reasons.push(`high fan-out (${fanOut})`);
       if (articulation) reasons.push('articulation point');
       if (bridgeCount > 0) reasons.push(`${bridgeCount} bridge edge(s)`);
-      if (cycleClusterCount > 0) reasons.push(`in ${cycleClusterCount} cycle cluster(s)`);
+      if (cycleClusterCount > 0)
+        reasons.push(`in ${cycleClusterCount} cycle cluster(s)`);
       if (onCriticalPath) reasons.push('on critical path');
-      if (criticality >= 20) reasons.push(`high complexity risk (${criticality})`);
+      if (criticality >= 20)
+        reasons.push(`high complexity risk (${criticality})`);
       return {
         file,
         score,
@@ -270,7 +299,7 @@ export function computeChokepoints(
         onCriticalPath,
       };
     })
-    .filter((entry) => entry.score > 0 && entry.reasons.length > 0)
+    .filter(entry => entry.score > 0 && entry.reasons.length > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 40);
 }
@@ -278,11 +307,17 @@ export function computeChokepoints(
 export function computeGraphAnalytics(
   dependencyState: DependencyState,
   dependencySummary: DependencySummary,
-  fileCriticalityByPath: Map<string, FileCriticality>,
+  fileCriticalityByPath: Map<string, FileCriticality>
 ): GraphAnalyticsSummary {
   const sccClusters = computeSccClusters(dependencyState);
-  const { articulationPoints, bridgeEdges } = computeArticulationAndBridges(dependencyState);
-  const chokepoints = computeChokepoints(dependencyState, dependencySummary, fileCriticalityByPath, sccClusters);
+  const { articulationPoints, bridgeEdges } =
+    computeArticulationAndBridges(dependencyState);
+  const chokepoints = computeChokepoints(
+    dependencyState,
+    dependencySummary,
+    fileCriticalityByPath,
+    sccClusters
+  );
   return {
     sccClusters,
     chokepoints,
@@ -292,11 +327,18 @@ export function computeGraphAnalytics(
   };
 }
 
-function findImportLine(state: DependencyState, fromFile: string, toFile?: string): { lineStart: number; lineEnd: number } {
+function findImportLine(
+  state: DependencyState,
+  fromFile: string,
+  toFile?: string
+): { lineStart: number; lineEnd: number } {
   const imports = state.importedSymbolsByFile.get(fromFile) || [];
   for (const ref of imports) {
     if (!toFile || ref.resolvedModule === toFile) {
-      return { lineStart: ref.lineStart || 1, lineEnd: ref.lineEnd || ref.lineStart || 1 };
+      return {
+        lineStart: ref.lineStart || 1,
+        lineEnd: ref.lineEnd || ref.lineStart || 1,
+      };
     }
   }
   return { lineStart: 1, lineEnd: 1 };
@@ -305,7 +347,7 @@ function findImportLine(state: DependencyState, fromFile: string, toFile?: strin
 export function buildAdvancedGraphFindings(
   graphAnalytics: GraphAnalyticsSummary,
   dependencyState: DependencyState,
-  fileSummaries: FileEntry[],
+  fileSummaries: FileEntry[]
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
 
@@ -323,14 +365,16 @@ export function buildAdvancedGraphFindings(
       reason: `Strongly connected cluster ${cluster.id} has ${cluster.nodeCount} files, ${cluster.entryEdges} entry edge(s), and ${cluster.exitEdges} exit edge(s).`,
       files: cluster.files,
       suggestedFix: {
-        strategy: 'Break the cluster at one of the hub files and move shared contracts lower.',
+        strategy:
+          'Break the cluster at one of the hub files and move shared contracts lower.',
         steps: [
           'Inspect the hub files first.',
           'Extract shared interfaces or types from the cluster.',
           'Remove at least one high-traffic edge to split the SCC.',
         ],
       },
-      impact: 'Large cycle clusters spread change risk across multiple files and hide the true architectural boundary.',
+      impact:
+        'Large cycle clusters spread change risk across multiple files and hide the true architectural boundary.',
       tags: ['architecture', 'cycle', 'graph', 'change-risk'],
       ruleId: 'architecture.cycle-cluster',
       confidence: 'high',
@@ -357,14 +401,16 @@ export function buildAdvancedGraphFindings(
       reason: `Module concentrates dependency traffic (${point.reasons.join(', ')}).`,
       files: [point.file],
       suggestedFix: {
-        strategy: 'Split orchestration responsibilities and reduce fan-in/fan-out through narrower seams.',
+        strategy:
+          'Split orchestration responsibilities and reduce fan-in/fan-out through narrower seams.',
         steps: [
           'Identify which consumers rely on this file for unrelated concerns.',
           'Extract narrower APIs or introduce an internal facade.',
           'Move side-effectful or persistence-specific logic into dedicated modules.',
         ],
       },
-      impact: 'Broker modules silently become architecture bottlenecks — a small change cascades broadly.',
+      impact:
+        'Broker modules silently become architecture bottlenecks — a small change cascades broadly.',
       tags: ['architecture', 'graph', 'chokepoint', 'coupling'],
       ruleId: 'architecture.broker-module',
       confidence: point.articulation ? 'high' : 'medium',
@@ -377,7 +423,9 @@ export function buildAdvancedGraphFindings(
     });
   }
 
-  for (const point of graphAnalytics.chokepoints.filter((entry) => entry.articulation).slice(0, 8)) {
+  for (const point of graphAnalytics.chokepoints
+    .filter(entry => entry.articulation)
+    .slice(0, 8)) {
     const loc = findImportLine(dependencyState, point.file);
     findings.push({
       severity: point.bridgeCount >= 2 ? 'high' : 'medium',
@@ -389,14 +437,16 @@ export function buildAdvancedGraphFindings(
       reason: `Module acts as a graph articulation point with ${point.bridgeCount} bridge edge(s).`,
       files: [point.file],
       suggestedFix: {
-        strategy: 'Reduce the amount of architecture that depends on this single bridge module.',
+        strategy:
+          'Reduce the amount of architecture that depends on this single bridge module.',
         steps: [
           'Split unrelated responsibilities out of the bridge module.',
           'Add lower-level contracts so adjacent subsystems do not all route through one file.',
           'Prefer explicit package boundaries over central catch-all utilities.',
         ],
       },
-      impact: 'Bridge modules are structurally brittle — they become the single point where subsystem changes collide.',
+      impact:
+        'Bridge modules are structurally brittle — they become the single point where subsystem changes collide.',
       tags: ['architecture', 'graph', 'bridge', 'fragility'],
       ruleId: 'architecture.bridge-module',
       confidence: 'high',
@@ -408,7 +458,10 @@ export function buildAdvancedGraphFindings(
     });
   }
 
-  for (const hotspot of graphAnalytics.packageGraphSummary.hotspots.slice(0, 5)) {
+  for (const hotspot of graphAnalytics.packageGraphSummary.hotspots.slice(
+    0,
+    5
+  )) {
     if (hotspot.edges < 4) continue;
     findings.push({
       severity: hotspot.edges >= 8 ? 'high' : 'medium',
@@ -420,14 +473,16 @@ export function buildAdvancedGraphFindings(
       reason: `Detected ${hotspot.edges} cross-package dependency edge(s) between these package groups.`,
       files: [hotspot.from, hotspot.to],
       suggestedFix: {
-        strategy: 'Reduce cross-package chatter by consolidating APIs or introducing a narrower shared contract.',
+        strategy:
+          'Reduce cross-package chatter by consolidating APIs or introducing a narrower shared contract.',
         steps: [
           'Map the symbols crossing this boundary most often.',
           'Promote a smaller public API surface between the packages.',
           'Move implementation detail imports behind a dedicated package boundary.',
         ],
       },
-      impact: 'High package chatter is a sign of architectural erosion — packages stop behaving like isolated subsystems.',
+      impact:
+        'High package chatter is a sign of architectural erosion — packages stop behaving like isolated subsystems.',
       tags: ['architecture', 'packages', 'boundary', 'graph'],
       ruleId: 'architecture.package-boundary-chatter',
       confidence: 'medium',
@@ -435,7 +490,9 @@ export function buildAdvancedGraphFindings(
     });
   }
 
-  const chokepointMap = new Map(graphAnalytics.chokepoints.map((entry) => [entry.file, entry]));
+  const chokepointMap = new Map(
+    graphAnalytics.chokepoints.map(entry => [entry.file, entry])
+  );
   for (const entry of fileSummaries) {
     const effects = entry.topLevelEffects || [];
     if (effects.length === 0) continue;
@@ -452,21 +509,23 @@ export function buildAdvancedGraphFindings(
       reason: `Module performs ${effects.length} import-time effect(s) and also behaves as a chokepoint (${point.reasons.join(', ')}).`,
       files: [entry.file],
       suggestedFix: {
-        strategy: 'Move import-time work behind explicit initialization and reduce inbound dependency pressure.',
+        strategy:
+          'Move import-time work behind explicit initialization and reduce inbound dependency pressure.',
         steps: [
           'Extract side effects into init() or lazy code paths.',
           'Avoid importing this module from broad utility or entrypoint chains.',
           'Keep only declarations and light configuration at module scope.',
         ],
       },
-      impact: 'Import-time side effects in a high fan-in hub create startup latency, hidden ordering bugs, and broad runtime blast radius.',
+      impact:
+        'Import-time side effects in a high fan-in hub create startup latency, hidden ordering bugs, and broad runtime blast radius.',
       tags: ['architecture', 'startup', 'side-effects', 'graph'],
       ruleId: 'architecture.startup-risk-hub',
       confidence: 'high',
       evidence: {
         fanIn: point.fanIn,
         chokepointScore: point.score,
-        topLevelEffects: effects.map((effect) => effect.kind),
+        topLevelEffects: effects.map(effect => effect.kind),
       },
     });
   }

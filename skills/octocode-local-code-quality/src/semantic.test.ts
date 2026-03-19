@@ -40,7 +40,10 @@ function writeFiles(dir: string, files: Record<string, string>): void {
   }
 }
 
-function makeFileEntry(file: string, overrides: Partial<FileEntry> = {}): FileEntry {
+function makeFileEntry(
+  file: string,
+  overrides: Partial<FileEntry> = {}
+): FileEntry {
   return {
     package: 'test',
     file,
@@ -61,7 +64,10 @@ function makeFileEntry(file: string, overrides: Partial<FileEntry> = {}): FileEn
   };
 }
 
-function makeProfile(file: string, overrides: Partial<SemanticProfile> = {}): SemanticProfile {
+function makeProfile(
+  file: string,
+  overrides: Partial<SemanticProfile> = {}
+): SemanticProfile {
   return {
     file,
     referenceCountByExport: new Map(),
@@ -84,7 +90,14 @@ describe('createSemanticContext', () => {
     const dir = makeTempDir();
     writeFiles(dir, {
       'a.ts': 'export const x = 1;\n',
-      'tsconfig.json': JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'node', strict: true } }),
+      'tsconfig.json': JSON.stringify({
+        compilerOptions: {
+          target: 'ES2022',
+          module: 'ESNext',
+          moduleResolution: 'node',
+          strict: true,
+        },
+      }),
     });
     const ctx = createSemanticContext([path.join(dir, 'a.ts')], dir);
     expect(ctx.service).toBeDefined();
@@ -108,21 +121,28 @@ describe('detectSemanticDeadExports', () => {
       referenceCountByExport: new Map([
         ['usedFn', { count: 5, uniqueFiles: 3, lineStart: 1, lineEnd: 3 }],
         ['deadFn', { count: 0, uniqueFiles: 0, lineStart: 10, lineEnd: 15 }],
-        ['anotherDead', { count: 0, uniqueFiles: 0, lineStart: 20, lineEnd: 25 }],
+        [
+          'anotherDead',
+          { count: 0, uniqueFiles: 0, lineStart: 20, lineEnd: 25 },
+        ],
       ]),
     });
     const findings = detectSemanticDeadExports([profile]);
     expect(findings.length).toBe(2);
-    expect(findings.every((f) => f.category === 'semantic-dead-export')).toBe(true);
-    expect(findings.every((f) => f.severity === 'high')).toBe(true);
-    expect(findings.every((f) => f.lspHints && f.lspHints.length > 0)).toBe(true);
+    expect(findings.every(f => f.category === 'semantic-dead-export')).toBe(
+      true
+    );
+    expect(findings.every(f => f.severity === 'high')).toBe(true);
+    expect(findings.every(f => f.lspHints && f.lspHints.length > 0)).toBe(true);
     expect(findings[0].lineStart).toBe(10);
     expect(findings[1].lineStart).toBe(20);
   });
 
   it('skips exports with references', () => {
     const profile = makeProfile('test.ts', {
-      referenceCountByExport: new Map([['usedFn', { count: 3, uniqueFiles: 2, lineStart: 1, lineEnd: 5 }]]),
+      referenceCountByExport: new Map([
+        ['usedFn', { count: 3, uniqueFiles: 2, lineStart: 1, lineEnd: 5 }],
+      ]),
     });
     expect(detectSemanticDeadExports([profile])).toHaveLength(0);
   });
@@ -152,7 +172,12 @@ describe('detectUnusedParameters', () => {
   it('flags unused parameters', () => {
     const profile = makeProfile('handler.ts', {
       unusedParams: [
-        { functionName: 'handleRequest', paramName: 'ctx', lineStart: 10, lineEnd: 25 },
+        {
+          functionName: 'handleRequest',
+          paramName: 'ctx',
+          lineStart: 10,
+          lineEnd: 25,
+        },
       ],
     });
     const findings = detectUnusedParameters([profile]);
@@ -173,7 +198,13 @@ describe('detectDeepOverrideChain', () => {
   it('flags deep method override chains', () => {
     const profile = makeProfile('overrides.ts', {
       overrideChains: [
-        { methodName: 'render', className: 'SuperWidget', depth: 4, chain: [], lineStart: 30 },
+        {
+          methodName: 'render',
+          className: 'SuperWidget',
+          depth: 4,
+          chain: [],
+          lineStart: 30,
+        },
       ],
     });
     const findings = detectDeepOverrideChain([profile], 3);
@@ -186,7 +217,13 @@ describe('detectDeepOverrideChain', () => {
   it('does not flag shallow overrides', () => {
     const profile = makeProfile('overrides.ts', {
       overrideChains: [
-        { methodName: 'render', className: 'Widget', depth: 1, chain: [], lineStart: 10 },
+        {
+          methodName: 'render',
+          className: 'Widget',
+          depth: 1,
+          chain: [],
+          lineStart: 10,
+        },
       ],
     });
     expect(detectDeepOverrideChain([profile], 3)).toHaveLength(0);
@@ -196,14 +233,16 @@ describe('detectDeepOverrideChain', () => {
 describe('detectInterfaceCompliance', () => {
   it('flags missing members', () => {
     const profile = makeProfile('impl.ts', {
-      interfaceImpls: [{
-        interfaceName: 'IService',
-        className: 'MyService',
-        classFile: 'impl.ts',
-        classLine: 15,
-        missingMembers: ['init', 'destroy'],
-        anycastMembers: [],
-      }],
+      interfaceImpls: [
+        {
+          interfaceName: 'IService',
+          className: 'MyService',
+          classFile: 'impl.ts',
+          classLine: 15,
+          missingMembers: ['init', 'destroy'],
+          anycastMembers: [],
+        },
+      ],
     });
     const findings = detectInterfaceCompliance([profile]);
     expect(findings.length).toBe(1);
@@ -214,14 +253,16 @@ describe('detectInterfaceCompliance', () => {
 
   it('flags any-cast members', () => {
     const profile = makeProfile('impl.ts', {
-      interfaceImpls: [{
-        interfaceName: 'IRepo',
-        className: 'MyRepo',
-        classFile: 'impl.ts',
-        classLine: 20,
-        missingMembers: [],
-        anycastMembers: ['save'],
-      }],
+      interfaceImpls: [
+        {
+          interfaceName: 'IRepo',
+          className: 'MyRepo',
+          classFile: 'impl.ts',
+          classLine: 20,
+          missingMembers: [],
+          anycastMembers: ['save'],
+        },
+      ],
     });
     const findings = detectInterfaceCompliance([profile]);
     expect(findings.length).toBe(1);
@@ -238,9 +279,7 @@ describe('detectInterfaceCompliance', () => {
 describe('detectUnusedImports', () => {
   it('flags imports with zero usage', () => {
     const profile = makeProfile('consumer.ts', {
-      unusedImports: [
-        { name: 'unusedHelper', lineStart: 3 },
-      ],
+      unusedImports: [{ name: 'unusedHelper', lineStart: 3 }],
     });
     const findings = detectUnusedImports([profile]);
     expect(findings.length).toBe(1);
@@ -262,7 +301,10 @@ describe('detectCircularTypeDependency', () => {
       'a.ts': 'export interface A { x: number; }\n',
       'b.ts': 'import type { A } from "./a";\nexport interface B { a: A; }\n',
     });
-    const ctx = createSemanticContext([path.join(dir, 'a.ts'), path.join(dir, 'b.ts')], dir);
+    const ctx = createSemanticContext(
+      [path.join(dir, 'a.ts'), path.join(dir, 'b.ts')],
+      dir
+    );
     const profileA = makeProfile('a.ts');
     const profileB = makeProfile('b.ts');
     const findings = detectCircularTypeDependency(ctx, [profileA, profileB]);
@@ -279,12 +321,16 @@ describe('runSemanticDetectors', () => {
     });
     const ctx = createSemanticContext([path.join(dir, 'test.ts')], dir);
     const profile = makeProfile('test.ts', {
-      referenceCountByExport: new Map([['deadExport', { count: 0, uniqueFiles: 0, lineStart: 5, lineEnd: 5 }]]),
-      unusedParams: [{ functionName: 'fn', paramName: 'p', lineStart: 1, lineEnd: 1 }],
+      referenceCountByExport: new Map([
+        ['deadExport', { count: 0, uniqueFiles: 0, lineStart: 5, lineEnd: 5 }],
+      ]),
+      unusedParams: [
+        { functionName: 'fn', paramName: 'p', lineStart: 1, lineEnd: 1 },
+      ],
       unusedImports: [{ name: 'unused', lineStart: 1 }],
     });
     const findings = runSemanticDetectors(ctx, [profile]);
-    const categories = new Set(findings.map((f) => f.category));
+    const categories = new Set(findings.map(f => f.category));
     expect(categories.has('unused-parameter')).toBe(true);
     expect(categories.has('unused-import')).toBe(true);
     fs.rmSync(dir, { recursive: true });
@@ -328,10 +374,11 @@ describe('SEMANTIC_CATEGORIES constant', () => {
   });
 });
 
-
 function setupCtx(dir: string, files: Record<string, string>) {
   writeFiles(dir, files);
-  const absPaths = Object.keys(files).filter((f) => f.endsWith('.ts')).map((f) => path.join(dir, f));
+  const absPaths = Object.keys(files)
+    .filter(f => f.endsWith('.ts'))
+    .map(f => path.join(dir, f));
   return createSemanticContext(absPaths, dir);
 }
 
@@ -350,15 +397,22 @@ describe('integration: semantic-dead-export', () => {
     });
     const entry = makeFileEntry('lib.ts', {
       dependencyProfile: {
-        internalDependencies: [], externalDependencies: [], unresolvedDependencies: [],
+        internalDependencies: [],
+        externalDependencies: [],
+        unresolvedDependencies: [],
         declaredExports: [
           { name: 'usedFn', kind: 'value', lineStart: 1, lineEnd: 1 },
           { name: 'deadFn', kind: 'value', lineStart: 2, lineEnd: 2 },
         ],
-        importedSymbols: [], reExports: [],
+        importedSymbols: [],
+        reExports: [],
       },
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'lib.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'lib.ts'),
+      entry
+    );
     const deadInfo = profile.referenceCountByExport.get('deadFn');
     const usedInfo = profile.referenceCountByExport.get('usedFn');
     expect(deadInfo?.count).toBe(0);
@@ -380,12 +434,21 @@ describe('integration: semantic-dead-export', () => {
     });
     const entry = makeFileEntry('util.ts', {
       dependencyProfile: {
-        internalDependencies: [], externalDependencies: [], unresolvedDependencies: [],
-        declaredExports: [{ name: 'FOO', kind: 'value', lineStart: 1, lineEnd: 1 }],
-        importedSymbols: [], reExports: [],
+        internalDependencies: [],
+        externalDependencies: [],
+        unresolvedDependencies: [],
+        declaredExports: [
+          { name: 'FOO', kind: 'value', lineStart: 1, lineEnd: 1 },
+        ],
+        importedSymbols: [],
+        reExports: [],
       },
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'util.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'util.ts'),
+      entry
+    );
     expect(detectSemanticDeadExports([profile])).toHaveLength(0);
     fs.rmSync(dir, { recursive: true });
   });
@@ -402,15 +465,35 @@ describe('integration: unused-parameter', () => {
       ].join('\n'),
     });
     const entry = makeFileEntry('handler.ts', {
-      functions: [{
-        kind: 'function', name: 'process', nameHint: 'process',
-        file: 'handler.ts', lineStart: 1, lineEnd: 3, columnStart: 0, columnEnd: 0,
-        statementCount: 1, complexity: 1, maxBranchDepth: 0, maxLoopDepth: 0,
-        returns: 1, awaits: 0, calls: 1, loops: 0, lengthLines: 3,
-        cognitiveComplexity: 0, params: 2,
-      }],
+      functions: [
+        {
+          kind: 'function',
+          name: 'process',
+          nameHint: 'process',
+          file: 'handler.ts',
+          lineStart: 1,
+          lineEnd: 3,
+          columnStart: 0,
+          columnEnd: 0,
+          statementCount: 1,
+          complexity: 1,
+          maxBranchDepth: 0,
+          maxLoopDepth: 0,
+          returns: 1,
+          awaits: 0,
+          calls: 1,
+          loops: 0,
+          lengthLines: 3,
+          cognitiveComplexity: 0,
+          params: 2,
+        },
+      ],
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'handler.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'handler.ts'),
+      entry
+    );
     expect(profile.unusedParams.length).toBe(1);
     expect(profile.unusedParams[0].paramName).toBe('unused');
     expect(profile.unusedParams[0].functionName).toBe('process');
@@ -432,13 +515,29 @@ describe('integration: unused-parameter', () => {
       ].join('\n'),
     });
     const entry = makeFileEntry('fn.ts', {
-      functions: [{
-        kind: 'function', name: 'add', nameHint: 'add',
-        file: 'fn.ts', lineStart: 1, lineEnd: 3, columnStart: 0, columnEnd: 0,
-        statementCount: 1, complexity: 1, maxBranchDepth: 0, maxLoopDepth: 0,
-        returns: 1, awaits: 0, calls: 0, loops: 0, lengthLines: 3,
-        cognitiveComplexity: 0, params: 2,
-      }],
+      functions: [
+        {
+          kind: 'function',
+          name: 'add',
+          nameHint: 'add',
+          file: 'fn.ts',
+          lineStart: 1,
+          lineEnd: 3,
+          columnStart: 0,
+          columnEnd: 0,
+          statementCount: 1,
+          complexity: 1,
+          maxBranchDepth: 0,
+          maxLoopDepth: 0,
+          returns: 1,
+          awaits: 0,
+          calls: 0,
+          loops: 0,
+          lengthLines: 3,
+          cognitiveComplexity: 0,
+          params: 2,
+        },
+      ],
     });
     const profile = analyzeSemanticProfile(ctx, path.join(dir, 'fn.ts'), entry);
     expect(profile.unusedParams).toHaveLength(0);
@@ -455,15 +554,35 @@ describe('integration: unused-parameter', () => {
       ].join('\n'),
     });
     const entry = makeFileEntry('skip.ts', {
-      functions: [{
-        kind: 'function', name: 'handle', nameHint: 'handle',
-        file: 'skip.ts', lineStart: 1, lineEnd: 3, columnStart: 0, columnEnd: 0,
-        statementCount: 1, complexity: 1, maxBranchDepth: 0, maxLoopDepth: 0,
-        returns: 1, awaits: 0, calls: 0, loops: 0, lengthLines: 3,
-        cognitiveComplexity: 0, params: 2,
-      }],
+      functions: [
+        {
+          kind: 'function',
+          name: 'handle',
+          nameHint: 'handle',
+          file: 'skip.ts',
+          lineStart: 1,
+          lineEnd: 3,
+          columnStart: 0,
+          columnEnd: 0,
+          statementCount: 1,
+          complexity: 1,
+          maxBranchDepth: 0,
+          maxLoopDepth: 0,
+          returns: 1,
+          awaits: 0,
+          calls: 0,
+          loops: 0,
+          lengthLines: 3,
+          cognitiveComplexity: 0,
+          params: 2,
+        },
+      ],
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'skip.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'skip.ts'),
+      entry
+    );
     expect(profile.unusedParams).toHaveLength(0);
     fs.rmSync(dir, { recursive: true });
   });
@@ -482,15 +601,23 @@ describe('integration: deep-override-chain', () => {
       ].join('\n'),
     });
     const entry = makeFileEntry('override.ts');
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'override.ts'), entry);
-    const leafOverrides = profile.overrideChains.filter((c) => c.className === 'Leaf');
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'override.ts'),
+      entry
+    );
+    const leafOverrides = profile.overrideChains.filter(
+      c => c.className === 'Leaf'
+    );
     expect(leafOverrides.length).toBeGreaterThanOrEqual(1);
     expect(leafOverrides[0].methodName).toBe('render');
     expect(leafOverrides[0].depth).toBeGreaterThanOrEqual(4);
 
     const findings = detectDeepOverrideChain([profile], 3);
     expect(findings.length).toBeGreaterThanOrEqual(1);
-    expect(findings.some((f) => f.title.includes('render') && f.title.includes('Leaf'))).toBe(true);
+    expect(
+      findings.some(f => f.title.includes('render') && f.title.includes('Leaf'))
+    ).toBe(true);
     fs.rmSync(dir, { recursive: true });
   });
 });
@@ -526,17 +653,29 @@ describe('integration: concrete-dependency', () => {
     });
     const entry = makeFileEntry('consumer.ts', {
       dependencyProfile: {
-        internalDependencies: ['service.ts'], externalDependencies: [], unresolvedDependencies: [],
+        internalDependencies: ['service.ts'],
+        externalDependencies: [],
+        unresolvedDependencies: [],
         declaredExports: [],
-        importedSymbols: [{
-          sourceModule: './service', resolvedModule: 'service.ts',
-          importedName: 'DbService', localName: 'DbService',
-          isTypeOnly: false, lineStart: 1, lineEnd: 1,
-        }],
+        importedSymbols: [
+          {
+            sourceModule: './service',
+            resolvedModule: 'service.ts',
+            importedName: 'DbService',
+            localName: 'DbService',
+            isTypeOnly: false,
+            lineStart: 1,
+            lineEnd: 1,
+          },
+        ],
         reExports: [],
       },
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'consumer.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'consumer.ts'),
+      entry
+    );
     expect(profile.concreteImports.length).toBe(1);
     expect(profile.concreteImports[0].name).toBe('DbService');
 
@@ -550,7 +689,8 @@ describe('integration: concrete-dependency', () => {
   it('does not flag import of abstract class', () => {
     const dir = makeTempDir();
     const ctx = setupCtx(dir, {
-      'base.ts': 'export abstract class BaseService { abstract save(): void; }\n',
+      'base.ts':
+        'export abstract class BaseService { abstract save(): void; }\n',
       'consumer2.ts': [
         'import { BaseService } from "./base";',
         'export function run(svc: BaseService) { svc.save(); }',
@@ -558,17 +698,29 @@ describe('integration: concrete-dependency', () => {
     });
     const entry = makeFileEntry('consumer2.ts', {
       dependencyProfile: {
-        internalDependencies: ['base.ts'], externalDependencies: [], unresolvedDependencies: [],
+        internalDependencies: ['base.ts'],
+        externalDependencies: [],
+        unresolvedDependencies: [],
         declaredExports: [],
-        importedSymbols: [{
-          sourceModule: './base', resolvedModule: 'base.ts',
-          importedName: 'BaseService', localName: 'BaseService',
-          isTypeOnly: false, lineStart: 1, lineEnd: 1,
-        }],
+        importedSymbols: [
+          {
+            sourceModule: './base',
+            resolvedModule: 'base.ts',
+            importedName: 'BaseService',
+            localName: 'BaseService',
+            isTypeOnly: false,
+            lineStart: 1,
+            lineEnd: 1,
+          },
+        ],
         reExports: [],
       },
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'consumer2.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'consumer2.ts'),
+      entry
+    );
     expect(profile.concreteImports).toHaveLength(0);
     fs.rmSync(dir, { recursive: true });
   });
@@ -578,7 +730,8 @@ describe('integration: unused-import', () => {
   it('detects import that is never used in the file', () => {
     const dir = makeTempDir();
     const ctx = setupCtx(dir, {
-      'utils.ts': 'export function helper() { return 1; }\nexport function unused() { return 2; }\n',
+      'utils.ts':
+        'export function helper() { return 1; }\nexport function unused() { return 2; }\n',
       'main.ts': [
         'import { helper, unused } from "./utils";',
         'console.log(helper());',
@@ -586,16 +739,36 @@ describe('integration: unused-import', () => {
     });
     const entry = makeFileEntry('main.ts', {
       dependencyProfile: {
-        internalDependencies: ['utils.ts'], externalDependencies: [], unresolvedDependencies: [],
+        internalDependencies: ['utils.ts'],
+        externalDependencies: [],
+        unresolvedDependencies: [],
         declaredExports: [],
         importedSymbols: [
-          { sourceModule: './utils', importedName: 'helper', localName: 'helper', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
-          { sourceModule: './utils', importedName: 'unused', localName: 'unused', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+          {
+            sourceModule: './utils',
+            importedName: 'helper',
+            localName: 'helper',
+            isTypeOnly: false,
+            lineStart: 1,
+            lineEnd: 1,
+          },
+          {
+            sourceModule: './utils',
+            importedName: 'unused',
+            localName: 'unused',
+            isTypeOnly: false,
+            lineStart: 1,
+            lineEnd: 1,
+          },
         ],
         reExports: [],
       },
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'main.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'main.ts'),
+      entry
+    );
     expect(profile.unusedImports.length).toBe(1);
     expect(profile.unusedImports[0].name).toBe('unused');
 
@@ -630,7 +803,8 @@ describe('integration: orphan-implementation', () => {
     const dir = makeTempDir();
     const ctx = setupCtx(dir, {
       'used.ts': 'export class UsedClass { run() {} }\n',
-      'consumer.ts': 'import { UsedClass } from "./used";\nnew UsedClass().run();\n',
+      'consumer.ts':
+        'import { UsedClass } from "./used";\nnew UsedClass().run();\n',
     });
     const profiles = [makeProfile('used.ts')];
     const findings = detectOrphanImplementation(ctx, profiles);
@@ -697,9 +871,13 @@ describe('integration: interface-compliance', () => {
       ].join('\n'),
     });
     const entry = makeFileEntry('compliance.ts');
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'compliance.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'compliance.ts'),
+      entry
+    );
     expect(profile.interfaceImpls.length).toBeGreaterThanOrEqual(1);
-    const impl = profile.interfaceImpls.find((i) => i.className === 'BadLogger');
+    const impl = profile.interfaceImpls.find(i => i.className === 'BadLogger');
     expect(impl).toBeDefined();
     expect(impl!.anycastMembers.length).toBeGreaterThanOrEqual(1);
 
@@ -719,12 +897,22 @@ describe('integration: includeTests filtering', () => {
     });
     const entry = makeFileEntry('lib.ts', {
       dependencyProfile: {
-        internalDependencies: [], externalDependencies: [], unresolvedDependencies: [],
-        declaredExports: [{ name: 'internalOnly', kind: 'value', lineStart: 1, lineEnd: 1 }],
-        importedSymbols: [], reExports: [],
+        internalDependencies: [],
+        externalDependencies: [],
+        unresolvedDependencies: [],
+        declaredExports: [
+          { name: 'internalOnly', kind: 'value', lineStart: 1, lineEnd: 1 },
+        ],
+        importedSymbols: [],
+        reExports: [],
       },
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'lib.ts'), entry, false);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'lib.ts'),
+      entry,
+      false
+    );
     const info = profile.referenceCountByExport.get('internalOnly');
     expect(info?.count).toBe(0);
 
@@ -742,12 +930,22 @@ describe('integration: includeTests filtering', () => {
     });
     const entry = makeFileEntry('lib.ts', {
       dependencyProfile: {
-        internalDependencies: [], externalDependencies: [], unresolvedDependencies: [],
-        declaredExports: [{ name: 'internalOnly', kind: 'value', lineStart: 1, lineEnd: 1 }],
-        importedSymbols: [], reExports: [],
+        internalDependencies: [],
+        externalDependencies: [],
+        unresolvedDependencies: [],
+        declaredExports: [
+          { name: 'internalOnly', kind: 'value', lineStart: 1, lineEnd: 1 },
+        ],
+        importedSymbols: [],
+        reExports: [],
       },
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'lib.ts'), entry, true);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'lib.ts'),
+      entry,
+      true
+    );
     const info = profile.referenceCountByExport.get('internalOnly');
     expect(info!.count).toBeGreaterThan(0);
 
@@ -770,40 +968,42 @@ describe('integration: full pipeline runSemanticDetectors', () => {
         'export function deadFn() { return 2; }',
         'export class Orphan { x = 1; }',
       ].join('\n'),
-      'app.ts': [
-        'import { usedFn } from "./lib";',
-        'usedFn();',
-      ].join('\n'),
+      'app.ts': ['import { usedFn } from "./lib";', 'usedFn();'].join('\n'),
     });
 
     const libEntry = makeFileEntry('lib.ts', {
       dependencyProfile: {
-        internalDependencies: [], externalDependencies: [], unresolvedDependencies: [],
+        internalDependencies: [],
+        externalDependencies: [],
+        unresolvedDependencies: [],
         declaredExports: [
           { name: 'usedFn', kind: 'value', lineStart: 1, lineEnd: 1 },
           { name: 'deadFn', kind: 'value', lineStart: 2, lineEnd: 2 },
           { name: 'Orphan', kind: 'value', lineStart: 3, lineEnd: 3 },
         ],
-        importedSymbols: [], reExports: [],
+        importedSymbols: [],
+        reExports: [],
       },
     });
 
     const profiles: SemanticProfile[] = [];
-    profiles.push(analyzeSemanticProfile(ctx, path.join(dir, 'lib.ts'), libEntry));
+    profiles.push(
+      analyzeSemanticProfile(ctx, path.join(dir, 'lib.ts'), libEntry)
+    );
     profiles.push(makeProfile('types.ts'));
 
     const findings = runSemanticDetectors(ctx, profiles);
-    const categories = new Set(findings.map((f) => f.category));
+    const categories = new Set(findings.map(f => f.category));
 
     expect(categories.has('circular-type-dependency')).toBe(true);
     expect(categories.has('orphan-implementation')).toBe(true);
 
-    expect(findings.every((f) => f.file)).toBe(true);
-    expect(findings.every((f) => f.category)).toBe(true);
-    expect(findings.every((f) => f.severity)).toBe(true);
-    expect(findings.every((f) => f.suggestedFix)).toBe(true);
+    expect(findings.every(f => f.file)).toBe(true);
+    expect(findings.every(f => f.category)).toBe(true);
+    expect(findings.every(f => f.severity)).toBe(true);
+    expect(findings.every(f => f.suggestedFix)).toBe(true);
 
-    const withHints = findings.filter((f) => f.lspHints && f.lspHints.length > 0);
+    const withHints = findings.filter(f => f.lspHints && f.lspHints.length > 0);
     expect(withHints.length).toBeGreaterThan(0);
     for (const f of withHints) {
       for (const h of f.lspHints!) {
@@ -819,13 +1019,18 @@ describe('integration: full pipeline runSemanticDetectors', () => {
   });
 });
 
-
 describe('integration: shotgun-surgery', () => {
   it('detects export used by many files', () => {
     const profile = makeProfile('util.ts', {
       referenceCountByExport: new Map([
-        ['widelyUsed', { count: 25, uniqueFiles: 10, lineStart: 5, lineEnd: 5 }],
-        ['rarelyUsed', { count: 2, uniqueFiles: 1, lineStart: 10, lineEnd: 10 }],
+        [
+          'widelyUsed',
+          { count: 25, uniqueFiles: 10, lineStart: 5, lineEnd: 5 },
+        ],
+        [
+          'rarelyUsed',
+          { count: 2, uniqueFiles: 1, lineStart: 10, lineEnd: 10 },
+        ],
       ]),
     });
     const findings = detectShotgunSurgery([profile], 8);
@@ -873,15 +1078,17 @@ describe('integration: move-to-caller', () => {
 describe('integration: narrowable-type', () => {
   it('detects param narrowable from mock profile', () => {
     const profile = makeProfile('handler.ts', {
-      narrowableParams: [{
-        functionName: 'process',
-        paramName: 'data',
-        declaredType: 'string | number',
-        actualTypes: ['string'],
-        narrowedType: 'string',
-        lineStart: 5,
-        lineEnd: 10,
-      }],
+      narrowableParams: [
+        {
+          functionName: 'process',
+          paramName: 'data',
+          declaredType: 'string | number',
+          actualTypes: ['string'],
+          narrowedType: 'string',
+          lineStart: 5,
+          lineEnd: 10,
+        },
+      ],
     });
     const findings = detectNarrowableType([profile]);
     expect(findings.length).toBe(1);
@@ -895,7 +1102,6 @@ describe('integration: narrowable-type', () => {
     expect(detectNarrowableType([makeProfile('a.ts')])).toHaveLength(0);
   });
 });
-
 
 describe('integration: type-hierarchy-and-override-chains', () => {
   it('detects typeHierarchyDepth and overrideChains in multi-file inheritance', () => {
@@ -920,22 +1126,34 @@ describe('integration: type-hierarchy-and-override-chains', () => {
       ].join('\n'),
     });
     const entry = makeFileEntry('grandchild.ts');
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'grandchild.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'grandchild.ts'),
+      entry
+    );
 
     expect(profile.typeHierarchyDepth).toBeGreaterThan(0);
     expect(profile.typeHierarchies.length).toBeGreaterThanOrEqual(1);
-    const hierarchy = profile.typeHierarchies.find((h) => h.name === 'Grandchild');
+    const hierarchy = profile.typeHierarchies.find(
+      h => h.name === 'Grandchild'
+    );
     expect(hierarchy).toBeDefined();
     expect(hierarchy!.depth).toBeGreaterThanOrEqual(2);
 
     expect(profile.overrideChains.length).toBeGreaterThanOrEqual(1);
-    const runChain = profile.overrideChains.find((c) => c.methodName === 'run' && c.className === 'Grandchild');
+    const runChain = profile.overrideChains.find(
+      c => c.methodName === 'run' && c.className === 'Grandchild'
+    );
     expect(runChain).toBeDefined();
     expect(runChain!.depth).toBeGreaterThanOrEqual(2);
 
     const findings = detectDeepOverrideChain([profile], 0);
     expect(findings.length).toBeGreaterThanOrEqual(1);
-    expect(findings.some((f) => f.title.includes('run') && f.title.includes('Grandchild'))).toBe(true);
+    expect(
+      findings.some(
+        f => f.title.includes('run') && f.title.includes('Grandchild')
+      )
+    ).toBe(true);
 
     fs.rmSync(dir, { recursive: true });
   });
@@ -962,7 +1180,9 @@ describe('integration: leaky-returns', () => {
         internalDependencies: ['types.ts'],
         externalDependencies: [],
         unresolvedDependencies: [],
-        declaredExports: [{ name: 'fetchData', kind: 'value', lineStart: 2, lineEnd: 4 }],
+        declaredExports: [
+          { name: 'fetchData', kind: 'value', lineStart: 2, lineEnd: 4 },
+        ],
         importedSymbols: [
           {
             sourceModule: './types',
@@ -1000,10 +1220,16 @@ describe('integration: leaky-returns', () => {
         },
       ],
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'api.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'api.ts'),
+      entry
+    );
 
     expect(profile.leakyReturns.length).toBeGreaterThanOrEqual(1);
-    const leaky = profile.leakyReturns.find((l) => l.functionName === 'fetchData');
+    const leaky = profile.leakyReturns.find(
+      l => l.functionName === 'fetchData'
+    );
     expect(leaky).toBeDefined();
     expect(leaky!.returnType).toContain('ApiResponse');
     expect(leaky!.sourceFile).toMatch(/types\.ts$/);
@@ -1039,7 +1265,11 @@ describe('integration: abstractness-ratio', () => {
         reExports: [],
       },
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'shapes.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'shapes.ts'),
+      entry
+    );
 
     expect(profile.abstractnessRatio).toBeGreaterThan(0);
     expect(profile.abstractnessRatio).toBeLessThanOrEqual(1);
@@ -1069,7 +1299,11 @@ describe('integration: abstractness-ratio', () => {
         reExports: [],
       },
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'types-only.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'types-only.ts'),
+      entry
+    );
 
     expect(profile.abstractnessRatio).toBeGreaterThan(0);
     expect(profile.abstractnessRatio).toBeLessThanOrEqual(1);
@@ -1100,7 +1334,9 @@ describe('integration: narrowable-params-comprehensive', () => {
         internalDependencies: [],
         externalDependencies: [],
         unresolvedDependencies: [],
-        declaredExports: [{ name: 'process', kind: 'value', lineStart: 1, lineEnd: 3 }],
+        declaredExports: [
+          { name: 'process', kind: 'value', lineStart: 1, lineEnd: 3 },
+        ],
         importedSymbols: [],
         reExports: [],
       },
@@ -1128,7 +1364,11 @@ describe('integration: narrowable-params-comprehensive', () => {
         },
       ],
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'lib.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'lib.ts'),
+      entry
+    );
 
     if (profile.narrowableParams.length > 0) {
       const np = profile.narrowableParams[0];
@@ -1150,7 +1390,10 @@ describe('collectAllAbsoluteFiles (extended)', () => {
     writeFiles(dir, {
       'a.ts': 'export const a = 1;',
     });
-    const entries: FileEntry[] = [makeFileEntry('a.ts'), makeFileEntry('nonexistent.ts')];
+    const entries: FileEntry[] = [
+      makeFileEntry('a.ts'),
+      makeFileEntry('nonexistent.ts'),
+    ];
     const state: DependencyState = {
       files: new Set(['ghost.ts']),
       outgoing: new Map(),
@@ -1196,10 +1439,9 @@ describe('integration: edge-cases', () => {
   it('file with no exports produces empty profile for reference counts', () => {
     const dir = makeTempDir();
     const ctx = setupCtx(dir, {
-      'no-exports.ts': [
-        'const x = 1;',
-        'function foo() { return x; }',
-      ].join('\n'),
+      'no-exports.ts': ['const x = 1;', 'function foo() { return x; }'].join(
+        '\n'
+      ),
     });
     const entry = makeFileEntry('no-exports.ts', {
       dependencyProfile: {
@@ -1211,7 +1453,11 @@ describe('integration: edge-cases', () => {
         reExports: [],
       },
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'no-exports.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'no-exports.ts'),
+      entry
+    );
 
     expect(profile.referenceCountByExport.size).toBe(0);
     expect(profile.leakyReturns).toEqual([]);
@@ -1240,7 +1486,11 @@ describe('integration: edge-cases', () => {
         reExports: [],
       },
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'types.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'types.ts'),
+      entry
+    );
 
     expect(profile.abstractnessRatio).toBeGreaterThan(0);
     expect(profile.leakyReturns).toEqual([]);
@@ -1270,7 +1520,11 @@ describe('integration: edge-cases', () => {
       },
       functions: [],
     });
-    const profile = analyzeSemanticProfile(ctx, path.join(dir, 'constants.ts'), entry);
+    const profile = analyzeSemanticProfile(
+      ctx,
+      path.join(dir, 'constants.ts'),
+      entry
+    );
 
     expect(profile.leakyReturns).toEqual([]);
     expect(profile.narrowableParams).toEqual([]);

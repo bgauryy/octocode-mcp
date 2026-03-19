@@ -6,14 +6,31 @@ import { getLineAndCharacter } from './utils.js';
 import type { TopLevelEffect } from './types.js';
 
 const SYNC_IO_TOP_LEVEL = new Set([
-  'readFileSync', 'writeFileSync', 'existsSync', 'mkdirSync', 'readdirSync',
-  'statSync', 'lstatSync', 'unlinkSync', 'rmdirSync', 'renameSync', 'copyFileSync',
-  'accessSync', 'appendFileSync', 'chmodSync', 'chownSync', 'openSync', 'closeSync',
+  'readFileSync',
+  'writeFileSync',
+  'existsSync',
+  'mkdirSync',
+  'readdirSync',
+  'statSync',
+  'lstatSync',
+  'unlinkSync',
+  'rmdirSync',
+  'renameSync',
+  'copyFileSync',
+  'accessSync',
+  'appendFileSync',
+  'chmodSync',
+  'chownSync',
+  'openSync',
+  'closeSync',
 ]);
 
 const EXEC_SYNC_TOP_LEVEL = new Set(['execSync', 'execFileSync', 'spawnSync']);
 
-export function collectTopLevelEffects(sourceFile: ts.SourceFile, _fileRelative: string): TopLevelEffect[] {
+export function collectTopLevelEffects(
+  sourceFile: ts.SourceFile,
+  _fileRelative: string
+): TopLevelEffect[] {
   const effects: TopLevelEffect[] = [];
 
   for (const stmt of sourceFile.statements) {
@@ -35,10 +52,20 @@ export function collectTopLevelEffects(sourceFile: ts.SourceFile, _fileRelative:
     }
 
     if (ts.isExportDeclaration(stmt) || ts.isExportAssignment(stmt)) continue;
-    if (ts.isTypeAliasDeclaration(stmt) || ts.isInterfaceDeclaration(stmt) || ts.isEnumDeclaration(stmt)) continue;
+    if (
+      ts.isTypeAliasDeclaration(stmt) ||
+      ts.isInterfaceDeclaration(stmt) ||
+      ts.isEnumDeclaration(stmt)
+    )
+      continue;
     if (ts.isModuleDeclaration(stmt)) continue;
 
-    if (isFunctionLike(stmt) || ts.isFunctionDeclaration(stmt) || ts.isClassDeclaration(stmt)) continue;
+    if (
+      isFunctionLike(stmt) ||
+      ts.isFunctionDeclaration(stmt) ||
+      ts.isClassDeclaration(stmt)
+    )
+      continue;
 
     if (ts.isVariableStatement(stmt)) {
       for (const decl of stmt.declarationList.declarations) {
@@ -54,9 +81,16 @@ export function collectTopLevelEffects(sourceFile: ts.SourceFile, _fileRelative:
       continue;
     }
 
-    if (ts.isIfStatement(stmt) || ts.isForStatement(stmt) || ts.isWhileStatement(stmt)
-        || ts.isDoStatement(stmt) || ts.isForOfStatement(stmt) || ts.isForInStatement(stmt)
-        || ts.isSwitchStatement(stmt) || ts.isTryStatement(stmt)) {
+    if (
+      ts.isIfStatement(stmt) ||
+      ts.isForStatement(stmt) ||
+      ts.isWhileStatement(stmt) ||
+      ts.isDoStatement(stmt) ||
+      ts.isForOfStatement(stmt) ||
+      ts.isForInStatement(stmt) ||
+      ts.isSwitchStatement(stmt) ||
+      ts.isTryStatement(stmt)
+    ) {
       scanNodeForEffects(stmt, sourceFile, effects);
     }
   }
@@ -64,7 +98,11 @@ export function collectTopLevelEffects(sourceFile: ts.SourceFile, _fileRelative:
   return effects;
 }
 
-function scanExpressionForEffects(expr: ts.Expression, sourceFile: ts.SourceFile, effects: TopLevelEffect[]): void {
+function scanExpressionForEffects(
+  expr: ts.Expression,
+  sourceFile: ts.SourceFile,
+  effects: TopLevelEffect[]
+): void {
   if (ts.isAwaitExpression(expr)) {
     const loc = getLineAndCharacter(sourceFile, expr);
     effects.push({
@@ -83,7 +121,10 @@ function scanExpressionForEffects(expr: ts.Expression, sourceFile: ts.SourceFile
     return;
   }
 
-  if (ts.isNewExpression(expr) && expr.expression.getText(sourceFile) === 'Function') {
+  if (
+    ts.isNewExpression(expr) &&
+    expr.expression.getText(sourceFile) === 'Function'
+  ) {
     const loc = getLineAndCharacter(sourceFile, expr);
     effects.push({
       kind: 'eval',
@@ -96,24 +137,45 @@ function scanExpressionForEffects(expr: ts.Expression, sourceFile: ts.SourceFile
     return;
   }
 
-  if (ts.isBinaryExpression(expr) && expr.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+  if (
+    ts.isBinaryExpression(expr) &&
+    expr.operatorToken.kind === ts.SyntaxKind.EqualsToken
+  ) {
     if (ts.isCallExpression(expr.right)) {
       classifyCall(expr.right, sourceFile, effects);
     }
   }
 }
 
-function classifyCall(call: ts.CallExpression, sourceFile: ts.SourceFile, effects: TopLevelEffect[]): void {
+function classifyCall(
+  call: ts.CallExpression,
+  sourceFile: ts.SourceFile,
+  effects: TopLevelEffect[]
+): void {
   const text = call.expression.getText(sourceFile);
   const loc = getLineAndCharacter(sourceFile, call);
 
   if (text === 'eval' || text === 'Function') {
-    effects.push({ kind: 'eval', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: `${text}()`, weight: 8, confidence: 'high' });
+    effects.push({
+      kind: 'eval',
+      lineStart: loc.lineStart,
+      lineEnd: loc.lineEnd,
+      detail: `${text}()`,
+      weight: 8,
+      confidence: 'high',
+    });
     return;
   }
 
   if (text === 'setInterval' || text === 'setTimeout') {
-    effects.push({ kind: 'timer', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: `${text}()`, weight: 4, confidence: 'high' });
+    effects.push({
+      kind: 'timer',
+      lineStart: loc.lineStart,
+      lineEnd: loc.lineEnd,
+      detail: `${text}()`,
+      weight: 4,
+      confidence: 'high',
+    });
     return;
   }
 
@@ -122,34 +184,84 @@ function classifyCall(call: ts.CallExpression, sourceFile: ts.SourceFile, effect
     const obj = call.expression.expression.getText(sourceFile);
 
     if (EXEC_SYNC_TOP_LEVEL.has(method) || EXEC_SYNC_TOP_LEVEL.has(text)) {
-      effects.push({ kind: 'exec-sync', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: text, weight: 8, confidence: 'high' });
+      effects.push({
+        kind: 'exec-sync',
+        lineStart: loc.lineStart,
+        lineEnd: loc.lineEnd,
+        detail: text,
+        weight: 8,
+        confidence: 'high',
+      });
       return;
     }
 
     if (SYNC_IO_TOP_LEVEL.has(method)) {
-      effects.push({ kind: 'sync-io', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: text, weight: 5, confidence: 'high' });
+      effects.push({
+        kind: 'sync-io',
+        lineStart: loc.lineStart,
+        lineEnd: loc.lineEnd,
+        detail: text,
+        weight: 5,
+        confidence: 'high',
+      });
       return;
     }
 
-    if (obj === 'process' && (method === 'on' || method === 'once' || method === 'addListener')) {
-      effects.push({ kind: 'process-handler', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: `${text}()`, weight: 4, confidence: 'high' });
+    if (
+      obj === 'process' &&
+      (method === 'on' || method === 'once' || method === 'addListener')
+    ) {
+      effects.push({
+        kind: 'process-handler',
+        lineStart: loc.lineStart,
+        lineEnd: loc.lineEnd,
+        detail: `${text}()`,
+        weight: 4,
+        confidence: 'high',
+      });
       return;
     }
 
-    if (method === 'addEventListener' || method === 'on' || method === 'addListener') {
-      effects.push({ kind: 'listener', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: `${text}()`, weight: 4, confidence: 'medium' });
+    if (
+      method === 'addEventListener' ||
+      method === 'on' ||
+      method === 'addListener'
+    ) {
+      effects.push({
+        kind: 'listener',
+        lineStart: loc.lineStart,
+        lineEnd: loc.lineEnd,
+        detail: `${text}()`,
+        weight: 4,
+        confidence: 'medium',
+      });
       return;
     }
   }
 
   if (ts.isCallExpression(call.expression) || text === 'import') {
-    if (text.startsWith('import(') || (ts.isCallExpression(call) && call.expression.kind === ts.SyntaxKind.ImportKeyword)) {
-      effects.push({ kind: 'dynamic-import', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: 'dynamic import()', weight: 3, confidence: 'medium' });
+    if (
+      text.startsWith('import(') ||
+      (ts.isCallExpression(call) &&
+        call.expression.kind === ts.SyntaxKind.ImportKeyword)
+    ) {
+      effects.push({
+        kind: 'dynamic-import',
+        lineStart: loc.lineStart,
+        lineEnd: loc.lineEnd,
+        detail: 'dynamic import()',
+        weight: 3,
+        confidence: 'medium',
+      });
     }
   }
 }
 
-function scanNodeForEffects(node: ts.Node, sourceFile: ts.SourceFile, effects: TopLevelEffect[]): void {
+function scanNodeForEffects(
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  effects: TopLevelEffect[]
+): void {
   if (isFunctionLike(node) || ts.isClassDeclaration(node)) return;
   if (ts.isCallExpression(node)) {
     classifyCall(node, sourceFile, effects);
@@ -157,20 +269,39 @@ function scanNodeForEffects(node: ts.Node, sourceFile: ts.SourceFile, effects: T
   }
   if (ts.isAwaitExpression(node)) {
     const loc = getLineAndCharacter(sourceFile, node);
-    effects.push({ kind: 'top-level-await', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: 'top-level await', weight: 4, confidence: 'high' });
+    effects.push({
+      kind: 'top-level-await',
+      lineStart: loc.lineStart,
+      lineEnd: loc.lineEnd,
+      detail: 'top-level await',
+      weight: 4,
+      confidence: 'high',
+    });
     return;
   }
-  if (ts.isNewExpression(node) && node.expression.getText(sourceFile) === 'Function') {
+  if (
+    ts.isNewExpression(node) &&
+    node.expression.getText(sourceFile) === 'Function'
+  ) {
     const loc = getLineAndCharacter(sourceFile, node);
-    effects.push({ kind: 'eval', lineStart: loc.lineStart, lineEnd: loc.lineEnd, detail: 'new Function()', weight: 8, confidence: 'high' });
+    effects.push({
+      kind: 'eval',
+      lineStart: loc.lineStart,
+      lineEnd: loc.lineEnd,
+      detail: 'new Function()',
+      weight: 8,
+      confidence: 'high',
+    });
     return;
   }
-  ts.forEachChild(node, (child) => scanNodeForEffects(child, sourceFile, effects));
+  ts.forEachChild(node, child =>
+    scanNodeForEffects(child, sourceFile, effects)
+  );
 }
 
-
-
-export function findParentBlock(node: ts.Node): ts.Block | ts.SourceFile | null {
+export function findParentBlock(
+  node: ts.Node
+): ts.Block | ts.SourceFile | null {
   let current = node.parent;
   while (current) {
     if (ts.isBlock(current) || ts.isSourceFile(current)) return current;
@@ -179,14 +310,23 @@ export function findParentBlock(node: ts.Node): ts.Block | ts.SourceFile | null 
   return null;
 }
 
-export function blockContainsCall(block: ts.Node, sourceFile: ts.SourceFile, callName: string): boolean {
+export function blockContainsCall(
+  block: ts.Node,
+  sourceFile: ts.SourceFile,
+  callName: string
+): boolean {
   let found = false;
   const search = (n: ts.Node): void => {
     if (found) return;
-    if (ts.isCallExpression(n) && n.expression.getText(sourceFile) === callName) { found = true; return; }
+    if (
+      ts.isCallExpression(n) &&
+      n.expression.getText(sourceFile) === callName
+    ) {
+      found = true;
+      return;
+    }
     ts.forEachChild(n, search);
   };
   ts.forEachChild(block, search);
   return found;
 }
-

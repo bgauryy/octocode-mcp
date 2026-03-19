@@ -44,10 +44,14 @@ describe('collectPerformanceData', () => {
   });
 
   it('collects sync io calls', () => {
-    const sourceFile = parse(`function read() { fs.readFileSync('/tmp/a.txt'); }`);
+    const sourceFile = parse(
+      `function read() { fs.readFileSync('/tmp/a.txt'); }`
+    );
     const fileEntry = emptyFileEntry();
     collectPerformanceData(sourceFile, 'test.ts', fileEntry);
-    expect(fileEntry.syncIoCalls?.some((c) => c.name === 'readFileSync')).toBe(true);
+    expect(fileEntry.syncIoCalls?.some(c => c.name === 'readFileSync')).toBe(
+      true
+    );
   });
 
   it('collects timer calls and marks cleanup when clearTimeout exists', () => {

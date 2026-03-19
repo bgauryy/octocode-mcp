@@ -69,7 +69,9 @@ describe('normalizeNodeKind', () => {
 
   it('returns STR for string literals', () => {
     expect(normalizeNodeKind(ts.SyntaxKind.StringLiteral)).toBe('STR');
-    expect(normalizeNodeKind(ts.SyntaxKind.NoSubstitutionTemplateLiteral)).toBe('STR');
+    expect(normalizeNodeKind(ts.SyntaxKind.NoSubstitutionTemplateLiteral)).toBe(
+      'STR'
+    );
   });
 
   it('returns NUM for numeric literal', () => {
@@ -108,20 +110,40 @@ describe('normalizeNodeKind', () => {
 
 describe('makeFingerprint', () => {
   it('returns consistent hash for same AST', () => {
-    const src = ts.createSourceFile('a.ts', 'const x = 1;', ts.ScriptTarget.ESNext, true);
+    const src = ts.createSourceFile(
+      'a.ts',
+      'const x = 1;',
+      ts.ScriptTarget.ESNext,
+      true
+    );
     const h1 = makeFingerprint(src);
     const h2 = makeFingerprint(src);
     expect(h1).toBe(h2);
   });
 
   it('returns different hashes for different ASTs', () => {
-    const src1 = ts.createSourceFile('a.ts', 'const x = 1;', ts.ScriptTarget.ESNext, true);
-    const src2 = ts.createSourceFile('b.ts', 'function f() {}', ts.ScriptTarget.ESNext, true);
+    const src1 = ts.createSourceFile(
+      'a.ts',
+      'const x = 1;',
+      ts.ScriptTarget.ESNext,
+      true
+    );
+    const src2 = ts.createSourceFile(
+      'b.ts',
+      'function f() {}',
+      ts.ScriptTarget.ESNext,
+      true
+    );
     expect(makeFingerprint(src1)).not.toBe(makeFingerprint(src2));
   });
 
   it('uses shared cache via WeakMap', () => {
-    const src = ts.createSourceFile('a.ts', 'const x = 1;', ts.ScriptTarget.ESNext, true);
+    const src = ts.createSourceFile(
+      'a.ts',
+      'const x = 1;',
+      ts.ScriptTarget.ESNext,
+      true
+    );
     const cache = new WeakMap<ts.Node, string>();
     const h1 = makeFingerprint(src, cache);
     const h2 = makeFingerprint(src, cache);
@@ -131,7 +153,12 @@ describe('makeFingerprint', () => {
 
 describe('getLineAndCharacter', () => {
   it('returns 1-indexed line and column numbers', () => {
-    const src = ts.createSourceFile('a.ts', 'const x = 1;\nconst y = 2;', ts.ScriptTarget.ESNext, true);
+    const src = ts.createSourceFile(
+      'a.ts',
+      'const x = 1;\nconst y = 2;',
+      ts.ScriptTarget.ESNext,
+      true
+    );
     const firstStmt = src.statements[0];
     const loc = getLineAndCharacter(src, firstStmt);
     expect(loc.lineStart).toBe(1);
@@ -139,7 +166,12 @@ describe('getLineAndCharacter', () => {
   });
 
   it('correctly positions second line', () => {
-    const src = ts.createSourceFile('a.ts', 'const x = 1;\nconst y = 2;', ts.ScriptTarget.ESNext, true);
+    const src = ts.createSourceFile(
+      'a.ts',
+      'const x = 1;\nconst y = 2;',
+      ts.ScriptTarget.ESNext,
+      true
+    );
     const secondStmt = src.statements[1];
     const loc = getLineAndCharacter(src, secondStmt);
     expect(loc.lineStart).toBe(2);
@@ -174,7 +206,9 @@ describe('isTestFile', () => {
 
 describe('toRepoPath', () => {
   it('converts absolute path to relative', () => {
-    expect(toRepoPath('/home/user/repo/src/a.ts', '/home/user/repo')).toBe('src/a.ts');
+    expect(toRepoPath('/home/user/repo/src/a.ts', '/home/user/repo')).toBe(
+      'src/a.ts'
+    );
   });
 
   it('normalizes backslashes to forward slashes', () => {
@@ -273,7 +307,12 @@ describe('buildNodeTree', () => {
   });
 
   it('depth=0 produces truncated node', () => {
-    const src = ts.createSourceFile('a.ts', 'const x = 1;', ts.ScriptTarget.ESNext, true);
+    const src = ts.createSourceFile(
+      'a.ts',
+      'const x = 1;',
+      ts.ScriptTarget.ESNext,
+      true
+    );
     const budget: NodeBudget = { size: 100 };
     const tree = buildNodeTree(src, src, 0, budget);
     expect(tree).not.toBeNull();
@@ -295,7 +334,12 @@ describe('buildNodeTree', () => {
   });
 
   it('seen WeakSet prevents cycles when passing same node twice', () => {
-    const src = ts.createSourceFile('a.ts', 'const x = 1;', ts.ScriptTarget.ESNext, true);
+    const src = ts.createSourceFile(
+      'a.ts',
+      'const x = 1;',
+      ts.ScriptTarget.ESNext,
+      true
+    );
     const stmt = src.statements[0];
     const budget: NodeBudget = { size: 100 };
     const seen = new WeakSet<ts.Node>();

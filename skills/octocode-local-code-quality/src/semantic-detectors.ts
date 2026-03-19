@@ -7,9 +7,8 @@ import type { Finding } from './types.js';
 
 type FindingDraft = Omit<Finding, 'id'>;
 
-
 export function detectSemanticDeadExports(
-  profiles: SemanticProfile[],
+  profiles: SemanticProfile[]
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
 
@@ -26,22 +25,26 @@ export function detectSemanticDeadExports(
           reason: `Exported symbol "${name}" has zero semantic references across the entire program (confirmed via TypeChecker, not just import matching).`,
           files: [profile.file],
           suggestedFix: {
-            strategy: 'Remove the export or delete the symbol if unused internally.',
+            strategy:
+              'Remove the export or delete the symbol if unused internally.',
             steps: [
               'Verify the symbol is not used via dynamic imports or runtime reflection.',
               'Remove the export keyword, or delete the symbol entirely if also unused locally.',
               'Re-run scan to confirm finding is resolved.',
             ],
           },
-          impact: 'Dead exports bloat the public API surface and confuse contributors.',
+          impact:
+            'Dead exports bloat the public API surface and confuse contributors.',
           tags: ['architecture', 'dead-code', 'semantic'],
-          lspHints: [{
-            tool: 'lspFindReferences',
-            symbolName: name,
-            lineHint: info.lineStart,
-            file: profile.file,
-            expectedResult: 'zero references confirms dead export',
-          }],
+          lspHints: [
+            {
+              tool: 'lspFindReferences',
+              symbolName: name,
+              lineHint: info.lineStart,
+              file: profile.file,
+              expectedResult: 'zero references confirms dead export',
+            },
+          ],
         });
       }
     }
@@ -52,37 +55,51 @@ export function detectSemanticDeadExports(
 
 export function detectOverAbstraction(
   ctx: SemanticContext,
-  profiles: SemanticProfile[],
+  profiles: SemanticProfile[]
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
-  const interfaceImplCounts = new Map<string, { files: Set<string>; line: number; file: string }>();
+  const interfaceImplCounts = new Map<
+    string,
+    { files: Set<string>; line: number; file: string }
+  >();
 
   for (const profile of profiles) {
-    const sourceFile = ctx.program.getSourceFile(path.resolve(ctx.root, profile.file));
+    const sourceFile = ctx.program.getSourceFile(
+      path.resolve(ctx.root, profile.file)
+    );
     if (!sourceFile) continue;
 
     const visit = (node: ts.Node): void => {
       if (ts.isInterfaceDeclaration(node) && node.name) {
         const name = node.name.text;
-        const line = sourceFile!.getLineAndCharacterOfPosition(node.getStart(sourceFile!)).line + 1;
+        const line =
+          sourceFile!.getLineAndCharacterOfPosition(node.getStart(sourceFile!))
+            .line + 1;
 
         const impls = ctx.service.getImplementationAtPosition(
           path.resolve(ctx.root, profile.file),
-          node.name.getStart(sourceFile!),
+          node.name.getStart(sourceFile!)
         );
 
         const implFiles = new Set<string>();
         if (impls) {
           for (const impl of impls) {
             const implFile = impl.fileName;
-            if (implFile !== path.resolve(ctx.root, profile.file) || impl.textSpan.start !== node.getStart(sourceFile!)) {
+            if (
+              implFile !== path.resolve(ctx.root, profile.file) ||
+              impl.textSpan.start !== node.getStart(sourceFile!)
+            ) {
               implFiles.add(implFile);
             }
           }
         }
 
         if (!interfaceImplCounts.has(name)) {
-          interfaceImplCounts.set(name, { files: new Set(), line, file: profile.file });
+          interfaceImplCounts.set(name, {
+            files: new Set(),
+            line,
+            file: profile.file,
+          });
         }
         const entry = interfaceImplCounts.get(name)!;
         for (const f of implFiles) entry.files.add(f);
@@ -106,22 +123,27 @@ export function detectOverAbstraction(
         reason: `Interface "${name}" is implemented only by one class in "${relImpl}". The abstraction layer adds complexity without enabling polymorphism.`,
         files: [info.file, relImpl],
         suggestedFix: {
-          strategy: 'Inline the interface into the concrete class or keep it only if future implementors are planned.',
+          strategy:
+            'Inline the interface into the concrete class or keep it only if future implementors are planned.',
           steps: [
             'Evaluate whether the interface is needed for testing (mocking) or future extensibility.',
             'If not, merge the interface declaration into the concrete class.',
             'Update consumers to depend on the concrete class directly.',
           ],
         },
-        impact: 'Over-abstraction adds indirection without polymorphic benefit, increasing cognitive load.',
+        impact:
+          'Over-abstraction adds indirection without polymorphic benefit, increasing cognitive load.',
         tags: ['architecture', 'abstraction', 'semantic'],
-        lspHints: [{
-          tool: 'lspFindReferences',
-          symbolName: name,
-          lineHint: info.line,
-          file: info.file,
-          expectedResult: 'exactly 1 implementation confirms over-abstraction',
-        }],
+        lspHints: [
+          {
+            tool: 'lspFindReferences',
+            symbolName: name,
+            lineHint: info.line,
+            file: info.file,
+            expectedResult:
+              'exactly 1 implementation confirms over-abstraction',
+          },
+        ],
       });
     }
   }
@@ -130,7 +152,7 @@ export function detectOverAbstraction(
 }
 
 export function detectConcreteDependency(
-  profiles: SemanticProfile[],
+  profiles: SemanticProfile[]
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
 
@@ -146,22 +168,27 @@ export function detectConcreteDependency(
         reason: `Module imports concrete class "${imp.name}" from "${imp.targetFile}" instead of an interface or abstract class. This violates the Dependency Inversion Principle (DIP).`,
         files: [profile.file, imp.targetFile],
         suggestedFix: {
-          strategy: 'Depend on an interface or abstract class instead of the concrete implementation.',
+          strategy:
+            'Depend on an interface or abstract class instead of the concrete implementation.',
           steps: [
             'Extract an interface from the concrete class covering the methods used by this module.',
             'Update imports to reference the interface instead of the concrete class.',
             'Use dependency injection to provide the concrete implementation at runtime.',
           ],
         },
-        impact: 'Concrete dependencies make modules harder to test and tightly coupled to implementation details.',
+        impact:
+          'Concrete dependencies make modules harder to test and tightly coupled to implementation details.',
         tags: ['architecture', 'dip', 'coupling', 'semantic'],
-        lspHints: [{
-          tool: 'lspGotoDefinition',
-          symbolName: imp.name,
-          lineHint: imp.lineStart,
-          file: profile.file,
-          expectedResult: 'resolves to concrete class (not interface/abstract)',
-        }],
+        lspHints: [
+          {
+            tool: 'lspGotoDefinition',
+            symbolName: imp.name,
+            lineHint: imp.lineStart,
+            file: profile.file,
+            expectedResult:
+              'resolves to concrete class (not interface/abstract)',
+          },
+        ],
       });
     }
   }
@@ -171,26 +198,34 @@ export function detectConcreteDependency(
 
 export function detectCircularTypeDependency(
   ctx: SemanticContext,
-  profiles: SemanticProfile[],
+  profiles: SemanticProfile[]
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
   const typeGraph = new Map<string, Set<string>>();
 
   for (const profile of profiles) {
-    const sourceFile = ctx.program.getSourceFile(path.resolve(ctx.root, profile.file));
+    const sourceFile = ctx.program.getSourceFile(
+      path.resolve(ctx.root, profile.file)
+    );
     if (!sourceFile) continue;
 
     const fileTypes = new Set<string>();
     const fileTypeRefs = new Map<string, Set<string>>();
 
     const visit = (node: ts.Node): void => {
-      if ((ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) && node.name) {
+      if (
+        (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) &&
+        node.name
+      ) {
         const typeName = `${profile.file}::${node.name.text}`;
         fileTypes.add(typeName);
         const refs = new Set<string>();
 
         const collectRefs = (child: ts.Node): void => {
-          if (ts.isTypeReferenceNode(child) && ts.isIdentifier(child.typeName)) {
+          if (
+            ts.isTypeReferenceNode(child) &&
+            ts.isIdentifier(child.typeName)
+          ) {
             const refName = child.typeName.text;
             const sym = ctx.checker.getSymbolAtLocation(child.typeName);
             if (sym) {
@@ -237,18 +272,20 @@ export function detectCircularTypeDependency(
             file,
             lineStart: 1,
             lineEnd: 1,
-            title: `Circular type dependency: ${cycle.map((c) => c.split('::')[1]).join(' → ')}`,
-            reason: `Type-level circular dependency detected: ${cycle.map((c) => c.split('::')[1]).join(' → ')} → ${cycle[0].split('::')[1]}. Types reference each other creating a cycle.`,
-            files: [...new Set(cycle.map((c) => c.split('::')[0]))],
+            title: `Circular type dependency: ${cycle.map(c => c.split('::')[1]).join(' → ')}`,
+            reason: `Type-level circular dependency detected: ${cycle.map(c => c.split('::')[1]).join(' → ')} → ${cycle[0].split('::')[1]}. Types reference each other creating a cycle.`,
+            files: [...new Set(cycle.map(c => c.split('::')[0]))],
             suggestedFix: {
-              strategy: 'Break the type cycle by extracting shared type definitions.',
+              strategy:
+                'Break the type cycle by extracting shared type definitions.',
               steps: [
                 'Identify the minimal set of type properties causing the cycle.',
                 'Extract shared types to a dedicated types file that both sides can import.',
                 'Replace direct type references with the shared type.',
               ],
             },
-            impact: 'Circular type dependencies make types harder to understand, refactor, and can cause issues with type inference.',
+            impact:
+              'Circular type dependencies make types harder to understand, refactor, and can cause issues with type inference.',
             tags: ['architecture', 'types', 'cycle', 'semantic'],
           });
         }
@@ -276,9 +313,8 @@ export function detectCircularTypeDependency(
   return findings;
 }
 
-
 export function detectUnusedParameters(
-  profiles: SemanticProfile[],
+  profiles: SemanticProfile[]
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
 
@@ -294,22 +330,26 @@ export function detectUnusedParameters(
         reason: `Parameter "${param.paramName}" in function "${param.functionName}" is never referenced in the function body (confirmed via semantic analysis).`,
         files: [profile.file],
         suggestedFix: {
-          strategy: 'Remove the parameter or prefix with underscore to indicate intentional non-use.',
+          strategy:
+            'Remove the parameter or prefix with underscore to indicate intentional non-use.',
           steps: [
             'Check if the parameter is required by an interface or callback signature.',
             'If not required, remove it and update all call sites.',
             'If required by contract, prefix with _ (e.g. _unused) to signal intent.',
           ],
         },
-        impact: 'Unused parameters add noise to function signatures and confuse callers about what the function actually needs.',
+        impact:
+          'Unused parameters add noise to function signatures and confuse callers about what the function actually needs.',
         tags: ['code-quality', 'parameters', 'semantic'],
-        lspHints: [{
-          tool: 'lspFindReferences',
-          symbolName: param.paramName,
-          lineHint: param.lineStart,
-          file: profile.file,
-          expectedResult: 'zero non-declaration references confirms unused',
-        }],
+        lspHints: [
+          {
+            tool: 'lspFindReferences',
+            symbolName: param.paramName,
+            lineHint: param.lineStart,
+            file: profile.file,
+            expectedResult: 'zero non-declaration references confirms unused',
+          },
+        ],
       });
     }
   }
@@ -319,7 +359,7 @@ export function detectUnusedParameters(
 
 export function detectDeepOverrideChain(
   profiles: SemanticProfile[],
-  threshold: number = 3,
+  threshold: number = 3
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
 
@@ -336,14 +376,16 @@ export function detectDeepOverrideChain(
           reason: `Method "${chain.methodName}" in class "${chain.className}" overrides a method ${chain.depth} levels up in the inheritance chain (threshold: ${threshold}).`,
           files: [profile.file],
           suggestedFix: {
-            strategy: 'Reduce override depth by flattening the class hierarchy or using the template method pattern.',
+            strategy:
+              'Reduce override depth by flattening the class hierarchy or using the template method pattern.',
             steps: [
               'Identify if intermediate overrides are necessary or if they just pass through.',
               'Consider extracting the behavior into a strategy or template method.',
               'Flatten unnecessary intermediate classes.',
             ],
           },
-          impact: 'Deep override chains make method behavior unpredictable — understanding what runs requires tracing through many classes.',
+          impact:
+            'Deep override chains make method behavior unpredictable — understanding what runs requires tracing through many classes.',
           tags: ['code-quality', 'inheritance', 'override', 'semantic'],
         });
       }
@@ -354,7 +396,7 @@ export function detectDeepOverrideChain(
 }
 
 export function detectInterfaceCompliance(
-  profiles: SemanticProfile[],
+  profiles: SemanticProfile[]
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
 
@@ -379,22 +421,34 @@ export function detectInterfaceCompliance(
           reason: `Class "${impl.className}" implements "${impl.interfaceName}" with issues: ${issues.join('; ')}.`,
           files: [impl.classFile],
           suggestedFix: {
-            strategy: 'Fix the implementation to fully satisfy the interface contract.',
+            strategy:
+              'Fix the implementation to fully satisfy the interface contract.',
             steps: [
-              ...(impl.missingMembers.length > 0 ? [`Implement missing members: ${impl.missingMembers.join(', ')}.`] : []),
-              ...(impl.anycastMembers.length > 0 ? [`Replace \`any\` types with proper types for: ${impl.anycastMembers.join(', ')}.`] : []),
+              ...(impl.missingMembers.length > 0
+                ? [
+                    `Implement missing members: ${impl.missingMembers.join(', ')}.`,
+                  ]
+                : []),
+              ...(impl.anycastMembers.length > 0
+                ? [
+                    `Replace \`any\` types with proper types for: ${impl.anycastMembers.join(', ')}.`,
+                  ]
+                : []),
               'Enable strict type checking to catch these at compile time.',
             ],
           },
-          impact: 'Incomplete interface implementations create runtime surprises and defeat the purpose of type contracts.',
+          impact:
+            'Incomplete interface implementations create runtime surprises and defeat the purpose of type contracts.',
           tags: ['code-quality', 'types', 'interface', 'semantic'],
-          lspHints: [{
-            tool: 'lspGotoDefinition',
-            symbolName: impl.interfaceName,
-            lineHint: impl.classLine,
-            file: impl.classFile,
-            expectedResult: 'interface definition showing expected contract',
-          }],
+          lspHints: [
+            {
+              tool: 'lspGotoDefinition',
+              symbolName: impl.interfaceName,
+              lineHint: impl.classLine,
+              file: impl.classFile,
+              expectedResult: 'interface definition showing expected contract',
+            },
+          ],
         });
       }
     }
@@ -403,9 +457,8 @@ export function detectInterfaceCompliance(
   return findings;
 }
 
-
 export function detectUnusedImports(
-  profiles: SemanticProfile[],
+  profiles: SemanticProfile[]
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
 
@@ -428,15 +481,18 @@ export function detectUnusedImports(
             'If part of a multi-import, remove only the unused symbol.',
           ],
         },
-        impact: 'Unused imports slow down IDE performance, increase bundle size (if not tree-shaken), and add noise.',
+        impact:
+          'Unused imports slow down IDE performance, increase bundle size (if not tree-shaken), and add noise.',
         tags: ['dead-code', 'imports', 'semantic'],
-        lspHints: [{
-          tool: 'lspFindReferences',
-          symbolName: imp.name,
-          lineHint: imp.lineStart,
-          file: profile.file,
-          expectedResult: 'zero usage references confirms unused import',
-        }],
+        lspHints: [
+          {
+            tool: 'lspFindReferences',
+            symbolName: imp.name,
+            lineHint: imp.lineStart,
+            file: profile.file,
+            expectedResult: 'zero usage references confirms unused import',
+          },
+        ],
       });
     }
   }
@@ -446,24 +502,27 @@ export function detectUnusedImports(
 
 export function detectOrphanImplementation(
   ctx: SemanticContext,
-  profiles: SemanticProfile[],
+  profiles: SemanticProfile[]
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
 
   for (const profile of profiles) {
-    const sourceFile = ctx.program.getSourceFile(path.resolve(ctx.root, profile.file));
+    const sourceFile = ctx.program.getSourceFile(
+      path.resolve(ctx.root, profile.file)
+    );
     if (!sourceFile) continue;
 
     const visit = (node: ts.Node): void => {
       if (ts.isClassDeclaration(node) && node.name) {
-        const hasHeritage = node.heritageClauses && node.heritageClauses.length > 0;
+        const hasHeritage =
+          node.heritageClauses && node.heritageClauses.length > 0;
         if (hasHeritage) {
           ts.forEachChild(node, visit);
           return;
         }
 
         const isExported = node.modifiers?.some(
-          (m) => m.kind === ts.SyntaxKind.ExportKeyword,
+          m => m.kind === ts.SyntaxKind.ExportKeyword
         );
         if (!isExported) {
           ts.forEachChild(node, visit);
@@ -472,7 +531,7 @@ export function detectOrphanImplementation(
 
         const refs = ctx.service.findReferences(
           path.resolve(ctx.root, profile.file),
-          node.name.getStart(sourceFile!),
+          node.name.getStart(sourceFile!)
         );
 
         let externalUsage = 0;
@@ -490,7 +549,10 @@ export function detectOrphanImplementation(
         }
 
         if (externalUsage === 0) {
-          const line = sourceFile!.getLineAndCharacterOfPosition(node.getStart(sourceFile!)).line + 1;
+          const line =
+            sourceFile!.getLineAndCharacterOfPosition(
+              node.getStart(sourceFile!)
+            ).line + 1;
           findings.push({
             severity: 'medium',
             category: 'orphan-implementation',
@@ -501,22 +563,26 @@ export function detectOrphanImplementation(
             reason: `Exported class "${node.name.text}" has no external references and does not implement any interface or extend any base class. It may be unreachable dead code.`,
             files: [profile.file],
             suggestedFix: {
-              strategy: 'Verify the class is needed and wire it in, or remove it.',
+              strategy:
+                'Verify the class is needed and wire it in, or remove it.',
               steps: [
                 'Check if the class is used via dynamic imports, reflection, or DI containers.',
                 'If unused, remove the class and its export.',
                 'If needed, wire it into the dependency graph via an interface or direct import.',
               ],
             },
-            impact: 'Orphan implementations waste maintenance effort and bloat the codebase.',
+            impact:
+              'Orphan implementations waste maintenance effort and bloat the codebase.',
             tags: ['dead-code', 'class', 'orphan', 'semantic'],
-            lspHints: [{
-              tool: 'lspFindReferences',
-              symbolName: node.name.text,
-              lineHint: line,
-              file: profile.file,
-              expectedResult: 'zero external references confirms orphan',
-            }],
+            lspHints: [
+              {
+                tool: 'lspFindReferences',
+                symbolName: node.name.text,
+                lineHint: line,
+                file: profile.file,
+                expectedResult: 'zero external references confirms orphan',
+              },
+            ],
           });
         }
       }
@@ -528,10 +594,9 @@ export function detectOrphanImplementation(
   return findings;
 }
 
-
 export function detectShotgunSurgery(
   profiles: SemanticProfile[],
-  threshold: number = 8,
+  threshold: number = 8
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
 
@@ -548,7 +613,8 @@ export function detectShotgunSurgery(
           reason: `Exported symbol "${name}" is referenced from ${info.uniqueFiles} unique files (threshold: ${threshold}). Any change to this symbol forces coordinated edits across all consumers.`,
           files: [profile.file],
           suggestedFix: {
-            strategy: 'Reduce coupling by introducing a facade, adapter, or event-based decoupling.',
+            strategy:
+              'Reduce coupling by introducing a facade, adapter, or event-based decoupling.',
             steps: [
               'Identify the consumers and group them by usage pattern.',
               'Extract a stable interface that consumers depend on instead of the implementation.',
@@ -556,15 +622,18 @@ export function detectShotgunSurgery(
               'If the symbol is a utility, ensure it has a single, well-defined responsibility.',
             ],
           },
-          impact: 'High fan-out symbols are the #1 source of cascading changes during refactoring.',
+          impact:
+            'High fan-out symbols are the #1 source of cascading changes during refactoring.',
           tags: ['architecture', 'coupling', 'change-risk', 'semantic'],
-          lspHints: [{
-            tool: 'lspFindReferences',
-            symbolName: name,
-            lineHint: info.lineStart,
-            file: profile.file,
-            expectedResult: `${info.uniqueFiles}+ unique referencing files confirms shotgun surgery risk`,
-          }],
+          lspHints: [
+            {
+              tool: 'lspFindReferences',
+              symbolName: name,
+              lineHint: info.lineStart,
+              file: profile.file,
+              expectedResult: `${info.uniqueFiles}+ unique referencing files confirms shotgun surgery risk`,
+            },
+          ],
         });
       }
     }
@@ -573,9 +642,8 @@ export function detectShotgunSurgery(
   return findings;
 }
 
-
 export function detectMoveToCaller(
-  profiles: SemanticProfile[],
+  profiles: SemanticProfile[]
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
 
@@ -600,15 +668,19 @@ export function detectMoveToCaller(
               'If the symbol is large, keep it but remove the export keyword.',
             ],
           },
-          impact: 'Single-consumer exports add unnecessary module surface and indirection.',
+          impact:
+            'Single-consumer exports add unnecessary module surface and indirection.',
           tags: ['dead-code', 'module-surface', 'refactoring', 'semantic'],
-          lspHints: [{
-            tool: 'lspFindReferences',
-            symbolName: name,
-            lineHint: info.lineStart,
-            file: profile.file,
-            expectedResult: 'exactly 1 referencing file confirms single-consumer',
-          }],
+          lspHints: [
+            {
+              tool: 'lspFindReferences',
+              symbolName: name,
+              lineHint: info.lineStart,
+              file: profile.file,
+              expectedResult:
+                'exactly 1 referencing file confirms single-consumer',
+            },
+          ],
         });
       }
     }
@@ -617,9 +689,8 @@ export function detectMoveToCaller(
   return findings;
 }
 
-
 export function detectNarrowableType(
-  profiles: SemanticProfile[],
+  profiles: SemanticProfile[]
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
 
@@ -642,15 +713,18 @@ export function detectNarrowableType(
             'If the function is part of a public API, consider keeping the broad type with a narrower overload.',
           ],
         },
-        impact: 'Overly broad parameter types weaken type checking — narrowing catches bugs at compile time.',
+        impact:
+          'Overly broad parameter types weaken type checking — narrowing catches bugs at compile time.',
         tags: ['code-quality', 'types', 'refactoring', 'semantic'],
-        lspHints: [{
-          tool: 'lspCallHierarchy',
-          symbolName: param.functionName,
-          lineHint: param.lineStart,
-          file: profile.file,
-          expectedResult: `all incoming calls pass ${param.narrowedType}`,
-        }],
+        lspHints: [
+          {
+            tool: 'lspCallHierarchy',
+            symbolName: param.functionName,
+            lineHint: param.lineStart,
+            file: profile.file,
+            expectedResult: `all incoming calls pass ${param.narrowedType}`,
+          },
+        ],
       });
     }
   }
@@ -658,11 +732,10 @@ export function detectNarrowableType(
   return findings;
 }
 
-
 export function runSemanticDetectors(
   ctx: SemanticContext,
   profiles: SemanticProfile[],
-  options: { overrideChainThreshold?: number; shotgunThreshold?: number } = {},
+  options: { overrideChainThreshold?: number; shotgunThreshold?: number } = {}
 ): FindingDraft[] {
   const all: FindingDraft[] = [];
 
@@ -670,7 +743,9 @@ export function runSemanticDetectors(
   all.push(...detectConcreteDependency(profiles));
   all.push(...detectCircularTypeDependency(ctx, profiles));
   all.push(...detectUnusedParameters(profiles));
-  all.push(...detectDeepOverrideChain(profiles, options.overrideChainThreshold ?? 3));
+  all.push(
+    ...detectDeepOverrideChain(profiles, options.overrideChainThreshold ?? 3)
+  );
   all.push(...detectInterfaceCompliance(profiles));
   all.push(...detectUnusedImports(profiles));
   all.push(...detectOrphanImplementation(ctx, profiles));

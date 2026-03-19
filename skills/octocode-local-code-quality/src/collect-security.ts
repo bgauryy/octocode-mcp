@@ -14,18 +14,24 @@ const SECRET_PATTERNS = [
   /auth[_-]?token\s*[:=]\s*['"`]/i,
 ];
 
-const SQL_KEYWORDS = /\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b/i;
+const SQL_KEYWORDS =
+  /\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b/i;
 
 /** Strings that look like placeholders, not real secrets */
 const PLACEHOLDER_PATTERN = /^(YOUR_|REPLACE_ME|<[a-z_-]+>|\$\{|{{)/i;
 /** UUID pattern: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx */
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isInsideRegexLiteral(node: ts.Node): boolean {
   let current: ts.Node | undefined = node.parent;
   while (current) {
     if (ts.isRegularExpressionLiteral(current)) return true;
-    if (ts.isNewExpression(current) && current.expression.getText(node.getSourceFile()) === 'RegExp') return true;
+    if (
+      ts.isNewExpression(current) &&
+      current.expression.getText(node.getSourceFile()) === 'RegExp'
+    )
+      return true;
     current = current.parent;
   }
   return false;
@@ -37,7 +43,13 @@ function isPlaceholderOrUuid(value: string): boolean {
 
 /** Skip strings inside finding metadata fields (suggestedFix, reason, impact, etc.) */
 const METADATA_PROP_NAMES = new Set([
-  'suggestedFix', 'strategy', 'steps', 'reason', 'impact', 'expectedResult', 'title',
+  'suggestedFix',
+  'strategy',
+  'steps',
+  'reason',
+  'impact',
+  'expectedResult',
+  'title',
 ]);
 
 function isInsideMetadataProperty(node: ts.Node): boolean {
@@ -61,54 +73,105 @@ function computeShannonEntropy(s: string): number {
   return entropy;
 }
 
-export function collectSecurityData(sourceFile: ts.SourceFile, fileRelative: string, fileEntry: FileEntry): void {
+export function collectSecurityData(
+  sourceFile: ts.SourceFile,
+  fileRelative: string,
+  fileEntry: FileEntry
+): void {
   const evalUsages: CodeLocation[] = [];
   const unsafeHtmlAssignments: CodeLocation[] = [];
   const suspiciousStrings: SuspiciousString[] = [];
-  const regexLiterals: Array<{ lineStart: number; lineEnd: number; pattern: string }> = [];
+  const regexLiterals: Array<{
+    lineStart: number;
+    lineEnd: number;
+    pattern: string;
+  }> = [];
 
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node)) {
       const text = node.expression.getText(sourceFile);
       if (text === 'eval' || text === 'Function') {
         const loc = getLineAndCharacter(sourceFile, node);
-        evalUsages.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+        evalUsages.push({
+          file: fileRelative,
+          lineStart: loc.lineStart,
+          lineEnd: loc.lineEnd,
+        });
       }
       if (text === 'new Function') {
         const loc = getLineAndCharacter(sourceFile, node);
-        evalUsages.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+        evalUsages.push({
+          file: fileRelative,
+          lineStart: loc.lineStart,
+          lineEnd: loc.lineEnd,
+        });
       }
-      if ((text === 'setTimeout' || text === 'setInterval') && node.arguments.length > 0) {
+      if (
+        (text === 'setTimeout' || text === 'setInterval') &&
+        node.arguments.length > 0
+      ) {
         const firstArg = node.arguments[0];
-        if (ts.isStringLiteral(firstArg) || ts.isNoSubstitutionTemplateLiteral(firstArg)) {
+        if (
+          ts.isStringLiteral(firstArg) ||
+          ts.isNoSubstitutionTemplateLiteral(firstArg)
+        ) {
           const loc = getLineAndCharacter(sourceFile, node);
-          evalUsages.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+          evalUsages.push({
+            file: fileRelative,
+            lineStart: loc.lineStart,
+            lineEnd: loc.lineEnd,
+          });
         }
       }
       if (text === 'document.write' || text === 'document.writeln') {
         const loc = getLineAndCharacter(sourceFile, node);
-        unsafeHtmlAssignments.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+        unsafeHtmlAssignments.push({
+          file: fileRelative,
+          lineStart: loc.lineStart,
+          lineEnd: loc.lineEnd,
+        });
       }
     }
 
-    if (ts.isNewExpression(node) && node.expression.getText(sourceFile) === 'Function') {
+    if (
+      ts.isNewExpression(node) &&
+      node.expression.getText(sourceFile) === 'Function'
+    ) {
       const loc = getLineAndCharacter(sourceFile, node);
-      evalUsages.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+      evalUsages.push({
+        file: fileRelative,
+        lineStart: loc.lineStart,
+        lineEnd: loc.lineEnd,
+      });
     }
 
-    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    ) {
       if (ts.isPropertyAccessExpression(node.left)) {
         const prop = node.left.name.getText(sourceFile);
         if (prop === 'innerHTML' || prop === 'outerHTML') {
           const loc = getLineAndCharacter(sourceFile, node);
-          unsafeHtmlAssignments.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+          unsafeHtmlAssignments.push({
+            file: fileRelative,
+            lineStart: loc.lineStart,
+            lineEnd: loc.lineEnd,
+          });
         }
       }
     }
 
-    if (ts.isJsxAttribute(node) && node.name.getText(sourceFile) === 'dangerouslySetInnerHTML') {
+    if (
+      ts.isJsxAttribute(node) &&
+      node.name.getText(sourceFile) === 'dangerouslySetInnerHTML'
+    ) {
       const loc = getLineAndCharacter(sourceFile, node);
-      unsafeHtmlAssignments.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+      unsafeHtmlAssignments.push({
+        file: fileRelative,
+        lineStart: loc.lineStart,
+        lineEnd: loc.lineEnd,
+      });
     }
 
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
@@ -118,13 +181,24 @@ export function collectSecurityData(sourceFile: ts.SourceFile, fileRelative: str
           for (const pattern of SECRET_PATTERNS) {
             if (pattern.test(value)) {
               const loc = getLineAndCharacter(sourceFile, node);
-              suspiciousStrings.push({ lineStart: loc.lineStart, lineEnd: loc.lineEnd, kind: 'hardcoded-secret', snippet: value.slice(0, 40), context: 'literal' });
+              suspiciousStrings.push({
+                lineStart: loc.lineStart,
+                lineEnd: loc.lineEnd,
+                kind: 'hardcoded-secret',
+                snippet: value.slice(0, 40),
+                context: 'literal',
+              });
               break;
             }
           }
           if (value.length >= 20 && computeShannonEntropy(value) > 4.5) {
             const loc = getLineAndCharacter(sourceFile, node);
-            suspiciousStrings.push({ lineStart: loc.lineStart, lineEnd: loc.lineEnd, kind: 'hardcoded-secret', context: 'literal' });
+            suspiciousStrings.push({
+              lineStart: loc.lineStart,
+              lineEnd: loc.lineEnd,
+              kind: 'hardcoded-secret',
+              context: 'literal',
+            });
           }
         }
       }
@@ -135,7 +209,13 @@ export function collectSecurityData(sourceFile: ts.SourceFile, fileRelative: str
       for (const pattern of SECRET_PATTERNS) {
         if (pattern.test(regexText)) {
           const loc = getLineAndCharacter(sourceFile, node);
-          suspiciousStrings.push({ lineStart: loc.lineStart, lineEnd: loc.lineEnd, kind: 'hardcoded-secret', snippet: regexText.slice(0, 40), context: 'regex-definition' });
+          suspiciousStrings.push({
+            lineStart: loc.lineStart,
+            lineEnd: loc.lineEnd,
+            kind: 'hardcoded-secret',
+            snippet: regexText.slice(0, 40),
+            context: 'regex-definition',
+          });
           break;
         }
       }
@@ -146,7 +226,12 @@ export function collectSecurityData(sourceFile: ts.SourceFile, fileRelative: str
         const fullText = node.getText(sourceFile);
         if (SQL_KEYWORDS.test(fullText) && node.templateSpans.length > 0) {
           const loc = getLineAndCharacter(sourceFile, node);
-          suspiciousStrings.push({ lineStart: loc.lineStart, lineEnd: loc.lineEnd, kind: 'sql-injection', snippet: fullText.slice(0, 60) });
+          suspiciousStrings.push({
+            lineStart: loc.lineStart,
+            lineEnd: loc.lineEnd,
+            kind: 'sql-injection',
+            snippet: fullText.slice(0, 60),
+          });
         }
       }
     }
@@ -154,7 +239,11 @@ export function collectSecurityData(sourceFile: ts.SourceFile, fileRelative: str
     if (ts.isRegularExpressionLiteral(node)) {
       const pattern = node.text;
       const loc = getLineAndCharacter(sourceFile, node);
-      regexLiterals.push({ lineStart: loc.lineStart, lineEnd: loc.lineEnd, pattern });
+      regexLiterals.push({
+        lineStart: loc.lineStart,
+        lineEnd: loc.lineEnd,
+        pattern,
+      });
     }
 
     ts.forEachChild(node, visit);
@@ -166,4 +255,3 @@ export function collectSecurityData(sourceFile: ts.SourceFile, fileRelative: str
   fileEntry.suspiciousStrings = suspiciousStrings;
   fileEntry.regexLiterals = regexLiterals;
 }
-

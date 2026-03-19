@@ -17,7 +17,7 @@
     "octocode"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node minify-scripts.mjs",
     "build:watch": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -29,7 +29,9 @@
     "analyze:graph": "node scripts/run-scan.js --graph --out .octocode/scan/scan.json",
     "search": "node scripts/ast-search.js",
     "search:json": "node scripts/ast-search.js --json",
-    "search:presets": "node scripts/ast-search.js --list-presets"
+    "search:presets": "node scripts/ast-search.js --list-presets",
+    "search:trees": "node scripts/ast-tree-search.js",
+    "search:trees:json": "node scripts/ast-tree-search.js --json"
   },
   "dependencies": {
     "@ast-grep/napi": "^0.42.0",
@@ -42,6 +44,7 @@
     "@types/node": "^20.0.0",
     "eslint": "^9.27.0",
     "eslint-plugin-import": "^2.32.0",
+    "terser": "^5.46.1",
     "typescript-eslint": "^8.32.0",
     "vitest": "^4.1.0"
   },

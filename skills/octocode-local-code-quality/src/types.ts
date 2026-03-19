@@ -4,11 +4,7 @@ import * as ts from 'typescript';
 
 import type Parser from 'tree-sitter';
 
-
-
-
 export type SyntaxNode = Parser.SyntaxNode;
-
 
 export interface AnalysisOptions {
   minFunctionStatements: number;
@@ -422,7 +418,12 @@ export interface SuspiciousString {
   lineEnd: number;
   kind: 'hardcoded-secret' | 'sql-injection' | 'secret-assignment';
   snippet?: string;
-  context?: 'literal' | 'regex-definition' | 'template' | 'comment' | 'error-message';
+  context?:
+    | 'literal'
+    | 'regex-definition'
+    | 'template'
+    | 'comment'
+    | 'error-message';
 }
 
 export interface TimerCall {
@@ -440,13 +441,26 @@ export interface TestBlock {
 }
 
 export interface FocusedTestCall {
-  kind: 'it.only' | 'test.only' | 'describe.only' | 'it.skip' | 'test.skip' | 'describe.skip' | 'it.todo' | 'test.todo';
+  kind:
+    | 'it.only'
+    | 'test.only'
+    | 'describe.only'
+    | 'it.skip'
+    | 'test.skip'
+    | 'describe.skip'
+    | 'it.todo'
+    | 'test.todo';
   lineStart: number;
   lineEnd: number;
 }
 
 export interface TimerControlCall {
-  kind: 'jest.useFakeTimers' | 'jest.useRealTimers' | 'vi.useFakeTimers' | 'vi.useRealTimers' | 'other';
+  kind:
+    | 'jest.useFakeTimers'
+    | 'jest.useRealTimers'
+    | 'vi.useFakeTimers'
+    | 'vi.useRealTimers'
+    | 'other';
   lineStart: number;
   lineEnd: number;
 }
@@ -459,7 +473,10 @@ export interface MockControlCall extends CodeLocation {
 export interface TestProfile {
   testBlocks: TestBlock[];
   mockCalls: CodeLocation[];
-  setupCalls: Array<{ kind: 'beforeAll' | 'beforeEach' | 'afterAll' | 'afterEach'; lineStart: number }>;
+  setupCalls: Array<{
+    kind: 'beforeAll' | 'beforeEach' | 'afterAll' | 'afterEach';
+    lineStart: number;
+  }>;
   mutableStateDecls: CodeLocation[];
   focusedCalls: FocusedTestCall[];
   timerControls: TimerControlCall[];
@@ -478,7 +495,6 @@ export interface InputSourceInfo {
   callsWithInputArgs: Array<{ callee: string; lineStart: number }>;
   paramConfidence: 'high' | 'medium' | 'low';
 }
-
 
 export type TopLevelEffectKind =
   | 'sync-io'
@@ -543,13 +559,30 @@ export interface FileEntry {
   switchesWithoutDefault?: CodeLocation[];
   anyCount?: number;
   magicNumbers?: MagicNumberEntry[];
-  typeAssertionEscapes?: { asAny: CodeLocation[]; doubleAssertion: CodeLocation[]; nonNull: CodeLocation[] };
-  asyncWithoutAwait?: Array<{ name: string; lineStart: number; lineEnd: number }>;
-  unprotectedAsync?: Array<{ name: string; awaitCount: number; lineStart: number; lineEnd: number }>;
+  typeAssertionEscapes?: {
+    asAny: CodeLocation[];
+    doubleAssertion: CodeLocation[];
+    nonNull: CodeLocation[];
+  };
+  asyncWithoutAwait?: Array<{
+    name: string;
+    lineStart: number;
+    lineEnd: number;
+  }>;
+  unprotectedAsync?: Array<{
+    name: string;
+    awaitCount: number;
+    lineStart: number;
+    lineEnd: number;
+  }>;
   evalUsages?: CodeLocation[];
   unsafeHtmlAssignments?: CodeLocation[];
   suspiciousStrings?: SuspiciousString[];
-  regexLiterals?: Array<{ lineStart: number; lineEnd: number; pattern: string }>;
+  regexLiterals?: Array<{
+    lineStart: number;
+    lineEnd: number;
+    pattern: string;
+  }>;
   awaitInLoopLocations?: CodeLocation[];
   syncIoCalls?: Array<{ name: string; lineStart: number; lineEnd: number }>;
   timerCalls?: TimerCall[];
@@ -561,7 +594,13 @@ export interface FileEntry {
   treeSitterError?: string;
   parserFallback?: string;
   topLevelEffects?: TopLevelEffect[];
-  prototypePollutionSites?: Array<{ kind: string; detail: string; lineStart: number; lineEnd: number; guarded: boolean }>;
+  prototypePollutionSites?: Array<{
+    kind: string;
+    detail: string;
+    lineStart: number;
+    lineEnd: number;
+    guarded: boolean;
+  }>;
   effectProfile?: EffectProfile;
   symbolUsageSummary?: SymbolUsageSummary;
   boundaryRoleHints?: BoundaryRoleHint[];
@@ -687,64 +726,132 @@ export const DEFAULT_OPTS: AnalysisOptions = {
 
 export const PILLAR_CATEGORIES: Record<string, string[]> = {
   architecture: [
-    'dependency-cycle', 'dependency-critical-path', 'dependency-test-only',
-    'architecture-sdp-violation', 'high-coupling', 'god-module-coupling',
-    'orphan-module', 'unreachable-module', 'layer-violation', 'low-cohesion',
+    'dependency-cycle',
+    'dependency-critical-path',
+    'dependency-test-only',
+    'architecture-sdp-violation',
+    'high-coupling',
+    'god-module-coupling',
+    'orphan-module',
+    'unreachable-module',
+    'layer-violation',
+    'low-cohesion',
     'mega-folder',
-    'distance-from-main-sequence', 'feature-envy',
+    'distance-from-main-sequence',
+    'feature-envy',
     'untested-critical-code',
-    'over-abstraction', 'concrete-dependency',
+    'over-abstraction',
+    'concrete-dependency',
     'circular-type-dependency',
     'shotgun-surgery',
     'import-side-effect-risk',
-    'cycle-cluster', 'broker-module', 'bridge-module',
-    'package-boundary-chatter', 'startup-risk-hub',
-    'namespace-import', 'commonjs-in-esm', 'export-star-leak', 'mixed-module-format',
+    'cycle-cluster',
+    'broker-module',
+    'bridge-module',
+    'package-boundary-chatter',
+    'startup-risk-hub',
+    'namespace-import',
+    'commonjs-in-esm',
+    'export-star-leak',
+    'mixed-module-format',
   ],
   'code-quality': [
-    'duplicate-function-body', 'duplicate-flow-structure', 'function-optimization',
-    'cognitive-complexity', 'god-module', 'god-function', 'halstead-effort',
-    'low-maintainability', 'excessive-parameters',
-    'unsafe-any', 'empty-catch', 'switch-no-default',
-    'unused-parameter', 'deep-override-chain',
+    'duplicate-function-body',
+    'duplicate-flow-structure',
+    'function-optimization',
+    'cognitive-complexity',
+    'god-module',
+    'god-function',
+    'halstead-effort',
+    'low-maintainability',
+    'excessive-parameters',
+    'unsafe-any',
+    'empty-catch',
+    'switch-no-default',
+    'unused-parameter',
+    'deep-override-chain',
     'interface-compliance',
-    'type-assertion-escape', 'promise-misuse', 'narrowable-type',
+    'type-assertion-escape',
+    'promise-misuse',
+    'narrowable-type',
     'missing-error-boundary',
-    'await-in-loop', 'sync-io', 'uncleared-timer', 'listener-leak-risk',
-    'unbounded-collection', 'similar-function-body',
+    'await-in-loop',
+    'sync-io',
+    'uncleared-timer',
+    'listener-leak-risk',
+    'unbounded-collection',
+    'similar-function-body',
   ],
   'dead-code': [
-    'dead-export', 'dead-re-export', 're-export-duplication',
-    're-export-shadowed', 'unused-npm-dependency', 'package-boundary-violation',
+    'dead-export',
+    'dead-re-export',
+    're-export-duplication',
+    're-export-shadowed',
+    'unused-npm-dependency',
+    'package-boundary-violation',
     'barrel-explosion',
-    'unused-import', 'orphan-implementation', 'move-to-caller',
+    'unused-import',
+    'orphan-implementation',
+    'move-to-caller',
     'semantic-dead-export',
   ],
   security: [
-    'hardcoded-secret', 'eval-usage', 'unsafe-html',
-    'sql-injection-risk', 'unsafe-regex', 'prototype-pollution-risk',
-    'unvalidated-input-sink', 'input-passthrough-risk',
-    'path-traversal-risk', 'command-injection-risk',
+    'hardcoded-secret',
+    'eval-usage',
+    'unsafe-html',
+    'sql-injection-risk',
+    'unsafe-regex',
+    'prototype-pollution-risk',
+    'unvalidated-input-sink',
+    'input-passthrough-risk',
+    'path-traversal-risk',
+    'command-injection-risk',
   ],
   'test-quality': [
-  'low-assertion-density', 'test-no-assertion', 'excessive-mocking',
-    'shared-mutable-state', 'missing-test-cleanup', 'focused-test',
-    'fake-timer-no-restore', 'missing-mock-restoration',
+    'low-assertion-density',
+    'test-no-assertion',
+    'excessive-mocking',
+    'shared-mutable-state',
+    'missing-test-cleanup',
+    'focused-test',
+    'fake-timer-no-restore',
+    'missing-mock-restoration',
   ],
 };
 
 export const ALL_CATEGORIES = new Set(Object.values(PILLAR_CATEGORIES).flat());
 
 export const SEMANTIC_CATEGORIES = new Set([
-  'over-abstraction', 'concrete-dependency',
-    'circular-type-dependency', 'unused-parameter',
-    'deep-override-chain', 'interface-compliance', 'unused-import',
-    'orphan-implementation',
-    'shotgun-surgery', 'move-to-caller', 'narrowable-type',
+  'over-abstraction',
+  'concrete-dependency',
+  'circular-type-dependency',
+  'unused-parameter',
+  'deep-override-chain',
+  'interface-compliance',
+  'unused-import',
+  'orphan-implementation',
+  'shotgun-surgery',
+  'move-to-caller',
+  'narrowable-type',
   'semantic-dead-export',
 ]);
-export const ALLOWED_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
-export const IMPORT_RESOLVE_EXTS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.d.ts'];
+export const ALLOWED_EXTS = new Set([
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+]);
+export const IMPORT_RESOLVE_EXTS = [
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.d.ts',
+];
 
 export const TS_CONTROL_KINDS = new Set<number>([
   ts.SyntaxKind.IfStatement,

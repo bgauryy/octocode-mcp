@@ -15,7 +15,7 @@ describe('collectPrototypePollutionSites', () => {
       }
     `);
     const sites = collectPrototypePollutionSites(sourceFile);
-    expect(sites.some((s) => s.kind === 'object-assign')).toBe(true);
+    expect(sites.some(s => s.kind === 'object-assign')).toBe(true);
   });
 
   it('detects deep merge risk', () => {
@@ -25,7 +25,7 @@ describe('collectPrototypePollutionSites', () => {
       }
     `);
     const sites = collectPrototypePollutionSites(sourceFile);
-    expect(sites.some((s) => s.kind === 'deep-merge')).toBe(true);
+    expect(sites.some(s => s.kind === 'deep-merge')).toBe(true);
   });
 
   it('detects dynamic bracket assignment', () => {
@@ -35,7 +35,7 @@ describe('collectPrototypePollutionSites', () => {
       }
     `);
     const sites = collectPrototypePollutionSites(sourceFile);
-    expect(sites.some((s) => s.kind === 'computed-property-write')).toBe(true);
+    expect(sites.some(s => s.kind === 'computed-property-write')).toBe(true);
   });
 
   it('marks guarded writes when iterating known internal keys', () => {
@@ -47,7 +47,9 @@ describe('collectPrototypePollutionSites', () => {
       }
     `);
     const sites = collectPrototypePollutionSites(sourceFile);
-    const guarded = sites.filter((s) => s.kind === 'computed-property-write' && s.guarded);
+    const guarded = sites.filter(
+      s => s.kind === 'computed-property-write' && s.guarded
+    );
     expect(guarded.length).toBeGreaterThan(0);
   });
 });

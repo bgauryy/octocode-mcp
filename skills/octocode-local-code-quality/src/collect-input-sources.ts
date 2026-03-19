@@ -5,9 +5,11 @@ import { getLineAndCharacter } from './utils.js';
 
 import type { FileEntry, InputSourceInfo } from './types.js';
 
-const HIGH_CONFIDENCE_PARAM = /^(req|request|body|rawBody|formData|payload|query|headers|params)$/i;
+const HIGH_CONFIDENCE_PARAM =
+  /^(req|request|body|rawBody|formData|payload|query|headers|params)$/i;
 const MEDIUM_CONFIDENCE_PARAM = /^(input|event|message)$/i;
-const SOURCE_PARAM_PATTERNS = /^(req|request|body|input|payload|data|params|query|headers|event|message|ctx|context|args|rawBody|formData)/i;
+const SOURCE_PARAM_PATTERNS =
+  /^(req|request|body|input|payload|data|params|query|headers|event|message|ctx|context|args|rawBody|formData)/i;
 
 function getParamConfidence(params: string[]): 'high' | 'medium' | 'low' {
   let hasMedium = false;
@@ -40,10 +42,16 @@ const SINK_CALL_PATTERNS: Array<{ pattern: RegExp; kind: string }> = [
   { pattern: /axios\.(get|post|put|delete|request)/, kind: 'ssrf' },
 ];
 
-const SCHEMA_VALIDATOR_PATTERNS = /\.(validate|parse|safeParse|parseAsync|check|verify)\s*\(/;
-const VALIDATOR_LIB_PATTERNS = /^(z|zod|Joi|yup|ajv|validator|superstruct|io-ts)\./;
+const SCHEMA_VALIDATOR_PATTERNS =
+  /\.(validate|parse|safeParse|parseAsync|check|verify)\s*\(/;
+const VALIDATOR_LIB_PATTERNS =
+  /^(z|zod|Joi|yup|ajv|validator|superstruct|io-ts)\./;
 
-export function collectInputSourceProfile(sourceFile: ts.SourceFile, _fileRelative: string, fileEntry: FileEntry): void {
+export function collectInputSourceProfile(
+  sourceFile: ts.SourceFile,
+  _fileRelative: string,
+  fileEntry: FileEntry
+): void {
   const inputSources: InputSourceInfo[] = [];
 
   const visitFn = (node: ts.Node): void => {
@@ -86,15 +94,25 @@ export function collectInputSourceProfile(sourceFile: ts.SourceFile, _fileRelati
             break;
           }
         }
-        if (SCHEMA_VALIDATOR_PATTERNS.test(callText) || VALIDATOR_LIB_PATTERNS.test(callText)) {
+        if (
+          SCHEMA_VALIDATOR_PATTERNS.test(callText) ||
+          VALIDATOR_LIB_PATTERNS.test(callText)
+        ) {
           hasValidation = true;
         }
         for (const arg of child.arguments) {
           const argText = arg.getText(sourceFile);
           for (const sp of sourceParamSet) {
-            if (argText === sp || argText.startsWith(sp + '.') || argText.startsWith(sp + '[')) {
+            if (
+              argText === sp ||
+              argText.startsWith(sp + '.') ||
+              argText.startsWith(sp + '[')
+            ) {
               const loc = getLineAndCharacter(sourceFile, child);
-              callsWithInputArgs.push({ callee: callText, lineStart: loc.lineStart });
+              callsWithInputArgs.push({
+                callee: callText,
+                lineStart: loc.lineStart,
+              });
               break;
             }
           }
@@ -106,24 +124,38 @@ export function collectInputSourceProfile(sourceFile: ts.SourceFile, _fileRelati
         if (sourceParamSet.has(operand)) hasValidation = true;
       }
 
-      if (ts.isPrefixUnaryExpression(child) && child.operator === ts.SyntaxKind.ExclamationToken) {
+      if (
+        ts.isPrefixUnaryExpression(child) &&
+        child.operator === ts.SyntaxKind.ExclamationToken
+      ) {
         const operand = child.operand.getText(sourceFile);
         if (sourceParamSet.has(operand)) hasValidation = true;
       }
 
       if (ts.isIfStatement(child) || ts.isConditionalExpression(child)) {
-        const cond = ts.isIfStatement(child) ? child.expression : child.condition;
+        const cond = ts.isIfStatement(child)
+          ? child.expression
+          : child.condition;
         const condText = cond.getText(sourceFile);
         for (const sp of sourceParamSet) {
-          if (condText.includes(sp)) { hasValidation = true; break; }
+          if (condText.includes(sp)) {
+            hasValidation = true;
+            break;
+          }
         }
       }
 
-      if (ts.isCallExpression(child) && child.expression.getText(sourceFile).endsWith('instanceof')) {
+      if (
+        ts.isCallExpression(child) &&
+        child.expression.getText(sourceFile).endsWith('instanceof')
+      ) {
         hasValidation = true;
       }
 
-      if (ts.isBinaryExpression(child) && child.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword) {
+      if (
+        ts.isBinaryExpression(child) &&
+        child.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword
+      ) {
         const leftText = child.left.getText(sourceFile);
         if (sourceParamSet.has(leftText)) hasValidation = true;
       }
@@ -135,7 +167,10 @@ export function collectInputSourceProfile(sourceFile: ts.SourceFile, _fileRelati
     if (ts.isTemplateExpression(body) || ts.isBlock(body)) {
       const bodyText = body.getText(sourceFile);
       for (const sp of sourceParamSet) {
-        if (bodyText.includes(sp + '?.')) { hasValidation = true; break; }
+        if (bodyText.includes(sp + '?.')) {
+          hasValidation = true;
+          break;
+        }
       }
     }
 
@@ -159,4 +194,3 @@ export function collectInputSourceProfile(sourceFile: ts.SourceFile, _fileRelati
 
   fileEntry.inputSources = inputSources;
 }
-

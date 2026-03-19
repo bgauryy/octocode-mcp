@@ -147,15 +147,15 @@ SourceFile[18:426]
 
 ### Navigation Commands
 
-| Goal | Command |
-|------|---------|
-| List all files | `grep "^##" ast-trees.txt` |
-| Find functions | `grep -E "FunctionDeclaration\|function_declaration\|ArrowFunction\|arrow_function" ast-trees.txt` |
-| Find classes | `grep -E "ClassDeclaration\|class_declaration" ast-trees.txt` |
-| Find control flow | `grep -E "IfStatement\|SwitchStatement\|ForStatement\|WhileStatement" ast-trees.txt` |
-| Deep nesting (>3 levels) | `grep -E "^\s{8,}" ast-trees.txt` |
-| Truncated subtrees | `grep "\.\.\.$" ast-trees.txt` |
-| Large spans | Pattern `\[(\d+):(\d+)\]` — subtract start from end for line count |
+Use the dedicated CLI against the exact scan artifact you are reading. Replace `<CURRENT_SCAN>` with the timestamped scan directory from `summary.md`.
+
+- Find functions: `node scripts/ast-tree-search.js -i <CURRENT_SCAN>/ast-trees.txt -k function_declaration --limit 25`
+- Find classes: `node scripts/ast-tree-search.js -i <CURRENT_SCAN>/ast-trees.txt -k class_declaration --limit 25`
+- Find control flow: `node scripts/ast-tree-search.js -i <CURRENT_SCAN>/ast-trees.txt -p 'IfStatement|SwitchStatement|ForStatement|WhileStatement' --limit 25`
+- Narrow to one file: `node scripts/ast-tree-search.js -i <CURRENT_SCAN>/ast-trees.txt --file "src/index" -k function_declaration --limit 10`
+- Raw text fallback: `rg 'FunctionDeclaration|IfStatement' <CURRENT_SCAN>/ast-trees.txt`
+
+See [ast-tree-search.md](./ast-tree-search.md) for the full CLI surface, including `--section`, `--context`, and JSON output.
 
 ### CLI Control
 

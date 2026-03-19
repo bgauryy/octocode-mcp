@@ -45,11 +45,16 @@ export function safeRead(filePath: string): string | null {
   }
 }
 
-export function listWorkspacePackages(root: string, packageRoot: string): PackageInfo[] {
-  if (!fs.existsSync(packageRoot) || !fs.statSync(packageRoot).isDirectory()) return [];
+export function listWorkspacePackages(
+  root: string,
+  packageRoot: string
+): PackageInfo[] {
+  if (!fs.existsSync(packageRoot) || !fs.statSync(packageRoot).isDirectory())
+    return [];
 
-  const packageDirs = fs.readdirSync(packageRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
+  const packageDirs = fs
+    .readdirSync(packageRoot, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const packages: PackageInfo[] = [];
@@ -63,14 +68,19 @@ export function listWorkspacePackages(root: string, packageRoot: string): Packag
       if (typeof json.name === 'string') {
         packages.push({ name: json.name, dir, folder: entry.name });
       }
-    } catch { /* ignore invalid manifests */ }
+    } catch {
+      /* ignore invalid manifests */
+    }
   }
 
   return packages;
 }
 
-export function fileSummaryWithFindings(fileSummaries: FileEntry[], byFile: Map<string, string[]>): (FileEntry & { issueIds: string[] })[] {
-  return fileSummaries.map((entry) => ({
+export function fileSummaryWithFindings(
+  fileSummaries: FileEntry[],
+  byFile: Map<string, string[]>
+): (FileEntry & { issueIds: string[] })[] {
+  return fileSummaries.map(entry => ({
     ...entry,
     issueIds: byFile.get(entry.file) || [],
   }));

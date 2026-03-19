@@ -214,7 +214,13 @@ Each scan writes to `.octocode/scan/<timestamp>/`:
 | `file-inventory.json` | Per-file: `functions[]`, `flows[]`, `dependencyProfile`, `effectProfile`, `symbolUsageSummary`, `boundaryRoleHints[]`, optional `cfgFlags`, `issueIds[]` |
 | `findings.json` | ALL findings across all categories, sorted by severity, with `ruleId`, `analysisLens`, `confidence`, `correlatedSignals[]`, `recommendedValidation`, and optional `flowTrace[]` |
 | `graph.md` | Mermaid dependency graph (with `--graph`) |
-| `ast-trees.txt` | Compact AST snapshots (on by default, disable with `--no-tree`) |
+| `ast-trees.txt` | Compact AST snapshots (on by default, disable with `--no-tree`). Query with `ast-tree-search.js` for bounded artifact triage. |
+
+### Artifact Search vs Source Search
+
+- Use `ast-tree-search.js` on `ast-trees.txt` when you want a low-noise, scan-specific AST snapshot for agent triage.
+- Use `ast-search.js` on source files when you already know the structural shape you want to match in live code.
+- Treat AST artifact search as a navigation tool, not proof. Validate code claims with Octocode local and LSP tools before presenting them as facts.
 
 ### How To Read Results Well
 
@@ -229,7 +235,7 @@ Use the outputs with this reasoning loop:
 Use the outputs with two main lenses:
 
 - **Graph lens**: `summary.md`, `architecture.json`, and `graph.md`
-- **AST lens**: `file-inventory.json`, `findings.json`, `ast-trees.txt`, and `ast-search.js`
+- **AST lens**: `file-inventory.json`, `findings.json`, `ast-trees.txt`, `ast-tree-search.js` for artifact triage, and `ast-search.js` for source-level shape matching
 
 Good architecture decisions usually come from combining both:
 

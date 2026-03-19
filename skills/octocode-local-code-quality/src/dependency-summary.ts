@@ -1,9 +1,22 @@
 import { dependencyProfileToRecord } from './dependencies.js';
 import { isTestFile } from './utils.js';
 
-import type { AnalysisOptions, CriticalPath, Cycle, DependencyState, DependencySummary, FileCriticality, ModuleCount, WalkResult } from './types.js';
+import type {
+  AnalysisOptions,
+  CriticalPath,
+  Cycle,
+  DependencyState,
+  DependencySummary,
+  FileCriticality,
+  ModuleCount,
+  WalkResult,
+} from './types.js';
 
-export function buildDependencySummary(dependencyState: DependencyState, fileCriticalityByPath: Map<string, FileCriticality>, options: AnalysisOptions): DependencySummary {
+export function buildDependencySummary(
+  dependencyState: DependencyState,
+  fileCriticalityByPath: Map<string, FileCriticality>,
+  options: AnalysisOptions
+): DependencySummary {
   const allFiles = [...dependencyState.files].sort();
   let totalEdges = 0;
   let unresolvedEdgeCount = 0;
@@ -14,46 +27,73 @@ export function buildDependencySummary(dependencyState: DependencyState, fileCri
     totalEdges += dependencyState.outgoing.get(file)?.size || 0;
     const record = dependencyProfileToRecord(file, dependencyState);
     const crit = fileCriticalityByPath.get(file) || { score: 1 };
-    outgoingCounts.push({ file, count: record.outboundCount, score: crit.score });
+    outgoingCounts.push({
+      file,
+      count: record.outboundCount,
+      score: crit.score,
+    });
     inboundCounts.push({ file, count: record.inboundCount, score: crit.score });
     unresolvedEdgeCount += record.unresolvedDependencyCount;
   }
 
-  const roots = allFiles.filter((file) => {
+  const roots = allFiles.filter(file => {
     const inCount = (dependencyState.incoming.get(file) || new Set()).size;
     return inCount === 0;
   });
 
-  const leaves = allFiles.filter((file) => {
+  const leaves = allFiles.filter(file => {
     const outCount = (dependencyState.outgoing.get(file) || new Set()).size;
     return outCount === 0;
   });
 
   const testOnlyModules = allFiles
-    .filter((file) => !isTestFile(file))
-    .filter((file) => {
+    .filter(file => !isTestFile(file))
+    .filter(file => {
       const prodIn = dependencyState.incomingFromProduction.get(file);
       const testIn = dependencyState.incomingFromTests.get(file);
-      return (!prodIn || prodIn.size === 0) && (testIn && testIn.size > 0);
+      return (!prodIn || prodIn.size === 0) && testIn && testIn.size > 0;
     })
-    .map((file) => ({
+    .map(file => ({
       ...dependencyProfileToRecord(file, dependencyState),
     }))
     .sort((a, b) => a.file.localeCompare(b.file));
 
   const criticalNodes = allFiles
-    .map((file) => ({ ...dependencyProfileToRecord(file, dependencyState), ...(fileCriticalityByPath.get(file) || {} as Partial<FileCriticality>) }))
-    .filter((node) => (node.score || 0) > 12 || node.outboundCount > 5 || node.inboundCount > 8)
-    .sort((a, b) => ((b.score || 0) + b.inboundCount * 0.8 + b.outboundCount * 0.4) - ((a.score || 0) + a.inboundCount * 0.8 + a.outboundCount * 0.4))
+    .map(file => ({
+      ...dependencyProfileToRecord(file, dependencyState),
+      ...(fileCriticalityByPath.get(file) || ({} as Partial<FileCriticality>)),
+    }))
+    .filter(
+      node =>
+        (node.score || 0) > 12 ||
+        node.outboundCount > 5 ||
+        node.inboundCount > 8
+    )
+    .sort(
+      (a, b) =>
+        (b.score || 0) +
+        b.inboundCount * 0.8 +
+        b.outboundCount * 0.4 -
+        ((a.score || 0) + a.inboundCount * 0.8 + a.outboundCount * 0.4)
+    )
     .slice(0, 150)
-    .map((node) => ({
+    .map(node => ({
       ...node,
       score: Math.round(node.score || 0),
-      riskBand: (node.score || 0) >= 60 ? 'high' : (node.score || 0) >= 30 ? 'medium' : 'low',
+      riskBand:
+        (node.score || 0) >= 60
+          ? 'high'
+          : (node.score || 0) >= 30
+            ? 'medium'
+            : 'low',
     }));
 
   const cycles = computeDependencyCycles(dependencyState);
-  const criticalPaths = computeDependencyCriticalPaths(dependencyState, fileCriticalityByPath, options);
+  const criticalPaths = computeDependencyCriticalPaths(
+    dependencyState,
+    fileCriticalityByPath,
+    options
+  );
 
   return {
     totalModules: allFiles.length,
@@ -64,9 +104,15 @@ export function buildDependencySummary(dependencyState: DependencyState, fileCri
     leavesCount: leaves.length,
     roots: roots.slice(0, 20),
     leaves: leaves.slice(0, 20),
-    criticalModules: criticalNodes.slice(0, 20) as import('./types.js').CriticalModule[],
+    criticalModules: criticalNodes.slice(
+      0,
+      20
+    ) as import('./types.js').CriticalModule[],
     testOnlyModules: testOnlyModules.slice(0, 50),
-    unresolvedSample: unresolvedEdgeCount > 0 ? [...dependencyState.unresolvedCounts.keys()].slice(0, 40) : [],
+    unresolvedSample:
+      unresolvedEdgeCount > 0
+        ? [...dependencyState.unresolvedCounts.keys()].slice(0, 40)
+        : [],
     outgoingTop: outgoingCounts.sort((a, b) => b.count - a.count).slice(0, 20),
     inboundTop: inboundCounts.sort((a, b) => b.count - a.count).slice(0, 20),
     cycles: cycles.slice(0, 20),
@@ -74,7 +120,9 @@ export function buildDependencySummary(dependencyState: DependencyState, fileCri
   };
 }
 
-export function computeDependencyCycles(dependencyState: DependencyState): Cycle[] {
+export function computeDependencyCycles(
+  dependencyState: DependencyState
+): Cycle[] {
   const cycles: Cycle[] = [];
   const visited = new Set<string>();
   const visiting = new Set<string>();
@@ -133,7 +181,11 @@ export function computeDependencyCycles(dependencyState: DependencyState): Cycle
   return cycles.sort((a, b) => b.nodeCount - a.nodeCount);
 }
 
-export function computeDependencyCriticalPaths(dependencyState: DependencyState, fileCriticalityByPath: Map<string, FileCriticality>, options: AnalysisOptions): CriticalPath[] {
+export function computeDependencyCriticalPaths(
+  dependencyState: DependencyState,
+  fileCriticalityByPath: Map<string, FileCriticality>,
+  options: AnalysisOptions
+): CriticalPath[] {
   const memo = new Map<string, WalkResult>();
   const visiting = new Set<string>();
 
@@ -164,7 +216,11 @@ export function computeDependencyCriticalPaths(dependencyState: DependencyState,
       if (!dependencyState.files.has(dep)) continue;
       const candidate = walk(dep);
       const candidateScore = nodeScore(file) + candidate.score;
-      if (candidateScore > bestPath.score || (candidateScore === bestPath.score && candidate.path.length > bestPath.path.length)) {
+      if (
+        candidateScore > bestPath.score ||
+        (candidateScore === bestPath.score &&
+          candidate.path.length > bestPath.path.length)
+      ) {
         bestPath = {
           path: [file, ...candidate.path],
           score: candidateScore,
@@ -191,7 +247,7 @@ export function computeDependencyCriticalPaths(dependencyState: DependencyState,
   }
 
   return all
-    .filter((item) => item.length > 1)
+    .filter(item => item.length > 1)
     .sort((a, b) => {
       const byScore = b.score - a.score;
       if (byScore !== 0) return byScore;

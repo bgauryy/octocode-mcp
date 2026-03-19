@@ -22,7 +22,6 @@ function emptyMaps(): FlowMaps {
   return { flowMap: new Map(), controlMap: new Map() };
 }
 
-
 describe('resolveTreeSitter', () => {
   it('returns a TreeSitterRuntime object', async () => {
     const runtime = await resolveTreeSitter();
@@ -57,7 +56,6 @@ describe('resolveTreeSitter', () => {
   });
 });
 
-
 describe('getTreeSitterRuntime', () => {
   it('returns null before resolveTreeSitter is called', async () => {
     vi.resetModules();
@@ -72,7 +70,6 @@ describe('getTreeSitterRuntime', () => {
     expect(fromGet).toBe(resolved);
   });
 });
-
 
 describe('analyzeTreeSitterFile when runtime not available', () => {
   it('returns null when tree-sitter runtime has available: false', async () => {
@@ -99,47 +96,48 @@ describe('analyzeTreeSitterFile when runtime not available', () => {
   });
 });
 
-
-describe.skipIf(!TREE_SITTER_AVAILABLE)('analyzeTreeSitterFile when runtime available', () => {
-  it('parses a simple function file and extracts function with correct name, lineStart, complexity', () => {
-    const code = `function greet() {
+describe.skipIf(!TREE_SITTER_AVAILABLE)(
+  'analyzeTreeSitterFile when runtime available',
+  () => {
+    it('parses a simple function file and extracts function with correct name, lineStart, complexity', () => {
+      const code = `function greet() {
   return "hello";
 }`;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/greet.ts',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    expect(result!.functions.length).toBe(1);
-    expect(result!.functions[0].name).toBe('greet');
-    expect(result!.functions[0].lineStart).toBe(1);
-    expect(result!.functions[0].complexity).toBeGreaterThanOrEqual(1);
-    expect(result!.parseEngine).toBe('tree-sitter');
-    expect(result!.nodeCount).toBeGreaterThan(0);
-  });
+      const result = analyzeTreeSitterFile(
+        '/repo/src/greet.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      expect(result!.functions.length).toBe(1);
+      expect(result!.functions[0].name).toBe('greet');
+      expect(result!.functions[0].lineStart).toBe(1);
+      expect(result!.functions[0].complexity).toBeGreaterThanOrEqual(1);
+      expect(result!.parseEngine).toBe('tree-sitter');
+      expect(result!.nodeCount).toBeGreaterThan(0);
+    });
 
-  it('parses file with multiple functions', () => {
-    const code = `
+    it('parses file with multiple functions', () => {
+      const code = `
 function foo() { return 1; }
 function bar() { return 2; }
 const baz = () => 3;
 `;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/multi.ts',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    expect(result!.functions.length).toBeGreaterThanOrEqual(2);
-  });
+      const result = analyzeTreeSitterFile(
+        '/repo/src/multi.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      expect(result!.functions.length).toBeGreaterThanOrEqual(2);
+    });
 
-  it('parses file with if/for/while control flows', () => {
-    const code = `
+    it('parses file with if/for/while control flows', () => {
+      const code = `
 function f(x: boolean) {
   if (x) { return 1; }
   for (let i = 0; i < 10; i++) { }
@@ -147,23 +145,23 @@ function f(x: boolean) {
   return 0;
 }
 `;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/flows.ts',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    expect(result!.flows.length).toBeGreaterThan(0);
-    const flowKinds = result!.flows.map((f) => f.kind);
-    expect(flowKinds).toContain('if_statement');
-    expect(flowKinds).toContain('for_statement');
-    expect(flowKinds).toContain('while_statement');
-  });
+      const result = analyzeTreeSitterFile(
+        '/repo/src/flows.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      expect(result!.flows.length).toBeGreaterThan(0);
+      const flowKinds = result!.flows.map(f => f.kind);
+      expect(flowKinds).toContain('if_statement');
+      expect(flowKinds).toContain('for_statement');
+      expect(flowKinds).toContain('while_statement');
+    });
 
-  it('parses file with nested loops and tracks maxLoopDepth', () => {
-    const code = `
+    it('parses file with nested loops and tracks maxLoopDepth', () => {
+      const code = `
 function nested() {
   for (let i = 0; i < 10; i++) {
     for (let j = 0; j < 10; j++) {
@@ -172,22 +170,22 @@ function nested() {
   }
 }
 `;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/nested.ts',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    const fn = result!.functions.find((f) => f.name === 'nested');
-    expect(fn).toBeDefined();
-    expect(fn!.maxLoopDepth).toBe(3);
-    expect(fn!.loops).toBe(3);
-  });
+      const result = analyzeTreeSitterFile(
+        '/repo/src/nested.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      const fn = result!.functions.find(f => f.name === 'nested');
+      expect(fn).toBeDefined();
+      expect(fn!.maxLoopDepth).toBe(3);
+      expect(fn!.loops).toBe(3);
+    });
 
-  it('parses file with nested if and tracks maxBranchDepth', () => {
-    const code = `
+    it('parses file with nested if and tracks maxBranchDepth', () => {
+      const code = `
 function branched(a: boolean, b: boolean) {
   if (a) {
     if (b) {
@@ -197,88 +195,88 @@ function branched(a: boolean, b: boolean) {
   return 0;
 }
 `;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/branch.ts',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    const fn = result!.functions.find((f) => f.name === 'branched');
-    expect(fn).toBeDefined();
-    expect(fn!.maxBranchDepth).toBe(2);
-  });
+      const result = analyzeTreeSitterFile(
+        '/repo/src/branch.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      const fn = result!.functions.find(f => f.name === 'branched');
+      expect(fn).toBeDefined();
+      expect(fn!.maxBranchDepth).toBe(2);
+    });
 
-  it('parses file with async/await and counts awaits', () => {
-    const code = `
+    it('parses file with async/await and counts awaits', () => {
+      const code = `
 async function fetchData() {
   const a = await fetch("a");
   const b = await fetch("b");
   return [a, b];
 }
 `;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/async.ts',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    const fn = result!.functions.find((f) => f.name === 'fetchData');
-    expect(fn).toBeDefined();
-    expect(fn!.awaits).toBe(2);
-  });
+      const result = analyzeTreeSitterFile(
+        '/repo/src/async.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      const fn = result!.functions.find(f => f.name === 'fetchData');
+      expect(fn).toBeDefined();
+      expect(fn!.awaits).toBe(2);
+    });
 
-  it('arrow function in variable declaration gets correct name', () => {
-    const code = `const handler = (x: number) => x + 1;`;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/arrow.ts',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    expect(result!.functions.length).toBe(1);
-    expect(result!.functions[0].name).toBe('handler');
-  });
+    it('arrow function in variable declaration gets correct name', () => {
+      const code = `const handler = (x: number) => x + 1;`;
+      const result = analyzeTreeSitterFile(
+        '/repo/src/arrow.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      expect(result!.functions.length).toBe(1);
+      expect(result!.functions[0].name).toBe('handler');
+    });
 
-  it('anonymous function gets <anonymous>', () => {
-    const code = `(function() { return 42; })`;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/anonymous.ts',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    expect(result!.functions.length).toBe(1);
-    expect(result!.functions[0].name).toBe('<anonymous>');
-  });
+    it('anonymous function gets <anonymous>', () => {
+      const code = `(function() { return 42; })`;
+      const result = analyzeTreeSitterFile(
+        '/repo/src/anonymous.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      expect(result!.functions.length).toBe(1);
+      expect(result!.functions[0].name).toBe('<anonymous>');
+    });
 
-  it('parses TSX file (parser selection)', () => {
-    const code = `
+    it('parses TSX file (parser selection)', () => {
+      const code = `
 function Component() {
   return <div>Hello</div>;
 }
 `;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/Component.tsx',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    expect(result!.functions.length).toBe(1);
-    expect(result!.functions[0].name).toBe('Component');
-  });
+      const result = analyzeTreeSitterFile(
+        '/repo/src/Component.tsx',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      expect(result!.functions.length).toBe(1);
+      expect(result!.functions[0].name).toBe('Component');
+    });
 
-  it('extracts switch_statement as flow', () => {
-    const code = `
+    it('extracts switch_statement as flow', () => {
+      const code = `
 function f(x: number) {
   switch (x) {
     case 1: return 1;
@@ -287,118 +285,123 @@ function f(x: number) {
   }
 }
 `;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/switch.ts',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    const switchFlow = result!.flows.find((f) => f.kind === 'switch_statement');
-    expect(switchFlow).toBeDefined();
-  });
+      const result = analyzeTreeSitterFile(
+        '/repo/src/switch.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      const switchFlow = result!.flows.find(f => f.kind === 'switch_statement');
+      expect(switchFlow).toBeDefined();
+    });
 
-  it('counts calls in function body', () => {
-    const code = `
+    it('counts calls in function body', () => {
+      const code = `
 function f() {
   a();
   b();
   c();
 }
 `;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/calls.ts',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    const fn = result!.functions[0];
-    expect(fn.calls).toBe(3);
-  });
+      const result = analyzeTreeSitterFile(
+        '/repo/src/calls.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      const fn = result!.functions[0];
+      expect(fn.calls).toBe(3);
+    });
 
-  it('increments complexity for ternary', () => {
-    const code = `function f(x: boolean) { return x ? 1 : 0; }`;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/ternary.ts',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    const fn = result!.functions[0];
-    expect(fn.complexity).toBeGreaterThan(1);
-  });
+    it('increments complexity for ternary', () => {
+      const code = `function f(x: boolean) { return x ? 1 : 0; }`;
+      const result = analyzeTreeSitterFile(
+        '/repo/src/ternary.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      const fn = result!.functions[0];
+      expect(fn.complexity).toBeGreaterThan(1);
+    });
 
-  it('increments complexity for logical operators', () => {
-    const code = `function f(a: boolean, b: boolean) { return a && b || !a; }`;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/logical.ts',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    const fn = result!.functions[0];
-    expect(fn.complexity).toBeGreaterThan(1);
-  });
+    it('increments complexity for logical operators', () => {
+      const code = `function f(a: boolean, b: boolean) { return a && b || !a; }`;
+      const result = analyzeTreeSitterFile(
+        '/repo/src/logical.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      const fn = result!.functions[0];
+      expect(fn.complexity).toBeGreaterThan(1);
+    });
 
-  it('when emitTree is true, builds tree snapshot', () => {
-    const code = `function foo() { return 1; }`;
-    const opts = { ...testOpts, emitTree: true };
-    const result = analyzeTreeSitterFile(
-      '/repo/src/tree.ts',
-      code,
-      opts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    expect(result!.tree).toBeDefined();
-    expect(result!.tree!.kind).toBe('program');
-    expect(result!.tree!.children.length).toBeGreaterThan(0);
-  });
+    it('when emitTree is true, builds tree snapshot', () => {
+      const code = `function foo() { return 1; }`;
+      const opts = { ...testOpts, emitTree: true };
+      const result = analyzeTreeSitterFile(
+        '/repo/src/tree.ts',
+        code,
+        opts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      expect(result!.tree).toBeDefined();
+      expect(result!.tree!.kind).toBe('program');
+      expect(result!.tree!.children.length).toBeGreaterThan(0);
+    });
 
-  it('populates maps when minFunctionStatements and minFlowStatements are met', () => {
-    const code = `function bigFn() {
+    it('populates maps when minFunctionStatements and minFlowStatements are met', () => {
+      const code = `function bigFn() {
   const a = 1; const b = 2; const c = 3;
   const d = 4; const e = 5; const f = 6;
   return a + b + c + d + e + f;
 }`;
-    const maps = emptyMaps();
-    const opts = { ...testOpts, minFunctionStatements: 6, minFlowStatements: 1 };
-    analyzeTreeSitterFile('/repo/src/big.ts', code, opts, 'test-pkg', maps);
-    expect(maps.flowMap.size).toBeGreaterThan(0);
-  });
+      const maps = emptyMaps();
+      const opts = {
+        ...testOpts,
+        minFunctionStatements: 6,
+        minFlowStatements: 1,
+      };
+      analyzeTreeSitterFile('/repo/src/big.ts', code, opts, 'test-pkg', maps);
+      expect(maps.flowMap.size).toBeGreaterThan(0);
+    });
 
-  it('extracts function with correct params count', () => {
-    const code = `function f(a: number, b: string, c: boolean) { return 1; }`;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/params.ts',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    const fn = result!.functions[0];
-    expect(fn.params).toBeGreaterThanOrEqual(3);
-  });
+    it('extracts function with correct params count', () => {
+      const code = `function f(a: number, b: string, c: boolean) { return 1; }`;
+      const result = analyzeTreeSitterFile(
+        '/repo/src/params.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      const fn = result!.functions[0];
+      expect(fn.params).toBeGreaterThanOrEqual(3);
+    });
 
-  it('sets source to tree-sitter on function entries', () => {
-    const code = `function f() {}`;
-    const result = analyzeTreeSitterFile(
-      '/repo/src/source.ts',
-      code,
-      testOpts,
-      'test-pkg',
-      null
-    );
-    expect(result).not.toBeNull();
-    expect(result!.functions[0].source).toBe('tree-sitter');
-  });
-});
+    it('sets source to tree-sitter on function entries', () => {
+      const code = `function f() {}`;
+      const result = analyzeTreeSitterFile(
+        '/repo/src/source.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      expect(result!.functions[0].source).toBe('tree-sitter');
+    });
+  }
+);

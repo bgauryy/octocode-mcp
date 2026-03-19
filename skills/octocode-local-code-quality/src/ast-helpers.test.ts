@@ -13,7 +13,7 @@ function findFirst(
 ): ts.Node | undefined {
   if (predicate(node)) return node;
   let found: ts.Node | undefined;
-  ts.forEachChild(node, (child) => {
+  ts.forEachChild(node, child => {
     if (!found) found = findFirst(child, predicate);
   });
   return found;

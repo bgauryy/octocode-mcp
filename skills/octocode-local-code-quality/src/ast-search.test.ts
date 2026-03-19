@@ -14,7 +14,6 @@ import {
   searchFile,
 } from './ast-search.js';
 
-
 describe('parseSearchArgs', () => {
   it('returns defaults when no args given', () => {
     const { opts } = parseSearchArgs([]);
@@ -108,9 +107,11 @@ describe('parseSearchArgs', () => {
 
   it('handles multiple flags together', () => {
     const { opts } = parseSearchArgs([
-      '-p', 'console.log($A)',
+      '-p',
+      'console.log($A)',
       '--json',
-      '--limit', '10',
+      '--limit',
+      '10',
       '--include-tests',
     ]);
     expect(opts.pattern).toBe('console.log($A)');
@@ -125,7 +126,6 @@ describe('parseSearchArgs', () => {
     expect(opts.rule).toEqual({ rule: { kind: 'catch_clause' } });
   });
 });
-
 
 describe('PRESETS', () => {
   it('has expected presets defined', () => {
@@ -147,7 +147,6 @@ describe('PRESETS', () => {
   });
 });
 
-
 describe('searchFile', () => {
   it('finds pattern matches in TypeScript', () => {
     const source = `
@@ -156,7 +155,13 @@ function greet(name: string) {
   console.log("Done");
 }
 `;
-    const matches = searchFile('test.ts', source, 'console.log($$$ARGS)', 'console.log($$$ARGS)', 100);
+    const matches = searchFile(
+      'test.ts',
+      source,
+      'console.log($$$ARGS)',
+      'console.log($$$ARGS)',
+      100
+    );
     expect(matches.length).toBe(2);
     expect(matches[0].kind).toBe('call_expression');
     expect(matches[0].lineStart).toBeGreaterThan(0);
@@ -169,7 +174,13 @@ function foo() { return 1; }
 const bar = () => 2;
 function baz() { return 3; }
 `;
-    const matches = searchFile('test.ts', source, { rule: { kind: 'function_declaration' } }, null, 100);
+    const matches = searchFile(
+      'test.ts',
+      source,
+      { rule: { kind: 'function_declaration' } },
+      null,
+      100
+    );
     expect(matches.length).toBe(2);
     expect(matches.every(m => m.kind === 'function_declaration')).toBe(true);
   });
@@ -182,7 +193,13 @@ console.log(3);
 console.log(4);
 console.log(5);
 `;
-    const matches = searchFile('test.ts', source, 'console.log($A)', 'console.log($A)', 3);
+    const matches = searchFile(
+      'test.ts',
+      source,
+      'console.log($A)',
+      'console.log($A)',
+      3
+    );
     expect(matches.length).toBe(3);
   });
 
@@ -284,13 +301,25 @@ const z = normal.foo;
 
   it('returns empty array when no matches', () => {
     const source = 'const x = 1;';
-    const matches = searchFile('test.ts', source, 'console.log($A)', 'console.log($A)', 100);
+    const matches = searchFile(
+      'test.ts',
+      source,
+      'console.log($A)',
+      'console.log($A)',
+      100
+    );
     expect(matches.length).toBe(0);
   });
 
   it('extracts meta variables from pattern', () => {
     const source = 'console.log("hello", 42);';
-    const matches = searchFile('test.ts', source, 'console.log($$$ARGS)', 'console.log($$$ARGS)', 100);
+    const matches = searchFile(
+      'test.ts',
+      source,
+      'console.log($$$ARGS)',
+      'console.log($$$ARGS)',
+      100
+    );
     expect(matches.length).toBe(1);
   });
 
@@ -301,11 +330,16 @@ function App() {
   return <div>Hello</div>;
 }
 `;
-    const matches = searchFile('test.tsx', source, 'console.log($$$ARGS)', 'console.log($$$ARGS)', 100);
+    const matches = searchFile(
+      'test.tsx',
+      source,
+      'console.log($$$ARGS)',
+      'console.log($$$ARGS)',
+      100
+    );
     expect(matches.length).toBe(1);
   });
 });
-
 
 describe('runSearch', () => {
   let tmpDir: string;
@@ -317,7 +351,9 @@ describe('runSearch', () => {
     return filePath;
   }
 
-  function defaultOpts(overrides: Partial<AstSearchOptions> = {}): AstSearchOptions {
+  function defaultOpts(
+    overrides: Partial<AstSearchOptions> = {}
+  ): AstSearchOptions {
     return {
       root: tmpDir,
       pattern: null,
@@ -347,14 +383,21 @@ describe('runSearch', () => {
     writeFile('src/c.ts', 'const x = 1;');
 
     const opts = defaultOpts({ pattern: 'console.log($A)' });
-    const result = runSearch([f1, f2, path.join(tmpDir, 'src/c.ts')], opts, tmpDir);
+    const result = runSearch(
+      [f1, f2, path.join(tmpDir, 'src/c.ts')],
+      opts,
+      tmpDir
+    );
     expect(result.totalMatches).toBe(3);
     expect(result.totalFiles).toBe(2);
     expect(result.queryType).toBe('pattern');
   });
 
   it('searches with preset', () => {
-    const f1 = writeFile('x.ts', 'try { a(); } catch(e) {}\ntry { b(); } catch(e) { log(e); }');
+    const f1 = writeFile(
+      'x.ts',
+      'try { a(); } catch(e) {}\ntry { b(); } catch(e) { log(e); }'
+    );
     const opts = defaultOpts({ preset: 'empty-catch' });
     const result = runSearch([f1], opts, tmpDir);
     expect(result.totalMatches).toBeGreaterThanOrEqual(1);
@@ -362,7 +405,10 @@ describe('runSearch', () => {
   });
 
   it('searches with kind', () => {
-    const f1 = writeFile('fn.ts', 'function foo() {}\nfunction bar() {}\nconst x = 1;');
+    const f1 = writeFile(
+      'fn.ts',
+      'function foo() {}\nfunction bar() {}\nconst x = 1;'
+    );
     const opts = defaultOpts({ kind: 'function_declaration' });
     const result = runSearch([f1], opts, tmpDir);
     expect(result.totalMatches).toBe(2);
@@ -370,7 +416,10 @@ describe('runSearch', () => {
   });
 
   it('respects limit across files', () => {
-    const f1 = writeFile('a.ts', 'console.log(1);\nconsole.log(2);\nconsole.log(3);');
+    const f1 = writeFile(
+      'a.ts',
+      'console.log(1);\nconsole.log(2);\nconsole.log(3);'
+    );
     const f2 = writeFile('b.ts', 'console.log(4);\nconsole.log(5);');
     const opts = defaultOpts({ pattern: 'console.log($A)', limit: 3 });
     const result = runSearch([f1, f2], opts, tmpDir);
@@ -380,7 +429,9 @@ describe('runSearch', () => {
   it('throws on unknown preset', () => {
     const f1 = writeFile('x.ts', 'const x = 1;');
     const opts = defaultOpts({ preset: 'nonexistent' });
-    expect(() => runSearch([f1], opts, tmpDir)).toThrow(/Unknown preset.*nonexistent/);
+    expect(() => runSearch([f1], opts, tmpDir)).toThrow(
+      /Unknown preset.*nonexistent/
+    );
   });
 
   it('throws when no search mode provided', () => {
@@ -389,7 +440,6 @@ describe('runSearch', () => {
     expect(() => runSearch([f1], opts, tmpDir)).toThrow(/Must provide/);
   });
 });
-
 
 describe('collectSearchFiles', () => {
   let tmpDir: string;
@@ -406,7 +456,10 @@ describe('collectSearchFiles', () => {
     fs.writeFileSync(path.join(tmpDir, 'a.ts'), '', 'utf8');
     fs.writeFileSync(path.join(tmpDir, 'b.js'), '', 'utf8');
     fs.writeFileSync(path.join(tmpDir, 'c.txt'), '', 'utf8');
-    const files = collectSearchFiles(tmpDir, { includeTests: false, ignoreDirs: new Set() });
+    const files = collectSearchFiles(tmpDir, {
+      includeTests: false,
+      ignoreDirs: new Set(),
+    });
     expect(files).toHaveLength(2);
     expect(files.some(f => f.endsWith('a.ts'))).toBe(true);
     expect(files.some(f => f.endsWith('b.js'))).toBe(true);
@@ -416,7 +469,10 @@ describe('collectSearchFiles', () => {
     fs.writeFileSync(path.join(tmpDir, 'foo.ts'), '', 'utf8');
     fs.writeFileSync(path.join(tmpDir, 'foo.test.ts'), '', 'utf8');
     fs.writeFileSync(path.join(tmpDir, 'foo.spec.ts'), '', 'utf8');
-    const files = collectSearchFiles(tmpDir, { includeTests: false, ignoreDirs: new Set() });
+    const files = collectSearchFiles(tmpDir, {
+      includeTests: false,
+      ignoreDirs: new Set(),
+    });
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(/foo\.ts$/);
   });
@@ -424,7 +480,10 @@ describe('collectSearchFiles', () => {
   it('includes test files when flag is set', () => {
     fs.writeFileSync(path.join(tmpDir, 'foo.ts'), '', 'utf8');
     fs.writeFileSync(path.join(tmpDir, 'foo.test.ts'), '', 'utf8');
-    const files = collectSearchFiles(tmpDir, { includeTests: true, ignoreDirs: new Set() });
+    const files = collectSearchFiles(tmpDir, {
+      includeTests: true,
+      ignoreDirs: new Set(),
+    });
     expect(files).toHaveLength(2);
   });
 
@@ -432,7 +491,10 @@ describe('collectSearchFiles', () => {
     fs.mkdirSync(path.join(tmpDir, 'node_modules'), { recursive: true });
     fs.writeFileSync(path.join(tmpDir, 'node_modules', 'lib.ts'), '', 'utf8');
     fs.writeFileSync(path.join(tmpDir, 'main.ts'), '', 'utf8');
-    const files = collectSearchFiles(tmpDir, { includeTests: false, ignoreDirs: new Set(['node_modules']) });
+    const files = collectSearchFiles(tmpDir, {
+      includeTests: false,
+      ignoreDirs: new Set(['node_modules']),
+    });
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(/main\.ts$/);
   });
@@ -440,16 +502,20 @@ describe('collectSearchFiles', () => {
   it('skips .d.ts files', () => {
     fs.writeFileSync(path.join(tmpDir, 'index.ts'), '', 'utf8');
     fs.writeFileSync(path.join(tmpDir, 'index.d.ts'), '', 'utf8');
-    const files = collectSearchFiles(tmpDir, { includeTests: false, ignoreDirs: new Set() });
+    const files = collectSearchFiles(tmpDir, {
+      includeTests: false,
+      ignoreDirs: new Set(),
+    });
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(/index\.ts$/);
   });
 });
 
-
 describe('parseSearchArgs --rule error handling', () => {
   it('throws user-friendly error for invalid JSON', () => {
-    expect(() => parseSearchArgs(['--rule', 'not-json'])).toThrow(/Invalid --rule JSON/);
+    expect(() => parseSearchArgs(['--rule', 'not-json'])).toThrow(
+      /Invalid --rule JSON/
+    );
   });
 
   it('includes the bad input in the error message', () => {
@@ -461,11 +527,16 @@ describe('parseSearchArgs --rule error handling', () => {
   });
 });
 
-
 describe('meta-variable extraction', () => {
   it('extracts single $VAR without duplicating variadic $$$VAR', () => {
     const source = 'console.log("hello");';
-    const matches = searchFile('test.ts', source, 'console.$METHOD($$$ARGS)', 'console.$METHOD($$$ARGS)', 100);
+    const matches = searchFile(
+      'test.ts',
+      source,
+      'console.$METHOD($$$ARGS)',
+      'console.$METHOD($$$ARGS)',
+      100
+    );
     expect(matches.length).toBe(1);
     const vars = matches[0].metaVariables!;
     expect(vars['$METHOD']).toBe('log');
@@ -475,7 +546,13 @@ describe('meta-variable extraction', () => {
 
   it('does not produce spurious single-var entries for variadic names', () => {
     const source = 'fn(1, 2, 3);';
-    const matches = searchFile('test.ts', source, 'fn($$$ITEMS)', 'fn($$$ITEMS)', 100);
+    const matches = searchFile(
+      'test.ts',
+      source,
+      'fn($$$ITEMS)',
+      'fn($$$ITEMS)',
+      100
+    );
     expect(matches.length).toBe(1);
     const vars = matches[0].metaVariables!;
     expect(vars['$$$ITEMS']).toBeDefined();
@@ -484,14 +561,19 @@ describe('meta-variable extraction', () => {
 
   it('handles pattern with both single and variadic meta-vars', () => {
     const source = 'import { foo, bar } from "lodash";';
-    const matches = searchFile('test.ts', source, 'import { $$$NAMES } from $MOD', 'import { $$$NAMES } from $MOD', 100);
+    const matches = searchFile(
+      'test.ts',
+      source,
+      'import { $$$NAMES } from $MOD',
+      'import { $$$NAMES } from $MOD',
+      100
+    );
     expect(matches.length).toBe(1);
     const vars = matches[0].metaVariables!;
     expect(vars['$MOD']).toBe('"lodash"');
     expect(vars['$$$NAMES']).toBeDefined();
   });
 });
-
 
 describe('formatTextOutput with context', () => {
   let tmpDir: string;
@@ -504,7 +586,9 @@ describe('formatTextOutput with context', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function defaultOpts(overrides: Partial<AstSearchOptions> = {}): AstSearchOptions {
+  function defaultOpts(
+    overrides: Partial<AstSearchOptions> = {}
+  ): AstSearchOptions {
     return {
       root: tmpDir,
       pattern: null,

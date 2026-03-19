@@ -1,7 +1,12 @@
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-import { collectMetrics, computeHalstead, computeMaintainabilityIndex, countLinesInNode } from './metrics.js';
+import {
+  collectMetrics,
+  computeHalstead,
+  computeMaintainabilityIndex,
+  countLinesInNode,
+} from './metrics.js';
 
 function parse(code: string): ts.SourceFile {
   return ts.createSourceFile('test.ts', code, ts.ScriptTarget.ESNext, true);
@@ -9,15 +14,23 @@ function parse(code: string): ts.SourceFile {
 
 function firstFn(sf: ts.SourceFile): ts.Node {
   let fn: ts.Node | undefined;
-  ts.forEachChild(sf, (n) => { if (!fn && ts.isFunctionDeclaration(n)) fn = n; });
+  ts.forEachChild(sf, n => {
+    if (!fn && ts.isFunctionDeclaration(n)) fn = n;
+  });
   return fn!;
 }
 
-function findNode(sf: ts.SourceFile, predicate: (n: ts.Node) => boolean): ts.Node | undefined {
+function findNode(
+  sf: ts.SourceFile,
+  predicate: (n: ts.Node) => boolean
+): ts.Node | undefined {
   let found: ts.Node | undefined;
   const visit = (n: ts.Node): void => {
     if (found) return;
-    if (predicate(n)) { found = n; return; }
+    if (predicate(n)) {
+      found = n;
+      return;
+    }
     ts.forEachChild(n, visit);
   };
   visit(sf);
@@ -61,7 +74,9 @@ describe('collectMetrics', () => {
   });
 
   it('nested for loops → maxLoopDepth 2', () => {
-    const sf = parse('function foo() { for (let i = 0; i < 5; i++) { for (let j = 0; j < 5; j++) {} } }');
+    const sf = parse(
+      'function foo() { for (let i = 0; i < 5; i++) { for (let j = 0; j < 5; j++) {} } }'
+    );
     const fn = firstFn(sf);
     const m = collectMetrics(fn);
     expect(m.loops).toBe(2);
@@ -213,7 +228,9 @@ describe('computeHalstead', () => {
   });
 
   it('various operator tokens (=, ==, ===, +, -, *, /)', () => {
-    const sf = parse('function foo() { const x = a == b ? c : d; const y = a + b - c * d / e; }');
+    const sf = parse(
+      'function foo() { const x = a == b ? c : d; const y = a + b - c * d / e; }'
+    );
     const fn = firstFn(sf);
     const h = computeHalstead(fn);
     expect(h.distinctOperators).toBeGreaterThan(2);

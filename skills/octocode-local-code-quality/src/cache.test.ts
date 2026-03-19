@@ -38,7 +38,13 @@ describe('cache', () => {
       const cache = createEmptyCache(tmpDir);
       saveCache(tmpDir, cache);
 
-      const cachePath = path.join(tmpDir, '.octocode', 'scan', '.cache', 'analysis-cache.json');
+      const cachePath = path.join(
+        tmpDir,
+        '.octocode',
+        'scan',
+        '.cache',
+        'analysis-cache.json'
+      );
       const data = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
       data.schemaVersion = '0.0.0';
       fs.writeFileSync(cachePath, JSON.stringify(data), 'utf8');
@@ -50,7 +56,13 @@ describe('cache', () => {
       const cache = createEmptyCache(tmpDir);
       saveCache(tmpDir, cache);
 
-      const cachePath = path.join(tmpDir, '.octocode', 'scan', '.cache', 'analysis-cache.json');
+      const cachePath = path.join(
+        tmpDir,
+        '.octocode',
+        'scan',
+        '.cache',
+        'analysis-cache.json'
+      );
       const data = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
       data.version = 999;
       fs.writeFileSync(cachePath, JSON.stringify(data), 'utf8');
@@ -67,7 +79,12 @@ describe('cache', () => {
 
     it('returns valid cache', () => {
       const cache = createEmptyCache(tmpDir);
-      setCacheEntry(cache, 'file.ts', { mtimeMs: 100, size: 50 }, { issues: [] });
+      setCacheEntry(
+        cache,
+        'file.ts',
+        { mtimeMs: 100, size: 50 },
+        { issues: [] }
+      );
       saveCache(tmpDir, cache);
 
       const loaded = loadCache(tmpDir);
@@ -117,7 +134,8 @@ describe('cache', () => {
     it('removes old entries and keeps recent ones', () => {
       const cache = createEmptyCache('/test');
       setCacheEntry(cache, 'old.ts', { mtimeMs: 1, size: 100 }, {});
-      cache.entries['old.ts'].lastAccessMs = Date.now() - 8 * 24 * 60 * 60 * 1000;
+      cache.entries['old.ts'].lastAccessMs =
+        Date.now() - 8 * 24 * 60 * 60 * 1000;
 
       setCacheEntry(cache, 'recent.ts', { mtimeMs: 2, size: 200 }, {});
 
@@ -161,7 +179,13 @@ describe('cache', () => {
       const cache = createEmptyCache(tmpDir);
       saveCache(tmpDir, cache);
 
-      const cachePath = path.join(tmpDir, '.octocode', 'scan', '.cache', 'analysis-cache.json');
+      const cachePath = path.join(
+        tmpDir,
+        '.octocode',
+        'scan',
+        '.cache',
+        'analysis-cache.json'
+      );
       expect(fs.existsSync(cachePath)).toBe(true);
 
       clearCache(tmpDir);

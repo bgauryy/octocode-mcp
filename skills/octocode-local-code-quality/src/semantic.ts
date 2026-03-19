@@ -79,20 +79,35 @@ export interface SemanticProfile {
   overrideChains: OverrideChainInfo[];
   abstractnessRatio: number;
   unusedImports: Array<{ name: string; lineStart: number }>;
-  concreteImports: Array<{ name: string; targetFile: string; lineStart: number }>;
+  concreteImports: Array<{
+    name: string;
+    targetFile: string;
+    lineStart: number;
+  }>;
   leakyReturns: LeakyReturn[];
   narrowableParams: NarrowableParam[];
 }
 
 function findTsConfig(root: string): ts.ParsedCommandLine | null {
-  const configPath = ts.findConfigFile(root, ts.sys.fileExists, 'tsconfig.json');
+  const configPath = ts.findConfigFile(
+    root,
+    ts.sys.fileExists,
+    'tsconfig.json'
+  );
   if (!configPath) return null;
   const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
   if (configFile.error) return null;
-  return ts.parseJsonConfigFileContent(configFile.config, ts.sys, path.dirname(configPath));
+  return ts.parseJsonConfigFileContent(
+    configFile.config,
+    ts.sys,
+    path.dirname(configPath)
+  );
 }
 
-export function createSemanticContext(files: string[], root: string): SemanticContext {
+export function createSemanticContext(
+  files: string[],
+  root: string
+): SemanticContext {
   const parsed = findTsConfig(root);
   const compilerOptions: ts.CompilerOptions = parsed?.options ?? {
     target: ts.ScriptTarget.ES2022,
@@ -109,13 +124,15 @@ export function createSemanticContext(files: string[], root: string): SemanticCo
   for (const f of files) {
     try {
       fileContents.set(f, fs.readFileSync(f, 'utf8'));
-    } catch { /* skip unreadable */ }
+    } catch {
+      /* skip unreadable */
+    }
   }
 
   const host: ts.LanguageServiceHost = {
     getScriptFileNames: () => [...fileSet],
     getScriptVersion: () => '1',
-    getScriptSnapshot: (fileName) => {
+    getScriptSnapshot: fileName => {
       const content = fileContents.get(fileName);
       if (content != null) return ts.ScriptSnapshot.fromString(content);
       try {
@@ -147,7 +164,7 @@ function getExportReferenceInfo(
   filePath: string,
   exportName: string,
   exportLine: number,
-  includeTests: boolean,
+  includeTests: boolean
 ): { count: number; uniqueFiles: number } {
   const sourceFile = ctx.program.getSourceFile(filePath);
   if (!sourceFile) return { count: -1, uniqueFiles: 0 };
@@ -174,12 +191,17 @@ function getExportReferenceInfo(
 function findSymbolAtLine(
   sourceFile: ts.SourceFile,
   name: string,
-  line: number,
+  line: number
 ): ts.Node | undefined {
-  const lineStart = sourceFile.getPositionOfLineAndCharacter(Math.max(0, line - 1), 0);
-  const lineEnd = line < sourceFile.getLineAndCharacterOfPosition(sourceFile.getEnd()).line + 1
-    ? sourceFile.getPositionOfLineAndCharacter(line, 0)
-    : sourceFile.getEnd();
+  const lineStart = sourceFile.getPositionOfLineAndCharacter(
+    Math.max(0, line - 1),
+    0
+  );
+  const lineEnd =
+    line <
+    sourceFile.getLineAndCharacterOfPosition(sourceFile.getEnd()).line + 1
+      ? sourceFile.getPositionOfLineAndCharacter(line, 0)
+      : sourceFile.getEnd();
 
   let found: ts.Node | undefined;
   const visit = (node: ts.Node): void => {
@@ -196,7 +218,10 @@ function findSymbolAtLine(
   return found;
 }
 
-function getInheritanceDepth(checker: ts.TypeChecker, type: ts.Type): { depth: number; chain: string[] } {
+function getInheritanceDepth(
+  checker: ts.TypeChecker,
+  type: ts.Type
+): { depth: number; chain: string[] } {
   const chain: string[] = [];
   let current = type;
   let depth = 0;
@@ -222,7 +247,7 @@ export function analyzeSemanticProfile(
   ctx: SemanticContext,
   filePath: string,
   fileEntry: FileEntry,
-  includeTests = true,
+  includeTests = true
 ): SemanticProfile {
   const profile: SemanticProfile = {
     file: fileEntry.file,
@@ -245,7 +270,13 @@ export function analyzeSemanticProfile(
   const exports = fileEntry.dependencyProfile?.declaredExports ?? [];
   for (const exp of exports) {
     if (exp.lineStart == null) continue;
-    const refInfo = getExportReferenceInfo(ctx, filePath, exp.name, exp.lineStart, includeTests);
+    const refInfo = getExportReferenceInfo(
+      ctx,
+      filePath,
+      exp.name,
+      exp.lineStart,
+      includeTests
+    );
     profile.referenceCountByExport.set(exp.name, {
       count: refInfo.count,
       uniqueFiles: refInfo.uniqueFiles,
@@ -261,13 +292,35 @@ export function analyzeSemanticProfile(
     const fnSourceFile = ctx.program.getSourceFile(filePath);
     if (!fnSourceFile) continue;
 
-    const fnPos = fnSourceFile.getPositionOfLineAndCharacter(Math.max(0, fn.lineStart - 1), 0);
+    const fnPos = fnSourceFile.getPositionOfLineAndCharacter(
+      Math.max(0, fn.lineStart - 1),
+      0
+    );
     let fnNode: ts.Node | undefined;
     const findFn = (node: ts.Node): void => {
       if (fnNode) return;
-      if (node.getStart(fnSourceFile!) >= fnPos && node.getEnd() <= fnSourceFile!.getPositionOfLineAndCharacter(Math.min(fn.lineEnd, fnSourceFile!.getLineAndCharacterOfPosition(fnSourceFile!.getEnd()).line + 1) - 1, 0) + 200) {
-        if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
-          const name = node.name && ts.isIdentifier(node.name) ? node.name.text : '';
+      if (
+        node.getStart(fnSourceFile!) >= fnPos &&
+        node.getEnd() <=
+          fnSourceFile!.getPositionOfLineAndCharacter(
+            Math.min(
+              fn.lineEnd,
+              fnSourceFile!.getLineAndCharacterOfPosition(
+                fnSourceFile!.getEnd()
+              ).line + 1
+            ) - 1,
+            0
+          ) +
+            200
+      ) {
+        if (
+          ts.isFunctionDeclaration(node) ||
+          ts.isMethodDeclaration(node) ||
+          ts.isArrowFunction(node) ||
+          ts.isFunctionExpression(node)
+        ) {
+          const name =
+            node.name && ts.isIdentifier(node.name) ? node.name.text : '';
           if (name === fn.name || fn.name === '<anonymous>') {
             fnNode = node;
             return;
@@ -278,13 +331,22 @@ export function analyzeSemanticProfile(
     };
     ts.forEachChild(fnSourceFile, findFn);
 
-    if (fnNode && (ts.isFunctionDeclaration(fnNode) || ts.isMethodDeclaration(fnNode) || ts.isArrowFunction(fnNode) || ts.isFunctionExpression(fnNode))) {
+    if (
+      fnNode &&
+      (ts.isFunctionDeclaration(fnNode) ||
+        ts.isMethodDeclaration(fnNode) ||
+        ts.isArrowFunction(fnNode) ||
+        ts.isFunctionExpression(fnNode))
+    ) {
       for (const param of fnNode.parameters) {
         if (!ts.isIdentifier(param.name)) continue;
         const paramName = param.name.text;
         if (paramName.startsWith('_')) continue;
 
-        const refs = ctx.service.findReferences(filePath, param.name.getStart(sourceFile));
+        const refs = ctx.service.findReferences(
+          filePath,
+          param.name.getStart(sourceFile)
+        );
         let usageCount = 0;
         if (refs) {
           for (const group of refs) {
@@ -316,7 +378,10 @@ export function analyzeSemanticProfile(
           name: node.name.text,
           depth,
           chain,
-          lineStart: sourceFile!.getLineAndCharacterOfPosition(node.getStart(sourceFile!)).line + 1,
+          lineStart:
+            sourceFile!.getLineAndCharacterOfPosition(
+              node.getStart(sourceFile!)
+            ).line + 1,
         });
         if (depth > profile.typeHierarchyDepth) {
           profile.typeHierarchyDepth = depth;
@@ -331,15 +396,22 @@ export function analyzeSemanticProfile(
               const ifaceName = ctx.checker.typeToString(ifaceType);
               const classType = ctx.checker.getTypeAtLocation(node);
               const ifaceProps = ifaceType.getProperties?.() ?? [];
-              const classProps = new Set((classType.getProperties?.() ?? []).map((p) => p.name));
-              const missing = ifaceProps.filter((p) => !classProps.has(p.name)).map((p) => p.name);
+              const classProps = new Set(
+                (classType.getProperties?.() ?? []).map(p => p.name)
+              );
+              const missing = ifaceProps
+                .filter(p => !classProps.has(p.name))
+                .map(p => p.name);
 
               const anycastMembers: string[] = [];
               for (const prop of ifaceProps) {
                 if (classProps.has(prop.name)) {
                   const classProp = classType.getProperty?.(prop.name);
                   if (classProp) {
-                    const classPropType = ctx.checker.getTypeOfSymbolAtLocation(classProp, node);
+                    const classPropType = ctx.checker.getTypeOfSymbolAtLocation(
+                      classProp,
+                      node
+                    );
                     const typeStr = ctx.checker.typeToString(classPropType);
                     if (typeStr === 'any') anycastMembers.push(prop.name);
                   }
@@ -351,7 +423,10 @@ export function analyzeSemanticProfile(
                   interfaceName: ifaceName,
                   className: node.name!.text,
                   classFile: fileEntry.file,
-                  classLine: sourceFile!.getLineAndCharacterOfPosition(node.getStart(sourceFile!)).line + 1,
+                  classLine:
+                    sourceFile!.getLineAndCharacterOfPosition(
+                      node.getStart(sourceFile!)
+                    ).line + 1,
                   missingMembers: missing,
                   anycastMembers,
                 });
@@ -361,7 +436,7 @@ export function analyzeSemanticProfile(
         }
       }
 
-      if (node.modifiers?.some((m) => m.kind === ts.SyntaxKind.AbstractKeyword)) {
+      if (node.modifiers?.some(m => m.kind === ts.SyntaxKind.AbstractKeyword)) {
         abstractCount++;
       }
 
@@ -376,8 +451,14 @@ export function analyzeSemanticProfile(
         const baseType = bases[0];
         for (const prop of baseType.getProperties?.() ?? []) {
           const decl = prop.getDeclarations?.()?.[0];
-          if (decl && (ts.isMethodDeclaration(decl) || ts.isMethodSignature(decl))) {
-            baseMethods.set(prop.name, Math.max(baseMethods.get(prop.name) ?? 0, baseDepth));
+          if (
+            decl &&
+            (ts.isMethodDeclaration(decl) || ts.isMethodSignature(decl))
+          ) {
+            baseMethods.set(
+              prop.name,
+              Math.max(baseMethods.get(prop.name) ?? 0, baseDepth)
+            );
           }
         }
         currentType = baseType;
@@ -385,7 +466,11 @@ export function analyzeSemanticProfile(
       }
 
       for (const member of node.members) {
-        if (ts.isMethodDeclaration(member) && member.name && ts.isIdentifier(member.name)) {
+        if (
+          ts.isMethodDeclaration(member) &&
+          member.name &&
+          ts.isIdentifier(member.name)
+        ) {
           const methodName = member.name.text;
           const overrideDepth = baseMethods.get(methodName);
           if (overrideDepth != null && overrideDepth > 0) {
@@ -394,7 +479,10 @@ export function analyzeSemanticProfile(
               className: node.name!.text,
               depth: overrideDepth,
               chain: [],
-              lineStart: sourceFile!.getLineAndCharacterOfPosition(member.getStart(sourceFile!)).line + 1,
+              lineStart:
+                sourceFile!.getLineAndCharacterOfPosition(
+                  member.getStart(sourceFile!)
+                ).line + 1,
             });
           }
         }
@@ -415,7 +503,8 @@ export function analyzeSemanticProfile(
   ts.forEachChild(sourceFile, visit);
 
   totalExportTypes += exports.length;
-  profile.abstractnessRatio = totalExportTypes > 0 ? abstractCount / totalExportTypes : 0;
+  profile.abstractnessRatio =
+    totalExportTypes > 0 ? abstractCount / totalExportTypes : 0;
 
   const imports = fileEntry.dependencyProfile?.importedSymbols ?? [];
   for (const imp of imports) {
@@ -423,7 +512,10 @@ export function analyzeSemanticProfile(
     const node = findSymbolAtLine(sourceFile, imp.localName, imp.lineStart);
     if (!node) continue;
 
-    const refs = ctx.service.findReferences(filePath, node.getStart(sourceFile));
+    const refs = ctx.service.findReferences(
+      filePath,
+      node.getStart(sourceFile)
+    );
     let sameFileUsageCount = 0;
     if (refs) {
       for (const group of refs) {
@@ -436,18 +528,28 @@ export function analyzeSemanticProfile(
     }
 
     if (sameFileUsageCount === 0) {
-      profile.unusedImports.push({ name: imp.localName, lineStart: imp.lineStart });
+      profile.unusedImports.push({
+        name: imp.localName,
+        lineStart: imp.lineStart,
+      });
     }
 
     if (imp.resolvedModule) {
-      const targetSrc = ctx.program.getSourceFile(path.resolve(ctx.root, imp.resolvedModule));
+      const targetSrc = ctx.program.getSourceFile(
+        path.resolve(ctx.root, imp.resolvedModule)
+      );
       if (targetSrc) {
         const sym = ctx.checker.getSymbolAtLocation(node);
         if (sym) {
-          const aliased = sym.flags & ts.SymbolFlags.Alias ? ctx.checker.getAliasedSymbol(sym) : sym;
+          const aliased =
+            sym.flags & ts.SymbolFlags.Alias
+              ? ctx.checker.getAliasedSymbol(sym)
+              : sym;
           const decl = aliased.getDeclarations?.()?.[0];
           if (decl && ts.isClassDeclaration(decl)) {
-            const isAbstract = decl.modifiers?.some((m) => m.kind === ts.SyntaxKind.AbstractKeyword);
+            const isAbstract = decl.modifiers?.some(
+              m => m.kind === ts.SyntaxKind.AbstractKeyword
+            );
             if (!isAbstract) {
               profile.concreteImports.push({
                 name: imp.localName,
@@ -461,17 +563,24 @@ export function analyzeSemanticProfile(
     }
   }
 
-  const exportedFns = fileEntry.functions.filter((fn) =>
-    fileEntry.dependencyProfile?.declaredExports?.some((e) => e.name === fn.name),
+  const exportedFns = fileEntry.functions.filter(fn =>
+    fileEntry.dependencyProfile?.declaredExports?.some(e => e.name === fn.name)
   );
   for (const fn of exportedFns) {
-    const fnPos = sourceFile.getPositionOfLineAndCharacter(Math.max(0, fn.lineStart - 1), 0);
+    const fnPos = sourceFile.getPositionOfLineAndCharacter(
+      Math.max(0, fn.lineStart - 1),
+      0
+    );
     let fnNode: ts.FunctionDeclaration | ts.MethodDeclaration | undefined;
     const findFnDecl = (node: ts.Node): void => {
       if (fnNode) return;
-      if ((ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) &&
-          node.name && ts.isIdentifier(node.name) && node.name.text === fn.name &&
-          node.getStart(sourceFile!) >= fnPos) {
+      if (
+        (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) &&
+        node.name &&
+        ts.isIdentifier(node.name) &&
+        node.name.text === fn.name &&
+        node.getStart(sourceFile!) >= fnPos
+      ) {
         fnNode = node;
         return;
       }
@@ -485,9 +594,14 @@ export function analyzeSemanticProfile(
         const retType = ctx.checker.getReturnTypeOfSignature(sig);
         const retSymbol = retType.symbol || retType.aliasSymbol;
         if (retSymbol?.declarations?.[0]) {
-          const retDeclFile = retSymbol.declarations[0].getSourceFile().fileName;
+          const retDeclFile =
+            retSymbol.declarations[0].getSourceFile().fileName;
           const relRetFile = path.relative(ctx.root, retDeclFile);
-          if (retDeclFile !== filePath && !relRetFile.startsWith('node_modules') && !retDeclFile.includes('lib.')) {
+          if (
+            retDeclFile !== filePath &&
+            !relRetFile.startsWith('node_modules') &&
+            !retDeclFile.includes('lib.')
+          ) {
             profile.leakyReturns.push({
               functionName: fn.name,
               returnType: ctx.checker.typeToString(retType),
@@ -502,12 +616,18 @@ export function analyzeSemanticProfile(
 
   for (const fn of exportedFns) {
     if (!fn.params || fn.params < 1) continue;
-    const fnPos = sourceFile.getPositionOfLineAndCharacter(Math.max(0, fn.lineStart - 1), 0);
+    const fnPos = sourceFile.getPositionOfLineAndCharacter(
+      Math.max(0, fn.lineStart - 1),
+      0
+    );
     let fnDeclNode: ts.FunctionDeclaration | undefined;
     const findDecl = (node: ts.Node): void => {
       if (fnDeclNode) return;
-      if (ts.isFunctionDeclaration(node) && node.name?.text === fn.name &&
-          node.getStart(sourceFile!) >= fnPos) {
+      if (
+        ts.isFunctionDeclaration(node) &&
+        node.name?.text === fn.name &&
+        node.getStart(sourceFile!) >= fnPos
+      ) {
         fnDeclNode = node;
         return;
       }
@@ -519,10 +639,17 @@ export function analyzeSemanticProfile(
     for (const param of fnDeclNode.parameters) {
       if (!ts.isIdentifier(param.name)) continue;
       const paramType = ctx.checker.getTypeAtLocation(param);
-      if (!paramType.isUnion() && !(paramType.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown))) continue;
+      if (
+        !paramType.isUnion() &&
+        !(paramType.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown))
+      )
+        continue;
 
       const declaredStr = ctx.checker.typeToString(paramType);
-      const refs = ctx.service.findReferences(filePath, fnDeclNode.name!.getStart(sourceFile));
+      const refs = ctx.service.findReferences(
+        filePath,
+        fnDeclNode.name!.getStart(sourceFile)
+      );
       if (!refs) continue;
 
       const argTypes: string[] = [];
@@ -536,7 +663,10 @@ export function analyzeSemanticProfile(
           if (!refSrc) continue;
           let tokenNode: ts.Node = refSrc;
           const findToken = (n: ts.Node): void => {
-            if (n.getStart(refSrc!) <= ref.textSpan.start && n.getEnd() >= ref.textSpan.start + ref.textSpan.length) {
+            if (
+              n.getStart(refSrc!) <= ref.textSpan.start &&
+              n.getEnd() >= ref.textSpan.start + ref.textSpan.length
+            ) {
               tokenNode = n;
               ts.forEachChild(n, findToken);
             }
@@ -545,20 +675,32 @@ export function analyzeSemanticProfile(
           let callExpr: ts.CallExpression | undefined;
           let ancestor: ts.Node | undefined = tokenNode;
           while (ancestor) {
-            if (ts.isCallExpression(ancestor)) { callExpr = ancestor; break; }
+            if (ts.isCallExpression(ancestor)) {
+              callExpr = ancestor;
+              break;
+            }
             ancestor = ancestor.parent;
           }
           if (!callExpr?.arguments) continue;
 
           const paramIdx = fnDeclNode.parameters.indexOf(param);
-          if (paramIdx < 0 || paramIdx >= callExpr.arguments.length) { allNarrow = false; continue; }
+          if (paramIdx < 0 || paramIdx >= callExpr.arguments.length) {
+            allNarrow = false;
+            continue;
+          }
 
-          const argType = ctx.checker.getTypeAtLocation(callExpr.arguments[paramIdx]);
+          const argType = ctx.checker.getTypeAtLocation(
+            callExpr.arguments[paramIdx]
+          );
           const argStr = ctx.checker.typeToString(argType);
           argTypes.push(argStr);
           callSiteCount++;
 
-          if (argStr === declaredStr || argStr === 'any' || argStr === 'unknown') {
+          if (
+            argStr === declaredStr ||
+            argStr === 'any' ||
+            argStr === 'unknown'
+          ) {
             allNarrow = false;
           }
         }
@@ -572,7 +714,10 @@ export function analyzeSemanticProfile(
             paramName: param.name.text,
             declaredType: declaredStr,
             actualTypes: uniqueArgTypes,
-            narrowedType: uniqueArgTypes.length === 1 ? uniqueArgTypes[0] : uniqueArgTypes.join(' | '),
+            narrowedType:
+              uniqueArgTypes.length === 1
+                ? uniqueArgTypes[0]
+                : uniqueArgTypes.join(' | '),
             lineStart: fn.lineStart,
             lineEnd: fn.lineEnd,
           });
@@ -587,7 +732,7 @@ export function analyzeSemanticProfile(
 export function collectAllAbsoluteFiles(
   fileSummaries: FileEntry[],
   dependencyState: DependencyState,
-  root: string,
+  root: string
 ): string[] {
   const files = new Set<string>();
   for (const entry of fileSummaries) {
@@ -596,7 +741,11 @@ export function collectAllAbsoluteFiles(
   for (const relFile of dependencyState.files) {
     files.add(path.resolve(root, relFile));
   }
-  return [...files].filter((f) => {
-    try { return fs.statSync(f).isFile(); } catch { return false; }
+  return [...files].filter(f => {
+    try {
+      return fs.statSync(f).isFile();
+    } catch {
+      return false;
+    }
   });
 }

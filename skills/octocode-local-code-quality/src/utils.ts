@@ -51,7 +51,10 @@ export function normalizeNodeKind(kind: ts.SyntaxKind): string {
   }
 }
 
-export function makeFingerprint(node: ts.Node, seen: WeakMap<ts.Node, string> = new WeakMap()): string {
+export function makeFingerprint(
+  node: ts.Node,
+  seen: WeakMap<ts.Node, string> = new WeakMap()
+): string {
   if (seen.has(node)) return seen.get(node)!;
 
   const tokens: string[] = [];
@@ -76,8 +79,18 @@ export function makeTreeSitterFingerprint(node: SyntaxNode): string {
   return hashString(tokens.join('|'));
 }
 
-export function getLineAndCharacter(sourceFile: ts.SourceFile, node: ts.Node): { lineStart: number; lineEnd: number; columnStart: number; columnEnd: number } {
-  const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+export function getLineAndCharacter(
+  sourceFile: ts.SourceFile,
+  node: ts.Node
+): {
+  lineStart: number;
+  lineEnd: number;
+  columnStart: number;
+  columnEnd: number;
+} {
+  const start = sourceFile.getLineAndCharacterOfPosition(
+    node.getStart(sourceFile)
+  );
   const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
   return {
     lineStart: start.line + 1,
@@ -87,7 +100,13 @@ export function getLineAndCharacter(sourceFile: ts.SourceFile, node: ts.Node): {
   };
 }
 
-export function buildNodeTree(node: ts.Node, sourceFile: ts.SourceFile, depth: number, maxNodes: NodeBudget, seen: WeakSet<ts.Node> = new WeakSet()): NodeTree | null {
+export function buildNodeTree(
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  depth: number,
+  maxNodes: NodeBudget,
+  seen: WeakSet<ts.Node> = new WeakSet()
+): NodeTree | null {
   if (!node || maxNodes.size <= 0) return null;
   maxNodes.size -= 1;
 
@@ -110,9 +129,15 @@ export function buildNodeTree(node: ts.Node, sourceFile: ts.SourceFile, depth: n
   }
   seen.add(node);
 
-  ts.forEachChild(node, (child) => {
+  ts.forEachChild(node, child => {
     if (maxNodes.size <= 0) return;
-    const childTree = buildNodeTree(child, sourceFile, depth - 1, maxNodes, seen);
+    const childTree = buildNodeTree(
+      child,
+      sourceFile,
+      depth - 1,
+      maxNodes,
+      seen
+    );
     if (childTree) {
       base.children.push(childTree);
     }
@@ -121,7 +146,13 @@ export function buildNodeTree(node: ts.Node, sourceFile: ts.SourceFile, depth: n
   return base;
 }
 
-export function buildTreeSitterTree(node: SyntaxNode, _sourceFileText: string, depth: number, maxNodes: NodeBudget, seen: WeakSet<SyntaxNode> = new WeakSet()): NodeTree | null {
+export function buildTreeSitterTree(
+  node: SyntaxNode,
+  _sourceFileText: string,
+  depth: number,
+  maxNodes: NodeBudget,
+  seen: WeakSet<SyntaxNode> = new WeakSet()
+): NodeTree | null {
   if (!node || maxNodes.size <= 0) return null;
   maxNodes.size -= 1;
 
@@ -145,7 +176,13 @@ export function buildTreeSitterTree(node: SyntaxNode, _sourceFileText: string, d
 
   for (const child of node.children) {
     if (maxNodes.size <= 0) break;
-    const childTree = buildTreeSitterTree(child, _sourceFileText, depth - 1, maxNodes, seen);
+    const childTree = buildTreeSitterTree(
+      child,
+      _sourceFileText,
+      depth - 1,
+      maxNodes,
+      seen
+    );
     if (childTree) {
       base.children.push(childTree);
     }
@@ -156,7 +193,10 @@ export function buildTreeSitterTree(node: SyntaxNode, _sourceFileText: string, d
 
 export function renderNodeText(node: NodeTree, indent: number = 0): string {
   const pad = '  '.repeat(indent);
-  const span = node.startLine === node.endLine ? `${node.startLine}` : `${node.startLine}:${node.endLine}`;
+  const span =
+    node.startLine === node.endLine
+      ? `${node.startLine}`
+      : `${node.startLine}:${node.endLine}`;
   const trunc = node.truncated ? ' ...' : '';
   let line = `${pad}${node.kind}[${span}]${trunc}\n`;
   for (const child of node.children) {
@@ -165,7 +205,10 @@ export function renderNodeText(node: NodeTree, indent: number = 0): string {
   return line;
 }
 
-export function renderTreesText(entries: import('./types.js').TreeEntry[], generatedAt: string): string {
+export function renderTreesText(
+  entries: import('./types.js').TreeEntry[],
+  generatedAt: string
+): string {
   const lines: string[] = [`# AST Trees — ${generatedAt}`, ''];
   for (const entry of entries) {
     lines.push(`## ${entry.package} — ${entry.file}`);
@@ -189,7 +232,11 @@ export function normalizeDependencyValue(value: string): string {
   return path.normalize(value).replace(/\\/g, '/');
 }
 
-export function addToMapSet(map: Map<string, Set<string>>, key: string, value: string): void {
+export function addToMapSet(
+  map: Map<string, Set<string>>,
+  key: string,
+  value: string
+): void {
   if (!map.has(key)) {
     map.set(key, new Set());
   }
@@ -197,10 +244,18 @@ export function addToMapSet(map: Map<string, Set<string>>, key: string, value: s
 }
 
 export function isRelativeImport(specifier: string): boolean {
-  return specifier.startsWith('./') || specifier.startsWith('../') || specifier.startsWith('.\\') || specifier.startsWith('..\\');
+  return (
+    specifier.startsWith('./') ||
+    specifier.startsWith('../') ||
+    specifier.startsWith('.\\') ||
+    specifier.startsWith('..\\')
+  );
 }
 
-export function resolveImportTarget(currentDirectory: string, specifier: string): string | null {
+export function resolveImportTarget(
+  currentDirectory: string,
+  specifier: string
+): string | null {
   const cleaned = specifier.replace(/[?#].*$/, '');
   const base = path.resolve(currentDirectory, cleaned);
   const candidates: string[] = [];
@@ -239,7 +294,11 @@ export function resolveImportTarget(currentDirectory: string, specifier: string)
   return null;
 }
 
-export function increment<T>(map: Map<string, T[]>, key: string, value: T): void {
+export function increment<T>(
+  map: Map<string, T[]>,
+  key: string,
+  value: T
+): void {
   if (!map.has(key)) map.set(key, []);
   map.get(key)!.push(value);
 }

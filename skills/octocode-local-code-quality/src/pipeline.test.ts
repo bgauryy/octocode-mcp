@@ -50,7 +50,9 @@ describe('pipeline main', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const exitErr = new Error('exit-1');
-    vi.spyOn(process, 'exit').mockImplementation(((code?: string | number | null) => {
+    vi.spyOn(process, 'exit').mockImplementation(((
+      code?: string | number | null
+    ) => {
       throw code === 1 ? exitErr : new Error(`unexpected-exit-${code}`);
     }) as never);
 
@@ -71,7 +73,9 @@ describe('pipeline main', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const exitErr = new Error('exit-1');
-    vi.spyOn(process, 'exit').mockImplementation(((code?: string | number | null) => {
+    vi.spyOn(process, 'exit').mockImplementation(((
+      code?: string | number | null
+    ) => {
       throw code === 1 ? exitErr : new Error(`unexpected-exit-${code}`);
     }) as never);
 

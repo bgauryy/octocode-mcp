@@ -5,7 +5,6 @@ import { collectInputSourceProfile } from './collect-input-sources.js';
 
 import type { FileEntry } from './types.js';
 
-
 function parse(code: string, fileName = '/repo/src/test.ts'): ts.SourceFile {
   return ts.createSourceFile(fileName, code, ts.ScriptTarget.ESNext, true);
 }
@@ -140,6 +139,6 @@ describe('collectInputSourceProfile', () => {
     expect(fileEntry.inputSources!.length).toBe(1);
     const calls = fileEntry.inputSources![0].callsWithInputArgs;
     expect(calls.length).toBeGreaterThan(0);
-    expect(calls.some((c) => c.callee.includes('res.send'))).toBe(true);
+    expect(calls.some(c => c.callee.includes('res.send'))).toBe(true);
   });
 });

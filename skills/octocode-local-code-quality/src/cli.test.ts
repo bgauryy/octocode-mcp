@@ -52,7 +52,9 @@ describe('parseArgs', () => {
   });
 
   it('parses --out as separate arg and --out= syntax', () => {
-    expect(parseArgs(['--out', '/tmp/report.json']).out).toBe('/tmp/report.json');
+    expect(parseArgs(['--out', '/tmp/report.json']).out).toBe(
+      '/tmp/report.json'
+    );
     expect(parseArgs(['--out=/tmp/report.json']).out).toBe('/tmp/report.json');
   });
 
@@ -61,7 +63,9 @@ describe('parseArgs', () => {
   });
 
   it('parses --min-function-statements', () => {
-    expect(parseArgs(['--min-function-statements', '12']).minFunctionStatements).toBe(12);
+    expect(
+      parseArgs(['--min-function-statements', '12']).minFunctionStatements
+    ).toBe(12);
   });
 
   it('parses --min-flow-statements', () => {
@@ -69,7 +73,10 @@ describe('parseArgs', () => {
   });
 
   it('parses --critical-complexity-threshold', () => {
-    expect(parseArgs(['--critical-complexity-threshold', '25']).criticalComplexityThreshold).toBe(25);
+    expect(
+      parseArgs(['--critical-complexity-threshold', '25'])
+        .criticalComplexityThreshold
+    ).toBe(25);
   });
 
   it('parses --deep-link-topn', () => {
@@ -81,7 +88,9 @@ describe('parseArgs', () => {
   });
 
   it('parses --coupling-threshold', () => {
-    expect(parseArgs(['--coupling-threshold', '20']).couplingThreshold).toBe(20);
+    expect(parseArgs(['--coupling-threshold', '20']).couplingThreshold).toBe(
+      20
+    );
   });
 
   it('parses --fan-in-threshold', () => {
@@ -93,7 +102,9 @@ describe('parseArgs', () => {
   });
 
   it('parses --god-module-statements', () => {
-    expect(parseArgs(['--god-module-statements', '600']).godModuleStatements).toBe(600);
+    expect(
+      parseArgs(['--god-module-statements', '600']).godModuleStatements
+    ).toBe(600);
   });
 
   it('parses --god-module-exports', () => {
@@ -101,15 +112,22 @@ describe('parseArgs', () => {
   });
 
   it('parses --god-function-statements', () => {
-    expect(parseArgs(['--god-function-statements', '150']).godFunctionStatements).toBe(150);
+    expect(
+      parseArgs(['--god-function-statements', '150']).godFunctionStatements
+    ).toBe(150);
   });
 
   it('parses --cognitive-complexity-threshold', () => {
-    expect(parseArgs(['--cognitive-complexity-threshold', '20']).cognitiveComplexityThreshold).toBe(20);
+    expect(
+      parseArgs(['--cognitive-complexity-threshold', '20'])
+        .cognitiveComplexityThreshold
+    ).toBe(20);
   });
 
   it('parses --barrel-symbol-threshold', () => {
-    expect(parseArgs(['--barrel-symbol-threshold', '50']).barrelSymbolThreshold).toBe(50);
+    expect(
+      parseArgs(['--barrel-symbol-threshold', '50']).barrelSymbolThreshold
+    ).toBe(50);
   });
 
   it('parses --layer-order as comma-separated list', () => {
@@ -172,20 +190,34 @@ describe('parseArgs', () => {
 
   it('falls back to defaults for NaN numeric args', () => {
     const opts = parseArgs([
-      '--findings-limit', 'abc',
-      '--coupling-threshold', 'xyz',
-      '--fan-in-threshold', '',
-      '--fan-out-threshold', 'NaN',
-      '--god-module-statements', 'bad',
-      '--god-module-exports', 'nope',
-      '--god-function-statements', 'err',
-      '--cognitive-complexity-threshold', 'x',
-      '--barrel-symbol-threshold', '!!',
-      '--min-function-statements', 'no',
-      '--min-flow-statements', 'no',
-      '--critical-complexity-threshold', 'no',
-      '--deep-link-topn', 'no',
-      '--tree-depth', 'no',
+      '--findings-limit',
+      'abc',
+      '--coupling-threshold',
+      'xyz',
+      '--fan-in-threshold',
+      '',
+      '--fan-out-threshold',
+      'NaN',
+      '--god-module-statements',
+      'bad',
+      '--god-module-exports',
+      'nope',
+      '--god-function-statements',
+      'err',
+      '--cognitive-complexity-threshold',
+      'x',
+      '--barrel-symbol-threshold',
+      '!!',
+      '--min-function-statements',
+      'no',
+      '--min-flow-statements',
+      'no',
+      '--critical-complexity-threshold',
+      'no',
+      '--deep-link-topn',
+      'no',
+      '--tree-depth',
+      'no',
     ]);
     expect(opts.findingsLimit).toBe(DEFAULT_OPTS.findingsLimit);
     expect(opts.couplingThreshold).toBe(DEFAULT_OPTS.couplingThreshold);
@@ -194,11 +226,15 @@ describe('parseArgs', () => {
     expect(opts.godModuleStatements).toBe(DEFAULT_OPTS.godModuleStatements);
     expect(opts.godModuleExports).toBe(DEFAULT_OPTS.godModuleExports);
     expect(opts.godFunctionStatements).toBe(DEFAULT_OPTS.godFunctionStatements);
-    expect(opts.cognitiveComplexityThreshold).toBe(DEFAULT_OPTS.cognitiveComplexityThreshold);
+    expect(opts.cognitiveComplexityThreshold).toBe(
+      DEFAULT_OPTS.cognitiveComplexityThreshold
+    );
     expect(opts.barrelSymbolThreshold).toBe(DEFAULT_OPTS.barrelSymbolThreshold);
     expect(opts.minFunctionStatements).toBe(DEFAULT_OPTS.minFunctionStatements);
     expect(opts.minFlowStatements).toBe(DEFAULT_OPTS.minFlowStatements);
-    expect(opts.criticalComplexityThreshold).toBe(DEFAULT_OPTS.criticalComplexityThreshold);
+    expect(opts.criticalComplexityThreshold).toBe(
+      DEFAULT_OPTS.criticalComplexityThreshold
+    );
     expect(opts.deepLinkTopN).toBe(DEFAULT_OPTS.deepLinkTopN);
     expect(opts.treeDepth).toBe(DEFAULT_OPTS.treeDepth);
   });
@@ -209,10 +245,14 @@ describe('parseArgs', () => {
       '--include-tests',
       '--no-tree',
       '--graph',
-      '--parser', 'typescript',
-      '--findings-limit', '100',
-      '--coupling-threshold', '10',
-      '--layer-order', 'a,b,c',
+      '--parser',
+      'typescript',
+      '--findings-limit',
+      '100',
+      '--coupling-threshold',
+      '10',
+      '--layer-order',
+      'a,b,c',
     ]);
     expect(opts.json).toBe(true);
     expect(opts.includeTests).toBe(true);
@@ -312,9 +352,12 @@ describe('parseArgs', () => {
 
   it('parses --findings-limit 10, --min-function-statements 8, --critical-complexity-threshold 30', () => {
     const opts = parseArgs([
-      '--findings-limit', '10',
-      '--min-function-statements', '8',
-      '--critical-complexity-threshold', '30',
+      '--findings-limit',
+      '10',
+      '--min-function-statements',
+      '8',
+      '--critical-complexity-threshold',
+      '30',
     ]);
     expect(opts.findingsLimit).toBe(10);
     expect(opts.minFunctionStatements).toBe(8);
@@ -323,24 +366,34 @@ describe('parseArgs', () => {
 
   it('parses --secret-entropy-threshold 4.0 and --similarity-threshold 0.9', () => {
     const opts = parseArgs([
-      '--secret-entropy-threshold', '4.0',
-      '--similarity-threshold', '0.9',
+      '--secret-entropy-threshold',
+      '4.0',
+      '--similarity-threshold',
+      '0.9',
     ]);
     expect(opts.secretEntropyThreshold).toBe(4);
     expect(opts.similarityThreshold).toBe(0.9);
   });
 
   it('parses float flags with decimal values', () => {
-    expect(parseArgs(['--secret-entropy-threshold', '5.5']).secretEntropyThreshold).toBe(5.5);
-    expect(parseArgs(['--similarity-threshold', '0.75']).similarityThreshold).toBe(0.75);
+    expect(
+      parseArgs(['--secret-entropy-threshold', '5.5']).secretEntropyThreshold
+    ).toBe(5.5);
+    expect(
+      parseArgs(['--similarity-threshold', '0.75']).similarityThreshold
+    ).toBe(0.75);
   });
 
   it('parses --parser typescript, --root /some/path, --out result.json, --layer-order ui,service,repo', () => {
     const opts = parseArgs([
-      '--parser', 'typescript',
-      '--root', '/some/path',
-      '--out', 'result.json',
-      '--layer-order', 'ui,service,repo',
+      '--parser',
+      'typescript',
+      '--root',
+      '/some/path',
+      '--out',
+      'result.json',
+      '--layer-order',
+      'ui,service,repo',
     ]);
     expect(opts.parser).toBe('typescript');
     expect(opts.root).toBe('/some/path');
@@ -357,7 +410,11 @@ describe('parseArgs', () => {
     const opts = parseArgs(['--scope', 'packages/foo,packages/bar']);
     expect(opts.scope).toBeInstanceOf(Array);
     expect(opts.scope!.length).toBe(2);
-    expect(opts.scope!.every((p) => p.endsWith('packages/foo') || p.endsWith('packages/bar'))).toBe(true);
+    expect(
+      opts.scope!.every(
+        p => p.endsWith('packages/foo') || p.endsWith('packages/bar')
+      )
+    ).toBe(true);
   });
 
   it('parses --scope= with file:symbol syntax', () => {
@@ -416,10 +473,14 @@ describe('parseArgs', () => {
   });
 
   it('throws when --features and --exclude are both provided', () => {
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {}) as never);
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((() => {}) as never);
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     parseArgs(['--features=architecture', '--exclude=dead-code']);
-    expect(consoleSpy).toHaveBeenCalledWith('--features and --exclude are mutually exclusive. Use one or the other.');
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '--features and --exclude are mutually exclusive. Use one or the other.'
+    );
     expect(exitSpy).toHaveBeenCalledWith(1);
     exitSpy.mockRestore();
     consoleSpy.mockRestore();

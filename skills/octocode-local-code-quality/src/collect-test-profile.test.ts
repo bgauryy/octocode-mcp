@@ -5,8 +5,10 @@ import { collectTestProfile } from './collect-test-profile.js';
 
 import type { FileEntry } from './types.js';
 
-
-function parse(code: string, fileName = '/repo/src/test.spec.ts'): ts.SourceFile {
+function parse(
+  code: string,
+  fileName = '/repo/src/test.spec.ts'
+): ts.SourceFile {
   return ts.createSourceFile(fileName, code, ts.ScriptTarget.ESNext, true);
 }
 
@@ -48,7 +50,9 @@ describe('collectTestProfile', () => {
     collectTestProfile(sourceFile, 'test.spec.ts', fileEntry);
     expect(fileEntry.testProfile).toBeDefined();
     expect(fileEntry.testProfile!.testBlocks).toHaveLength(1);
-    expect(fileEntry.testProfile!.testBlocks[0].assertionCount).toBeGreaterThan(0);
+    expect(fileEntry.testProfile!.testBlocks[0].assertionCount).toBeGreaterThan(
+      0
+    );
   });
 
   it('jest.mock() → detects mocks', () => {

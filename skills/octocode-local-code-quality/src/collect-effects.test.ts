@@ -11,7 +11,6 @@ function parse(code: string, fileName = '/repo/src/test.ts'): ts.SourceFile {
   return ts.createSourceFile(fileName, code, ts.ScriptTarget.ESNext, true);
 }
 
-
 describe('collectTopLevelEffects', () => {
   describe('effect kinds', () => {
     it('detects side-effect-import (bare import)', () => {
@@ -122,7 +121,9 @@ describe('collectTopLevelEffects', () => {
     });
 
     it('detects execFileSync (exec-sync)', () => {
-      const src = parse('const cp = require("child_process"); const x = cp.execFileSync("ls");');
+      const src = parse(
+        'const cp = require("child_process"); const x = cp.execFileSync("ls");'
+      );
       const effects = collectTopLevelEffects(src, 'src/test.ts');
       expect(effects).toHaveLength(1);
       expect(effects[0]).toMatchObject({
@@ -133,7 +134,9 @@ describe('collectTopLevelEffects', () => {
     });
 
     it('detects readFileSync (sync-io)', () => {
-      const src = parse('const fs = require("fs"); const data = fs.readFileSync("/path", "utf8");');
+      const src = parse(
+        'const fs = require("fs"); const data = fs.readFileSync("/path", "utf8");'
+      );
       const effects = collectTopLevelEffects(src, 'src/test.ts');
       expect(effects).toHaveLength(1);
       expect(effects[0]).toMatchObject({
@@ -144,7 +147,9 @@ describe('collectTopLevelEffects', () => {
     });
 
     it('detects writeFileSync (sync-io)', () => {
-      const src = parse('const fs = require("fs"); fs.writeFileSync("/tmp/x", "data");');
+      const src = parse(
+        'const fs = require("fs"); fs.writeFileSync("/tmp/x", "data");'
+      );
       const effects = collectTopLevelEffects(src, 'src/test.ts');
       expect(effects).toHaveLength(1);
       expect(effects[0]).toMatchObject({
@@ -266,7 +271,9 @@ describe('collectTopLevelEffects', () => {
 
   describe('variable initializers', () => {
     it('variable initializer with call expression', () => {
-      const src = parse('const fs = require("fs"); const data = fs.readFileSync("/path", "utf8");');
+      const src = parse(
+        'const fs = require("fs"); const data = fs.readFileSync("/path", "utf8");'
+      );
       const effects = collectTopLevelEffects(src, 'src/test.ts');
       expect(effects).toHaveLength(1);
       expect(effects[0].kind).toBe('sync-io');
@@ -276,7 +283,10 @@ describe('collectTopLevelEffects', () => {
       const src = parse('x = setTimeout(() => {}, 0);');
       const effects = collectTopLevelEffects(src, 'src/test.ts');
       expect(effects).toHaveLength(1);
-      expect(effects[0]).toMatchObject({ kind: 'timer', detail: 'setTimeout()' });
+      expect(effects[0]).toMatchObject({
+        kind: 'timer',
+        detail: 'setTimeout()',
+      });
     });
 
     it('variable initializer as binary with call on right', () => {
@@ -306,11 +316,16 @@ describe('collectTopLevelEffects', () => {
       const src = parse('while (false) { new Function("1"); }');
       const effects = collectTopLevelEffects(src, 'src/test.ts');
       expect(effects).toHaveLength(1);
-      expect(effects[0]).toMatchObject({ kind: 'eval', detail: 'new Function()' });
+      expect(effects[0]).toMatchObject({
+        kind: 'eval',
+        detail: 'new Function()',
+      });
     });
 
     it('switch statement with call inside', () => {
-      const src = parse('switch (1) { case 1: setInterval(() => {}, 100); break; }');
+      const src = parse(
+        'switch (1) { case 1: setInterval(() => {}, 100); break; }'
+      );
       const effects = collectTopLevelEffects(src, 'src/test.ts');
       expect(effects).toHaveLength(1);
       expect(effects[0]).toMatchObject({ kind: 'timer' });
@@ -324,21 +339,27 @@ describe('collectTopLevelEffects', () => {
     });
 
     it('do-while with call inside', () => {
-      const src = parse('const cp = require("child_process"); do { cp.execSync("ls"); } while (false);');
+      const src = parse(
+        'const cp = require("child_process"); do { cp.execSync("ls"); } while (false);'
+      );
       const effects = collectTopLevelEffects(src, 'src/test.ts');
       expect(effects).toHaveLength(1);
       expect(effects[0]).toMatchObject({ kind: 'exec-sync' });
     });
 
     it('for-of with call inside', () => {
-      const src = parse('const fs = require("fs"); for (const x of []) { fs.readFileSync("/x"); }');
+      const src = parse(
+        'const fs = require("fs"); for (const x of []) { fs.readFileSync("/x"); }'
+      );
       const effects = collectTopLevelEffects(src, 'src/test.ts');
       expect(effects).toHaveLength(1);
       expect(effects[0]).toMatchObject({ kind: 'sync-io' });
     });
 
     it('for-in with call inside', () => {
-      const src = parse('for (const k in {}) { document.addEventListener("click", () => {}); }');
+      const src = parse(
+        'for (const k in {}) { document.addEventListener("click", () => {}); }'
+      );
       const effects = collectTopLevelEffects(src, 'src/test.ts');
       expect(effects).toHaveLength(1);
       expect(effects[0]).toMatchObject({ kind: 'listener' });
@@ -398,7 +419,6 @@ describe('collectTopLevelEffects', () => {
   });
 });
 
-
 describe('findParentBlock', () => {
   it('returns Block when node is inside a block', () => {
     const src = parse('function f() { const x = 1; }');
@@ -430,7 +450,6 @@ describe('findParentBlock', () => {
   });
 });
 
-
 describe('blockContainsCall', () => {
   it('returns true when block contains call with given name', () => {
     const src = parse('function f() { setTimeout(() => {}, 0); }');
@@ -460,8 +479,10 @@ describe('blockContainsCall', () => {
     expect(blockContainsCall(block, src, 'setTimeout')).toBe(false);
   });
 
-    it('returns true when call is in variable initializer', () => {
-    const src = parse('const fs = require("fs"); function f() { const x = fs.readFileSync("/x"); }');
+  it('returns true when call is in variable initializer', () => {
+    const src = parse(
+      'const fs = require("fs"); function f() { const x = fs.readFileSync("/x"); }'
+    );
     const fn = src.statements[1] as ts.FunctionDeclaration;
     const block = fn.body!;
     expect(blockContainsCall(block, src, 'fs.readFileSync')).toBe(true);

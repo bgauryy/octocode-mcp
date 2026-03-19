@@ -17,7 +17,6 @@ import { ALLOWED_EXTS } from './types.js';
 
 import type { NapiConfig, SgNode, SgRoot } from '@ast-grep/napi';
 
-
 export interface AstSearchOptions {
   root: string;
   pattern: string | null;
@@ -52,7 +51,6 @@ export interface AstSearchResult {
   _sourceByFile?: Map<string, string[]>;
 }
 
-
 type PresetRule = NapiConfig & { description: string };
 
 export const PRESETS: Record<string, PresetRule> = {
@@ -78,7 +76,7 @@ export const PRESETS: Record<string, PresetRule> = {
     },
     description: 'Any console method call (log, warn, error, debug, etc.)',
   },
-  'debugger': {
+  debugger: {
     rule: {
       kind: 'debugger_statement',
     },
@@ -117,7 +115,8 @@ export const PRESETS: Record<string, PresetRule> = {
         kind: 'statement_block',
       },
     },
-    description: 'Arrow functions with statement block bodies (could be expression)',
+    description:
+      'Arrow functions with statement block bodies (could be expression)',
   },
   'nested-ternary': {
     rule: {
@@ -183,15 +182,19 @@ export const PRESETS: Record<string, PresetRule> = {
   },
 };
 
-
 function isTestFile(filePath: string): boolean {
   const base = path.basename(filePath);
-  return /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/.test(base)
-    || base.startsWith('test_')
-    || filePath.includes('__tests__');
+  return (
+    /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/.test(base) ||
+    base.startsWith('test_') ||
+    filePath.includes('__tests__')
+  );
 }
 
-export function collectSearchFiles(root: string, opts: Pick<AstSearchOptions, 'includeTests' | 'ignoreDirs'>): string[] {
+export function collectSearchFiles(
+  root: string,
+  opts: Pick<AstSearchOptions, 'includeTests' | 'ignoreDirs'>
+): string[] {
   const files: string[] = [];
   const walk = (dir: string): void => {
     let entries: fs.Dirent[];
@@ -205,7 +208,10 @@ export function collectSearchFiles(root: string, opts: Pick<AstSearchOptions, 'i
       if (opts.ignoreDirs.has(entry.name)) continue;
       if (entry.isSymbolicLink()) continue;
       const next = path.join(dir, entry.name);
-      if (entry.isDirectory()) { walk(next); continue; }
+      if (entry.isDirectory()) {
+        walk(next);
+        continue;
+      }
       if (!entry.isFile()) continue;
       if (entry.name.endsWith('.d.ts')) continue;
       const ext = path.extname(entry.name);
@@ -217,7 +223,6 @@ export function collectSearchFiles(root: string, opts: Pick<AstSearchOptions, 'i
   walk(root);
   return files;
 }
-
 
 type AstParser = { parse(src: string): SgRoot };
 
@@ -237,8 +242,10 @@ function parserForExt(ext: string): AstParser {
   }
 }
 
-
-function extractMetaVars(node: SgNode, pattern: string): Record<string, string> {
+function extractMetaVars(
+  node: SgNode,
+  pattern: string
+): Record<string, string> {
   const vars: Record<string, string> = {};
   let match: RegExpExecArray | null;
 
@@ -264,7 +271,11 @@ function extractMetaVars(node: SgNode, pattern: string): Record<string, string> 
   return vars;
 }
 
-function nodeToMatch(node: SgNode, file: string, pattern: string | null): AstMatch {
+function nodeToMatch(
+  node: SgNode,
+  file: string,
+  pattern: string | null
+): AstMatch {
   const range = node.range();
   const result: AstMatch = {
     file,
@@ -287,7 +298,7 @@ export function searchFile(
   source: string,
   matcher: string | number | NapiConfig,
   patternStr: string | null,
-  limit: number,
+  limit: number
 ): AstMatch[] {
   const ext = path.extname(filePath);
   const parser = parserForExt(ext);
@@ -306,7 +317,11 @@ export function searchFile(
   return matches;
 }
 
-export function runSearch(files: string[], opts: AstSearchOptions, root: string): AstSearchResult {
+export function runSearch(
+  files: string[],
+  opts: AstSearchOptions,
+  root: string
+): AstSearchResult {
   let matcher: string | NapiConfig;
   let queryLabel: string;
   let queryType: AstSearchResult['queryType'];
@@ -316,7 +331,9 @@ export function runSearch(files: string[], opts: AstSearchOptions, root: string)
     const preset = PRESETS[opts.preset];
     if (!preset) {
       const available = Object.keys(PRESETS).join(', ');
-      throw new Error(`Unknown preset: "${opts.preset}". Available: ${available}`);
+      throw new Error(
+        `Unknown preset: "${opts.preset}". Available: ${available}`
+      );
     }
     matcher = preset;
     queryLabel = `preset:${opts.preset} — ${preset.description}`;
@@ -340,7 +357,8 @@ export function runSearch(files: string[], opts: AstSearchOptions, root: string)
 
   const allMatches: AstMatch[] = [];
   const filesWithMatches = new Set<string>();
-  const sourceByFile = opts.context > 0 ? new Map<string, string[]>() : undefined;
+  const sourceByFile =
+    opts.context > 0 ? new Map<string, string[]>() : undefined;
 
   for (const filePath of files) {
     if (allMatches.length >= opts.limit) break;
@@ -352,7 +370,13 @@ export function runSearch(files: string[], opts: AstSearchOptions, root: string)
     }
     const relFile = path.relative(root, filePath);
     const remaining = opts.limit - allMatches.length;
-    const fileMatches = searchFile(relFile, source, matcher, patternStr, remaining);
+    const fileMatches = searchFile(
+      relFile,
+      source,
+      matcher,
+      patternStr,
+      remaining
+    );
     if (fileMatches.length > 0) {
       filesWithMatches.add(relFile);
       allMatches.push(...fileMatches);
@@ -371,7 +395,6 @@ export function runSearch(files: string[], opts: AstSearchOptions, root: string)
   return result;
 }
 
-
 interface ParsedSearchArgs {
   opts: AstSearchOptions;
   listPresets: boolean;
@@ -388,8 +411,15 @@ export function parseSearchArgs(argv: string[]): ParsedSearchArgs {
     limit: 500,
     includeTests: false,
     ignoreDirs: new Set([
-      '.git', '.next', '.yarn', '.cache', '.octocode',
-      'node_modules', 'dist', 'coverage', 'out',
+      '.git',
+      '.next',
+      '.yarn',
+      '.cache',
+      '.octocode',
+      'node_modules',
+      'dist',
+      'coverage',
+      'out',
     ]),
     context: 0,
   };
@@ -397,27 +427,73 @@ export function parseSearchArgs(argv: string[]): ParsedSearchArgs {
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === '--pattern' || arg === '-p') { opts.pattern = argv[++i]; continue; }
-    if (arg.startsWith('--pattern=')) { opts.pattern = arg.slice('--pattern='.length); continue; }
-    if (arg === '--kind' || arg === '-k') { opts.kind = argv[++i]; continue; }
-    if (arg.startsWith('--kind=')) { opts.kind = arg.slice('--kind='.length); continue; }
-    if (arg === '--preset') { opts.preset = argv[++i]; continue; }
-    if (arg.startsWith('--preset=')) { opts.preset = arg.slice('--preset='.length); continue; }
+    if (arg === '--pattern' || arg === '-p') {
+      opts.pattern = argv[++i];
+      continue;
+    }
+    if (arg.startsWith('--pattern=')) {
+      opts.pattern = arg.slice('--pattern='.length);
+      continue;
+    }
+    if (arg === '--kind' || arg === '-k') {
+      opts.kind = argv[++i];
+      continue;
+    }
+    if (arg.startsWith('--kind=')) {
+      opts.kind = arg.slice('--kind='.length);
+      continue;
+    }
+    if (arg === '--preset') {
+      opts.preset = argv[++i];
+      continue;
+    }
+    if (arg.startsWith('--preset=')) {
+      opts.preset = arg.slice('--preset='.length);
+      continue;
+    }
     if (arg === '--rule') {
       const raw = argv[++i];
-      try { opts.rule = JSON.parse(raw) as NapiConfig; } catch {
-        throw new Error(`Invalid --rule JSON: ${raw?.slice(0, 100) ?? '(empty)'}`);
+      try {
+        opts.rule = JSON.parse(raw) as NapiConfig;
+      } catch {
+        throw new Error(
+          `Invalid --rule JSON: ${raw?.slice(0, 100) ?? '(empty)'}`
+        );
       }
       continue;
     }
-    if (arg === '--root') { opts.root = path.resolve(argv[++i]); continue; }
-    if (arg.startsWith('--root=')) { opts.root = path.resolve(arg.slice('--root='.length)); continue; }
-    if (arg === '--json') { opts.json = true; continue; }
-    if (arg === '--limit') { opts.limit = parseInt(argv[++i], 10); continue; }
-    if (arg === '--include-tests') { opts.includeTests = true; continue; }
-    if (arg === '--context' || arg === '-C') { opts.context = parseInt(argv[++i], 10); continue; }
-    if (arg === '--list-presets') { listPresets = true; continue; }
-    if (arg === '--help' || arg === '-h') { printSearchHelp(); process.exit(0); }
+    if (arg === '--root') {
+      opts.root = path.resolve(argv[++i]);
+      continue;
+    }
+    if (arg.startsWith('--root=')) {
+      opts.root = path.resolve(arg.slice('--root='.length));
+      continue;
+    }
+    if (arg === '--json') {
+      opts.json = true;
+      continue;
+    }
+    if (arg === '--limit') {
+      opts.limit = parseInt(argv[++i], 10);
+      continue;
+    }
+    if (arg === '--include-tests') {
+      opts.includeTests = true;
+      continue;
+    }
+    if (arg === '--context' || arg === '-C') {
+      opts.context = parseInt(argv[++i], 10);
+      continue;
+    }
+    if (arg === '--list-presets') {
+      listPresets = true;
+      continue;
+    }
+    if (arg === '--help' || arg === '-h') {
+      printSearchHelp();
+      process.exit(0);
+    }
   }
 
   if (Number.isNaN(opts.limit)) opts.limit = 500;
@@ -461,14 +537,22 @@ Examples:
   node scripts/ast-search.js --rule '{"rule":{"kind":"catch_clause"}}' --root ./src
 
 Presets:
-${Object.entries(PRESETS).map(([name, p]) => `  ${name.padEnd(22)} ${p.description}`).join('\n')}
+${Object.entries(PRESETS)
+  .map(([name, p]) => `  ${name.padEnd(22)} ${p.description}`)
+  .join('\n')}
 `);
 }
 
-export function formatTextOutput(result: AstSearchResult, opts: AstSearchOptions, _root: string): string {
+export function formatTextOutput(
+  result: AstSearchResult,
+  opts: AstSearchOptions,
+  _root: string
+): string {
   const lines: string[] = [];
   lines.push(`\n🔍 ${result.query}`);
-  lines.push(`   ${result.totalMatches} matches across ${result.totalFiles} files\n`);
+  lines.push(
+    `   ${result.totalMatches} matches across ${result.totalFiles} files\n`
+  );
 
   const ctx = opts.context;
   const sourceMap = result._sourceByFile;
@@ -487,19 +571,23 @@ export function formatTextOutput(result: AstSearchResult, opts: AstSearchOptions
         const end = Math.min(srcLines.length, m.lineEnd + ctx);
         for (let i = start; i < end; i++) {
           const lineNum = i + 1;
-          const marker = (lineNum >= m.lineStart && lineNum <= m.lineEnd) ? '>' : ' ';
-          lines.push(`  ${marker} ${String(lineNum).padStart(4)} | ${srcLines[i]}`);
+          const marker =
+            lineNum >= m.lineStart && lineNum <= m.lineEnd ? '>' : ' ';
+          lines.push(
+            `  ${marker} ${String(lineNum).padStart(4)} | ${srcLines[i]}`
+          );
         }
         lines.push('');
         continue;
       }
     }
 
-    const truncatedText = m.text.length > 200
-      ? m.text.slice(0, 200) + '…'
-      : m.text;
+    const truncatedText =
+      m.text.length > 200 ? m.text.slice(0, 200) + '…' : m.text;
     const singleLine = truncatedText.replace(/\n/g, '↵').replace(/\s+/g, ' ');
-    lines.push(`  L${m.lineStart}:${m.columnStart}  [${m.kind}]  ${singleLine}`);
+    lines.push(
+      `  L${m.lineStart}:${m.columnStart}  [${m.kind}]  ${singleLine}`
+    );
 
     if (m.metaVariables && Object.keys(m.metaVariables).length > 0) {
       for (const [k, v] of Object.entries(m.metaVariables)) {
@@ -518,7 +606,7 @@ async function main(): Promise<void> {
 
   if (listPresets) {
     if (opts.json) {
-      console.log(JSON.stringify(PRESETS, null, 2));
+      console.log(JSON.stringify(PRESETS));
     } else {
       console.log('\nAvailable presets:\n');
       for (const [name, preset] of Object.entries(PRESETS)) {
@@ -545,16 +633,16 @@ async function main(): Promise<void> {
   const result = runSearch(files, opts, opts.root);
 
   if (opts.json) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(result));
   } else {
     console.log(formatTextOutput(result, opts, opts.root));
   }
 }
 
-const isDirectRun = process.argv[1] && (
-  import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'))
-  || import.meta.url.endsWith('/scripts/ast-search.js')
-);
+const isDirectRun =
+  process.argv[1] &&
+  (import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/')) ||
+    import.meta.url.endsWith('/scripts/ast-search.js'));
 
 if (isDirectRun) {
   main().catch((error: unknown) => {

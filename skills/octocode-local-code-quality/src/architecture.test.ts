@@ -47,9 +47,19 @@ import {
   mergeOverlappingChains,
 } from './architecture.js';
 
-import type { DependencyProfile, DependencyState, DuplicateGroup, FileEntry, FunctionEntry, RedundantFlowGroup } from './types.js';
-import type { CodeLocation, DependencySummary, FileCriticality } from './types.js';
-
+import type {
+  DependencyProfile,
+  DependencyState,
+  DuplicateGroup,
+  FileEntry,
+  FunctionEntry,
+  RedundantFlowGroup,
+} from './types.js';
+import type {
+  CodeLocation,
+  DependencySummary,
+  FileCriticality,
+} from './types.js';
 
 function emptyState(): DependencyState {
   return {
@@ -122,16 +132,28 @@ function makeFileEntry(overrides: Partial<FileEntry> = {}): FileEntry {
   };
 }
 
-function minimalDepSummary(overrides: Partial<DependencySummary> = {}): DependencySummary {
+function minimalDepSummary(
+  overrides: Partial<DependencySummary> = {}
+): DependencySummary {
   return {
-    totalModules: 0, totalEdges: 0, unresolvedEdgeCount: 0,
-    externalDependencyFiles: 0, rootsCount: 0, leavesCount: 0,
-    roots: [], leaves: [], criticalModules: [], testOnlyModules: [],
-    unresolvedSample: [], outgoingTop: [], inboundTop: [],
-    cycles: [], criticalPaths: [], ...overrides,
+    totalModules: 0,
+    totalEdges: 0,
+    unresolvedEdgeCount: 0,
+    externalDependencyFiles: 0,
+    rootsCount: 0,
+    leavesCount: 0,
+    roots: [],
+    leaves: [],
+    criticalModules: [],
+    testOnlyModules: [],
+    unresolvedSample: [],
+    outgoingTop: [],
+    inboundTop: [],
+    cycles: [],
+    criticalPaths: [],
+    ...overrides,
   };
 }
-
 
 describe('isLikelyEntrypoint', () => {
   it('matches config files', () => {
@@ -143,7 +165,6 @@ describe('isLikelyEntrypoint', () => {
     expect(isLikelyEntrypoint('src/public.ts')).toBe(true);
   });
 });
-
 
 describe('computeInstability', () => {
   it('returns 0 when both counts are 0', () => {
@@ -229,12 +250,11 @@ describe('detectSdpViolations', () => {
       addEdge(state, 'src/unstable.ts', f);
     }
     const findings = detectSdpViolations(state);
-    const sdp = findings.find((f) => f.file === 'src/stable.ts');
+    const sdp = findings.find(f => f.file === 'src/stable.ts');
     expect(sdp).toBeDefined();
     expect(sdp!.severity).toBe('high');
   });
 });
-
 
 describe('detectHighCoupling', () => {
   it('returns empty for uncoupled modules', () => {
@@ -258,7 +278,7 @@ describe('detectHighCoupling', () => {
       addEdge(state, f, hub);
     }
     const findings = detectHighCoupling(state, 15);
-    const hubFinding = findings.find((f) => f.file === hub);
+    const hubFinding = findings.find(f => f.file === hub);
     expect(hubFinding).toBeDefined();
     expect(hubFinding!.category).toBe('high-coupling');
   });
@@ -290,7 +310,6 @@ describe('detectHighCoupling', () => {
   });
 });
 
-
 describe('detectGodModuleCoupling', () => {
   it('returns empty for low fan-in/fan-out', () => {
     const state = emptyState();
@@ -310,7 +329,7 @@ describe('detectGodModuleCoupling', () => {
       addEdge(state, f, hub);
     }
     const findings = detectGodModuleCoupling(state, 20, 15);
-    expect(findings.some((f) => f.title.includes('fan-in'))).toBe(true);
+    expect(findings.some(f => f.title.includes('fan-in'))).toBe(true);
   });
 
   it('detects high fan-out', () => {
@@ -323,7 +342,7 @@ describe('detectGodModuleCoupling', () => {
       addEdge(state, hub, f);
     }
     const findings = detectGodModuleCoupling(state, 20, 15);
-    expect(findings.some((f) => f.title.includes('fan-out'))).toBe(true);
+    expect(findings.some(f => f.title.includes('fan-out'))).toBe(true);
   });
 
   it('can detect both fan-in and fan-out for same module', () => {
@@ -341,11 +360,10 @@ describe('detectGodModuleCoupling', () => {
       addEdge(state, hub, f);
     }
     const findings = detectGodModuleCoupling(state, 20, 15);
-    const hubFindings = findings.filter((f) => f.file === hub);
+    const hubFindings = findings.filter(f => f.file === hub);
     expect(hubFindings.length).toBe(2);
   });
 });
-
 
 describe('detectOrphanModules', () => {
   it('returns empty when all modules are connected', () => {
@@ -377,7 +395,6 @@ describe('detectOrphanModules', () => {
   });
 });
 
-
 describe('detectUnreachableModules', () => {
   it('returns empty when all reachable from entrypoint', () => {
     const state = emptyState();
@@ -391,7 +408,7 @@ describe('detectUnreachableModules', () => {
     addEdge(state, 'src/index.ts', 'src/a.ts');
     addEdge(state, 'src/island.ts', 'src/leaf.ts');
     const findings = detectUnreachableModules(state);
-    const unreachable = findings.map((f) => f.file).sort();
+    const unreachable = findings.map(f => f.file).sort();
     expect(unreachable).toContain('src/island.ts');
     expect(unreachable).toContain('src/leaf.ts');
   });
@@ -401,7 +418,10 @@ describe('detectUnreachableModules', () => {
     addEdge(state, 'src/main.ts', 'src/a.ts');
     addEdge(state, 'src/orphan.ts', 'src/b.ts');
     const findings = detectUnreachableModules(state);
-    expect(findings.map((f) => f.file).sort()).toEqual(['src/b.ts', 'src/orphan.ts']);
+    expect(findings.map(f => f.file).sort()).toEqual([
+      'src/b.ts',
+      'src/orphan.ts',
+    ]);
   });
 
   it('uses roots as entrypoints when no index/main files exist', () => {
@@ -420,7 +440,6 @@ describe('detectUnreachableModules', () => {
     expect(detectUnreachableModules(state)).toEqual([]);
   });
 });
-
 
 describe('detectUnusedNpmDeps', () => {
   it('returns empty when all deps are used', () => {
@@ -450,11 +469,14 @@ describe('detectUnusedNpmDeps', () => {
 
   it('reports both unused prod and dev deps', () => {
     const ext = new Map<string, Set<string>>();
-    const findings = detectUnusedNpmDeps(ext, { react: '^18' }, { jest: '^29' });
+    const findings = detectUnusedNpmDeps(
+      ext,
+      { react: '^18' },
+      { jest: '^29' }
+    );
     expect(findings.length).toBe(2);
   });
 });
-
 
 describe('detectBoundaryViolations', () => {
   it('returns empty for same-package imports', () => {
@@ -480,7 +502,11 @@ describe('detectBoundaryViolations', () => {
 
   it('assigns high severity for internal/ path imports', () => {
     const state = emptyState();
-    addEdge(state, 'packages/foo/src/a.ts', 'packages/bar/src/internal/secret.ts');
+    addEdge(
+      state,
+      'packages/foo/src/a.ts',
+      'packages/bar/src/internal/secret.ts'
+    );
     const findings = detectBoundaryViolations(state);
     expect(findings[0].severity).toBe('high');
   });
@@ -492,7 +518,6 @@ describe('detectBoundaryViolations', () => {
   });
 });
 
-
 describe('computeBarrelDepth', () => {
   it('returns 0 for file with no re-exports', () => {
     const state = emptyState();
@@ -503,7 +528,14 @@ describe('computeBarrelDepth', () => {
   it('returns 1 for single-level barrel', () => {
     const state = emptyState();
     state.reExportsByFile.set('src/index.ts', [
-      { sourceModule: './a', resolvedModule: 'src/a.ts', exportedAs: 'A', importedName: 'A', isStar: false, isTypeOnly: false },
+      {
+        sourceModule: './a',
+        resolvedModule: 'src/a.ts',
+        exportedAs: 'A',
+        importedName: 'A',
+        isStar: false,
+        isTypeOnly: false,
+      },
     ]);
     state.reExportsByFile.set('src/a.ts', []);
     expect(computeBarrelDepth('src/index.ts', state)).toBe(1);
@@ -512,10 +544,24 @@ describe('computeBarrelDepth', () => {
   it('returns 2 for two-level barrel chain', () => {
     const state = emptyState();
     state.reExportsByFile.set('src/index.ts', [
-      { sourceModule: './sub', resolvedModule: 'src/sub/index.ts', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: false },
+      {
+        sourceModule: './sub',
+        resolvedModule: 'src/sub/index.ts',
+        exportedAs: '*',
+        importedName: '*',
+        isStar: true,
+        isTypeOnly: false,
+      },
     ]);
     state.reExportsByFile.set('src/sub/index.ts', [
-      { sourceModule: './a', resolvedModule: 'src/sub/a.ts', exportedAs: 'A', importedName: 'A', isStar: false, isTypeOnly: false },
+      {
+        sourceModule: './a',
+        resolvedModule: 'src/sub/a.ts',
+        exportedAs: 'A',
+        importedName: 'A',
+        isStar: false,
+        isTypeOnly: false,
+      },
     ]);
     state.reExportsByFile.set('src/sub/a.ts', []);
     expect(computeBarrelDepth('src/index.ts', state)).toBe(2);
@@ -524,10 +570,24 @@ describe('computeBarrelDepth', () => {
   it('handles cycles without infinite loop', () => {
     const state = emptyState();
     state.reExportsByFile.set('src/a.ts', [
-      { sourceModule: './b', resolvedModule: 'src/b.ts', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: false },
+      {
+        sourceModule: './b',
+        resolvedModule: 'src/b.ts',
+        exportedAs: '*',
+        importedName: '*',
+        isStar: true,
+        isTypeOnly: false,
+      },
     ]);
     state.reExportsByFile.set('src/b.ts', [
-      { sourceModule: './a', resolvedModule: 'src/a.ts', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: false },
+      {
+        sourceModule: './a',
+        resolvedModule: 'src/a.ts',
+        exportedAs: '*',
+        importedName: '*',
+        isStar: true,
+        isTypeOnly: false,
+      },
     ]);
     expect(computeBarrelDepth('src/a.ts', state)).toBe(2);
   });
@@ -537,7 +597,14 @@ describe('detectBarrelExplosion', () => {
   it('returns empty for small barrel', () => {
     const state = emptyState();
     state.reExportsByFile.set('src/index.ts', [
-      { sourceModule: './a', resolvedModule: 'src/a.ts', exportedAs: 'A', importedName: 'A', isStar: false, isTypeOnly: false },
+      {
+        sourceModule: './a',
+        resolvedModule: 'src/a.ts',
+        exportedAs: 'A',
+        importedName: 'A',
+        isStar: false,
+        isTypeOnly: false,
+      },
     ]);
     expect(detectBarrelExplosion(state, 30)).toEqual([]);
   });
@@ -554,21 +621,30 @@ describe('detectBarrelExplosion', () => {
     }));
     state.reExportsByFile.set('src/index.ts', reexports);
     const findings = detectBarrelExplosion(state, 30);
-    expect(findings.some((f) => f.category === 'barrel-explosion' && f.title.includes('Barrel explosion'))).toBe(true);
+    expect(
+      findings.some(
+        f =>
+          f.category === 'barrel-explosion' &&
+          f.title.includes('Barrel explosion')
+      )
+    ).toBe(true);
   });
 });
-
 
 describe('detectGodModules', () => {
   it('returns empty for small modules', () => {
     const state = emptyState();
-    const files: FileEntry[] = [makeFileEntry({ functions: [makeFn({ statementCount: 10 })] })];
+    const files: FileEntry[] = [
+      makeFileEntry({ functions: [makeFn({ statementCount: 10 })] }),
+    ];
     expect(detectGodModules(files, state)).toEqual([]);
   });
 
   it('detects module with many statements', () => {
     const state = emptyState();
-    const fns = Array.from({ length: 10 }, (_, i) => makeFn({ name: `fn${i}`, statementCount: 60 }));
+    const fns = Array.from({ length: 10 }, (_, i) =>
+      makeFn({ name: `fn${i}`, statementCount: 60 })
+    );
     const files: FileEntry[] = [makeFileEntry({ functions: fns })];
     const findings = detectGodModules(files, state, 500);
     expect(findings.length).toBe(1);
@@ -577,7 +653,10 @@ describe('detectGodModules', () => {
 
   it('detects module with many exports', () => {
     const state = emptyState();
-    const exports = Array.from({ length: 25 }, (_, i) => ({ name: `exp${i}`, kind: 'value' as const }));
+    const exports = Array.from({ length: 25 }, (_, i) => ({
+      name: `exp${i}`,
+      kind: 'value' as const,
+    }));
     state.declaredExportsByFile.set('src/file.ts', exports);
     const files: FileEntry[] = [makeFileEntry()];
     const findings = detectGodModules(files, state, 9999, 20);
@@ -598,7 +677,9 @@ describe('detectMegaFolders', () => {
 
   it('flags large concentrated folder and includes decomposition evidence', () => {
     const files = [
-      ...Array.from({ length: 6 }, (_, i) => makeFileEntry({ file: `src/core/file-${i}.ts` })),
+      ...Array.from({ length: 6 }, (_, i) =>
+        makeFileEntry({ file: `src/core/file-${i}.ts` })
+      ),
       makeFileEntry({ file: 'src/feature/a.ts' }),
       makeFileEntry({ file: 'src/feature/b.ts' }),
     ];
@@ -612,12 +693,18 @@ describe('detectMegaFolders', () => {
 
 describe('detectGodFunctions', () => {
   it('returns empty for small functions', () => {
-    const files: FileEntry[] = [makeFileEntry({ functions: [makeFn({ statementCount: 50 })] })];
+    const files: FileEntry[] = [
+      makeFileEntry({ functions: [makeFn({ statementCount: 50 })] }),
+    ];
     expect(detectGodFunctions(files, 100)).toEqual([]);
   });
 
   it('detects function exceeding statement threshold', () => {
-    const files: FileEntry[] = [makeFileEntry({ functions: [makeFn({ statementCount: 120, name: 'bigFn' })] })];
+    const files: FileEntry[] = [
+      makeFileEntry({
+        functions: [makeFn({ statementCount: 120, name: 'bigFn' })],
+      }),
+    ];
     const findings = detectGodFunctions(files, 100);
     expect(findings.length).toBe(1);
     expect(findings[0].category).toBe('god-function');
@@ -625,10 +712,14 @@ describe('detectGodFunctions', () => {
   });
 });
 
-
 describe('computeCognitiveComplexity', () => {
   function parseExpr(code: string): ts.Node {
-    const src = ts.createSourceFile('test.ts', code, ts.ScriptTarget.ESNext, true);
+    const src = ts.createSourceFile(
+      'test.ts',
+      code,
+      ts.ScriptTarget.ESNext,
+      true
+    );
     return src.statements[0];
   }
 
@@ -643,17 +734,23 @@ describe('computeCognitiveComplexity', () => {
   });
 
   it('penalizes nesting', () => {
-    const node = parseExpr('function f(a: boolean, b: boolean) { if (a) { if (b) { return 1; } } }');
+    const node = parseExpr(
+      'function f(a: boolean, b: boolean) { if (a) { if (b) { return 1; } } }'
+    );
     expect(computeCognitiveComplexity(node)).toBe(3);
   });
 
   it('counts for loop', () => {
-    const node = parseExpr('function f(arr: number[]) { for (const x of arr) { console.log(x); } }');
+    const node = parseExpr(
+      'function f(arr: number[]) { for (const x of arr) { console.log(x); } }'
+    );
     expect(computeCognitiveComplexity(node)).toBeGreaterThan(0);
   });
 
   it('counts logical operators', () => {
-    const node = parseExpr('function f(a: boolean, b: boolean) { return a && b; }');
+    const node = parseExpr(
+      'function f(a: boolean, b: boolean) { return a && b; }'
+    );
     expect(computeCognitiveComplexity(node)).toBe(1);
   });
 
@@ -676,24 +773,31 @@ describe('computeCognitiveComplexity', () => {
 
 describe('detectCognitiveComplexity', () => {
   it('returns empty for low-complexity functions', () => {
-    const files: FileEntry[] = [makeFileEntry({ functions: [makeFn({ cognitiveComplexity: 5 })] })];
+    const files: FileEntry[] = [
+      makeFileEntry({ functions: [makeFn({ cognitiveComplexity: 5 })] }),
+    ];
     expect(detectCognitiveComplexity(files, 15)).toEqual([]);
   });
 
   it('detects high cognitive complexity', () => {
-    const files: FileEntry[] = [makeFileEntry({ functions: [makeFn({ cognitiveComplexity: 20, name: 'complexFn' })] })];
+    const files: FileEntry[] = [
+      makeFileEntry({
+        functions: [makeFn({ cognitiveComplexity: 20, name: 'complexFn' })],
+      }),
+    ];
     const findings = detectCognitiveComplexity(files, 15);
     expect(findings.length).toBe(1);
     expect(findings[0].category).toBe('cognitive-complexity');
   });
 
   it('assigns high severity above 25', () => {
-    const files: FileEntry[] = [makeFileEntry({ functions: [makeFn({ cognitiveComplexity: 30 })] })];
+    const files: FileEntry[] = [
+      makeFileEntry({ functions: [makeFn({ cognitiveComplexity: 30 })] }),
+    ];
     const findings = detectCognitiveComplexity(files, 15);
     expect(findings[0].severity).toBe('high');
   });
 });
-
 
 describe('detectLayerViolations', () => {
   it('returns empty with no layer config', () => {
@@ -704,14 +808,22 @@ describe('detectLayerViolations', () => {
     const state = emptyState();
     addEdge(state, 'src/ui/page.ts', 'src/service/api.ts');
     addEdge(state, 'src/service/api.ts', 'src/repository/db.ts');
-    const findings = detectLayerViolations(state, ['ui', 'service', 'repository']);
+    const findings = detectLayerViolations(state, [
+      'ui',
+      'service',
+      'repository',
+    ]);
     expect(findings).toEqual([]);
   });
 
   it('detects backward layer import', () => {
     const state = emptyState();
     addEdge(state, 'src/repository/db.ts', 'src/ui/page.ts');
-    const findings = detectLayerViolations(state, ['ui', 'service', 'repository']);
+    const findings = detectLayerViolations(state, [
+      'ui',
+      'service',
+      'repository',
+    ]);
     expect(findings.length).toBe(1);
     expect(findings[0].category).toBe('layer-violation');
     expect(findings[0].severity).toBe('high');
@@ -720,7 +832,11 @@ describe('detectLayerViolations', () => {
   it('ignores files not in any layer', () => {
     const state = emptyState();
     addEdge(state, 'src/utils/helper.ts', 'src/ui/page.ts');
-    const findings = detectLayerViolations(state, ['ui', 'service', 'repository']);
+    const findings = detectLayerViolations(state, [
+      'ui',
+      'service',
+      'repository',
+    ]);
     expect(findings).toEqual([]);
   });
 
@@ -728,11 +844,14 @@ describe('detectLayerViolations', () => {
     const state = emptyState();
     addEdge(state, 'src/repository/db.ts', 'src/ui/page.ts');
     addEdge(state, 'src/service/api.ts', 'src/ui/button.ts');
-    const findings = detectLayerViolations(state, ['ui', 'service', 'repository']);
+    const findings = detectLayerViolations(state, [
+      'ui',
+      'service',
+      'repository',
+    ]);
     expect(findings.length).toBe(2);
   });
 });
-
 
 describe('detectLowCohesion', () => {
   it('returns empty when file has few exports', () => {
@@ -749,8 +868,10 @@ describe('detectLowCohesion', () => {
     const state = emptyState();
     state.files.add('src/index.ts');
     state.declaredExportsByFile.set('src/index.ts', [
-      { name: 'a', kind: 'value' }, { name: 'b', kind: 'value' },
-      { name: 'c', kind: 'value' }, { name: 'd', kind: 'value' },
+      { name: 'a', kind: 'value' },
+      { name: 'b', kind: 'value' },
+      { name: 'c', kind: 'value' },
+      { name: 'd', kind: 'value' },
     ]);
     expect(detectLowCohesion(state)).toEqual([]);
   });
@@ -761,16 +882,42 @@ describe('detectLowCohesion', () => {
     state.files.add('src/a.ts');
     state.files.add('src/b.ts');
     state.declaredExportsByFile.set('src/lib.ts', [
-      { name: 'x', kind: 'value' }, { name: 'y', kind: 'value' },
-      { name: 'z', kind: 'value' }, { name: 'w', kind: 'value' },
+      { name: 'x', kind: 'value' },
+      { name: 'y', kind: 'value' },
+      { name: 'z', kind: 'value' },
+      { name: 'w', kind: 'value' },
     ]);
     state.importedSymbolsByFile.set('src/a.ts', [
-      { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'x', localName: 'x', isTypeOnly: false },
-      { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'y', localName: 'y', isTypeOnly: false },
+      {
+        sourceModule: './lib',
+        resolvedModule: 'src/lib.ts',
+        importedName: 'x',
+        localName: 'x',
+        isTypeOnly: false,
+      },
+      {
+        sourceModule: './lib',
+        resolvedModule: 'src/lib.ts',
+        importedName: 'y',
+        localName: 'y',
+        isTypeOnly: false,
+      },
     ]);
     state.importedSymbolsByFile.set('src/b.ts', [
-      { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'x', localName: 'x', isTypeOnly: false },
-      { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'y', localName: 'y', isTypeOnly: false },
+      {
+        sourceModule: './lib',
+        resolvedModule: 'src/lib.ts',
+        importedName: 'x',
+        localName: 'x',
+        isTypeOnly: false,
+      },
+      {
+        sourceModule: './lib',
+        resolvedModule: 'src/lib.ts',
+        importedName: 'y',
+        localName: 'y',
+        isTypeOnly: false,
+      },
     ]);
     expect(detectLowCohesion(state)).toEqual([]);
   });
@@ -781,16 +928,42 @@ describe('detectLowCohesion', () => {
     state.files.add('src/a.ts');
     state.files.add('src/b.ts');
     state.declaredExportsByFile.set('src/junkdrawer.ts', [
-      { name: 'alpha', kind: 'value' }, { name: 'beta', kind: 'value' },
-      { name: 'gamma', kind: 'value' }, { name: 'delta', kind: 'value' },
+      { name: 'alpha', kind: 'value' },
+      { name: 'beta', kind: 'value' },
+      { name: 'gamma', kind: 'value' },
+      { name: 'delta', kind: 'value' },
     ]);
     state.importedSymbolsByFile.set('src/a.ts', [
-      { sourceModule: './junkdrawer', resolvedModule: 'src/junkdrawer.ts', importedName: 'alpha', localName: 'alpha', isTypeOnly: false },
-      { sourceModule: './junkdrawer', resolvedModule: 'src/junkdrawer.ts', importedName: 'beta', localName: 'beta', isTypeOnly: false },
+      {
+        sourceModule: './junkdrawer',
+        resolvedModule: 'src/junkdrawer.ts',
+        importedName: 'alpha',
+        localName: 'alpha',
+        isTypeOnly: false,
+      },
+      {
+        sourceModule: './junkdrawer',
+        resolvedModule: 'src/junkdrawer.ts',
+        importedName: 'beta',
+        localName: 'beta',
+        isTypeOnly: false,
+      },
     ]);
     state.importedSymbolsByFile.set('src/b.ts', [
-      { sourceModule: './junkdrawer', resolvedModule: 'src/junkdrawer.ts', importedName: 'gamma', localName: 'gamma', isTypeOnly: false },
-      { sourceModule: './junkdrawer', resolvedModule: 'src/junkdrawer.ts', importedName: 'delta', localName: 'delta', isTypeOnly: false },
+      {
+        sourceModule: './junkdrawer',
+        resolvedModule: 'src/junkdrawer.ts',
+        importedName: 'gamma',
+        localName: 'gamma',
+        isTypeOnly: false,
+      },
+      {
+        sourceModule: './junkdrawer',
+        resolvedModule: 'src/junkdrawer.ts',
+        importedName: 'delta',
+        localName: 'delta',
+        isTypeOnly: false,
+      },
     ]);
     const findings = detectLowCohesion(state);
     expect(findings.length).toBe(1);
@@ -805,17 +978,37 @@ describe('detectLowCohesion', () => {
     state.files.add('src/b.ts');
     state.files.add('src/c.ts');
     state.declaredExportsByFile.set('src/utils.ts', [
-      { name: 'e1', kind: 'value' }, { name: 'e2', kind: 'value' },
-      { name: 'e3', kind: 'value' }, { name: 'e4', kind: 'value' },
+      { name: 'e1', kind: 'value' },
+      { name: 'e2', kind: 'value' },
+      { name: 'e3', kind: 'value' },
+      { name: 'e4', kind: 'value' },
     ]);
     state.importedSymbolsByFile.set('src/a.ts', [
-      { sourceModule: './utils', resolvedModule: 'src/utils.ts', importedName: 'e1', localName: 'e1', isTypeOnly: false },
+      {
+        sourceModule: './utils',
+        resolvedModule: 'src/utils.ts',
+        importedName: 'e1',
+        localName: 'e1',
+        isTypeOnly: false,
+      },
     ]);
     state.importedSymbolsByFile.set('src/b.ts', [
-      { sourceModule: './utils', resolvedModule: 'src/utils.ts', importedName: 'e2', localName: 'e2', isTypeOnly: false },
+      {
+        sourceModule: './utils',
+        resolvedModule: 'src/utils.ts',
+        importedName: 'e2',
+        localName: 'e2',
+        isTypeOnly: false,
+      },
     ]);
     state.importedSymbolsByFile.set('src/c.ts', [
-      { sourceModule: './utils', resolvedModule: 'src/utils.ts', importedName: 'e3', localName: 'e3', isTypeOnly: false },
+      {
+        sourceModule: './utils',
+        resolvedModule: 'src/utils.ts',
+        importedName: 'e3',
+        localName: 'e3',
+        isTypeOnly: false,
+      },
     ]);
     const findings = detectLowCohesion(state);
     expect(findings.length).toBe(1);
@@ -826,27 +1019,45 @@ describe('detectLowCohesion', () => {
     const state = emptyState();
     state.files.add('src/utils.test.ts');
     state.declaredExportsByFile.set('src/utils.test.ts', [
-      { name: 'a', kind: 'value' }, { name: 'b', kind: 'value' },
-      { name: 'c', kind: 'value' }, { name: 'd', kind: 'value' },
+      { name: 'a', kind: 'value' },
+      { name: 'b', kind: 'value' },
+      { name: 'c', kind: 'value' },
+      { name: 'd', kind: 'value' },
     ]);
     expect(detectLowCohesion(state)).toEqual([]);
   });
 });
 
-
 describe('computeHotFiles', () => {
-  function minimalDepSummary(overrides: Partial<DependencySummary> = {}): DependencySummary {
+  function minimalDepSummary(
+    overrides: Partial<DependencySummary> = {}
+  ): DependencySummary {
     return {
-      totalModules: 0, totalEdges: 0, unresolvedEdgeCount: 0,
-      externalDependencyFiles: 0, rootsCount: 0, leavesCount: 0,
-      roots: [], leaves: [], criticalModules: [], testOnlyModules: [],
-      unresolvedSample: [], outgoingTop: [], inboundTop: [],
-      cycles: [], criticalPaths: [], ...overrides,
+      totalModules: 0,
+      totalEdges: 0,
+      unresolvedEdgeCount: 0,
+      externalDependencyFiles: 0,
+      rootsCount: 0,
+      leavesCount: 0,
+      roots: [],
+      leaves: [],
+      criticalModules: [],
+      testOnlyModules: [],
+      unresolvedSample: [],
+      outgoingTop: [],
+      inboundTop: [],
+      cycles: [],
+      criticalPaths: [],
+      ...overrides,
     };
   }
 
   it('returns empty for empty input', () => {
-    const result = computeHotFiles(emptyState(), minimalDepSummary(), new Map());
+    const result = computeHotFiles(
+      emptyState(),
+      minimalDepSummary(),
+      new Map()
+    );
     expect(result).toEqual([]);
   });
 
@@ -860,7 +1071,14 @@ describe('computeHotFiles', () => {
       addEdge(state, f, hub);
     }
     const critMap = new Map<string, FileCriticality>();
-    critMap.set(hub, { file: hub, complexityRisk: 5, highComplexityFunctions: 3, functionCount: 8, flows: 20, score: 50 });
+    critMap.set(hub, {
+      file: hub,
+      complexityRisk: 5,
+      highComplexityFunctions: 3,
+      functionCount: 8,
+      flows: 20,
+      score: 50,
+    });
     const result = computeHotFiles(state, minimalDepSummary(), critMap);
     expect(result.length).toBeGreaterThan(0);
     expect(result[0].file).toBe(hub);
@@ -878,8 +1096,22 @@ describe('computeHotFiles', () => {
       cycles: [{ path: ['src/a.ts', 'src/b.ts', 'src/a.ts'], nodeCount: 2 }],
     });
     const critMap = new Map<string, FileCriticality>();
-    critMap.set('src/a.ts', { file: 'src/a.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 10 });
-    critMap.set('src/b.ts', { file: 'src/b.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 10 });
+    critMap.set('src/a.ts', {
+      file: 'src/a.ts',
+      complexityRisk: 1,
+      highComplexityFunctions: 0,
+      functionCount: 1,
+      flows: 0,
+      score: 10,
+    });
+    critMap.set('src/b.ts', {
+      file: 'src/b.ts',
+      complexityRisk: 1,
+      highComplexityFunctions: 0,
+      functionCount: 1,
+      flows: 0,
+      score: 10,
+    });
     const result = computeHotFiles(state, depSummary, critMap);
     expect(result.some(f => f.inCycle)).toBe(true);
   });
@@ -890,8 +1122,22 @@ describe('computeHotFiles', () => {
     state.files.add('src/cold.ts');
     for (let i = 0; i < 10; i++) addEdge(state, `src/dep${i}.ts`, 'src/hot.ts');
     const critMap = new Map<string, FileCriticality>();
-    critMap.set('src/hot.ts', { file: 'src/hot.ts', complexityRisk: 5, highComplexityFunctions: 3, functionCount: 10, flows: 20, score: 100 });
-    critMap.set('src/cold.ts', { file: 'src/cold.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 5 });
+    critMap.set('src/hot.ts', {
+      file: 'src/hot.ts',
+      complexityRisk: 5,
+      highComplexityFunctions: 3,
+      functionCount: 10,
+      flows: 20,
+      score: 100,
+    });
+    critMap.set('src/cold.ts', {
+      file: 'src/cold.ts',
+      complexityRisk: 1,
+      highComplexityFunctions: 0,
+      functionCount: 1,
+      flows: 0,
+      score: 5,
+    });
     const result = computeHotFiles(state, minimalDepSummary(), critMap);
     if (result.length >= 2) {
       expect(result[0].riskScore).toBeGreaterThanOrEqual(result[1].riskScore);
@@ -907,7 +1153,14 @@ describe('computeHotFiles', () => {
     }
     const critMap = new Map<string, FileCriticality>();
     for (const f of state.files) {
-      critMap.set(f, { file: f, complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 5 });
+      critMap.set(f, {
+        file: f,
+        complexityRisk: 1,
+        highComplexityFunctions: 0,
+        functionCount: 1,
+        flows: 0,
+        score: 5,
+      });
     }
     const result = computeHotFiles(state, minimalDepSummary(), critMap);
     expect(result.length).toBeLessThanOrEqual(20);
@@ -916,14 +1169,21 @@ describe('computeHotFiles', () => {
   it('skips test files', () => {
     const state = emptyState();
     state.files.add('src/a.test.ts');
-    for (let i = 0; i < 10; i++) addEdge(state, `src/c${i}.ts`, 'src/a.test.ts');
+    for (let i = 0; i < 10; i++)
+      addEdge(state, `src/c${i}.ts`, 'src/a.test.ts');
     const critMap = new Map<string, FileCriticality>();
-    critMap.set('src/a.test.ts', { file: 'src/a.test.ts', complexityRisk: 1, highComplexityFunctions: 0, functionCount: 1, flows: 0, score: 50 });
+    critMap.set('src/a.test.ts', {
+      file: 'src/a.test.ts',
+      complexityRisk: 1,
+      highComplexityFunctions: 0,
+      functionCount: 1,
+      flows: 0,
+      score: 50,
+    });
     const result = computeHotFiles(state, minimalDepSummary(), critMap);
     expect(result.some(f => f.file === 'src/a.test.ts')).toBe(false);
   });
 });
-
 
 describe('buildConsumedFromModule', () => {
   it('returns empty maps for no imports', () => {
@@ -935,8 +1195,20 @@ describe('buildConsumedFromModule', () => {
   it('collects consumed symbols per module in production map', () => {
     const state = emptyState();
     state.importedSymbolsByFile.set('src/a.ts', [
-      { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'foo', localName: 'foo', isTypeOnly: false },
-      { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'bar', localName: 'bar', isTypeOnly: false },
+      {
+        sourceModule: './lib',
+        resolvedModule: 'src/lib.ts',
+        importedName: 'foo',
+        localName: 'foo',
+        isTypeOnly: false,
+      },
+      {
+        sourceModule: './lib',
+        resolvedModule: 'src/lib.ts',
+        importedName: 'bar',
+        localName: 'bar',
+        isTypeOnly: false,
+      },
     ]);
     const result = buildConsumedFromModule(state);
     expect(result.production.get('src/lib.ts')?.size).toBe(2);
@@ -946,7 +1218,13 @@ describe('buildConsumedFromModule', () => {
   it('routes test file imports to the test map', () => {
     const state = emptyState();
     state.importedSymbolsByFile.set('src/a.test.ts', [
-      { sourceModule: './lib', resolvedModule: 'src/lib.ts', importedName: 'foo', localName: 'foo', isTypeOnly: false },
+      {
+        sourceModule: './lib',
+        resolvedModule: 'src/lib.ts',
+        importedName: 'foo',
+        localName: 'foo',
+        isTypeOnly: false,
+      },
     ]);
     const result = buildConsumedFromModule(state);
     expect(result.production.size).toBe(0);
@@ -956,7 +1234,14 @@ describe('buildConsumedFromModule', () => {
   it('collects symbols from re-exports in production map', () => {
     const state = emptyState();
     state.reExportsByFile.set('src/barrel.ts', [
-      { sourceModule: './lib', resolvedModule: 'src/lib.ts', exportedAs: 'X', importedName: 'X', isStar: false, isTypeOnly: false },
+      {
+        sourceModule: './lib',
+        resolvedModule: 'src/lib.ts',
+        exportedAs: 'X',
+        importedName: 'X',
+        isStar: false,
+        isTypeOnly: false,
+      },
     ]);
     const result = buildConsumedFromModule(state);
     expect(result.production.get('src/lib.ts')?.has('X')).toBe(true);
@@ -965,16 +1250,23 @@ describe('buildConsumedFromModule', () => {
   it('skips re-exports with unresolved target', () => {
     const state = emptyState();
     state.reExportsByFile.set('src/barrel.ts', [
-      { sourceModule: './unresolved', exportedAs: 'Y', importedName: 'Y', isStar: false, isTypeOnly: false },
+      {
+        sourceModule: './unresolved',
+        exportedAs: 'Y',
+        importedName: 'Y',
+        isStar: false,
+        isTypeOnly: false,
+      },
     ]);
     const result = buildConsumedFromModule(state);
     expect(result.production.size).toBe(0);
   });
 });
 
-
 describe('detectDuplicateFunctionBodies', () => {
-  function makeDupGroup(overrides: Partial<DuplicateGroup> = {}): DuplicateGroup {
+  function makeDupGroup(
+    overrides: Partial<DuplicateGroup> = {}
+  ): DuplicateGroup {
     return {
       hash: 'abc123',
       signature: 'handleError',
@@ -982,8 +1274,66 @@ describe('detectDuplicateFunctionBodies', () => {
       occurrences: 3,
       filesCount: 2,
       locations: [
-        { kind: 'ArrowFunction', name: 'handleError', nameHint: 'handleError', file: 'src/a.ts', lineStart: 1, lineEnd: 10, columnStart: 1, columnEnd: 1, statementCount: 8, complexity: 3, maxBranchDepth: 1, maxLoopDepth: 0, returns: 1, awaits: 0, calls: 2, loops: 0, lengthLines: 10, cognitiveComplexity: 2, hash: 'abc', metrics: { complexity: 3, maxBranchDepth: 1, maxLoopDepth: 0, returns: 1, awaits: 0, calls: 2, loops: 0 } },
-        { kind: 'ArrowFunction', name: 'handleError', nameHint: 'handleError', file: 'src/b.ts', lineStart: 5, lineEnd: 15, columnStart: 1, columnEnd: 1, statementCount: 8, complexity: 3, maxBranchDepth: 1, maxLoopDepth: 0, returns: 1, awaits: 0, calls: 2, loops: 0, lengthLines: 10, cognitiveComplexity: 2, hash: 'abc', metrics: { complexity: 3, maxBranchDepth: 1, maxLoopDepth: 0, returns: 1, awaits: 0, calls: 2, loops: 0 } },
+        {
+          kind: 'ArrowFunction',
+          name: 'handleError',
+          nameHint: 'handleError',
+          file: 'src/a.ts',
+          lineStart: 1,
+          lineEnd: 10,
+          columnStart: 1,
+          columnEnd: 1,
+          statementCount: 8,
+          complexity: 3,
+          maxBranchDepth: 1,
+          maxLoopDepth: 0,
+          returns: 1,
+          awaits: 0,
+          calls: 2,
+          loops: 0,
+          lengthLines: 10,
+          cognitiveComplexity: 2,
+          hash: 'abc',
+          metrics: {
+            complexity: 3,
+            maxBranchDepth: 1,
+            maxLoopDepth: 0,
+            returns: 1,
+            awaits: 0,
+            calls: 2,
+            loops: 0,
+          },
+        },
+        {
+          kind: 'ArrowFunction',
+          name: 'handleError',
+          nameHint: 'handleError',
+          file: 'src/b.ts',
+          lineStart: 5,
+          lineEnd: 15,
+          columnStart: 1,
+          columnEnd: 1,
+          statementCount: 8,
+          complexity: 3,
+          maxBranchDepth: 1,
+          maxLoopDepth: 0,
+          returns: 1,
+          awaits: 0,
+          calls: 2,
+          loops: 0,
+          lengthLines: 10,
+          cognitiveComplexity: 2,
+          hash: 'abc',
+          metrics: {
+            complexity: 3,
+            maxBranchDepth: 1,
+            maxLoopDepth: 0,
+            returns: 1,
+            awaits: 0,
+            calls: 2,
+            loops: 0,
+          },
+        },
       ],
       ...overrides,
     };
@@ -1001,17 +1351,23 @@ describe('detectDuplicateFunctionBodies', () => {
   });
 
   it('assigns low severity for 2 occurrences', () => {
-    const findings = detectDuplicateFunctionBodies([makeDupGroup({ occurrences: 2 })]);
+    const findings = detectDuplicateFunctionBodies([
+      makeDupGroup({ occurrences: 2 }),
+    ]);
     expect(findings[0].severity).toBe('low');
   });
 
   it('assigns medium severity for 3-5 occurrences', () => {
-    const findings = detectDuplicateFunctionBodies([makeDupGroup({ occurrences: 4 })]);
+    const findings = detectDuplicateFunctionBodies([
+      makeDupGroup({ occurrences: 4 }),
+    ]);
     expect(findings[0].severity).toBe('medium');
   });
 
   it('assigns high severity for 6+ occurrences', () => {
-    const findings = detectDuplicateFunctionBodies([makeDupGroup({ occurrences: 7 })]);
+    const findings = detectDuplicateFunctionBodies([
+      makeDupGroup({ occurrences: 7 }),
+    ]);
     expect(findings[0].severity).toBe('high');
   });
 
@@ -1021,22 +1377,43 @@ describe('detectDuplicateFunctionBodies', () => {
   });
 
   it('uses plural "files" in reason when filesCount > 1', () => {
-    const findings = detectDuplicateFunctionBodies([makeDupGroup({ filesCount: 3, occurrences: 4 })]);
+    const findings = detectDuplicateFunctionBodies([
+      makeDupGroup({ filesCount: 3, occurrences: 4 }),
+    ]);
     expect(findings[0].reason).toContain('3 file');
     expect(findings[0].reason).toContain('s');
   });
 });
 
-
 describe('detectDuplicateFlowStructures', () => {
-  function makeFlowGroup(overrides: Partial<RedundantFlowGroup> = {}): RedundantFlowGroup {
+  function makeFlowGroup(
+    overrides: Partial<RedundantFlowGroup> = {}
+  ): RedundantFlowGroup {
     return {
       kind: 'IfStatement',
       occurrences: 5,
       filesCount: 3,
       locations: [
-        { kind: 'IfStatement', file: 'src/a.ts', lineStart: 10, lineEnd: 20, columnStart: 1, columnEnd: 1, statementCount: 5, hash: 'x' },
-        { kind: 'IfStatement', file: 'src/b.ts', lineStart: 15, lineEnd: 25, columnStart: 1, columnEnd: 1, statementCount: 5, hash: 'x' },
+        {
+          kind: 'IfStatement',
+          file: 'src/a.ts',
+          lineStart: 10,
+          lineEnd: 20,
+          columnStart: 1,
+          columnEnd: 1,
+          statementCount: 5,
+          hash: 'x',
+        },
+        {
+          kind: 'IfStatement',
+          file: 'src/b.ts',
+          lineStart: 15,
+          lineEnd: 25,
+          columnStart: 1,
+          columnEnd: 1,
+          statementCount: 5,
+          hash: 'x',
+        },
       ],
       ...overrides,
     };
@@ -1047,7 +1424,10 @@ describe('detectDuplicateFlowStructures', () => {
   });
 
   it('skips groups below threshold', () => {
-    const findings = detectDuplicateFlowStructures([makeFlowGroup({ occurrences: 2 })], 3);
+    const findings = detectDuplicateFlowStructures(
+      [makeFlowGroup({ occurrences: 2 })],
+      3
+    );
     expect(findings).toEqual([]);
   });
 
@@ -1058,59 +1438,96 @@ describe('detectDuplicateFlowStructures', () => {
   });
 
   it('assigns high severity for 10+ occurrences', () => {
-    const findings = detectDuplicateFlowStructures([makeFlowGroup({ occurrences: 12 })], 3);
+    const findings = detectDuplicateFlowStructures(
+      [makeFlowGroup({ occurrences: 12 })],
+      3
+    );
     expect(findings[0].severity).toBe('high');
   });
 
   it('assigns medium severity for fewer occurrences', () => {
-    const findings = detectDuplicateFlowStructures([makeFlowGroup({ occurrences: 5 })], 3);
+    const findings = detectDuplicateFlowStructures(
+      [makeFlowGroup({ occurrences: 5 })],
+      3
+    );
     expect(findings[0].severity).toBe('medium');
   });
 });
 
-
 describe('detectFunctionOptimization', () => {
   it('returns empty for simple functions', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ complexity: 5, maxBranchDepth: 2, maxLoopDepth: 1, statementCount: 10 })] })];
+    const files = [
+      makeFileEntry({
+        functions: [
+          makeFn({
+            complexity: 5,
+            maxBranchDepth: 2,
+            maxLoopDepth: 1,
+            statementCount: 10,
+          }),
+        ],
+      }),
+    ];
     expect(detectFunctionOptimization(files, 30)).toEqual([]);
   });
 
   it('flags high complexity', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ complexity: 35, name: 'complexFn' })] })];
+    const files = [
+      makeFileEntry({
+        functions: [makeFn({ complexity: 35, name: 'complexFn' })],
+      }),
+    ];
     const findings = detectFunctionOptimization(files, 30);
     expect(findings.length).toBe(1);
     expect(findings[0].severity).toBe('high');
   });
 
   it('flags deep branch nesting', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ maxBranchDepth: 8, name: 'deepFn' })] })];
+    const files = [
+      makeFileEntry({
+        functions: [makeFn({ maxBranchDepth: 8, name: 'deepFn' })],
+      }),
+    ];
     const findings = detectFunctionOptimization(files, 30);
     expect(findings.length).toBe(1);
     expect(findings[0].reason).toContain('Branch depth');
   });
 
   it('flags deep loop nesting', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ maxLoopDepth: 5, name: 'loopFn' })] })];
+    const files = [
+      makeFileEntry({
+        functions: [makeFn({ maxLoopDepth: 5, name: 'loopFn' })],
+      }),
+    ];
     const findings = detectFunctionOptimization(files, 30);
     expect(findings.length).toBe(1);
     expect(findings[0].reason).toContain('Nested loops');
   });
 
   it('flags large function bodies', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ statementCount: 30, name: 'bigFn' })] })];
+    const files = [
+      makeFileEntry({
+        functions: [makeFn({ statementCount: 30, name: 'bigFn' })],
+      }),
+    ];
     const findings = detectFunctionOptimization(files, 30);
     expect(findings.length).toBe(1);
     expect(findings[0].severity).toBe('medium');
   });
 
   it('combines multiple alerts', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ complexity: 40, maxBranchDepth: 8, name: 'badFn' })] })];
+    const files = [
+      makeFileEntry({
+        functions: [
+          makeFn({ complexity: 40, maxBranchDepth: 8, name: 'badFn' }),
+        ],
+      }),
+    ];
     const findings = detectFunctionOptimization(files, 30);
     expect(findings[0].reason).toContain('Cyclomatic');
     expect(findings[0].reason).toContain('Branch depth');
   });
 });
-
 
 describe('detectTestOnlyModules', () => {
   it('returns empty when no test-only modules', () => {
@@ -1119,11 +1536,17 @@ describe('detectTestOnlyModules', () => {
 
   it('creates finding for test-only module', () => {
     const summary = minimalDepSummary({
-      testOnlyModules: [{
-        file: 'src/test-helper.ts', outboundCount: 0, inboundCount: 1,
-        inboundFromProduction: 0, inboundFromTests: 1,
-        externalDependencyCount: 0, unresolvedDependencyCount: 0,
-      }],
+      testOnlyModules: [
+        {
+          file: 'src/test-helper.ts',
+          outboundCount: 0,
+          inboundCount: 1,
+          inboundFromProduction: 0,
+          inboundFromTests: 1,
+          externalDependencyCount: 0,
+          unresolvedDependencyCount: 0,
+        },
+      ],
     });
     const findings = detectTestOnlyModules(summary);
     expect(findings.length).toBe(1);
@@ -1133,19 +1556,26 @@ describe('detectTestOnlyModules', () => {
 
   it('limits to 25 findings', () => {
     const modules = Array.from({ length: 30 }, (_, i) => ({
-      file: `src/helper${i}.ts`, outboundCount: 0, inboundCount: 1,
-      inboundFromProduction: 0, inboundFromTests: 1,
-      externalDependencyCount: 0, unresolvedDependencyCount: 0,
+      file: `src/helper${i}.ts`,
+      outboundCount: 0,
+      inboundCount: 1,
+      inboundFromProduction: 0,
+      inboundFromTests: 1,
+      externalDependencyCount: 0,
+      unresolvedDependencyCount: 0,
     }));
-    const findings = detectTestOnlyModules(minimalDepSummary({ testOnlyModules: modules }));
+    const findings = detectTestOnlyModules(
+      minimalDepSummary({ testOnlyModules: modules })
+    );
     expect(findings.length).toBe(25);
   });
 });
 
-
 describe('detectDependencyCycles (detector)', () => {
   it('returns empty for no cycles', () => {
-    expect(detectDependencyCycles(minimalDepSummary(), emptyState())).toEqual([]);
+    expect(detectDependencyCycles(minimalDepSummary(), emptyState())).toEqual(
+      []
+    );
   });
 
   it('creates finding per cycle', () => {
@@ -1163,26 +1593,36 @@ describe('detectDependencyCycles (detector)', () => {
 
   it('limits to 15 cycle findings', () => {
     const cycles = Array.from({ length: 20 }, (_, i) => ({
-      path: [`src/a${i}.ts`, `src/b${i}.ts`, `src/a${i}.ts`], nodeCount: 2,
+      path: [`src/a${i}.ts`, `src/b${i}.ts`, `src/a${i}.ts`],
+      nodeCount: 2,
     }));
-    const findings = detectDependencyCycles(minimalDepSummary({ cycles }), emptyState());
+    const findings = detectDependencyCycles(
+      minimalDepSummary({ cycles }),
+      emptyState()
+    );
     expect(findings.length).toBe(15);
   });
 });
 
-
 describe('detectCriticalPaths (detector)', () => {
   it('returns empty for no critical paths', () => {
-    expect(detectCriticalPaths(minimalDepSummary(), emptyState(), 30)).toEqual([]);
+    expect(detectCriticalPaths(minimalDepSummary(), emptyState(), 30)).toEqual(
+      []
+    );
   });
 
   it('creates finding for high-score path', () => {
     const state = emptyState();
     const summary = minimalDepSummary({
-      criticalPaths: [{
-        start: 'a.ts', path: ['a.ts', 'b.ts', 'c.ts'],
-        score: 300, length: 3, containsCycle: false,
-      }],
+      criticalPaths: [
+        {
+          start: 'a.ts',
+          path: ['a.ts', 'b.ts', 'c.ts'],
+          score: 300,
+          length: 3,
+          containsCycle: false,
+        },
+      ],
     });
     const findings = detectCriticalPaths(summary, state, 30);
     expect(findings.length).toBe(1);
@@ -1191,10 +1631,15 @@ describe('detectCriticalPaths (detector)', () => {
 
   it('skips paths below score threshold', () => {
     const summary = minimalDepSummary({
-      criticalPaths: [{
-        start: 'a.ts', path: ['a.ts', 'b.ts'],
-        score: 10, length: 2, containsCycle: false,
-      }],
+      criticalPaths: [
+        {
+          start: 'a.ts',
+          path: ['a.ts', 'b.ts'],
+          score: 10,
+          length: 2,
+          containsCycle: false,
+        },
+      ],
     });
     const findings = detectCriticalPaths(summary, emptyState(), 30);
     expect(findings).toEqual([]);
@@ -1202,16 +1647,20 @@ describe('detectCriticalPaths (detector)', () => {
 
   it('assigns critical severity for very high scores', () => {
     const summary = minimalDepSummary({
-      criticalPaths: [{
-        start: 'a.ts', path: ['a.ts', 'b.ts'],
-        score: 500, length: 2, containsCycle: false,
-      }],
+      criticalPaths: [
+        {
+          start: 'a.ts',
+          path: ['a.ts', 'b.ts'],
+          score: 500,
+          length: 2,
+          containsCycle: false,
+        },
+      ],
     });
     const findings = detectCriticalPaths(summary, emptyState(), 30);
     expect(findings[0].severity).toBe('critical');
   });
 });
-
 
 describe('mergeOverlappingChains', () => {
   type FindingDraft = Omit<import('./types.js').Finding, 'id'>;
@@ -1266,7 +1715,11 @@ describe('mergeOverlappingChains', () => {
     const shared = Array.from({ length: 10 }, (_, i) => `s${i}.ts`);
     const overlap1 = makeChainFinding('o1.ts', ['o1.ts', ...shared]);
     const overlap2 = makeChainFinding('o2.ts', ['o2.ts', ...shared]);
-    const distinct = makeChainFinding('d.ts', ['d.ts', 'unique1.ts', 'unique2.ts']);
+    const distinct = makeChainFinding('d.ts', [
+      'd.ts',
+      'unique1.ts',
+      'unique2.ts',
+    ]);
 
     const result = mergeOverlappingChains([overlap1, overlap2, distinct]);
     expect(result).toHaveLength(2);
@@ -1274,7 +1727,6 @@ describe('mergeOverlappingChains', () => {
     expect(result.find(f => f.file === 'd.ts')).toBeDefined();
   });
 });
-
 
 describe('detectCriticalPaths — computed fix & merging', () => {
   it('names the highest-fan-out module in suggestedFix.strategy', () => {
@@ -1284,10 +1736,15 @@ describe('detectCriticalPaths — computed fix & merging', () => {
     addEdge(state, 'hub.ts', 'd.ts');
     addEdge(state, 'hub.ts', 'e.ts');
     const summary = minimalDepSummary({
-      criticalPaths: [{
-        start: 'a.ts', path: ['a.ts', 'hub.ts', 'c.ts'],
-        score: 300, length: 3, containsCycle: false,
-      }],
+      criticalPaths: [
+        {
+          start: 'a.ts',
+          path: ['a.ts', 'hub.ts', 'c.ts'],
+          score: 300,
+          length: 3,
+          containsCycle: false,
+        },
+      ],
     });
     const findings = detectCriticalPaths(summary, state, 30);
     expect(findings.length).toBe(1);
@@ -1301,10 +1758,15 @@ describe('detectCriticalPaths — computed fix & merging', () => {
     state.files.add('x.ts');
     state.files.add('y.ts');
     const summary = minimalDepSummary({
-      criticalPaths: [{
-        start: 'x.ts', path: ['x.ts', 'y.ts'],
-        score: 300, length: 2, containsCycle: false,
-      }],
+      criticalPaths: [
+        {
+          start: 'x.ts',
+          path: ['x.ts', 'y.ts'],
+          score: 300,
+          length: 2,
+          containsCycle: false,
+        },
+      ],
     });
     const findings = detectCriticalPaths(summary, state, 30);
     expect(findings[0].suggestedFix.strategy).toContain('x.ts');
@@ -1319,10 +1781,15 @@ describe('detectCriticalPaths — computed fix & merging', () => {
     addEdge(state, 'hub.ts', 'dep2.ts');
     addEdge(state, 'hub.ts', 'dep3.ts');
     const summary = minimalDepSummary({
-      criticalPaths: [{
-        start: 'caller1.ts', path: ['caller1.ts', 'hub.ts', 'dep.ts'],
-        score: 300, length: 3, containsCycle: false,
-      }],
+      criticalPaths: [
+        {
+          start: 'caller1.ts',
+          path: ['caller1.ts', 'hub.ts', 'dep.ts'],
+          score: 300,
+          length: 3,
+          containsCycle: false,
+        },
+      ],
     });
     const findings = detectCriticalPaths(summary, state, 30);
     expect(findings[0].suggestedFix.strategy).toContain('fan-in: 2');
@@ -1339,8 +1806,20 @@ describe('detectCriticalPaths — computed fix & merging', () => {
 
     const summary = minimalDepSummary({
       criticalPaths: [
-        { start: 'e1.ts', path: ['e1.ts', ...shared], score: 300, length: shared.length + 1, containsCycle: false },
-        { start: 'e2.ts', path: ['e2.ts', ...shared], score: 300, length: shared.length + 1, containsCycle: false },
+        {
+          start: 'e1.ts',
+          path: ['e1.ts', ...shared],
+          score: 300,
+          length: shared.length + 1,
+          containsCycle: false,
+        },
+        {
+          start: 'e2.ts',
+          path: ['e2.ts', ...shared],
+          score: 300,
+          length: shared.length + 1,
+          containsCycle: false,
+        },
       ],
     });
     const findings = detectCriticalPaths(summary, state, 30);
@@ -1349,18 +1828,22 @@ describe('detectCriticalPaths — computed fix & merging', () => {
   });
 });
 
-
 describe('detectDeadFiles', () => {
   it('returns empty when no dead files', () => {
     const state = emptyState();
     addEdge(state, 'src/a.ts', 'src/b.ts');
-    expect(detectDeadFiles(minimalDepSummary({ roots: ['src/a.ts'] }), state)).toEqual([]);
+    expect(
+      detectDeadFiles(minimalDepSummary({ roots: ['src/a.ts'] }), state)
+    ).toEqual([]);
   });
 
   it('flags root file with zero outgoing', () => {
     const state = emptyState();
     state.files.add('src/dead.ts');
-    const findings = detectDeadFiles(minimalDepSummary({ roots: ['src/dead.ts'] }), state);
+    const findings = detectDeadFiles(
+      minimalDepSummary({ roots: ['src/dead.ts'] }),
+      state
+    );
     expect(findings.length).toBe(1);
     expect(findings[0].category).toBe('dead-file');
   });
@@ -1368,31 +1851,41 @@ describe('detectDeadFiles', () => {
   it('skips entrypoints', () => {
     const state = emptyState();
     state.files.add('src/index.ts');
-    const findings = detectDeadFiles(minimalDepSummary({ roots: ['src/index.ts'] }), state);
+    const findings = detectDeadFiles(
+      minimalDepSummary({ roots: ['src/index.ts'] }),
+      state
+    );
     expect(findings).toEqual([]);
   });
 
   it('skips test files', () => {
     const state = emptyState();
     state.files.add('src/foo.test.ts');
-    const findings = detectDeadFiles(minimalDepSummary({ roots: ['src/foo.test.ts'] }), state);
+    const findings = detectDeadFiles(
+      minimalDepSummary({ roots: ['src/foo.test.ts'] }),
+      state
+    );
     expect(findings).toEqual([]);
   });
 
   it('skips roots with outgoing dependencies', () => {
     const state = emptyState();
     addEdge(state, 'src/root.ts', 'src/dep.ts');
-    const findings = detectDeadFiles(minimalDepSummary({ roots: ['src/root.ts'] }), state);
+    const findings = detectDeadFiles(
+      minimalDepSummary({ roots: ['src/root.ts'] }),
+      state
+    );
     expect(findings).toEqual([]);
   });
 });
-
 
 describe('detectDeadExports', () => {
   it('returns empty when all exports consumed', () => {
     const state = emptyState();
     state.files.add('src/lib.ts');
-    state.declaredExportsByFile.set('src/lib.ts', [{ name: 'foo', kind: 'value' }]);
+    state.declaredExportsByFile.set('src/lib.ts', [
+      { name: 'foo', kind: 'value' },
+    ]);
     const consumed = new Map([['src/lib.ts', new Set(['foo'])]]);
     expect(detectDeadExports(state, consumed)).toEqual([]);
   });
@@ -1413,7 +1906,9 @@ describe('detectDeadExports', () => {
   it('assigns medium severity for type exports', () => {
     const state = emptyState();
     state.files.add('src/lib.ts');
-    state.declaredExportsByFile.set('src/lib.ts', [{ name: 'MyType', kind: 'type' }]);
+    state.declaredExportsByFile.set('src/lib.ts', [
+      { name: 'MyType', kind: 'type' },
+    ]);
     const findings = detectDeadExports(state, new Map());
     expect(findings[0].severity).toBe('medium');
   });
@@ -1421,7 +1916,9 @@ describe('detectDeadExports', () => {
   it('assigns high severity for value exports', () => {
     const state = emptyState();
     state.files.add('src/lib.ts');
-    state.declaredExportsByFile.set('src/lib.ts', [{ name: 'myFn', kind: 'value' }]);
+    state.declaredExportsByFile.set('src/lib.ts', [
+      { name: 'myFn', kind: 'value' },
+    ]);
     const findings = detectDeadExports(state, new Map());
     expect(findings[0].severity).toBe('high');
   });
@@ -1429,18 +1926,26 @@ describe('detectDeadExports', () => {
   it('skips namespace-imported modules', () => {
     const state = emptyState();
     state.files.add('src/lib.ts');
-    state.declaredExportsByFile.set('src/lib.ts', [{ name: 'foo', kind: 'value' }]);
+    state.declaredExportsByFile.set('src/lib.ts', [
+      { name: 'foo', kind: 'value' },
+    ]);
     const consumed = new Map([['src/lib.ts', new Set(['*'])]]);
     expect(detectDeadExports(state, consumed)).toEqual([]);
   });
 });
 
-
 describe('detectDeadReExports', () => {
   it('returns empty for consumed re-exports', () => {
     const state = emptyState();
     state.reExportsByFile.set('src/index.ts', [
-      { sourceModule: './a', resolvedModule: 'src/a.ts', exportedAs: 'X', importedName: 'X', isStar: false, isTypeOnly: false },
+      {
+        sourceModule: './a',
+        resolvedModule: 'src/a.ts',
+        exportedAs: 'X',
+        importedName: 'X',
+        isStar: false,
+        isTypeOnly: false,
+      },
     ]);
     const consumed = new Map([['src/index.ts', new Set(['X'])]]);
     expect(detectDeadReExports(state, consumed)).toEqual([]);
@@ -1449,7 +1954,14 @@ describe('detectDeadReExports', () => {
   it('flags unused re-exports', () => {
     const state = emptyState();
     state.reExportsByFile.set('src/index.ts', [
-      { sourceModule: './a', resolvedModule: 'src/a.ts', exportedAs: 'Dead', importedName: 'Dead', isStar: false, isTypeOnly: false },
+      {
+        sourceModule: './a',
+        resolvedModule: 'src/a.ts',
+        exportedAs: 'Dead',
+        importedName: 'Dead',
+        isStar: false,
+        isTypeOnly: false,
+      },
     ]);
     const findings = detectDeadReExports(state, new Map());
     expect(findings.some(f => f.category === 'dead-re-export')).toBe(true);
@@ -1458,26 +1970,50 @@ describe('detectDeadReExports', () => {
   it('detects duplicate re-export sources', () => {
     const state = emptyState();
     state.reExportsByFile.set('src/barrel.ts', [
-      { sourceModule: './a', resolvedModule: 'src/a.ts', exportedAs: 'Foo', importedName: 'Foo', isStar: false, isTypeOnly: false },
-      { sourceModule: './b', resolvedModule: 'src/b.ts', exportedAs: 'Foo', importedName: 'Foo', isStar: false, isTypeOnly: false },
+      {
+        sourceModule: './a',
+        resolvedModule: 'src/a.ts',
+        exportedAs: 'Foo',
+        importedName: 'Foo',
+        isStar: false,
+        isTypeOnly: false,
+      },
+      {
+        sourceModule: './b',
+        resolvedModule: 'src/b.ts',
+        exportedAs: 'Foo',
+        importedName: 'Foo',
+        isStar: false,
+        isTypeOnly: false,
+      },
     ]);
     const consumed = new Map([['src/barrel.ts', new Set(['Foo'])]]);
     const findings = detectDeadReExports(state, consumed);
-    expect(findings.some(f => f.category === 're-export-duplication')).toBe(true);
+    expect(findings.some(f => f.category === 're-export-duplication')).toBe(
+      true
+    );
   });
 
   it('detects shadowed re-exports', () => {
     const state = emptyState();
-    state.declaredExportsByFile.set('src/barrel.ts', [{ name: 'Conflict', kind: 'value' }]);
+    state.declaredExportsByFile.set('src/barrel.ts', [
+      { name: 'Conflict', kind: 'value' },
+    ]);
     state.reExportsByFile.set('src/barrel.ts', [
-      { sourceModule: './a', resolvedModule: 'src/a.ts', exportedAs: 'Conflict', importedName: 'Conflict', isStar: false, isTypeOnly: false },
+      {
+        sourceModule: './a',
+        resolvedModule: 'src/a.ts',
+        exportedAs: 'Conflict',
+        importedName: 'Conflict',
+        isStar: false,
+        isTypeOnly: false,
+      },
     ]);
     const consumed = new Map([['src/barrel.ts', new Set(['Conflict'])]]);
     const findings = detectDeadReExports(state, consumed);
     expect(findings.some(f => f.category === 're-export-shadowed')).toBe(true);
   });
 });
-
 
 describe('detectExcessiveParameters', () => {
   it('returns empty for functions within threshold', () => {
@@ -1486,7 +2022,9 @@ describe('detectExcessiveParameters', () => {
   });
 
   it('flags functions exceeding threshold', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ params: 7, name: 'manyArgs' })] })];
+    const files = [
+      makeFileEntry({ functions: [makeFn({ params: 7, name: 'manyArgs' })] }),
+    ];
     const findings = detectExcessiveParameters(files, 5);
     expect(findings.length).toBe(1);
     expect(findings[0].category).toBe('excessive-parameters');
@@ -1511,11 +2049,15 @@ describe('detectExcessiveParameters', () => {
   });
 
   it('skips test files', () => {
-    const files = [makeFileEntry({ file: 'src/a.test.ts', functions: [makeFn({ params: 10 })] })];
+    const files = [
+      makeFileEntry({
+        file: 'src/a.test.ts',
+        functions: [makeFn({ params: 10 })],
+      }),
+    ];
     expect(detectExcessiveParameters(files, 5)).toEqual([]);
   });
 });
-
 
 describe('detectEmptyCatchBlocks', () => {
   it('returns empty when no empty catches', () => {
@@ -1524,7 +2066,11 @@ describe('detectEmptyCatchBlocks', () => {
   });
 
   it('flags empty catch blocks', () => {
-    const loc: CodeLocation = { file: 'src/file.ts', lineStart: 10, lineEnd: 12 };
+    const loc: CodeLocation = {
+      file: 'src/file.ts',
+      lineStart: 10,
+      lineEnd: 12,
+    };
     const files = [makeFileEntry({ emptyCatches: [loc] })];
     const findings = detectEmptyCatchBlocks(files);
     expect(findings.length).toBe(1);
@@ -1544,12 +2090,17 @@ describe('detectEmptyCatchBlocks', () => {
   });
 
   it('skips test files', () => {
-    const loc: CodeLocation = { file: 'src/a.test.ts', lineStart: 10, lineEnd: 12 };
-    const files = [makeFileEntry({ file: 'src/a.test.ts', emptyCatches: [loc] })];
+    const loc: CodeLocation = {
+      file: 'src/a.test.ts',
+      lineStart: 10,
+      lineEnd: 12,
+    };
+    const files = [
+      makeFileEntry({ file: 'src/a.test.ts', emptyCatches: [loc] }),
+    ];
     expect(detectEmptyCatchBlocks(files)).toEqual([]);
   });
 });
-
 
 describe('detectSwitchNoDefault', () => {
   it('returns empty when no switches without default', () => {
@@ -1558,7 +2109,11 @@ describe('detectSwitchNoDefault', () => {
   });
 
   it('flags switch without default', () => {
-    const loc: CodeLocation = { file: 'src/file.ts', lineStart: 15, lineEnd: 30 };
+    const loc: CodeLocation = {
+      file: 'src/file.ts',
+      lineStart: 15,
+      lineEnd: 30,
+    };
     const files = [makeFileEntry({ switchesWithoutDefault: [loc] })];
     const findings = detectSwitchNoDefault(files);
     expect(findings.length).toBe(1);
@@ -1567,12 +2122,17 @@ describe('detectSwitchNoDefault', () => {
   });
 
   it('skips test files', () => {
-    const loc: CodeLocation = { file: 'src/a.test.ts', lineStart: 15, lineEnd: 30 };
-    const files = [makeFileEntry({ file: 'src/a.test.ts', switchesWithoutDefault: [loc] })];
+    const loc: CodeLocation = {
+      file: 'src/a.test.ts',
+      lineStart: 15,
+      lineEnd: 30,
+    };
+    const files = [
+      makeFileEntry({ file: 'src/a.test.ts', switchesWithoutDefault: [loc] }),
+    ];
     expect(detectSwitchNoDefault(files)).toEqual([]);
   });
 });
-
 
 describe('detectUnsafeAny', () => {
   it('returns empty for files below threshold', () => {
@@ -1605,20 +2165,55 @@ describe('detectUnsafeAny', () => {
   });
 });
 
-
 describe('detectHighHalsteadEffort', () => {
   it('returns empty for functions below thresholds', () => {
-    const files = [makeFileEntry({ functions: [makeFn({
-      halstead: { operators: 10, operands: 10, distinctOperators: 5, distinctOperands: 5, vocabulary: 10, length: 20, volume: 100, difficulty: 5, effort: 500, time: 28, estimatedBugs: 0.03 },
-    })] })];
+    const files = [
+      makeFileEntry({
+        functions: [
+          makeFn({
+            halstead: {
+              operators: 10,
+              operands: 10,
+              distinctOperators: 5,
+              distinctOperands: 5,
+              vocabulary: 10,
+              length: 20,
+              volume: 100,
+              difficulty: 5,
+              effort: 500,
+              time: 28,
+              estimatedBugs: 0.03,
+            },
+          }),
+        ],
+      }),
+    ];
     expect(detectHighHalsteadEffort(files)).toEqual([]);
   });
 
   it('flags functions with high effort', () => {
-    const files = [makeFileEntry({ functions: [makeFn({
-      name: 'heavyFn',
-      halstead: { operators: 100, operands: 200, distinctOperators: 30, distinctOperands: 50, vocabulary: 80, length: 300, volume: 50000, difficulty: 20, effort: 1_000_000, time: 55556, estimatedBugs: 1.5 },
-    })] })];
+    const files = [
+      makeFileEntry({
+        functions: [
+          makeFn({
+            name: 'heavyFn',
+            halstead: {
+              operators: 100,
+              operands: 200,
+              distinctOperators: 30,
+              distinctOperands: 50,
+              vocabulary: 80,
+              length: 300,
+              volume: 50000,
+              difficulty: 20,
+              effort: 1_000_000,
+              time: 55556,
+              estimatedBugs: 1.5,
+            },
+          }),
+        ],
+      }),
+    ];
     const findings = detectHighHalsteadEffort(files);
     expect(findings.length).toBe(1);
     expect(findings[0].category).toBe('halstead-effort');
@@ -1626,9 +2221,27 @@ describe('detectHighHalsteadEffort', () => {
   });
 
   it('flags functions with high estimated bugs', () => {
-    const files = [makeFileEntry({ functions: [makeFn({
-      halstead: { operators: 50, operands: 100, distinctOperators: 15, distinctOperands: 25, vocabulary: 40, length: 150, volume: 10000, difficulty: 10, effort: 100_000, time: 5556, estimatedBugs: 3.5 },
-    })] })];
+    const files = [
+      makeFileEntry({
+        functions: [
+          makeFn({
+            halstead: {
+              operators: 50,
+              operands: 100,
+              distinctOperators: 15,
+              distinctOperands: 25,
+              vocabulary: 40,
+              length: 150,
+              volume: 10000,
+              difficulty: 10,
+              effort: 100_000,
+              time: 5556,
+              estimatedBugs: 3.5,
+            },
+          }),
+        ],
+      }),
+    ];
     const findings = detectHighHalsteadEffort(files, 500_000, 2.0);
     expect(findings.length).toBe(1);
     expect(findings[0].reason).toContain('estimatedBugs');
@@ -1640,15 +2253,20 @@ describe('detectHighHalsteadEffort', () => {
   });
 });
 
-
 describe('detectLowMaintainability', () => {
   it('returns empty for functions above threshold', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ maintainabilityIndex: 50 })] })];
+    const files = [
+      makeFileEntry({ functions: [makeFn({ maintainabilityIndex: 50 })] }),
+    ];
     expect(detectLowMaintainability(files, 20)).toEqual([]);
   });
 
   it('flags functions below threshold', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ maintainabilityIndex: 15, name: 'hardFn' })] })];
+    const files = [
+      makeFileEntry({
+        functions: [makeFn({ maintainabilityIndex: 15, name: 'hardFn' })],
+      }),
+    ];
     const findings = detectLowMaintainability(files, 20);
     expect(findings.length).toBe(1);
     expect(findings[0].category).toBe('low-maintainability');
@@ -1656,13 +2274,17 @@ describe('detectLowMaintainability', () => {
   });
 
   it('assigns critical severity for MI < 10', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ maintainabilityIndex: 5 })] })];
+    const files = [
+      makeFileEntry({ functions: [makeFn({ maintainabilityIndex: 5 })] }),
+    ];
     const findings = detectLowMaintainability(files, 20);
     expect(findings[0].severity).toBe('critical');
   });
 
   it('assigns high severity for MI 10-19', () => {
-    const files = [makeFileEntry({ functions: [makeFn({ maintainabilityIndex: 15 })] })];
+    const files = [
+      makeFileEntry({ functions: [makeFn({ maintainabilityIndex: 15 })] }),
+    ];
     const findings = detectLowMaintainability(files, 20);
     expect(findings[0].severity).toBe('high');
   });
@@ -1673,35 +2295,38 @@ describe('detectLowMaintainability', () => {
   });
 });
 
-
-
 describe('computeAbstractness', () => {
   it('returns 0 for file with no type exports', () => {
-    expect(computeAbstractness([
-      { name: 'foo', kind: 'value' },
-      { name: 'bar', kind: 'value' },
-    ])).toBe(0);
+    expect(
+      computeAbstractness([
+        { name: 'foo', kind: 'value' },
+        { name: 'bar', kind: 'value' },
+      ])
+    ).toBe(0);
   });
 
   it('returns 1 for file with only type exports', () => {
-    expect(computeAbstractness([
-      { name: 'Foo', kind: 'type' },
-      { name: 'Bar', kind: 'type' },
-    ])).toBe(1);
+    expect(
+      computeAbstractness([
+        { name: 'Foo', kind: 'type' },
+        { name: 'Bar', kind: 'type' },
+      ])
+    ).toBe(1);
   });
 
   it('returns 0.5 for equal mix', () => {
-    expect(computeAbstractness([
-      { name: 'Foo', kind: 'type' },
-      { name: 'foo', kind: 'value' },
-    ])).toBe(0.5);
+    expect(
+      computeAbstractness([
+        { name: 'Foo', kind: 'type' },
+        { name: 'foo', kind: 'value' },
+      ])
+    ).toBe(0.5);
   });
 
   it('returns 0 for empty exports', () => {
     expect(computeAbstractness([])).toBe(0);
   });
 });
-
 
 describe('detectDistanceFromMainSequence', () => {
   it('returns empty for no files', () => {
@@ -1764,7 +2389,9 @@ describe('detectDistanceFromMainSequence', () => {
   it('skips test files', () => {
     const state = emptyState();
     state.files.add('src/a.test.ts');
-    state.declaredExportsByFile.set('src/a.test.ts', [{ name: 'fn', kind: 'value' }]);
+    state.declaredExportsByFile.set('src/a.test.ts', [
+      { name: 'fn', kind: 'value' },
+    ]);
     expect(detectDistanceFromMainSequence(state)).toEqual([]);
   });
 
@@ -1775,14 +2402,25 @@ describe('detectDistanceFromMainSequence', () => {
   });
 });
 
-
 describe('detectFeatureEnvy', () => {
   it('returns empty when no envy detected', () => {
     const state = emptyState();
     state.files.add('src/a.ts');
     state.importedSymbolsByFile.set('src/a.ts', [
-      { sourceModule: './b', resolvedModule: 'src/b.ts', importedName: 'x', localName: 'x', isTypeOnly: false },
-      { sourceModule: './c', resolvedModule: 'src/c.ts', importedName: 'y', localName: 'y', isTypeOnly: false },
+      {
+        sourceModule: './b',
+        resolvedModule: 'src/b.ts',
+        importedName: 'x',
+        localName: 'x',
+        isTypeOnly: false,
+      },
+      {
+        sourceModule: './c',
+        resolvedModule: 'src/c.ts',
+        importedName: 'y',
+        localName: 'y',
+        isTypeOnly: false,
+      },
     ]);
     expect(detectFeatureEnvy(state)).toEqual([]);
   });
@@ -1792,12 +2430,18 @@ describe('detectFeatureEnvy', () => {
     state.files.add('src/envious.ts');
     state.files.add('src/target.ts');
     const imports = Array.from({ length: 8 }, (_, i) => ({
-      sourceModule: './target', resolvedModule: 'src/target.ts',
-      importedName: `sym${i}`, localName: `sym${i}`, isTypeOnly: false,
+      sourceModule: './target',
+      resolvedModule: 'src/target.ts',
+      importedName: `sym${i}`,
+      localName: `sym${i}`,
+      isTypeOnly: false,
     }));
     imports.push({
-      sourceModule: './other', resolvedModule: 'src/other.ts',
-      importedName: 'z', localName: 'z', isTypeOnly: false,
+      sourceModule: './other',
+      resolvedModule: 'src/other.ts',
+      importedName: 'z',
+      localName: 'z',
+      isTypeOnly: false,
     });
     state.importedSymbolsByFile.set('src/envious.ts', imports);
     const findings = detectFeatureEnvy(state);
@@ -1814,8 +2458,11 @@ describe('detectFeatureEnvy', () => {
     for (let m = 0; m < 5; m++) {
       for (let s = 0; s < 2; s++) {
         imports.push({
-          sourceModule: `./mod${m}`, resolvedModule: `src/mod${m}.ts`,
-          importedName: `fn${s}`, localName: `fn${s}`, isTypeOnly: false,
+          sourceModule: `./mod${m}`,
+          resolvedModule: `src/mod${m}.ts`,
+          importedName: `fn${s}`,
+          localName: `fn${s}`,
+          isTypeOnly: false,
         });
       }
     }
@@ -1827,8 +2474,11 @@ describe('detectFeatureEnvy', () => {
     const state = emptyState();
     state.files.add('src/a.test.ts');
     const imports = Array.from({ length: 10 }, (_, i) => ({
-      sourceModule: './target', resolvedModule: 'src/target.ts',
-      importedName: `sym${i}`, localName: `sym${i}`, isTypeOnly: false,
+      sourceModule: './target',
+      resolvedModule: 'src/target.ts',
+      importedName: `sym${i}`,
+      localName: `sym${i}`,
+      isTypeOnly: false,
     }));
     state.importedSymbolsByFile.set('src/a.test.ts', imports);
     expect(detectFeatureEnvy(state)).toEqual([]);
@@ -1838,12 +2488,17 @@ describe('detectFeatureEnvy', () => {
     const state = emptyState();
     state.files.add('src/small.ts');
     state.importedSymbolsByFile.set('src/small.ts', [
-      { sourceModule: './target', resolvedModule: 'src/target.ts', importedName: 'x', localName: 'x', isTypeOnly: false },
+      {
+        sourceModule: './target',
+        resolvedModule: 'src/target.ts',
+        importedName: 'x',
+        localName: 'x',
+        isTypeOnly: false,
+      },
     ]);
     expect(detectFeatureEnvy(state)).toEqual([]);
   });
 });
-
 
 describe('detectUntestedCriticalCode', () => {
   it('returns empty when no hot files provided', () => {
@@ -1857,7 +2512,16 @@ describe('detectUntestedCriticalCode', () => {
     state.files.add('src/core.ts');
     state.incomingFromTests.set('src/core.ts', new Set());
     const hotFiles = [
-      { file: 'src/core.ts', riskScore: 50, fanIn: 10, fanOut: 5, complexityScore: 20, exportCount: 8, inCycle: false, onCriticalPath: true },
+      {
+        file: 'src/core.ts',
+        riskScore: 50,
+        fanIn: 10,
+        fanOut: 5,
+        complexityScore: 20,
+        exportCount: 8,
+        inCycle: false,
+        onCriticalPath: true,
+      },
     ];
     const findings = detectUntestedCriticalCode(state, hotFiles, new Map());
     expect(findings.length).toBe(1);
@@ -1873,7 +2537,16 @@ describe('detectUntestedCriticalCode', () => {
     state.files.add('src/core.ts');
     state.incomingFromTests.set('src/core.ts', new Set(['src/core.test.ts']));
     const hotFiles = [
-      { file: 'src/core.ts', riskScore: 50, fanIn: 10, fanOut: 5, complexityScore: 20, exportCount: 8, inCycle: false, onCriticalPath: true },
+      {
+        file: 'src/core.ts',
+        riskScore: 50,
+        fanIn: 10,
+        fanOut: 5,
+        complexityScore: 20,
+        exportCount: 8,
+        inCycle: false,
+        onCriticalPath: true,
+      },
     ];
     const findings = detectUntestedCriticalCode(state, hotFiles, new Map());
     expect(findings).toEqual([]);
@@ -1883,7 +2556,16 @@ describe('detectUntestedCriticalCode', () => {
     const state = emptyState();
     state.files.add('src/hub.ts');
     const hotFiles = [
-      { file: 'src/hub.ts', riskScore: 80, fanIn: 20, fanOut: 10, complexityScore: 40, exportCount: 15, inCycle: true, onCriticalPath: true },
+      {
+        file: 'src/hub.ts',
+        riskScore: 80,
+        fanIn: 20,
+        fanOut: 10,
+        complexityScore: 40,
+        exportCount: 15,
+        inCycle: true,
+        onCriticalPath: true,
+      },
     ];
     const findings = detectUntestedCriticalCode(state, hotFiles, new Map());
     expect(findings.length).toBe(1);
@@ -1894,7 +2576,17 @@ describe('detectUntestedCriticalCode', () => {
     const state = emptyState();
     state.files.add('src/deep.ts');
     const critMap = new Map<string, FileCriticality>([
-      ['src/deep.ts', { file: 'src/deep.ts', complexityRisk: 50, highComplexityFunctions: 3, functionCount: 5, flows: 2, score: 60 }],
+      [
+        'src/deep.ts',
+        {
+          file: 'src/deep.ts',
+          complexityRisk: 50,
+          highComplexityFunctions: 3,
+          functionCount: 5,
+          flows: 2,
+          score: 60,
+        },
+      ],
     ]);
     const findings = detectUntestedCriticalCode(state, [], critMap);
     expect(findings.length).toBe(1);
@@ -1906,7 +2598,16 @@ describe('detectUntestedCriticalCode', () => {
     const state = emptyState();
     state.files.add('src/core.test.ts');
     const hotFiles = [
-      { file: 'src/core.test.ts', riskScore: 50, fanIn: 10, fanOut: 5, complexityScore: 20, exportCount: 8, inCycle: false, onCriticalPath: true },
+      {
+        file: 'src/core.test.ts',
+        riskScore: 50,
+        fanIn: 10,
+        fanOut: 5,
+        complexityScore: 20,
+        exportCount: 8,
+        inCycle: false,
+        onCriticalPath: true,
+      },
     ];
     const findings = detectUntestedCriticalCode(state, hotFiles, new Map());
     expect(findings).toEqual([]);
@@ -1916,10 +2617,29 @@ describe('detectUntestedCriticalCode', () => {
     const state = emptyState();
     state.files.add('src/shared.ts');
     const hotFiles = [
-      { file: 'src/shared.ts', riskScore: 50, fanIn: 10, fanOut: 5, complexityScore: 20, exportCount: 8, inCycle: false, onCriticalPath: false },
+      {
+        file: 'src/shared.ts',
+        riskScore: 50,
+        fanIn: 10,
+        fanOut: 5,
+        complexityScore: 20,
+        exportCount: 8,
+        inCycle: false,
+        onCriticalPath: false,
+      },
     ];
     const critMap = new Map<string, FileCriticality>([
-      ['src/shared.ts', { file: 'src/shared.ts', complexityRisk: 50, highComplexityFunctions: 3, functionCount: 5, flows: 2, score: 60 }],
+      [
+        'src/shared.ts',
+        {
+          file: 'src/shared.ts',
+          complexityRisk: 50,
+          highComplexityFunctions: 3,
+          functionCount: 5,
+          flows: 2,
+          score: 60,
+        },
+      ],
     ]);
     const findings = detectUntestedCriticalCode(state, hotFiles, critMap);
     expect(findings.length).toBe(1);
@@ -1929,7 +2649,16 @@ describe('detectUntestedCriticalCode', () => {
     const state = emptyState();
     state.files.add('src/risky.ts');
     const hotFiles = [
-      { file: 'src/risky.ts', riskScore: 60, fanIn: 15, fanOut: 8, complexityScore: 30, exportCount: 12, inCycle: true, onCriticalPath: false },
+      {
+        file: 'src/risky.ts',
+        riskScore: 60,
+        fanIn: 15,
+        fanOut: 8,
+        complexityScore: 30,
+        exportCount: 12,
+        inCycle: true,
+        onCriticalPath: false,
+      },
     ];
     const findings = detectUntestedCriticalCode(state, hotFiles, new Map());
     expect(findings[0].reason).toContain('risk');
@@ -1941,13 +2670,21 @@ describe('detectUntestedCriticalCode', () => {
     const hotFiles = Array.from({ length: 40 }, (_, i) => {
       const file = `src/mod${i}.ts`;
       state.files.add(file);
-      return { file, riskScore: 50, fanIn: 10, fanOut: 5, complexityScore: 20, exportCount: 8, inCycle: false, onCriticalPath: true };
+      return {
+        file,
+        riskScore: 50,
+        fanIn: 10,
+        fanOut: 5,
+        complexityScore: 20,
+        exportCount: 8,
+        inCycle: false,
+        onCriticalPath: true,
+      };
     });
     const findings = detectUntestedCriticalCode(state, hotFiles, new Map());
     expect(findings.length).toBeLessThanOrEqual(25);
   });
 });
-
 
 describe('detectNamespaceImport', () => {
   it('flags import * as X from internal module', () => {
@@ -1955,7 +2692,15 @@ describe('detectNamespaceImport', () => {
     state.files.add('src/consumer.ts');
     state.files.add('src/utils.ts');
     state.importedSymbolsByFile.set('src/consumer.ts', [
-      { sourceModule: './utils', resolvedModule: 'src/utils.ts', importedName: '*', localName: 'utils', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+      {
+        sourceModule: './utils',
+        resolvedModule: 'src/utils.ts',
+        importedName: '*',
+        localName: 'utils',
+        isTypeOnly: false,
+        lineStart: 1,
+        lineEnd: 1,
+      },
     ]);
     const findings = detectNamespaceImport(state);
     expect(findings.length).toBe(1);
@@ -1967,7 +2712,14 @@ describe('detectNamespaceImport', () => {
     const state = emptyState();
     state.files.add('src/app.ts');
     state.importedSymbolsByFile.set('src/app.ts', [
-      { sourceModule: 'lodash', importedName: '*', localName: 'lodash', isTypeOnly: false, lineStart: 3, lineEnd: 3 },
+      {
+        sourceModule: 'lodash',
+        importedName: '*',
+        localName: 'lodash',
+        isTypeOnly: false,
+        lineStart: 3,
+        lineEnd: 3,
+      },
     ]);
     const findings = detectNamespaceImport(state);
     expect(findings.length).toBe(1);
@@ -1978,7 +2730,15 @@ describe('detectNamespaceImport', () => {
     const state = emptyState();
     state.files.add('src/consumer.ts');
     state.importedSymbolsByFile.set('src/consumer.ts', [
-      { sourceModule: './types', resolvedModule: 'src/types.ts', importedName: '*', localName: 'T', isTypeOnly: true, lineStart: 1, lineEnd: 1 },
+      {
+        sourceModule: './types',
+        resolvedModule: 'src/types.ts',
+        importedName: '*',
+        localName: 'T',
+        isTypeOnly: true,
+        lineStart: 1,
+        lineEnd: 1,
+      },
     ]);
     const findings = detectNamespaceImport(state);
     expect(findings.length).toBe(0);
@@ -1988,7 +2748,14 @@ describe('detectNamespaceImport', () => {
     const state = emptyState();
     state.files.add('src/app.ts');
     state.importedSymbolsByFile.set('src/app.ts', [
-      { sourceModule: 'fs', importedName: '*', localName: 'require', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+      {
+        sourceModule: 'fs',
+        importedName: '*',
+        localName: 'require',
+        isTypeOnly: false,
+        lineStart: 1,
+        lineEnd: 1,
+      },
     ]);
     const findings = detectNamespaceImport(state);
     expect(findings.length).toBe(0);
@@ -1998,7 +2765,14 @@ describe('detectNamespaceImport', () => {
     const state = emptyState();
     state.files.add('src/app.test.ts');
     state.importedSymbolsByFile.set('src/app.test.ts', [
-      { sourceModule: './utils', importedName: '*', localName: 'utils', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+      {
+        sourceModule: './utils',
+        importedName: '*',
+        localName: 'utils',
+        isTypeOnly: false,
+        lineStart: 1,
+        lineEnd: 1,
+      },
     ]);
     const findings = detectNamespaceImport(state);
     expect(findings.length).toBe(0);
@@ -2009,9 +2783,24 @@ describe('detectNamespaceImport', () => {
     state.files.add('src/consumer.ts');
     state.files.add('src/shared.ts');
     state.importedSymbolsByFile.set('src/consumer.ts', [
-      { sourceModule: './shared', resolvedModule: 'src/shared.ts', importedName: '*', localName: 'shared', isTypeOnly: false, lineStart: 2, lineEnd: 2 },
+      {
+        sourceModule: './shared',
+        resolvedModule: 'src/shared.ts',
+        importedName: '*',
+        localName: 'shared',
+        isTypeOnly: false,
+        lineStart: 2,
+        lineEnd: 2,
+      },
     ]);
-    const incomingSet = new Set(['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts']);
+    const incomingSet = new Set([
+      'a.ts',
+      'b.ts',
+      'c.ts',
+      'd.ts',
+      'e.ts',
+      'f.ts',
+    ]);
     state.incoming.set('src/shared.ts', incomingSet);
     const findings = detectNamespaceImport(state);
     expect(findings.length).toBe(1);
@@ -2024,7 +2813,14 @@ describe('detectCommonJsInEsm', () => {
     const state = emptyState();
     state.files.add('src/legacy.ts');
     state.importedSymbolsByFile.set('src/legacy.ts', [
-      { sourceModule: 'fs', importedName: '*', localName: 'require', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+      {
+        sourceModule: 'fs',
+        importedName: '*',
+        localName: 'require',
+        isTypeOnly: false,
+        lineStart: 1,
+        lineEnd: 1,
+      },
     ]);
     const findings = detectCommonJsInEsm(state);
     expect(findings.length).toBe(1);
@@ -2036,8 +2832,22 @@ describe('detectCommonJsInEsm', () => {
     const state = emptyState();
     state.files.add('src/hybrid.ts');
     state.importedSymbolsByFile.set('src/hybrid.ts', [
-      { sourceModule: 'path', importedName: 'default', localName: 'path', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
-      { sourceModule: 'fs', importedName: '*', localName: 'require', isTypeOnly: false, lineStart: 2, lineEnd: 2 },
+      {
+        sourceModule: 'path',
+        importedName: 'default',
+        localName: 'path',
+        isTypeOnly: false,
+        lineStart: 1,
+        lineEnd: 1,
+      },
+      {
+        sourceModule: 'fs',
+        importedName: '*',
+        localName: 'require',
+        isTypeOnly: false,
+        lineStart: 2,
+        lineEnd: 2,
+      },
     ]);
     const findings = detectCommonJsInEsm(state);
     expect(findings.length).toBe(1);
@@ -2049,7 +2859,14 @@ describe('detectCommonJsInEsm', () => {
     const state = emptyState();
     state.files.add('src/app.test.ts');
     state.importedSymbolsByFile.set('src/app.test.ts', [
-      { sourceModule: 'fs', importedName: '*', localName: 'require', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+      {
+        sourceModule: 'fs',
+        importedName: '*',
+        localName: 'require',
+        isTypeOnly: false,
+        lineStart: 1,
+        lineEnd: 1,
+      },
     ]);
     const findings = detectCommonJsInEsm(state);
     expect(findings.length).toBe(0);
@@ -2059,7 +2876,14 @@ describe('detectCommonJsInEsm', () => {
     const state = emptyState();
     state.files.add('src/clean.ts');
     state.importedSymbolsByFile.set('src/clean.ts', [
-      { sourceModule: 'path', importedName: 'join', localName: 'join', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+      {
+        sourceModule: 'path',
+        importedName: 'join',
+        localName: 'join',
+        isTypeOnly: false,
+        lineStart: 1,
+        lineEnd: 1,
+      },
     ]);
     const findings = detectCommonJsInEsm(state);
     expect(findings.length).toBe(0);
@@ -2069,8 +2893,22 @@ describe('detectCommonJsInEsm', () => {
     const state = emptyState();
     state.files.add('src/legacy.ts');
     state.importedSymbolsByFile.set('src/legacy.ts', [
-      { sourceModule: 'fs', importedName: '*', localName: 'require', isTypeOnly: false, lineStart: 1, lineEnd: 1 },
-      { sourceModule: 'path', importedName: '*', localName: 'require', isTypeOnly: false, lineStart: 2, lineEnd: 2 },
+      {
+        sourceModule: 'fs',
+        importedName: '*',
+        localName: 'require',
+        isTypeOnly: false,
+        lineStart: 1,
+        lineEnd: 1,
+      },
+      {
+        sourceModule: 'path',
+        importedName: '*',
+        localName: 'require',
+        isTypeOnly: false,
+        lineStart: 2,
+        lineEnd: 2,
+      },
     ]);
     const findings = detectCommonJsInEsm(state);
     expect(findings.length).toBe(2);
@@ -2083,7 +2921,16 @@ describe('detectExportStarLeak', () => {
     state.files.add('src/index.ts');
     state.files.add('src/utils.ts');
     state.reExportsByFile.set('src/index.ts', [
-      { sourceModule: './utils', resolvedModule: 'src/utils.ts', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+      {
+        sourceModule: './utils',
+        resolvedModule: 'src/utils.ts',
+        exportedAs: '*',
+        importedName: '*',
+        isStar: true,
+        isTypeOnly: false,
+        lineStart: 1,
+        lineEnd: 1,
+      },
     ]);
     state.declaredExportsByFile.set('src/utils.ts', [
       { name: 'foo', kind: 'value' },
@@ -2100,9 +2947,21 @@ describe('detectExportStarLeak', () => {
     state.files.add('src/barrel.ts');
     state.files.add('src/large.ts');
     state.reExportsByFile.set('src/barrel.ts', [
-      { sourceModule: './large', resolvedModule: 'src/large.ts', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+      {
+        sourceModule: './large',
+        resolvedModule: 'src/large.ts',
+        exportedAs: '*',
+        importedName: '*',
+        isStar: true,
+        isTypeOnly: false,
+        lineStart: 1,
+        lineEnd: 1,
+      },
     ]);
-    const exports = Array.from({ length: 25 }, (_, i) => ({ name: `fn${i}`, kind: 'value' as const }));
+    const exports = Array.from({ length: 25 }, (_, i) => ({
+      name: `fn${i}`,
+      kind: 'value' as const,
+    }));
     state.declaredExportsByFile.set('src/large.ts', exports);
     const findings = detectExportStarLeak(state);
     expect(findings.length).toBe(1);
@@ -2114,13 +2973,31 @@ describe('detectExportStarLeak', () => {
     state.files.add('src/barrel.ts');
     state.files.add('src/sub-barrel.ts');
     state.reExportsByFile.set('src/barrel.ts', [
-      { sourceModule: './sub-barrel', resolvedModule: 'src/sub-barrel.ts', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+      {
+        sourceModule: './sub-barrel',
+        resolvedModule: 'src/sub-barrel.ts',
+        exportedAs: '*',
+        importedName: '*',
+        isStar: true,
+        isTypeOnly: false,
+        lineStart: 1,
+        lineEnd: 1,
+      },
     ]);
     state.reExportsByFile.set('src/sub-barrel.ts', [
-      { sourceModule: './deep', resolvedModule: 'src/deep.ts', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+      {
+        sourceModule: './deep',
+        resolvedModule: 'src/deep.ts',
+        exportedAs: '*',
+        importedName: '*',
+        isStar: true,
+        isTypeOnly: false,
+        lineStart: 1,
+        lineEnd: 1,
+      },
     ]);
     const findings = detectExportStarLeak(state);
-    const barrelFinding = findings.find((f) => f.file === 'src/barrel.ts');
+    const barrelFinding = findings.find(f => f.file === 'src/barrel.ts');
     expect(barrelFinding).toBeDefined();
     expect(barrelFinding!.severity).toBe('high');
     expect(barrelFinding!.reason).toContain('chains');
@@ -2130,7 +3007,16 @@ describe('detectExportStarLeak', () => {
     const state = emptyState();
     state.files.add('src/index.ts');
     state.reExportsByFile.set('src/index.ts', [
-      { sourceModule: './types', resolvedModule: 'src/types.ts', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: true, lineStart: 1, lineEnd: 1 },
+      {
+        sourceModule: './types',
+        resolvedModule: 'src/types.ts',
+        exportedAs: '*',
+        importedName: '*',
+        isStar: true,
+        isTypeOnly: true,
+        lineStart: 1,
+        lineEnd: 1,
+      },
     ]);
     const findings = detectExportStarLeak(state);
     expect(findings.length).toBe(0);
@@ -2140,7 +3026,15 @@ describe('detectExportStarLeak', () => {
     const state = emptyState();
     state.files.add('src/test-utils.test.ts');
     state.reExportsByFile.set('src/test-utils.test.ts', [
-      { sourceModule: './helpers', exportedAs: '*', importedName: '*', isStar: true, isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+      {
+        sourceModule: './helpers',
+        exportedAs: '*',
+        importedName: '*',
+        isStar: true,
+        isTypeOnly: false,
+        lineStart: 1,
+        lineEnd: 1,
+      },
     ]);
     const findings = detectExportStarLeak(state);
     expect(findings.length).toBe(0);
@@ -2150,10 +3044,18 @@ describe('detectExportStarLeak', () => {
     const state = emptyState();
     state.files.add('src/index.ts');
     state.reExportsByFile.set('src/index.ts', [
-      { sourceModule: './utils', resolvedModule: 'src/utils.ts', exportedAs: 'foo', importedName: 'foo', isStar: false, isTypeOnly: false, lineStart: 1, lineEnd: 1 },
+      {
+        sourceModule: './utils',
+        resolvedModule: 'src/utils.ts',
+        exportedAs: 'foo',
+        importedName: 'foo',
+        isStar: false,
+        isTypeOnly: false,
+        lineStart: 1,
+        lineEnd: 1,
+      },
     ]);
     const findings = detectExportStarLeak(state);
     expect(findings.length).toBe(0);
   });
 });
-

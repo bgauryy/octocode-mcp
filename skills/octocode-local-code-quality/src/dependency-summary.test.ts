@@ -8,9 +8,15 @@ import {
 } from './dependency-summary.js';
 import { DEFAULT_OPTS } from './types.js';
 
-import type { AnalysisOptions, DependencyState, FileCriticality } from './types.js';
+import type {
+  AnalysisOptions,
+  DependencyState,
+  FileCriticality,
+} from './types.js';
 
-function makeDependencyState(overrides: Partial<DependencyState> = {}): DependencyState {
+function makeDependencyState(
+  overrides: Partial<DependencyState> = {}
+): DependencyState {
   return {
     files: new Set(),
     outgoing: new Map(),
@@ -26,18 +32,25 @@ function makeDependencyState(overrides: Partial<DependencyState> = {}): Dependen
   };
 }
 
-function addEdge(state: DependencyState, from: string, to: string, importerIsTest: boolean): void {
+function addEdge(
+  state: DependencyState,
+  from: string,
+  to: string,
+  importerIsTest: boolean
+): void {
   state.files.add(from);
   state.files.add(to);
   trackDependencyEdge(state, from, to, importerIsTest);
 }
 
-function addEdges(state: DependencyState, edges: Array<[string, string, boolean]>): void {
+function addEdges(
+  state: DependencyState,
+  edges: Array<[string, string, boolean]>
+): void {
   for (const [from, to, isTest] of edges) {
     addEdge(state, from, to, isTest);
   }
 }
-
 
 describe('buildDependencySummary', () => {
   it('handles empty dependency state (no files)', () => {
@@ -66,7 +79,9 @@ describe('buildDependencySummary', () => {
       outgoing: new Map([['src/standalone.ts', new Set()]]),
       incoming: new Map([['src/standalone.ts', new Set()]]),
     });
-    const criticality = new Map<string, FileCriticality>([['src/standalone.ts', { score: 5 } as FileCriticality]]);
+    const criticality = new Map<string, FileCriticality>([
+      ['src/standalone.ts', { score: 5 } as FileCriticality],
+    ]);
     const summary = buildDependencySummary(state, criticality, DEFAULT_OPTS);
 
     expect(summary.totalModules).toBe(1);
@@ -165,7 +180,10 @@ describe('buildDependencySummary', () => {
     state.files.add('e.ts');
     state.files.add('f.ts');
     state.files.add('g.ts');
-    state.outgoing.set(hub, new Set(['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts']));
+    state.outgoing.set(
+      hub,
+      new Set(['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts'])
+    );
     state.incoming.set('a.ts', new Set([hub]));
     state.incoming.set('b.ts', new Set([hub]));
     state.incoming.set('c.ts', new Set([hub]));
@@ -179,16 +197,28 @@ describe('buildDependencySummary', () => {
     state.incomingFromProduction.set('e.ts', new Set([hub]));
     state.incomingFromProduction.set('f.ts', new Set([hub]));
 
-    const criticality = new Map<string, FileCriticality>([['hub.ts', { score: 1 } as FileCriticality]]);
+    const criticality = new Map<string, FileCriticality>([
+      ['hub.ts', { score: 1 } as FileCriticality],
+    ]);
     const summary = buildDependencySummary(state, criticality, DEFAULT_OPTS);
 
-    expect(summary.criticalModules.some((m) => m.file === 'hub.ts')).toBe(true);
+    expect(summary.criticalModules.some(m => m.file === 'hub.ts')).toBe(true);
   });
 
   it('filters critical nodes by inbound > 8', () => {
     const state = makeDependencyState();
     const hub = 'hub.ts';
-    const importers = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts', 'h.ts', 'i.ts'];
+    const importers = [
+      'a.ts',
+      'b.ts',
+      'c.ts',
+      'd.ts',
+      'e.ts',
+      'f.ts',
+      'g.ts',
+      'h.ts',
+      'i.ts',
+    ];
     state.files.add(hub);
     for (const imp of importers) {
       state.files.add(imp);
@@ -197,12 +227,15 @@ describe('buildDependencySummary', () => {
     const criticality = new Map<string, FileCriticality>();
     const summary = buildDependencySummary(state, criticality, DEFAULT_OPTS);
 
-    expect(summary.criticalModules.some((m) => m.file === 'hub.ts')).toBe(true);
+    expect(summary.criticalModules.some(m => m.file === 'hub.ts')).toBe(true);
   });
 
   it('assigns riskBand high/medium/low by score', () => {
     const state = makeDependencyState();
-    addEdges(state, [['a.ts', 'b.ts', false], ['b.ts', 'c.ts', false]]);
+    addEdges(state, [
+      ['a.ts', 'b.ts', false],
+      ['b.ts', 'c.ts', false],
+    ]);
     const criticality = new Map<string, FileCriticality>([
       ['a.ts', { score: 70 } as FileCriticality],
       ['b.ts', { score: 40 } as FileCriticality],
@@ -210,9 +243,9 @@ describe('buildDependencySummary', () => {
     ]);
     const summary = buildDependencySummary(state, criticality, DEFAULT_OPTS);
 
-    const high = summary.criticalModules.find((m) => m.riskBand === 'high');
-    const medium = summary.criticalModules.find((m) => m.riskBand === 'medium');
-    const low = summary.criticalModules.find((m) => m.riskBand === 'low');
+    const high = summary.criticalModules.find(m => m.riskBand === 'high');
+    const medium = summary.criticalModules.find(m => m.riskBand === 'medium');
+    const low = summary.criticalModules.find(m => m.riskBand === 'low');
     expect(high?.file).toBe('a.ts');
     expect(medium?.file).toBe('b.ts');
     expect(low?.file).toBe('c.ts');
@@ -278,7 +311,6 @@ describe('buildDependencySummary', () => {
     expect(summary.criticalPaths.length).toBe(1);
   });
 });
-
 
 describe('computeDependencyCycles', () => {
   it('returns empty for no cycles (linear chain A→B→C)', () => {
@@ -381,7 +413,6 @@ describe('computeDependencyCycles', () => {
   });
 });
 
-
 describe('computeDependencyCriticalPaths', () => {
   it('produces one path for linear chain', () => {
     const state = makeDependencyState();
@@ -394,10 +425,14 @@ describe('computeDependencyCriticalPaths', () => {
       ['b.ts', { score: 1 } as FileCriticality],
       ['c.ts', { score: 1 } as FileCriticality],
     ]);
-    const paths = computeDependencyCriticalPaths(state, criticality, DEFAULT_OPTS);
+    const paths = computeDependencyCriticalPaths(
+      state,
+      criticality,
+      DEFAULT_OPTS
+    );
 
     expect(paths.length).toBeGreaterThanOrEqual(1);
-    const fullPath = paths.find((p) => p.path.length === 3);
+    const fullPath = paths.find(p => p.path.length === 3);
     expect(fullPath).toBeDefined();
     expect(fullPath?.path).toContain('a.ts');
     expect(fullPath?.path).toContain('b.ts');
@@ -420,10 +455,16 @@ describe('computeDependencyCriticalPaths', () => {
       ['leaf1.ts', { score: 1 } as FileCriticality],
       ['leaf2.ts', { score: 1 } as FileCriticality],
     ]);
-    const paths = computeDependencyCriticalPaths(state, criticality, DEFAULT_OPTS);
+    const paths = computeDependencyCriticalPaths(
+      state,
+      criticality,
+      DEFAULT_OPTS
+    );
 
     expect(paths[0].path).toContain('high.ts');
-    expect(paths[0].score).toBeGreaterThan(paths.find((p) => p.path.includes('low.ts'))?.score ?? 0);
+    expect(paths[0].score).toBeGreaterThan(
+      paths.find(p => p.path.includes('low.ts'))?.score ?? 0
+    );
   });
 
   it('sets containsCycle when path has cycle', () => {
@@ -436,10 +477,14 @@ describe('computeDependencyCriticalPaths', () => {
       ['a.ts', { score: 10 } as FileCriticality],
       ['b.ts', { score: 10 } as FileCriticality],
     ]);
-    const paths = computeDependencyCriticalPaths(state, criticality, DEFAULT_OPTS);
+    const paths = computeDependencyCriticalPaths(
+      state,
+      criticality,
+      DEFAULT_OPTS
+    );
 
     expect(paths.length).toBeGreaterThan(0);
-    const cyclePath = paths.find((p) => p.containsCycle);
+    const cyclePath = paths.find(p => p.containsCycle);
     expect(cyclePath).toBeDefined();
   });
 
@@ -447,9 +492,13 @@ describe('computeDependencyCriticalPaths', () => {
     const state = makeDependencyState();
     addEdges(state, [['a.ts', 'b.ts', false]]);
     const criticality = new Map<string, FileCriticality>();
-    const paths = computeDependencyCriticalPaths(state, criticality, DEFAULT_OPTS);
+    const paths = computeDependencyCriticalPaths(
+      state,
+      criticality,
+      DEFAULT_OPTS
+    );
 
-    const singleNodePaths = paths.filter((p) => p.length <= 1);
+    const singleNodePaths = paths.filter(p => p.length <= 1);
     expect(singleNodePaths).toHaveLength(0);
   });
 
@@ -482,7 +531,11 @@ describe('computeDependencyCriticalPaths', () => {
     const state = makeDependencyState();
     addEdges(state, [['a.ts', 'b.ts', false]]);
     const criticality = new Map<string, FileCriticality>();
-    const paths = computeDependencyCriticalPaths(state, criticality, DEFAULT_OPTS);
+    const paths = computeDependencyCriticalPaths(
+      state,
+      criticality,
+      DEFAULT_OPTS
+    );
 
     expect(paths[0].score).toBeGreaterThanOrEqual(1);
   });
@@ -501,7 +554,11 @@ describe('computeDependencyCriticalPaths', () => {
       ['y.ts', { score: 1 } as FileCriticality],
       ['z.ts', { score: 1 } as FileCriticality],
     ]);
-    const paths = computeDependencyCriticalPaths(state, criticality, DEFAULT_OPTS);
+    const paths = computeDependencyCriticalPaths(
+      state,
+      criticality,
+      DEFAULT_OPTS
+    );
 
     expect(paths[0].start).toBe('a.ts');
     expect(paths[0].score).toBeGreaterThan(paths[1]?.score ?? 0);

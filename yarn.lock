@@ -7032,6 +7032,7 @@ __metadata:
     "@types/node": "npm:^20.0.0"
     eslint: "npm:^9.27.0"
     eslint-plugin-import: "npm:^2.32.0"
+    terser: "npm:^5.46.1"
     tree-sitter: "npm:^0.25.0"
     tree-sitter-typescript: "npm:^0.23.2"
     typescript: "npm:^5.9.3"
@@ -8982,6 +8983,20 @@ __metadata:
   bin:
     terser: bin/terser
   checksum: 10c0/ee7a76692cb39b1ed22c30ff366c33ff3c977d9bb769575338ff5664676168fcba59192fb5168ef80c7cd901ef5411a1b0351261f5eaa50decf0fc71f63bde75
+  languageName: node
+  linkType: hard
+
+"terser@npm:^5.46.1":
+  version: 5.46.1
+  resolution: "terser@npm:5.46.1"
+  dependencies:
+    "@jridgewell/source-map": "npm:^0.3.3"
+    acorn: "npm:^8.15.0"
+    commander: "npm:^2.20.0"
+    source-map-support: "npm:~0.5.20"
+  bin:
+    terser: bin/terser
+  checksum: 10c0/45ba6566af976c518ff4e140250348d606761af822e23ea28d95b30fcf60fb69d3fabd93c6fafa4085d9fe31b67207e58b8480a64370b6cca07066c434101602
   languageName: node
   linkType: hard
 

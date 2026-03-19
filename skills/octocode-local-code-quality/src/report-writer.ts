@@ -3,21 +3,43 @@ import path from 'node:path';
 
 import { computeHotFiles } from './architecture.js';
 import { computeGraphAnalytics } from './graph-analytics.js';
-import { computeReportAnalysisSummary, enrichFileInventoryEntries, enrichFindings } from './report-analysis.js';
-import { categoryBreakdown, generateSummaryMd, severityBreakdown } from './summary-md.js';
+import {
+  computeReportAnalysisSummary,
+  enrichFileInventoryEntries,
+  enrichFindings,
+} from './report-analysis.js';
+import {
+  categoryBreakdown,
+  generateSummaryMd,
+  severityBreakdown,
+} from './summary-md.js';
 import { PILLAR_CATEGORIES } from './types.js';
 import { renderTreesText } from './utils.js';
 
-import type { AnalysisOptions, DependencyState, DependencySummary, DuplicateFlowHint, FileCriticality, FileEntry, Finding, TreeEntry } from './types.js';
-
+import type {
+  AnalysisOptions,
+  DependencyState,
+  DependencySummary,
+  DuplicateFlowHint,
+  FileCriticality,
+  FileEntry,
+  Finding,
+  TreeEntry,
+} from './types.js';
 
 export const REPORT_SCHEMA_VERSION = '1.1.0';
 
-export const ARCHITECTURE_CATEGORIES = new Set(PILLAR_CATEGORIES['architecture']);
-export const CODE_QUALITY_CATEGORIES = new Set(PILLAR_CATEGORIES['code-quality']);
+export const ARCHITECTURE_CATEGORIES = new Set(
+  PILLAR_CATEGORIES['architecture']
+);
+export const CODE_QUALITY_CATEGORIES = new Set(
+  PILLAR_CATEGORIES['code-quality']
+);
 export const DEAD_CODE_CATEGORIES = new Set(PILLAR_CATEGORIES['dead-code']);
 export const SECURITY_CATEGORIES = new Set(PILLAR_CATEGORIES['security']);
-export const TEST_QUALITY_CATEGORIES = new Set(PILLAR_CATEGORIES['test-quality']);
+export const TEST_QUALITY_CATEGORIES = new Set(
+  PILLAR_CATEGORIES['test-quality']
+);
 
 export interface FullReport {
   generatedAt: string;
@@ -44,12 +66,12 @@ export function writeMultiFileReport(
   options: AnalysisOptions,
   dependencyState: DependencyState,
   dependencySummary: DependencySummary,
-  fileCriticalityByPath: Map<string, FileCriticality>,
+  fileCriticalityByPath: Map<string, FileCriticality>
 ): Record<string, string> {
   fs.mkdirSync(dir, { recursive: true });
 
   const writeJson = (name: string, data: unknown): void => {
-    fs.writeFileSync(path.join(dir, name), JSON.stringify(data, null, 2), 'utf8');
+    fs.writeFileSync(path.join(dir, name), JSON.stringify(data), 'utf8');
   };
 
   const outputFiles: Record<string, string> = {
@@ -61,22 +83,52 @@ export function writeMultiFileReport(
     findings: 'findings.json',
   };
 
-  const hotFiles = computeHotFiles(dependencyState, dependencySummary, fileCriticalityByPath);
-  const graphAnalytics = report.graphAnalytics ?? computeGraphAnalytics(dependencyState, dependencySummary, fileCriticalityByPath);
-  const enrichedFileInventory = enrichFileInventoryEntries(report.fileInventory || [], { flowEnabled: !!options.flow });
+  const hotFiles = computeHotFiles(
+    dependencyState,
+    dependencySummary,
+    fileCriticalityByPath
+  );
+  const graphAnalytics =
+    report.graphAnalytics ??
+    computeGraphAnalytics(
+      dependencyState,
+      dependencySummary,
+      fileCriticalityByPath
+    );
+  const enrichedFileInventory = enrichFileInventoryEntries(
+    report.fileInventory || [],
+    { flowEnabled: !!options.flow }
+  );
   const allFindings = enrichFindings(
     report.optimizationFindings || [],
     enrichedFileInventory,
     hotFiles,
     graphAnalytics,
-    { flowEnabled: !!options.flow },
+    { flowEnabled: !!options.flow }
   );
-  const architectureFindings = allFindings.filter(f => ARCHITECTURE_CATEGORIES.has(f.category));
-  const codeQualityFindings = allFindings.filter(f => CODE_QUALITY_CATEGORIES.has(f.category));
-  const deadCodeFindings = allFindings.filter(f => DEAD_CODE_CATEGORIES.has(f.category));
-  const securityFindings = allFindings.filter(f => SECURITY_CATEGORIES.has(f.category));
-  const testQualityFindings = allFindings.filter(f => TEST_QUALITY_CATEGORIES.has(f.category));
-  const reportAnalysis = report.reportAnalysis ?? computeReportAnalysisSummary(allFindings, enrichedFileInventory, hotFiles, graphAnalytics);
+  const architectureFindings = allFindings.filter(f =>
+    ARCHITECTURE_CATEGORIES.has(f.category)
+  );
+  const codeQualityFindings = allFindings.filter(f =>
+    CODE_QUALITY_CATEGORIES.has(f.category)
+  );
+  const deadCodeFindings = allFindings.filter(f =>
+    DEAD_CODE_CATEGORIES.has(f.category)
+  );
+  const securityFindings = allFindings.filter(f =>
+    SECURITY_CATEGORIES.has(f.category)
+  );
+  const testQualityFindings = allFindings.filter(f =>
+    TEST_QUALITY_CATEGORIES.has(f.category)
+  );
+  const reportAnalysis =
+    report.reportAnalysis ??
+    computeReportAnalysisSummary(
+      allFindings,
+      enrichedFileInventory,
+      hotFiles,
+      graphAnalytics
+    );
 
   writeJson('architecture.json', {
     schemaVersion: REPORT_SCHEMA_VERSION,
@@ -92,8 +144,12 @@ export function writeMultiFileReport(
     chokepoints: graphAnalytics.chokepoints,
     criticalHubCandidates: graphAnalytics.chokepoints.slice(0, 10),
     sccClusters: options.graphAdvanced ? graphAnalytics.sccClusters : [],
-    packageGraphSummary: options.graphAdvanced ? graphAnalytics.packageGraphSummary : null,
-    packageHotspots: options.graphAdvanced ? graphAnalytics.packageGraphSummary.hotspots : [],
+    packageGraphSummary: options.graphAdvanced
+      ? graphAnalytics.packageGraphSummary
+      : null,
+    packageHotspots: options.graphAdvanced
+      ? graphAnalytics.packageGraphSummary.hotspots
+      : [],
   });
 
   writeJson('code-quality.json', {
@@ -155,13 +211,21 @@ export function writeMultiFileReport(
   });
 
   if (options.graph) {
-    const graphMd = generateMermaidGraph(dependencyState, dependencySummary, fileCriticalityByPath);
+    const graphMd = generateMermaidGraph(
+      dependencyState,
+      dependencySummary,
+      fileCriticalityByPath
+    );
     fs.writeFileSync(path.join(dir, 'graph.md'), graphMd, 'utf8');
     outputFiles.graph = 'graph.md';
   }
 
   if (report.astTrees) {
-    fs.writeFileSync(path.join(dir, 'ast-trees.txt'), renderTreesText(report.astTrees, report.generatedAt), 'utf8');
+    fs.writeFileSync(
+      path.join(dir, 'ast-trees.txt'),
+      renderTreesText(report.astTrees, report.generatedAt),
+      'utf8'
+    );
     outputFiles.astTrees = 'ast-trees.txt';
   }
 
@@ -192,11 +256,20 @@ export function writeMultiFileReport(
   writeJson('summary.json', summaryJsonData);
 
   const summaryMd = generateSummaryMd({
-    dir, report, outputFiles,
-    architectureFindings, codeQualityFindings, deadCodeFindings,
-    hotFiles, activeFeatures: options.features, scope: options.scope,
-    root: options.root, scopeSymbols: options.scopeSymbols,
-    semanticEnabled: options.semantic, securityFindings, testQualityFindings,
+    dir,
+    report,
+    outputFiles,
+    architectureFindings,
+    codeQualityFindings,
+    deadCodeFindings,
+    hotFiles,
+    activeFeatures: options.features,
+    scope: options.scope,
+    root: options.root,
+    scopeSymbols: options.scopeSymbols,
+    semanticEnabled: options.semantic,
+    securityFindings,
+    testQualityFindings,
     reportAnalysis,
   });
   fs.writeFileSync(path.join(dir, 'summary.md'), summaryMd, 'utf8');
@@ -207,7 +280,11 @@ export function writeMultiFileReport(
   return outputFiles;
 }
 
-export function generateMermaidGraph(dependencyState: DependencyState, dependencySummary: DependencySummary, _fileCriticalityByPath: Map<string, FileCriticality>): string {
+export function generateMermaidGraph(
+  dependencyState: DependencyState,
+  dependencySummary: DependencySummary,
+  _fileCriticalityByPath: Map<string, FileCriticality>
+): string {
   const lines: string[] = [];
   lines.push('# Dependency Graph\n');
   lines.push('## Module Dependency Map\n');
@@ -215,7 +292,7 @@ export function generateMermaidGraph(dependencyState: DependencyState, dependenc
   lines.push('graph LR');
 
   const criticalFiles = new Set(
-    (dependencySummary.criticalModules || []).map((m) => m.file),
+    (dependencySummary.criticalModules || []).map(m => m.file)
   );
   const cycleFiles = new Set<string>();
   for (const cycle of dependencySummary.cycles || []) {
@@ -238,7 +315,7 @@ export function generateMermaidGraph(dependencyState: DependencyState, dependenc
     ...(dependencySummary.inboundTop || []).slice(0, 15),
     ...(dependencySummary.criticalModules || []).slice(0, 10),
   ];
-  const moduleSet = new Set(topModules.map((m) => m.file));
+  const moduleSet = new Set(topModules.map(m => m.file));
   for (const cycle of (dependencySummary.cycles || []).slice(0, 5)) {
     for (const f of cycle.path) moduleSet.add(f);
   }
@@ -280,11 +357,15 @@ export function generateMermaidGraph(dependencyState: DependencyState, dependenc
     lines.push('## Dependency Cycles\n');
     lines.push('```mermaid');
     lines.push('graph LR');
-    for (const [idx, cycle] of dependencySummary.cycles.slice(0, 10).entries()) {
+    for (const [idx, cycle] of dependencySummary.cycles
+      .slice(0, 10)
+      .entries()) {
       for (let i = 0; i < cycle.path.length - 1; i++) {
         const from = sanitize(cycle.path[i]);
         const to = sanitize(cycle.path[i + 1]);
-        lines.push(`  ${from}["${shorten(cycle.path[i])}"] -. "cycle ${idx + 1}" .-> ${to}["${shorten(cycle.path[i + 1])}"]`);
+        lines.push(
+          `  ${from}["${shorten(cycle.path[i])}"] -. "cycle ${idx + 1}" .-> ${to}["${shorten(cycle.path[i + 1])}"]`
+        );
       }
     }
     lines.push('```\n');
@@ -298,7 +379,9 @@ export function generateMermaidGraph(dependencyState: DependencyState, dependenc
       for (let i = 0; i < chain.path.length - 1; i++) {
         const from = sanitize(chain.path[i]);
         const to = sanitize(chain.path[i + 1]);
-        lines.push(`  ${from}["${shorten(chain.path[i])}"] ==> ${to}["${shorten(chain.path[i + 1])}"]`);
+        lines.push(
+          `  ${from}["${shorten(chain.path[i])}"] ==> ${to}["${shorten(chain.path[i + 1])}"]`
+        );
       }
     }
     lines.push('```\n');
@@ -312,9 +395,15 @@ export function generateMermaidGraph(dependencyState: DependencyState, dependenc
   lines.push(`| Root modules | ${dependencySummary.rootsCount} |`);
   lines.push(`| Leaf modules | ${dependencySummary.leavesCount} |`);
   lines.push(`| Cycles | ${dependencySummary.cycles?.length || 0} |`);
-  lines.push(`| Critical paths | ${dependencySummary.criticalPaths?.length || 0} |`);
-  lines.push(`| Test-only modules | ${dependencySummary.testOnlyModules?.length || 0} |`);
-  lines.push(`| Unresolved imports | ${dependencySummary.unresolvedEdgeCount || 0} |`);
+  lines.push(
+    `| Critical paths | ${dependencySummary.criticalPaths?.length || 0} |`
+  );
+  lines.push(
+    `| Test-only modules | ${dependencySummary.testOnlyModules?.length || 0} |`
+  );
+  lines.push(
+    `| Unresolved imports | ${dependencySummary.unresolvedEdgeCount || 0} |`
+  );
   lines.push('');
 
   if (dependencySummary.criticalModules?.length > 0) {
@@ -322,7 +411,9 @@ export function generateMermaidGraph(dependencyState: DependencyState, dependenc
     lines.push('| Module | Score | Risk | Inbound | Outbound |');
     lines.push('|--------|-------|------|---------|----------|');
     for (const m of dependencySummary.criticalModules.slice(0, 20)) {
-      lines.push(`| \`${m.file}\` | ${m.score} | ${m.riskBand || '-'} | ${m.inboundCount} | ${m.outboundCount} |`);
+      lines.push(
+        `| \`${m.file}\` | ${m.score} | ${m.riskBand || '-'} | ${m.inboundCount} | ${m.outboundCount} |`
+      );
     }
     lines.push('');
   }

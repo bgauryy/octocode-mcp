@@ -14,15 +14,30 @@ import {
 import { analyzeSourceFile } from './ts-analyzer.js';
 import { DEFAULT_OPTS } from './types.js';
 
-import type { DependencyProfile, FileEntry, FlowMaps, PackageFileSummary } from './types.js';
+import type {
+  DependencyProfile,
+  FileEntry,
+  FlowMaps,
+  PackageFileSummary,
+} from './types.js';
 
-
-function parse(code: string, fileName = '/repo/src/feature.spec.ts'): ts.SourceFile {
+function parse(
+  code: string,
+  fileName = '/repo/src/feature.spec.ts'
+): ts.SourceFile {
   return ts.createSourceFile(fileName, code, ts.ScriptTarget.ESNext, true);
 }
 
 function emptySummary(): PackageFileSummary {
-  return { fileCount: 0, nodeCount: 0, functionCount: 0, flowCount: 0, kindCounts: {}, functions: [], flows: [] };
+  return {
+    fileCount: 0,
+    nodeCount: 0,
+    functionCount: 0,
+    flowCount: 0,
+    kindCounts: {},
+    functions: [],
+    flows: [],
+  };
 }
 
 function emptyMaps(): FlowMaps {
@@ -40,7 +55,15 @@ const emptyProfile: DependencyProfile = {
 
 function analyze(code: string): FileEntry {
   const src = parse(code);
-  return analyzeSourceFile(src, 'pkg', emptySummary(), { ...DEFAULT_OPTS, root: '/repo' }, emptyMaps(), [], emptyProfile);
+  return analyzeSourceFile(
+    src,
+    'pkg',
+    emptySummary(),
+    { ...DEFAULT_OPTS, root: '/repo' },
+    emptyMaps(),
+    [],
+    emptyProfile
+  );
 }
 
 describe('focused-test detector', () => {
@@ -162,10 +185,21 @@ describe('low assertion density detector', () => {
   });
 
   it('skips non-test files', () => {
-    const src = parse(`describe('suite', () => {
+    const src = parse(
+      `describe('suite', () => {
   it('test1', () => { doSomething(); });
-});`, '/repo/src/feature.ts');
-    const entry = analyzeSourceFile(src, 'pkg', emptySummary(), { ...DEFAULT_OPTS, root: '/repo' }, emptyMaps(), [], emptyProfile);
+});`,
+      '/repo/src/feature.ts'
+    );
+    const entry = analyzeSourceFile(
+      src,
+      'pkg',
+      emptySummary(),
+      { ...DEFAULT_OPTS, root: '/repo' },
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
     const findings = detectLowAssertionDensity([entry]);
     expect(findings).toHaveLength(0);
   });
@@ -201,8 +235,19 @@ describe('test-no-assertion detector', () => {
   });
 
   it('skips non-test files', () => {
-    const src = parse(`it('test', () => { doSomething(); });`, '/repo/src/feature.ts');
-    const entry = analyzeSourceFile(src, 'pkg', emptySummary(), { ...DEFAULT_OPTS, root: '/repo' }, emptyMaps(), [], emptyProfile);
+    const src = parse(
+      `it('test', () => { doSomething(); });`,
+      '/repo/src/feature.ts'
+    );
+    const entry = analyzeSourceFile(
+      src,
+      'pkg',
+      emptySummary(),
+      { ...DEFAULT_OPTS, root: '/repo' },
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
     const findings = detectTestNoAssertion([entry]);
     expect(findings).toHaveLength(0);
   });
@@ -229,8 +274,19 @@ describe('excessive mocking detector', () => {
   });
 
   it('skips non-test files', () => {
-    const src = parse(`jest.mock('a'); jest.mock('b'); jest.mock('c');`, '/repo/src/feature.ts');
-    const entry = analyzeSourceFile(src, 'pkg', emptySummary(), { ...DEFAULT_OPTS, root: '/repo' }, emptyMaps(), [], emptyProfile);
+    const src = parse(
+      `jest.mock('a'); jest.mock('b'); jest.mock('c');`,
+      '/repo/src/feature.ts'
+    );
+    const entry = analyzeSourceFile(
+      src,
+      'pkg',
+      emptySummary(),
+      { ...DEFAULT_OPTS, root: '/repo' },
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
     const findings = detectExcessiveMocking([entry], 2);
     expect(findings).toHaveLength(0);
   });
@@ -258,7 +314,15 @@ describe('shared mutable state detector', () => {
 
   it('skips non-test files', () => {
     const src = parse(`let x = 0;`, '/repo/src/feature.ts');
-    const entry = analyzeSourceFile(src, 'pkg', emptySummary(), { ...DEFAULT_OPTS, root: '/repo' }, emptyMaps(), [], emptyProfile);
+    const entry = analyzeSourceFile(
+      src,
+      'pkg',
+      emptySummary(),
+      { ...DEFAULT_OPTS, root: '/repo' },
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
     const findings = detectSharedMutableState([entry]);
     expect(findings).toHaveLength(0);
   });
@@ -309,7 +373,15 @@ describe('missing test cleanup detector', () => {
 
   it('skips non-test files', () => {
     const src = parse(`beforeAll(() => { setup(); });`, '/repo/src/feature.ts');
-    const entry = analyzeSourceFile(src, 'pkg', emptySummary(), { ...DEFAULT_OPTS, root: '/repo' }, emptyMaps(), [], emptyProfile);
+    const entry = analyzeSourceFile(
+      src,
+      'pkg',
+      emptySummary(),
+      { ...DEFAULT_OPTS, root: '/repo' },
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
     const findings = detectMissingTestCleanup([entry]);
     expect(findings).toHaveLength(0);
   });

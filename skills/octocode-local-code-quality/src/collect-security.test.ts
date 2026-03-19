@@ -5,7 +5,6 @@ import { collectSecurityData } from './collect-security.js';
 
 import type { FileEntry } from './types.js';
 
-
 function parse(code: string, fileName = '/repo/src/test.ts'): ts.SourceFile {
   return ts.createSourceFile(fileName, code, ts.ScriptTarget.ESNext, true);
 }
@@ -49,7 +48,9 @@ describe('collectSecurityData', () => {
     collectSecurityData(sourceFile, 'test.ts', fileEntry);
     expect(fileEntry.suspiciousStrings).toBeDefined();
     expect(fileEntry.suspiciousStrings!.length).toBeGreaterThan(0);
-    const secretEntry = fileEntry.suspiciousStrings!.find((s) => s.kind === 'hardcoded-secret');
+    const secretEntry = fileEntry.suspiciousStrings!.find(
+      s => s.kind === 'hardcoded-secret'
+    );
     expect(secretEntry).toBeDefined();
     expect(secretEntry!.context).toBe('literal');
   });
@@ -60,7 +61,9 @@ describe('collectSecurityData', () => {
     const fileEntry = emptyFileEntry();
     collectSecurityData(sourceFile, 'test.ts', fileEntry);
     expect(fileEntry.suspiciousStrings).toBeDefined();
-    const sqlEntry = fileEntry.suspiciousStrings!.find((s) => s.kind === 'sql-injection');
+    const sqlEntry = fileEntry.suspiciousStrings!.find(
+      s => s.kind === 'sql-injection'
+    );
     expect(sqlEntry).toBeDefined();
     expect(sqlEntry!.snippet).toMatch(/SELECT/i);
   });
@@ -81,7 +84,9 @@ describe('collectSecurityData', () => {
     const fileEntry = emptyFileEntry();
     collectSecurityData(sourceFile, 'test.ts', fileEntry);
     expect(fileEntry.suspiciousStrings).toBeDefined();
-    const entry = fileEntry.suspiciousStrings!.find((s) => s.context === 'regex-definition');
+    const entry = fileEntry.suspiciousStrings!.find(
+      s => s.context === 'regex-definition'
+    );
     expect(entry).toBeDefined();
     expect(entry!.kind).toBe('hardcoded-secret');
   });
@@ -102,7 +107,9 @@ describe('collectSecurityData', () => {
     const fileEntry = emptyFileEntry();
     collectSecurityData(sourceFile, 'test.ts', fileEntry);
     expect(fileEntry.suspiciousStrings).toBeDefined();
-    const sqlEntry = fileEntry.suspiciousStrings!.find((s) => s.kind === 'sql-injection');
+    const sqlEntry = fileEntry.suspiciousStrings!.find(
+      s => s.kind === 'sql-injection'
+    );
     expect(sqlEntry).toBeDefined();
   });
 

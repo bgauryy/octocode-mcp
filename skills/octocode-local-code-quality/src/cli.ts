@@ -4,7 +4,6 @@ import { ALL_CATEGORIES, DEFAULT_OPTS, PILLAR_CATEGORIES } from './types.js';
 
 import type { AnalysisOptions } from './types.js';
 
-
 function parseNumeric(raw: string | undefined, fallback: number): number {
   const n = parseInt(raw ?? '', 10);
   return Number.isNaN(n) ? fallback : n;
@@ -16,7 +15,10 @@ function parseDecimal(raw: string | undefined, fallback: number): number {
 }
 
 function resolveCategories(val: string, flagName: string): Set<string> {
-  const tokens = val.split(',').map((s) => s.trim()).filter(Boolean);
+  const tokens = val
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
   const resolved = new Set<string>();
   for (const token of tokens) {
     if (PILLAR_CATEGORIES[token]) {
@@ -24,17 +26,25 @@ function resolveCategories(val: string, flagName: string): Set<string> {
     } else if (ALL_CATEGORIES.has(token)) {
       resolved.add(token);
     } else {
-      console.error(`Unknown ${flagName}: "${token}". Use pillar names (${Object.keys(PILLAR_CATEGORIES).join(', ')}) or category names.`);
+      console.error(
+        `Unknown ${flagName}: "${token}". Use pillar names (${Object.keys(PILLAR_CATEGORIES).join(', ')}) or category names.`
+      );
       process.exit(1);
     }
   }
   return resolved;
 }
 
-function parseScope(val: string, root: string): { paths: string[]; symbols: Map<string, string[]> } {
+function parseScope(
+  val: string,
+  root: string
+): { paths: string[]; symbols: Map<string, string[]> } {
   const paths: string[] = [];
   const symbols = new Map<string, string[]>();
-  for (const token of val.split(',').map((s) => s.trim()).filter(Boolean)) {
+  for (const token of val
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)) {
     const colonIdx = token.lastIndexOf(':');
     if (colonIdx > 0 && !token.substring(0, colonIdx).includes(':')) {
       const filePart = token.substring(0, colonIdx);
@@ -50,60 +60,89 @@ function parseScope(val: string, root: string): { paths: string[]; symbols: Map<
   return { paths, symbols };
 }
 
-
 type FlagHandler = (opts: AnalysisOptions, argv: string[], i: number) => number;
 
-const BOOL_FLAGS: Record<string, (opts: AnalysisOptions, value: boolean) => void> = {
-  '--json':          (o) => { o.json = true; },
-  '--include-tests': (o) => { o.includeTests = true; },
-  '--emit-tree':     (o) => { o.emitTree = true; },
-  '--no-tree':       (o) => { o.emitTree = false; },
-  '--graph':         (o) => { o.graph = true; },
-  '--semantic':      (o) => { o.semantic = true; },
-  '--no-diversify':  (o) => { o.noDiversify = true; },
-  '--no-cache':      (o) => { o.noCache = true; },
-  '--clear-cache':   (o) => { o.clearCache = true; },
-  '--graph-advanced': (o) => { o.graphAdvanced = true; },
-  '--flow':          (o) => { o.flow = true; },
-  '--all':           (o) => { o.includeTests = true; o.semantic = true; },
+const BOOL_FLAGS: Record<
+  string,
+  (opts: AnalysisOptions, value: boolean) => void
+> = {
+  '--json': o => {
+    o.json = true;
+  },
+  '--include-tests': o => {
+    o.includeTests = true;
+  },
+  '--emit-tree': o => {
+    o.emitTree = true;
+  },
+  '--no-tree': o => {
+    o.emitTree = false;
+  },
+  '--graph': o => {
+    o.graph = true;
+  },
+  '--semantic': o => {
+    o.semantic = true;
+  },
+  '--no-diversify': o => {
+    o.noDiversify = true;
+  },
+  '--no-cache': o => {
+    o.noCache = true;
+  },
+  '--clear-cache': o => {
+    o.clearCache = true;
+  },
+  '--graph-advanced': o => {
+    o.graphAdvanced = true;
+  },
+  '--flow': o => {
+    o.flow = true;
+  },
+  '--all': o => {
+    o.includeTests = true;
+    o.semantic = true;
+  },
 };
 
 const INT_FLAGS: Record<string, keyof AnalysisOptions> = {
-  '--findings-limit':              'findingsLimit',
-  '--min-function-statements':     'minFunctionStatements',
-  '--min-flow-statements':         'minFlowStatements',
+  '--findings-limit': 'findingsLimit',
+  '--min-function-statements': 'minFunctionStatements',
+  '--min-flow-statements': 'minFlowStatements',
   '--critical-complexity-threshold': 'criticalComplexityThreshold',
-  '--deep-link-topn':              'deepLinkTopN',
-  '--tree-depth':                  'treeDepth',
-  '--coupling-threshold':          'couplingThreshold',
-  '--fan-in-threshold':            'fanInThreshold',
-  '--fan-out-threshold':           'fanOutThreshold',
-  '--god-module-statements':       'godModuleStatements',
-  '--god-module-exports':          'godModuleExports',
-  '--god-function-statements':     'godFunctionStatements',
+  '--deep-link-topn': 'deepLinkTopN',
+  '--tree-depth': 'treeDepth',
+  '--coupling-threshold': 'couplingThreshold',
+  '--fan-in-threshold': 'fanInThreshold',
+  '--fan-out-threshold': 'fanOutThreshold',
+  '--god-module-statements': 'godModuleStatements',
+  '--god-module-exports': 'godModuleExports',
+  '--god-function-statements': 'godFunctionStatements',
   '--cognitive-complexity-threshold': 'cognitiveComplexityThreshold',
-  '--barrel-symbol-threshold':     'barrelSymbolThreshold',
-  '--parameter-threshold':         'parameterThreshold',
-  '--halstead-effort-threshold':   'halsteadEffortThreshold',
+  '--barrel-symbol-threshold': 'barrelSymbolThreshold',
+  '--parameter-threshold': 'parameterThreshold',
+  '--halstead-effort-threshold': 'halsteadEffortThreshold',
   '--maintainability-index-threshold': 'maintainabilityIndexThreshold',
-  '--any-threshold':               'anyThreshold',
-  '--flow-dup-threshold':          'flowDupThreshold',
-  '--max-recs-per-category':       'maxRecsPerCategory',
-  '--override-chain-threshold':    'overrideChainThreshold',
-  '--secret-min-length':           'secretMinLength',
-  '--mock-threshold':              'mockThreshold',
+  '--any-threshold': 'anyThreshold',
+  '--flow-dup-threshold': 'flowDupThreshold',
+  '--max-recs-per-category': 'maxRecsPerCategory',
+  '--override-chain-threshold': 'overrideChainThreshold',
+  '--secret-min-length': 'secretMinLength',
+  '--mock-threshold': 'mockThreshold',
 };
 
 const FLOAT_FLAGS: Record<string, keyof AnalysisOptions> = {
-  '--secret-entropy-threshold':     'secretEntropyThreshold',
-  '--similarity-threshold':         'similarityThreshold',
+  '--secret-entropy-threshold': 'secretEntropyThreshold',
+  '--similarity-threshold': 'similarityThreshold',
 };
 
 const SPECIAL_FLAGS: Record<string, FlagHandler> = {
   '--parser': (opts, argv, i) => {
     const next = argv[i + 1];
     if (!['auto', 'typescript', 'tree-sitter'].includes(next)) {
-      console.error(`Unsupported parser: ${next}. Use auto|typescript|tree-sitter`);
+      console.error(
+        `Unsupported parser: ${next}. Use auto|typescript|tree-sitter`
+      );
       process.exit(1);
     }
     opts.parser = next as AnalysisOptions['parser'];
@@ -118,13 +157,18 @@ const SPECIAL_FLAGS: Record<string, FlagHandler> = {
     return i + 1;
   },
   '--layer-order': (opts, argv, i) => {
-    opts.layerOrder = argv[i + 1].split(',').map((s) => s.trim());
+    opts.layerOrder = argv[i + 1].split(',').map(s => s.trim());
     return i + 1;
   },
-  '--help': () => { printHelp(); return process.exit(0) as never; },
-  '-h': () => { printHelp(); return process.exit(0) as never; },
+  '--help': () => {
+    printHelp();
+    return process.exit(0) as never;
+  },
+  '-h': () => {
+    printHelp();
+    return process.exit(0) as never;
+  },
 };
-
 
 export function parseArgs(argv: string[]): AnalysisOptions {
   const opts: AnalysisOptions = { ...DEFAULT_OPTS };
@@ -171,13 +215,17 @@ export function parseArgs(argv: string[]): AnalysisOptions {
     }
 
     if (arg === '--features' || arg.startsWith('--features=')) {
-      const val = arg.startsWith('--features=') ? arg.slice('--features='.length) : argv[++i];
+      const val = arg.startsWith('--features=')
+        ? arg.slice('--features='.length)
+        : argv[++i];
       opts.features = resolveCategories(val, 'feature');
       continue;
     }
 
     if (arg === '--exclude' || arg.startsWith('--exclude=')) {
-      const val = arg.startsWith('--exclude=') ? arg.slice('--exclude='.length) : argv[++i];
+      const val = arg.startsWith('--exclude=')
+        ? arg.slice('--exclude='.length)
+        : argv[++i];
       excludeSet = resolveCategories(val, 'exclude');
       continue;
     }
@@ -186,16 +234,20 @@ export function parseArgs(argv: string[]): AnalysisOptions {
   opts.packageRoot = path.join(opts.root, 'packages');
 
   if (opts.features !== null && excludeSet !== null) {
-    console.error('--features and --exclude are mutually exclusive. Use one or the other.');
+    console.error(
+      '--features and --exclude are mutually exclusive. Use one or the other.'
+    );
     process.exit(1);
   }
   if (excludeSet !== null) {
-    opts.features = new Set([...ALL_CATEGORIES].filter((c) => !excludeSet!.has(c)));
+    opts.features = new Set(
+      [...ALL_CATEGORIES].filter(c => !excludeSet!.has(c))
+    );
   }
 
   if (opts.features !== null) {
     const testQualityCats = new Set(PILLAR_CATEGORIES['test-quality']);
-    if ([...opts.features].some((f) => testQualityCats.has(f))) {
+    if ([...opts.features].some(f => testQualityCats.has(f))) {
       opts.includeTests = true;
     }
   }
