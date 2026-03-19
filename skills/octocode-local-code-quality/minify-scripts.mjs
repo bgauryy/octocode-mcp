@@ -6,10 +6,23 @@ import { minify } from 'terser';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const scriptsDir = path.join(__dirname, 'scripts');
-const files = fs.readdirSync(scriptsDir).filter((f) => f.endsWith('.js'));
 
-for (const file of files) {
-  const filePath = path.join(scriptsDir, file);
+function collectJsFiles(dir) {
+  const results = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...collectJsFiles(full));
+    } else if (entry.isFile() && entry.name.endsWith('.js')) {
+      results.push(full);
+    }
+  }
+  return results;
+}
+
+const files = collectJsFiles(scriptsDir);
+
+for (const filePath of files) {
   let code = fs.readFileSync(filePath, 'utf8');
   const shebang = code.startsWith('#!') ? code.slice(0, code.indexOf('\n') + 1) : '';
   if (shebang) code = code.slice(shebang.length);

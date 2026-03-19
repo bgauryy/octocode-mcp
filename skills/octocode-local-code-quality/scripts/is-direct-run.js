@@ -1,1 +1,0 @@
-import path from"node:path";import{fileURLToPath}from"node:url";export function isDirectRun(o,r=process.argv[1]){return!!r&&fileURLToPath(o)===path.resolve(r)}
