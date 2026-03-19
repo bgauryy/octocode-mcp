@@ -18,6 +18,8 @@ Scan (CLI) → Read summary.md → Triage findings.json
   → Present validated findings to user
   → ASK user: "Want me to plan fixes for these?"
   → If yes → Output prioritized improvement plan
+  → ASK user: "Should I apply these fixes?"
+  → If yes → Apply fixes → Re-scan to verify
 ```
 
 Two tool layers work together — use any combination that fits the problem:
@@ -80,6 +82,7 @@ Use `--help` on any script for the full flag reference.
 - CLI-only is the fallback when Octocode MCP is unavailable, not the default.
 - Use `--help` and reference docs for flags, categories, and presets — do not restate them.
 - Detect the project environment before running commands — see Project Environment.
+- **Use the task tool** to create a todo list at the start of every review — one item per workflow step. Update status as you go. Always stop and ask the user before planning fixes (after Step 5) and before applying them (after Step 6).
 
 ## Project Environment
 
@@ -252,6 +255,8 @@ The plan should be prioritized and practical:
 Each item should name the target files, reason, expected benefit, evidence level, and execution tactic.
 
 For mechanical or repeated fixes, prefer `rg` + `sed`, `find` + `xargs`, `mv`, `jq` over manual editing. Use manual edits for nuanced logic changes. For mega-folder restructuring, see the [playbooks reference](./references/playbooks.md).
+
+**After presenting the plan, ask the user:** "Should I apply these fixes?" Do not make code changes without confirmation. Once approved, apply fixes in priority order, then re-scan with `--scope` to verify improvements.
 
 ## Tool Strategy
 
