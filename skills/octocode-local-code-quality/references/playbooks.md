@@ -107,7 +107,7 @@ Use `--graph-advanced` when you want SCC clusters, chokepoints, bridge modules, 
 | `dead-export` | `ast-search -p 'import { symbolName } from $MOD'` — 0 hits | `localSearchCode(export symbolName)` → `lspFindReferences(includeDeclaration=false)` — 0 refs | Remove export or delete symbol |
 | `dead-re-export` | `ast-search -p 'import { symbolName } from "barrelPath"'` — 0 hits | `localSearchCode(export.*from)` on barrel → `lspFindReferences` | Remove stale re-export |
 | `re-export-duplication` / `re-export-shadowed` | Read barrel file → check duplicate export names | `localSearchCode(export {)` in barrel | Keep one source-of-truth per name |
-| `unused-npm-dependency` | `ast-search -p 'import $$$N from "packageName"'` — 0 hits; also check `require("packageName")` | `localSearchCode(packageName)` — check build scripts | `npm uninstall`, verify build |
+| `unused-npm-dependency` | `ast-search -p 'import $$$N from "packageName"'` — 0 hits; also check `require("packageName")` | `localSearchCode(packageName)` — check build scripts | Remove the dependency via the project's package manager, verify build |
 | `package-boundary-violation` | Read finding → check if import goes through public API (index file) | `lspGotoDefinition` on cross-package import | Re-export from target index |
 | `barrel-explosion` | Count re-exports in barrel file; `--features=barrel-explosion` | `localGetFileContent(barrel file)` | Group into sub-barrels |
 

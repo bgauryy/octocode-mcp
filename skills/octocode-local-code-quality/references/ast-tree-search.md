@@ -44,7 +44,7 @@ Core options:
 node scripts/ast-tree-search.js -i <CURRENT_SCAN>/ast-trees.txt -k function_declaration --limit 25
 node scripts/ast-tree-search.js -i <CURRENT_SCAN>/ast-trees.txt --file 'src/report' -k class_declaration --limit 10
 node scripts/ast-tree-search.js -i <CURRENT_SCAN>/ast-trees.txt -p 'IfStatement|SwitchStatement|ForStatement|WhileStatement' --limit 25
-node scripts/ast-tree-search.js -i <CURRENT_SCAN>/ast-trees.txt --section 'packages/octocode-mcp' -k function_declaration --json
+node scripts/ast-tree-search.js -i <CURRENT_SCAN>/ast-trees.txt --section 'src/services' -k function_declaration --json
 ```
 
 ## Difference from `ast-search.js`

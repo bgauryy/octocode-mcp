@@ -1,3 +1,4 @@
+import { isDirectRun } from './common/is-direct-run.js';
 import {
   buildConsumedFromModule,
   computeHotFiles,
@@ -45,7 +46,7 @@ import {
   detectUnsafeAny,
   detectUntestedCriticalCode,
   detectUnusedNpmDeps,
-} from './architecture.js';
+} from './detectors/index.js';
 import {
   detectCommandInjectionRisk,
   detectEvalUsage,
@@ -57,8 +58,7 @@ import {
   detectUnsafeHtml,
   detectUnsafeRegex,
   detectUnvalidatedInputSink,
-} from './security-detectors.js';
-import { diversifyFindings } from './summary-md.js';
+} from './detectors/security.js';
 import {
   detectExcessiveMocking,
   detectFakeTimersWithoutRestore,
@@ -68,9 +68,9 @@ import {
   detectMissingTestCleanup,
   detectSharedMutableState,
   detectTestNoAssertion,
-} from './test-quality-detectors.js';
-import { isDirectRun } from './is-direct-run.js';
-import { SEVERITY_ORDER } from './types.js';
+} from './detectors/test-quality.js';
+import { diversifyFindings } from './reporting/summary-md.js';
+import { SEVERITY_ORDER } from './types/index.js';
 
 import type {
   AnalysisOptions,
@@ -82,13 +82,13 @@ import type {
   Finding,
   FlowMapEntry,
   RedundantFlowGroup,
-} from './types.js';
+} from './types/index.js';
 
 export {
   buildDependencySummary,
   computeDependencyCycles,
   computeDependencyCriticalPaths,
-} from './dependency-summary.js';
+} from './analysis/dependency-summary.js';
 export {
   REPORT_SCHEMA_VERSION,
   ARCHITECTURE_CATEGORIES,
@@ -98,8 +98,8 @@ export {
   TEST_QUALITY_CATEGORIES,
   writeMultiFileReport,
   generateMermaidGraph,
-} from './report-writer.js';
-export type { FullReport } from './report-writer.js';
+} from './reporting/writer.js';
+export type { FullReport } from './reporting/writer.js';
 export {
   severityBreakdown,
   categoryBreakdown,
@@ -109,8 +109,8 @@ export {
   diversifyFindings,
   diverseTopRecommendations,
   generateSummaryMd,
-} from './summary-md.js';
-export type { SummaryMdOptions } from './summary-md.js';
+} from './reporting/summary-md.js';
+export type { SummaryMdOptions } from './reporting/summary-md.js';
 
 export function buildIssueCatalog(
   duplicates: DuplicateGroup[],
@@ -379,7 +379,7 @@ export function assignFindingIds(
 }
 
 if (isDirectRun(import.meta.url)) {
-  import('./pipeline.js')
+  import('./pipeline/main.js')
     .then(m => m.main())
     .catch((error: unknown) => {
       console.error(error);
