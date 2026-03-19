@@ -1,60 +1,203 @@
 import path from 'node:path';
+
+import { ALL_CATEGORIES, DEFAULT_OPTS, PILLAR_CATEGORIES } from './types.js';
+
 import type { AnalysisOptions } from './types.js';
-import { DEFAULT_OPTS, PILLAR_CATEGORIES, ALL_CATEGORIES } from './types.js';
+
+function parseNumeric(raw: string | undefined, fallback: number): number {
+  const n = parseInt(raw ?? '', 10);
+  return Number.isNaN(n) ? fallback : n;
+}
+
+function parseDecimal(raw: string | undefined, fallback: number): number {
+  const n = parseFloat(raw ?? '');
+  return Number.isNaN(n) ? fallback : n;
+}
+
+function resolveCategories(val: string, flagName: string): Set<string> {
+  const tokens = val
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const resolved = new Set<string>();
+  for (const token of tokens) {
+    if (PILLAR_CATEGORIES[token]) {
+      for (const cat of PILLAR_CATEGORIES[token]) resolved.add(cat);
+    } else if (ALL_CATEGORIES.has(token)) {
+      resolved.add(token);
+    } else {
+      console.error(
+        `Unknown ${flagName}: "${token}". Use pillar names (${Object.keys(PILLAR_CATEGORIES).join(', ')}) or category names.`
+      );
+      process.exit(1);
+    }
+  }
+  return resolved;
+}
+
+function parseScope(
+  val: string,
+  root: string
+): { paths: string[]; symbols: Map<string, string[]> } {
+  const paths: string[] = [];
+  const symbols = new Map<string, string[]>();
+  for (const token of val
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)) {
+    const colonIdx = token.lastIndexOf(':');
+    if (colonIdx > 0 && !token.substring(0, colonIdx).includes(':')) {
+      const filePart = token.substring(0, colonIdx);
+      const symbolPart = token.substring(colonIdx + 1);
+      const absFile = path.resolve(root, filePart);
+      paths.push(absFile);
+      if (!symbols.has(absFile)) symbols.set(absFile, []);
+      symbols.get(absFile)!.push(symbolPart);
+    } else {
+      paths.push(path.resolve(root, token));
+    }
+  }
+  return { paths, symbols };
+}
+
+type FlagHandler = (opts: AnalysisOptions, argv: string[], i: number) => number;
+
+const BOOL_FLAGS: Record<
+  string,
+  (opts: AnalysisOptions, value: boolean) => void
+> = {
+  '--json': o => {
+    o.json = true;
+  },
+  '--include-tests': o => {
+    o.includeTests = true;
+  },
+  '--emit-tree': o => {
+    o.emitTree = true;
+  },
+  '--no-tree': o => {
+    o.emitTree = false;
+  },
+  '--graph': o => {
+    o.graph = true;
+  },
+  '--semantic': o => {
+    o.semantic = true;
+  },
+  '--no-diversify': o => {
+    o.noDiversify = true;
+  },
+  '--no-cache': o => {
+    o.noCache = true;
+  },
+  '--clear-cache': o => {
+    o.clearCache = true;
+  },
+  '--graph-advanced': o => {
+    o.graphAdvanced = true;
+  },
+  '--flow': o => {
+    o.flow = true;
+  },
+  '--all': o => {
+    o.includeTests = true;
+    o.semantic = true;
+  },
+};
+
+const INT_FLAGS: Record<string, keyof AnalysisOptions> = {
+  '--findings-limit': 'findingsLimit',
+  '--min-function-statements': 'minFunctionStatements',
+  '--min-flow-statements': 'minFlowStatements',
+  '--critical-complexity-threshold': 'criticalComplexityThreshold',
+  '--deep-link-topn': 'deepLinkTopN',
+  '--tree-depth': 'treeDepth',
+  '--coupling-threshold': 'couplingThreshold',
+  '--fan-in-threshold': 'fanInThreshold',
+  '--fan-out-threshold': 'fanOutThreshold',
+  '--god-module-statements': 'godModuleStatements',
+  '--god-module-exports': 'godModuleExports',
+  '--god-function-statements': 'godFunctionStatements',
+  '--cognitive-complexity-threshold': 'cognitiveComplexityThreshold',
+  '--barrel-symbol-threshold': 'barrelSymbolThreshold',
+  '--parameter-threshold': 'parameterThreshold',
+  '--halstead-effort-threshold': 'halsteadEffortThreshold',
+  '--maintainability-index-threshold': 'maintainabilityIndexThreshold',
+  '--any-threshold': 'anyThreshold',
+  '--flow-dup-threshold': 'flowDupThreshold',
+  '--max-recs-per-category': 'maxRecsPerCategory',
+  '--override-chain-threshold': 'overrideChainThreshold',
+  '--secret-min-length': 'secretMinLength',
+  '--mock-threshold': 'mockThreshold',
+};
+
+const FLOAT_FLAGS: Record<string, keyof AnalysisOptions> = {
+  '--secret-entropy-threshold': 'secretEntropyThreshold',
+  '--similarity-threshold': 'similarityThreshold',
+};
+
+const SPECIAL_FLAGS: Record<string, FlagHandler> = {
+  '--parser': (opts, argv, i) => {
+    const next = argv[i + 1];
+    if (!['auto', 'typescript', 'tree-sitter'].includes(next)) {
+      console.error(
+        `Unsupported parser: ${next}. Use auto|typescript|tree-sitter`
+      );
+      process.exit(1);
+    }
+    opts.parser = next as AnalysisOptions['parser'];
+    return i + 1;
+  },
+  '--root': (opts, argv, i) => {
+    opts.root = path.resolve(argv[i + 1]);
+    return i + 1;
+  },
+  '--out': (opts, argv, i) => {
+    opts.out = argv[i + 1];
+    return i + 1;
+  },
+  '--layer-order': (opts, argv, i) => {
+    opts.layerOrder = argv[i + 1].split(',').map(s => s.trim());
+    return i + 1;
+  },
+  '--help': () => {
+    printHelp();
+    return process.exit(0) as never;
+  },
+  '-h': () => {
+    printHelp();
+    return process.exit(0) as never;
+  },
+};
 
 export function parseArgs(argv: string[]): AnalysisOptions {
   const opts: AnalysisOptions = { ...DEFAULT_OPTS };
   let excludeSet: Set<string> | null = null;
+
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
 
-    if (arg === '--json') {
-      opts.json = true;
+    if (BOOL_FLAGS[arg]) {
+      BOOL_FLAGS[arg](opts, true);
       continue;
     }
 
-    if (arg === '--include-tests') {
-      opts.includeTests = true;
+    if (INT_FLAGS[arg]) {
+      const key = INT_FLAGS[arg];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (opts as any)[key] = parseNumeric(argv[++i], (DEFAULT_OPTS as any)[key]);
       continue;
     }
 
-    if (arg === '--emit-tree') {
-      opts.emitTree = true;
+    if (FLOAT_FLAGS[arg]) {
+      const key = FLOAT_FLAGS[arg];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (opts as any)[key] = parseDecimal(argv[++i], (DEFAULT_OPTS as any)[key]);
       continue;
     }
 
-    if (arg === '--no-tree') {
-      opts.emitTree = false;
-      continue;
-    }
-
-    if (arg === '--graph') {
-      opts.graph = true;
-      continue;
-    }
-
-    if (arg === '--parser') {
-      const next = argv[++i];
-      if (!['auto', 'typescript', 'tree-sitter'].includes(next)) {
-        console.error(`Unsupported parser: ${next}. Use auto|typescript|tree-sitter`);
-        process.exit(1);
-      }
-      opts.parser = next as AnalysisOptions['parser'];
-      continue;
-    }
-
-    if (arg === '--findings-limit') {
-      opts.findingsLimit = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--root') {
-      opts.root = path.resolve(argv[++i]);
-      continue;
-    }
-
-    if (arg === '--out') {
-      opts.out = argv[++i];
+    if (SPECIAL_FLAGS[arg]) {
+      i = SPECIAL_FLAGS[arg](opts, argv, i);
       continue;
     }
 
@@ -63,202 +206,50 @@ export function parseArgs(argv: string[]): AnalysisOptions {
       continue;
     }
 
-    if (arg === '--min-function-statements') {
-      opts.minFunctionStatements = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--min-flow-statements') {
-      opts.minFlowStatements = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--critical-complexity-threshold') {
-      opts.criticalComplexityThreshold = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--deep-link-topn') {
-      opts.deepLinkTopN = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--tree-depth') {
-      opts.treeDepth = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--coupling-threshold') {
-      opts.couplingThreshold = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--fan-in-threshold') {
-      opts.fanInThreshold = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--fan-out-threshold') {
-      opts.fanOutThreshold = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--god-module-statements') {
-      opts.godModuleStatements = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--god-module-exports') {
-      opts.godModuleExports = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--god-function-statements') {
-      opts.godFunctionStatements = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--cognitive-complexity-threshold') {
-      opts.cognitiveComplexityThreshold = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--barrel-symbol-threshold') {
-      opts.barrelSymbolThreshold = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--layer-order') {
-      opts.layerOrder = argv[++i].split(',').map((s) => s.trim());
-      continue;
-    }
-
-    if (arg === '--parameter-threshold') {
-      opts.parameterThreshold = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--halstead-effort-threshold') {
-      opts.halsteadEffortThreshold = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--maintainability-index-threshold') {
-      opts.maintainabilityIndexThreshold = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--cyclomatic-density-threshold') {
-      opts.cyclomaticDensityThreshold = parseFloat(argv[++i]);
-      continue;
-    }
-
-    if (arg === '--any-threshold') {
-      opts.anyThreshold = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--magic-number-threshold') {
-      opts.magicNumberThreshold = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--flow-dup-threshold') {
-      opts.flowDupThreshold = parseInt(argv[++i], 10);
-      continue;
-    }
-
-    if (arg === '--max-recs-per-category') {
-      opts.maxRecsPerCategory = parseInt(argv[++i], 10);
+    if (arg === '--scope' || arg.startsWith('--scope=')) {
+      const val = arg.includes('=') ? arg.split('=')[1] : argv[++i];
+      const { paths, symbols } = parseScope(val, opts.root);
+      opts.scope = paths;
+      if (symbols.size > 0) opts.scopeSymbols = symbols;
       continue;
     }
 
     if (arg === '--features' || arg.startsWith('--features=')) {
-      const val = arg.startsWith('--features=') ? arg.slice('--features='.length) : argv[++i];
-      const tokens = val.split(',').map((s) => s.trim()).filter(Boolean);
-      const resolved = new Set<string>();
-      for (const token of tokens) {
-        if (PILLAR_CATEGORIES[token]) {
-          for (const cat of PILLAR_CATEGORIES[token]) resolved.add(cat);
-        } else if (ALL_CATEGORIES.has(token)) {
-          resolved.add(token);
-        } else {
-          console.error(`Unknown feature: "${token}". Use pillar names (${Object.keys(PILLAR_CATEGORIES).join(', ')}) or category names.`);
-          process.exit(1);
-        }
-      }
-      opts.features = resolved;
+      const val = arg.startsWith('--features=')
+        ? arg.slice('--features='.length)
+        : argv[++i];
+      opts.features = resolveCategories(val, 'feature');
       continue;
     }
 
     if (arg === '--exclude' || arg.startsWith('--exclude=')) {
-      const val = arg.startsWith('--exclude=') ? arg.slice('--exclude='.length) : argv[++i];
-      const tokens = val.split(',').map((s) => s.trim()).filter(Boolean);
-      excludeSet = new Set<string>();
-      for (const token of tokens) {
-        if (PILLAR_CATEGORIES[token]) {
-          for (const cat of PILLAR_CATEGORIES[token]) excludeSet.add(cat);
-        } else if (ALL_CATEGORIES.has(token)) {
-          excludeSet.add(token);
-        } else {
-          console.error(`Unknown exclude: "${token}". Use pillar names (${Object.keys(PILLAR_CATEGORIES).join(', ')}) or category names.`);
-          process.exit(1);
-        }
-      }
+      const val = arg.startsWith('--exclude=')
+        ? arg.slice('--exclude='.length)
+        : argv[++i];
+      excludeSet = resolveCategories(val, 'exclude');
       continue;
-    }
-
-    if (arg === '--no-cache') {
-      opts.noCache = true;
-      continue;
-    }
-
-    if (arg === '--clear-cache') {
-      opts.clearCache = true;
-      continue;
-    }
-
-    if (arg === '--help' || arg === '-h') {
-      printHelp();
-      process.exit(0);
     }
   }
 
   opts.packageRoot = path.join(opts.root, 'packages');
 
-  if (Number.isNaN(opts.minFunctionStatements)) opts.minFunctionStatements = DEFAULT_OPTS.minFunctionStatements;
-  if (Number.isNaN(opts.minFlowStatements)) opts.minFlowStatements = DEFAULT_OPTS.minFlowStatements;
-  if (Number.isNaN(opts.findingsLimit)) opts.findingsLimit = DEFAULT_OPTS.findingsLimit;
-  if (Number.isNaN(opts.treeDepth)) opts.treeDepth = DEFAULT_OPTS.treeDepth;
-  if (Number.isNaN(opts.criticalComplexityThreshold)) {
-    opts.criticalComplexityThreshold = DEFAULT_OPTS.criticalComplexityThreshold;
-  }
-  if (Number.isNaN(opts.deepLinkTopN)) {
-    opts.deepLinkTopN = DEFAULT_OPTS.deepLinkTopN;
-  }
-  if (Number.isNaN(opts.couplingThreshold)) opts.couplingThreshold = DEFAULT_OPTS.couplingThreshold;
-  if (Number.isNaN(opts.fanInThreshold)) opts.fanInThreshold = DEFAULT_OPTS.fanInThreshold;
-  if (Number.isNaN(opts.fanOutThreshold)) opts.fanOutThreshold = DEFAULT_OPTS.fanOutThreshold;
-  if (Number.isNaN(opts.godModuleStatements)) opts.godModuleStatements = DEFAULT_OPTS.godModuleStatements;
-  if (Number.isNaN(opts.godModuleExports)) opts.godModuleExports = DEFAULT_OPTS.godModuleExports;
-  if (Number.isNaN(opts.godFunctionStatements)) opts.godFunctionStatements = DEFAULT_OPTS.godFunctionStatements;
-  if (Number.isNaN(opts.cognitiveComplexityThreshold)) opts.cognitiveComplexityThreshold = DEFAULT_OPTS.cognitiveComplexityThreshold;
-  if (Number.isNaN(opts.barrelSymbolThreshold)) opts.barrelSymbolThreshold = DEFAULT_OPTS.barrelSymbolThreshold;
-  if (Number.isNaN(opts.parameterThreshold)) opts.parameterThreshold = DEFAULT_OPTS.parameterThreshold;
-  if (Number.isNaN(opts.halsteadEffortThreshold)) opts.halsteadEffortThreshold = DEFAULT_OPTS.halsteadEffortThreshold;
-  if (Number.isNaN(opts.maintainabilityIndexThreshold)) opts.maintainabilityIndexThreshold = DEFAULT_OPTS.maintainabilityIndexThreshold;
-  if (Number.isNaN(opts.cyclomaticDensityThreshold)) opts.cyclomaticDensityThreshold = DEFAULT_OPTS.cyclomaticDensityThreshold;
-  if (Number.isNaN(opts.anyThreshold)) opts.anyThreshold = DEFAULT_OPTS.anyThreshold;
-  if (Number.isNaN(opts.magicNumberThreshold)) opts.magicNumberThreshold = DEFAULT_OPTS.magicNumberThreshold;
-  if (Number.isNaN(opts.flowDupThreshold)) opts.flowDupThreshold = DEFAULT_OPTS.flowDupThreshold;
-  if (Number.isNaN(opts.maxRecsPerCategory)) opts.maxRecsPerCategory = DEFAULT_OPTS.maxRecsPerCategory;
-
   if (opts.features !== null && excludeSet !== null) {
-    console.error('--features and --exclude are mutually exclusive. Use one or the other.');
+    console.error(
+      '--features and --exclude are mutually exclusive. Use one or the other.'
+    );
     process.exit(1);
   }
   if (excludeSet !== null) {
-    opts.features = new Set([...ALL_CATEGORIES].filter((c) => !excludeSet!.has(c)));
+    opts.features = new Set(
+      [...ALL_CATEGORIES].filter(c => !excludeSet!.has(c))
+    );
+  }
+
+  if (opts.features !== null) {
+    const testQualityCats = new Set(PILLAR_CATEGORIES['test-quality']);
+    if ([...opts.features].some(f => testQualityCats.has(f))) {
+      opts.includeTests = true;
+    }
   }
 
   return opts;
@@ -267,7 +258,7 @@ export function parseArgs(argv: string[]): AnalysisOptions {
 export function printHelp(): void {
   console.log(`
 Usage:
-  node scripts/index.js [options]
+  node scripts/run-scan.js [options]
 
 Options:
   --root <path>                 Analyze a different repo root (default: cwd)
@@ -280,6 +271,8 @@ Options:
   --no-tree                     Do not write AST trees to report
   --emit-tree                   Force include tree blocks
   --graph                       Emit Mermaid dependency graph to .md file alongside JSON
+  --graph-advanced              Enable advanced graph overlays and additional architecture findings
+  --flow                        Enable lightweight flow enrichment for evidence traces and cfgFlags
   --min-function-statements N    Minimum function body statement count for duplicate matching (default 6)
   --min-flow-statements N        Minimum control-flow statement count for duplicate matching (default 6)
   --critical-complexity-threshold N
@@ -301,23 +294,43 @@ Options:
   --halstead-effort-threshold N Halstead effort threshold for findings (default 500000)
   --maintainability-index-threshold N
                                 MI below this triggers a finding (default 20, scale 0-100)
-  --cyclomatic-density-threshold N
-                                Cyclomatic/LOC ratio threshold (default 0.5)
   --any-threshold N             Max \`any\` type usages per file before flagging (default 5)
-  --magic-number-threshold N    Max magic number occurrences per file before flagging (default 3)
   --flow-dup-threshold N        Min occurrences for a repeated flow to become a finding (default 3)
   --max-recs-per-category N     Max findings per category in top recommendations (default 2)
+  --scope=X,Y,Z                 Limit scan to specific paths, files, or functions. Comma-separated.
+                                Supports file:functionName to drill into a specific function.
+                                Examples: --scope=packages/octocode-mcp
+                                          --scope=packages/octocode-mcp/src/tools
+                                          --scope=packages/octocode-mcp/src/session.ts
+                                          --scope=packages/octocode-mcp/src/session.ts:initSession
+                                          --scope=packages/foo,packages/bar
   --features=X,Y,Z              Run only selected features. Accepts pillar names (architecture,
-                                code-quality, dead-code) or individual category names. Comma-separated.
+                                code-quality, dead-code, security, test-quality) or individual
+                                category names. Comma-separated.
                                 Examples: --features=architecture
                                           --features=dead-code,cognitive-complexity
                                           --features=dependency-cycle,dead-export
   --exclude=X,Y,Z               Run everything EXCEPT the given pillars or categories. Mutually
                                 exclusive with --features. Same pillar/category names as --features.
                                 Examples: --exclude=architecture
-                                          --exclude=dead-export,magic-number
+                                          --exclude=dead-export,unsafe-any
+  --semantic                    Enable semantic analysis phase (TypeChecker + LanguageService).
+                                Adds 14 categories: over-abstraction, concrete-dependency,
+                                circular-type-dependency, unused-parameter,
+                                deep-override-chain, interface-compliance, unused-import,
+                                orphan-implementation, shotgun-surgery, move-to-caller,
+                                narrowable-type, semantic-dead-export.
+  --override-chain-threshold N  Max method override depth before flagging (default 3, requires --semantic)
+  --secret-entropy-threshold N  Shannon entropy threshold for secret detection (default 4.5)
+  --secret-min-length N         Min string length for entropy-based secret detection (default 20)
+  --similarity-threshold N      Jaccard similarity threshold for near-clone detection (default 0.85)
+  --mock-threshold N            Max mock/spy calls per test file (default 10)
+  --no-diversify                Disable category-aware diversification when truncating findings.
+                                By default, --findings-limit interleaves categories so the
+                                truncated list is diverse. Use this to get pure severity ordering.
   --no-cache                    Disable incremental cache; re-parse all files
   --clear-cache                 Delete the analysis cache and exit (no scan)
+  --all                         Enable all features: --include-tests --semantic
   --help                        Show this message
 `);
 }

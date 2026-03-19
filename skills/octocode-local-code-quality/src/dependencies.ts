@@ -1,17 +1,31 @@
 import path from 'node:path';
+
 import * as ts from 'typescript';
+
+import {
+  addToMapSet,
+  isRelativeImport,
+  isTestFile,
+  normalizeDependencyValue,
+  resolveImportTarget,
+  toRepoPath,
+} from './utils.js';
+
 import type {
   AnalysisOptions,
   DependencyProfile,
-  DependencyState,
   DependencyRecord,
+  DependencyState,
   ExportSymbol,
   ImportedSymbolRef,
   ReExportRef,
 } from './types.js';
-import { isRelativeImport, resolveImportTarget, normalizeDependencyValue, addToMapSet, toRepoPath, isTestFile } from './utils.js';
 
-export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: string, repoRoot: string): DependencyProfile {
+export function collectModuleDependencies(
+  sourceFile: ts.SourceFile,
+  filePath: string,
+  repoRoot: string
+): DependencyProfile {
   const currentDirectory = path.dirname(filePath);
   const internal = new Set<string>();
   const external = new Set<string>();
@@ -22,11 +36,20 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
 
   const hasExportModifier = (node: ts.Node): boolean => {
     if (!ts.canHaveModifiers(node)) return false;
-    return Boolean(ts.getModifiers(node)?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword));
+    return Boolean(
+      ts
+        .getModifiers(node)
+        ?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword)
+    );
   };
 
   const pushDeclaredExport = (item: ExportSymbol): void => {
-    if (declaredExports.some((entry) => entry.name === item.name && entry.kind === item.kind)) return;
+    if (
+      declaredExports.some(
+        entry => entry.name === item.name && entry.kind === item.kind
+      )
+    )
+      return;
     declaredExports.push(item);
   };
 
@@ -51,19 +74,29 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
       return null;
     }
 
-    const relativeResolved = normalizeDependencyValue(path.relative(repoRoot, resolved));
+    const relativeResolved = normalizeDependencyValue(
+      path.relative(repoRoot, resolved)
+    );
     internal.add(relativeResolved);
     return relativeResolved;
   };
 
-  const importLine = (node: ts.Node): { lineStart: number; lineEnd: number } => {
-    const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+  const importLine = (
+    node: ts.Node
+  ): { lineStart: number; lineEnd: number } => {
+    const start = sourceFile.getLineAndCharacterOfPosition(
+      node.getStart(sourceFile)
+    );
     const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
     return { lineStart: start.line + 1, lineEnd: end.line + 1 };
   };
 
   const visit = (node: ts.Node): void => {
-    if (ts.isImportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+    if (
+      ts.isImportDeclaration(node) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
       const sourceModule = node.moduleSpecifier.text;
       const resolvedModule = resolveSpecifier(sourceModule) ?? undefined;
       const loc = importLine(node);
@@ -105,7 +138,11 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
       }
     }
 
-    if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+    if (
+      ts.isExportDeclaration(node) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)
+    ) {
       const sourceModule = node.moduleSpecifier.text;
       const resolvedModule = resolveSpecifier(sourceModule) ?? undefined;
       if (node.exportClause && ts.isNamedExports(node.exportClause)) {
@@ -117,8 +154,13 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
             importedName: element.propertyName?.text ?? element.name.text,
             isStar: false,
             isTypeOnly: node.isTypeOnly || element.isTypeOnly,
-            lineStart: sourceFile.getLineAndCharacterOfPosition(element.getStart(sourceFile)).line + 1,
-            lineEnd: sourceFile.getLineAndCharacterOfPosition(element.getEnd()).line + 1,
+            lineStart:
+              sourceFile.getLineAndCharacterOfPosition(
+                element.getStart(sourceFile)
+              ).line + 1,
+            lineEnd:
+              sourceFile.getLineAndCharacterOfPosition(element.getEnd()).line +
+              1,
           });
         }
       } else {
@@ -129,8 +171,11 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
           importedName: '*',
           isStar: true,
           isTypeOnly: node.isTypeOnly,
-          lineStart: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
-          lineEnd: sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
+          lineStart:
+            sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+              .line + 1,
+          lineEnd:
+            sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
         });
       }
     }
@@ -140,8 +185,11 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
         name: 'default',
         kind: 'value',
         isDefault: true,
-        lineStart: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
-        lineEnd: sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
+        lineStart:
+          sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+            .line + 1,
+        lineEnd:
+          sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
       });
     }
 
@@ -150,8 +198,11 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
         name: node.name?.text || 'default',
         kind: 'value',
         isDefault: node.name ? false : true,
-        lineStart: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
-        lineEnd: sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
+        lineStart:
+          sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+            .line + 1,
+        lineEnd:
+          sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
       });
     }
 
@@ -160,8 +211,11 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
         name: node.name?.text || 'default',
         kind: 'value',
         isDefault: node.name ? false : true,
-        lineStart: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
-        lineEnd: sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
+        lineStart:
+          sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+            .line + 1,
+        lineEnd:
+          sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
       });
     }
 
@@ -169,17 +223,26 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
       pushDeclaredExport({
         name: node.name.text,
         kind: 'value',
-        lineStart: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
-        lineEnd: sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
+        lineStart:
+          sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+            .line + 1,
+        lineEnd:
+          sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
       });
     }
 
-    if ((ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) && hasExportModifier(node)) {
+    if (
+      (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) &&
+      hasExportModifier(node)
+    ) {
       pushDeclaredExport({
         name: node.name.text,
         kind: 'type',
-        lineStart: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
-        lineEnd: sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
+        lineStart:
+          sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+            .line + 1,
+        lineEnd:
+          sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
       });
     }
 
@@ -189,30 +252,43 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
           pushDeclaredExport({
             name: decl.name.text,
             kind: 'value',
-            lineStart: sourceFile.getLineAndCharacterOfPosition(decl.getStart(sourceFile)).line + 1,
-            lineEnd: sourceFile.getLineAndCharacterOfPosition(decl.getEnd()).line + 1,
+            lineStart:
+              sourceFile.getLineAndCharacterOfPosition(
+                decl.getStart(sourceFile)
+              ).line + 1,
+            lineEnd:
+              sourceFile.getLineAndCharacterOfPosition(decl.getEnd()).line + 1,
           });
         }
       }
     }
 
-    if (ts.isExportDeclaration(node) && !node.moduleSpecifier && node.exportClause && ts.isNamedExports(node.exportClause)) {
+    if (
+      ts.isExportDeclaration(node) &&
+      !node.moduleSpecifier &&
+      node.exportClause &&
+      ts.isNamedExports(node.exportClause)
+    ) {
       for (const element of node.exportClause.elements) {
         pushDeclaredExport({
           name: element.name.text,
           kind: element.isTypeOnly ? 'type' : 'unknown',
-          lineStart: sourceFile.getLineAndCharacterOfPosition(element.getStart(sourceFile)).line + 1,
-          lineEnd: sourceFile.getLineAndCharacterOfPosition(element.getEnd()).line + 1,
+          lineStart:
+            sourceFile.getLineAndCharacterOfPosition(
+              element.getStart(sourceFile)
+            ).line + 1,
+          lineEnd:
+            sourceFile.getLineAndCharacterOfPosition(element.getEnd()).line + 1,
         });
       }
     }
 
     if (
-      ts.isCallExpression(node)
-      && ts.isIdentifier(node.expression)
-      && node.expression.text === 'require'
-      && node.arguments.length === 1
-      && ts.isStringLiteral(node.arguments[0])
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'require' &&
+      node.arguments.length === 1 &&
+      ts.isStringLiteral(node.arguments[0])
     ) {
       const sourceModule = node.arguments[0].text;
       const resolvedModule = resolveSpecifier(sourceModule) ?? undefined;
@@ -240,7 +316,12 @@ export function collectModuleDependencies(sourceFile: ts.SourceFile, filePath: s
   };
 }
 
-export function trackDependencyEdge(dependencyState: DependencyState, fromFile: string, toFile: string, importerIsTest: boolean): void {
+export function trackDependencyEdge(
+  dependencyState: DependencyState,
+  fromFile: string,
+  toFile: string,
+  importerIsTest: boolean
+): void {
   addToMapSet(dependencyState.outgoing, fromFile, toFile);
   addToMapSet(dependencyState.incoming, toFile, fromFile);
   if (importerIsTest) {
@@ -250,7 +331,13 @@ export function trackDependencyEdge(dependencyState: DependencyState, fromFile: 
   }
 }
 
-export function collectDependencyProfile(sourceFile: ts.SourceFile, filePath: string, packageName: string, options: AnalysisOptions, dependencyState: DependencyState): DependencyProfile {
+export function collectDependencyProfile(
+  sourceFile: ts.SourceFile,
+  filePath: string,
+  packageName: string,
+  options: AnalysisOptions,
+  dependencyState: DependencyState
+): DependencyProfile {
   const fileRelative = toRepoPath(filePath, options.root);
   dependencyState.files.add(fileRelative);
 
@@ -259,15 +346,26 @@ export function collectDependencyProfile(sourceFile: ts.SourceFile, filePath: st
 
   for (const internalDependency of deps.internalDependencies) {
     const normalizedDep = normalizeDependencyValue(internalDependency);
-    trackDependencyEdge(dependencyState, fileRelative, normalizedDep, importerIsTest);
+    trackDependencyEdge(
+      dependencyState,
+      fileRelative,
+      normalizedDep,
+      importerIsTest
+    );
   }
 
   if (deps.externalDependencies.length > 0) {
-    dependencyState.externalCounts.set(fileRelative, new Set(deps.externalDependencies));
+    dependencyState.externalCounts.set(
+      fileRelative,
+      new Set(deps.externalDependencies)
+    );
   }
 
   if (deps.unresolvedDependencies.length > 0) {
-    dependencyState.unresolvedCounts.set(fileRelative, new Set(deps.unresolvedDependencies));
+    dependencyState.unresolvedCounts.set(
+      fileRelative,
+      new Set(deps.unresolvedDependencies)
+    );
   }
 
   dependencyState.declaredExportsByFile.set(fileRelative, deps.declaredExports);
@@ -281,13 +379,20 @@ export function collectDependencyProfile(sourceFile: ts.SourceFile, filePath: st
   };
 }
 
-export function dependencyProfileToRecord(fileRelative: string, dependencyState: DependencyState): DependencyRecord {
+export function dependencyProfileToRecord(
+  fileRelative: string,
+  dependencyState: DependencyState
+): DependencyRecord {
   const outbound = dependencyState.outgoing.get(fileRelative) || new Set();
   const inbound = dependencyState.incoming.get(fileRelative) || new Set();
-  const prodIn = dependencyState.incomingFromProduction.get(fileRelative) || new Set();
-  const testIn = dependencyState.incomingFromTests.get(fileRelative) || new Set();
-  const external = dependencyState.externalCounts.get(fileRelative) || new Set();
-  const unresolvedSet = dependencyState.unresolvedCounts.get(fileRelative) || new Set();
+  const prodIn =
+    dependencyState.incomingFromProduction.get(fileRelative) || new Set();
+  const testIn =
+    dependencyState.incomingFromTests.get(fileRelative) || new Set();
+  const external =
+    dependencyState.externalCounts.get(fileRelative) || new Set();
+  const unresolvedSet =
+    dependencyState.unresolvedCounts.get(fileRelative) || new Set();
 
   return {
     file: fileRelative,

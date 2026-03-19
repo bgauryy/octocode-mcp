@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import * as ts from 'typescript';
+import { describe, expect, it } from 'vitest';
+
 import { parseArgs } from './cli.js';
 import { canonicalScriptKind, hashString, isTestFile } from './utils.js';
 

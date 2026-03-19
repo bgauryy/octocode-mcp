@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AnalysisOptions, PackageInfo, FileEntry } from './types.js';
+
 import { ALLOWED_EXTS } from './types.js';
 import { isTestFile } from './utils.js';
+
+import type { AnalysisOptions, FileEntry, PackageInfo } from './types.js';
 
 export function collectFiles(rootDir: string, opts: AnalysisOptions): string[] {
   const files: string[] = [];
@@ -43,11 +45,16 @@ export function safeRead(filePath: string): string | null {
   }
 }
 
-export function listWorkspacePackages(root: string, packageRoot: string): PackageInfo[] {
-  if (!fs.existsSync(packageRoot) || !fs.statSync(packageRoot).isDirectory()) return [];
+export function listWorkspacePackages(
+  root: string,
+  packageRoot: string
+): PackageInfo[] {
+  if (!fs.existsSync(packageRoot) || !fs.statSync(packageRoot).isDirectory())
+    return [];
 
-  const packageDirs = fs.readdirSync(packageRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
+  const packageDirs = fs
+    .readdirSync(packageRoot, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const packages: PackageInfo[] = [];
@@ -62,15 +69,18 @@ export function listWorkspacePackages(root: string, packageRoot: string): Packag
         packages.push({ name: json.name, dir, folder: entry.name });
       }
     } catch {
-      // Ignore invalid package manifests.
+      /* ignore invalid manifests */
     }
   }
 
   return packages;
 }
 
-export function fileSummaryWithFindings(fileSummaries: FileEntry[], byFile: Map<string, string[]>): (FileEntry & { issueIds: string[] })[] {
-  return fileSummaries.map((entry) => ({
+export function fileSummaryWithFindings(
+  fileSummaries: FileEntry[],
+  byFile: Map<string, string[]>
+): (FileEntry & { issueIds: string[] })[] {
+  return fileSummaries.map(entry => ({
     ...entry,
     issueIds: byFile.get(entry.file) || [],
   }));
