@@ -33,6 +33,81 @@ It does that with a hybrid model:
 
 `README.md` explains the product for users. [SKILL.md](./SKILL.md) is the actual agent workflow and execution contract.
 
+## What This Skill Does
+
+This skill scans a TypeScript or JavaScript codebase and turns the results into a usable investigation workflow.
+
+At a high level, it helps you:
+
+- find architectural pressure such as cycles, chokepoints, coupling, reachability problems, and boundary leaks
+- surface code-quality issues such as complexity, duplication, maintainability decline, and risky orchestration
+- identify dead code, unused exports, noisy APIs, and dependency hygiene problems
+- flag security and test-quality risks that deserve validation
+- produce structured output that helps you decide what to fix first instead of dumping raw warnings
+
+It is meant for people who want a practical answer to questions like:
+
+- "Why is this repo getting hard to change?"
+- "What should we clean up first?"
+- "Which findings are probably real and which need validation?"
+- "Where should an agent start investigating?"
+
+## Why Use It
+
+Use this skill when you want more than syntax checks, lint rules, or a flat list of findings.
+
+It is especially useful when:
+
+- a repo feels fragile or slow to change and you want to understand why
+- you need a fast architecture or maintainability review
+- you want an agent to investigate code quality without guessing
+- you want one workflow for architecture, cleanup, security triage, and refactor planning
+- you need broad coverage first, then narrower validation before acting
+
+The main value is prioritization. The skill helps separate:
+
+- what is most important
+- what is likely noise
+- what needs semantic validation
+- what can be fixed quickly with mechanical edits
+
+## High-Level Features
+
+This skill combines several lenses instead of relying on one kind of signal:
+
+- **Architecture review**
+  - cycles, critical paths, hotspots, coupling, layering issues, startup-risk modules
+- **Code quality review**
+  - complexity, maintainability risk, duplication, orchestration smells, performance-style issues
+- **Dead code and hygiene**
+  - dead exports, unused dependencies, barrel problems, cleanup opportunities
+- **Security triage**
+  - risky sinks, validation gaps, and unsafe patterns that need confirmation
+- **Test-quality review**
+  - weak assertions, cleanup issues, focused tests, and mocking problems
+- **Structured outputs**
+  - `summary.md`, pillar JSON files, `findings.json`, `file-inventory.json`, `graph.md`, and `ast-trees.txt`
+- **Agent-ready investigation flow**
+  - broad scan first, then narrow with scope, graph analysis, AST readers, Octocode local tools, and LSP validation
+
+## What You Get From a Run
+
+After a run, you do not just get a pass/fail result. You get a map of the repo:
+
+- a user-facing `summary.md` with health scores, hotspots, top recommendations, and analysis signals
+- focused JSON outputs for each pillar so you can drill into one area at a time
+- a complete prioritized incident list in `findings.json`
+- AST and graph artifacts for structure-first exploration
+
+That makes the skill useful for:
+
+- codebase audits
+- refactor planning
+- cleanup campaigns
+- security triage
+- agent-guided investigation
+- architecture review before larger changes
+
 ## Why It Feels Different
 
 This is not just “run many linters.”

@@ -42,6 +42,20 @@ node <SKILL_DIR>/scripts/run-scan.js --graph --flow
 
 Use `--help` when you need the exact flag list or a narrower preset.
 
+Choose scan features deliberately instead of always running the broadest mode:
+
+- use `--features=architecture` for cycles, coupling, reachability, and dependency pressure
+- use `--features=code-quality` for complexity, maintainability, duplication, and performance-style code smells
+- use `--features=dead-code` for export cleanup, dependency hygiene, and public-surface reduction
+- use `--features=security` for sink-risk and validation-sensitive findings
+- use `--features=test-quality` for flaky or misleading test patterns
+- add `--graph` when the question is about dependency structure, hotspots, or critical paths
+- add `--flow` when the claim is path-sensitive and you want richer control-flow evidence
+- add `--semantic` when type-aware design signals matter and you need stronger architectural interpretation
+- add `--scope=<path>` or `--scope=<file:symbol>` when you already know the target area and want faster rescans
+
+Start broad only when you do not yet know the problem shape. Once the summary shows the dominant area, narrow the scan and validation flow around that area.
+
 ### Step 2. Check Output Files
 
 Read `summary.md` first. Then pull in only the files that help answer the current question.
@@ -56,6 +70,7 @@ How to read `summary.md`:
 Commonly useful outputs:
 
 - `summary.md` for the top-level story, health scores, and severity ordering
+- `summary.json` for machine-readable scan metadata, counters, and `agentOutput`
 - `findings.json` for the full prioritized finding queue you will validate and fix against
 - pillar files such as `architecture.json`, `code-quality.json`, `dead-code.json`, `security.json`, or `test-quality.json` for focused investigation
 - `file-inventory.json` to understand hotspots and file-level context
@@ -90,6 +105,8 @@ At this stage, keep a distinction between:
 - `observed`: what the scan output explicitly shows
 - `suspected`: what you infer from combined signals
 - `validated`: what Octocode tools confirm in the code
+
+Do not build the user plan from `summary.md` alone. Use `findings.json` to choose the real incident list, then validate the most important ones before you recommend changes.
 
 ### Step 4. Validate with a Hybrid Flow
 
@@ -132,6 +149,15 @@ Use hybrid validation by default because it lowers false positives:
 
 Important rule: security findings, data-flow concerns, and behavior claims should not be treated as confirmed without semantic validation when LSP tools are available.
 
+Smart validation pattern:
+
+1. use `summary.md` to choose the lens
+2. use `findings.json` to pick the exact incidents
+3. use the relevant pillar JSON to understand related evidence
+4. use `localSearchCode` to anchor the live code location
+5. use LSP tools to validate reachability, references, and call behavior
+6. use `ast-tree-search.js`, `ast-search.js`, or a scoped re-scan only when you need broader structural confirmation
+
 ### Step 5. Present Findings Carefully
 
 When you report findings:
@@ -163,6 +189,16 @@ The plan should be prioritized and practical:
 A good plan names the target files or areas, the reason for each change, the expected benefit, the evidence level behind it, and the execution tactic.
 
 When the fix is mechanical or repeated, explicitly prefer fast Linux command workflows such as `rg`, `sed`, `jq`, `mv`, `cp`, and `xargs` before slower manual editing. Use manual edits for nuanced logic changes, but call out command-first refactors in the plan whenever they would make the work faster and safer.
+
+Typical command-first operations to mention in the plan:
+
+- use `rg` + `sed` for repeated string replacements or import updates
+- use `find` + `xargs` for bulk file rewrites across a scoped directory
+- use `mv` for renames and file moves
+- use `cp` for safe template duplication before targeted edits
+- use `jq` to inspect or filter `findings.json`, `summary.json`, or pillar JSON during triage
+
+Prefer these for fast, low-risk mechanical work. Prefer targeted manual edits for control-flow changes, semantic fixes, or anything where broad replacement could hide mistakes.
 
 ## Tool Strategy
 
