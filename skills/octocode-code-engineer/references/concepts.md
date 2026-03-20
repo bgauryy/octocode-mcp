@@ -42,11 +42,49 @@
 
 **Example**: MI=12 on a 300-line function means it's in the danger zone. Splitting it into 4 focused helpers of ~75 lines each would likely push each above MI=40.
 
+## Abstractness (A)
+
+**Formula**: `A = abstractExports / totalExports` — share of exports that are types/interfaces.
+
+**Range**: 0 (fully concrete) to 1 (fully abstract).
+
+**Interpretation**: Combined with Instability to compute Distance from Main Sequence.
+
+**Example**: A module with 10 exports, 3 of which are types → A = 0.3.
+
+## Distance from Main Sequence (D)
+
+**Formula**: `D = |A + I - 1|` where A = Abstractness, I = Instability.
+
+**Default thresholds**: D > 0.7 (and module has minimum coupling) triggers a finding. Severity high if D > 0.8.
+
+**Interpretation**: D = 0 means the module sits on the "main sequence" (balanced abstraction vs. stability). High D means the module is either in the **Zone of Pain** (concrete + stable = hard to change) or **Zone of Uselessness** (abstract + unstable = unused abstractions).
+
+**Example**: Module with I=0.1, A=0.1 → D = |0.1 + 0.1 - 1| = 0.8 (Zone of Pain). Fix: add abstractions or reduce inbound coupling.
+
+## Hot-File Risk Score
+
+**Formula**: `risk = fanIn * 3 + complexity + fanOut + (onCriticalPath ? 100 : 0) + (inCycle ? 50 : 0)`
+
+**Interpretation**: Ranks files by danger-to-change. High fan-in means many consumers break. High complexity means the file itself is fragile. Critical path and cycle membership amplify risk.
+
+**Example**: `types/index.ts` with fanIn=54, complexity=1 → risk = 54*3 + 1 + 2 + 100 = 265. The highest risk files are the most important to keep stable and well-tested.
+
+## Low Cohesion (LCOM)
+
+**Method**: For each file, compare the set of imports used by each export. If exports share few common dependencies, the file has low cohesion — its exports serve unrelated purposes.
+
+**Default thresholds**: minExports ≥ 3, internal dependencies from 3+ distinct groups.
+
+**Interpretation**: A file with low cohesion is doing multiple jobs and should be split. LCOM > 1 suggests the module boundary is wrong.
+
+**Example**: `utils.ts` exports `parseDate()`, `formatCurrency()`, and `validateEmail()` — each uses different imports and serves a different domain. Split into `date-utils.ts`, `currency-utils.ts`, `validation-utils.ts`.
+
 ## Cyclomatic Density
 
 **Formula**: `CC / LOC` (cyclomatic complexity divided by lines of code).
 
-**Default threshold**: > 0.5 triggers a finding.
+**Note**: Not used as a standalone finding category. Cyclomatic complexity is folded into the `function-optimization` detector and the Maintainability Index calculation.
 
 **Interpretation**: Density > 0.5 means on average every other line is a branch point. The code is almost entirely control flow with minimal straight-line logic.
 

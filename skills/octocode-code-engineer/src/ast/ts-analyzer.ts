@@ -398,6 +398,16 @@ export function analyzeSourceFile(
     nonNull: nonNullLocs,
   };
 
+  analyzeAsyncPatterns(sourceFile, fileEntry);
+  collectFileProfiles(sourceFile, fileRelative, fileEntry);
+
+  return fileEntry;
+}
+
+function analyzeAsyncPatterns(
+  sourceFile: ts.SourceFile,
+  fileEntry: FileEntry
+): void {
   const asyncWithoutAwait: Array<{
     name: string;
     lineStart: number;
@@ -469,7 +479,13 @@ export function analyzeSourceFile(
   }
   fileEntry.asyncWithoutAwait = asyncWithoutAwait;
   fileEntry.unprotectedAsync = unprotectedAsync;
+}
 
+function collectFileProfiles(
+  sourceFile: ts.SourceFile,
+  fileRelative: string,
+  fileEntry: FileEntry
+): void {
   collectSecurityData(sourceFile, fileRelative, fileEntry);
   if (!isTestFile(fileRelative)) {
     collectInputSourceProfile(sourceFile, fileRelative, fileEntry);
@@ -490,6 +506,4 @@ export function analyzeSourceFile(
       fileEntry.prototypePollutionSites = ppSites;
     }
   }
-
-  return fileEntry;
 }

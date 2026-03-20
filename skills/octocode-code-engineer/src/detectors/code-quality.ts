@@ -806,7 +806,7 @@ export function detectUnboundedCollection(
           lineStart: fn.lineStart,
           lineEnd: fn.lineEnd,
           title: `Potential unbounded collection growth in ${fn.name}`,
-          reason: `Function "${fn.name}" has ${fn.loops} loops nested ${fn.maxLoopDepth} levels with ${fn.calls} calls. Collections growing inside nested loops without bounds can cause OOM.`,
+          reason: `Function "${fn.name}" has ${fn.loops} loops nested ${fn.maxLoopDepth} levels deep with ${fn.calls} calls — structural signal for unbounded growth. Validate with tools: read the function body and check for collection mutations (.push, .add, .set) inside loops.`,
           files: [entry.file],
           suggestedFix: {
             strategy: 'Add size limits, pagination, or streaming.',

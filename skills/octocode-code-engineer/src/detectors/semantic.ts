@@ -752,6 +752,7 @@ export function runSemanticDetectors(
   all.push(...detectShotgunSurgery(profiles, options.shotgunThreshold ?? 8));
   all.push(...detectMoveToCaller(profiles));
   all.push(...detectNarrowableType(profiles));
+  all.push(...detectSemanticDeadExports(profiles));
 
   return all;
 }

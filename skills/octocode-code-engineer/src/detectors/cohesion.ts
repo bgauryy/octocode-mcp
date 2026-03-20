@@ -169,14 +169,29 @@ export function detectMegaFolders(
 
 export function detectGodFunctions(
   fileSummaries: FileEntry[],
-  stmtThreshold: number = 100
+  stmtThreshold: number = 100,
+  miThreshold: number = 10
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
+  const MIN_LOC_FOR_MI = 30;
 
   for (const entry of fileSummaries) {
     if (isTestFile(entry.file)) continue;
     for (const fn of entry.functions) {
-      if (fn.statementCount > stmtThreshold) {
+      const byStatements = fn.statementCount > stmtThreshold;
+      const byMI =
+        fn.maintainabilityIndex !== undefined &&
+        fn.maintainabilityIndex < miThreshold &&
+        fn.lengthLines > MIN_LOC_FOR_MI;
+
+      if (byStatements || byMI) {
+        const miNote =
+          byMI && fn.maintainabilityIndex !== undefined
+            ? ` MI=${fn.maintainabilityIndex.toFixed(1)} (threshold: ${miThreshold}).`
+            : '';
+        const stmtNote = byStatements
+          ? `${fn.statementCount} statements (threshold: ${stmtThreshold}).`
+          : '';
         findings.push({
           severity: 'high',
           category: 'god-function',
@@ -184,7 +199,7 @@ export function detectGodFunctions(
           lineStart: fn.lineStart,
           lineEnd: fn.lineEnd,
           title: `God function: ${fn.name}`,
-          reason: `Function has ${fn.statementCount} statements (threshold: ${stmtThreshold}).`,
+          reason: `Function "${fn.name}" triggers god-function detection. ${stmtNote}${miNote}`.trim(),
           files: [`${entry.file}:${fn.lineStart}-${fn.lineEnd}`],
           suggestedFix: {
             strategy: 'Break down into smaller, focused functions.',

@@ -14,6 +14,7 @@ All categories detected by the scan, grouped by pillar. Categories marked `--sem
 | `architecture-sdp-violation` | medium — high | Stable module depends on unstable module (I = Ce/(Ca+Ce)) | — |
 | `high-coupling` | medium — high | Excessive Ca + Ce connections | — |
 | `god-module-coupling` | medium — high | High fan-in (bottleneck) or fan-out (sprawl) | — |
+| `mega-folder` | medium | Directory with excessive file count | — |
 | `orphan-module` | medium | Zero inbound AND zero outbound dependencies | — |
 | `unreachable-module` | high | Not reachable from any entrypoint via BFS | — |
 | `layer-violation` | high | Import backwards in configured layer order | — |
@@ -82,12 +83,13 @@ All categories detected by the scan, grouped by pillar. Categories marked `--sem
 | `unused-npm-dependency` | low — medium | package.json dep not imported anywhere | — |
 | `package-boundary-violation` | medium — high | Cross-package import bypassing public API | — |
 | `barrel-explosion` | medium — high | Barrel with excessive re-exports or chain depth | — |
-| `redundant-re-export` | low — medium | Barrel re-export with 0 consumers through the barrel path; includes `export *` where <50% of symbols are consumed | — |
-| `redundant-comment` | low | Comment that restates what the code already says (narrating patterns: `// Import`, `// Define`, `// Return`, `// Set`, `// Get`, `// Handle`, `// Create`, etc.) | — |
+| `redundant-re-export` | low — medium | *(planned)* Barrel re-export with 0 consumers through the barrel path; includes `export *` where <50% of symbols are consumed | — |
+| `redundant-comment` | low | *(planned)* Comment that restates what the code already says (narrating patterns: `// Import`, `// Define`, `// Return`, `// Set`, `// Get`, `// Handle`, `// Create`, etc.) | — |
 | `unused-import` | low | Imported symbol never semantically used (TypeChecker confirmed) | `--semantic` |
 | `orphan-implementation` | medium | Exported class with no external references and no interface | `--semantic` |
 | `move-to-caller` | low | Exported symbol consumed by exactly 1 file (candidate for inlining) | `--semantic` |
 | `semantic-dead-export` | high | Exported symbol with zero semantic references (TypeChecker confirmed, stricter than `dead-export`) | `--semantic` |
+| `dead-file` | medium | File with no inbound or outbound dependencies — likely stale | — |
 
 ---
 

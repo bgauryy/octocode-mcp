@@ -220,10 +220,32 @@ function inferAnalysisLens(category: string): AnalysisLens {
       'prototype-pollution-risk',
       'path-traversal-risk',
       'command-injection-risk',
+      'debug-log-leakage',
+      'sensitive-data-logging',
     ].includes(category)
   ) {
     return 'hybrid';
   }
+
+  if (
+    [
+      'over-abstraction',
+      'concrete-dependency',
+      'circular-type-dependency',
+      'unused-parameter',
+      'deep-override-chain',
+      'interface-compliance',
+      'unused-import',
+      'orphan-implementation',
+      'shotgun-surgery',
+      'move-to-caller',
+      'narrowable-type',
+      'semantic-dead-export',
+    ].includes(category)
+  ) {
+    return 'hybrid';
+  }
+
   return 'ast';
 }
 

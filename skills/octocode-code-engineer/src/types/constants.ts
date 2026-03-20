@@ -36,6 +36,7 @@ export const DEFAULT_OPTS: AnalysisOptions = {
   godModuleStatements: 500,
   godModuleExports: 20,
   godFunctionStatements: 100,
+  godFunctionMiThreshold: 10,
   cognitiveComplexityThreshold: 15,
   barrelSymbolThreshold: 30,
   layerOrder: [],
@@ -52,6 +53,9 @@ export const DEFAULT_OPTS: AnalysisOptions = {
   clearCache: false,
   semantic: false,
   overrideChainThreshold: 3,
+  shotgunThreshold: 8,
+  sdpMinDelta: 0.15,
+  sdpMaxSourceInstability: 0.6,
   secretEntropyThreshold: 4.5,
   secretMinLength: 20,
   similarityThreshold: 0.85,
@@ -118,6 +122,7 @@ export const PILLAR_CATEGORIES: Record<string, string[]> = {
     'listener-leak-risk',
     'unbounded-collection',
     'similar-function-body',
+    'message-chain',
   ],
   'dead-code': [
     'dead-export',
@@ -131,6 +136,7 @@ export const PILLAR_CATEGORIES: Record<string, string[]> = {
     'orphan-implementation',
     'move-to-caller',
     'semantic-dead-export',
+    'dead-file',
   ],
   security: [
     'hardcoded-secret',
@@ -143,6 +149,8 @@ export const PILLAR_CATEGORIES: Record<string, string[]> = {
     'input-passthrough-risk',
     'path-traversal-risk',
     'command-injection-risk',
+    'debug-log-leakage',
+    'sensitive-data-logging',
   ],
   'test-quality': [
     'low-assertion-density',

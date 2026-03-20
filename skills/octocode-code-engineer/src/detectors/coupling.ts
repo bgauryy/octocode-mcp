@@ -16,7 +16,8 @@ export function computeInstability(
 
 export function detectSdpViolations(
   dependencyState: DependencyState,
-  minDelta: number = 0.15
+  minDelta: number = 0.15,
+  maxSourceInstability: number = 0.6
 ): FindingDraft[] {
   const findings: FindingDraft[] = [];
   const cache = new Map<string, number>();
@@ -40,7 +41,7 @@ export function detectSdpViolations(
       const iTgt = getI(dep);
       const delta = iTgt - iSrc;
 
-      if (delta > minDelta && iSrc < 0.5) {
+      if (delta > minDelta && iSrc < maxSourceInstability) {
         const importRef = findImportLine(dependencyState, file, dep);
         findings.push({
           severity: delta > 0.3 ? 'high' : 'medium',

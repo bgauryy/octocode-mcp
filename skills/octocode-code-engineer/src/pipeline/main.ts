@@ -212,6 +212,7 @@ function runSemanticPhase(
     }
     return runSemanticDetectors(semanticCtx, profiles, {
       overrideChainThreshold: options.overrideChainThreshold,
+      shotgunThreshold: options.shotgunThreshold,
     });
   } catch (err: unknown) {
     parseErrors.push({
@@ -373,21 +374,62 @@ function printConsoleResults(
   console.log(`\nParser engine used: ${parserEffective}`);
 }
 
-async function main(): Promise<void> {
+interface ScanState {
+  options: AnalysisOptions;
+  packages: PackageInfo[];
+  effectiveParser: string;
+  useTreeSitter: boolean;
+  summary: {
+    totalPackages: number;
+    totalFiles: number;
+    totalNodes: number;
+    totalFunctions: number;
+    totalFlows: number;
+    totalDependencyFiles: number;
+    byPackage: Record<
+      string,
+      {
+        files: number;
+        nodes: number;
+        functions: number;
+        flows: number;
+        topKinds: [string, number][];
+        rootPath: string;
+      }
+    >;
+  };
+  flowMap: Map<string, FlowMapEntry[]>;
+  controlMap: Map<string, ControlMapEntry[]>;
+  trees: TreeEntry[];
+  fileSummaries: FileEntry[];
+  parseErrors: { file: string; message: string }[];
+  dependencyState: DependencyState;
+  packageFileStats: Record<string, PackageFileSummary>;
+  allPkgJsonDeps: Record<string, string>;
+  allPkgJsonDevDeps: Record<string, string>;
+  cacheHits: number;
+  isLegacyMode: boolean;
+  outputDir: string | null;
+  outputPath: string | null;
+  treeSitterAvailable: boolean;
+  treeSitterError: string | null;
+}
+
+async function initScanState(): Promise<ScanState | null> {
   const options = parseArgs(process.argv.slice(2));
 
   if (options.clearCache) {
     clearCache(options.root);
     console.error('Cache cleared.');
-    return;
+    return null;
   }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const isLegacyMode = options.out?.endsWith('.json');
+  const isLegacyMode = options.out?.endsWith('.json') ?? false;
   const outputDir = isLegacyMode
     ? null
     : options.out || path.join(options.root, '.octocode', 'scan', timestamp);
-  const outputPath = isLegacyMode ? options.out : null;
+  const outputPath = isLegacyMode ? (options.out ?? null) : null;
 
   const packages = discoverPackages(options.root, options.packageRoot);
 
@@ -416,64 +458,6 @@ async function main(): Promise<void> {
     effectiveParser = 'typescript (primary) + tree-sitter (node count)';
   }
 
-  const summary = {
-    totalPackages: packages.length,
-    totalFiles: 0,
-    totalNodes: 0,
-    totalFunctions: 0,
-    totalFlows: 0,
-    totalDependencyFiles: 0,
-    byPackage: {} as Record<
-      string,
-      {
-        files: number;
-        nodes: number;
-        functions: number;
-        flows: number;
-        topKinds: [string, number][];
-        rootPath: string;
-      }
-    >,
-  };
-
-  const flowMap = new Map<string, FlowMapEntry[]>();
-  const controlMap = new Map<string, ControlMapEntry[]>();
-  const trees: TreeEntry[] = [];
-  const fileSummaries: FileEntry[] = [];
-
-  const cache = options.noCache ? null : loadCache(options.root);
-  const newCache = createEmptyCache(options.root);
-  let cacheHits = 0;
-  const parseErrors: { file: string; message: string }[] = [];
-  const dependencyState: DependencyState = {
-    files: new Set(),
-    outgoing: new Map(),
-    incoming: new Map(),
-    incomingFromTests: new Map(),
-    incomingFromProduction: new Map(),
-    externalCounts: new Map(),
-    unresolvedCounts: new Map(),
-    declaredExportsByFile: new Map(),
-    importedSymbolsByFile: new Map(),
-    reExportsByFile: new Map(),
-  };
-
-  const packageFileStats: Record<string, PackageFileSummary> =
-    Object.fromEntries(
-      packages.map(pkg => [
-        pkg.name,
-        {
-          fileCount: 0,
-          nodeCount: 0,
-          functionCount: 0,
-          flowCount: 0,
-          kindCounts: {},
-          functions: [],
-          flows: [],
-        },
-      ])
-    );
-
   const allPkgJsonDeps: Record<string, string> = {};
   const allPkgJsonDevDeps: Record<string, string> = {};
   for (const pkg of packages) {
@@ -487,6 +471,74 @@ async function main(): Promise<void> {
       void 0;
     }
   }
+
+  return {
+    options,
+    packages,
+    effectiveParser,
+    useTreeSitter,
+    summary: {
+      totalPackages: packages.length,
+      totalFiles: 0,
+      totalNodes: 0,
+      totalFunctions: 0,
+      totalFlows: 0,
+      totalDependencyFiles: 0,
+      byPackage: {},
+    },
+    flowMap: new Map(),
+    controlMap: new Map(),
+    trees: [],
+    fileSummaries: [],
+    parseErrors: [],
+    dependencyState: {
+      files: new Set(),
+      outgoing: new Map(),
+      incoming: new Map(),
+      incomingFromTests: new Map(),
+      incomingFromProduction: new Map(),
+      externalCounts: new Map(),
+      unresolvedCounts: new Map(),
+      declaredExportsByFile: new Map(),
+      importedSymbolsByFile: new Map(),
+      reExportsByFile: new Map(),
+    },
+    packageFileStats: Object.fromEntries(
+      packages.map(pkg => [
+        pkg.name,
+        {
+          fileCount: 0,
+          nodeCount: 0,
+          functionCount: 0,
+          flowCount: 0,
+          kindCounts: {},
+          functions: [],
+          flows: [],
+        },
+      ])
+    ),
+    allPkgJsonDeps,
+    allPkgJsonDevDeps,
+    cacheHits: 0,
+    isLegacyMode,
+    outputDir,
+    outputPath,
+    treeSitterAvailable: useTreeSitter,
+    treeSitterError: parserProbe?.available ? null : (parserProbe?.error || null),
+  };
+}
+
+type CachedResult = {
+  fileEntry: FileEntry;
+  flowMapEntries: [string, FlowMapEntry[]][];
+  controlMapEntries: [string, ControlMapEntry[]][];
+  treeEntry?: TreeEntry;
+};
+
+function collectFileData(state: ScanState): void {
+  const { options, packages, useTreeSitter, summary, flowMap, controlMap, trees, fileSummaries, parseErrors, dependencyState, packageFileStats } = state;
+  const cache = options.noCache ? null : loadCache(options.root);
+  const newCache = createEmptyCache(options.root);
 
   for (const pkg of packages) {
     let packageStats = packageFileStats[pkg.name];
@@ -554,13 +606,6 @@ async function main(): Promise<void> {
         const stat = fs.statSync(filePath);
         const statKey = { mtimeMs: stat.mtimeMs, size: stat.size };
 
-        type CachedResult = {
-          fileEntry: FileEntry;
-          flowMapEntries: [string, FlowMapEntry[]][];
-          controlMapEntries: [string, ControlMapEntry[]][];
-          treeEntry?: TreeEntry;
-        };
-
         if (cache && isCacheHit(cache, relPath, statKey)) {
           const raw = getCachedResult(cache, relPath) as
             | CachedResult
@@ -595,7 +640,7 @@ async function main(): Promise<void> {
             fileSummaries.push(fileSummary);
 
             setCacheEntry(newCache, relPath, statKey, raw);
-            cacheHits++;
+            state.cacheHits++;
             continue;
           }
         }
@@ -733,13 +778,17 @@ async function main(): Promise<void> {
     garbageCollect(newCache);
     saveCache(options.root, newCache);
   }
-  if (cacheHits > 0 && !options.json) {
+  if (state.cacheHits > 0 && !options.json) {
     console.error(
-      `Cache: ${cacheHits} hits, ${fileSummaries.length - cacheHits} misses`
+      `Cache: ${state.cacheHits} hits, ${fileSummaries.length - state.cacheHits} misses`
     );
   }
 
   summary.totalDependencyFiles = dependencyState.files.size;
+}
+
+function analyzeAndReport(state: ScanState): void {
+  const { options, effectiveParser, summary, flowMap, controlMap, trees, fileSummaries, parseErrors, dependencyState, allPkgJsonDeps, allPkgJsonDevDeps, isLegacyMode, outputDir, outputPath, treeSitterAvailable, treeSitterError } = state;
 
   const { duplicateFunctions, redundantFlows, duplicateFlowHints } =
     groupDuplicates(flowMap, controlMap, options.flowDupThreshold);
@@ -835,10 +884,8 @@ async function main(): Promise<void> {
     parser: {
       requested: options.parser,
       effective: effectiveParser,
-      treeSitterAvailable: !!parserProbe?.available,
-      treeSitterError: parserProbe?.available
-        ? null
-        : parserProbe?.error || null,
+      treeSitterAvailable,
+      treeSitterError,
     },
     summary,
     fileInventory: enhancedFileSummaries,
@@ -955,6 +1002,13 @@ async function main(): Promise<void> {
       }
     }
   }
+}
+
+async function main(): Promise<void> {
+  const state = await initScanState();
+  if (!state) return;
+  collectFileData(state);
+  analyzeAndReport(state);
 }
 
 export { main };

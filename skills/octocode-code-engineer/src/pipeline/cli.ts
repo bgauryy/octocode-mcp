@@ -118,6 +118,7 @@ const INT_FLAGS: Record<string, keyof AnalysisOptions> = {
   '--god-module-statements': 'godModuleStatements',
   '--god-module-exports': 'godModuleExports',
   '--god-function-statements': 'godFunctionStatements',
+  '--god-function-mi-threshold': 'godFunctionMiThreshold',
   '--cognitive-complexity-threshold': 'cognitiveComplexityThreshold',
   '--barrel-symbol-threshold': 'barrelSymbolThreshold',
   '--parameter-threshold': 'parameterThreshold',
@@ -127,6 +128,7 @@ const INT_FLAGS: Record<string, keyof AnalysisOptions> = {
   '--flow-dup-threshold': 'flowDupThreshold',
   '--max-recs-per-category': 'maxRecsPerCategory',
   '--override-chain-threshold': 'overrideChainThreshold',
+  '--shotgun-threshold': 'shotgunThreshold',
   '--secret-min-length': 'secretMinLength',
   '--mock-threshold': 'mockThreshold',
 };
@@ -134,6 +136,8 @@ const INT_FLAGS: Record<string, keyof AnalysisOptions> = {
 const FLOAT_FLAGS: Record<string, keyof AnalysisOptions> = {
   '--secret-entropy-threshold': 'secretEntropyThreshold',
   '--similarity-threshold': 'similarityThreshold',
+  '--sdp-min-delta': 'sdpMinDelta',
+  '--sdp-max-source-instability': 'sdpMaxSourceInstability',
 };
 
 const SPECIAL_FLAGS: Record<string, FlagHandler> = {
@@ -286,6 +290,7 @@ Options:
   --god-module-statements N     Statement threshold for god-module findings (default 500)
   --god-module-exports N        Export threshold for god-module findings (default 20)
   --god-function-statements N   Statement threshold for god-function findings (default 100)
+  --god-function-mi-threshold N MI threshold for god-function findings (default 10, fires when MI < N and LOC > 30)
   --cognitive-complexity-threshold N
                                 Cognitive complexity threshold for findings (default 15)
   --barrel-symbol-threshold N   Re-export count threshold for barrel-explosion (default 30)
@@ -321,6 +326,9 @@ Options:
                                 orphan-implementation, shotgun-surgery, move-to-caller,
                                 narrowable-type, semantic-dead-export.
   --override-chain-threshold N  Max method override depth before flagging (default 3, requires --semantic)
+  --shotgun-threshold N         Unique-file threshold for shotgun-surgery (default 8, requires --semantic)
+  --sdp-min-delta N             Min instability delta for SDP violations (default 0.15)
+  --sdp-max-source-instability N  Max source instability to report SDP (default 0.6)
   --secret-entropy-threshold N  Shannon entropy threshold for secret detection (default 4.5)
   --secret-min-length N         Min string length for entropy-based secret detection (default 20)
   --similarity-threshold N      Jaccard similarity threshold for near-clone detection (default 0.85)

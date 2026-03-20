@@ -24,6 +24,7 @@ export interface AnalysisOptions {
   godModuleStatements: number;
   godModuleExports: number;
   godFunctionStatements: number;
+  godFunctionMiThreshold: number;
   cognitiveComplexityThreshold: number;
   barrelSymbolThreshold: number;
   layerOrder: string[];
@@ -40,6 +41,9 @@ export interface AnalysisOptions {
   clearCache: boolean;
   semantic: boolean;
   overrideChainThreshold: number;
+  shotgunThreshold: number;
+  sdpMinDelta: number;
+  sdpMaxSourceInstability: number;
   secretEntropyThreshold: number;
   secretMinLength: number;
   similarityThreshold: number;

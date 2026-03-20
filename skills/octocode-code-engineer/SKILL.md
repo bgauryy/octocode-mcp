@@ -10,6 +10,8 @@ Code engineering platform — understand, build, and improve code with full code
 
 The scanner is a hypothesis generator, not a source of truth. Every finding must be validated before it becomes a recommendation.
 
+**Architecture principle: deterministic detection + AI-powered validation.** Detectors use cheap structural AST signals (loop depth, call count, fan-in/fan-out, statement count) to flag candidates. They intentionally do NOT hardcode domain-specific heuristics (regex patterns, method name lists, keyword matching). The AI agent is the smart layer — it uses its tools (AST search, LSP, localGetFileContent) to read the actual code, confirm or dismiss the hypothesis, and explain the evidence. This separation keeps detectors fast, maintainable, and language-generic while the agent adapts to any codebase.
+
 ## Capabilities
 
 Use this skill throughout your engineering workflow — not just for reviews.
@@ -36,8 +38,8 @@ Use this skill throughout your engineering workflow — not just for reviews.
 | **Quality Audit** | "audit code", "find issues", "scan for problems" | Scan → triage → validate → present → plan fixes → apply → verify |
 | **Code Quality Review** | "review this module", "is this code good" | AST smell sweep + complexity + dead code + maintainability |
 | **Code Review** | "review impact of changes", "what does this PR touch" | Change impact → architecture delta → new issues → test coverage |
-| **Test Strategy** | "test coverage gaps", "what needs testing" | Coverage mapping + test quality + critical untested code |
-| **Security Analysis** | "security review", "find vulnerabilities" | AST sink patterns + LSP taint tracing + sanitizer detection |
+| **Test Strategy** | "test coverage gaps", "what needs testing" | Coverage mapping + test quality (requires `--include-tests`) + critical untested code (graph-based, always on) |
+| **Security Analysis** | "security review", "find vulnerabilities", "check sensitive flows" | Map project security context → identify critical paths (auth, payments, user data, DB, external services) → trace sensitive flows with LSP → validate scanner findings → check exposure points (APIs, logs, errors, third-party) |
 | **Dependency Health** | "unused deps", "import analysis" | Dead-code scan + reference counting + import mapping |
 
 ## Flow at a Glance
@@ -131,6 +133,8 @@ The agent decides which tools to use. No required order — pick what makes sens
 ## Principles
 
 - Findings are leads, not facts — validate with Octocode local tools before presenting.
+- **Be the smart layer**: detectors flag structural candidates; you decide what's real. Read the code (`localGetFileContent`, `ast/search.js`), trace relationships (`lspCallHierarchy`, `lspFindReferences`), check context. Dismiss findings that don't hold up. Promote findings with strong evidence. Explain your reasoning with `file:line` citations.
+- **Use `lspHints`**: many findings include `lspHints[]` — pre-computed tool calls that point you to the fastest validation path. Run them before inventing your own.
 - Read `summary.md` first: scope, health scores, analysis signals, hotspots, recommended validation.
 - Let the problem drive tool choice — pick the tools that fit the finding, not a fixed sequence.
 - CLI-only is the fallback when Octocode MCP is unavailable, not the default.
@@ -272,6 +276,8 @@ lspFindReferences(lineHint=N)                                    → moved/renam
 <pm> run lint --fix && <pm> run test && <pm> run build           → toolchain passes
 ```
 
+**If LSP unavailable** (Steps 2, 5): fall back to `localSearchCode` for usage counting, `ast/search.js` for structural verification, and scan JSON (`architecture.json` hotFiles/fan-in) for dependency data. Mark confidence as `medium` (structural) instead of `high` (semantic).
+
 **Decision gates**:
 - Step 2: >20 production consumers = high-risk, consider feature flag or incremental approach
 - Step 3: target touches cycle member or hotfile = extra caution
@@ -354,16 +360,22 @@ Do not point `ast/search.js` at `.octocode/scan/...` output files — it searche
 
 **Step 3. Triage** — prioritize findings with high severity, clusters in the same call path, security-sensitive items, architecture signals that align with hotspots. Label each: `observed`, `suspected`, or `validated`.
 
-**Step 4. Validate** — every finding must be confirmed before presenting as fact:
+**Step 4. Validate** — every finding must be confirmed before presenting as fact.
 
-| Finding type | Useful tools | Why |
-|-------------|-------------|-----|
-| Dead export | `lspFindReferences` → 0 refs confirms dead | Direct proof |
-| Dependency cycle | `localViewStructure` → layout, `lspCallHierarchy` → trace chain | Structure + flow |
-| Security sink | `localGetFileContent` → context, `lspCallHierarchy(incoming)` → callers | Context + data-flow |
-| Coupling hotspot | `localSearchCode` → usages, `lspFindReferences` → consumers | Blast radius |
-| God module | `localViewStructure` → file count, `localSearchCode` → cross-imports | Scope the problem |
-| Complex function | `localGetFileContent` → code, `lspCallHierarchy(outgoing)` → callees | Understand complexity |
+Detectors produce structural candidates (loops × calls × depth). You are the intelligence layer. Read the code, trace the graph, and decide:
+
+1. **Check `lspHints`** — if the finding has `lspHints[]`, run those tool calls first. They're pre-computed shortcuts to the fastest validation.
+2. **Read evidence** — `localGetFileContent(matchString=functionName)` to see the actual code. Look for the concrete behavior the detector suspected (e.g., collection mutation inside a loop, unvalidated input reaching a sink, function doing too many things).
+3. **Trace context** — `lspCallHierarchy` / `lspFindReferences` to understand callers, consumers, blast radius.
+4. **Decide** — `confirmed` (evidence supports), `dismissed` (false positive — explain why), `uncertain` (need more data — say what's missing).
+
+| Finding type | Read the code for | Trace context with | Dismiss when |
+|-------------|-------------------|-------------------|-------------|
+| Unbounded collection | Collection mutation (.push/.add/.set) inside loops | `lspCallHierarchy(incoming)` — is it hot path? | No mutation in body, or bounded by guard/limit |
+| Dead export | — | `lspFindReferences` → 0 refs = confirmed | Dynamic usage, runtime reflection |
+| Security sink | Unsanitized input reaching sink call | `lspCallHierarchy(incoming)` → trace data source; map project context first (auth, payments, DB, external services) | Input validated upstream; see [security analysis](./references/validate-investigate.md#security-analysis) for full flow |
+| God function | Multiple responsibilities in body | `lspCallHierarchy(outgoing)` → what it calls | Single responsibility, just long |
+| Coupling hotspot | What the module exposes | `lspFindReferences` per export → consumer map | Intentionally shared utility |
 
 For detailed per-category guidance, see [playbooks](./references/playbooks.md) and [validate & investigate](./references/validate-investigate.md).
 

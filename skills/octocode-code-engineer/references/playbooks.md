@@ -74,7 +74,7 @@ The tables below show CLI and Octocode MCP approaches per category. **These are 
 | `sync-io` | `ast-search -p 'readFileSync($$$A)'` (or `writeFileSync`, etc.) | `localSearchCode("readFileSync\|writeFileSync")` → `lspCallHierarchy(incoming)` → check if in hot path | Replace with `fs.promises.*` async equivalents |
 | `uncleared-timer` | `ast-search -p 'setInterval($$$A)'` + search for `clearInterval` in same file | `localSearchCode("setInterval")` → check for `clearInterval` in same scope/cleanup | Store timer ID, call `clearInterval` in cleanup |
 | `listener-leak-risk` | `ast-search -p '.addEventListener($$$A)'` + `ast-search -p '.removeEventListener($$$A)'` — compare counts | `localSearchCode("addEventListener\|.on(")` → check for matching removal | Add `removeEventListener`/`.off()` in cleanup, or use `AbortController` |
-| `unbounded-collection` | `--scope=file.ts:functionName` → check loop depth and call count | `localGetFileContent(startLine, endLine)` → check nested loop + collection.push | Add size limits, use pagination or streaming |
+| `unbounded-collection` | `--scope=file.ts:functionName` → structural signal (loops × calls × depth) | **Read body**: `localGetFileContent(matchString=fnName)` → look for `.push/.add/.set` inside loops. **Trace**: `lspCallHierarchy(incoming)` → hot path? **Use `lspHints[]`** if present. **Dismiss** if no mutation in body or bounded by guard/limit | Add size limits, use pagination or streaming |
 
 ---
 

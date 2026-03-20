@@ -1153,15 +1153,15 @@ describe('category group constants', () => {
   });
 
   it('code quality group has expected categories', () => {
-    expect(CODE_QUALITY_CATEGORIES.size).toBe(25);
+    expect(CODE_QUALITY_CATEGORIES.size).toBe(26);
   });
 
   it('dead code group has 11 categories', () => {
-    expect(DEAD_CODE_CATEGORIES.size).toBe(11);
+    expect(DEAD_CODE_CATEGORIES.size).toBe(12);
   });
 
   it('security group has 10 categories', () => {
-    expect(SECURITY_CATEGORIES.size).toBe(10);
+    expect(SECURITY_CATEGORIES.size).toBe(12);
   });
 
   it('test quality group has 8 categories', () => {

@@ -4,6 +4,8 @@ Research-backed upgrade plan for the weakest parts of the skill: security analys
 
 For validation policy, see the Principles section in [SKILL.md](../SKILL.md) and [validate & investigate](./validate-investigate.md).
 
+**Status legend**: Done, Partial, Planned
+
 ---
 
 ## 1. Security Analysis
@@ -41,15 +43,15 @@ Upgrade the noisier rules to dataflow-backed analysis:
 
 ### P0 work
 
-- Split current security detectors into `pattern` rules and `flow` rules.
-- Add fixture tests for true positive and false positive pairs.
-- Add `confidence` and `evidence` fields to security findings.
+- Split current security detectors into `pattern` rules and `flow` rules. *(Partial — detectors use evidence/confidence/ruleId)*
+- Add fixture tests for true positive and false positive pairs. *(Partial — test file exists)*
+- Add `confidence` and `evidence` fields to security findings. *(Done — `toSecurityFinding` in security.ts)*
 
 ### P1 work
 
-- Build intra-procedural taint tracking inside a function body.
-- Add reusable source/sink/sanitizer definitions.
-- Add validation playbooks for each security category using Octocode local tools.
+- Build intra-procedural taint tracking inside a function body. *(Planned)*
+- Add reusable source/sink/sanitizer definitions. *(Planned)*
+- Add validation playbooks for each security category using Octocode local tools. *(Partial — playbooks.md covers some)*
 
 ---
 
@@ -80,15 +82,15 @@ Extend test analysis from simple counters to behavior-aware checks:
 
 ### P0 work
 
-- Add dedicated detector tests for test-quality rules.
-- Add rules for focused tests, fake timers without restore, and missing mock restoration.
-- Add a richer `testProfile` summary for timers, mocks, async patterns, and cleanup hooks.
+- Add dedicated detector tests for test-quality rules. *(Done — test-quality.test.ts)*
+- Add rules for focused tests, fake timers without restore, and missing mock restoration. *(Done — all 8 categories implemented)*
+- Add a richer `testProfile` summary for timers, mocks, async patterns, and cleanup hooks. *(Done — TestProfile in interfaces.ts)*
 
 ### P1 work
 
-- Add code-path-aware assertion and cleanup checks.
-- Add framework-specific adapters for Vitest/Jest style APIs.
-- Add flaky-test tags and recommended remediation steps.
+- Add code-path-aware assertion and cleanup checks. *(Planned)*
+- Add framework-specific adapters for Vitest/Jest style APIs. *(Planned)*
+- Add flaky-test tags and recommended remediation steps. *(Planned)*
 
 ---
 
@@ -116,15 +118,15 @@ Adopt a persistent project-backed semantic engine:
 
 ### P0 work
 
-- Introduce a semantic cache keyed by root + tsconfig + file versions.
-- Stop hardcoding script version `"1"`.
-- Benchmark semantic scan cost before and after caching.
+- Introduce a semantic cache keyed by root + tsconfig + file versions. *(Planned)*
+- Stop hardcoding script version `"1"`. *(Planned)*
+- Benchmark semantic scan cost before and after caching. *(Planned)*
 
 ### P1 work
 
-- Move to a Project Service style lifecycle.
-- Support project references and monorepo workspaces.
-- Share semantic state between multiple detectors in a single run.
+- Move to a Project Service style lifecycle. *(Planned)*
+- Support project references and monorepo workspaces. *(Planned)*
+- Share semantic state between multiple detectors in a single run. *(Partial — `runSemanticDetectors` shares ctx)*
 
 ---
 
@@ -154,15 +156,15 @@ Treat findings and reports as a versioned API:
 
 ### P0 work
 
-- Fix the report regression first.
-- Add dedicated golden tests for `summary.md`, `summary.json`, and `findings.json`.
-- Add contract assertions around required keys and nullable fields.
+- Fix the report regression first. *(Done)*
+- Add dedicated golden tests for `summary.md`, `summary.json`, and `findings.json`. *(Done — output-contract.test.ts)*
+- Add contract assertions around required keys and nullable fields. *(Done — schemaVersion, REPORT_SCHEMA_VERSION)*
 
 ### P1 work
 
-- Add SARIF emitter.
-- Add baseline and diff output modes.
-- Add category-level and confidence-level summary slices.
+- Add SARIF emitter. *(Planned)*
+- Add baseline and diff output modes. *(Planned)*
+- Add category-level and confidence-level summary slices. *(Planned)*
 
 ---
 
@@ -191,15 +193,15 @@ Use layered testing:
 
 ### P0 work
 
-- Restore a green Vitest run.
-- Add missing focused test files.
-- Lock down report and findings schema expectations.
+- Restore a green Vitest run. *(Done)*
+- Add missing focused test files. *(Partial — 34 test files, some detector modules still untested)*
+- Lock down report and findings schema expectations. *(Done — output-contract.test.ts)*
 
 ### P1 work
 
-- Add property-based tests with `fast-check`.
-- Add mutation testing with Stryker for critical modules.
-- Add self-scan fixture snapshots for detector stability.
+- Add property-based tests with `fast-check`. *(Planned)*
+- Add mutation testing with Stryker for critical modules. *(Planned)*
+- Add self-scan fixture snapshots for detector stability. *(Planned)*
 
 ---
 
@@ -234,15 +236,15 @@ Treat architecture analysis as a hybrid of graph evidence and structural evidenc
 
 ### P0 work
 
-- Expand the docs and playbooks so agents interpret architecture findings through graph and AST lenses together.
-- Surface existing hub-node and hotspot signals more explicitly in result reading guidance.
-- Add fixture-based tests for graph-hotspot interpretation and architecture-summary rendering.
+- Expand the docs and playbooks so agents interpret architecture findings through graph and AST lenses together. *(Done — tool-workflows.md, playbooks.md)*
+- Surface existing hub-node and hotspot signals more explicitly in result reading guidance. *(Done — hotFiles in summary.md)*
+- Add fixture-based tests for graph-hotspot interpretation and architecture-summary rendering. *(Partial)*
 
 ### P1 work
 
-- Implement SCC condensation and package-level dependency views.
-- Add broker centrality and articulation-point scoring to hotspot analysis.
-- Add relational AST rules for boundary leaks, split-brain modules, and import-time orchestration.
+- Implement SCC condensation and package-level dependency views. *(Partial — SCC clusters implemented in graph-analytics.ts)*
+- Add broker centrality and articulation-point scoring to hotspot analysis. *(Done — broker-module, bridge-module in graph-analytics.ts)*
+- Add relational AST rules for boundary leaks, split-brain modules, and import-time orchestration. *(Partial — import-side-effect-risk implemented)*
 
 ### P2 work
 

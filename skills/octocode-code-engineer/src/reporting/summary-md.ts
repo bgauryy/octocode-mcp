@@ -465,24 +465,101 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
   }
   renderPillarCategories('architecture', architectureFindings);
 
-  if (hotFiles.length > 0) {
-    lines.push('## Change Risk Hotspots\n');
-    lines.push(
-      'Files most dangerous to change — high fan-in, complexity, or cycle membership.\n'
-    );
-    lines.push(
-      '| File | Risk | Fan-In | Fan-Out | Complexity | Exports | Cycle | Critical Path |'
-    );
-    lines.push(
-      '|------|------|--------|---------|------------|---------|-------|---------------|'
-    );
-    for (const hf of hotFiles.slice(0, 15)) {
-      lines.push(
-        `| \`${hf.file}\` | ${hf.riskScore} | ${hf.fanIn} | ${hf.fanOut} | ${hf.complexityScore} | ${hf.exportCount} | ${hf.inCycle ? 'Y' : '-'} | ${hf.onCriticalPath ? 'Y' : '-'} |`
-      );
+  renderHotspots(lines, hotFiles);
+
+  renderPillarSections(lines, {
+    architectureFindings,
+    codeQualityFindings,
+    deadCodeFindings,
+    securityFindings,
+    testQualityFindings,
+    archStats,
+    qualStats,
+    deadStats,
+    secStats,
+    testStats,
+    archHealth,
+    qualHealth,
+    deadHealth,
+    secHealth,
+    testHealth,
+    activeFeatures,
+    outputFiles,
+    renderPillarCategories,
+    pushPillarSummary,
+  });
+
+  renderRecommendations(lines, agentOutput);
+
+  if (outputFiles.astTrees) {
+    renderAstTreesSection(lines, dir, outputFiles, root, relativeScanDir, exampleFileFilter);
+  }
+
+  renderOutputFilesTable(lines, dir, outputFiles);
+
+  if (report.parseErrors?.length > 0) {
+    lines.push('## Parse Errors\n');
+    lines.push(`${report.parseErrors.length} file(s) failed to parse:\n`);
+    for (const err of report.parseErrors.slice(0, 10)) {
+      lines.push(`- \`${err.file}\`: ${err.message}`);
     }
     lines.push('');
   }
+
+  return lines.join('\n');
+}
+
+function renderHotspots(
+  lines: string[],
+  hotFiles: SummaryMdOptions['hotFiles']
+): void {
+  if (!hotFiles || hotFiles.length === 0) return;
+  lines.push('## Change Risk Hotspots\n');
+  lines.push(
+    'Files most dangerous to change — high fan-in, complexity, or cycle membership.\n'
+  );
+  lines.push(
+    '| File | Risk | Fan-In | Fan-Out | Complexity | Exports | Cycle | Critical Path |'
+  );
+  lines.push(
+    '|------|------|--------|---------|------------|---------|-------|---------------|'
+  );
+  for (const hf of hotFiles.slice(0, 15)) {
+    lines.push(
+      `| \`${hf.file}\` | ${hf.riskScore} | ${hf.fanIn} | ${hf.fanOut} | ${hf.complexityScore} | ${hf.exportCount} | ${hf.inCycle ? 'Y' : '-'} | ${hf.onCriticalPath ? 'Y' : '-'} |`
+    );
+  }
+  lines.push('');
+}
+
+function renderPillarSections(
+  lines: string[],
+  ctx: {
+    architectureFindings: Finding[];
+    codeQualityFindings: Finding[];
+    deadCodeFindings: Finding[];
+    securityFindings: Finding[];
+    testQualityFindings: Finding[];
+    archStats: { totalFindings: number; severityBreakdown: Record<string, number> } | undefined;
+    qualStats: { totalFindings: number; severityBreakdown: Record<string, number> } | undefined;
+    deadStats: { totalFindings: number; severityBreakdown: Record<string, number> } | undefined;
+    secStats: { totalFindings: number; severityBreakdown: Record<string, number> } | undefined;
+    testStats: { totalFindings: number; severityBreakdown: Record<string, number> } | undefined;
+    archHealth: number;
+    qualHealth: number;
+    deadHealth: number;
+    secHealth: number;
+    testHealth: number;
+    activeFeatures: Set<string> | null;
+    outputFiles: Record<string, string>;
+    renderPillarCategories: (pillarKey: string, findings: Finding[]) => void;
+    pushPillarSummary: (pillarKey: string, count: number, score: number, artifactKey?: string, artifactName?: string) => void;
+  }
+): void {
+  const { architectureFindings, codeQualityFindings, deadCodeFindings, securityFindings, testQualityFindings } = ctx;
+  const { qualStats, deadStats, secStats, testStats } = ctx;
+  const { qualHealth, deadHealth, secHealth, testHealth } = ctx;
+  const { renderPillarCategories, pushPillarSummary } = ctx;
 
   lines.push('## Code Quality\n');
   pushPillarSummary(
@@ -524,6 +601,23 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
   );
   renderPillarCategories('test-quality', testQualityFindings);
 
+  const untestedCount = architectureFindings.filter(
+    f => f.category === 'untested-critical-code'
+  ).length;
+  if (
+    untestedCount > 0 &&
+    (testStats?.totalFindings ?? testQualityFindings.length) === 0
+  ) {
+    lines.push(
+      `> **Note**: Test Quality reflects analyzed test files only. ${untestedCount} modules flagged as \`untested-critical-code\` (architecture pillar) have no test coverage — use \`--include-tests\` for test-quality analysis.\n`
+    );
+  }
+}
+
+function renderRecommendations(
+  lines: string[],
+  agentOutput: Record<string, unknown>
+): void {
   const topRecs = (agentOutput?.topRecommendations ?? []) as Array<{
     severity: string;
     title: string;
@@ -539,43 +633,56 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
     }
     lines.push('');
   }
+}
 
-  if (outputFiles.astTrees) {
-    const astTreePath = path.resolve(dir, outputFiles.astTrees);
-    const astTreeArg = formatCliPath(astTreePath);
-    lines.push('## AST Trees (`ast-trees.txt`)\n');
-    lines.push(
-      'Compact indented text format — each node is `Kind[startLine:endLine]`, nesting = indentation.\n'
-    );
-    lines.push(
-      `Run these commands from the skill directory. Current scan: \`${relativeScanDir}\`.\n`
-    );
-    lines.push('```');
-    lines.push('SourceFile[1:152]');
-    lines.push('  ImportDeclaration[1]');
-    lines.push('  FunctionDeclaration[3:20]');
-    lines.push('    Block[4:19]');
-    lines.push('      IfStatement[5:12] ...');
-    lines.push('```\n');
-    lines.push('**Smart navigation:**\n');
-    lines.push(
-      `- Find functions: \`node scripts/ast/tree-search.js -i ${astTreeArg} -k function_declaration --limit 25\``
-    );
-    lines.push(
-      `- Find classes: \`node scripts/ast/tree-search.js -i ${astTreeArg} -k class_declaration --limit 25\``
-    );
-    lines.push(
-      `- Find control flow: \`node scripts/ast/tree-search.js -i ${astTreeArg} -p 'IfStatement|SwitchStatement|ForStatement|WhileStatement' --limit 25\``
-    );
-    lines.push(
-      `- Narrow to one file: \`node scripts/ast/tree-search.js -i ${astTreeArg} --file "${exampleFileFilter}" -k function_declaration --limit 10\``
-    );
-    lines.push(
-      `- Raw text fallback: \`rg 'FunctionDeclaration|IfStatement' ${astTreeArg}\``
-    );
-    lines.push('');
-  }
+function renderAstTreesSection(
+  lines: string[],
+  dir: string,
+  outputFiles: Record<string, string>,
+  root: string,
+  relativeScanDir: string,
+  exampleFileFilter: string
+): void {
+  const astTreePath = path.resolve(dir, outputFiles.astTrees);
+  const astTreeArg = formatCliPath(astTreePath);
+  lines.push('## AST Trees (`ast-trees.txt`)\n');
+  lines.push(
+    'Compact indented text format — each node is `Kind[startLine:endLine]`, nesting = indentation.\n'
+  );
+  lines.push(
+    `Run these commands from the skill directory. Current scan: \`${relativeScanDir}\`.\n`
+  );
+  lines.push('```');
+  lines.push('SourceFile[1:152]');
+  lines.push('  ImportDeclaration[1]');
+  lines.push('  FunctionDeclaration[3:20]');
+  lines.push('    Block[4:19]');
+  lines.push('      IfStatement[5:12] ...');
+  lines.push('```\n');
+  lines.push('**Smart navigation:**\n');
+  lines.push(
+    `- Find functions: \`node scripts/ast/tree-search.js -i ${astTreeArg} -k function_declaration --limit 25\``
+  );
+  lines.push(
+    `- Find classes: \`node scripts/ast/tree-search.js -i ${astTreeArg} -k class_declaration --limit 25\``
+  );
+  lines.push(
+    `- Find control flow: \`node scripts/ast/tree-search.js -i ${astTreeArg} -p 'IfStatement|SwitchStatement|ForStatement|WhileStatement' --limit 25\``
+  );
+  lines.push(
+    `- Narrow to one file: \`node scripts/ast/tree-search.js -i ${astTreeArg} --file "${exampleFileFilter}" -k function_declaration --limit 10\``
+  );
+  lines.push(
+    `- Raw text fallback: \`rg 'FunctionDeclaration|IfStatement' ${astTreeArg}\``
+  );
+  lines.push('');
+}
 
+function renderOutputFilesTable(
+  lines: string[],
+  dir: string,
+  outputFiles: Record<string, string>
+): void {
   lines.push('## Output Files\n');
   lines.push('| File | Size | Description |');
   lines.push('|------|------|-------------|');
@@ -604,15 +711,4 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
     );
   }
   lines.push('');
-
-  if (report.parseErrors?.length > 0) {
-    lines.push('## Parse Errors\n');
-    lines.push(`${report.parseErrors.length} file(s) failed to parse:\n`);
-    for (const err of report.parseErrors.slice(0, 10)) {
-      lines.push(`- \`${err.file}\`: ${err.message}`);
-    }
-    lines.push('');
-  }
-
-  return lines.join('\n');
 }

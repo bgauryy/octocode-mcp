@@ -9,6 +9,7 @@ import {
   detectCommonJsInEsm,
   detectCriticalPaths,
   detectDeadExports,
+  detectDeadFiles,
   detectDeadReExports,
   detectDependencyCycles,
   detectDistanceFromMainSequence,
@@ -165,6 +166,8 @@ export function buildIssueCatalog(
     options.criticalComplexityThreshold
   ))
     addFinding(f);
+  for (const f of detectDeadFiles(dependencySummary, dependencyState))
+    addFinding(f);
   for (const f of detectDeadExports(
     dependencyState,
     consumedFromModule,
@@ -173,7 +176,12 @@ export function buildIssueCatalog(
     addFinding(f);
   for (const f of detectDeadReExports(dependencyState, consumedFromModule))
     addFinding(f);
-  for (const f of detectSdpViolations(dependencyState)) addFinding(f);
+  for (const f of detectSdpViolations(
+    dependencyState,
+    options.sdpMinDelta,
+    options.sdpMaxSourceInstability
+  ))
+    addFinding(f);
   for (const f of detectHighCoupling(
     dependencyState,
     options.couplingThreshold
@@ -210,7 +218,8 @@ export function buildIssueCatalog(
   for (const f of detectMegaFolders(fileSummaries)) addFinding(f);
   for (const f of detectGodFunctions(
     fileSummaries,
-    options.godFunctionStatements
+    options.godFunctionStatements,
+    options.godFunctionMiThreshold
   ))
     addFinding(f);
   for (const f of detectCognitiveComplexity(
