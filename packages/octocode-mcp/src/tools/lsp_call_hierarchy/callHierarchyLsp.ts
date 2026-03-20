@@ -4,7 +4,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { getHints } from '../../hints/index.js';
-import { createClient } from '../../lsp/index.js';
+import { createClient } from '../../lsp/manager.js';
 import type {
   CallHierarchyResult,
   CallHierarchyItem,
@@ -21,7 +21,7 @@ import {
   enhanceOutgoingCalls,
   paginateResults,
 } from './callHierarchyHelpers.js';
-import { TOOL_NAME } from './execution.js';
+import { TOOL_NAME } from './constants.js';
 
 /**
  * Use LSP client for semantic call hierarchy
@@ -37,7 +37,6 @@ export async function callHierarchyWithLSP(
   if (!client) return null;
 
   try {
-    // Prepare call hierarchy to get the item at position
     let items = await client.prepareCallHierarchy(filePath, position);
     let effectiveContent = content;
 
@@ -68,11 +67,8 @@ export async function callHierarchyWithLSP(
       };
     }
 
-    // Use the first item (usually there's only one)
-    // Non-null assertion safe: we checked items.length > 0 above
     const targetItem = items[0]!;
 
-    // Add content snippet to target item
     const enhancedTargetItem = await enhanceCallHierarchyItem(
       targetItem,
       effectiveContent,
@@ -81,13 +77,11 @@ export async function callHierarchyWithLSP(
 
     const depth = query.depth ?? 1;
     const visited = new Set<string>();
-    visited.add(createCallItemKey(targetItem)); // Mark target as visited
+    visited.add(createCallItemKey(targetItem));
 
-    // Get calls based on direction
     if (query.direction === 'incoming') {
       const contextLines = query.contextLines ?? 2;
 
-      // Gather calls without enhancement for efficient pagination
       const allIncomingCalls = await gatherIncomingCallsRecursive(
         client,
         targetItem,
@@ -116,14 +110,12 @@ export async function callHierarchyWithLSP(
         });
       }
 
-      // Apply pagination first, then enhance only visible items
       const { paginatedItems, pagination } = paginateResults(
         allIncomingCalls,
         query.callsPerPage ?? 15,
         query.page ?? 1
       );
 
-      // Lazy enhancement: only add content snippets to paginated items
       const enhancedItems =
         contextLines > 0
           ? await enhanceIncomingCalls(paginatedItems, contextLines)
@@ -153,7 +145,6 @@ export async function callHierarchyWithLSP(
     } else {
       const contextLines = query.contextLines ?? 2;
 
-      // Gather calls without enhancement for efficient pagination
       const allOutgoingCalls = await gatherOutgoingCallsRecursive(
         client,
         targetItem,
@@ -181,14 +172,12 @@ export async function callHierarchyWithLSP(
         });
       }
 
-      // Apply pagination first, then enhance only visible items
       const { paginatedItems, pagination } = paginateResults(
         allOutgoingCalls,
         query.callsPerPage ?? 15,
         query.page ?? 1
       );
 
-      // Lazy enhancement: only add content snippets to paginated items
       const enhancedItems =
         contextLines > 0
           ? await enhanceOutgoingCalls(paginatedItems, contextLines)
@@ -244,7 +233,6 @@ export async function gatherIncomingCallsRecursive(
     return enhancedCalls;
   }
 
-  // For depth > 1, recursively get callers of callers
   const allCalls: IncomingCall[] = [...enhancedCalls];
 
   for (const call of enhancedCalls) {
@@ -288,7 +276,6 @@ export async function gatherOutgoingCallsRecursive(
     return enhancedCalls;
   }
 
-  // For depth > 1, recursively get callees of callees
   const allCalls: OutgoingCall[] = [...enhancedCalls];
 
   for (const call of enhancedCalls) {
@@ -339,18 +326,18 @@ async function tryFollowToDefinition(
     const defItems = await client.prepareCallHierarchy(def.uri, defPosition);
     if (!defItems || defItems.length === 0) return null;
 
-    // If definition is in a different file, read its content for snippet enhancement
     let content: string | undefined;
     if (def.uri !== filePath) {
       try {
         content = await readFile(def.uri, 'utf-8');
       } catch {
-        // Non-critical: snippet enhancement will just use original content
+        // Definition file unreadable; omit extra snippet text, items are still valid.
       }
     }
 
     return { items: defItems, content };
   } catch {
+    // gotoDefinition or prepareCallHierarchy failed after import follow; no definition hop available.
     return null;
   }
 }

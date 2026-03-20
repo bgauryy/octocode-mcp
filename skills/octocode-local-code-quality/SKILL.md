@@ -1,6 +1,6 @@
 ---
 name: octocode-local-code-quality
-description: "Scan TS/JS codebases for architecture rot, code quality, security risks, dead code, test quality, and performance patterns. Use for: audit code, check architecture, find cycles, trace flows, dead exports, complexity, security review, input validation, test coverage gaps, performance issues, duplicate code. Produces validated findings with file:line evidence and a prioritized improvement plan."
+description: "Scan TS/JS codebases for architecture rot, code quality, security risks, dead code, test quality, and performance patterns. Use for: audit code, check architecture, find cycles, trace flows, dead exports, complexity, security review, input validation, test coverage gaps, performance issues, duplicate code, redundant comments, redundant re-exports. Produces validated findings with file:line evidence and a prioritized improvement plan. Fixes use TDD when possible and are validated with the project's lint, test, and build toolchain."
 compatibility: "Requires Node.js >= 18. Works with any AI coding agent. Best with Octocode MCP local + LSP tools for hybrid validation. Pre-built scripts only; no install or build step required."
 ---
 
@@ -19,10 +19,14 @@ Scan (CLI) → Read summary.md → Triage findings.json
   → ASK user: "Want me to plan fixes for these?"
   → If yes → Output prioritized improvement plan
   → ASK user: "Should I apply these fixes?"
-  → If yes → Apply fixes → Re-scan to verify
+  → If yes → Apply fixes (TDD when possible, clean up redundant comments & re-exports)
+  → Validate with project lint (--fix), tests, and build
+  → Re-scan to verify finding count drops
 ```
 
-Two tool layers work together — use any combination that fits the problem:
+## Tools
+
+Two layers work together — use any combination that fits the problem.
 
 **Layer 1: CLI scan scripts** — broad hypothesis generation
 
@@ -44,17 +48,56 @@ Two tool layers work together — use any combination that fits the problem:
 | `lspFindReferences` | Find all usages of a symbol (types, vars, exports) |
 | `lspCallHierarchy` | Trace incoming/outgoing call chains (functions only) |
 
-**The agent decides which tools to use.** There is no required order — pick what makes sense for the finding. A dead-export check might only need `lspFindReferences`. A cycle investigation might start with `localViewStructure` to understand layout, then `lspCallHierarchy` to trace the chain. A security finding might need `localGetFileContent` to read the surrounding code, then `lspCallHierarchy` to trace callers.
+The agent decides which tools to use. No required order — pick what makes sense for the finding. If Octocode MCP is unavailable, fall back to CLI-only and mark confidence explicitly.
 
-If Octocode MCP is unavailable, use CLI-only and mark confidence explicitly.
+**MCP detection**: try any local tool (e.g. `localSearchCode`). If it fails → MCP not available, use CLI-only.
 
-## Placeholders
+## Principles
+
+- Findings are leads, not facts — validate with Octocode local tools before presenting.
+- Read `summary.md` first: scope, health scores, analysis signals, hotspots, recommended validation.
+- Let the problem drive tool choice — pick the tools that fit the finding, not a fixed sequence.
+- CLI-only is the fallback when Octocode MCP is unavailable, not the default.
+- Use `--help` and reference docs for flags, categories, and presets — do not restate them.
+- Detect the project environment before running commands — see Project Environment.
+- **TDD when possible**: for behavioral or logic fixes, write a failing test first, then make it pass. Skip for mechanical cleanups (comment removal, dead re-export deletion). See [TDD Fix Playbook](./references/playbooks.md).
+- **Validate fixes with the project toolchain**: after each fix batch, run the project's lint (with `--fix` if supported), tests, and build. Do not present fixes as done until the toolchain passes.
+- **Hygiene is part of every fix**: when touching a file, also remove redundant comments (comments that just restate the code) and redundant re-exports (barrel re-exports with 0 consumers). See [playbooks](./references/playbooks.md).
+- **Use the task tool** to create a todo list at the start of every review — one item per workflow step. Update status as you go. Always stop and ask the user before planning fixes (after Step 5) and before applying them (after Step 6).
+- Run only the pre-built scripts in `scripts/`. Never execute files from `src/`.
+- Use absolute paths with MCP/LSP tools.
+- Do not present live-code claims without validation when local/LSP tools are available.
+- Do not recommend broad refactors from one noisy finding.
+- If the scan and validation disagree, say so explicitly and lower confidence.
+- **Use shell commands for mechanical file operations**: for renaming, moving files, and bulk import-path rewrites, prefer `mv`, `sed`, `find + xargs`, `rg` over manual edits. Batch changes into scripts when touching many files. Detect the OS (`uname`) if commands differ across platforms (e.g. `sed -i` on Linux vs `sed -i ''` on macOS).
+
+## Project Environment
+
+Never hardcode tool names. Detect the project setup before running lint, build, or test commands:
+
+1. **Package manager**: `yarn.lock` → yarn, `pnpm-lock.yaml` → pnpm, `package-lock.json` → npm.
+2. **Scripts**: read `package.json` `scripts` (both root and package-level in monorepos). Use actual script names — do not invent commands.
+3. **Workspace context**: in monorepos, check `workspaces` config to decide between root-level (`yarn workspace <name> test`) or package-level (`cd packages/foo && yarn test`).
+
+### Validation Commands
+
+After detecting the project environment, identify these three commands for post-fix validation:
+
+| Command | How to detect | Fallback |
+|---------|--------------|----------|
+| **Lint** | `scripts.lint` in `package.json`. If the script wraps eslint/biome/oxlint, use `<pm> run lint --fix`. | Skip lint step, warn user |
+| **Test** | `scripts.test` in `package.json`. In monorepos, prefer package-level test scope. | Skip test step, warn user |
+| **Build** | `scripts.build` in `package.json`. | Skip build step, warn user |
+
+Run all three after every fix batch. If lint `--fix` auto-corrects files, stage those corrections as part of the fix. If tests fail, investigate before continuing — the fix may have introduced a regression.
+
+## Quick Start
+
+**Placeholders** used throughout this skill:
 
 - `<SKILL_DIR>` — absolute path to this skill's directory (where `SKILL.md` lives). All script paths are relative to it.
 - `<CURRENT_SCAN>` — timestamped scan output directory (e.g., `.octocode/scan/2026-03-19T00-01-19-468Z`). Find it at the top of `summary.md` or use the latest directory in `.octocode/scan/`.
 - `<TARGET_ROOT>` — root of the codebase being analyzed. Defaults to cwd, override with `--root`.
-
-## Quick Start
 
 Minimum path for a fresh scan — adapt based on the question:
 
@@ -72,25 +115,6 @@ node <SKILL_DIR>/scripts/ast/tree-search.js -i .octocode/scan -k function_declar
 ```
 
 Use `--help` on any script for the full flag reference.
-
-## Working Principles
-
-- Findings are leads, not facts — validate with Octocode local tools before presenting.
-- Read `summary.md` first: scope, health scores, analysis signals, hotspots, recommended validation.
-- Let the problem drive tool choice — pick the Octocode tools that fit the finding, not a fixed sequence.
-- All Octocode local tools are available: search, structure, files, content, LSP definition/references/calls.
-- CLI-only is the fallback when Octocode MCP is unavailable, not the default.
-- Use `--help` and reference docs for flags, categories, and presets — do not restate them.
-- Detect the project environment before running commands — see Project Environment.
-- **Use the task tool** to create a todo list at the start of every review — one item per workflow step. Update status as you go. Always stop and ask the user before planning fixes (after Step 5) and before applying them (after Step 6).
-
-## Project Environment
-
-Never hardcode tool names. Detect the project setup before running lint, build, or test commands:
-
-1. **Package manager**: `yarn.lock` → yarn, `pnpm-lock.yaml` → pnpm, `package-lock.json` → npm.
-2. **Scripts**: read `package.json` `scripts` (both root and package-level in monorepos). Use actual script names — do not invent commands.
-3. **Workspace context**: in monorepos, check `workspaces` config to decide between root-level (`yarn workspace <name> test`) or package-level (`cd packages/foo && yarn test`).
 
 ## Workflow
 
@@ -120,31 +144,11 @@ Choose scan features deliberately — start broad only when you do not know the 
 
 Once the summary shows the dominant area, narrow the scan around it.
 
-### Step 2. Check Output Files
+### Step 2. Read Output Files
 
 Read `summary.md` first. Then pull in only the files that help answer the current question.
 
-How to read `summary.md` — it follows a fixed structure:
-
-```
-## Health Scores
-| Pillar        | Score  | Grade |
-| Overall       | 61/100 | D     |
-| Architecture  | 54/100 | D     |
-| Code Quality  | 72/100 | C     |
-
-## Analysis Signals
-- Graph Signal: src/tools.ts concentrates dependency pressure (high fan-in, on critical path)
-- AST Signal: No dominant AST signal in this scan.
-- Confidence: high
-- Recommended Validation: Confirm with localSearchCode -> lspGotoDefinition
-
-## Top Recommendations
-- [CRITICAL] src/server.ts — Dependency cycle detected (4 node cycle)
-- [HIGH] src/utils.ts:89 — 6 unused exports
-```
-
-Use health scores to gauge severity, analysis signals to choose the investigation lens, and hotspots + top recommendations to decide where validation is worth the time.
+`summary.md` follows a fixed structure — health scores → analysis signals → top recommendations. Use health scores to gauge severity, analysis signals to choose the investigation lens, and hotspots + top recommendations to decide where validation is worth the time. See [present results](./references/present-results.md) for the full section breakdown.
 
 Default solving set: `summary.md` (priorities) + `findings.json` (work queue) + relevant pillar JSON (evidence). Do not jump from a single finding to a fix — check pattern density and related files first.
 
@@ -161,26 +165,16 @@ Default solving set: `summary.md` (priorities) + `findings.json` (work queue) + 
 | `ast-trees.txt` | AST snapshot for structural triage |
 | `graph.md` | Mermaid dependency graph (with `--graph`) |
 
-`ast-trees.txt` is a compact indented text snapshot of every file's AST. Each node is `Kind[startLine:endLine]`, nesting depth = indentation level:
+For JSON key schemas and field reference, see [output files](./references/output-files.md).
 
-```
-## my-package — src/services/storage.ts
-SourceFile[1:152]
-  ImportDeclaration[1:3]
-  FunctionDeclaration[10:45]
-    Block[11:44]
-      IfStatement[12:20] ...
-      ReturnStatement[43]
-```
-
-### AST Tools — Which One to Use
+**AST tools — which one to use:**
 
 | Tool | Searches | Input | Purpose |
 |------|----------|-------|---------|
-| `ast/tree-search.js` | Generated `ast-trees.txt` from a scan | `-i <CURRENT_SCAN>/ast-trees.txt` or `-i .octocode/scan` (auto-resolves latest) | Fast structure triage — decide where to look |
-| `ast/search.js` | Actual source files on disk | `--root <dir>` | Structural proof — find code by AST shape with `@ast-grep/napi` |
+| `ast/tree-search.js` | Generated `ast-trees.txt` from a scan | `-i .octocode/scan` (auto-resolves latest) | Fast structure triage — decide where to look |
+| `ast/search.js` | Actual source files on disk | `--root <dir>` | Structural proof — find code by AST shape |
 
-Do not point `ast/search.js` at `.octocode/scan/...` output files — it searches source files, not generated AST text artifacts. Use `ast/tree-search.js` for scan artifacts.
+Do not point `ast/search.js` at `.octocode/scan/...` output files — it searches source files, not generated AST text artifacts.
 
 ### Step 3. Triage Before Validating
 
@@ -191,61 +185,40 @@ Decide what deserves deeper work first:
 - security findings and behavior-sensitive findings
 - architecture signals that line up with hotspots or high fan-in / fan-out
 
-Each finding in `findings.json` has this shape:
+Each finding in `findings.json` includes `lspHints` (pre-computed validation with exact tool, symbol, and line), `impact` (real-world consequence for prioritization), and `suggestedFix`. Use `lspHints` directly when present.
 
-```json
-{
-  "id": "AST-ISSUE-0001", "severity": "high", "category": "dependency-critical-path",
-  "file": "src/tools/manager.ts", "lineStart": 45, "lineEnd": 45,
-  "title": "Critical dependency chain risk: 27 files",
-  "reason": "Long transitive chain increases change propagation risk",
-  "impact": "Changes may cascade through 27 downstream consumers",
-  "suggestedFix": { "strategy": "Break chain at src/providers/factory.ts" },
-  "lspHints": [{ "tool": "lspCallHierarchy", "symbolName": "factory", "lineHint": 45 }],
-  "tags": ["coupling", "change-risk"], "confidence": "high"
-}
-```
+Label each finding: `observed` (scan shows it), `suspected` (inferred from signals), or `validated` (confirmed by tools). Build the work queue from `findings.json`, not `summary.md` alone.
 
-Use `lspHints` directly when present — pre-computed validation with exact tool, symbol, and line. Use `impact` to prioritize.
+### Step 4. Validate Findings
 
-Label each finding: `observed` (scan shows it), `suspected` (inferred from signals), or `validated` (confirmed by tools). Build the work queue from `findings.json`, not `summary.md` alone — validate the top items before recommending changes.
+**Every finding must be validated before presenting it as fact.**
 
-### Step 4. Validate Findings with Octocode
-
-**Every finding must be validated with Octocode local tools before presenting it as fact.**
-
-Choose the tools that fit the finding — there is no required sequence. Examples of how different finding types map to tools:
+Choose the tools that fit the finding — there is no required sequence:
 
 | Finding type | Useful tools | Why |
 |-------------|-------------|-----|
 | Dead export | `lspFindReferences` → 0 refs confirms dead | Direct proof |
-| Dependency cycle | `localViewStructure` → see layout, `lspCallHierarchy` → trace chain | Understand structure + prove flow |
-| Security sink | `localGetFileContent` → read surrounding code, `lspCallHierarchy(incoming)` → trace callers | Need context + data-flow |
-| Coupling hotspot | `localSearchCode` → find usages, `lspFindReferences` → count consumers | Quantify blast radius |
-| God module | `localViewStructure` → see file count, `localSearchCode` → find cross-imports | Scope the problem |
-| Complex function | `localGetFileContent` → read implementation, `lspCallHierarchy(outgoing)` → see what it calls | Understand why it's complex |
+| Dependency cycle | `localViewStructure` → layout, `lspCallHierarchy` → trace chain | Structure + flow |
+| Security sink | `localGetFileContent` → context, `lspCallHierarchy(incoming)` → callers | Context + data-flow |
+| Coupling hotspot | `localSearchCode` → usages, `lspFindReferences` → consumers | Blast radius |
+| God module | `localViewStructure` → file count, `localSearchCode` → cross-imports | Scope the problem |
+| Complex function | `localGetFileContent` → code, `lspCallHierarchy(outgoing)` → callees | Understand complexity |
 
-Use `lspHints` from `findings.json` when present — they provide pre-computed tool + symbol + line for direct validation.
+For detailed per-category validation and fix guidance, see [playbooks](./references/playbooks.md). For investigation methodology, see [validate & investigate](./references/validate-investigate.md).
 
-After fixes, re-scan with `--scope` to verify finding count drops.
-
-**Fallback (CLI-only — only if Octocode MCP is unavailable):**
-
-Use `ast/search.js` for structural verification, read source at `lineStart:lineEnd`, and re-scan with `--scope`. Mark confidence: `high` = structural (empty-catch, switch-no-default), `medium` = semantic (dead-export, coupling), `low` = behavioral (security, data-flow).
+**CLI-only fallback** (only if Octocode MCP is unavailable): use `ast/search.js` for structural verification, read source at `lineStart:lineEnd`, re-scan with `--scope`. Mark confidence: `high` = structural (empty-catch, switch-no-default), `medium` = semantic (dead-export, coupling), `low` = behavioral (security, data-flow).
 
 ### Step 5. Present Findings and Ask User
 
 Report structure: what the scan suggested → what validation confirmed or disproved → what remains uncertain.
 
-Rules: only validated claims are facts, unvalidated items are hypotheses, always include `file:line` evidence, explain why it matters (not just what matched), state confidence level.
+Rules: only validated claims are facts, unvalidated items are hypotheses, always include `file:line` evidence, explain why it matters (not just what matched), state confidence level. See [present results](./references/present-results.md) for template and examples.
 
-**After presenting findings, ask the user:** "Want me to plan fixes for these findings?" Do not jump into an improvement plan automatically — let the user decide scope and priority first.
+**After presenting findings, ask the user:** "Want me to plan fixes for these findings?" Do not jump into an improvement plan automatically.
 
 ### Step 6. Output an Improvement Plan (on user request)
 
-Only produce the plan after the user confirms.
-
-The plan should be prioritized and practical:
+Only produce the plan after the user confirms. The plan should be prioritized and practical:
 
 1. Immediate fixes for validated high-signal problems
 2. Short follow-up checks for important but not yet fully proven issues
@@ -254,44 +227,43 @@ The plan should be prioritized and practical:
 
 Each item should name the target files, reason, expected benefit, evidence level, and execution tactic.
 
-For mechanical or repeated fixes, prefer `rg` + `sed`, `find` + `xargs`, `mv`, `jq` over manual editing. Use manual edits for nuanced logic changes. For mega-folder restructuring, see the [playbooks reference](./references/playbooks.md).
+For mechanical or repeated fixes, prefer `rg` + `sed`, `find` + `xargs`, `mv`, `jq` over manual editing. Use manual edits for nuanced logic changes. For mega-folder restructuring, see the [playbooks](./references/playbooks.md).
 
-**After presenting the plan, ask the user:** "Should I apply these fixes?" Do not make code changes without confirmation. Once approved, apply fixes in priority order, then re-scan with `--scope` to verify improvements.
+**After presenting the plan, ask the user:** "Should I apply these fixes?" Do not make code changes without confirmation.
 
-## Tool Strategy
+### Step 7. Apply Fixes
 
-Choose the lightest approach that gives reliable conclusions — use any Octocode tool that fits:
+Once the user approves, apply fixes using these methods (detailed steps in [playbooks](./references/playbooks.md)):
 
-| Strategy | When | Available tools | Confidence |
-|----------|------|----------------|------------|
-| **Hybrid** | Octocode MCP available | CLI scan + all local tools (`localSearchCode`, `localViewStructure`, `localFindFiles`, `localGetFileContent`) + LSP (`lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`) | Highest — semantic proof |
-| **CLI-first** | Scan output already gives strong context | CLI scan + `ast/search.js` + targeted re-scan | High for structural findings |
-| **CLI-only** | No MCP/LSP available | CLI scan + `ast/search.js` + `ast/tree-search.js` + file reads | Mark confidence explicitly |
+1. **TDD-first for behavioral fixes**: write a failing test → run it → apply the fix → confirm pass → run full suite. Skip TDD for mechanical cleanups (comment removal, dead re-export deletion, import rewriting, formatting).
 
-**Detect MCP**: try any local tool (e.g. `localSearchCode`). If it fails → CLI-only fallback.
+2. **Remove redundant comments**: when touching a file, strip comments that just restate what the code says. Keep comments explaining *why*, trade-offs, constraints, or non-obvious intent. Rule: if deleting the comment loses zero information, delete it.
 
-## Guardrails
+3. **Remove redundant re-exports**: when touching a barrel/index file, check each re-export for consumers via `lspFindReferences` — 0 consumers = dead, remove it.
 
-- Run only the pre-built scripts in `scripts/`.
-- Never execute files from `src/`.
-- Use absolute paths with MCP/LSP tools.
-- Do not present live-code claims without validation when local/LSP tools are available.
-- Do not recommend broad refactors from one noisy finding.
-- If the scan and validation disagree, say so explicitly and lower confidence.
+4. **Validate with project toolchain**: after each fix batch, run lint (with `--fix` if available) → tests → build. See Validation Commands in Project Environment. Do not present a fix as complete until the toolchain passes (or pre-existing failures are documented).
+
+### Step 8. Re-scan and Verify
+
+After all fixes are applied and validated:
+
+1. Re-scan with `--scope` targeting the changed files/directories.
+2. Compare finding counts — they should drop.
+3. If new findings appeared, triage them (the fix may have exposed a deeper issue).
+4. Report the before/after delta to the user.
 
 ## References
 
 Use these when you need specifics instead of copying detailed reference material into the response:
 
-- [CLI reference](./references/cli-reference.md)
-- [Output files](./references/output-files.md)
-- [AST tree search](./references/ast-tree-search.md)
-- [AST search](./references/ast-search.md)
-- [Validation and investigation](./references/validate-investigate.md)
-- [Playbooks](./references/playbooks.md)
-- [Finding categories](./references/finding-categories.md)
-- [Present results](./references/present-results.md)
-- [Architecture techniques](./references/architecture-techniques.md)
-- [Concepts](./references/concepts.md)
-- [Agent AST reading RFC](./references/agent-ast-reading-rfc.md)
-- [Improvement roadmap](./references/improvement-roadmap.md)
+- [CLI reference](./references/cli-reference.md) — all flags, thresholds, presets
+- [Output files](./references/output-files.md) — JSON schemas, key reference, reading guide
+- [AST tree search](./references/ast-tree-search.md) — `ast/tree-search.js` usage and examples
+- [AST search](./references/ast-search.md) — `ast/search.js` patterns, rules, presets
+- [Validation and investigation](./references/validate-investigate.md) — reasoning loop, hybrid validation, taint tracing, lspHints
+- [Playbooks](./references/playbooks.md) — per-category validate & fix, TDD, validation, comments, re-exports
+- [Finding categories](./references/finding-categories.md) — all detectable categories by pillar
+- [Present results](./references/present-results.md) — summary sections, decision heuristics, templates
+- [Architecture techniques](./references/architecture-techniques.md) — SCC, broker, symbol-level analysis
+- [Concepts](./references/concepts.md) — metric definitions (SDP, cognitive complexity, Halstead, MI)
+- [Improvement roadmap](./references/improvement-roadmap.md) — planned upgrades for security, semantic, test quality

@@ -7,7 +7,11 @@
  */
 
 import type { GitHubAPIError } from '../../github/githubAPI.js';
-import { toToolError, isToolError, type ToolError } from '../../errorCodes.js';
+import {
+  toToolError,
+  isToolError,
+  type ToolError,
+} from '../../errors/ToolError.js';
 import { getHints } from '../../hints/index.js';
 import type { BaseQuery } from '../core/types.js';
 

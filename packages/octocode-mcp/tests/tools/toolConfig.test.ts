@@ -16,7 +16,7 @@ import {
 import {
   TOOL_NAMES,
   DESCRIPTIONS,
-} from '../../src/tools/toolMetadata/index.js';
+} from '../../src/tools/toolMetadata/proxies.js';
 
 describe('Tool Configuration', () => {
   describe('ALL_TOOLS', () => {

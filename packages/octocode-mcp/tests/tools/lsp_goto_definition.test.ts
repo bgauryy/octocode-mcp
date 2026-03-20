@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { addLineNumbers } from '../../src/tools/lsp_goto_definition/lsp_goto_definition.js';
+import { addLineNumbers } from '../../src/tools/lsp_goto_definition/execution.js';
 
 describe('LSP Goto Definition Tool', () => {
   beforeEach(() => {

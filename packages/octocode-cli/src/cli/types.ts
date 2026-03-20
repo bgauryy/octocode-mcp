@@ -1,7 +1,3 @@
-/**
- * CLI Types
- */
-
 export interface ParsedArgs {
   command: string | null;
   args: string[];

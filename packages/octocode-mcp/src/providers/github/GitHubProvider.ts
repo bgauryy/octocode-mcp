@@ -33,6 +33,7 @@ import type { GitHubAPIError } from '../../github/githubAPI.js';
 import { handleGitHubAPIError } from '../../github/errors.js';
 import { resolveDefaultBranch as resolveGitHubDefaultBranch } from '../../github/client.js';
 import { PROVIDER_CAPABILITIES } from '../capabilities.js';
+import { parseGitHubProjectId } from './utils.js';
 
 /**
  * GitHub Provider implementation.
@@ -66,7 +67,7 @@ export class GitHubProvider implements ICodeHostProvider {
       return await githubSearch.searchCode(
         query,
         this.authInfo,
-        this.parseProjectId.bind(this)
+        parseGitHubProjectId
       );
     } catch (error) {
       return this.handleError(error);
@@ -84,7 +85,7 @@ export class GitHubProvider implements ICodeHostProvider {
       return await githubContent.getFileContent(
         query,
         this.authInfo,
-        this.parseProjectId.bind(this)
+        parseGitHubProjectId
       );
     } catch (error) {
       return this.handleError(error);
@@ -116,7 +117,7 @@ export class GitHubProvider implements ICodeHostProvider {
       return await githubPullRequests.searchPullRequests(
         query,
         this.authInfo,
-        this.parseProjectId.bind(this)
+        parseGitHubProjectId
       );
     } catch (error) {
       return this.handleError(error);
@@ -134,7 +135,7 @@ export class GitHubProvider implements ICodeHostProvider {
       return await githubStructure.getRepoStructure(
         query,
         this.authInfo,
-        this.parseProjectId.bind(this)
+        parseGitHubProjectId
       );
     } catch (error) {
       return this.handleError(error);
@@ -146,39 +147,13 @@ export class GitHubProvider implements ICodeHostProvider {
   // ============================================================================
 
   async resolveDefaultBranch(projectId: string): Promise<string> {
-    const { owner, repo } = this.parseProjectId(projectId);
+    const { owner, repo } = parseGitHubProjectId(projectId);
     if (!owner || !repo) {
       throw new Error(
         `Cannot resolve default branch: invalid projectId '${projectId}'.`
       );
     }
     return resolveGitHubDefaultBranch(owner, repo, this.authInfo);
-  }
-
-  // ============================================================================
-  // HELPER METHODS
-  // ============================================================================
-
-  /**
-   * Parse a unified projectId into owner and repo.
-   * GitHub format: 'owner/repo'
-   */
-  private parseProjectId(projectId?: string): {
-    owner?: string;
-    repo?: string;
-  } {
-    if (!projectId) {
-      return { owner: undefined, repo: undefined };
-    }
-
-    const parts = projectId.split('/');
-    if (parts.length !== 2 || !parts[0] || !parts[1]) {
-      throw new Error(
-        `Invalid GitHub projectId format: '${projectId}'. Expected 'owner/repo'.`
-      );
-    }
-
-    return { owner: parts[0], repo: parts[1] };
   }
 
   /**

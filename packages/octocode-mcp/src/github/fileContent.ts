@@ -14,11 +14,6 @@ import { getOctokit } from './client';
 import { generateCacheKey, withDataCache } from '../utils/http/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 
-// Re-export from split modules
-export {
-  clearDefaultBranchCache,
-  type RawContentResult,
-} from './fileContentRaw.js';
 import {
   fetchRawGitHubFileContent,
   type RawContentResult,

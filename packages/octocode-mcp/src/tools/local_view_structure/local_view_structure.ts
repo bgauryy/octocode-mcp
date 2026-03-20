@@ -1,11 +1,11 @@
 import { LsCommandBuilder } from '../../commands/LsCommandBuilder.js';
+import { safeExec } from '../../utils/exec/safe.js';
 import {
-  safeExec,
   checkCommandAvailability,
   getMissingCommandError,
-} from '../../utils/exec/index.js';
+} from '../../utils/exec/commandAvailability.js';
 import { getHints } from '../../hints/index.js';
-import { TOOL_NAMES } from '../toolMetadata/index.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import {
   validateToolPath,
   createErrorResult,
@@ -16,7 +16,7 @@ import type {
   ViewStructureQuery,
   ViewStructureResult,
 } from '../../utils/core/types.js';
-import { ToolErrors } from '../../errorCodes.js';
+import { ToolErrors } from '../../errors/errorFactories.js';
 import {
   applyEntryFilters,
   toEntryObject,
@@ -259,7 +259,6 @@ async function viewStructureRecursive(
 
   const totalEntries = filteredEntries.length;
 
-  // Apply entry-based pagination
   const entriesPerPage =
     query.entriesPerPage || RESOURCE_LIMITS.DEFAULT_ENTRIES_PER_PAGE;
   const totalPages = Math.max(1, Math.ceil(totalEntries / entriesPerPage));

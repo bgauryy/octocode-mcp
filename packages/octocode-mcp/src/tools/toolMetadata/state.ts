@@ -3,7 +3,7 @@
  * Handles the singleton lifecycle of tool metadata.
  */
 import { fetchWithRetries } from '../../utils/http/fetch.js';
-import { TOOL_METADATA_ERRORS } from '../../errorCodes.js';
+import { TOOL_METADATA_ERRORS } from '../../errors/domainErrors.js';
 import { logSessionError } from '../../session.js';
 import { CompleteMetadata, ToolNames } from '../../types/metadata.js';
 import { RawCompleteMetadataSchema } from './schemas.js';

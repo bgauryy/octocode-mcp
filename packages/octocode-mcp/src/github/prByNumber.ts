@@ -7,9 +7,9 @@ import {
   GitHubPullRequestsSearchParams,
 } from './githubAPI';
 import type { GitHubPullRequestSearchApiResult } from '../tools/github_search_pull_requests/types.js';
-import { SEARCH_ERRORS } from '../errorCodes.js';
+import { SEARCH_ERRORS } from '../errors/domainErrors.js';
 import { logSessionError } from '../session.js';
-import { TOOL_NAMES } from '../tools/toolMetadata/index.js';
+import { TOOL_NAMES } from '../tools/toolMetadata/proxies.js';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { generateCacheKey, withDataCache } from '../utils/http/cache';

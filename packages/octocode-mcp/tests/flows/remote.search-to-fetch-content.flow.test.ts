@@ -39,15 +39,16 @@ vi.mock('../../src/serverConfig.js', () => ({
   isLoggingEnabled: vi.fn(() => false),
 }));
 
-vi.mock('../../src/tools/toolMetadata/index.js', async () => {
+vi.mock('../../src/tools/toolMetadata/proxies.js', async () => {
   const actual = await vi.importActual<
-    typeof import('../../src/tools/toolMetadata/index.js')
-  >('../../src/tools/toolMetadata/index.js');
+    typeof import('../../src/tools/toolMetadata/proxies.js')
+  >('../../src/tools/toolMetadata/proxies.js');
+  const { STATIC_TOOL_NAMES } = await import('../../src/tools/toolNames.js');
 
   return {
     ...actual,
     isToolInMetadata: mockIsToolInMetadata,
-    TOOL_NAMES: actual.STATIC_TOOL_NAMES,
+    TOOL_NAMES: STATIC_TOOL_NAMES as typeof actual.TOOL_NAMES,
     DESCRIPTIONS: new Proxy(
       {},
       {

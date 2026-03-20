@@ -1,5 +1,5 @@
 import { getConfigSync } from 'octocode-shared';
-import { TOOL_NAMES } from '../../tools/toolMetadata/index.js';
+import { TOOL_NAMES } from '../../tools/toolMetadata/proxies.js';
 import type {
   BulkToolResponse,
   FlatQueryResult,
@@ -515,22 +515,22 @@ function paginateStringValue(
   };
 }
 
-function paginateObjectStringField(
+function paginateObjectFieldCore(
   target: Record<string, unknown>,
   field: string,
-  request: ResolvedPaginationRequest
+  request: ResolvedPaginationRequest,
+  emptyValue: unknown,
+  innerPaginate: (
+    value: unknown,
+    req: ResolvedPaginationRequest
+  ) => ValuePageResult<unknown>
 ): ValuePageResult<Record<string, unknown>> | null {
-  const rawValue = target[field];
-  if (typeof rawValue !== 'string') {
-    return null;
-  }
-
-  const baseValue = { ...target, [field]: '' };
+  const baseValue = { ...target, [field]: emptyValue };
   delete baseValue.outputPagination;
   delete baseValue.charPagination;
 
   const wrapperChars = Math.max(serialize(baseValue).length - 2, 0);
-  const stringPage = paginateStringValue(rawValue, {
+  const innerPage = innerPaginate(target[field], {
     offset: request.offset <= wrapperChars ? 0 : request.offset - wrapperChars,
     length:
       request.offset <= wrapperChars
@@ -538,7 +538,7 @@ function paginateObjectStringField(
         : request.length,
     explicit: true,
   });
-  const totalChars = wrapperChars + stringPage.totalChars;
+  const totalChars = wrapperChars + innerPage.totalChars;
 
   if (!request.explicit && totalChars <= request.length) {
     return {
@@ -563,16 +563,27 @@ function paginateObjectStringField(
   return {
     value: {
       ...baseValue,
-      [field]: stringPage.value,
+      [field]: innerPage.value,
     },
     actualOffset:
       request.offset <= wrapperChars
         ? 0
-        : wrapperChars + stringPage.actualOffset,
-    pageEnd: wrapperChars + stringPage.pageEnd,
+        : wrapperChars + innerPage.actualOffset,
+    pageEnd: wrapperChars + innerPage.pageEnd,
     totalChars,
     paginated: true,
   };
+}
+
+function paginateObjectStringField(
+  target: Record<string, unknown>,
+  field: string,
+  request: ResolvedPaginationRequest
+): ValuePageResult<Record<string, unknown>> | null {
+  if (typeof target[field] !== 'string') return null;
+  return paginateObjectFieldCore(target, field, request, '', (v, r) =>
+    paginateStringValue(v as string, r)
+  );
 }
 
 function paginateNestedObjectField(
@@ -580,59 +591,10 @@ function paginateNestedObjectField(
   field: string,
   request: ResolvedPaginationRequest
 ): ValuePageResult<Record<string, unknown>> | null {
-  const nestedValue = target[field];
-  if (!isPlainObject(nestedValue)) {
-    return null;
-  }
-
-  const baseValue = { ...target, [field]: {} };
-  delete baseValue.outputPagination;
-  delete baseValue.charPagination;
-
-  const wrapperChars = Math.max(serialize(baseValue).length - 2, 0);
-  const nestedPage = paginateFallbackObjectValue(nestedValue, {
-    offset: request.offset <= wrapperChars ? 0 : request.offset - wrapperChars,
-    length:
-      request.offset <= wrapperChars
-        ? Math.max(1, request.length - wrapperChars)
-        : request.length,
-    explicit: true,
-  });
-  const totalChars = wrapperChars + nestedPage.totalChars;
-
-  if (!request.explicit && totalChars <= request.length) {
-    return {
-      value: target,
-      actualOffset: 0,
-      pageEnd: totalChars,
-      totalChars,
-      paginated: false,
-    };
-  }
-
-  if (request.offset >= totalChars) {
-    return {
-      value: baseValue,
-      actualOffset: request.offset,
-      pageEnd: request.offset,
-      totalChars,
-      paginated: true,
-    };
-  }
-
-  return {
-    value: {
-      ...baseValue,
-      [field]: nestedPage.value,
-    },
-    actualOffset:
-      request.offset <= wrapperChars
-        ? 0
-        : wrapperChars + nestedPage.actualOffset,
-    pageEnd: wrapperChars + nestedPage.pageEnd,
-    totalChars,
-    paginated: true,
-  };
+  if (!isPlainObject(target[field])) return null;
+  return paginateObjectFieldCore(target, field, request, {}, (v, r) =>
+    paginateFallbackObjectValue(v as Record<string, unknown>, r)
+  );
 }
 
 function paginateFallbackValue(

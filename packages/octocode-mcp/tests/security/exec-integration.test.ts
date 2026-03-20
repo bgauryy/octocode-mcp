@@ -22,8 +22,8 @@ beforeAll(async () => {
   vi.mocked(spawn).mockImplementation(childProcess.spawn);
 
   // Now import safeExec which will use the real spawn
-  const execModule = await import('../../src/utils/exec/index.js');
-  safeExec = execModule.safeExec;
+  const safeModule = await import('../../src/utils/exec/safe.js');
+  safeExec = safeModule.safeExec;
 });
 
 describe('safeExec execution context security', () => {

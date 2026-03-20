@@ -1,5 +1,5 @@
 // Must mock before any imports that use these modules
-vi.mock('../src/utils/exec/index.js', () => ({
+vi.mock('../src/utils/exec/npm.js', () => ({
   getGithubCLIToken: vi.fn(() => Promise.resolve('mock-token')),
 }));
 
@@ -69,7 +69,7 @@ import {
   resetSessionManager,
 } from '../src/session.js';
 import { initialize, cleanup } from '../src/serverConfig.js';
-import { TOOL_NAMES } from '../src/tools/toolMetadata/index.js';
+import { TOOL_NAMES } from '../src/tools/toolMetadata/proxies.js';
 
 // Set LOG environment variable to enable logging
 process.env.LOG = 'true';

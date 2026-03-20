@@ -13,7 +13,7 @@ import { handleBitbucketAPIError, createBitbucketError } from './errors.js';
 import type { BitbucketAPIResponse, BitbucketTreeEntry } from './types.js';
 import { generateCacheKey, withDataCache } from '../utils/http/cache.js';
 
-export interface BitbucketRepoStructureQuery {
+interface BitbucketRepoStructureQuery {
   workspace: string;
   repoSlug: string;
   ref?: string;
@@ -23,7 +23,7 @@ export interface BitbucketRepoStructureQuery {
   entryPageNumber?: number;
 }
 
-export interface BitbucketRepoStructureResult {
+interface BitbucketRepoStructureResult {
   entries: BitbucketTreeEntry[];
   branch: string;
   path: string;

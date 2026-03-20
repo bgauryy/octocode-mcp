@@ -6,7 +6,7 @@ import {
   getGithubCLIToken,
   executeNpmCommand,
   checkNpmAvailability,
-} from '../../src/utils/exec';
+} from '../../src/utils/exec/npm.js';
 
 // Mock process for testing
 class MockChildProcess extends EventEmitter {

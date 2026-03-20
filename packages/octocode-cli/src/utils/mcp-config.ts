@@ -1,7 +1,3 @@
-/**
- * MCP Configuration Utilities
- */
-
 import type {
   MCPConfig,
   MCPServer,
@@ -11,7 +7,6 @@ import type {
 import type { MCPRegistryEntry } from '../configs/mcp-registry.js';
 import { isWindows } from './platform.js';
 
-// Re-exports for backward compatibility
 export {
   getMCPConfigPath,
   clientConfigExists,
@@ -19,17 +14,11 @@ export {
 } from './mcp-paths.js';
 export { readMCPConfig, writeMCPConfig } from './mcp-io.js';
 
-/**
- * Environment options for octocode server configuration
- */
 export interface OctocodeEnvOptions {
   enableLocal?: boolean;
   githubToken?: string;
 }
 
-/**
- * Get octocode MCP server configuration for a given install method
- */
 export function getOctocodeServerConfig(
   method: InstallMethod,
   envOptions?: OctocodeEnvOptions
@@ -58,7 +47,6 @@ export function getOctocodeServerConfig(
       throw new Error(`Unknown install method: ${method}`);
   }
 
-  // Add env options if provided
   if (envOptions) {
     const env: Record<string, string> = {};
 
@@ -78,15 +66,11 @@ export function getOctocodeServerConfig(
   return config;
 }
 
-/**
- * Get Windows-compatible octocode config for direct method
- */
 export function getOctocodeServerConfigWindows(
   method: InstallMethod,
   envOptions?: OctocodeEnvOptions
 ): MCPServer {
   if (method === 'direct') {
-    // Windows doesn't have bash/curl by default, use PowerShell
     const config: MCPServer = {
       command: 'powershell',
       args: [
@@ -95,7 +79,6 @@ export function getOctocodeServerConfigWindows(
       ],
     };
 
-    // Add env options if provided
     if (envOptions) {
       const env: Record<string, string> = {};
 
@@ -114,13 +97,10 @@ export function getOctocodeServerConfigWindows(
 
     return config;
   }
-  // npx works the same on Windows
+
   return getOctocodeServerConfig(method, envOptions);
 }
 
-/**
- * Add or update octocode in MCP config
- */
 export function mergeOctocodeConfig(
   config: MCPConfig,
   method: InstallMethod,
@@ -139,16 +119,10 @@ export function mergeOctocodeConfig(
   };
 }
 
-/**
- * Check if octocode is already configured
- */
 export function isOctocodeConfigured(config: MCPConfig): boolean {
   return Boolean(config.mcpServers?.octocode);
 }
 
-/**
- * Get currently configured octocode method
- */
 export function getConfiguredMethod(config: MCPConfig): InstallMethod | null {
   const octocode = config.mcpServers?.octocode;
   if (!octocode) return null;
@@ -159,10 +133,6 @@ export function getConfiguredMethod(config: MCPConfig): InstallMethod | null {
   }
   return null;
 }
-
-// ============================================================================
-// Client Installation Status
-// ============================================================================
 
 import { getMCPConfigPath, configFileExists } from './mcp-paths.js';
 import { readMCPConfig } from './mcp-io.js';
@@ -175,9 +145,6 @@ export interface ClientInstallStatus {
   configPath: string;
 }
 
-/**
- * Check if octocode is installed for a specific client
- */
 export function getClientInstallStatus(
   client: MCPClient,
   customPath?: string
@@ -205,9 +172,6 @@ export function getClientInstallStatus(
   };
 }
 
-/**
- * Get installation status for all available clients
- */
 export function getAllClientInstallStatus(): ClientInstallStatus[] {
   const clients: MCPClient[] = [
     'cursor',
@@ -226,21 +190,10 @@ export function getAllClientInstallStatus(): ClientInstallStatus[] {
   return clients.map(client => getClientInstallStatus(client));
 }
 
-/**
- * Find clients that already have octocode installed
- */
 export function findInstalledClients(): ClientInstallStatus[] {
   return getAllClientInstallStatus().filter(status => status.octocodeInstalled);
 }
 
-// ============================================================================
-// External MCP Server Configuration (from Registry)
-// ============================================================================
-
-/**
- * Convert a registry entry to an MCP server config
- * Replaces ${VAR_NAME} placeholders with actual environment variable values
- */
 export function registryEntryToServerConfig(
   entry: MCPRegistryEntry,
   envValues?: Record<string, string>
@@ -250,25 +203,20 @@ export function registryEntryToServerConfig(
     args: [...entry.installConfig.args],
   };
 
-  // Replace placeholders in args with actual values
   if (envValues && config.args) {
     config.args = config.args.map(arg => {
-      // Replace ${VAR_NAME} patterns
       return arg.replace(/\$\{(\w+)\}/g, (_, varName) => {
         return envValues[varName] || `\${${varName}}`;
       });
     });
   }
 
-  // Merge env from install config and provided values
   const env: Record<string, string> = {};
 
-  // Add env from installConfig
   if (entry.installConfig.env) {
     Object.assign(env, entry.installConfig.env);
   }
 
-  // Add required env vars from provided values
   if (envValues) {
     for (const [key, value] of Object.entries(envValues)) {
       if (value) {
@@ -284,9 +232,6 @@ export function registryEntryToServerConfig(
   return config;
 }
 
-/**
- * Add or update an external MCP server in the config
- */
 export function mergeExternalMCPConfig(
   config: MCPConfig,
   entry: MCPRegistryEntry,
@@ -303,9 +248,6 @@ export function mergeExternalMCPConfig(
   };
 }
 
-/**
- * Check if an external MCP server is already configured
- */
 export function isExternalMCPConfigured(
   config: MCPConfig,
   entryId: string
@@ -313,9 +255,6 @@ export function isExternalMCPConfigured(
   return Boolean(config.mcpServers?.[entryId]);
 }
 
-/**
- * Remove an external MCP server from the config
- */
 export function removeExternalMCPConfig(
   config: MCPConfig,
   entryId: string
@@ -334,9 +273,6 @@ export function removeExternalMCPConfig(
   };
 }
 
-/**
- * Get list of installed external MCPs from config
- */
 export function getInstalledExternalMCPs(
   config: MCPConfig,
   registry: MCPRegistryEntry[]
@@ -347,9 +283,6 @@ export function getInstalledExternalMCPs(
   return registry.filter(entry => installedIds.has(entry.id));
 }
 
-/**
- * Validate that all required env vars have values
- */
 export function validateRequiredEnvVars(
   entry: MCPRegistryEntry,
   envValues: Record<string, string>

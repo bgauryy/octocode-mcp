@@ -288,8 +288,7 @@ vi.mock('../../src/lsp/validation.js', async importOriginal => {
   };
 });
 
-vi.mock('../../src/lsp/index.js', () => ({
-  createClient: vi.fn(),
+vi.mock('../../src/lsp/resolver.js', () => ({
   SymbolResolver: vi.fn(),
   SymbolResolutionError: class extends Error {
     searchRadius: number;
@@ -298,11 +297,15 @@ vi.mock('../../src/lsp/index.js', () => ({
       this.searchRadius = 2;
     }
   },
+}));
+
+vi.mock('../../src/lsp/manager.js', () => ({
+  createClient: vi.fn(),
   isLanguageServerAvailable: vi.fn(),
 }));
 
 import * as fs from 'fs/promises';
-import * as lspModule from '../../src/lsp/index.js';
+import * as managerModule from '../../src/lsp/manager.js';
 import { safeReadFile } from '../../src/lsp/validation.js';
 import { findReferencesWithLSP } from '../../src/tools/lsp_find_references/lspReferencesCore.js';
 
@@ -332,7 +335,7 @@ describe('LSP Find References - Filtering and Lazy Enhancement', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(lspModule.createClient).mockResolvedValue(mockClient as any);
+    vi.mocked(managerModule.createClient).mockResolvedValue(mockClient as any);
     const defaultContent =
       'line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10';
     vi.mocked(fs.readFile).mockResolvedValue(defaultContent);
@@ -568,7 +571,7 @@ describe('LSP Find References - Filtering and Lazy Enhancement', () => {
   });
 
   it('should return null when client creation fails', async () => {
-    vi.mocked(lspModule.createClient).mockResolvedValue(null);
+    vi.mocked(managerModule.createClient).mockResolvedValue(null);
 
     const result = await findReferencesWithLSP(
       '/workspace/src/file.ts',

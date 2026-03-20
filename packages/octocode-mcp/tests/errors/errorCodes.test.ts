@@ -3,15 +3,17 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { LOCAL_TOOL_ERROR_CODES } from '../../src/errors/localToolErrors.js';
 import {
-  LOCAL_TOOL_ERROR_CODES,
-  LOCAL_TOOL_ERROR_REGISTRY,
-  LocalToolErrorCategory as ErrorCategory,
   ToolError,
   isToolError,
   toToolError,
-  ToolErrors,
-} from '../../src/errorCodes.js';
+} from '../../src/errors/ToolError.js';
+import { ToolErrors } from '../../src/errors/errorFactories.js';
+import {
+  LOCAL_TOOL_ERROR_REGISTRY,
+  LocalToolErrorCategory as ErrorCategory,
+} from '../../src/errors/localToolErrors.js';
 
 describe('Local Error Codes', () => {
   describe('LOCAL_TOOL_ERROR_CODES', () => {

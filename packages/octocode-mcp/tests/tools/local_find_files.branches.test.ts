@@ -4,12 +4,15 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { findFiles } from '../../src/tools/local_find_files/index.js';
-import * as exec from '../../src/utils/exec/index.js';
+import { findFiles } from '../../src/tools/local_find_files/findFiles.js';
+import { safeExec } from '../../src/utils/exec/safe.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 
-vi.mock('../../src/utils/exec/index.js', () => ({
+vi.mock('../../src/utils/exec/safe.js', () => ({
   safeExec: vi.fn(),
+}));
+
+vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
   checkCommandAvailability: vi
     .fn()
     .mockResolvedValue({ available: true, command: 'find' }),
@@ -34,7 +37,7 @@ const mockFs = vi.mocked(await import('fs')) as unknown as {
   promises: { lstat: ReturnType<typeof vi.fn> };
 };
 
-const mockSafeExec = vi.mocked(exec.safeExec);
+const mockSafeExec = vi.mocked(safeExec);
 const mockValidate = vi.mocked(pathValidator.pathValidator.validate);
 
 describe('findFiles sortBy branches', () => {

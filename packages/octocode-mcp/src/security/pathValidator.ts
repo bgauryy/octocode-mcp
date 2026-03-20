@@ -1,33 +1,6 @@
 /**
- * Path validation for security - prevents path traversal attacks
- *
- * SYMLINK BEHAVIOR:
- * ==================
- * This validator has TWO different behaviors for symlinks:
- *
- * 1. PATH VALIDATION (Security - Always Resolves):
- *    - Symlinks are ALWAYS resolved to their real paths using fs.realpathSync()
- *    - The real path is then validated against allowed roots
- *    - This prevents symlink-based path traversal attacks
- *    - Example: /workspace/link -> /etc/passwd would be blocked
- *    - Cannot be disabled (security requirement)
- *
- * 2. TOOL TRAVERSAL (Performance - Configurable):
- *    - By default, tools DON'T follow symlinks during directory traversal
- *    - Use followSymlinks=true in tool options to enable
- *    - This matches ripgrep and find default behavior
- *    - Performance: Following symlinks can significantly slow down searches
- *    - Safety: May cause infinite loops with circular symlinks
- *
- * RATIONALE:
- * - Security validation must resolve symlinks to prevent attacks
- * - Tool traversal defaults to NOT following for performance
- * - Users can opt-in to symlink following per operation
- * - Symlink targets are still validated (must be within workspace)
- *
- * CONSTANTS:
- * - SECURITY_DEFAULTS.VALIDATE_SYMLINK_TARGETS = true (always)
- * - SECURITY_DEFAULTS.DEFAULT_FOLLOW_SYMLINKS = false (tool default)
+ * Path validation: resolves symlinks for security checks; tool traversal may
+ * disable symlink following separately (see SECURITY_DEFAULTS).
  */
 
 import path from 'path';
@@ -57,14 +30,8 @@ interface PathValidatorOptions {
 export class PathValidator {
   private allowedRoots: string[];
 
-  /**
-   * Creates a new PathValidator
-   * @param options - Configuration options (or legacy string for workspace root)
-   */
-  constructor(options?: string | PathValidatorOptions) {
-    // Support legacy string argument
-    const opts: PathValidatorOptions =
-      typeof options === 'string' ? { workspaceRoot: options } : options || {};
+  constructor(options?: PathValidatorOptions) {
+    const opts = options || {};
 
     const root = this.expandTilde(resolveWorkspaceRoot(opts.workspaceRoot));
 
@@ -86,7 +53,7 @@ export class PathValidator {
         this.allowedRoots.push(octocodeHome);
       }
     } catch {
-      // getOctocodeDir unavailable, skip
+      // getOctocodeDir failed; cloned-repo root is omitted from allowed roots for this validator.
     }
 
     // Add additional roots from options
@@ -116,7 +83,7 @@ export class PathValidator {
           }
         }
       } catch {
-        // Config not loaded yet, skip
+        // Config not ready; skip config-based allowedPaths until it loads.
       }
     }
   }

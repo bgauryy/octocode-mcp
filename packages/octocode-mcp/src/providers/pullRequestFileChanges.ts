@@ -1,7 +1,7 @@
 import { filterPatch } from '../utils/parsers/diff.js';
 import type { PullRequestQuery } from './providerQueries.js';
 
-export interface NormalizedPullRequestFileChange {
+interface NormalizedPullRequestFileChange {
   path: string;
   status: string;
   additions: number;
@@ -9,7 +9,7 @@ export interface NormalizedPullRequestFileChange {
   patch?: string;
 }
 
-export interface PullRequestFileChangeSummary {
+interface PullRequestFileChangeSummary {
   changedFilesCount?: number;
   additions?: number;
   deletions?: number;

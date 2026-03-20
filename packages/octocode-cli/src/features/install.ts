@@ -1,7 +1,3 @@
-/**
- * Installation Feature
- */
-
 import type {
   IDE,
   InstallMethod,
@@ -23,16 +19,11 @@ import {
 import { fileExists } from '../utils/fs.js';
 import { isWindows } from '../utils/platform.js';
 
-/**
- * Convert IDE string to MCPClient
- * Handles legacy 'claude' alias and all MCPClient types
- */
 function ideToMCPClient(ide: string): MCPClient {
-  // Legacy alias
   if (ide === 'claude') {
     return 'claude-desktop';
   }
-  // Direct MCPClient types
+
   return ide as MCPClient;
 }
 
@@ -59,9 +50,6 @@ interface InstallPreview {
   existingMethod?: InstallMethod | null;
 }
 
-/**
- * Detect which IDEs are available on the system
- */
 export function detectAvailableIDEs(): IDE[] {
   const available: IDE[] = [];
 
@@ -75,9 +63,6 @@ export function detectAvailableIDEs(): IDE[] {
   return available;
 }
 
-/**
- * Check if octocode is already installed for an IDE
- */
 export function checkExistingInstallation(ide: IDE): {
   installed: boolean;
   configPath: string;
@@ -102,17 +87,12 @@ export function checkExistingInstallation(ide: IDE): {
   };
 }
 
-/**
- * Install octocode MCP for an IDE
- */
 export function installOctocode(options: InstallOptions): InstallResult {
   const { ide, method, force = false } = options;
   const configPath = getMCPConfigPath(ideToMCPClient(ide));
 
-  // Read existing config or create new
   let config: MCPConfig = readMCPConfig(configPath) || { mcpServers: {} };
 
-  // Check if already installed
   if (isOctocodeConfigured(config) && !force) {
     return {
       success: false,
@@ -122,10 +102,8 @@ export function installOctocode(options: InstallOptions): InstallResult {
     };
   }
 
-  // Merge octocode config
   config = mergeOctocodeConfig(config, method);
 
-  // Write config
   const writeResult = writeMCPConfig(configPath, config);
 
   if (!writeResult.success) {
@@ -143,9 +121,6 @@ export function installOctocode(options: InstallOptions): InstallResult {
   };
 }
 
-/**
- * Install octocode for multiple IDEs
- */
 export function installOctocodeMultiple(
   ides: IDE[],
   method: InstallMethod,
@@ -160,10 +135,6 @@ export function installOctocodeMultiple(
   return results;
 }
 
-/**
- * Get a preview of what the installation will do
- * Shared between CLI and interactive UI
- */
 export function getInstallPreview(
   ide: IDE,
   method: InstallMethod
@@ -192,10 +163,6 @@ export function getInstallPreview(
   };
 }
 
-// ============================================================================
-// MCPClient-based Installation (New API)
-// ============================================================================
-
 import type { OctocodeEnvOptions } from '../utils/mcp-config.js';
 
 interface ClientInstallOptions {
@@ -215,9 +182,6 @@ interface ClientInstallPreview {
   existingMethod?: InstallMethod | null;
 }
 
-/**
- * Check if octocode is already installed for a client
- */
 export function checkExistingClientInstallation(
   client: MCPClient,
   customPath?: string
@@ -248,9 +212,6 @@ export function checkExistingClientInstallation(
   };
 }
 
-/**
- * Install octocode MCP for a specific client
- */
 export function installOctocodeForClient(
   options: ClientInstallOptions
 ): InstallResult {
@@ -260,10 +221,8 @@ export function installOctocodeForClient(
       ? customPath
       : getMCPConfigPath(client, customPath);
 
-  // Read existing config or create new
   let config: MCPConfig = readMCPConfig(configPath) || { mcpServers: {} };
 
-  // Check if already installed
   if (isOctocodeConfigured(config) && !force) {
     return {
       success: false,
@@ -273,10 +232,8 @@ export function installOctocodeForClient(
     };
   }
 
-  // Merge octocode config with env options
   config = mergeOctocodeConfig(config, method, envOptions);
 
-  // Write config
   const writeResult = writeMCPConfig(configPath, config);
 
   if (!writeResult.success) {
@@ -294,9 +251,6 @@ export function installOctocodeForClient(
   };
 }
 
-/**
- * Get a preview of what the installation will do for a client
- */
 export function getInstallPreviewForClient(
   client: MCPClient,
   method: InstallMethod,
@@ -330,9 +284,6 @@ export function getInstallPreviewForClient(
   };
 }
 
-/**
- * Detect which clients are available on the system
- */
 export function detectAvailableClients(): MCPClient[] {
   const available: MCPClient[] = [];
 

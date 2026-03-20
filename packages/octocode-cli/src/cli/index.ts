@@ -1,19 +1,10 @@
-/**
- * CLI Entry Point
- */
-
 import { parseArgs, hasHelpFlag, hasVersionFlag } from './parser.js';
 import { findCommand } from './commands.js';
 import { showHelp, showCommandHelp, showVersion } from './help.js';
 
-/**
- * Run CLI
- * Returns true if a CLI command was handled, false to continue to interactive mode
- */
 export async function runCLI(argv?: string[]): Promise<boolean> {
   const args = parseArgs(argv);
 
-  // Global --help
   if (hasHelpFlag(args)) {
     if (args.command) {
       const cmd = findCommand(args.command);
@@ -26,18 +17,15 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
     return true;
   }
 
-  // Global --version
   if (hasVersionFlag(args)) {
     showVersion();
     return true;
   }
 
-  // No command - return false to go to interactive mode
   if (!args.command) {
     return false;
   }
 
-  // Find and run command
   const command = findCommand(args.command);
 
   if (!command) {
@@ -49,13 +37,11 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
     return true;
   }
 
-  // Check for command-specific help
   if (hasHelpFlag(args)) {
     showCommandHelp(command);
     return true;
   }
 
-  // Run the command handler
   await command.handler(args);
   return true;
 }

@@ -38,7 +38,6 @@ import {
 
 // =============================================================================
 // Finding 1 — HIGH: Shell injection via exec()
-//
 // escapeForRegex is a pure function — no mocks needed.
 // build*Args functions return arrays for spawn() — no shell interpretation.
 // =============================================================================
@@ -106,7 +105,6 @@ describe('Finding 1 — escapeForRegex + command args safety', () => {
 
 // =============================================================================
 // Finding 2 — MEDIUM: Telemetry sends repo names and research goals
-//
 // Mock: axios (external HTTP) — already mocked in setup.ts
 // Real: initializeSession, logToolCall, initialize, cleanup
 // =============================================================================
@@ -191,7 +189,6 @@ describe('Finding 2 — Telemetry excludes sensitive data', () => {
 
 // =============================================================================
 // Finding 6 — LOW: Credential env vars passed to child processes
-//
 // buildChildProcessEnv is pure — no mocks needed.
 // Key/allowlist tests are in security-resilience.test.ts.
 // This file tests VALUE leakage: do secret strings appear anywhere in output?

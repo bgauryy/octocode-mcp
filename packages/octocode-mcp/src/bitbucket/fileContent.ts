@@ -16,7 +16,7 @@ import type {
 } from './types.js';
 import { generateCacheKey, withDataCache } from '../utils/http/cache.js';
 
-export interface BitbucketFileContentQuery {
+interface BitbucketFileContentQuery {
   workspace: string;
   repoSlug: string;
   path: string;

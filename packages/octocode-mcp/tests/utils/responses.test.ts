@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createResult, createResponseFormat } from '../../src/responses';
-import { jsonToYamlString } from '../../src/utils/minifier/index.js';
+import { jsonToYamlString } from '../../src/utils/minifier/jsonToYamlString.js';
 import { getTextContent } from './testHelpers.js';
 
 describe('Response Utilities', () => {

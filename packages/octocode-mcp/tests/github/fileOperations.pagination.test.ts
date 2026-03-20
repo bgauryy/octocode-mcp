@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fetchGitHubFileContentAPI } from '../../src/github/fileOperations.js';
+import { fetchGitHubFileContentAPI } from '../../src/github/fileContent.js';
 import { getOctokit } from '../../src/github/client.js';
-import * as minifierModule from '../../src/utils/minifier/index.js';
+import * as minifierModule from '../../src/utils/minifier/minifier.js';
 
 // Mock dependencies
 vi.mock('../../src/github/client.js');
-vi.mock('../../src/utils/minifier/index.js');
+vi.mock('../../src/utils/minifier/minifier.js');
 
 const DEFAULT_OUTPUT_CHAR_LENGTH = 8000;
 

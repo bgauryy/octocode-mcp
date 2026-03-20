@@ -48,13 +48,11 @@ export async function createClient(
     await client.start();
     return client;
   } catch {
-    // LSP start failed - ensure the process is cleaned up.
-    // client.start() already calls stop() on init failure, but
-    // belt-and-suspenders to guarantee no orphaned process.
+    // LSP start failed; belt-and-suspenders stop() in case init cleanup missed the process.
     try {
       await client.stop();
     } catch {
-      // Ignore cleanup errors
+      // stop() after a failed start may throw; secondary cleanup errors are safe to ignore.
     }
     return null;
   }
@@ -145,6 +143,7 @@ export async function isLanguageServerAvailable(
       await fs.access(command);
       return true;
     } catch {
+      // Absolute server command path missing or unreadable.
       return false;
     }
   }

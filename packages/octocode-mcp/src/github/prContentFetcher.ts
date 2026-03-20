@@ -14,7 +14,7 @@ import {
   PullRequestItem,
   IssueComment,
 } from './githubAPI';
-import { TOOL_NAMES } from '../tools/toolMetadata/index.js';
+import { TOOL_NAMES } from '../tools/toolMetadata/proxies.js';
 import { logSessionError } from '../session.js';
 import { ContentSanitizer } from '../security/contentSanitizer';
 import { getOctokit, OctokitWithThrottling } from './client';

@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { executeBulkOperation } from '../../src/utils/response/bulk.js';
 import type { QueryStatus } from '../../src/types';
-import {
-  ToolName,
-  TOOL_NAMES,
-  initializeToolMetadata,
-} from '../../src/tools/toolMetadata/index.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata/proxies.js';
+import { initializeToolMetadata } from '../../src/tools/toolMetadata/state.js';
+import type { ToolName } from '../../src/tools/toolMetadata/types.js';
 import { getTextContent } from './testHelpers.js';
 
 beforeAll(async () => {

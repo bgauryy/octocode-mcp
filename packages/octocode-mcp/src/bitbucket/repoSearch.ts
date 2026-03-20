@@ -15,7 +15,7 @@ import type {
 } from './types.js';
 import { generateCacheKey, withDataCache } from '../utils/http/cache.js';
 
-export interface BitbucketRepoSearchQuery {
+interface BitbucketRepoSearchQuery {
   workspace: string;
   keywords?: string[];
   topics?: string[];
@@ -25,7 +25,7 @@ export interface BitbucketRepoSearchQuery {
   limit?: number;
 }
 
-export interface BitbucketRepoSearchResult {
+interface BitbucketRepoSearchResult {
   repositories: BitbucketRepository[];
   pagination: {
     currentPage: number;

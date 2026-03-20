@@ -5,15 +5,14 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { addLineNumbers } from '../../src/tools/lsp_goto_definition/lsp_goto_definition.js';
+import { addLineNumbers } from '../../src/tools/lsp_goto_definition/execution.js';
 
 // Mock fs/promises
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
 }));
 
-// Mock LSP module with controllable behavior
-vi.mock('../../src/lsp/index.js', () => {
+vi.mock('../../src/lsp/resolver.js', () => {
   class MockSymbolResolutionError extends Error {
     searchRadius: number;
     constructor(message: string, searchRadius: number) {
@@ -36,14 +35,18 @@ vi.mock('../../src/lsp/index.js', () => {
       }),
     })),
     SymbolResolutionError: MockSymbolResolutionError,
-    createClient: vi.fn().mockResolvedValue(null),
-    isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
   };
 });
 
+vi.mock('../../src/lsp/manager.js', () => ({
+  createClient: vi.fn().mockResolvedValue(null),
+  isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
+}));
+
 // Import mocked modules
 import * as fs from 'fs/promises';
-import * as lspModule from '../../src/lsp/index.js';
+import * as resolverModule from '../../src/lsp/resolver.js';
+import * as managerModule from '../../src/lsp/manager.js';
 
 describe('LSP Goto Definition Coverage Tests', () => {
   beforeEach(() => {
@@ -657,11 +660,13 @@ describe('LSP Goto Definition Coverage Tests', () => {
 
       // Default mocks
       vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-      vi.mocked(lspModule.createClient).mockResolvedValue(null);
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        false
+      );
+      vi.mocked(managerModule.createClient).mockResolvedValue(null);
 
       // Default SymbolResolver mock
-      vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
+      vi.mocked(resolverModule.SymbolResolver).mockImplementation(function () {
         return {
           resolvePositionFromContent: vi.fn().mockReturnValue({
             position: { line: 3, character: 16 },
@@ -713,7 +718,7 @@ describe('LSP Goto Definition Coverage Tests', () => {
       vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
 
       // Make SymbolResolver throw a generic error (not SymbolResolutionError)
-      vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
+      vi.mocked(resolverModule.SymbolResolver).mockImplementation(function () {
         return {
           resolvePositionFromContent: vi.fn(() => {
             throw new Error('Generic internal error');
@@ -745,10 +750,12 @@ describe('LSP Goto Definition Coverage Tests', () => {
       const testPath = `${process.cwd()}/src/test.ts`;
 
       vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        true
+      );
 
       // Make createClient return a client that throws on gotoDefinition
-      vi.mocked(lspModule.createClient).mockResolvedValue({
+      vi.mocked(managerModule.createClient).mockResolvedValue({
         stop: vi.fn(),
         gotoDefinition: vi.fn().mockRejectedValue(new Error('LSP timeout')),
       } as any);
@@ -777,10 +784,12 @@ describe('LSP Goto Definition Coverage Tests', () => {
       const testPath = `${process.cwd()}/src/test.ts`;
 
       vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        true
+      );
 
       // Make createClient return a client that returns empty locations
-      vi.mocked(lspModule.createClient).mockResolvedValue({
+      vi.mocked(managerModule.createClient).mockResolvedValue({
         stop: vi.fn(),
         gotoDefinition: vi.fn().mockResolvedValue([]),
       } as any);
@@ -811,9 +820,11 @@ describe('LSP Goto Definition Coverage Tests', () => {
       const testPath = `${process.cwd()}/src/test.ts`;
 
       vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        true
+      );
 
-      vi.mocked(lspModule.createClient).mockResolvedValue({
+      vi.mocked(managerModule.createClient).mockResolvedValue({
         stop: vi.fn(),
         gotoDefinition: vi.fn().mockResolvedValue(null),
       } as any);
@@ -842,8 +853,10 @@ describe('LSP Goto Definition Coverage Tests', () => {
       const testPath = `${process.cwd()}/src/test.ts`;
 
       vi.mocked(fs.readFile).mockResolvedValue('const test = 1;');
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
-      vi.mocked(lspModule.createClient).mockResolvedValue(null);
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        true
+      );
+      vi.mocked(managerModule.createClient).mockResolvedValue(null);
 
       const handler = await createHandler();
       const result = await handler({

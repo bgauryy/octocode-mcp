@@ -7,7 +7,7 @@ import { getMetadataDynamicHints } from '../../hints/static.js';
 import type { HintContext, ToolHintGenerators } from '../../types/metadata.js';
 import { getActiveProvider } from '../../serverConfig.js';
 
-export const TOOL_NAME = 'githubSearchCode';
+const TOOL_NAME = 'githubSearchCode';
 
 export const hints: ToolHintGenerators = {
   hasResults: (ctx: HintContext = {}) => {

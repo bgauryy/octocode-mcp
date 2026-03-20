@@ -22,25 +22,34 @@ export {
   initializeToolMetadata,
   loadToolContent,
   getMetadata,
+} from '../tools/toolMetadata/state.js';
+
+export {
   TOOL_NAMES,
   BASE_SCHEMA,
   DESCRIPTIONS,
   TOOL_HINTS,
   GENERIC_ERROR_HINTS,
+  isToolInMetadata,
+  getToolHintsSync,
+  getGenericErrorHintsSync,
+  getDynamicHints,
+} from '../tools/toolMetadata/proxies.js';
+
+export {
   GITHUB_FETCH_CONTENT,
   GITHUB_SEARCH_CODE,
   GITHUB_SEARCH_REPOS,
   GITHUB_SEARCH_PULL_REQUESTS,
   GITHUB_VIEW_REPO_STRUCTURE,
   PACKAGE_SEARCH,
+} from '../tools/toolMetadata/githubSchemaHelpers.js';
+
+export {
   LOCAL_RIPGREP,
   LOCAL_FETCH_CONTENT,
   LOCAL_FIND_FILES,
   LOCAL_VIEW_STRUCTURE,
-  isToolInMetadata,
-  getToolHintsSync,
-  getGenericErrorHintsSync,
-  getDynamicHints,
-} from '../tools/toolMetadata/index.js';
+} from '../tools/toolMetadata/localSchemaHelpers.js';
 
-export type { ToolName } from '../tools/toolMetadata/index.js';
+export type { ToolName } from '../tools/toolMetadata/types.js';

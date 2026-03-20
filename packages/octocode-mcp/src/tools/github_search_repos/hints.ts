@@ -5,8 +5,6 @@
 
 import type { HintContext, ToolHintGenerators } from '../../types/metadata.js';
 
-export const TOOL_NAME = 'githubSearchRepositories';
-
 export const hints: ToolHintGenerators = {
   hasResults: (_ctx: HintContext = {}) => [
     // Context-aware hints - static hints cover generic cases

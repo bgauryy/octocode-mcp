@@ -53,9 +53,7 @@ describe('executionContextValidator', () => {
     it('should reject parent directory', () => {
       const result = validateExecutionContext(parentDir);
       expect(result.isValid).toBe(false);
-      expect(result.error).toContain(
-        'configured workspace directory'
-      );
+      expect(result.error).toContain('configured workspace directory');
       expect(result.error).not.toContain(parentDir);
       expect(result.error).not.toContain(workspaceRoot);
     });
@@ -66,50 +64,38 @@ describe('executionContextValidator', () => {
       const siblingPath = workspaceRoot + '-evil';
       const result = validateExecutionContext(siblingPath);
       expect(result.isValid).toBe(false);
-      expect(result.error).toContain(
-        'configured workspace directory'
-      );
+      expect(result.error).toContain('configured workspace directory');
     });
 
     it('should reject paths with similar prefix (e.g., workspace2)', () => {
       const similarPath = workspaceRoot + '2';
       const result = validateExecutionContext(similarPath);
       expect(result.isValid).toBe(false);
-      expect(result.error).toContain(
-        'configured workspace directory'
-      );
+      expect(result.error).toContain('configured workspace directory');
     });
 
     it('should reject path traversal with ../', () => {
       const result = validateExecutionContext('../');
       expect(result.isValid).toBe(false);
-      expect(result.error).toContain(
-        'configured workspace directory'
-      );
+      expect(result.error).toContain('configured workspace directory');
     });
 
     it('should reject multiple path traversals (../../../../)', () => {
       const result = validateExecutionContext('../../../../');
       expect(result.isValid).toBe(false);
-      expect(result.error).toContain(
-        'configured workspace directory'
-      );
+      expect(result.error).toContain('configured workspace directory');
     });
 
     it('should reject system directories (/etc)', () => {
       const result = validateExecutionContext('/etc');
       expect(result.isValid).toBe(false);
-      expect(result.error).toContain(
-        'configured workspace directory'
-      );
+      expect(result.error).toContain('configured workspace directory');
     });
 
     it('should reject root directory (/)', () => {
       const result = validateExecutionContext('/');
       expect(result.isValid).toBe(false);
-      expect(result.error).toContain(
-        'configured workspace directory'
-      );
+      expect(result.error).toContain('configured workspace directory');
     });
 
     it('should reject home directory', () => {
@@ -117,9 +103,7 @@ describe('executionContextValidator', () => {
       if (homeDir !== workspaceRoot && !homeDir.startsWith(workspaceRoot)) {
         const result = validateExecutionContext(homeDir);
         expect(result.isValid).toBe(false);
-        expect(result.error).toContain(
-          'configured workspace directory'
-        );
+        expect(result.error).toContain('configured workspace directory');
       }
     });
 
@@ -141,9 +125,7 @@ describe('executionContextValidator', () => {
 
       const result = validateExecutionContext(invalidPath, customRoot);
       expect(result.isValid).toBe(false);
-      expect(result.error).toContain(
-        'configured workspace directory'
-      );
+      expect(result.error).toContain('configured workspace directory');
     });
 
     describe('symlink handling', () => {

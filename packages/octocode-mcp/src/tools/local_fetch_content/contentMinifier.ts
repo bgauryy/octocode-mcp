@@ -1,4 +1,4 @@
-import { minifyContentSync } from '../../utils/minifier/index.js';
+import { minifyContentSync } from '../../utils/minifier/minifier.js';
 
 /**
  * Apply minification to content (always enabled for token efficiency)

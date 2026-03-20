@@ -3,7 +3,7 @@
  */
 
 import { version } from '../../../package.json';
-import { FETCH_ERRORS } from '../../errorCodes.js';
+import { FETCH_ERRORS } from '../../errors/domainErrors.js';
 import { logSessionError } from '../../session.js';
 
 interface ExtendedError extends Error {
@@ -112,7 +112,6 @@ export async function fetchWithRetries(
   const maxAttempts = maxRetries + 1;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    // Check if request was aborted before attempting
     if (signal?.aborted) {
       throw new Error('Request aborted');
     }

@@ -7,11 +7,8 @@ import {
   BaseQuerySchemaLocal,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import {
-  LOCAL_FETCH_CONTENT,
-  TOOL_NAMES,
-  DESCRIPTIONS,
-} from '../toolMetadata/index.js';
+import { LOCAL_FETCH_CONTENT } from '../toolMetadata/localSchemaHelpers.js';
+import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/proxies.js';
 
 /**
  * Tool description for localGetFileContent

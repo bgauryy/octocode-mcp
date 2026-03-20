@@ -60,11 +60,11 @@ describe('Skills Utilities', () => {
       expect(dirExists).toHaveBeenCalledTimes(2);
     });
 
-    it('should throw error when neither path exists', () => {
+    it('should throw error when no candidate skills path exists', () => {
       vi.mocked(dirExists).mockReturnValue(false);
 
       expect(() => getSkillsSourcePath()).toThrow('Skills directory not found');
-      expect(dirExists).toHaveBeenCalledTimes(2);
+      expect(dirExists).toHaveBeenCalledTimes(3);
     });
 
     it('should check fromOut path first', () => {
@@ -219,7 +219,7 @@ describe('Skills Utilities', () => {
     it('should filter out non-octocode prefixed directories', () => {
       vi.mocked(dirExists).mockReturnValue(true);
       vi.mocked(listSubdirectories).mockReturnValue([
-        'octocode-pr-review',
+        'octocode-pull-request-reviewer',
         '.git',
         'node_modules',
         'octocode-test',
@@ -227,7 +227,10 @@ describe('Skills Utilities', () => {
 
       const result = getAvailableSkills();
 
-      expect(result).toEqual(['octocode-pr-review', 'octocode-test']);
+      expect(result).toEqual([
+        'octocode-pull-request-reviewer',
+        'octocode-test',
+      ]);
       expect(result).toHaveLength(2);
     });
 
@@ -256,7 +259,7 @@ describe('Skills Utilities', () => {
         'octocode-research',
         'octocode-plan',
         'octocode-generate',
-        'octocode-pr-review',
+        'octocode-pull-request-reviewer',
       ]);
       vi.mocked(copyDirectory).mockReturnValue(true);
 

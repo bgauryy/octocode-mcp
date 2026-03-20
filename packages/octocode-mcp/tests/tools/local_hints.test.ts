@@ -3,11 +3,9 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import {
-  getHints,
-  getLargeFileWorkflowHints,
-  HINTS,
-} from '../../src/hints/index.js';
+import { getHints } from '../../src/hints/index.js';
+import { getLargeFileWorkflowHints } from '../../src/hints/dynamic.js';
+import { HINTS } from '../../src/hints/dynamic.js';
 import { STATIC_TOOL_NAMES } from '../../src/tools/toolNames.js';
 
 describe('Local Tools Hints', () => {

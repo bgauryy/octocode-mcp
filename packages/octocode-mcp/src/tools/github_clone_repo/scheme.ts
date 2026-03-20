@@ -13,7 +13,7 @@ import {
   BaseQuerySchema,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import { TOOL_NAMES } from '../toolMetadata/index.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 
 /**
  * GitHub identifier pattern – prevents path traversal.

@@ -10,7 +10,7 @@ describe('applyMinification', () => {
   it('should return original content when minification throws', async () => {
     vi.resetModules();
 
-    vi.doMock('../../src/utils/minifier/index.js', () => ({
+    vi.doMock('../../src/utils/minifier/minifier.js', () => ({
       minifyContentSync: vi.fn(() => {
         throw new Error('Minification engine crashed');
       }),
@@ -28,7 +28,7 @@ describe('applyMinification', () => {
   it('should return original when minified is not smaller', async () => {
     vi.resetModules();
 
-    vi.doMock('../../src/utils/minifier/index.js', () => ({
+    vi.doMock('../../src/utils/minifier/minifier.js', () => ({
       minifyContentSync: vi.fn((content: string) => content + '/* padded */'),
     }));
 
@@ -45,7 +45,7 @@ describe('applyMinification', () => {
     vi.resetModules();
 
     const minified = 'const x=1;const y=2;';
-    vi.doMock('../../src/utils/minifier/index.js', () => ({
+    vi.doMock('../../src/utils/minifier/minifier.js', () => ({
       minifyContentSync: vi.fn(() => minified),
     }));
 

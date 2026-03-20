@@ -171,7 +171,6 @@ export async function getOctokit(
     const key = hashToken(authInfo.token);
     const cached = instances.get(key);
 
-    // Check if cached instance exists and is not expired
     if (cached && !isExpired(cached)) {
       return cached.client;
     }
@@ -181,7 +180,6 @@ export async function getOctokit(
       purgeExpiredInstances();
     }
 
-    // Create new instance (either doesn't exist or expired)
     const newInstance = createOctokitInstance(authInfo.token);
     instances.set(key, { client: newInstance, createdAt: Date.now() });
     return newInstance;
@@ -259,7 +257,7 @@ export async function resolveDefaultBranch(
     cacheDefaultBranch(cacheKey, branch);
     return branch;
   } catch {
-    // Fall through to smart fallback
+    // repos.get failed (auth/network/repo); try probing well-known branch names below.
   }
 
   // Smart fallback: verify common branch names exist (main → master)

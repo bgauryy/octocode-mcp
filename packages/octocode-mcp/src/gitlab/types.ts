@@ -390,31 +390,3 @@ export interface GitLabProjectsSearchQuery {
 // ============================================================================
 // TYPE GUARDS
 // ============================================================================
-
-/**
- * Check if response is a GitLab API error.
- */
-export function isGitLabAPIError(obj: unknown): obj is GitLabAPIError {
-  return !!(
-    obj &&
-    typeof obj === 'object' &&
-    'error' in obj &&
-    typeof (obj as Record<string, unknown>).error === 'string' &&
-    'type' in obj
-  );
-}
-
-/**
- * Check if response is a GitLab API success.
- */
-export function isGitLabAPISuccess<T>(
-  obj: unknown
-): obj is GitLabAPISuccess<T> {
-  return !!(
-    obj &&
-    typeof obj === 'object' &&
-    'data' in obj &&
-    'status' in obj &&
-    typeof (obj as Record<string, unknown>).status === 'number'
-  );
-}

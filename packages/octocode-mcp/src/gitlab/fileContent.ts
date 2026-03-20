@@ -76,7 +76,6 @@ async function fetchGitLabFileContentAPIInternal(
     // URL-encode the file path as required by GitLab API
     const encodedPath = encodeURIComponent(params.path);
 
-    // Fetch file content
     const file = (await gitlab.RepositoryFiles.show(
       params.projectId,
       encodedPath,

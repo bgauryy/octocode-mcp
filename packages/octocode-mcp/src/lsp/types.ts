@@ -188,7 +188,7 @@ export interface LSPPaginationInfo {
 /**
  * LSP error types for dynamic hints
  */
-export type LSPErrorType =
+type LSPErrorType =
   | 'symbol_not_found'
   | 'file_not_found'
   | 'not_a_function'
@@ -271,34 +271,4 @@ export interface CallHierarchyResult extends LSPToolResultBase {
   direction?: 'incoming' | 'outgoing';
   /** Depth of the search */
   depth?: number;
-}
-
-/**
- * LSP hint context extending base HintContext
- */
-export interface LSPHintContext {
-  // Resolution info
-  symbolFound?: boolean;
-  resolvedLine?: number;
-  searchRadius?: number;
-  symbolName?: string;
-  lineHint?: number;
-
-  // Results info
-  locationCount?: number;
-  hasMultipleFiles?: boolean;
-  hasExternalPackage?: boolean;
-
-  // Call hierarchy specific
-  direction?: 'incoming' | 'outgoing';
-  depth?: number;
-  callCount?: number;
-
-  // Pagination
-  hasMorePages?: boolean;
-  currentPage?: number;
-  totalPages?: number;
-
-  // Error context
-  errorType?: LSPErrorType;
 }

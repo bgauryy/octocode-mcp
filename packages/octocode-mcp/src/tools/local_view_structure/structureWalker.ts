@@ -28,7 +28,7 @@ export async function walkDirectory(
   maxEntries: number = 10000,
   showHidden: boolean = false,
   showModified: boolean = false,
-  stats?: WalkStats,
+  stats: WalkStats,
   showDetails: boolean = false
 ): Promise<void> {
   if (depth >= maxDepth) return;
@@ -56,7 +56,7 @@ export async function walkDirectory(
           type,
           size: formatFileSize(fileStats.size),
           extension: getExtension(item),
-          depth: depth, // Store correct depth from walker
+          depth,
         };
         if (showDetails || showModified) {
           entry.modified = fileStats.mtime.toISOString();
@@ -81,10 +81,10 @@ export async function walkDirectory(
           );
         }
       } catch {
-        if (stats) stats.skipped++;
+        stats.skipped++;
       }
     }
   } catch {
-    if (stats) stats.skipped++;
+    stats.skipped++;
   }
 }

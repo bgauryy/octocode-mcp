@@ -124,10 +124,8 @@ export class LSPClient {
         new StreamMessageWriter(this.process.stdin)
       );
 
-      // Start listening
       this.connection.listen();
 
-      // Initialize the language server
       await this.initialize();
     } catch (error) {
       // Kill the spawned process and clean up connection to prevent leaks

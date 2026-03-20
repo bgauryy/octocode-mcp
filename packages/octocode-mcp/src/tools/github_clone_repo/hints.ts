@@ -9,8 +9,6 @@
 
 import type { HintContext, ToolHintGenerators } from '../../types/metadata.js';
 
-export const TOOL_NAME = 'githubCloneRepo';
-
 export const hints: ToolHintGenerators = {
   hasResults: (_ctx: HintContext = {}) => [
     // Primary hints are injected in execution.ts (FULL_CLONE_HINTS / SPARSE_CLONE_HINTS)

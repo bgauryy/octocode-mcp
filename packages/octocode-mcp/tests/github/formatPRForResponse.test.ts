@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatPRForResponse } from '../../src/github/pullRequestSearch.js';
+import { formatPRForResponse } from '../../src/github/prTransformation.js';
 import type {
   GitHubPullRequestItem,
   DiffEntry,

@@ -4,9 +4,10 @@
 
 import { getHints } from '../../hints/index.js';
 import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
-import { SymbolResolver } from '../../lsp/index.js';
+import { SymbolResolver } from '../../lsp/resolver.js';
 import { RipgrepMatchOnlySchema } from '../../utils/parsers/schemas.js';
-import { safeExec, checkCommandAvailability } from '../../utils/exec/index.js';
+import { safeExec } from '../../utils/exec/safe.js';
+import { checkCommandAvailability } from '../../utils/exec/commandAvailability.js';
 import type {
   CallHierarchyResult,
   CallHierarchyItem,
@@ -24,7 +25,7 @@ import {
   createRange,
   escapeRegex,
 } from './callHierarchyHelpers.js';
-import { TOOL_NAME } from './execution.js';
+import { TOOL_NAME } from './constants.js';
 
 /**
  * Fallback: Use pattern matching when LSP is unavailable
@@ -45,7 +46,6 @@ export async function callHierarchyWithPatternMatching(
     query.contextLines ?? 2
   );
 
-  // Process based on direction
   if (query.direction === 'incoming') {
     return await findIncomingCallsWithPatternMatching(
       query,
@@ -86,10 +86,8 @@ async function findIncomingCallsWithPatternMatching(
   const workspaceRoot = resolveWorkspaceRoot();
   const symbolName = query.symbolName;
 
-  // Search for calls to this function using grep pattern: symbolName(
   const searchPattern = `\\b${escapeRegex(symbolName)}\\s*\\(`;
 
-  // Try ripgrep first, fall back to grep
   const rgAvailable = await checkCommandAvailability('rg');
   let searchResults: CallSite[] = [];
 
@@ -125,7 +123,6 @@ async function findIncomingCallsWithPatternMatching(
     };
   }
 
-  // Filter out the definition itself
   const callSites = searchResults.filter(
     site =>
       !(
@@ -150,13 +147,11 @@ async function findIncomingCallsWithPatternMatching(
     };
   }
 
-  // Apply pagination
   const totalResults = callSites.length;
   const totalPages = Math.ceil(totalResults / callsPerPage);
   const startIndex = (page - 1) * callsPerPage;
   const paginatedSites = callSites.slice(startIndex, startIndex + callsPerPage);
 
-  // Convert call sites to IncomingCall format
   const incomingCalls: IncomingCall[] = await Promise.all(
     paginatedSites.map(async site => {
       const callerItem = await createCallHierarchyItemFromSite(
@@ -213,7 +208,6 @@ async function findOutgoingCallsWithPatternMatching(
 ): Promise<CallHierarchyResult> {
   const lines = content.split(/\r?\n/);
 
-  // Extract the function body
   const functionBody = extractFunctionBody(lines, functionLine - 1);
   if (!functionBody) {
     return {
@@ -230,11 +224,9 @@ async function findOutgoingCallsWithPatternMatching(
     };
   }
 
-  // Find function calls in the body
   const callPattern = /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g;
   const foundCalls = new Map<string, { line: number; column: number }[]>();
 
-  // JavaScript/TypeScript keywords and built-ins to exclude
   const excludePatterns = new Set([
     'if',
     'for',
@@ -263,7 +255,6 @@ async function findOutgoingCallsWithPatternMatching(
     'const',
     'let',
     'var',
-    // Common built-ins
     'Array',
     'Object',
     'String',
@@ -329,7 +320,6 @@ async function findOutgoingCallsWithPatternMatching(
     };
   }
 
-  // Apply pagination
   const totalResults = uniqueCalls.length;
   const totalPages = Math.ceil(totalResults / callsPerPage);
   const startIndex = (page - 1) * callsPerPage;
@@ -338,7 +328,6 @@ async function findOutgoingCallsWithPatternMatching(
     startIndex + callsPerPage
   );
 
-  // Convert to OutgoingCall format
   const outgoingCalls: OutgoingCall[] = paginatedCalls.map(
     ([funcName, locations]) => {
       const firstLoc = locations[0]!;
@@ -480,7 +469,7 @@ export function parseRipgrepJsonOutput(output: string): CallSite[] {
         lineContent: data.lines.text,
       });
     } catch {
-      // Skip invalid JSON lines
+      // Malformed JSON line from ripgrep; skip this line.
     }
   }
 
@@ -526,7 +515,6 @@ export function extractFunctionBody(
   let bodyStartLine = startLineIndex;
   const bodyLines: string[] = [];
 
-  // Find the opening brace
   for (
     let i = startLineIndex;
     i < Math.min(lines.length, startLineIndex + 5);
@@ -553,7 +541,6 @@ export function extractFunctionBody(
 
   if (!foundStart) return null;
 
-  // Continue until we find the matching closing brace
   for (let i = bodyStartLine + 1; i < lines.length && braceCount > 0; i++) {
     const line = lines[i];
     if (!line) {

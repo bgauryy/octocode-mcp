@@ -1,12 +1,12 @@
-import { executeNpmCommand } from '../exec/index.js';
+import { executeNpmCommand } from '../exec/npm.js';
 import { fetchWithRetries } from '../http/fetch.js';
 import { generateCacheKey, withDataCache } from '../http/cache.js';
-import {
+import type {
   PackageSearchAPIResult,
   PackageSearchError,
   NpmPackageResult,
   DeprecationInfo,
-} from './common.js';
+} from './types.js';
 import {
   NpmViewResultSchema,
   NpmRegistrySearchSchema,
@@ -39,7 +39,7 @@ export async function getNpmRegistryUrl(): Promise<string> {
       }
     }
   } catch {
-    // Fall through to default
+    // npm config get registry failed or threw; use DEFAULT_NPM_REGISTRY below.
   }
 
   _cachedRegistryUrl = DEFAULT_NPM_REGISTRY;
@@ -246,7 +246,7 @@ async function fetchLastPublished(
       })) as { modified?: string } | null;
       if (data?.modified) return data.modified;
     } catch {
-      // Abbreviated endpoint may not be supported by all registries
+      // install-v1+json abbreviated fetch failed; fall back to full JSON metadata below.
     }
 
     // Fallback: fetch full document and extract time.modified

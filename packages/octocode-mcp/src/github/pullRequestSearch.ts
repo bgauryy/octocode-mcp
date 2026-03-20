@@ -13,9 +13,9 @@ import {
   PullRequestSimple,
 } from './githubAPI';
 import type { GitHubPullRequestSearchApiResult } from '../tools/github_search_pull_requests/types.js';
-import { SEARCH_ERRORS } from '../errorCodes.js';
+import { SEARCH_ERRORS } from '../errors/domainErrors.js';
 import { logSessionError } from '../session.js';
-import { TOOL_NAMES } from '../tools/toolMetadata/index.js';
+import { TOOL_NAMES } from '../tools/toolMetadata/proxies.js';
 import { getOctokit, OctokitWithThrottling } from './client';
 import { handleGitHubAPIError } from './errors';
 import {
@@ -24,11 +24,6 @@ import {
 } from './queryBuilders';
 import { generateCacheKey, withDataCache } from '../utils/http/cache';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-
-// Re-export public symbols from split modules
-export { formatPRForResponse } from './prTransformation.js';
-export { transformPullRequestItemFromREST } from './prContentFetcher.js';
-export { fetchGitHubPullRequestByNumberAPI } from './prByNumber.js';
 
 import { formatPRForResponse } from './prTransformation.js';
 import {

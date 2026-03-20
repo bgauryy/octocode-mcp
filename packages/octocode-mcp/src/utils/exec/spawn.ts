@@ -368,6 +368,7 @@ export function spawnCheckSuccess(
         env: buildChildProcessEnv({}, allowEnvVars),
       });
     } catch {
+      // spawn() failed before a child existed; treat as command unavailable.
       resolve(false);
       return;
     }
@@ -465,6 +466,7 @@ export function spawnCollectStdout(
         env: buildChildProcessEnv({}, allowEnvVars),
       });
     } catch {
+      // spawn() failed; no process to read stdout from.
       resolve(null);
       return;
     }

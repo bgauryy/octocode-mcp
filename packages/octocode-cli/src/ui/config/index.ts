@@ -1,10 +1,3 @@
-/**
- * Configuration Options UI
- *
- * Allows users to view and configure octocode-mcp server options.
- * Configurations are saved as environment variables in the MCP server config.
- */
-
 export { runInspectFlow } from './inspect-flow.js';
 
 import { c, bold, dim } from '../../utils/colors.js';
@@ -28,11 +21,7 @@ import {
 import { selectMCPClient } from '../install/prompts.js';
 import type { MCPConfig } from '../../types/index.js';
 
-/**
- * All available tools (GitHub + Local)
- */
 const ALL_AVAILABLE_TOOLS = {
-  // GitHub tools
   github: [
     {
       id: 'githubSearchCode',
@@ -65,7 +54,7 @@ const ALL_AVAILABLE_TOOLS = {
       description: 'Search npm/Python packages and find their repos',
     },
   ],
-  // Local tools
+
   local: [
     {
       id: 'localSearchCode',
@@ -90,9 +79,6 @@ const ALL_AVAILABLE_TOOLS = {
   ],
 } as const;
 
-/**
- * Configuration option definition
- */
 interface ConfigOption {
   id: string;
   envVar: string;
@@ -105,16 +91,13 @@ interface ConfigOption {
     max?: number;
     pattern?: RegExp;
   };
-  // For array types: which tool category to show
+
   toolCategory?: 'all' | 'github' | 'local';
 }
 
 type ConfigMenuChoice = 'edit' | 'view' | 'show-json' | 'back';
 type EditConfigChoice = string | 'save' | 'reset' | 'back';
 
-/**
- * All available configuration options
- */
 const ALL_CONFIG_OPTIONS: ConfigOption[] = [
   {
     id: 'enableLocal',
@@ -180,9 +163,6 @@ const ALL_CONFIG_OPTIONS: ConfigOption[] = [
   },
 ];
 
-/**
- * Get all tools as a flat list for multi-select
- */
 function getAllTools(): Array<{
   id: string;
   name: string;
@@ -201,9 +181,6 @@ function getAllTools(): Array<{
   ];
 }
 
-/**
- * Get current value for a config option from env
- */
 function getCurrentValue(
   env: Record<string, string>,
   option: ConfigOption
@@ -215,12 +192,6 @@ function getCurrentValue(
   return value;
 }
 
-/**
- * Format display value for config option with clear state indicators
- * @param option - The config option
- * @param value - Current value
- * @param isModified - Whether the value has been modified in this session
- */
 function formatDisplayValue(
   option: ConfigOption,
   value: string,
@@ -253,23 +224,17 @@ function formatDisplayValue(
     }
     return `${c('cyan', '●')} ${c('cyan', value)}${modifiedMarker}`;
   }
-  // string
+
   if (value === option.defaultValue) {
     return `${c('dim', '○')} ${c('dim', value)}${modifiedMarker}`;
   }
   return `${c('cyan', '●')} ${c('cyan', value)}${modifiedMarker}`;
 }
 
-/**
- * Parse boolean value from env string
- */
 function parseBooleanValue(value: string): boolean {
   return value === '1' || value.toLowerCase() === 'true';
 }
 
-/**
- * Show configuration submenu
- */
 async function showConfigMenu(): Promise<ConfigMenuChoice> {
   const choice = await select<ConfigMenuChoice>({
     message: '',
@@ -308,19 +273,15 @@ async function showConfigMenu(): Promise<ConfigMenuChoice> {
   return choice;
 }
 
-/**
- * Run the configuration options flow
- */
 export async function runConfigOptionsFlow(): Promise<void> {
   await loadInquirer();
 
-  // Show submenu
   const choice = await showConfigMenu();
 
   switch (choice) {
     case 'view':
       showConfigInfo();
-      // Wait for user to press enter before returning
+
       await pressEnterToContinue();
       break;
 
@@ -334,14 +295,10 @@ export async function runConfigOptionsFlow(): Promise<void> {
 
     case 'back':
     default:
-      // Just return to main menu
       break;
   }
 }
 
-/**
- * Wait for user to press enter
- */
 async function pressEnterToContinue(): Promise<void> {
   console.log();
   await input({
@@ -352,9 +309,6 @@ async function pressEnterToContinue(): Promise<void> {
 
 type OpenChoice = 'cursor' | 'vscode' | 'default' | 'no';
 
-/**
- * Ask user if they want to open the config file
- */
 async function promptOpenConfigFile(configPath: string): Promise<void> {
   console.log();
   const openChoice = await select<OpenChoice>({
@@ -406,9 +360,6 @@ async function promptOpenConfigFile(configPath: string): Promise<void> {
   console.log();
 }
 
-/**
- * Edit a boolean configuration option
- */
 async function editBooleanOption(
   option: ConfigOption,
   currentValue: string
@@ -449,9 +400,6 @@ async function editBooleanOption(
   return choice === 'enable' ? '1' : 'false';
 }
 
-/**
- * Edit a string configuration option
- */
 async function editStringOption(
   option: ConfigOption,
   currentValue: string
@@ -473,7 +421,6 @@ async function editStringOption(
     message: `${option.name}:`,
     default: '',
     validate: (value: string) => {
-      // Allow empty to cancel
       if (!value.trim()) {
         return true;
       }
@@ -487,18 +434,13 @@ async function editStringOption(
     },
   });
 
-  // Empty means cancel - return null to indicate no change
   if (!newValue.trim()) {
     return null;
   }
 
-  // Return empty string if matches default (to remove from env)
   return newValue === option.defaultValue ? '' : newValue;
 }
 
-/**
- * Edit a number configuration option
- */
 async function editNumberOption(
   option: ConfigOption,
   currentValue: string
@@ -528,7 +470,6 @@ async function editNumberOption(
     message: `${option.name}:`,
     default: '',
     validate: (value: string) => {
-      // Allow empty to cancel
       if (!value.trim()) {
         return true;
       }
@@ -546,18 +487,13 @@ async function editNumberOption(
     },
   });
 
-  // Empty means cancel - return null to indicate no change
   if (!newValue.trim()) {
     return null;
   }
 
-  // Return empty string if matches default (to remove from env)
   return newValue === option.defaultValue ? '' : newValue;
 }
 
-/**
- * Edit an array (tools) configuration option
- */
 async function editArrayOption(
   option: ConfigOption,
   currentValue: string
@@ -570,7 +506,6 @@ async function editArrayOption(
         .filter(Boolean)
     : [];
 
-  // Show current state
   const currentDisplay =
     currentTools.length > 0
       ? currentTools.join(', ')
@@ -584,7 +519,6 @@ async function editArrayOption(
   console.log(`  ${dim('Current:')} ${currentDisplay}`);
   console.log();
 
-  // First, ask what the user wants to do
   type ArrayAction = 'select' | 'clear' | 'cancel';
   const action = await select<ArrayAction>({
     message: `${option.name}:`,
@@ -619,7 +553,6 @@ async function editArrayOption(
     return '';
   }
 
-  // Build choices with categories
   const choices: Array<{
     name: string;
     value: string;
@@ -627,7 +560,6 @@ async function editArrayOption(
     description?: string;
   }> = [];
 
-  // Add GitHub tools section
   choices.push({
     name: c('blue', '── GitHub Tools ──'),
     value: '__separator_github__',
@@ -643,7 +575,6 @@ async function editArrayOption(
     });
   }
 
-  // Add Local tools section
   choices.push({
     name: c('yellow', '── Local Tools ──'),
     value: '__separator_local__',
@@ -659,7 +590,6 @@ async function editArrayOption(
     });
   }
 
-  // Add cancel option at the end
   choices.push({
     name: c('dim', '── Actions ──'),
     value: '__separator_actions__',
@@ -692,21 +622,16 @@ async function editArrayOption(
     },
   });
 
-  // Check if user selected cancel
   if (selected.includes('__cancel__')) {
-    return null; // Return null to indicate no change
+    return null;
   }
 
-  // Filter out separator values
   const validTools = selected.filter(
     t => !t.startsWith('__separator') && t !== '__cancel__'
   );
   return validTools.length > 0 ? validTools.join(',') : '';
 }
 
-/**
- * Check if a value has been modified from original
- */
 function isValueModified(
   originalEnv: Record<string, string>,
   currentEnv: Record<string, string>,
@@ -717,9 +642,6 @@ function isValueModified(
   return originalValue !== currentValue;
 }
 
-/**
- * Count how many options have been modified
- */
 function countModifiedOptions(
   originalEnv: Record<string, string>,
   currentEnv: Record<string, string>
@@ -733,9 +655,6 @@ function countModifiedOptions(
   return count;
 }
 
-/**
- * Show config editing menu with all options and current values
- */
 async function showEditConfigMenu(
   workingEnv: Record<string, string>,
   originalEnv: Record<string, string>
@@ -746,13 +665,11 @@ async function showEditConfigMenu(
     description?: string;
   }> = [];
 
-  // Group options by type for better organization
   const booleanOptions = ALL_CONFIG_OPTIONS.filter(o => o.type === 'boolean');
   const stringOptions = ALL_CONFIG_OPTIONS.filter(o => o.type === 'string');
   const numberOptions = ALL_CONFIG_OPTIONS.filter(o => o.type === 'number');
   const arrayOptions = ALL_CONFIG_OPTIONS.filter(o => o.type === 'array');
 
-  // Count modifications for header
   const modifiedCount = countModifiedOptions(originalEnv, workingEnv);
   const statusHeader =
     modifiedCount > 0
@@ -764,7 +681,6 @@ async function showEditConfigMenu(
     value: '__status__',
   });
 
-  // Boolean options (Features)
   if (booleanOptions.length > 0) {
     choices.push({
       name: c('dim', '── Features ──'),
@@ -782,7 +698,6 @@ async function showEditConfigMenu(
     }
   }
 
-  // String options (Endpoints)
   if (stringOptions.length > 0) {
     choices.push({
       name: c('dim', '── Endpoints ──'),
@@ -800,7 +715,6 @@ async function showEditConfigMenu(
     }
   }
 
-  // Number options (Performance)
   if (numberOptions.length > 0) {
     choices.push({
       name: c('dim', '── Performance ──'),
@@ -818,7 +732,6 @@ async function showEditConfigMenu(
     }
   }
 
-  // Array options (Tool Selection)
   if (arrayOptions.length > 0) {
     choices.push({
       name: c('dim', '── Tool Selection ──'),
@@ -836,13 +749,11 @@ async function showEditConfigMenu(
     }
   }
 
-  // Actions
   choices.push({
     name: c('dim', '── Actions ──'),
     value: '__sep5__',
   });
 
-  // Show save button with indication if there are changes
   if (modifiedCount > 0) {
     choices.push({
       name: `${c('green', '💾')} Save changes ${c('yellow', `(${modifiedCount})`)}`,
@@ -884,11 +795,7 @@ async function showEditConfigMenu(
   return choice;
 }
 
-/**
- * Run the edit configuration flow
- */
 async function runEditConfigFlow(): Promise<void> {
-  // Select MCP client
   const selection = await selectMCPClient();
   if (!selection) return;
 
@@ -896,7 +803,6 @@ async function runEditConfigFlow(): Promise<void> {
   const clientInfo = MCP_CLIENTS[client];
   const configPath = customPath || getMCPConfigPath(client);
 
-  // Read existing config
   const config = readMCPConfig(configPath);
   if (!config) {
     console.log();
@@ -905,7 +811,6 @@ async function runEditConfigFlow(): Promise<void> {
     return;
   }
 
-  // Check if octocode is configured
   if (!isOctocodeConfigured(config)) {
     console.log();
     console.log(
@@ -918,29 +823,24 @@ async function runEditConfigFlow(): Promise<void> {
     return;
   }
 
-  // Show current config path
   console.log();
   console.log(`  ${dim('Config file:')} ${c('cyan', configPath)}`);
   console.log(`  ${dim('Client:')} ${clientInfo.name}`);
   console.log();
 
-  // Get current environment variables
   const originalEnv = { ...(config.mcpServers?.octocode?.env || {}) };
   const workingEnv = { ...originalEnv };
 
-  // Edit loop
   let editing = true;
   while (editing) {
     const choice = await showEditConfigMenu(workingEnv, originalEnv);
 
-    // Handle separators and status line - skip them
     if (choice.startsWith('__sep') || choice === '__status__') {
       continue;
     }
 
     switch (choice) {
       case 'save': {
-        // Check if anything changed
         const hasChanges =
           JSON.stringify(originalEnv) !== JSON.stringify(workingEnv);
         if (!hasChanges) {
@@ -951,10 +851,8 @@ async function runEditConfigFlow(): Promise<void> {
           break;
         }
 
-        // Save changes
         const spinner = new Spinner('Saving configuration...').start();
 
-        // Clean up empty values
         const cleanEnv: Record<string, string> = {};
         for (const [key, value] of Object.entries(workingEnv)) {
           if (value && value !== '') {
@@ -962,7 +860,6 @@ async function runEditConfigFlow(): Promise<void> {
           }
         }
 
-        // Update the config
         const updatedConfig: MCPConfig = {
           ...config,
           mcpServers: {
@@ -974,7 +871,6 @@ async function runEditConfigFlow(): Promise<void> {
           },
         };
 
-        // Clean up undefined env
         if (
           updatedConfig.mcpServers?.octocode?.env &&
           Object.keys(updatedConfig.mcpServers.octocode.env).length === 0
@@ -1012,7 +908,6 @@ async function runEditConfigFlow(): Promise<void> {
           default: false,
         });
         if (confirmReset) {
-          // Clear all config values
           for (const key of Object.keys(workingEnv)) {
             delete workingEnv[key];
           }
@@ -1022,7 +917,6 @@ async function runEditConfigFlow(): Promise<void> {
       }
 
       case 'back': {
-        // Check for unsaved changes
         const hasUnsavedChanges =
           JSON.stringify(originalEnv) !== JSON.stringify(workingEnv);
         if (hasUnsavedChanges) {
@@ -1039,7 +933,6 @@ async function runEditConfigFlow(): Promise<void> {
       }
 
       default: {
-        // Edit a specific option
         const option = ALL_CONFIG_OPTIONS.find(o => o.id === choice);
         if (!option) break;
 
@@ -1059,11 +952,12 @@ async function runEditConfigFlow(): Promise<void> {
           case 'array':
             newValue = await editArrayOption(option, currentValue);
             break;
+          default:
+            break;
         }
 
         if (newValue !== null) {
           if (newValue === '' || newValue === option.defaultValue) {
-            // Remove from env if empty or matches default
             delete workingEnv[option.envVar];
           } else {
             workingEnv[option.envVar] = newValue;
@@ -1075,11 +969,7 @@ async function runEditConfigFlow(): Promise<void> {
   }
 }
 
-/**
- * Show current JSON configuration for a client
- */
 async function showCurrentJsonConfig(): Promise<void> {
-  // Select MCP client
   const selection = await selectMCPClient();
   if (!selection) return;
 
@@ -1087,7 +977,6 @@ async function showCurrentJsonConfig(): Promise<void> {
   const clientInfo = MCP_CLIENTS[client];
   const configPath = customPath || getMCPConfigPath(client);
 
-  // Read existing config
   const config = readMCPConfig(configPath);
   if (!config) {
     console.log();
@@ -1096,7 +985,6 @@ async function showCurrentJsonConfig(): Promise<void> {
     return;
   }
 
-  // Check if octocode is configured
   if (!isOctocodeConfigured(config)) {
     console.log();
     console.log(
@@ -1109,7 +997,6 @@ async function showCurrentJsonConfig(): Promise<void> {
     return;
   }
 
-  // Get the octocode configuration
   const octocodeConfig = config.mcpServers?.octocode;
 
   console.log();
@@ -1118,28 +1005,22 @@ async function showCurrentJsonConfig(): Promise<void> {
   );
   console.log();
 
-  // Pretty print the octocode config
   const jsonString = JSON.stringify({ octocode: octocodeConfig }, null, 2);
   const lines = jsonString.split('\n');
   for (const line of lines) {
-    // Syntax highlight the JSON
     const highlighted = line
-      .replace(/"([^"]+)":/g, `${c('cyan', '"$1"')}:`) // keys
-      .replace(/: "([^"]+)"/g, `: ${c('green', '"$1"')}`) // string values
-      .replace(/: (\d+)/g, `: ${c('yellow', '$1')}`) // number values
-      .replace(/: (true|false)/g, `: ${c('magenta', '$1')}`); // boolean values
+      .replace(/"([^"]+)":/g, `${c('cyan', '"$1"')}:`)
+      .replace(/: "([^"]+)"/g, `: ${c('green', '"$1"')}`)
+      .replace(/: (\d+)/g, `: ${c('yellow', '$1')}`)
+      .replace(/: (true|false)/g, `: ${c('magenta', '$1')}`);
     console.log(`  ${highlighted}`);
   }
 
   console.log();
 
-  // Ask if user wants to open the config file
   await promptOpenConfigFile(configPath);
 }
 
-/**
- * Get example value for a config option
- */
 function getExampleValue(option: ConfigOption): string {
   switch (option.id) {
     case 'enableLocal':
@@ -1161,9 +1042,6 @@ function getExampleValue(option: ConfigOption): string {
   }
 }
 
-/**
- * Get display default value for a config option
- */
 function getDisplayDefault(option: ConfigOption): string {
   if (option.type === 'array') {
     return option.id === 'toolsToRun' ? '(all tools)' : '(none)';
@@ -1171,9 +1049,6 @@ function getDisplayDefault(option: ConfigOption): string {
   return option.defaultValue;
 }
 
-/**
- * Show all configuration options with explanations
- */
 function showConfigInfo(): void {
   console.log();
   console.log(`  ${bold('All Available Configuration Options')}`);

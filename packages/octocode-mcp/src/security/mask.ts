@@ -1,5 +1,5 @@
 import { allRegexPatterns } from './regexes/index.js';
-import type { SensitiveDataPattern } from '../types.js';
+import type { SensitiveDataPattern } from './regexes/types.js';
 
 interface Match {
   start: number;
@@ -10,10 +10,13 @@ interface Match {
 let combinedRegex: RegExp | null = null;
 let patternMap: SensitiveDataPattern[] = [];
 
-export function maskSensitiveData(text: string): string {
+export function maskSensitiveData(
+  text: string,
+  patterns: SensitiveDataPattern[] = allRegexPatterns
+): string {
   if (!text) return text;
 
-  const regex = getCombinedRegex();
+  const regex = getCombinedRegex(patterns);
   const matches: Match[] = [];
   let match;
 
@@ -64,10 +67,12 @@ export function maskSensitiveData(text: string): string {
   return result;
 }
 
-function getCombinedRegex(): RegExp {
-  if (!combinedRegex) {
-    combinedRegex = createCombinedRegex(allRegexPatterns);
-    patternMap = allRegexPatterns;
+function getCombinedRegex(
+  patterns: SensitiveDataPattern[] = allRegexPatterns
+): RegExp {
+  if (!combinedRegex || patternMap !== patterns) {
+    combinedRegex = createCombinedRegex(patterns);
+    patternMap = patterns;
   }
   return combinedRegex;
 }

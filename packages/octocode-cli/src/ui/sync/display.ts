@@ -1,9 +1,3 @@
-/**
- * Sync Display Helpers
- *
- * Functions for displaying sync status, diffs, and results.
- */
-
 import { c, bold, dim } from '../../utils/colors.js';
 import type { MCPServer } from '../../types/index.js';
 import type {
@@ -14,9 +8,6 @@ import type {
 } from '../../features/sync.js';
 import { getClientDisplayName } from '../../features/sync.js';
 
-/**
- * Print sync analysis summary
- */
 export function printSyncSummary(analysis: SyncAnalysis): void {
   const { summary } = analysis;
 
@@ -28,20 +19,17 @@ export function printSyncSummary(analysis: SyncAnalysis): void {
   console.log(c('blue', ' └' + '─'.repeat(60) + '┘'));
   console.log();
 
-  // Client summary
   console.log(` ${bold('Clients:')}`);
   console.log(
     `   ${c('cyan', '•')} ${summary.clientsWithConfig} of ${summary.totalClients} with MCP configs`
   );
   console.log();
 
-  // MCP summary
   console.log(` ${bold('MCPs:')}`);
   console.log(
     `   ${c('cyan', '•')} ${summary.totalUniqueMCPs} unique MCPs found`
   );
 
-  // Fully synced
   if (summary.consistentMCPs > 0) {
     console.log(`   ${c('green', '✓')} ${summary.consistentMCPs} fully synced`);
     for (const diff of analysis.fullyConsistent) {
@@ -49,7 +37,6 @@ export function printSyncSummary(analysis: SyncAnalysis): void {
     }
   }
 
-  // Needs sync (auto-resolvable)
   if (summary.needsSyncCount > 0) {
     const count = summary.needsSyncCount;
     console.log(`   ${c('yellow', '○')} ${count} can be synced`);
@@ -60,7 +47,6 @@ export function printSyncSummary(analysis: SyncAnalysis): void {
     }
   }
 
-  // Conflicts (requires resolution)
   if (summary.conflictCount > 0) {
     console.log(`   ${c('red', '!')} ${summary.conflictCount} have conflicts`);
     for (const diff of analysis.conflicts) {
@@ -79,9 +65,6 @@ export function printSyncSummary(analysis: SyncAnalysis): void {
   console.log();
 }
 
-/**
- * Print client status list
- */
 export function printClientStatus(snapshots: ClientConfigSnapshot[]): void {
   console.log(` ${bold('Client Configurations:')}`);
   console.log();
@@ -100,9 +83,6 @@ export function printClientStatus(snapshots: ClientConfigSnapshot[]): void {
   }
 }
 
-/**
- * Print MCP diff details
- */
 function printMCPDiff(diff: MCPDiff): void {
   const icon = diff.hasConflict
     ? c('red', '!')
@@ -112,17 +92,14 @@ function printMCPDiff(diff: MCPDiff): void {
 
   console.log(`   ${icon} ${bold(diff.mcpId)}`);
 
-  // Present in
   const presentNames = diff.presentIn.map(getClientDisplayName).join(', ');
   console.log(`     ${dim('Present in:')} ${presentNames}`);
 
-  // Missing from
   if (diff.missingIn.length > 0) {
     const missingNames = diff.missingIn.map(getClientDisplayName).join(', ');
     console.log(`     ${c('yellow', 'Missing from:')} ${missingNames}`);
   }
 
-  // Conflict indicator
   if (diff.hasConflict) {
     console.log(
       `     ${c('red', 'Conflict:')} Different configurations detected`
@@ -132,11 +109,7 @@ function printMCPDiff(diff: MCPDiff): void {
   console.log();
 }
 
-/**
- * Print all diffs grouped by status
- */
 export function printAllDiffs(analysis: SyncAnalysis): void {
-  // Fully synced
   if (analysis.fullyConsistent.length > 0) {
     console.log(` ${c('green', '✓')} ${bold('Fully Synced:')}`);
     for (const diff of analysis.fullyConsistent) {
@@ -145,7 +118,6 @@ export function printAllDiffs(analysis: SyncAnalysis): void {
     console.log();
   }
 
-  // Needs sync (no conflicts)
   if (analysis.needsSync.length > 0) {
     console.log(
       ` ${c('yellow', '○')} ${bold('Needs Sync (auto-resolvable):')}`
@@ -155,7 +127,6 @@ export function printAllDiffs(analysis: SyncAnalysis): void {
     }
   }
 
-  // Conflicts
   if (analysis.conflicts.length > 0) {
     console.log(
       ` ${c('red', '!')} ${bold('Conflicts (requires resolution):')}`
@@ -166,9 +137,6 @@ export function printAllDiffs(analysis: SyncAnalysis): void {
   }
 }
 
-/**
- * Print MCP server config details
- */
 function printServerConfig(server: MCPServer, indent: string = '     '): void {
   console.log(`${indent}${dim('command:')} ${server.command || dim('(none)')}`);
   const argsStr = server.args?.join(' ') || '';
@@ -189,9 +157,6 @@ function printServerConfig(server: MCPServer, indent: string = '     '): void {
   }
 }
 
-/**
- * Print conflict details for resolution
- */
 export function printConflictDetails(
   diff: MCPDiff,
   showFullConfig: boolean = false
@@ -220,7 +185,6 @@ export function printConflictDetails(
     if (showFullConfig) {
       printServerConfig(server, '       ');
     } else {
-      // Compact view
       const argsStr = server.args?.join(' ') || '';
       const cmdLine = [server.command, argsStr].filter(Boolean).join(' ');
       console.log(`       ${dim('command:')} ${cmdLine || dim('(none)')}`);
@@ -235,9 +199,6 @@ export function printConflictDetails(
   }
 }
 
-/**
- * Print sync preview
- */
 export function printSyncPreview(
   mcpsToSync: Array<{ mcpId: string }>,
   targetClients: ClientConfigSnapshot[]
@@ -271,9 +232,6 @@ export function printSyncPreview(
   console.log();
 }
 
-/**
- * Print sync result
- */
 export function printSyncResult(result: SyncResult): void {
   console.log();
 
@@ -299,7 +257,6 @@ export function printSyncResult(result: SyncResult): void {
 
   console.log();
 
-  // MCPs synced
   if (result.mcpsSynced.length > 0) {
     console.log(` ${bold('Synced MCPs:')} ${result.mcpsSynced.length}`);
     for (const mcpId of result.mcpsSynced) {
@@ -308,7 +265,6 @@ export function printSyncResult(result: SyncResult): void {
     console.log();
   }
 
-  // Client results
   console.log(` ${bold('Client Results:')}`);
   for (const [client, clientResult] of result.clientResults) {
     const name = getClientDisplayName(client);
@@ -325,7 +281,6 @@ export function printSyncResult(result: SyncResult): void {
     }
   }
 
-  // Errors
   if (result.errors.length > 0) {
     console.log();
     console.log(` ${c('red', 'Errors:')}`);
@@ -337,9 +292,6 @@ export function printSyncResult(result: SyncResult): void {
   console.log();
 }
 
-/**
- * Print "no sync needed" message
- */
 export function printNoSyncNeeded(): void {
   console.log();
   console.log(c('green', ' ┌' + '─'.repeat(60) + '┐'));

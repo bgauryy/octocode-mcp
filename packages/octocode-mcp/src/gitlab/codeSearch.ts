@@ -126,7 +126,6 @@ async function searchGitLabCodeAPIInternal(
     const perPage = Math.min(params.perPage || 20, 100);
     const page = params.page || 1;
 
-    // Build search string with filters
     const searchQuery = buildGitLabSearchQuery({
       searchText: params.search,
       path: params.path,
@@ -162,7 +161,6 @@ async function searchGitLabCodeAPIInternal(
 
     const items = results as unknown as GitLabCodeSearchItem[];
 
-    // Check if we have more results
     const hasMore = items.length === perPage;
 
     return {

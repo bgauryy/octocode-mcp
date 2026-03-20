@@ -42,10 +42,6 @@ interface FlowState {
   envValues: Record<string, string>;
 }
 
-/**
- * Allowlist of safe commands for MCP servers
- * These are standard package runners and interpreters
- */
 const ALLOWED_COMMANDS = [
   'npx',
   'node',
@@ -62,32 +58,23 @@ const ALLOWED_COMMANDS = [
   'npm',
 ] as const;
 
-/**
- * Validate command is in allowlist
- * Performs strict validation to prevent command injection via path traversal
- */
 function validateCommand(command: string): {
   valid: boolean;
   error?: string;
 } {
-  // Reject empty commands
   if (!command || typeof command !== 'string') {
     return { valid: false, error: 'Command is required' };
   }
 
-  // Normalize and extract base command
   const trimmed = command.trim();
 
-  // Reject commands with suspicious patterns
   if (trimmed.includes('..') || trimmed.includes('\0')) {
     return { valid: false, error: 'Command contains invalid characters' };
   }
 
-  // Extract base command name (handle paths like /usr/bin/node)
   const segments = trimmed.split(/[/\\]/);
   const baseCommand = segments[segments.length - 1]?.split(/\s+/)[0] || '';
 
-  // Must be exact match (case-sensitive)
   if (
     !ALLOWED_COMMANDS.includes(baseCommand as (typeof ALLOWED_COMMANDS)[number])
   ) {
@@ -100,40 +87,23 @@ function validateCommand(command: string): {
   return { valid: true };
 }
 
-/**
- * Shell metacharacters and patterns that could enable injection
- */
 const DANGEROUS_PATTERNS = [
-  /[;&|`$]/, // Command chaining and substitution
-  /[(){}[\]]/, // Subshells and braces
-  /[<>]/, // Redirects
-  /[!^]/, // History expansion and negation
-  /\\(?!["'\\])/, // Backslash (except escaped quotes)
-  /[\n\r\x00]/, // Newlines and null bytes
-  /'.*'/, // Single quotes (potential quoting issues)
-  /".*\$.*"/, // Double quotes with variable expansion
+  /[;&|`$]/,
+  /[(){}[\]]/,
+  /[<>]/,
+  /[!^]/,
+  /\\(?!["'\\])/,
+  /[\n\r\x00]/,
+  /'.*'/,
+  /".*\$.*"/,
 ];
 
-/**
- * Pattern for safe CLI flags:
- * - Single letter flags: -y, -i, -e
- * - Long flags: --rm, --yes, --no-cache
- * - Flags with values: --port=8080, -p=3000
- */
 const SAFE_FLAG_PATTERN = /^--?[a-zA-Z][a-zA-Z0-9-]*(=\S+)?$/;
 
-/**
- * Check if an argument is a safe CLI flag
- * Safe flags: -y, -i, --rm, --yes, --port=8080, etc.
- */
 function isSafeFlag(arg: string): boolean {
   return SAFE_FLAG_PATTERN.test(arg);
 }
 
-/**
- * Validate args don't contain shell injection characters
- * More comprehensive check than simple regex
- */
 function validateArgs(args: string[]): {
   valid: boolean;
   problematic?: string;
@@ -152,12 +122,10 @@ function validateArgs(args: string[]): {
       };
     }
 
-    // Skip validation for safe CLI flags (e.g., -y, --rm, --port=8080)
     if (isSafeFlag(arg)) {
       continue;
     }
 
-    // Check against dangerous patterns
     for (const pattern of DANGEROUS_PATTERNS) {
       if (pattern.test(arg)) {
         return {
@@ -168,7 +136,6 @@ function validateArgs(args: string[]): {
       }
     }
 
-    // Check for excessively long arguments (potential buffer overflow)
     if (arg.length > 4096) {
       return {
         valid: false,
@@ -181,23 +148,18 @@ function validateArgs(args: string[]): {
   return { valid: true };
 }
 
-/**
- * Validate environment variable names and values
- */
 function validateEnvVars(env: Record<string, string>): {
   valid: boolean;
   problematic?: string;
   error?: string;
 } {
   if (!env || typeof env !== 'object') {
-    return { valid: true }; // Empty env is OK
+    return { valid: true };
   }
 
-  // Valid env var name pattern (POSIX: letters, digits, underscores, not starting with digit)
   const validNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
   for (const [name, value] of Object.entries(env)) {
-    // Validate name
     if (!validNamePattern.test(name)) {
       return {
         valid: false,
@@ -206,7 +168,6 @@ function validateEnvVars(env: Record<string, string>): {
       };
     }
 
-    // Validate value (no null bytes or control characters except tab/newline)
     if (typeof value !== 'string') {
       return {
         valid: false,
@@ -215,7 +176,6 @@ function validateEnvVars(env: Record<string, string>): {
       };
     }
 
-    // Check for dangerous control characters
     if (/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(value)) {
       return {
         valid: false,
@@ -224,7 +184,6 @@ function validateEnvVars(env: Record<string, string>): {
       };
     }
 
-    // Check for excessively long values
     if (value.length > 32768) {
       return {
         valid: false,
@@ -237,21 +196,15 @@ function validateEnvVars(env: Record<string, string>): {
   return { valid: true };
 }
 
-/**
- * Build MCP server config from registry entry
- * Validates command, args, and environment variables for security
- */
 function buildServerConfig(
   mcp: MCPRegistryEntry,
   envValues: Record<string, string>
 ): MCPServer {
-  // Validate command is in allowlist
   const cmdValidation = validateCommand(mcp.installConfig.command);
   if (!cmdValidation.valid) {
     throw new Error(cmdValidation.error || 'Invalid command');
   }
 
-  // Validate args don't contain shell injection
   const argsValidation = validateArgs(mcp.installConfig.args);
   if (!argsValidation.valid) {
     throw new Error(
@@ -260,13 +213,11 @@ function buildServerConfig(
     );
   }
 
-  // Merge install config env with user-provided values
   const allEnv: Record<string, string> = {
     ...(mcp.installConfig.env || {}),
     ...envValues,
   };
 
-  // Validate environment variables (both from registry and user input)
   const envValidation = validateEnvVars(allEnv);
   if (!envValidation.valid) {
     throw new Error(
@@ -287,9 +238,6 @@ function buildServerConfig(
   return config;
 }
 
-/**
- * Check if MCP already exists in config
- */
 function checkMCPExists(
   mcpId: string,
   client: MCPClient,
@@ -308,9 +256,6 @@ function checkMCPExists(
   return mcpId in config.mcpServers;
 }
 
-/**
- * Install external MCP to client config
- */
 function installExternalMCP(
   mcp: MCPRegistryEntry,
   client: MCPClient,
@@ -327,13 +272,10 @@ function installExternalMCP(
       ? customPath
       : getMCPConfigPath(client, customPath);
 
-  // Read existing config
   let config: MCPConfig = readMCPConfig(configPath) || { mcpServers: {} };
 
-  // Build server config
   const serverConfig = buildServerConfig(mcp, envValues);
 
-  // Add to config
   config = {
     ...config,
     mcpServers: {
@@ -342,7 +284,6 @@ function installExternalMCP(
     },
   };
 
-  // Write config
   const writeResult = writeMCPConfig(configPath, config);
 
   if (!writeResult.success) {
@@ -360,9 +301,6 @@ function installExternalMCP(
   };
 }
 
-/**
- * Press enter to continue helper
- */
 async function pressEnterToContinue(): Promise<void> {
   console.log();
   await input({
@@ -371,9 +309,6 @@ async function pressEnterToContinue(): Promise<void> {
   });
 }
 
-/**
- * Main flow for installing external MCPs
- */
 export async function runExternalMCPFlow(): Promise<void> {
   await loadInquirer();
 
@@ -393,11 +328,9 @@ export async function runExternalMCPFlow(): Promise<void> {
 
   while (currentStep !== 'done') {
     switch (currentStep) {
-      // Step 1: Select target client (IDE)
       case 'client': {
         const selection = await selectTargetClient();
         if (!selection) {
-          // Back to main menu
           return;
         }
         state.client = selection.client;
@@ -406,7 +339,6 @@ export async function runExternalMCPFlow(): Promise<void> {
         break;
       }
 
-      // Step 2: Select browse mode
       case 'browse': {
         const mode = await selectBrowseMode();
         if (mode === 'back' || mode === null) {
@@ -418,7 +350,6 @@ export async function runExternalMCPFlow(): Promise<void> {
         break;
       }
 
-      // Step 3: Select MCP based on browse mode
       case 'selectMCP': {
         let result: MCPRegistryEntry | 'back' | null = null;
 
@@ -438,6 +369,8 @@ export async function runExternalMCPFlow(): Promise<void> {
           case 'all':
             result = await selectAll();
             break;
+          default:
+            break;
         }
 
         if (result === 'back') {
@@ -446,7 +379,6 @@ export async function runExternalMCPFlow(): Promise<void> {
         }
 
         if (result === null) {
-          // No results or error, stay in browse mode
           currentStep = 'browse';
           break;
         }
@@ -456,7 +388,6 @@ export async function runExternalMCPFlow(): Promise<void> {
         break;
       }
 
-      // Step 4: Show MCP details
       case 'details': {
         const selectedMCP = assertDefined(
           state.selectedMCP,
@@ -492,7 +423,6 @@ export async function runExternalMCPFlow(): Promise<void> {
         break;
       }
 
-      // Step 5: Configure environment variables
       case 'envVars': {
         const selectedMCP = assertDefined(
           state.selectedMCP,
@@ -515,7 +445,6 @@ export async function runExternalMCPFlow(): Promise<void> {
         break;
       }
 
-      // Step 6: Confirm installation
       case 'confirm': {
         const selectedMCP = assertDefined(
           state.selectedMCP,
@@ -534,7 +463,6 @@ export async function runExternalMCPFlow(): Promise<void> {
             ? state.customPath
             : getMCPConfigPath(client, state.customPath);
 
-        // Check if MCP already exists
         const mcpExists = checkMCPExists(
           selectedMCP.id,
           client,
@@ -585,7 +513,6 @@ export async function runExternalMCPFlow(): Promise<void> {
             break;
           }
 
-          // 'update' continues to installation
           console.log();
           console.log(`  ${c('blue', '\u2192')} Updating MCP configuration...`);
         }
@@ -609,7 +536,6 @@ export async function runExternalMCPFlow(): Promise<void> {
         break;
       }
 
-      // Step 7: Perform installation
       case 'install': {
         const selectedMCP = assertDefined(
           state.selectedMCP,
@@ -646,6 +572,8 @@ export async function runExternalMCPFlow(): Promise<void> {
         currentStep = 'done';
         break;
       }
+      default:
+        break;
     }
   }
 }

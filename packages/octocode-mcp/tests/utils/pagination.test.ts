@@ -5,13 +5,15 @@
 import { describe, it, expect } from 'vitest';
 import {
   applyPagination,
+  serializeForPagination,
+  createPaginationInfo,
+} from '../../src/utils/pagination/core.js';
+import {
   generatePaginationHints,
   generateGitHubPaginationHints,
   generateStructurePaginationHints,
-  serializeForPagination,
-  createPaginationInfo,
-  type PaginationMetadata,
-} from '../../src/utils/pagination/index.js';
+} from '../../src/utils/pagination/hints.js';
+import type { PaginationMetadata } from '../../src/utils/pagination/types.js';
 // Internal function imported directly for testing
 import { sliceByCharRespectLines } from '../../src/utils/pagination/core.js';
 

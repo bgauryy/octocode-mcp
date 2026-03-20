@@ -32,17 +32,6 @@ import { handleBitbucketAPIError } from '../../bitbucket/errors.js';
 import { logRateLimit } from '../../session.js';
 import { PROVIDER_CAPABILITIES } from '../capabilities.js';
 
-export {
-  transformCodeSearchResult,
-  transformRepoSearchResult,
-} from './bitbucketSearch.js';
-export { parseBitbucketProjectId } from './utils.js';
-export { transformFileContentResult } from './bitbucketContent.js';
-export {
-  mapPRState,
-  transformPullRequestResult,
-} from './bitbucketPullRequests.js';
-
 export class BitbucketProvider implements ICodeHostProvider {
   readonly type = 'bitbucket' as const;
   readonly capabilities = PROVIDER_CAPABILITIES.bitbucket;

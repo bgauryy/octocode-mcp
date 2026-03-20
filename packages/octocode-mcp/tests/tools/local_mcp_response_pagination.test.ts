@@ -14,11 +14,11 @@ import {
   LocalViewStructureDataSchema,
   LocalViewStructureOutputSchema,
 } from '../../src/scheme/outputSchemas.js';
-import { registerLocalRipgrepTool } from '../../src/tools/local_ripgrep/index.js';
-import { registerLocalViewStructureTool } from '../../src/tools/local_view_structure/index.js';
-import { registerLocalFindFilesTool } from '../../src/tools/local_find_files/index.js';
-import { registerLocalFetchContentTool } from '../../src/tools/local_fetch_content/index.js';
-import { TOOL_NAMES } from '../../src/tools/toolMetadata/index.js';
+import { registerLocalRipgrepTool } from '../../src/tools/local_ripgrep/register.js';
+import { registerLocalViewStructureTool } from '../../src/tools/local_view_structure/register.js';
+import { registerLocalFindFilesTool } from '../../src/tools/local_find_files/register.js';
+import { registerLocalFetchContentTool } from '../../src/tools/local_fetch_content/register.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata/proxies.js';
 
 const mockSearchContentRipgrep = vi.hoisted(() => vi.fn());
 const mockViewStructure = vi.hoisted(() => vi.fn());

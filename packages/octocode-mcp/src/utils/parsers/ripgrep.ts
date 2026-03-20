@@ -7,8 +7,6 @@ import type {
 } from '../core/types.js';
 import { RipgrepJsonMessageSchema } from './schemas.js';
 
-// Ripgrep JSON types are now validated via Zod schemas in ./schemas.ts
-
 export function parseRipgrepJson(
   jsonOutput: string,
   query: RipgrepQuery
@@ -96,7 +94,7 @@ export function parseRipgrepJson(
         };
       }
     } catch {
-      // Skip malformed JSON lines
+      // Ripgrep JSON-RPC line was malformed; skip and continue streaming parse.
     }
   }
 
@@ -110,14 +108,11 @@ export function parseRipgrepJson(
     ([path, entry]) => {
       const matches: RipgrepMatch[] = entry.rawMatches.map(m => {
         const contextLines: string[] = [];
-        // prepend before-context
         for (let i = before; i > 0; i--) {
           const ctx = entry.contexts.get(m.lineNumber - i);
           if (ctx) contextLines.push(ctx);
         }
-        // current line
         contextLines.push(m.lineText);
-        // append after-context
         for (let i = 1; i <= after; i++) {
           const ctx = entry.contexts.get(m.lineNumber + i);
           if (ctx) contextLines.push(ctx);
@@ -166,10 +161,7 @@ export function parseGrepOutput(
 
   const fileMap = new Map<string, RawMatch[]>();
 
-  // Grep output format with -n -H: filename:lineNumber:content
-  // For files-only mode (-l): just filename
   if (query.filesOnly) {
-    // Each line is just a filename
     for (const line of lines) {
       const path = line.trim();
       if (path && !fileMap.has(path)) {
@@ -188,8 +180,6 @@ export function parseGrepOutput(
           fileMap.set(path, []);
         }
 
-        // Try to find the column (position of pattern in the line)
-        // For simplicity, we set column to 0 since grep doesn't provide it
         const fileMatches = fileMap.get(path);
         if (fileMatches) {
           fileMatches.push({
@@ -199,7 +189,6 @@ export function parseGrepOutput(
           });
         }
       } else if (line.includes(':')) {
-        // Fallback: try to parse as filename:content (no line number)
         const colonIdx = line.indexOf(':');
         const path = line.substring(0, colonIdx);
         const content = line.substring(colonIdx + 1);

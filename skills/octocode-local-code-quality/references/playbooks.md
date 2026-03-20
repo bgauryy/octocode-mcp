@@ -2,26 +2,13 @@
 
 Per-category guidance: which tools can help, what to check, and how to fix.
 
-All Octocode local tools are available — use whichever fits the finding:
+For available tools, see the Tools section in [SKILL.md](../SKILL.md). For security taint tracing, see [validate & investigate](./validate-investigate.md).
 
-| Tool | What it gives you |
-|------|------------------|
-| `localSearchCode` | Find patterns, get file + lineHint |
-| `localViewStructure` | Directory layout, project organization |
-| `localFindFiles` | Locate files by name, size, modification time |
-| `localGetFileContent` | Read file content at specific lines or with match strings |
-| `lspGotoDefinition` | Jump to symbol definition |
-| `lspFindReferences` | All usages of a symbol |
-| `lspCallHierarchy` | Incoming/outgoing call chains (functions only) |
-
-CLI scripts (`ast/search.js`, `ast/tree-search.js`, `scripts/index.js --scope`) complement these for broad structural search and re-scanning.
+CLI scripts (`ast/search.js`, `ast/tree-search.js`, `scripts/index.js --scope`) complement Octocode tools for broad structural search and re-scanning.
 
 Use `--graph-advanced` for SCC clusters, chokepoints, bridge modules, and package chatter. Use `--flow` for `cfgFlags`, `flowTrace`, and richer evidence.
 
----
-
 The playbook tables below show CLI and Octocode approaches per category. **These are suggestions, not rigid sequences** — pick the tools that answer the question fastest.
-| Confirm dead code | `ast-search -p 'import.*symbolName'` | `lspFindReferences` → 0 refs = confirmed dead |
 
 ---
 
@@ -95,10 +82,12 @@ The playbook tables below show CLI and Octocode approaches per category. **These
 |---------|-------------|----------------------|-----|
 | `dead-export` | `ast-search -p 'import { symbolName } from $MOD'` — 0 hits | `localSearchCode(export symbolName)` → `lspFindReferences(includeDeclaration=false)` — 0 refs | Remove export or delete symbol |
 | `dead-re-export` | `ast-search -p 'import { symbolName } from "barrelPath"'` — 0 hits | `localSearchCode(export.*from)` on barrel → `lspFindReferences` | Remove stale re-export |
+| `redundant-re-export` | Read barrel → `ast-search -p 'export { $SYM } from $MOD'` → check each for consumers | `lspFindReferences` on each re-exported symbol (from barrel, not source) → 0 consumer refs = redundant | Remove the re-export line. If source module also has 0 refs, flag for deletion. For `export *` with <50% consumed symbols, replace with explicit named exports |
 | `re-export-duplication` / `re-export-shadowed` | Read barrel file → check duplicate export names | `localSearchCode(export {)` in barrel | Keep one source-of-truth per name |
 | `unused-npm-dependency` | `ast-search -p 'import $$$N from "packageName"'` — 0 hits; also check `require("packageName")` | `localSearchCode(packageName)` — check build scripts | Remove the dependency via the project's package manager, verify build |
 | `package-boundary-violation` | Read finding → check if import goes through public API (index file) | `lspGotoDefinition` on cross-package import | Re-export from target index |
 | `barrel-explosion` | Count re-exports in barrel file; `--features=barrel-explosion` | `localGetFileContent(barrel file)` | Group into sub-barrels |
+| `redundant-comment` | `ast-search --rule '{"rule":{"kind":"comment"}}'` → filter for narrating patterns | `localSearchCode("// Import\|// Define\|// Return\|// Set \|// Get \|// Handle\|// Create\|// Initialize\|// Check \|// Update")` → review each hit | Delete comments that restate code. Keep comments explaining *why*, trade-offs, constraints, or non-obvious intent. Rule: if removing the comment loses zero information, remove it |
 
 ---
 
@@ -117,31 +106,7 @@ The playbook tables below show CLI and Octocode approaches per category. **These
 | `path-traversal-risk` | `--features=path-traversal-risk` → read finding for source params + sink kinds | `lspCallHierarchy(incoming)` on fs.readFile/path.resolve call → trace if path param comes from user input → check for `path.resolve` + `startsWith` + `realpathSync` guards | Add multi-layer validation: normalize → prefix check → realpath → re-validate |
 | `command-injection-risk` | `--features=command-injection-risk` → read finding for exec vs spawn distinction | `lspCallHierarchy(incoming)` on exec/spawn call → check if args come from user input → verify spawn uses array args (safe) vs exec with string interpolation (dangerous) | Replace exec with spawn + array args; use command allowlist; never interpolate user input into command strings |
 
-### Security Validation with Octocode
-
-For every security finding, validate before acting:
-
-| Step | Action | Tool |
-|------|--------|------|
-| 1. Locate | Find the flagged code | `localSearchCode(pattern)` → get lineHint |
-| 2. Trace origin | Check if user input reaches the sink | `lspCallHierarchy(incoming)` on the sink function |
-| 3. Check sanitizers | Look for validation between source and sink | `localSearchCode("validate\|sanitize\|guard")` in the call chain |
-| 4. Dismiss or confirm | False positive criteria below | Compare with dismissal rules |
-
-**False positive dismissal criteria:**
-- `prototype-pollution-risk`: key comes from `Object.keys()` on internal object, or target is `Object.create(null)` / `Map` / `Set` → dismiss
-- `hardcoded-secret`: value is inside a regex definition, is a UUID, placeholder (`YOUR_*`, `<key>`), or used only in tests → dismiss. Note: error messages and prose strings are now auto-filtered by the scanner, so common false positives like `"Invalid token format"` no longer appear.
-- `path-traversal-risk`: path goes through normalize + prefix check + realpath resolution → dismiss (or downgrade to info)
-- `command-injection-risk`: spawn uses array args without `shell: true` → downgrade to info
-
-### Agentic Security Awareness
-
-When scanning **agentic/MCP tool code**, apply additional scrutiny:
-
-1. **Prompt → path flow**: trace from user prompt / tool arguments → file path parameters → `fs.*` operations. Any path from user input MUST go through path validation (normalize → prefix check → realpath)
-2. **Prompt → command flow**: trace from user prompt / tool arguments → command strings → `exec`/`spawn` calls. Commands MUST use allowlists, not string interpolation
-3. **Tool argument schemas**: verify that tool argument schemas validate input types and ranges (e.g., numeric bounds, string length limits, enum constraints)
-4. **SSRF risk**: trace from user prompt / tool arguments → URL parameters → `fetch`/`http.request`. URLs from user input MUST be validated against allowlists
+For security taint tracing methodology, false positive dismissal criteria, and agentic security taint paths, see [validate & investigate](./validate-investigate.md).
 
 ---
 
@@ -197,3 +162,36 @@ When the scan reports a mega-folder finding (flat directory with many loosely re
 5. **Delete the migration script.** One-shot tool, not part of the codebase.
 
 Prefer this over manual file-by-file moves when a directory has 15+ files in clearly separable domains.
+
+---
+
+## Fix Validation Playbook
+
+After every fix batch, run the project's toolchain to catch regressions:
+
+| Step | Command | On Failure |
+|------|---------|------------|
+| 1. Lint (auto-fix) | `<pm> run lint --fix` (if supported) or `<pm> run lint` | Fix lint errors in changed code. Pre-existing errors: note but don't block |
+| 2. Tests | `<pm> run test` (scoped to package in monorepos) | Investigate immediately. If your fix broke it, revert or correct. Pre-existing: note and continue |
+| 3. Build | `<pm> run build` (scoped to package in monorepos) | Likely missing export or type error from your change — fix before continuing |
+
+**Detect lint auto-fix support**: check if the `lint` script wraps eslint (`--fix`), biome (`--write`), or oxlint (`--fix`). If uncertain, run without `--fix` first.
+
+**Monorepo scoping**: prefer `<pm> workspace <pkg> test` or `cd packages/<pkg> && <pm> run test` over root-level runs — faster feedback loop.
+
+---
+
+## TDD Fix Playbook
+
+For behavioral fixes (logic changes, bug fixes, refactors that change observable behavior):
+
+| Step | Action | Tool |
+|------|--------|------|
+| 1. Understand behavior | Read the code and its callers | `localGetFileContent`, `lspCallHierarchy(incoming)` |
+| 2. Write failing test | Add a test that describes the expected post-fix behavior | Manual edit in test file |
+| 3. Run test | Confirm it fails for the right reason | `<pm> run test -- <test-file>` |
+| 4. Apply fix | Make the minimal change | Edit source file |
+| 5. Run test | Confirm it passes | `<pm> run test -- <test-file>` |
+| 6. Run full suite | Confirm no regressions | `<pm> run test` |
+
+**Skip TDD for**: comment removal, dead re-export deletion, import path rewrites, formatting, any change where the test would just assert "file doesn't contain X" — those are validated by lint + build instead.

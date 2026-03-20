@@ -36,6 +36,3 @@ export function registerLSPGotoDefinitionTool(server: McpServer) {
     withBasicSecurityValidation(executeGotoDefinition, TOOL_NAME)
   );
 }
-
-// Re-export for testing
-export { addLineNumbers, isImportOrReExport } from './execution.js';

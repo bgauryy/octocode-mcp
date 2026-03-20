@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import { BASE_SCHEMA } from '../tools/toolMetadata/index.js';
+import { BASE_SCHEMA } from '../tools/toolMetadata/proxies.js';
 
 const QUERY_ID_DESCRIPTION =
   'Stable query identifier used to match each result to its input query. Required for every query. Use a short meaningful string like "react_hooks_search" or "router_prs".';

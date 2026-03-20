@@ -3,19 +3,19 @@ import {
   GrepCommandBuilder,
   getGrepFeatureWarnings,
 } from '../../commands/GrepCommandBuilder.js';
-import { safeExec } from '../../utils/exec/index.js';
-import { getLargeFileWorkflowHints } from '../../hints/index.js';
+import { safeExec } from '../../utils/exec/safe.js';
+import { getLargeFileWorkflowHints } from '../../hints/dynamic.js';
 import { validateRipgrepQuery, type RipgrepQuery } from './scheme.js';
 import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
-import { TOOL_NAMES } from '../toolMetadata/index.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import type { SearchContentResult } from '../../utils/core/types.js';
 import { promises as fs } from 'fs';
 import { join } from 'path';
-import { LOCAL_TOOL_ERROR_CODES } from '../../errorCodes.js';
+import { LOCAL_TOOL_ERROR_CODES } from '../../errors/localToolErrors.js';
 import { getHints } from '../../hints/index.js';
 import { parseRipgrepOutput } from './ripgrepParser.js';
 import { parseGrepOutputWrapper } from './ripgrepParser.js';
@@ -39,7 +39,6 @@ export async function executeRipgrepSearchInternal(
     ) as SearchContentResult;
   }
 
-  // Type guard: ensure path exists before validation
   if (!configuredQuery.path) {
     return createErrorResult(
       new Error('Path is required for search'),
@@ -59,7 +58,6 @@ export async function executeRipgrepSearchInternal(
     return pathValidation.errorResult as SearchContentResult;
   }
 
-  // Use sanitized path (includes tilde expansion) — avoid mutating input query
   const queryForExec = {
     ...configuredQuery,
     path: pathValidation.sanitizedPath!,
@@ -80,7 +78,6 @@ export async function executeRipgrepSearchInternal(
 
   const result = await safeExec(command, args);
 
-  // Check for timeout specifically
   if (result.stderr?.includes('timeout') || result.code === null) {
     const timeoutMs = RESOURCE_LIMITS.DEFAULT_EXEC_TIMEOUT_MS;
     return {
@@ -98,7 +95,6 @@ export async function executeRipgrepSearchInternal(
     } as SearchContentResult;
   }
 
-  // Check for empty results (exit code 1) or successful run with empty output
   if (result.code === 1 || (result.success && !result.stdout.trim())) {
     return {
       status: 'empty',
@@ -108,7 +104,6 @@ export async function executeRipgrepSearchInternal(
     };
   }
 
-  // Handle other errors (exit code > 1)
   if (!result.success) {
     return createErrorResult(
       new Error(`Ripgrep failed (exit code ${result.code}): ${result.stderr}`),
@@ -119,8 +114,6 @@ export async function executeRipgrepSearchInternal(
     ) as SearchContentResult;
   }
 
-  // Handle both JSON and plain text output modes
-  // filesOnly (-l) and filesWithoutMatch (--files-without-match) output plain text
   const parsed = parseRipgrepOutput(result.stdout, configuredQuery);
 
   return await buildSearchResult(
@@ -138,7 +131,6 @@ export async function executeRipgrepSearchInternal(
 export async function executeGrepSearch(
   configuredQuery: RipgrepQuery
 ): Promise<SearchContentResult> {
-  // Get warnings about unsupported grep features
   const grepWarnings = getGrepFeatureWarnings(configuredQuery);
   grepWarnings.unshift(
     'Using grep fallback (ripgrep not available). Some features may be limited.'
@@ -156,7 +148,6 @@ export async function executeGrepSearch(
     ) as SearchContentResult;
   }
 
-  // Type guard: ensure path exists before validation
   if (!configuredQuery.path) {
     return createErrorResult(
       new Error('Path is required for search'),
@@ -177,7 +168,6 @@ export async function executeGrepSearch(
     return pathValidation.errorResult as SearchContentResult;
   }
 
-  // Use sanitized path (includes tilde expansion) — avoid mutating input query
   const queryForExec = {
     ...configuredQuery,
     path: pathValidation.sanitizedPath!,
@@ -198,7 +188,6 @@ export async function executeGrepSearch(
 
   const result = await safeExec(command, args);
 
-  // Check for timeout
   if (result.stderr?.includes('timeout') || result.code === null) {
     const timeoutMs = RESOURCE_LIMITS.DEFAULT_EXEC_TIMEOUT_MS;
     return {
@@ -216,7 +205,6 @@ export async function executeGrepSearch(
     } as SearchContentResult;
   }
 
-  // grep returns exit code 1 when no matches found (not an error)
   if (result.code === 1 || (result.success && !result.stdout.trim())) {
     return {
       status: 'empty',
@@ -226,7 +214,6 @@ export async function executeGrepSearch(
     };
   }
 
-  // Handle errors (exit code > 1)
   if (!result.success) {
     return createErrorResult(
       new Error(`Grep failed (exit code ${result.code}): ${result.stderr}`),
@@ -237,7 +224,6 @@ export async function executeGrepSearch(
     ) as SearchContentResult;
   }
 
-  // Parse grep output
   const parsedFiles = parseGrepOutputWrapper(result.stdout, configuredQuery);
 
   return await buildSearchResult(parsedFiles, configuredQuery, 'grep', [
@@ -265,7 +251,7 @@ export async function estimateDirectoryStats(dirPath: string): Promise<{
           totalSize += stats.size;
           fileCount++;
         } catch {
-          // Skip inaccessible files
+          // stat failed for one entry; omit from size estimate.
         }
       } else if (entry.isDirectory() && !entry.name.startsWith('.')) {
         try {
@@ -277,7 +263,7 @@ export async function estimateDirectoryStats(dirPath: string): Promise<{
           totalSize +=
             subFiles.length * RESOURCE_LIMITS.ESTIMATED_AVG_FILE_SIZE_BYTES;
         } catch {
-          // Skip inaccessible directories
+          // Subdirectory read failed; omit from estimate.
         }
       }
     }

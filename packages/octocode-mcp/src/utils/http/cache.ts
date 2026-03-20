@@ -141,6 +141,7 @@ function safeCacheSet(key: string, value: unknown, ttl: number): boolean {
     cacheStats.totalKeys = cache.keys().length;
     return true;
   } catch {
+    // Initial set failed (e.g. ECACHEFULL); try evicting expired then retry once.
     try {
       const keys = cache.keys();
       for (const k of keys) {
@@ -151,6 +152,7 @@ function safeCacheSet(key: string, value: unknown, ttl: number): boolean {
       cacheStats.totalKeys = cache.keys().length;
       return true;
     } catch {
+      // Retry after eviction still failed; drop this cache entry.
       return false;
     }
   }
@@ -181,7 +183,7 @@ export async function withDataCache<T>(
         return cached;
       }
     } catch {
-      /* no-op */
+      // Cache get threw or returned unusable data; treat as miss and run the operation.
     }
   }
 

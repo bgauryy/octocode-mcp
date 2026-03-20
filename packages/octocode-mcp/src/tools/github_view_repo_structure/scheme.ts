@@ -3,10 +3,8 @@ import {
   BaseQuerySchema,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import {
-  GITHUB_VIEW_REPO_STRUCTURE,
-  TOOL_NAMES,
-} from '../toolMetadata/index.js';
+import { GITHUB_VIEW_REPO_STRUCTURE } from '../toolMetadata/githubSchemaHelpers.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import type { PaginationInfo } from '../../types.js';
 import type { DirectoryEntry } from './types.js';
 import type { ContentDirectoryEntry } from '../../github/githubAPI.js';
@@ -87,7 +85,6 @@ export const GitHubViewRepoStructureBulkQuerySchema = createBulkQuerySchema(
 
 /**
  * GitHub API file/directory item from content listing.
- * Re-exported from Octokit's OpenAPI types for proper type safety.
  * Schema: components['schemas']['content-directory'][number]
  */
 export type GitHubApiFileItem = ContentDirectoryEntry;

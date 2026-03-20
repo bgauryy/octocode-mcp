@@ -6,9 +6,9 @@ import {
   isCloneEnabled,
 } from '../serverConfig.js';
 import { ToolInvocationCallback } from '../types.js';
-import { isToolInMetadata } from './toolMetadata/index.js';
+import { isToolInMetadata } from './toolMetadata/proxies.js';
 import { logSessionError } from '../session.js';
-import { TOOL_METADATA_ERRORS } from '../errorCodes.js';
+import { TOOL_METADATA_ERRORS } from '../errors/domainErrors.js';
 
 /**
  * Register all tools from ALL_TOOLS (single source of truth in toolConfig.ts).

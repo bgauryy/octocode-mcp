@@ -32,6 +32,15 @@ vi.mock('../../src/tools/toolConfig.js', () => {
     },
   ];
 
+  const mockCloneTool = {
+    name: 'githubCloneRepo',
+    isDefault: true,
+    isLocal: true,
+    isClone: true,
+    skipMetadataCheck: true,
+    fn: vi.fn(),
+  };
+
   const mockLocalTools = [
     { name: 'localSearchCode', isDefault: true, isLocal: true, fn: vi.fn() },
     { name: 'localViewStructure', isDefault: true, isLocal: true, fn: vi.fn() },
@@ -44,15 +53,28 @@ vi.mock('../../src/tools/toolConfig.js', () => {
     },
   ];
 
+  const mockNonDefaultTool = {
+    name: 'experimentalDebugTool',
+    isDefault: false,
+    isLocal: false,
+    type: 'debug',
+    fn: vi.fn(),
+  };
+
   return {
-    ALL_TOOLS: [...mockGitHubTools, ...mockLocalTools],
+    ALL_TOOLS: [
+      ...mockGitHubTools,
+      mockCloneTool,
+      ...mockLocalTools,
+      mockNonDefaultTool,
+    ],
   };
 });
 
-vi.mock('../../src/tools/toolMetadata/index.js', async () => {
+vi.mock('../../src/tools/toolMetadata/proxies.js', async () => {
   const actual = await vi.importActual<
-    typeof import('../../src/tools/toolMetadata/index.js')
-  >('../../src/tools/toolMetadata/index.js');
+    typeof import('../../src/tools/toolMetadata/proxies.js')
+  >('../../src/tools/toolMetadata/proxies.js');
   return {
     ...actual,
     isToolInMetadata: vi.fn(),
@@ -90,7 +112,7 @@ import {
 import {
   TOOL_NAMES,
   isToolInMetadata,
-} from '../../src/tools/toolMetadata/index.js';
+} from '../../src/tools/toolMetadata/proxies.js';
 import { logSessionError } from '../../src/session.js';
 
 const mockGetServerConfig = vi.mocked(getServerConfig);
@@ -151,9 +173,11 @@ describe('ToolsManager', () => {
       expect(result.failedTools).toBeDefined();
       expect(Array.isArray(result.failedTools)).toBe(true);
 
-      // Verify GitHub tools were called
-      const githubTools = ALL_TOOLS.filter(t => !t.isLocal);
-      githubTools.forEach(tool => {
+      // Verify default GitHub tools were called
+      const defaultGithubTools = ALL_TOOLS.filter(
+        t => !t.isLocal && t.isDefault
+      );
+      defaultGithubTools.forEach(tool => {
         expect(tool.fn).toHaveBeenCalled();
       });
 
@@ -162,6 +186,10 @@ describe('ToolsManager', () => {
       localTools.forEach(tool => {
         expect(tool.fn).not.toHaveBeenCalled();
       });
+
+      // Verify non-default tools were NOT called
+      const nonDefaultTool = ALL_TOOLS.find(t => !t.isDefault && !t.isLocal);
+      expect(nonDefaultTool!.fn).not.toHaveBeenCalled();
     });
   });
 
@@ -347,6 +375,254 @@ describe('ToolsManager', () => {
     });
   });
 
+  describe('TOOLS_TO_RUN strict filtering guarantees', () => {
+    it('should register ONLY the single tool specified in TOOLS_TO_RUN (nothing else)', async () => {
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        toolsToRun: ['githubSearchCode'],
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: false,
+        enableClone: false,
+        disablePrompts: false,
+        outputFormat: 'yaml',
+        tokenSource: 'env:GITHUB_TOKEN',
+      });
+
+      const result = await registerTools(mockServer);
+
+      expect(result.successCount).toBe(1);
+      expect(result.failedTools).toHaveLength(0);
+
+      const calledTools = ALL_TOOLS.filter(
+        t => vi.mocked(t.fn).mock.calls.length > 0
+      );
+      expect(calledTools).toHaveLength(1);
+      expect(calledTools[0]!.name).toBe('githubSearchCode');
+    });
+
+    it('should select specific local tools via TOOLS_TO_RUN when ENABLE_LOCAL=true', async () => {
+      mockIsLocalEnabled.mockReturnValue(true);
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        toolsToRun: ['localSearchCode', 'localGetFileContent'],
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: true,
+        enableClone: false,
+        disablePrompts: false,
+        outputFormat: 'yaml',
+        tokenSource: 'env:GITHUB_TOKEN',
+      });
+
+      const result = await registerTools(mockServer);
+
+      expect(result.successCount).toBe(2);
+
+      const calledTools = ALL_TOOLS.filter(
+        t => vi.mocked(t.fn).mock.calls.length > 0
+      );
+      expect(calledTools).toHaveLength(2);
+      const calledNames = calledTools.map(t => t.name).sort();
+      expect(calledNames).toEqual(['localGetFileContent', 'localSearchCode']);
+
+      const viewStructure = ALL_TOOLS.find(
+        t => t.name === 'localViewStructure'
+      );
+      expect(viewStructure!.fn).not.toHaveBeenCalled();
+      const findFiles = ALL_TOOLS.find(t => t.name === 'localFindFiles');
+      expect(findFiles!.fn).not.toHaveBeenCalled();
+    });
+
+    it('should NOT register local tools from TOOLS_TO_RUN when ENABLE_LOCAL=false', async () => {
+      mockIsLocalEnabled.mockReturnValue(false);
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        toolsToRun: ['localSearchCode', 'githubSearchCode'],
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: false,
+        enableClone: false,
+        disablePrompts: false,
+        outputFormat: 'yaml',
+        tokenSource: 'env:GITHUB_TOKEN',
+      });
+
+      const result = await registerTools(mockServer);
+
+      expect(result.successCount).toBe(1);
+
+      const githubSearch = ALL_TOOLS.find(t => t.name === 'githubSearchCode');
+      expect(githubSearch!.fn).toHaveBeenCalled();
+
+      const localSearch = ALL_TOOLS.find(t => t.name === 'localSearchCode');
+      expect(localSearch!.fn).not.toHaveBeenCalled();
+    });
+
+    it('should NOT register clone tool from TOOLS_TO_RUN when ENABLE_CLONE=false', async () => {
+      mockIsLocalEnabled.mockReturnValue(true);
+      mockIsCloneEnabled.mockReturnValue(false);
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        toolsToRun: ['githubCloneRepo', 'githubSearchCode'],
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: true,
+        enableClone: false,
+        disablePrompts: false,
+        outputFormat: 'yaml',
+        tokenSource: 'env:GITHUB_TOKEN',
+      });
+
+      const result = await registerTools(mockServer);
+
+      expect(result.successCount).toBe(1);
+
+      const githubSearch = ALL_TOOLS.find(t => t.name === 'githubSearchCode');
+      expect(githubSearch!.fn).toHaveBeenCalled();
+
+      const cloneTool = ALL_TOOLS.find(t => t.name === 'githubCloneRepo');
+      expect(cloneTool!.fn).not.toHaveBeenCalled();
+    });
+
+    it('should register clone tool from TOOLS_TO_RUN when both ENABLE_LOCAL and ENABLE_CLONE are true', async () => {
+      mockIsLocalEnabled.mockReturnValue(true);
+      mockIsCloneEnabled.mockReturnValue(true);
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        toolsToRun: ['githubCloneRepo'],
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: true,
+        enableClone: true,
+        disablePrompts: false,
+        outputFormat: 'yaml',
+        tokenSource: 'env:GITHUB_TOKEN',
+      });
+
+      const result = await registerTools(mockServer);
+
+      expect(result.successCount).toBe(1);
+
+      const cloneTool = ALL_TOOLS.find(t => t.name === 'githubCloneRepo');
+      expect(cloneTool!.fn).toHaveBeenCalled();
+
+      const githubTools = ALL_TOOLS.filter(
+        t => !t.isLocal && t.name !== 'experimentalDebugTool'
+      );
+      githubTools.forEach(tool => {
+        expect(tool.fn).not.toHaveBeenCalled();
+      });
+    });
+
+    it('should enable a non-default tool via TOOLS_TO_RUN', async () => {
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        toolsToRun: ['experimentalDebugTool'],
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: false,
+        enableClone: false,
+        disablePrompts: false,
+        outputFormat: 'yaml',
+        tokenSource: 'env:GITHUB_TOKEN',
+      });
+
+      const result = await registerTools(mockServer);
+
+      expect(result.successCount).toBe(1);
+
+      const debugTool = ALL_TOOLS.find(t => t.name === 'experimentalDebugTool');
+      expect(debugTool!.fn).toHaveBeenCalled();
+
+      const defaultTools = ALL_TOOLS.filter(t => t.isDefault && !t.isLocal);
+      defaultTools.forEach(tool => {
+        expect(tool.fn).not.toHaveBeenCalled();
+      });
+    });
+
+    it('should treat empty TOOLS_TO_RUN array as not set (fall through to defaults)', async () => {
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        toolsToRun: [],
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: false,
+        enableClone: false,
+        disablePrompts: false,
+        outputFormat: 'yaml',
+        tokenSource: 'env:GITHUB_TOKEN',
+      });
+
+      const result = await registerTools(mockServer);
+
+      const defaultGithubTools = ALL_TOOLS.filter(
+        t => !t.isLocal && t.isDefault
+      );
+      expect(result.successCount).toBe(defaultGithubTools.length);
+
+      defaultGithubTools.forEach(tool => {
+        expect(tool.fn).toHaveBeenCalled();
+      });
+
+      const nonDefaultTool = ALL_TOOLS.find(
+        t => t.name === 'experimentalDebugTool'
+      );
+      expect(nonDefaultTool!.fn).not.toHaveBeenCalled();
+    });
+
+    it('should mix GitHub and local tools in TOOLS_TO_RUN with ENABLE_LOCAL=true', async () => {
+      mockIsLocalEnabled.mockReturnValue(true);
+      mockGetServerConfig.mockReturnValue({
+        version: '1.0.0',
+        githubApiUrl: 'https://api.github.com',
+        toolsToRun: ['githubSearchCode', 'localSearchCode', 'localFindFiles'],
+        timeout: 30000,
+        maxRetries: 3,
+        loggingEnabled: true,
+        enableLocal: true,
+        enableClone: false,
+        disablePrompts: false,
+        outputFormat: 'yaml',
+        tokenSource: 'env:GITHUB_TOKEN',
+      });
+
+      const result = await registerTools(mockServer);
+
+      expect(result.successCount).toBe(3);
+      expect(result.failedTools).toHaveLength(0);
+
+      const calledTools = ALL_TOOLS.filter(
+        t => vi.mocked(t.fn).mock.calls.length > 0
+      );
+      const calledNames = calledTools.map(t => t.name).sort();
+      expect(calledNames).toEqual([
+        'githubSearchCode',
+        'localFindFiles',
+        'localSearchCode',
+      ]);
+
+      const notCalled = ALL_TOOLS.filter(
+        t => vi.mocked(t.fn).mock.calls.length === 0
+      );
+      expect(notCalled.length).toBe(ALL_TOOLS.length - 3);
+    });
+  });
+
   describe('ENABLE_TOOLS/DISABLE_TOOLS Configuration (without TOOLS_TO_RUN)', () => {
     it('should register all default tools with ENABLE_TOOLS (no-op for already default tools)', async () => {
       mockGetServerConfig.mockReturnValue({
@@ -369,9 +645,11 @@ describe('ToolsManager', () => {
       expect(result.successCount).toBeGreaterThanOrEqual(0);
       expect(Array.isArray(result.failedTools)).toBe(true);
 
-      // Verify all GitHub tools were called
-      const githubTools = ALL_TOOLS.filter(t => !t.isLocal);
-      githubTools.forEach(tool => {
+      // Verify all default GitHub tools were called
+      const defaultGithubTools = ALL_TOOLS.filter(
+        t => !t.isLocal && t.isDefault
+      );
+      defaultGithubTools.forEach(tool => {
         expect(tool.fn).toHaveBeenCalled();
       });
     });
@@ -537,14 +815,21 @@ describe('ToolsManager', () => {
 
       const result = await registerTools(mockServer);
 
-      // Should register both GitHub and local tools (5 GitHub + 4 local = 9)
-      expect(result.successCount).toBeGreaterThanOrEqual(4);
+      // Should register default GitHub + local tools (clone excluded: ENABLE_CLONE=false)
+      const expectedCount = ALL_TOOLS.filter(
+        t => t.isDefault && !t.isClone
+      ).length;
+      expect(result.successCount).toBe(expectedCount);
 
-      // Verify local tools were called
-      const localTools = ALL_TOOLS.filter(t => t.isLocal);
+      // Verify non-clone local tools were called
+      const localTools = ALL_TOOLS.filter(t => t.isLocal && !t.isClone);
       localTools.forEach(tool => {
         expect(tool.fn).toHaveBeenCalled();
       });
+
+      // Clone tool should NOT be called (ENABLE_CLONE=false)
+      const cloneTool = ALL_TOOLS.find(t => t.isClone);
+      expect(cloneTool!.fn).not.toHaveBeenCalled();
     });
 
     it('should not register local tools when ENABLE_LOCAL is not set', async () => {
@@ -763,7 +1048,7 @@ describe('ToolsManager', () => {
   });
 
   describe('Unified tool registration (ALL_TOOLS)', () => {
-    it('should register all tools from ALL_TOOLS when ENABLE_LOCAL is true', async () => {
+    it('should register all default tools from ALL_TOOLS when ENABLE_LOCAL is true (excluding clone and non-default)', async () => {
       mockIsLocalEnabled.mockReturnValue(true);
       mockIsToolAvailableSync.mockReturnValue(true);
       mockGetServerConfig.mockReturnValue({
@@ -781,13 +1066,19 @@ describe('ToolsManager', () => {
 
       const result = await registerTools(mockServer);
 
-      // Should register all tools (GitHub + local)
-      expect(result.successCount).toBe(ALL_TOOLS.length);
+      // Clone tool blocked (ENABLE_CLONE=false), non-default tool skipped
+      const expectedCount = ALL_TOOLS.filter(
+        t => t.isDefault && !t.isClone
+      ).length;
+      expect(result.successCount).toBe(expectedCount);
       expect(result.failedTools).toHaveLength(0);
 
-      // Verify all tools were called
       ALL_TOOLS.forEach(tool => {
-        expect(tool.fn).toHaveBeenCalled();
+        if (tool.isDefault && !tool.isClone) {
+          expect(tool.fn).toHaveBeenCalled();
+        } else {
+          expect(tool.fn).not.toHaveBeenCalled();
+        }
       });
     });
 
@@ -809,16 +1100,17 @@ describe('ToolsManager', () => {
 
       const result = await registerTools(mockServer);
 
-      // Should only register GitHub tools
-      const githubToolCount = ALL_TOOLS.filter(t => !t.isLocal).length;
-      expect(result.successCount).toBe(githubToolCount);
+      // Only default non-local tools registered
+      const defaultGithubCount = ALL_TOOLS.filter(
+        t => !t.isLocal && t.isDefault
+      ).length;
+      expect(result.successCount).toBe(defaultGithubCount);
 
-      // Verify only GitHub tools were called
       ALL_TOOLS.forEach(tool => {
-        if (tool.isLocal) {
-          expect(tool.fn).not.toHaveBeenCalled();
-        } else {
+        if (!tool.isLocal && tool.isDefault) {
           expect(tool.fn).toHaveBeenCalled();
+        } else {
+          expect(tool.fn).not.toHaveBeenCalled();
         }
       });
     });

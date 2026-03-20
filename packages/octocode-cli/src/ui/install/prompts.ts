@@ -1,7 +1,3 @@
-/**
- * Install Prompt Components
- */
-
 import type { MCPClient } from '../../types/index.js';
 import { c, dim, bold } from '../../utils/colors.js';
 import { select, Separator, input } from '../../utils/prompts.js';
@@ -17,19 +13,12 @@ import {
 import { dirExists } from '../../utils/fs.js';
 import path from 'node:path';
 
-// ============================================================================
-// MCP Client Selection (New)
-// ============================================================================
-
 interface ClientChoice {
   name: string;
   value: MCPClient | 'back' | 'install-new';
   disabled?: boolean | string;
 }
 
-/**
- * Build status indicator for a client
- */
 function getClientStatusIndicator(status: ClientInstallStatus): string {
   if (status.octocodeInstalled) {
     return c('green', '✓ Installed');
@@ -43,9 +32,6 @@ function getClientStatusIndicator(status: ClientInstallStatus): string {
   return c('dim', '○ Not found');
 }
 
-/**
- * Get list of all clients with their install status
- */
 function getAllClientsWithStatus(): Array<{
   clientId: MCPClient;
   status: ClientInstallStatus;
@@ -72,12 +58,6 @@ function getAllClientsWithStatus(): Array<{
   }));
 }
 
-/**
- * Select MCP client prompt with smart detection and status indicators
- * Provides intuitive UX:
- * - If no octocode configs exist: Shows message and option to install or go back
- * - If configs exist: Shows only installed clients for editing, plus option to install new
- */
 export async function selectMCPClient(): Promise<{
   client: MCPClient;
   customPath?: string;
@@ -85,18 +65,15 @@ export async function selectMCPClient(): Promise<{
   const currentClient = detectCurrentClient();
   const allClients = getAllClientsWithStatus();
 
-  // Find clients with octocode installed
   const installedClients = allClients.filter(c => c.status.octocodeInstalled);
   const availableClients = allClients.filter(
     c => c.isAvailable && !c.status.octocodeInstalled
   );
 
-  // If NO octocode configurations found
   if (installedClients.length === 0) {
     return await promptNoConfigurationsFound(availableClients, currentClient);
   }
 
-  // If configurations exist, show installed clients for editing
   return await promptExistingConfigurations(
     installedClients,
     availableClients,
@@ -104,9 +81,6 @@ export async function selectMCPClient(): Promise<{
   );
 }
 
-/**
- * Show prompt when no octocode configurations are found
- */
 async function promptNoConfigurationsFound(
   availableClients: Array<{
     clientId: MCPClient;
@@ -170,17 +144,14 @@ async function promptNoConfigurationsFound(
     return null;
   }
 
-  // Show available clients for fresh installation
   const choices: ClientChoice[] = [];
 
   for (const { clientId, status } of availableClients) {
     const client = MCP_CLIENTS[clientId];
     let name = `${client.name} - ${dim(client.description)}`;
 
-    // Add status indicator
     name += ` ${getClientStatusIndicator(status)}`;
 
-    // Highlight current environment
     if (currentClient === clientId) {
       name = `${c('green', '★')} ${name} ${c('yellow', '(Current)')}`;
     }
@@ -191,14 +162,12 @@ async function promptNoConfigurationsFound(
     });
   }
 
-  // Sort: current first
   choices.sort((a, b) => {
     if (currentClient === a.value) return -1;
     if (currentClient === b.value) return 1;
     return 0;
   });
 
-  // Add separator and options
   choices.push(new Separator() as unknown as ClientChoice);
   choices.push({
     name: `${c('cyan', '⚙')} Custom Path - ${dim('Specify your own MCP config path')}`,
@@ -227,9 +196,6 @@ async function promptNoConfigurationsFound(
   return { client: selected };
 }
 
-/**
- * Show prompt when octocode configurations exist - for viewing/editing
- */
 async function promptExistingConfigurations(
   installedClients: Array<{
     clientId: MCPClient;
@@ -251,12 +217,10 @@ async function promptExistingConfigurations(
 
   const choices: ClientChoice[] = [];
 
-  // Show installed clients first (for editing)
   for (const { clientId } of installedClients) {
     const client = MCP_CLIENTS[clientId];
     let name = `${c('green', '✓')} ${client.name} - ${dim('View/Edit configuration')}`;
 
-    // Highlight current environment
     if (currentClient === clientId) {
       name += ` ${c('yellow', '(Current)')}`;
     }
@@ -267,14 +231,12 @@ async function promptExistingConfigurations(
     });
   }
 
-  // Sort installed: current first
   choices.sort((a, b) => {
     if (currentClient === a.value) return -1;
     if (currentClient === b.value) return 1;
     return 0;
   });
 
-  // Add option to install to new client if there are available clients
   if (availableClients.length > 0) {
     choices.push(new Separator() as unknown as ClientChoice);
     choices.push({
@@ -283,7 +245,6 @@ async function promptExistingConfigurations(
     });
   }
 
-  // Add custom and back options
   choices.push(new Separator() as unknown as ClientChoice);
   choices.push({
     name: `${c('cyan', '⚙')} Custom Path - ${dim('Specify your own MCP config path')}`,
@@ -306,7 +267,6 @@ async function promptExistingConfigurations(
 
   if (selected === 'back') return null;
 
-  // If user wants to install to a new client
   if (selected === 'install-new') {
     return await promptInstallToNewClient(availableClients, currentClient);
   }
@@ -320,9 +280,6 @@ async function promptExistingConfigurations(
   return { client: selected };
 }
 
-/**
- * Show prompt for installing to a new client (when user already has some configs)
- */
 async function promptInstallToNewClient(
   availableClients: Array<{
     clientId: MCPClient;
@@ -341,10 +298,8 @@ async function promptInstallToNewClient(
     const client = MCP_CLIENTS[clientId];
     let name = `${client.name} - ${dim(client.description)}`;
 
-    // Add status indicator
     name += ` ${getClientStatusIndicator(status)}`;
 
-    // Highlight current environment
     if (currentClient === clientId) {
       name = `${c('green', '★')} ${name} ${c('yellow', '(Current)')}`;
     }
@@ -355,14 +310,12 @@ async function promptInstallToNewClient(
     });
   }
 
-  // Sort: current first
   choices.sort((a, b) => {
     if (currentClient === a.value) return -1;
     if (currentClient === b.value) return 1;
     return 0;
   });
 
-  // Add back option
   choices.push(new Separator() as unknown as ClientChoice);
   choices.push({
     name: `${c('dim', '← Back to configurations')}`,
@@ -376,7 +329,6 @@ async function promptInstallToNewClient(
   });
 
   if (selected === 'back') {
-    // Go back to existing configurations menu
     const allClients = getAllClientsWithStatus();
     const installedClients = allClients.filter(c => c.status.octocodeInstalled);
     return await promptExistingConfigurations(
@@ -389,9 +341,6 @@ async function promptInstallToNewClient(
   return { client: selected };
 }
 
-/**
- * Expand ~ to home directory in paths
- */
 function expandPath(inputPath: string): string {
   if (inputPath.startsWith('~')) {
     return path.join(process.env.HOME || '', inputPath.slice(1));
@@ -399,9 +348,6 @@ function expandPath(inputPath: string): string {
   return inputPath;
 }
 
-/**
- * Prompt for custom MCP config path with validation
- */
 async function promptCustomPath(): Promise<string | null> {
   console.log();
   console.log(
@@ -435,24 +381,20 @@ async function promptCustomPath(): Promise<string | null> {
   const customPath = await input({
     message: 'MCP config path (or press Enter to go back):',
     validate: (value: string) => {
-      // Allow empty to go back
       if (!value.trim()) {
         return true;
       }
 
       const expandedPath = expandPath(value);
 
-      // Check if it's a JSON file
       if (!expandedPath.endsWith('.json')) {
         return 'Path must be a .json file (e.g., mcp.json, config.json)';
       }
 
-      // Check if path is absolute (after expansion)
       if (!path.isAbsolute(expandedPath)) {
         return 'Please provide an absolute path (starting with / or ~)';
       }
 
-      // Check if parent directory exists
       const parentDir = path.dirname(expandedPath);
       if (!dirExists(parentDir)) {
         return `Parent directory does not exist: ${parentDir}\nCreate it first or choose a different location.`;
@@ -462,22 +404,13 @@ async function promptCustomPath(): Promise<string | null> {
     },
   });
 
-  // Empty input means go back
   if (!customPath || !customPath.trim()) return null;
 
   return expandPath(customPath);
 }
 
-// ============================================================================
-// Environment Configuration Prompts
-// ============================================================================
-
 type LocalToolsChoice = 'enable' | 'disable' | 'back';
 
-/**
- * Prompt for local tools enablement
- * Returns: true (enable), false (disable), or null (back)
- */
 export async function promptLocalTools(): Promise<boolean | null> {
   console.log();
   console.log(`  ${c('blue', 'ℹ')} ${bold('Local Tools')}`);
@@ -513,10 +446,6 @@ export async function promptLocalTools(): Promise<boolean | null> {
 
 type GitHubAuthMethod = 'gh-cli' | 'token' | 'skip' | 'back';
 
-/**
- * Prompt for GitHub authentication method
- * Returns null if user chooses to go back
- */
 export async function promptGitHubAuth(): Promise<{
   method: Exclude<GitHubAuthMethod, 'back'>;
   token?: string;
@@ -574,7 +503,6 @@ export async function promptGitHubAuth(): Promise<{
     const token = await input({
       message: 'Enter your GitHub personal access token:',
       validate: (value: string) => {
-        // Allow empty to go back
         if (!value.trim()) {
           return true;
         }
@@ -585,7 +513,6 @@ export async function promptGitHubAuth(): Promise<{
       },
     });
 
-    // Empty input means go back
     if (!token || !token.trim()) {
       return null;
     }

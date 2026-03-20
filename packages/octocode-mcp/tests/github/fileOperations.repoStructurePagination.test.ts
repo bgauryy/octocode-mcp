@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { viewGitHubRepositoryStructureAPI } from '../../src/github/fileOperations.js';
+import { viewGitHubRepositoryStructureAPI } from '../../src/github/repoStructure.js';
 import { getOctokit } from '../../src/github/client.js';
 import { clearAllCache } from '../../src/utils/http/cache.js';
 import { GITHUB_STRUCTURE_DEFAULTS } from '../../src/tools/github_view_repo_structure/constants.js';

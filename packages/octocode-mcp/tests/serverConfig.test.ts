@@ -1164,11 +1164,11 @@ describe('ServerConfig - Simplified Version', () => {
   });
 
   describe('GitLab Configuration Fresh Resolution (Issue #1 & #2)', () => {
-    let getGitLabConfig: typeof import('../src/serverConfig.js').getGitLabConfig;
+    let getGitLabConfig: typeof import('../src/gitlabConfig.js').getGitLabConfig;
 
     beforeEach(async () => {
-      const serverConfig = await import('../src/serverConfig.js');
-      getGitLabConfig = serverConfig.getGitLabConfig;
+      const gitlabConfig = await import('../src/gitlabConfig.js');
+      getGitLabConfig = gitlabConfig.getGitLabConfig;
       // Clear any cached state
       delete process.env.GITLAB_TOKEN;
       delete process.env.GL_TOKEN;

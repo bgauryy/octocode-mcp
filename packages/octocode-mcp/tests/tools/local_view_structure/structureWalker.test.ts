@@ -114,15 +114,26 @@ describe('walkDirectory - WalkStats error tracking', () => {
     readdirSpy.mockRestore();
   });
 
-  it('should work without stats param (backward compat)', async () => {
+  it('should list files when stats tracks skips', async () => {
     await fs.promises.writeFile(path.join(tmpDir, 'file.txt'), 'content');
 
     const entries: DirectoryEntry[] = [];
+    const stats: WalkStats = { skipped: 0 };
 
-    // No stats param — should not throw
-    await walkDirectory(tmpDir, tmpDir, 0, 1, entries, 100, false, false);
+    await walkDirectory(
+      tmpDir,
+      tmpDir,
+      0,
+      1,
+      entries,
+      100,
+      false,
+      false,
+      stats
+    );
 
     expect(entries.length).toBe(1);
+    expect(stats.skipped).toBe(0);
   });
 
   it('should collect non-error entries alongside errors', async () => {

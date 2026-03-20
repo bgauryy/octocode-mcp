@@ -1,7 +1,3 @@
-/**
- * Install Flow - Main installation orchestration
- */
-
 import { c, bold, dim } from '../../utils/colors.js';
 import { loadInquirer, select, Separator } from '../../utils/prompts.js';
 import { Spinner } from '../../utils/spinner.js';
@@ -29,9 +25,6 @@ import type { MCPClient } from '../../types/index.js';
 
 type FinalChoice = 'proceed' | 'back' | 'cancel';
 
-/**
- * Installation flow steps
- */
 type InstallStep =
   | 'client'
   | 'updateConfirm'
@@ -41,9 +34,6 @@ type InstallStep =
   | 'install'
   | 'done';
 
-/**
- * State for the install flow
- */
 interface InstallFlowState {
   client: MCPClient | null;
   customPath?: string;
@@ -52,20 +42,15 @@ interface InstallFlowState {
   githubAuth: { method: 'gh-cli' | 'token' | 'skip'; token?: string };
 }
 
-/**
- * Run the interactive install flow with back navigation support
- */
 export async function runInstallFlow(): Promise<void> {
   await loadInquirer();
 
-  // Configure MCP section
   console.log();
   console.log(c('blue', '━'.repeat(66)));
   console.log(`  📦 ${bold('Configure MCP server for your environment')}`);
   console.log(c('blue', '━'.repeat(66)));
   console.log();
 
-  // Initialize state
   const state: InstallFlowState = {
     client: null,
     hasExistingOctocode: false,
@@ -75,19 +60,16 @@ export async function runInstallFlow(): Promise<void> {
 
   let currentStep: InstallStep = 'client';
 
-  // Step-based flow with back navigation
   while (currentStep !== 'done') {
     switch (currentStep) {
       case 'client': {
         const selection = await selectMCPClient();
         if (!selection) {
-          // User chose back from client selection - exit flow
           return;
         }
         state.client = selection.client;
         state.customPath = selection.customPath;
 
-        // Check for existing octocode configuration
         const configPath = state.customPath || getMCPConfigPath(state.client);
         const existingConfig = readMCPConfig(configPath);
         state.hasExistingOctocode = !!existingConfig?.mcpServers?.octocode;
@@ -150,7 +132,6 @@ export async function runInstallFlow(): Promise<void> {
       case 'localTools': {
         const enableLocal = await promptLocalTools();
         if (enableLocal === null) {
-          // User chose back
           currentStep = state.hasExistingOctocode ? 'updateConfirm' : 'client';
         } else {
           state.enableLocal = enableLocal;
@@ -162,7 +143,6 @@ export async function runInstallFlow(): Promise<void> {
       case 'githubAuth': {
         const githubAuth = await promptGitHubAuth();
         if (githubAuth === null) {
-          // User chose back
           currentStep = 'localTools';
         } else {
           state.githubAuth = githubAuth;
@@ -178,7 +158,6 @@ export async function runInstallFlow(): Promise<void> {
         } else if (shouldProceed === 'back') {
           currentStep = 'githubAuth';
         } else {
-          // cancel
           console.log(`  ${dim('Configuration cancelled.')}`);
           return;
         }
@@ -190,22 +169,19 @@ export async function runInstallFlow(): Promise<void> {
         currentStep = 'done';
         break;
       }
+      default:
+        break;
     }
   }
 }
 
-/**
- * Show confirmation preview and prompt for final decision
- */
 async function showConfirmationAndPrompt(
   state: InstallFlowState
 ): Promise<FinalChoice> {
   const clientInfo = MCP_CLIENTS[state.client! as keyof typeof MCP_CLIENTS];
-  // Interactive flow uses NPX (recommended method)
-  // For 'direct' method, use CLI: octocode install --ide <id> --method direct
+
   const method = 'npx' as const;
 
-  // Build environment options
   const envOptions: OctocodeEnvOptions = {};
   if (state.enableLocal) {
     envOptions.enableLocal = true;
@@ -214,7 +190,6 @@ async function showConfirmationAndPrompt(
     envOptions.githubToken = state.githubAuth.token;
   }
 
-  // Get install preview
   const preview = getInstallPreviewForClient(
     state.client!,
     method,
@@ -222,7 +197,6 @@ async function showConfirmationAndPrompt(
     envOptions
   );
 
-  // Show action info
   console.log();
   if (state.hasExistingOctocode) {
     console.log(
@@ -238,7 +212,6 @@ async function showConfirmationAndPrompt(
     );
   }
 
-  // Show configuration preview
   console.log();
   console.log(c('blue', '  ┌' + '─'.repeat(60) + '┐'));
   console.log(
@@ -250,7 +223,6 @@ async function showConfirmationAndPrompt(
   console.log(c('blue', '  └' + '─'.repeat(60) + '┘'));
   printConfigPreview(preview.serverConfig);
 
-  // Final summary
   console.log();
   console.log(`  ${bold('Summary:')}`);
   console.log(`    ${dim('Client:')}       ${clientInfo.name}`);
@@ -282,7 +254,6 @@ async function showConfirmationAndPrompt(
   console.log(`    ${dim('Action:')}       ${actionStatus}`);
   console.log();
 
-  // Security reminder
   console.log(`  ${c('yellow', '⚠')} ${bold('Note:')}`);
   console.log(
     `  ${dim('Nothing is saved to any server. Configuration is stored locally at:')}`
@@ -290,7 +261,6 @@ async function showConfirmationAndPrompt(
   console.log(`  ${c('cyan', preview.configPath)}`);
   console.log();
 
-  // Final confirmation with back option
   const choice = await select<FinalChoice>({
     message: 'What would you like to do?',
     choices: [
@@ -314,13 +284,9 @@ async function showConfirmationAndPrompt(
   return choice;
 }
 
-/**
- * Perform the actual installation
- */
 async function performInstall(state: InstallFlowState): Promise<void> {
   const method = 'npx' as const;
 
-  // Build environment options
   const envOptions: OctocodeEnvOptions = {};
   if (state.enableLocal) {
     envOptions.enableLocal = true;
@@ -336,9 +302,8 @@ async function performInstall(state: InstallFlowState): Promise<void> {
     envOptions
   );
 
-  // Install
   const spinner = new Spinner('Configuring octocode-mcp...').start();
-  await new Promise(resolve => setTimeout(resolve, 500)); // Brief pause for UX
+  await new Promise(resolve => setTimeout(resolve, 500));
 
   const result = installOctocodeForClient({
     client: state.client!,
@@ -357,9 +322,6 @@ async function performInstall(state: InstallFlowState): Promise<void> {
   }
 }
 
-/**
- * Print success message for client installation
- */
 function printInstallSuccessForClient(
   result: { configPath: string; backupPath?: string },
   client: string,
@@ -377,7 +339,6 @@ function printInstallSuccessForClient(
   console.log(c('green', '  └' + '─'.repeat(60) + '┘'));
   console.log();
 
-  // Show where config was saved prominently
   console.log(`  ${bold('Configuration saved to:')}`);
   console.log(`  ${c('cyan', configPath)}`);
   console.log();

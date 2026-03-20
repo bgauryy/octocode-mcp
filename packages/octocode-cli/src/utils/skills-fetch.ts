@@ -1,8 +1,3 @@
-/**
- * Skills Fetch Utilities
- * Fetch skills from GitHub marketplace repositories and local bundled sources
- */
-
 import type {
   MarketplaceSource,
   MarketplaceSkill,
@@ -19,30 +14,21 @@ import { join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { mkdirSync, statSync, readdirSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import { getSkillsSourcePath, getAvailableSkills } from './skills.js';
+import { parseSkillFrontmatter } from './parsers/frontmatter.js';
 
-// ============================================================================
-// Cache Configuration
-// ============================================================================
-
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 interface CachedSkillsData {
   timestamp: number;
   skills: MarketplaceSkill[];
 }
 
-/**
- * Get the cache directory for skills
- * Uses npm cache location or falls back to ~/.cache/octocode
- */
 function getCacheDir(): string {
   const home = os.homedir();
 
-  // Try npm cache location first
   const npmCacheDir = process.env.npm_config_cache || join(home, '.npm');
   const npmOctocodeCache = join(npmCacheDir, '_cacache', 'octocode-skills');
 
-  // Fallback to standard cache location
   const isWindows = os.platform() === 'win32';
   const fallbackCache = isWindows
     ? join(
@@ -53,7 +39,6 @@ function getCacheDir(): string {
       )
     : join(home, '.cache', 'octocode', 'skills');
 
-  // Prefer npm cache if parent exists, otherwise use fallback
   if (dirExists(npmCacheDir)) {
     return npmOctocodeCache;
   }
@@ -61,9 +46,6 @@ function getCacheDir(): string {
   return fallbackCache;
 }
 
-/**
- * Ensure cache directory exists
- */
 function ensureCacheDir(): string {
   const cacheDir = getCacheDir();
   if (!dirExists(cacheDir)) {
@@ -84,17 +66,11 @@ function isPathInside(baseDir: string, targetPath: string): boolean {
   );
 }
 
-/**
- * Get cache file path for a marketplace source
- */
 function getCacheFilePath(source: MarketplaceSource): string {
   const cacheDir = ensureCacheDir();
   return join(cacheDir, `${source.id}.json`);
 }
 
-/**
- * Check if cached data is still valid (less than 24 hours old)
- */
 function isCacheValid(cacheFile: string): boolean {
   try {
     if (!fileExists(cacheFile)) {
@@ -109,9 +85,6 @@ function isCacheValid(cacheFile: string): boolean {
   }
 }
 
-/**
- * Read cached skills data
- */
 function readCachedSkills(
   source: MarketplaceSource
 ): MarketplaceSkill[] | null {
@@ -129,12 +102,10 @@ function readCachedSkills(
 
     const data = JSON.parse(content) as CachedSkillsData;
 
-    // Double-check timestamp in data
     if (Date.now() - data.timestamp > CACHE_TTL_MS) {
       return null;
     }
 
-    // Restore source reference (not serialized)
     return data.skills.map(skill => ({
       ...skill,
       source,
@@ -144,9 +115,6 @@ function readCachedSkills(
   }
 }
 
-/**
- * Write skills data to cache
- */
 function writeCachedSkills(
   source: MarketplaceSource,
   skills: MarketplaceSkill[]
@@ -154,7 +122,6 @@ function writeCachedSkills(
   try {
     const cacheFile = getCacheFilePath(source);
 
-    // Remove source from skills before caching (circular reference)
     const skillsToCache = skills.map(({ source: _, ...rest }) => rest);
 
     const data: CachedSkillsData = {
@@ -164,13 +131,10 @@ function writeCachedSkills(
 
     writeFileContent(cacheFile, JSON.stringify(data, null, 2));
   } catch {
-    // Silently fail cache write - not critical
+    void 0;
   }
 }
 
-/**
- * GitHub API response for directory listing
- */
 interface GitHubTreeItem {
   path: string;
   mode: string;
@@ -187,34 +151,7 @@ interface GitHubTreeResponse {
   truncated: boolean;
 }
 
-/**
- * Parse YAML frontmatter from markdown content
- */
-function parseFrontmatter(
-  content: string
-): { description: string; category?: string } | null {
-  const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
-  if (!match) return null;
-
-  const frontmatter = match[1];
-  const descMatch = frontmatter.match(/^description:\s*(.+)$/m);
-  const catMatch = frontmatter.match(/^category:\s*(.+)$/m);
-
-  if (!descMatch) return null;
-
-  return {
-    description: descMatch[1].trim(),
-    category: catMatch?.[1].trim(),
-  };
-}
-
-/**
- * Format skill name from filename or folder name
- * e.g., "code-review.md" -> "Code Review"
- * e.g., "pr-review" -> "PR Review"
- */
 function formatSkillName(name: string): string {
-  // Common acronyms that should be fully uppercase
   const acronyms = ['PR', 'API', 'UI', 'CLI', 'MCP', 'AI'];
 
   return name
@@ -226,14 +163,6 @@ function formatSkillName(name: string): string {
     );
 }
 
-// ============================================================================
-// Local Skills Fetching
-// ============================================================================
-
-/**
- * Fetch skills from local bundled source
- * Reads directly from the skills directory bundled with the CLI
- */
 function fetchLocalSkills(source: MarketplaceSource): MarketplaceSkill[] {
   try {
     const skillsSourcePath = getSkillsSourcePath();
@@ -247,7 +176,7 @@ function fetchLocalSkills(source: MarketplaceSource): MarketplaceSkill[] {
       if (fileExists(skillMdPath)) {
         const content = readFileContent(skillMdPath);
         if (content) {
-          const meta = parseFrontmatter(content);
+          const meta = parseSkillFrontmatter(content);
           skills.push({
             name: skillFolder,
             displayName: formatSkillName(skillFolder),
@@ -269,9 +198,6 @@ function fetchLocalSkills(source: MarketplaceSource): MarketplaceSkill[] {
   }
 }
 
-/**
- * Install a local skill (copy from bundled source)
- */
 function installLocalSkill(
   skill: MarketplaceSkill,
   destDir: string
@@ -295,10 +221,6 @@ function installLocalSkill(
   }
 }
 
-/**
- * Fetch the directory tree from GitHub API
- * Uses the Trees API which doesn't require authentication for public repos
- */
 export async function fetchMarketplaceTree(
   source: MarketplaceSource
 ): Promise<GitHubTreeItem[]> {
@@ -322,15 +244,8 @@ export async function fetchMarketplaceTree(
   return data.tree;
 }
 
-/**
- * Maximum content size for downloaded skill files (1MB).
- */
 const MAX_CONTENT_SIZE_BYTES = 1024 * 1024;
 
-/**
- * Fetch raw file content from GitHub with content validation.
- * Validates response content-type and size before returning.
- */
 export async function fetchRawContent(
   source: MarketplaceSource,
   path: string
@@ -347,7 +262,6 @@ export async function fetchRawContent(
     throw new Error(`Failed to fetch content: ${response.statusText}`);
   }
 
-  // Validate content size to prevent downloading unexpectedly large files
   const contentLength = response.headers?.get?.('Content-Length');
   const contentLengthBytes = contentLength ? Number(contentLength) : NaN;
   if (
@@ -362,7 +276,6 @@ export async function fetchRawContent(
   const content = await response.text();
   const contentSizeBytes = Buffer.byteLength(content, 'utf8');
 
-  // Validate size of actual content (Content-Length may not be set)
   if (contentSizeBytes > MAX_CONTENT_SIZE_BYTES) {
     throw new Error(
       `Content too large: ${contentSizeBytes} bytes exceeds ${MAX_CONTENT_SIZE_BYTES} byte limit`
@@ -372,22 +285,14 @@ export async function fetchRawContent(
   return content;
 }
 
-/**
- * Fetch skills index from a marketplace source
- * Returns a list of available skills with metadata
- * Uses 24-hour cache to reduce API calls
- * For local sources, reads directly from bundled files
- */
 export async function fetchMarketplaceSkills(
   source: MarketplaceSource,
   options: { skipCache?: boolean } = {}
 ): Promise<MarketplaceSkill[]> {
-  // Handle local sources - read directly from bundled files
   if (isLocalSource(source)) {
     return fetchLocalSkills(source);
   }
 
-  // Check cache first (unless skipCache is true)
   if (!options.skipCache) {
     const cached = readCachedSkills(source);
     if (cached) {
@@ -399,7 +304,6 @@ export async function fetchMarketplaceSkills(
   const skills: MarketplaceSkill[] = [];
 
   if (source.skillPattern === 'flat-md') {
-    // Flat .md files in a directory (buildwithclaude pattern)
     const prefix = source.skillsPath ? `${source.skillsPath}/` : '';
     const mdFiles = tree.filter(
       item =>
@@ -410,33 +314,31 @@ export async function fetchMarketplaceSkills(
         (prefix === '' || item.path.split('/').length === 2)
     );
 
-    // Fetch first line of each file to get description
-    // Limit to prevent too many requests
     const filesToFetch = mdFiles.slice(0, 100);
 
-    for (const file of filesToFetch) {
-      try {
-        const content = await fetchRawContent(source, file.path);
-        const meta = parseFrontmatter(content);
-        const filename = file.path.split('/').pop() || file.path;
-
-        skills.push({
-          name: filename.replace(/\.md$/i, ''),
-          displayName: formatSkillName(filename),
-          description: meta?.description || 'No description available',
-          category: meta?.category,
-          path: file.path,
-          source,
-        });
-      } catch {
-        // Skip files that fail to fetch
-      }
-    }
+    const results = await Promise.all(
+      filesToFetch.map(async file => {
+        try {
+          const content = await fetchRawContent(source, file.path);
+          const meta = parseSkillFrontmatter(content);
+          const filename = file.path.split('/').pop() || file.path;
+          return {
+            name: filename.replace(/\.md$/i, ''),
+            displayName: formatSkillName(filename),
+            description: meta?.description || 'No description available',
+            category: meta?.category,
+            path: file.path,
+            source,
+          } as MarketplaceSkill;
+        } catch {
+          return null;
+        }
+      })
+    );
+    skills.push(...results.filter((s): s is MarketplaceSkill => s !== null));
   } else {
-    // Skill folders pattern (SKILL.md in subfolders)
     const prefix = source.skillsPath ? `${source.skillsPath}/` : '';
 
-    // Find directories that might contain skills
     const skillDirs = tree.filter(
       item =>
         item.type === 'tree' &&
@@ -445,28 +347,31 @@ export async function fetchMarketplaceSkills(
         !item.path.startsWith('.')
     );
 
-    // Look for SKILL.md or README.md in each directory
-    for (const dir of skillDirs.slice(0, 50)) {
-      const skillMdPath = `${dir.path}/SKILL.md`;
-      const readmePath = `${dir.path}/README.md`;
+    const results = await Promise.all(
+      skillDirs.slice(0, 50).map(async dir => {
+        const skillMdPath = `${dir.path}/SKILL.md`;
+        const readmePath = `${dir.path}/README.md`;
 
-      // Check if SKILL.md exists in tree
-      const hasSkillMd = tree.some(
-        item => item.path === skillMdPath && item.type === 'blob'
-      );
-      const hasReadme = tree.some(
-        item => item.path === readmePath && item.type === 'blob'
-      );
+        const hasSkillMd = tree.some(
+          item => item.path === skillMdPath && item.type === 'blob'
+        );
+        const hasReadme = tree.some(
+          item => item.path === readmePath && item.type === 'blob'
+        );
 
-      const filePath = hasSkillMd ? skillMdPath : hasReadme ? readmePath : null;
+        const filePath = hasSkillMd
+          ? skillMdPath
+          : hasReadme
+            ? readmePath
+            : null;
 
-      if (filePath) {
+        if (!filePath) return null;
+
         try {
           const content = await fetchRawContent(source, filePath);
-          const meta = parseFrontmatter(content);
+          const meta = parseSkillFrontmatter(content);
           const folderName = dir.path.split('/').pop() || dir.path;
-
-          skills.push({
+          return {
             name: folderName,
             displayName: formatSkillName(folderName),
             description:
@@ -476,28 +381,23 @@ export async function fetchMarketplaceSkills(
             category: meta?.category,
             path: dir.path,
             source,
-          });
+          } as MarketplaceSkill;
         } catch {
-          // Skip directories that fail to fetch
+          return null;
         }
-      }
-    }
+      })
+    );
+    skills.push(...results.filter((s): s is MarketplaceSkill => s !== null));
   }
 
-  // Write to cache for future requests
   writeCachedSkills(source, skills);
 
   return skills;
 }
 
-/**
- * Extract first paragraph from markdown content (after frontmatter)
- */
 function extractFirstParagraph(content: string): string | null {
-  // Remove frontmatter
   const withoutFrontmatter = content.replace(/^---[\s\S]*?---\s*/, '');
 
-  // Find first non-empty paragraph
   const lines = withoutFrontmatter.split('\n');
   let paragraph = '';
 
@@ -514,11 +414,6 @@ function extractFirstParagraph(content: string): string | null {
   return paragraph ? paragraph.slice(0, 200) : null;
 }
 
-/**
- * Download and install a skill from a marketplace
- * For local sources, copies from bundled files
- * For GitHub sources, downloads from remote repository
- */
 export async function installMarketplaceSkill(
   skill: MarketplaceSkill,
   destDir: string
@@ -526,7 +421,6 @@ export async function installMarketplaceSkill(
   try {
     const source = skill.source;
 
-    // Handle local sources - copy from bundled files
     if (isLocalSource(source)) {
       return installLocalSkill(skill, destDir);
     }
@@ -539,7 +433,6 @@ export async function installMarketplaceSkill(
     }
 
     if (source.skillPattern === 'flat-md') {
-      // Single file skill - download and create SKILL.md
       const content = await fetchRawContent(source, skill.path);
       const skillMdPath = join(skillDestDir, 'SKILL.md');
       if (!isPathInside(skillDestDir, skillMdPath)) {
@@ -547,7 +440,6 @@ export async function installMarketplaceSkill(
       }
       writeFileContent(skillMdPath, content);
     } else {
-      // Folder skill - download all files in the folder
       const prefix = `${skill.path}/`;
       const files = tree.filter(
         item => item.type === 'blob' && item.path.startsWith(prefix)
@@ -562,7 +454,6 @@ export async function installMarketplaceSkill(
         if (!isPathInside(skillDestDir, destPath)) {
           throw new Error('Invalid skill file path traversal');
         }
-
         const destSubDir = join(
           skillDestDir,
           relativePath.split('/').slice(0, -1).join('/')
@@ -570,10 +461,16 @@ export async function installMarketplaceSkill(
         if (destSubDir !== skillDestDir && !dirExists(destSubDir)) {
           mkdirSync(destSubDir, { recursive: true, mode: 0o700 });
         }
-
-        const content = await fetchRawContent(source, file.path);
-        writeFileContent(destPath, content);
       }
+
+      await Promise.all(
+        files.map(async file => {
+          const relativePath = file.path.slice(prefix.length);
+          const destPath = join(skillDestDir, relativePath);
+          const content = await fetchRawContent(source, file.path);
+          writeFileContent(destPath, content);
+        })
+      );
     }
 
     return { success: true };
@@ -585,9 +482,6 @@ export async function installMarketplaceSkill(
   }
 }
 
-/**
- * Search skills by query across all fetched skills
- */
 export function searchSkills(
   skills: MarketplaceSkill[],
   query: string
@@ -602,9 +496,6 @@ export function searchSkills(
   );
 }
 
-/**
- * Group skills by category
- */
 export function groupSkillsByCategory(
   skills: MarketplaceSkill[]
 ): Map<string, MarketplaceSkill[]> {
@@ -621,13 +512,6 @@ export function groupSkillsByCategory(
   return grouped;
 }
 
-// ============================================================================
-// Cache Management (exported)
-// ============================================================================
-
-/**
- * Clear all cached marketplace skills
- */
 export function clearSkillsCache(): void {
   try {
     const cacheDir = getCacheDir();
@@ -640,13 +524,10 @@ export function clearSkillsCache(): void {
       }
     }
   } catch {
-    // Silently fail
+    void 0;
   }
 }
 
-/**
- * Clear cache for a specific marketplace source
- */
 export function clearSourceCache(source: MarketplaceSource): void {
   try {
     const cacheFile = getCacheFilePath(source);
@@ -654,13 +535,10 @@ export function clearSourceCache(source: MarketplaceSource): void {
       unlinkSync(cacheFile);
     }
   } catch {
-    // Silently fail
+    void 0;
   }
 }
 
-/**
- * Get cache info for a marketplace source
- */
 export function getCacheInfo(source: MarketplaceSource): {
   isCached: boolean;
   age: number | null;
@@ -687,9 +565,6 @@ export function getCacheInfo(source: MarketplaceSource): {
   }
 }
 
-/**
- * Get cache directory path (for display purposes)
- */
 export function getSkillsCacheDir(): string {
   return getCacheDir();
 }

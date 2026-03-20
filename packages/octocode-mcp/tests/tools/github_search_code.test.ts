@@ -123,7 +123,7 @@ describe('GitHubCodeSearchQuerySchema', () => {
       }
     });
 
-    it('should maintain backward compatibility with existing fields', () => {
+    it('should accept minimal query with keywords only', () => {
       const basicQuery = withResearchFields({
         keywordsToSearch: ['function'],
       });
@@ -136,9 +136,6 @@ describe('GitHubCodeSearchQuerySchema', () => {
     });
   });
 });
-
-// Code Search Flow tests removed - redundant with github_search_code.tool.test.ts
-// which comprehensively tests all status flows (hasResults, empty, error) at the tool layer
 
 describe('Quality Boosting and Research Goals', () => {
   beforeEach(() => {

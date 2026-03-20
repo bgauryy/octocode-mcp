@@ -42,10 +42,13 @@ vi.mock('fs/promises', () => ({
   stat: vi.fn().mockResolvedValue({ size: 0 }),
 }));
 
-vi.mock('../../src/utils/exec/index.js', () => ({
+vi.mock('../../src/utils/exec/safe.js', () => ({
   safeExec: vi
     .fn()
     .mockResolvedValue({ success: true, stdout: '', stderr: '' }),
+}));
+
+vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
   checkCommandAvailability: vi
     .fn()
     .mockResolvedValue({ available: true, command: 'test' }),

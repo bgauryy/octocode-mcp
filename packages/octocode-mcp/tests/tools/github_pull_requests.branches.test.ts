@@ -54,7 +54,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 }));
 
 import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_search_pull_requests/github_search_pull_requests.js';
-import { TOOL_NAMES } from '../../src/tools/toolMetadata/index.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata/proxies.js';
 
 describe('GitHub Pull Requests Tool - Branch Coverage', () => {
   let mockServer: MockMcpServer;

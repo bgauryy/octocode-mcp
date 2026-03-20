@@ -7,15 +7,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 // Only mock external dependencies, NOT the config flow
-vi.mock('../../src/tools/toolMetadata/index.js', async () => {
+vi.mock('../../src/tools/toolMetadata/proxies.js', async () => {
   const actual = await vi.importActual<
-    typeof import('../../src/tools/toolMetadata/index.js')
-  >('../../src/tools/toolMetadata/index.js');
+    typeof import('../../src/tools/toolMetadata/proxies.js')
+  >('../../src/tools/toolMetadata/proxies.js');
+  const { STATIC_TOOL_NAMES } = await import('../../src/tools/toolNames.js');
   return {
     ...actual,
     // Mock metadata to return true for all tools (simulating API response)
     isToolInMetadata: vi.fn().mockReturnValue(true),
-    TOOL_NAMES: actual.STATIC_TOOL_NAMES,
+    TOOL_NAMES: STATIC_TOOL_NAMES as typeof actual.TOOL_NAMES,
     DESCRIPTIONS: new Proxy(
       {},
       {
@@ -29,14 +30,23 @@ vi.mock('../../src/session.js', () => ({
   logSessionError: vi.fn(),
 }));
 
-vi.mock('../../src/utils/exec/index.js', () => ({
+vi.mock('../../src/utils/exec/npm.js', () => ({
   getGithubCLIToken: vi.fn().mockResolvedValue(null),
 }));
 
-// Mock credentials to prevent file storage loading
-vi.mock('../../src/utils/credentials/index.js', () => ({
-  getOctocodeToken: vi.fn().mockResolvedValue(null),
-}));
+// Mock octocode-shared token resolution (replaces deleted credentials barrel)
+vi.mock('octocode-shared', async () => {
+  const actual =
+    await vi.importActual<typeof import('octocode-shared')>('octocode-shared');
+  return {
+    ...actual,
+    resolveTokenFull: vi.fn().mockResolvedValue({
+      token: null,
+      source: 'none',
+      wasRefreshed: false,
+    }),
+  };
+});
 
 // Mock the actual tool registration functions to track calls
 const mockLocalRipgrepRegister = vi.fn().mockReturnValue({});
@@ -50,16 +60,16 @@ const mockGitHubSearchReposRegister = vi.fn().mockReturnValue({});
 const mockGitHubSearchPRsRegister = vi.fn().mockReturnValue({});
 const mockPackageSearchRegister = vi.fn().mockReturnValue({});
 
-vi.mock('../../src/tools/local_ripgrep/index.js', () => ({
+vi.mock('../../src/tools/local_ripgrep/register.js', () => ({
   registerLocalRipgrepTool: mockLocalRipgrepRegister,
 }));
-vi.mock('../../src/tools/local_view_structure/index.js', () => ({
+vi.mock('../../src/tools/local_view_structure/register.js', () => ({
   registerLocalViewStructureTool: mockLocalViewStructureRegister,
 }));
-vi.mock('../../src/tools/local_find_files/index.js', () => ({
+vi.mock('../../src/tools/local_find_files/register.js', () => ({
   registerLocalFindFilesTool: mockLocalFindFilesRegister,
 }));
-vi.mock('../../src/tools/local_fetch_content/index.js', () => ({
+vi.mock('../../src/tools/local_fetch_content/register.js', () => ({
   registerLocalFetchContentTool: mockLocalFetchContentRegister,
 }));
 vi.mock('../../src/tools/github_search_code/github_search_code.js', () => ({
@@ -88,7 +98,7 @@ vi.mock('../../src/tools/package_search/package_search.js', () => ({
 }));
 
 const mockGitHubCloneRepoRegister = vi.fn().mockReturnValue({});
-vi.mock('../../src/tools/github_clone_repo/index.js', () => ({
+vi.mock('../../src/tools/github_clone_repo/register.js', () => ({
   registerGitHubCloneRepoTool: mockGitHubCloneRepoRegister,
 }));
 
@@ -256,7 +266,7 @@ describe('Local Tools Flow Integration', () => {
   describe('Tool names verification', () => {
     it('should use correct tool names from STATIC_TOOL_NAMES', async () => {
       const { STATIC_TOOL_NAMES } =
-        await import('../../src/tools/toolMetadata/index.js');
+        await import('../../src/tools/toolNames.js');
 
       // Verify the expected tool names
       expect(STATIC_TOOL_NAMES.LOCAL_RIPGREP).toBe('localSearchCode');

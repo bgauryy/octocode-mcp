@@ -1,18 +1,22 @@
 # Validate & Investigate
 
-**Validate before fixing** — for semantic findings (dead exports, cycles, coupling), always confirm with CLI or LSP tools. For structurally obvious findings (empty-catch, switch-no-default, magic-number), the scan output with `file:line` is sufficient.
+**Validate before fixing** — for semantic findings (dead exports, cycles, coupling), always confirm with CLI or LSP tools. For structurally obvious findings (empty-catch, switch-no-default), the scan output with `file:line` is sufficient.
+
+For available tools, see the Tools section in [SKILL.md](../SKILL.md).
 
 ---
 
-## Reasoning Loop
+## Investigation Loop
 
-Before presenting a conclusion:
+Before presenting a conclusion — adapt to the finding, not the other way around:
 
-1. **Choose lens** — graph, AST, or hybrid — based on what the finding needs.
-2. **Correlate signals** — compare `summary.md`, `architecture.json`, `findings.json`, `file-inventory.json`.
-3. **Validate** — use whichever Octocode local tools fit (search, structure, content, LSP). No fixed order.
-4. **State confidence** — high / medium / low.
-5. **Present** — graph signal, AST signal, combined interpretation, remaining gaps.
+1. **Understand context**: read `summary.md` signals (Graph, AST, Confidence, Recommended Validation), then the finding itself (`file`, `lineStart`, `category`, `reason`, `impact`).
+2. **Choose lens** — graph, AST, or hybrid — based on what the finding needs.
+3. **Use lspHints first**: if `lspHints[]` or `recommendedValidation` exist on the finding, use those directly — they're pre-computed validation shortcuts.
+4. **Validate with any fitting tool**: use Octocode local tools, CLI AST scripts, or both — pick what answers the question fastest. Cross-check `fileInventory` and related findings in the same file.
+5. **Correlate signals** — compare `summary.md`, `architecture.json`, `findings.json`, `file-inventory.json`.
+6. **State confidence** — high / medium / low.
+7. **Present** — graph signal, AST signal, combined interpretation, remaining gaps.
 
 If the scan looks ambiguous, escalate deliberately:
 
@@ -22,49 +26,9 @@ If the scan looks ambiguous, escalate deliberately:
 
 ---
 
-## Statement Validation Policy
-
-When Octocode MCP local tools are available, every statement about live code must be validated before presenting as fact.
-
-Use whichever tools fit the claim — all are available:
-
-| Tool | What it gives you |
-|------|------------------|
-| `localSearchCode` | Find patterns, get file + lineHint |
-| `localViewStructure` | Directory layout, project organization |
-| `localFindFiles` | Locate files by name, size, modification time |
-| `localGetFileContent` | Read file content at specific lines or with match strings |
-| `lspGotoDefinition` | Jump to symbol definition |
-| `lspFindReferences` | All usages of a symbol |
-| `lspCallHierarchy` | Incoming/outgoing call chains (functions only) |
-
-There is no required order. Pick what fits: a dead-export check might only need `lspFindReferences`, a layout question might only need `localViewStructure`, a complex finding might need several tools.
-
-If Octocode local tools are unavailable, use CLI validation and mark confidence explicitly.
-
----
-
-## Validation Modes
-
-| Mode | When to use | Available tools |
-|------|------------|----------------|
-| **CLI only** | No Octocode MCP installed | `scripts/index.js` (rescan) + `scripts/ast/search.js` + `scripts/ast/tree-search.js` |
-| **Octocode MCP** | MCP available | All local tools (`localSearchCode`, `localViewStructure`, `localFindFiles`, `localGetFileContent`) + LSP (`lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`) |
-| **Hybrid** (recommended) | Both available | CLI for broad scanning + any Octocode tool for targeted validation |
-
----
-
-## MCP Availability
-
-Try `localSearchCode` first. If it fails → Octocode not installed or `ENABLE_LOCAL ≠ "true"`.
-- Suggest once: "Enable local tools by setting `ENABLE_LOCAL=true` in your Octocode MCP config."
-- **Without MCP**: use CLI tools (`ast/search.js` for structural search, rescan with `--scope` for targeted checks), mark confidence (`high`/`medium`/`low`), avoid broad refactors.
-
----
-
 ## Hybrid Validation (CLI + Octocode MCP)
 
-Both CLI scripts and Octocode tools are available — use whichever fits the task:
+When both CLI scripts and Octocode tools are available, use whichever fits:
 
 | Task | CLI option | Octocode option |
 |------|-----------|----------------|
@@ -86,7 +50,9 @@ Both CLI scripts and Octocode tools are available — use whichever fits the tas
 
 ---
 
-## Tool Chain — CLI Only
+## CLI-Only Tool Chain
+
+When Octocode MCP is unavailable:
 
 ```
 1. node scripts/index.js --scope=file.ts --features=<category>   → targeted rescan
@@ -97,17 +63,6 @@ Both CLI scripts and Octocode tools are available — use whichever fits the tas
 ```
 
 Useful `ast-search` presets: `empty-catch`, `any-type`, `type-assertion`, `non-null-assertion`, `console-log`, `todo-fixme`, `switch-no-default`, `debugger`, `nested-ternary`.
-
----
-
-## Investigation Loop
-
-Guide — adapt to the finding, not the other way around:
-
-1. **Understand context**: read `summary.md` signals (Graph, AST, Confidence, Recommended Validation), then the finding itself (`file`, `lineStart`, `category`, `reason`, `impact`).
-2. **Use lspHints first**: if `lspHints[]` or `recommendedValidation` exist on the finding, use those directly — they're pre-computed validation shortcuts.
-3. **Validate with any fitting tool**: use Octocode local tools, CLI AST scripts, or both — pick what answers the question fastest. Cross-check `fileInventory` and related findings in the same file.
-4. **Fix and verify**: follow `suggestedFix.steps`, re-scan with `--scope`, compare counts.
 
 ---
 
@@ -128,8 +83,6 @@ Most findings include `lspHints[]` with pre-computed validation instructions:
 ```
 
 Use directly: `lspFindReferences(file, lineHint)` → compare with `expectedResult`. No `localSearchCode` step needed when the hint provides the exact position.
-
-Most detectors across architecture, performance, security, and dead-code now include `lspHints`.
 
 ---
 
@@ -152,11 +105,11 @@ Use `impact` to:
 
 ## Security Finding Validation — Taint Tracing
 
-Security findings are **context-sensitive** — unlike structural findings (empty-catch, switch-no-default), a `prototype-pollution-risk` on `cache[key] = value` is a false positive if `key` comes from internal iteration. Always trace the data flow before acting.
+Security findings are **context-sensitive** — a `prototype-pollution-risk` on `cache[key] = value` is a false positive if `key` comes from internal iteration. Always trace the data flow before acting.
 
 ### Taint Tracing Workflow
 
-For every security finding, trace the data flow from source to sink. Use any Octocode tools that help — common approaches:
+For every security finding, trace the data flow from source to sink:
 
 - **Find the sink**: `localSearchCode` or `lspGotoDefinition` to locate it
 - **Trace callers**: `lspCallHierarchy(incoming)` to see who calls the sink
@@ -182,6 +135,13 @@ For every security finding, trace the data flow from source to sink. Use any Oct
 | `hardcoded-secret` | string literal | auth/network calls | environment variable substitution |
 | `unvalidated-input-sink` | req/body/input params | eval/SQL/exec/fs-write | schema validation (zod, joi) |
 | `sql-injection-risk` | template interpolation | `.query()`, `.execute()` | parameterized queries |
+
+### False Positive Dismissal Criteria
+
+- `prototype-pollution-risk`: key comes from `Object.keys()` on internal object, or target is `Object.create(null)` / `Map` / `Set` → dismiss
+- `hardcoded-secret`: value is inside a regex definition, is a UUID, placeholder (`YOUR_*`, `<key>`), or used only in tests → dismiss. Error messages and prose strings are auto-filtered by the scanner.
+- `path-traversal-risk`: path goes through normalize + prefix check + realpath resolution → dismiss (or downgrade to info)
+- `command-injection-risk`: spawn uses array args without `shell: true` → downgrade to info
 
 ### Agentic Security Taint Paths
 

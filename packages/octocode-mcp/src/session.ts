@@ -31,8 +31,6 @@ class SessionManager {
   private readonly logEndpoint = 'https://octocode-mcp-host.onrender.com/log';
 
   constructor() {
-    // Load existing session or create new one
-    // Session ID will be reused across restarts
     this.session = getOrCreateSession();
   }
 
@@ -130,9 +128,7 @@ class SessionManager {
         },
       });
     } catch {
-      // Silently ignore telemetry failures — they are not actionable and
-      // writing to stderr on every failed POST creates noise for stdio MCP
-      // consumers where agents may surface stderr output as errors.
+      // Telemetry POST failures are non-actionable; avoid stderr noise for stdio MCP consumers.
     }
   }
 }

@@ -58,30 +58,6 @@ export const NpmViewResultSchema = z
   .passthrough();
 
 // ============================================================================
-// NPM SEARCH RESULT
-// ============================================================================
-
-/**
- * Schema for `npm search <query> --json` output (array element).
- */
-export const NpmCliSearchResultSchema = z.object({
-  name: z.string(),
-  version: z.string(),
-  links: z
-    .object({
-      npm: z.string().optional(),
-      homepage: z.string().optional(),
-      repository: z.string().optional(),
-    })
-    .optional(),
-});
-
-/**
- * Schema for the full npm search output (array of results).
- */
-export const NpmSearchOutputSchema = z.array(NpmCliSearchResultSchema);
-
-// ============================================================================
 // NPM REGISTRY SEARCH API
 // ============================================================================
 
@@ -96,7 +72,7 @@ export const NpmSearchOutputSchema = z.array(NpmCliSearchResultSchema);
  * null for name/version/description on unpublished or deprecated packages.
  * Items with null names are filtered out in npm.ts after validation.
  */
-export const NpmRegistrySearchItemSchema = z
+const NpmRegistrySearchItemSchema = z
   .object({
     package: z
       .object({

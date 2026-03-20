@@ -6,7 +6,7 @@ import {
 } from './scheme.js';
 import { executeCallHierarchy } from './execution.js';
 import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
-import { TOOL_NAMES } from '../toolMetadata/index.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { LspCallHierarchyOutputSchema } from '../../scheme/outputSchemas.js';
 
 /**

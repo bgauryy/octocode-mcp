@@ -5,11 +5,11 @@ import { applyMinification } from './contentMinifier.js';
 import { extractMatchingLines } from './contentExtractor.js';
 import {
   applyPagination,
-  generatePaginationHints,
   createPaginationInfo,
-} from '../../utils/pagination/index.js';
+} from '../../utils/pagination/core.js';
+import { generatePaginationHints } from '../../utils/pagination/hints.js';
 import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
-import { TOOL_NAMES } from '../toolMetadata/index.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import {
   validateToolPath,
   createErrorResult,
@@ -18,7 +18,8 @@ import type {
   FetchContentQuery,
   FetchContentResult,
 } from '../../utils/core/types.js';
-import { ToolErrors, LOCAL_TOOL_ERROR_CODES } from '../../errorCodes.js';
+import { ToolErrors } from '../../errors/errorFactories.js';
+import { LOCAL_TOOL_ERROR_CODES } from '../../errors/localToolErrors.js';
 
 function readConfiguredDefaultCharLength(): number {
   const config = getConfigSync() as {

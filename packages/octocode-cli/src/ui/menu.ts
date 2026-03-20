@@ -1,7 +1,3 @@
-/**
- * Main Menu UI
- */
-
 import { c, bold, dim } from '../utils/colors.js';
 import {
   loadInquirer,
@@ -40,9 +36,6 @@ import {
 import { getCredentials, hasEnvToken } from '../utils/token-storage.js';
 import open from 'open';
 
-/**
- * Wait for user to press enter
- */
 async function pressEnterToContinue(): Promise<void> {
   console.log();
   await input({
@@ -61,16 +54,10 @@ type MenuChoice =
 
 type OctocodeMenuChoice = 'configure' | 'install' | 'back';
 
-/**
- * Get friendly client names for display
- */
 function getClientNames(clients: ClientInstallStatus[]): string {
   return clients.map(c => MCP_CLIENTS[c.client]?.name || c.client).join(', ');
 }
 
-/**
- * Print installed IDEs with their config paths
- */
 function printInstalledIDEs(installedClients: ClientInstallStatus[]): void {
   if (installedClients.length === 0) {
     console.log(`  ${dim('No IDEs configured yet')}`);
@@ -86,9 +73,6 @@ function printInstalledIDEs(installedClients: ClientInstallStatus[]): void {
   }
 }
 
-/**
- * Build skills menu item based on state (for main menu)
- */
 function buildSkillsMenuItem(skills: SkillsState): {
   name: string;
   value: MenuChoice;
@@ -118,7 +102,6 @@ function buildSkillsMenuItem(skills: SkillsState): {
     };
   }
 
-  // No skills installed - encourage installation
   return {
     name: `🧠 ${bold('Manage System Skills')} ${c('cyan', '★')}`,
     value: 'skills',
@@ -126,16 +109,11 @@ function buildSkillsMenuItem(skills: SkillsState): {
   };
 }
 
-/**
- * Build Octocode Skills menu item
- * Shows ✓ if any octocode skills are installed
- */
 function buildOctocodeSkillsMenuItem(skills: SkillsState): {
   name: string;
   value: MenuChoice;
   description: string;
 } {
-  // Check if any octocode-* skills are installed
   const octocodeSkillsInstalled = skills.skills.filter(
     s => s.name.startsWith('octocode-') && s.installed
   ).length;
@@ -155,15 +133,11 @@ function buildOctocodeSkillsMenuItem(skills: SkillsState): {
   };
 }
 
-/**
- * Get human-readable auth source name
- */
 function getAuthSourceDisplay(auth: OctocodeAuthStatus): string {
   switch (auth.tokenSource) {
     case 'gh-cli':
       return 'gh CLI';
     case 'env': {
-      // Show which env var is being used (e.g., "env:GH_TOKEN" → "GH_TOKEN")
       if (auth.envTokenSource) {
         const varName = auth.envTokenSource.replace('env:', '');
         return `env (${varName})`;
@@ -177,9 +151,6 @@ function getAuthSourceDisplay(auth: OctocodeAuthStatus): string {
   }
 }
 
-/**
- * Build auth menu item based on state
- */
 function buildAuthMenuItem(auth: OctocodeAuthStatus): {
   name: string;
   value: MenuChoice;
@@ -196,7 +167,6 @@ function buildAuthMenuItem(auth: OctocodeAuthStatus): {
     };
   }
 
-  // Not authenticated - show prominent indicator with call to action
   return {
     name: `🔑 ${bold('Manage Auth')} ${c('red', '✗ Required!')}`,
     value: 'auth',
@@ -204,14 +174,9 @@ function buildAuthMenuItem(auth: OctocodeAuthStatus): {
   };
 }
 
-/**
- * Build status line for display
- * Uses centralized state counts for consistency
- */
 function buildStatusLine(state: AppState): string {
   const parts: string[] = [];
 
-  // Octocode installation status - use installedCount from centralized state
   if (state.octocode.isInstalled) {
     const clientLabel =
       state.octocode.installedCount === 1 ? 'client' : 'clients';
@@ -222,7 +187,6 @@ function buildStatusLine(state: AppState): string {
     parts.push(`${c('yellow', '○')} Not installed`);
   }
 
-  // Skills status - use totalInstalledCount from centralized state
   if (state.skills.totalInstalledCount > 0) {
     parts.push(`${c('green', '●')} ${state.skills.totalInstalledCount} skills`);
   } else if (state.skills.sourceExists && state.skills.hasSkills) {
@@ -232,12 +196,6 @@ function buildStatusLine(state: AppState): string {
   return parts.join(dim('  │  '));
 }
 
-/**
- * Build Octocode menu item based on state
- * Shows ✓ only if both installed AND auth is working
- * Shows ✗ if installed but no auth
- * Uses centralized state counts for consistency
- */
 function buildOctocodeMenuItem(state: AppState): {
   name: string;
   value: MenuChoice;
@@ -246,7 +204,6 @@ function buildOctocodeMenuItem(state: AppState): {
   if (state.octocode.isInstalled) {
     const clientLabel = state.octocode.installedCount === 1 ? 'IDE' : 'IDEs';
 
-    // Show ✓ only if both installed AND authenticated
     if (state.githubAuth.authenticated) {
       return {
         name: `🐙 Octocode MCP ${c('green', '✓')}`,
@@ -255,7 +212,6 @@ function buildOctocodeMenuItem(state: AppState): {
       };
     }
 
-    // Installed but not authenticated - show ✗ to indicate setup needed
     return {
       name: `🐙 Octocode MCP ${c('red', '✗')}`,
       value: 'octocode',
@@ -270,12 +226,7 @@ function buildOctocodeMenuItem(state: AppState): {
   };
 }
 
-/**
- * Print contextual hints based on app state
- * Guides users to set up auth and use best practices
- */
 function printContextualHints(state: AppState): void {
-  // ─── AUTH HINT (Priority 1) ───
   if (!state.githubAuth.authenticated) {
     console.log();
     console.log(
@@ -285,14 +236,12 @@ function printContextualHints(state: AppState): void {
     state.octocode.isInstalled &&
     state.skills.totalInstalledCount === 0
   ) {
-    // ─── SKILLS HINT (Priority 2) ───
     console.log();
     console.log(
       `  ${c('cyan', '💡')} ${dim('Boost your AI coding:')} Install ${c('magenta', 'Skills')} for research, PR review & more!`
     );
   }
 
-  // ─── QUICK HINTS (always show, yellow) ───
   console.log();
   console.log(`  ${c('yellow', 'Hints:')}`);
   console.log(
@@ -321,46 +270,32 @@ function printContextualHints(state: AppState): void {
   );
 }
 
-/**
- * Show main menu and handle selection
- * @param state - Unified application state
- * @returns MenuChoice or 'exit' if user confirms exit
- */
 async function showMainMenu(state: AppState): Promise<MenuChoice> {
-  // Display compact status bar
   console.log();
   console.log(`  ${dim('Status:')} ${buildStatusLine(state)}`);
 
-  // Show contextual hints and tips
   printContextualHints(state);
 
-  // Build menu choices based on state
   const choices: Array<{
     name: string;
     value: MenuChoice;
     description?: string;
   }> = [];
 
-  // ─── OCTOCODE ───
   choices.push(buildOctocodeMenuItem(state));
 
-  // ─── OCTOCODE SKILLS ───
   choices.push(buildOctocodeSkillsMenuItem(state.skills));
 
-  // ─── SKILLS ───
   choices.push(buildSkillsMenuItem(state.skills));
 
-  // ─── AUTH ───
   choices.push(buildAuthMenuItem(state.githubAuth));
 
-  // ─── MCP CONFIGURATION ───
   choices.push({
     name: '⚡ Manage System MCP',
     value: 'mcp-config',
     description: 'Add, sync and configure MCP across all IDEs',
   });
 
-  // ─── EXIT ───
   choices.push(
     new Separator() as unknown as {
       name: string;
@@ -390,13 +325,6 @@ async function showMainMenu(state: AppState): Promise<MenuChoice> {
   return choice;
 }
 
-// ============================================================================
-// Octocode Submenu Flow
-// ============================================================================
-
-/**
- * Show Octocode submenu
- */
 async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
   const choices: Array<{
     name: string;
@@ -404,9 +332,7 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
     description?: string;
   }> = [];
 
-  // ─── INSTALL / ADD TO IDE ───
   if (state.octocode.isInstalled) {
-    // Show "Add to IDE" if more clients available
     if (state.octocode.hasMoreToInstall) {
       const availableNames = getClientNames(state.octocode.availableClients);
       choices.push({
@@ -416,7 +342,6 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
       });
     }
   } else {
-    // Install is the main action when not installed - show ✗ indicator
     choices.push({
       name: `📦 ${bold('Install')} ${c('red', '✗')}`,
       value: 'install',
@@ -424,7 +349,6 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
     });
   }
 
-  // ─── CONFIGURE (only when installed) ───
   if (state.octocode.isInstalled) {
     choices.push({
       name: '⚙️  Configure Octocode',
@@ -433,7 +357,6 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
     });
   }
 
-  // ─── BACK ───
   choices.push(
     new Separator() as unknown as {
       name: string;
@@ -463,25 +386,18 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
   return choice;
 }
 
-/**
- * Run Octocode submenu flow
- */
 async function runOctocodeFlow(): Promise<void> {
   await loadInquirer();
 
-  // Get initial state
   let state = await getAppState();
 
-  // Show installed IDEs info
   console.log();
   printInstalledIDEs(state.octocode.installedClients);
 
   let inMenu = true;
   let firstRun = true;
   while (inMenu) {
-    // Refresh state on each iteration (with loading indicator on subsequent runs)
     if (firstRun) {
-      // State already fetched above
       firstRun = false;
     } else {
       const spinner = new Spinner('  Refreshing...').start();
@@ -510,15 +426,8 @@ async function runOctocodeFlow(): Promise<void> {
   }
 }
 
-// ============================================================================
-// MCP Configuration Flow
-// ============================================================================
-
 type MCPConfigChoice = 'sync' | 'marketplace' | 'inspect' | 'back';
 
-/**
- * Show MCP configuration submenu
- */
 async function showMCPConfigMenu(): Promise<MCPConfigChoice> {
   const choices: Array<{
     name: string;
@@ -573,9 +482,6 @@ async function showMCPConfigMenu(): Promise<MCPConfigChoice> {
   return choice;
 }
 
-/**
- * Run MCP configuration flow (submenu)
- */
 async function runMCPConfigFlow(): Promise<void> {
   await loadInquirer();
   console.log();
@@ -607,16 +513,8 @@ async function runMCPConfigFlow(): Promise<void> {
   }
 }
 
-// ============================================================================
-// Auth Flow
-// ============================================================================
-
 type AuthMenuChoice = 'login' | 'gh-guidance' | 'logout' | 'gh-logout' | 'back';
 
-/**
- * Show auth menu - directly shows all relevant options
- * No intermediate "Manage Tokens" step - everything in one menu
- */
 async function showAuthMenu(
   status: OctocodeAuthStatus
 ): Promise<AuthMenuChoice> {
@@ -628,7 +526,6 @@ async function showAuthMenu(
 
   const isUsingEnv = status.tokenSource === 'env';
 
-  // Check what auth methods are available (independent of current active source)
   const ghCliToken = getGitHubCLIToken();
   const ghAuth = checkGitHubAuth();
   const octocodeCredentials = await getCredentials();
@@ -637,13 +534,12 @@ async function showAuthMenu(
   const hasOctocode = !!octocodeCredentials;
   const hasEnv = hasEnvToken();
 
-  // ─── Show env var info if using env (can't delete) ───
   if (isUsingEnv && hasEnv) {
     const envVar =
       status.envTokenSource?.replace('env:', '') || 'environment variable';
     choices.push({
       name: `ℹ️  Using ${c('cyan', envVar)} ${dim('(takes priority)')}`,
-      value: 'back', // No action, just info
+      value: 'back',
       description: 'Token set via environment variable',
     });
 
@@ -656,7 +552,6 @@ async function showAuthMenu(
     );
   }
 
-  // ─── Show delete options for available tokens ───
   if (hasGhCli) {
     const userPart = ghAuth.username ? ` (@${ghAuth.username})` : '';
     choices.push({
@@ -678,7 +573,6 @@ async function showAuthMenu(
     });
   }
 
-  // ─── Show sign-in options for methods not yet configured ───
   if (!hasOctocode) {
     choices.push({
       name: `🔐 Sign In via Octocode ${c('green', '(Recommended)')}`,
@@ -726,9 +620,6 @@ async function showAuthMenu(
   return choice;
 }
 
-/**
- * Run the login flow with enhanced progress indication
- */
 async function runLoginFlow(): Promise<boolean> {
   console.log();
   console.log(c('blue', '━'.repeat(66)));
@@ -749,7 +640,6 @@ async function runLoginFlow(): Promise<boolean> {
       spinner.stop();
       verificationShown = true;
 
-      // Clear visual box for the code
       console.log();
       console.log(c('yellow', '  ┌' + '─'.repeat(50) + '┐'));
       console.log(
@@ -767,14 +657,12 @@ async function runLoginFlow(): Promise<boolean> {
       console.log(`  ${bold('3.')} Paste the code in your browser`);
       console.log();
 
-      // Start a progress spinner with helpful context
       authSpinner = new Spinner(
         `Waiting for browser authentication... ${dim('(typically 10-30 seconds)')}`
       ).start();
     },
   });
 
-  // Stop any running spinner
   if (authSpinner) {
     (authSpinner as Spinner).stop();
   }
@@ -833,9 +721,6 @@ async function runLoginFlow(): Promise<boolean> {
   return result.success;
 }
 
-/**
- * Run the logout flow
- */
 async function runLogoutFlow(): Promise<boolean> {
   const status = await getAuthStatusAsync();
 
@@ -851,7 +736,6 @@ async function runLogoutFlow(): Promise<boolean> {
   if (result.success) {
     console.log(`  ${c('green', '✓')} Signed out successfully`);
 
-    // Check if gh CLI fallback is available
     const ghAuth = checkGitHubAuth();
     if (ghAuth.authenticated) {
       console.log(
@@ -871,14 +755,9 @@ async function runLogoutFlow(): Promise<boolean> {
 
 type GhGuidanceChoice = 'open-site' | 'back';
 
-/**
- * Show gh CLI setup guidance
- * Escape key returns to parent menu
- */
 async function showGhCliGuidance(): Promise<void> {
   const GH_CLI_URL = 'https://cli.github.com/';
 
-  // Show instructions upfront
   console.log();
   console.log(`  ${bold('Setup Instructions:')}`);
   console.log();
@@ -940,18 +819,11 @@ async function showGhCliGuidance(): Promise<void> {
   }
 }
 
-/**
- * Display auth status - clean, simple status line
- */
-/**
- * Get detailed auth source for display
- */
 function getDetailedAuthSource(status: OctocodeAuthStatus): string {
   switch (status.tokenSource) {
     case 'gh-cli':
       return 'gh CLI';
     case 'env': {
-      // Show which env var (e.g., "env:GH_TOKEN" → "GH_TOKEN")
       if (status.envTokenSource) {
         const varName = status.envTokenSource.replace('env:', '');
         return `${varName} env var`;
@@ -972,7 +844,6 @@ function displayAuthStatus(status: OctocodeAuthStatus): void {
   if (status.authenticated) {
     const source = getDetailedAuthSource(status);
 
-    // For env tokens, we can't get username, so show different message
     if (status.tokenSource === 'env') {
       const envVarName = status.envTokenSource
         ? status.envTokenSource.replace('env:', '')
@@ -992,13 +863,11 @@ function displayAuthStatus(status: OctocodeAuthStatus): void {
       );
     }
 
-    // Success tips
     console.log();
     console.log(
       `  ${c('green', '✓')} ${dim('Ready to access GitHub repositories!')}`
     );
   } else {
-    // Not authenticated - prominent warning with instructions
     console.log(c('yellow', '  ┌' + '─'.repeat(56) + '┐'));
     console.log(
       c('yellow', '  │ ') +
@@ -1022,9 +891,6 @@ function displayAuthStatus(status: OctocodeAuthStatus): void {
   console.log();
 }
 
-/**
- * Run auth flow (login/logout menu)
- */
 async function runAuthFlow(): Promise<void> {
   await loadInquirer();
   console.log();
@@ -1033,7 +899,6 @@ async function runAuthFlow(): Promise<void> {
   while (inAuthMenu) {
     const status = await getAuthStatusAsync();
 
-    // Show current status
     displayAuthStatus(status);
 
     const choice = await showAuthMenu(status);
@@ -1058,7 +923,6 @@ async function runAuthFlow(): Promise<void> {
         break;
 
       case 'gh-logout': {
-        // Confirm before deleting
         const confirmGh = await selectWithCancel<'yes' | 'no'>({
           message: 'Sign out of gh CLI?',
           choices: [
@@ -1101,9 +965,6 @@ async function runAuthFlow(): Promise<void> {
   }
 }
 
-/**
- * Handle menu selection
- */
 async function handleMenuChoice(choice: MenuChoice): Promise<boolean> {
   switch (choice) {
     case 'octocode':
@@ -1135,19 +996,12 @@ async function handleMenuChoice(choice: MenuChoice): Promise<boolean> {
   }
 }
 
-/**
- * Print the environment check section header
- */
 function printEnvHeader(): void {
   console.log(c('blue', '━'.repeat(66)));
   console.log(`  🔍 ${bold('Environment')}`);
   console.log(c('blue', '━'.repeat(66)));
 }
 
-/**
- * Display environment status section
- * Uses pre-fetched auth status to ensure consistency with menu items
- */
 async function displayEnvironmentStatus(
   _authStatus: OctocodeAuthStatus
 ): Promise<void> {
@@ -1155,7 +1009,6 @@ async function displayEnvironmentStatus(
 
   const envStatus = await checkAndPrintEnvironmentWithLoader();
 
-  // Show node-doctor hint if issues detected
   if (hasEnvironmentIssues(envStatus)) {
     console.log();
     console.log(
@@ -1164,17 +1017,11 @@ async function displayEnvironmentStatus(
   }
 }
 
-/**
- * Run the interactive menu loop
- */
 export async function runMenuLoop(): Promise<void> {
   let firstRun = true;
   let running = true;
 
   while (running) {
-    // Get unified app state FIRST (refreshed on each iteration for accurate status)
-    // This ensures consistency between environment display and menu items
-    // Show loading indicator on subsequent iterations (first run shows env status)
     let state;
     if (firstRun) {
       state = await getAppState();
@@ -1184,11 +1031,10 @@ export async function runMenuLoop(): Promise<void> {
       spinner.clear();
     }
 
-    // Clear screen and show welcome when returning to menu (not on first run)
     if (!firstRun) {
       clearScreen();
       printWelcome();
-      // Show environment status using pre-fetched state for consistency
+
       await displayEnvironmentStatus(state.githubAuth);
     }
     firstRun = false;

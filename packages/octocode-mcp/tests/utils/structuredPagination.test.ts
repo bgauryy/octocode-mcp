@@ -4,10 +4,8 @@ import {
   applyBulkResponsePagination,
 } from '../../src/utils/response/structuredPagination.js';
 import { executeBulkOperation } from '../../src/utils/response/bulk.js';
-import {
-  TOOL_NAMES,
-  initializeToolMetadata,
-} from '../../src/tools/toolMetadata/index.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata/proxies.js';
+import { initializeToolMetadata } from '../../src/tools/toolMetadata/state.js';
 
 beforeAll(async () => {
   await initializeToolMetadata();

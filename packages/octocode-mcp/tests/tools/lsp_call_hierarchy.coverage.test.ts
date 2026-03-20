@@ -5,19 +5,21 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
+import { registerLSPCallHierarchyTool } from '../../src/tools/lsp_call_hierarchy/register.js';
 import {
-  registerLSPCallHierarchyTool,
   parseRipgrepJsonOutput,
   parseGrepOutput,
   extractFunctionBody,
-  isFunctionAssignment,
   inferSymbolKind,
   createRange,
-} from '../../src/tools/lsp_call_hierarchy/index.js';
-import { SymbolResolver } from '../../src/lsp/index.js';
-import * as lspIndex from '../../src/lsp/index.js';
+  isFunctionAssignment,
+} from '../../src/tools/lsp_call_hierarchy/callHierarchy.js';
+import { SymbolResolver } from '../../src/lsp/resolver.js';
+import * as resolverModule from '../../src/lsp/resolver.js';
+import * as managerModule from '../../src/lsp/manager.js';
 import * as toolHelpers from '../../src/utils/file/toolHelpers.js';
-import * as execIndex from '../../src/utils/exec/index.js';
+import { safeExec } from '../../src/utils/exec/safe.js';
+import { checkCommandAvailability } from '../../src/utils/exec/commandAvailability.js';
 import * as fsPromises from 'fs/promises';
 
 // Mocks
@@ -25,9 +27,12 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
 }));
 
-vi.mock('../../src/lsp/index.js', () => ({
+vi.mock('../../src/lsp/resolver.js', () => ({
   SymbolResolver: vi.fn(),
   SymbolResolutionError: class extends Error {},
+}));
+
+vi.mock('../../src/lsp/manager.js', () => ({
   createClient: vi.fn(),
   isLanguageServerAvailable: vi.fn(),
 }));
@@ -41,8 +46,11 @@ vi.mock('../../src/utils/file/toolHelpers.js', () => ({
   })),
 }));
 
-vi.mock('../../src/utils/exec/index.js', () => ({
+vi.mock('../../src/utils/exec/safe.js', () => ({
   safeExec: vi.fn(),
+}));
+
+vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
   checkCommandAvailability: vi.fn(),
 }));
 
@@ -94,7 +102,7 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
       getIncomingCalls: vi.fn(),
       getOutgoingCalls: vi.fn(),
     };
-    (lspIndex.createClient as Mock).mockResolvedValue(mockLSPClient);
+    (managerModule.createClient as Mock).mockResolvedValue(mockLSPClient);
 
     // Register tool to get handler
     registerLSPCallHierarchyTool(mockServer);
@@ -152,7 +160,7 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
       (fsPromises.readFile as Mock).mockResolvedValue('content');
 
       mockSymbolResolver.resolvePositionFromContent.mockImplementation(() => {
-        throw new lspIndex.SymbolResolutionError(
+        throw new resolverModule.SymbolResolutionError(
           'myFunc',
           10,
           'Symbol not found'
@@ -176,7 +184,9 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
           position: { line: 0, character: 0 },
           foundAtLine: 1,
         });
-        (lspIndex.isLanguageServerAvailable as Mock).mockResolvedValue(true);
+        (managerModule.isLanguageServerAvailable as Mock).mockResolvedValue(
+          true
+        );
       });
 
       it('should use LSP incoming calls when available', async () => {
@@ -336,10 +346,10 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
         );
 
         // Setup fallback mocks
-        (execIndex.checkCommandAvailability as Mock).mockResolvedValue({
+        (checkCommandAvailability as Mock).mockResolvedValue({
           available: false,
         });
-        (execIndex.safeExec as Mock).mockResolvedValue({
+        (safeExec as Mock).mockResolvedValue({
           success: true,
           stdout: '',
         }); // Grep returns nothing
@@ -348,7 +358,7 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
         const results = JSON.parse(result.content[0].text);
 
         // Should have tried fallback (grep/rg)
-        expect(execIndex.safeExec).toHaveBeenCalled();
+        expect(safeExec).toHaveBeenCalled();
         // Since grep returned empty
         expect(results[0].status).toBe('empty');
         expect(results[0].hints.length).toBeGreaterThan(0);
@@ -366,14 +376,16 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
           position: { line: 0, character: 0 },
           foundAtLine: 1,
         });
-        (lspIndex.isLanguageServerAvailable as Mock).mockResolvedValue(false);
+        (managerModule.isLanguageServerAvailable as Mock).mockResolvedValue(
+          false
+        );
       });
 
       it('should use ripgrep for incoming calls if available', async () => {
-        (execIndex.checkCommandAvailability as Mock).mockResolvedValue({
+        (checkCommandAvailability as Mock).mockResolvedValue({
           available: true,
         });
-        (execIndex.safeExec as Mock).mockResolvedValue({
+        (safeExec as Mock).mockResolvedValue({
           success: true,
           stdout: JSON.stringify({
             type: 'match',
@@ -389,7 +401,7 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
         const result = await toolHandler({ queries: [baseQuery] });
         const results = JSON.parse(result.content[0].text);
 
-        expect(execIndex.safeExec).toHaveBeenCalledWith(
+        expect(safeExec).toHaveBeenCalledWith(
           'rg',
           expect.any(Array),
           expect.any(Object)
@@ -399,10 +411,10 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
       });
 
       it('should use grep for incoming calls if rg unavailable', async () => {
-        (execIndex.checkCommandAvailability as Mock).mockResolvedValue({
+        (checkCommandAvailability as Mock).mockResolvedValue({
           available: false,
         });
-        (execIndex.safeExec as Mock).mockResolvedValue({
+        (safeExec as Mock).mockResolvedValue({
           success: true,
           stdout: '/workspace/caller.ts:5:myFunc();',
         });
@@ -410,7 +422,7 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
         const result = await toolHandler({ queries: [baseQuery] });
         const results = JSON.parse(result.content[0].text);
 
-        expect(execIndex.safeExec).toHaveBeenCalledWith(
+        expect(safeExec).toHaveBeenCalledWith(
           'grep',
           expect.any(Array),
           expect.any(Object)
@@ -419,10 +431,10 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
       });
 
       it('should handle search errors', async () => {
-        (execIndex.checkCommandAvailability as Mock).mockResolvedValue({
+        (checkCommandAvailability as Mock).mockResolvedValue({
           available: true,
         });
-        (execIndex.safeExec as Mock).mockResolvedValue({
+        (safeExec as Mock).mockResolvedValue({
           success: false,
           code: 2,
           stderr: 'Search failed',
@@ -487,10 +499,10 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
       });
 
       it('should handle grep failure when rg unavailable (searchWithGrep code !== 1)', async () => {
-        (execIndex.checkCommandAvailability as Mock).mockResolvedValue({
+        (checkCommandAvailability as Mock).mockResolvedValue({
           available: false,
         });
-        (execIndex.safeExec as Mock).mockResolvedValue({
+        (safeExec as Mock).mockResolvedValue({
           success: false,
           code: 2,
           stderr: 'grep: invalid option',
@@ -842,11 +854,13 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
         position: { line: 2, character: 9 },
         foundAtLine: 3,
       });
-      (lspIndex.isLanguageServerAvailable as Mock).mockResolvedValue(false);
-      (execIndex.checkCommandAvailability as Mock).mockResolvedValue({
+      (managerModule.isLanguageServerAvailable as Mock).mockResolvedValue(
+        false
+      );
+      (checkCommandAvailability as Mock).mockResolvedValue({
         available: false,
       });
-      (execIndex.safeExec as Mock).mockResolvedValue({
+      (safeExec as Mock).mockResolvedValue({
         success: true,
         stdout: '/workspace/caller.ts:3:    this.myFunc();',
       });
@@ -884,11 +898,13 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
         position: { line: 2, character: 10 },
         foundAtLine: 3,
       });
-      (lspIndex.isLanguageServerAvailable as Mock).mockResolvedValue(false);
-      (execIndex.checkCommandAvailability as Mock).mockResolvedValue({
+      (managerModule.isLanguageServerAvailable as Mock).mockResolvedValue(
+        false
+      );
+      (checkCommandAvailability as Mock).mockResolvedValue({
         available: false,
       });
-      (execIndex.safeExec as Mock).mockResolvedValue({
+      (safeExec as Mock).mockResolvedValue({
         success: true,
         stdout: '/workspace/caller.ts:3:    await myFunc();',
       });
@@ -922,11 +938,13 @@ describe('LSP Call Hierarchy Coverage Tests', () => {
         position: { line: 0, character: 0 },
         foundAtLine: 1,
       });
-      (lspIndex.isLanguageServerAvailable as Mock).mockResolvedValue(false);
-      (execIndex.checkCommandAvailability as Mock).mockResolvedValue({
+      (managerModule.isLanguageServerAvailable as Mock).mockResolvedValue(
+        false
+      );
+      (checkCommandAvailability as Mock).mockResolvedValue({
         available: false,
       });
-      (execIndex.safeExec as Mock).mockResolvedValue({
+      (safeExec as Mock).mockResolvedValue({
         success: true,
         stdout: '/workspace/caller.ts:5:myFunc();',
       });

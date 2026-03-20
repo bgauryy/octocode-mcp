@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   findWorkspaceRoot,
   isLikelyDefinition,
-} from '../../src/tools/lsp_find_references/index.js';
+} from '../../src/tools/lsp_find_references/lspReferencesPatterns.js';
 
 describe('LSP Find References Tool', () => {
   beforeEach(() => {
@@ -23,7 +23,7 @@ describe('LSP Find References Tool', () => {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references/index.js');
+        await import('../../src/tools/lsp_find_references/register.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -51,7 +51,7 @@ describe('LSP Find References Tool', () => {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references/index.js');
+        await import('../../src/tools/lsp_find_references/register.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -69,7 +69,7 @@ describe('LSP Find References Tool', () => {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references/index.js');
+        await import('../../src/tools/lsp_find_references/register.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),

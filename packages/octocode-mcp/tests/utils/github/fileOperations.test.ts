@@ -37,7 +37,7 @@ vi.mock('../../../src/security/contentSanitizer.js', () => ({
   ContentSanitizer: mockContentSanitizer,
 }));
 
-vi.mock('../../../src/utils/minifier/index.js', () => ({
+vi.mock('../../../src/utils/minifier/minifier.js', () => ({
   minifyContent: mockminifyContent,
 }));
 
@@ -51,10 +51,7 @@ vi.mock('../../../src/mcp/responses.js', () => ({
 }));
 
 // Import after mocks are set up
-import {
-  fetchGitHubFileContentAPI,
-  clearDefaultBranchCache,
-} from '../../../src/github/fileOperations.js';
+import { fetchGitHubFileContentAPI } from '../../../src/github/fileContent.js';
 
 // Helper function to create properly formatted test parameters
 function createTestParams(overrides: Record<string, unknown> = {}) {
@@ -69,8 +66,8 @@ function createTestParams(overrides: Record<string, unknown> = {}) {
 }
 
 describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
-  describe('Schema defaults and backward compatibility', () => {
-    it('should have correct schema defaults for backward compatibility', async () => {
+  describe('Schema defaults', () => {
+    it('should have correct schema defaults', async () => {
       const { FileContentQuerySchema } =
         await import('../../../src/tools/github_fetch_content/scheme.js');
 
@@ -87,7 +84,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
       const parsed = FileContentQuerySchema.parse(minimalInput);
 
-      // Verify defaults ensure backward compatibility
       expect(parsed.fullContent).toBe(false); // Should default to false
       expect(parsed.startLine).toBeUndefined(); // Should be optional
       expect(parsed.endLine).toBeUndefined(); // Should be optional
@@ -108,7 +104,6 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    clearDefaultBranchCache();
     mockResolveDefaultBranch.mockResolvedValue('main');
 
     // Setup default mock Octokit instance
@@ -191,7 +186,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       });
     });
 
-    it('should fetch entire file when no parameters specified (backward compatibility)', async () => {
+    it('should fetch entire file when no parameters specified ', async () => {
       const params = createTestParams();
 
       const result = await fetchGitHubFileContentAPI(params);
@@ -244,7 +239,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
       });
     });
 
-    it('should explicitly handle fullContent=false as full content (backward compatibility)', async () => {
+    it('should explicitly handle fullContent=false as full content ', async () => {
       const params = createTestParams({
         fullContent: false, // Explicitly set to false
         // No other content selection parameters

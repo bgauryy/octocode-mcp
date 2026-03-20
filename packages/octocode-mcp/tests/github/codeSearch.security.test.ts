@@ -25,7 +25,7 @@ vi.mock('../../src/session.js', () => ({
 
 // Import after mocking
 import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
-import { SEARCH_ERRORS } from '../../src/errorCodes.js';
+import { SEARCH_ERRORS } from '../../src/errors/domainErrors.js';
 
 describe('Code Search - Empty Query Validation', () => {
   beforeEach(() => {

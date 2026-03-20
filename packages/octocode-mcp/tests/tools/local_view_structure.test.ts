@@ -3,15 +3,19 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { LOCAL_TOOL_ERROR_CODES } from '../../src/errorCodes.js';
+import { LOCAL_TOOL_ERROR_CODES } from '../../src/errors/localToolErrors.js';
 import { viewStructure } from '../../src/tools/local_view_structure/local_view_structure.js';
-import * as exec from '../../src/utils/exec/index.js';
+import { safeExec } from '../../src/utils/exec/safe.js';
+import { checkCommandAvailability } from '../../src/utils/exec/commandAvailability.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 import type { Stats } from 'fs';
 
 // Mock dependencies
-vi.mock('../../src/utils/exec/index.js', () => ({
+vi.mock('../../src/utils/exec/safe.js', () => ({
   safeExec: vi.fn(),
+}));
+
+vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
   checkCommandAvailability: vi
     .fn()
     .mockResolvedValue({ available: true, command: 'ls' }),
@@ -49,7 +53,7 @@ vi.mock('fs', () => {
 });
 
 describe('localViewStructure', () => {
-  const mockSafeExec = vi.mocked(exec.safeExec);
+  const mockSafeExec = vi.mocked(safeExec);
   const mockValidate = vi.mocked(pathValidator.pathValidator.validate);
   // Use the mock functions directly
   const mockReaddir = mockReaddirFn;
@@ -60,7 +64,7 @@ describe('localViewStructure', () => {
     // Clear all mocks but then immediately set defaults
     vi.clearAllMocks();
 
-    vi.mocked(exec.checkCommandAvailability).mockResolvedValue({
+    vi.mocked(checkCommandAvailability).mockResolvedValue({
       available: true,
       command: 'ls',
     });
@@ -94,7 +98,7 @@ describe('localViewStructure', () => {
 
   describe('ls command not available (lines 52-56)', () => {
     it('should return ToolErrors.commandNotAvailable when ls is not available in non-recursive mode', async () => {
-      vi.mocked(exec.checkCommandAvailability).mockResolvedValue({
+      vi.mocked(checkCommandAvailability).mockResolvedValue({
         available: false,
         command: 'ls',
       });

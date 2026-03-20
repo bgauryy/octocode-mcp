@@ -1,19 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import {
-  fetchGitHubFileContentAPI,
-  viewGitHubRepositoryStructureAPI,
-  clearDefaultBranchCache,
-} from '../../src/github/fileOperations.js';
+import { fetchGitHubFileContentAPI } from '../../src/github/fileContent.js';
+import { viewGitHubRepositoryStructureAPI } from '../../src/github/repoStructure.js';
 import { getOctokit, resolveDefaultBranch } from '../../src/github/client.js';
 import { clearAllCache } from '../../src/utils/http/cache.js';
 import { RequestError } from 'octokit';
-import * as minifierModule from '../../src/utils/minifier/index.js';
+import * as minifierModule from '../../src/utils/minifier/minifier.js';
 
 vi.mock('../../src/github/client.js');
 vi.mock('../../src/session.js', () => ({
   logSessionError: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('../../src/utils/minifier/index.js');
+vi.mock('../../src/utils/minifier/minifier.js');
 
 // Helper to create RequestError with proper structure
 function createRequestError(message: string, status: number) {
@@ -37,7 +34,6 @@ describe('File Operations - Additional Coverage Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearAllCache();
-    clearDefaultBranchCache();
     vi.mocked(resolveDefaultBranch).mockResolvedValue('main');
   });
 

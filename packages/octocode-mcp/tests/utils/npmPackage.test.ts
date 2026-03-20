@@ -24,7 +24,7 @@ vi.mock('../../src/utils/http/fetch.js', () => ({
 // Mock: executeNpmCommand (still used by checkNpmDeprecation)
 // ---------------------------------------------------------------------------
 const mockExecuteNpmCommand = vi.fn();
-vi.mock('../../src/utils/exec/index.js', () => ({
+vi.mock('../../src/utils/exec/npm.js', () => ({
   executeNpmCommand: (...args: unknown[]) => mockExecuteNpmCommand(...args),
 }));
 

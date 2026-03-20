@@ -22,7 +22,7 @@ import { getHints } from '../../hints/index.js';
 import { RipgrepMatchOnlySchema } from '../../utils/parsers/schemas.js';
 import { matchesFilePatterns } from './lspReferencesCore.js';
 import { validateCommand } from '../../security/commandValidator.js';
-import { TOOL_NAME } from './execution.js';
+import { TOOL_NAME } from './constants.js';
 const DEFAULT_GREP_EXTENSIONS = [
   'ts',
   'tsx',
@@ -71,7 +71,6 @@ async function spawnCollectOutput(
   args: string[],
   options: { maxBuffer?: number; timeout?: number } = {}
 ): Promise<{ stdout: string }> {
-  // Validate command against security allowlist
   const validation = validateCommand(command, args);
   if (!validation.isValid) {
     throw new Error(
@@ -154,7 +153,7 @@ async function enhancePatternReference(
       const endLine = Math.min(fileLines.length, raw.lineNumber + contextLines);
       content = fileLines.slice(startLine, endLine).join('\n');
     } catch {
-      // Keep single line content
+      // Context lines read failed; keep single-line ripgrep excerpt.
     }
   }
 
@@ -185,13 +184,11 @@ export async function findReferencesWithPatternMatching(
 
   const totalUnfiltered = allRawReferences.length;
 
-  // Filter based on includeDeclaration
   let filteredReferences = allRawReferences;
   if (!query.includeDeclaration) {
     filteredReferences = allRawReferences.filter(ref => !ref.isDefinition);
   }
 
-  // Apply file pattern filtering (post-search for any results ripgrep globs missed)
   const hasFilters =
     query.includePattern?.length || query.excludePattern?.length;
   if (hasFilters) {
@@ -200,7 +197,6 @@ export async function findReferencesWithPatternMatching(
     );
   }
 
-  // Paginate
   const referencesPerPage = query.referencesPerPage ?? 20;
   const page = query.page ?? 1;
   const totalReferences = filteredReferences.length;
@@ -227,7 +223,6 @@ export async function findReferencesWithPatternMatching(
     };
   }
 
-  // Lazy enhancement: only enhance the current page with context
   const contextLines = query.contextLines ?? 2;
   const paginatedReferences: ReferenceLocation[] = [];
   for (const raw of paginatedRaw) {
@@ -289,7 +284,6 @@ export async function findWorkspaceRoot(filePath: string): Promise<string> {
   ];
 
   for (let i = 0; i < 10; i++) {
-    // Check all markers in current directory in parallel
     const checks = markers.map(async marker => {
       try {
         await access(path.join(currentDir, marker));
@@ -373,15 +367,12 @@ export function buildGrepFilterArgs(
   const parts: string[] = [];
   if (includePattern?.length) {
     for (const pattern of includePattern) {
-      // Convert glob patterns to grep --include
-      // e.g. "**/*.test.ts" -> "*.test.ts"
       const filename = pattern.replace(/^\*\*\//, '');
       parts.push(`--include="${filename}"`);
     }
   }
   if (excludePattern?.length) {
     for (const pattern of excludePattern) {
-      // Convert glob patterns to grep --exclude / --exclude-dir
       const cleaned = pattern.replace(/^\*\*\//, '').replace(/\/\*\*$/, '');
       if (pattern.includes('/')) {
         parts.push(`--exclude-dir="${cleaned}"`);
@@ -522,7 +513,7 @@ async function searchReferencesInWorkspace(
           }
         }
       } catch {
-        // Skip malformed JSON
+        // One ripgrep JSON line failed to parse or match; skip that line.
       }
     }
   } catch (error: unknown) {
@@ -616,7 +607,7 @@ async function searchReferencesWithGrep(
       }
     }
   } catch {
-    // grep failed
+    // Grep fallback search failed; sort and return whatever references were collected.
   }
 
   references.sort((a, b) => {

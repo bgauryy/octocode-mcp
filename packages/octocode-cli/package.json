@@ -59,6 +59,8 @@
     "build": "yarn lint && vite build",
     "build:dev": "vite build",
     "clean": "rm -rf out/",
+    "prepack": "cp -r ../../skills ./skills",
+    "postpack": "rm -rf ./skills",
     "lint": "eslint src tests",
     "lint:fix": "eslint src tests --fix",
     "start": "node ./out/octocode-cli.js",

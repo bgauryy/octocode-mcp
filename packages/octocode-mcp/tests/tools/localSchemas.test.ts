@@ -5,7 +5,7 @@ import { BulkRipgrepQuerySchema } from '../../src/tools/local_ripgrep/scheme.js'
 import { BulkViewStructureSchema } from '../../src/tools/local_view_structure/scheme.js';
 import { BulkFindFilesSchema } from '../../src/tools/local_find_files/scheme.js';
 import { BulkFetchContentSchema } from '../../src/tools/local_fetch_content/scheme.js';
-import { STATIC_TOOL_NAMES } from '../../src/tools/toolMetadata/index.js';
+import { STATIC_TOOL_NAMES } from '../../src/tools/toolNames.js';
 
 describe('Local tool schemas (TDD for local tools registration)', () => {
   const bulkQueriesShape = (schema: unknown) => {

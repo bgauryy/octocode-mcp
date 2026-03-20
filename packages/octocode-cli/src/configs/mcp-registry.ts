@@ -2252,7 +2252,7 @@ export function getAllTags(): string[] {
       tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
     });
   });
-  // Sort by count (descending), then alphabetically
+
   return Array.from(tagCounts.keys()).sort((a, b) => {
     const countDiff = (tagCounts.get(b) || 0) - (tagCounts.get(a) || 0);
     return countDiff !== 0 ? countDiff : a.localeCompare(b);

@@ -3,7 +3,6 @@
  *
  * This module provides types, schemas, and utilities for users
  * who want to programmatically interact with Octocode MCP metadata.
- * Split into focused section modules — this barrel re-exports everything.
  *
  * @example
  * ```typescript

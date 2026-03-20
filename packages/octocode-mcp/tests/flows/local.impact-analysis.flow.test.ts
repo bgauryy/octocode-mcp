@@ -26,14 +26,24 @@ const flowRuntime = vi.hoisted(() => ({
   spawn: vi.fn(),
 }));
 
-vi.mock('../../src/utils/exec/index.js', async () => {
+vi.mock('../../src/utils/exec/safe.js', async () => {
   const actual = await vi.importActual<
-    typeof import('../../src/utils/exec/index.js')
-  >('../../src/utils/exec/index.js');
+    typeof import('../../src/utils/exec/safe.js')
+  >('../../src/utils/exec/safe.js');
 
   return {
     ...actual,
     safeExec: flowRuntime.safeExec,
+  };
+});
+
+vi.mock('../../src/utils/exec/commandAvailability.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../src/utils/exec/commandAvailability.js')
+  >('../../src/utils/exec/commandAvailability.js');
+
+  return {
+    ...actual,
     checkCommandAvailability: flowRuntime.checkCommandAvailability,
   };
 });
@@ -44,10 +54,10 @@ vi.mock('child_process', () => {
   };
 });
 
-vi.mock('../../src/lsp/index.js', async () => {
-  const actual = await vi.importActual<typeof import('../../src/lsp/index.js')>(
-    '../../src/lsp/index.js'
-  );
+vi.mock('../../src/lsp/manager.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../src/lsp/manager.js')
+  >('../../src/lsp/manager.js');
 
   return {
     ...actual,

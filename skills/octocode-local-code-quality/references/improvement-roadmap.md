@@ -2,22 +2,7 @@
 
 Research-backed upgrade plan for the weakest parts of the skill: security analysis, test-quality analysis, semantic analysis, output/reporting, and test-suite quality.
 
----
-
-## Validation Policy
-
-When Octocode MCP local tools are available, every statement about live code must be validated with them before it is presented as fact.
-
-- Start with `localSearchCode` to anchor the statement to a concrete file and `lineHint`.
-- Use one semantic check next: `lspGotoDefinition`, `lspFindReferences`, or `lspCallHierarchy`.
-- Use `localGetFileContent` only after the location is known and the exact statement to validate is clear.
-- If Octocode local tools are unavailable, fall back to CLI validation and mark the confidence level.
-
-This rule applies to:
-- statements about whether code is dead, reachable, validated, or unused
-- statements about whether user input reaches a sink
-- statements about whether tests clean up, isolate state, or assert behavior
-- statements about module boundaries, dependency direction, and exported API usage
+For validation policy, see the Principles section in [SKILL.md](../SKILL.md) and [validate & investigate](./validate-investigate.md).
 
 ---
 

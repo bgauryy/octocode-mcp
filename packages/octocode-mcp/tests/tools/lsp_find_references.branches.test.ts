@@ -12,8 +12,7 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
 }));
 
-// Mock LSP module with MockSymbolResolutionError defined INSIDE the factory
-vi.mock('../../src/lsp/index.js', () => {
+vi.mock('../../src/lsp/resolver.js', () => {
   class MockSymbolResolutionError extends Error {
     searchRadius: number;
     symbolName: string;
@@ -35,10 +34,13 @@ vi.mock('../../src/lsp/index.js', () => {
       }),
     })),
     SymbolResolutionError: MockSymbolResolutionError,
-    isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
-    createClient: vi.fn().mockResolvedValue(null),
   };
 });
+
+vi.mock('../../src/lsp/manager.js', () => ({
+  isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
+  createClient: vi.fn().mockResolvedValue(null),
+}));
 
 // Mock pattern matching module
 vi.mock('../../src/tools/lsp_find_references/lspReferencesPatterns.js', () => ({
@@ -69,8 +71,7 @@ vi.mock('../../src/utils/file/toolHelpers.js', () => ({
   })),
 }));
 
-// Mock errorCodes
-vi.mock('../../src/errorCodes.js', () => ({
+vi.mock('../../src/errors/errorFactories.js', () => ({
   ToolErrors: {
     fileAccessFailed: vi.fn(
       (path: string) => new Error(`Cannot access file: ${path}`)
@@ -83,7 +84,8 @@ vi.mock('../../src/errorCodes.js', () => ({
 
 // Import after mocks
 import * as fs from 'fs/promises';
-import * as lspModule from '../../src/lsp/index.js';
+import * as resolverModule from '../../src/lsp/resolver.js';
+import * as managerModule from '../../src/lsp/manager.js';
 import * as patternModule from '../../src/tools/lsp_find_references/lspReferencesPatterns.js';
 import * as coreModule from '../../src/tools/lsp_find_references/lspReferencesCore.js';
 import {
@@ -128,11 +130,11 @@ describe('LSP Find References - Branch Coverage Tests', () => {
     vi.mocked(fs.readFile).mockResolvedValue(
       'function testFunction() {}\nexport { testFunction };'
     );
-    vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-    vi.mocked(lspModule.createClient).mockResolvedValue(null);
+    vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(false);
+    vi.mocked(managerModule.createClient).mockResolvedValue(null);
 
     // Must use regular function (not arrow) because it's called with `new`
-    vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
+    vi.mocked(resolverModule.SymbolResolver).mockImplementation(function () {
       return {
         resolvePositionFromContent: vi.fn().mockReturnValue({
           position: { line: 0, character: 9 },
@@ -181,8 +183,8 @@ describe('LSP Find References - Branch Coverage Tests', () => {
 
     it('should handle SymbolResolutionError (line 120)', async () => {
       // Override SymbolResolver to throw SymbolResolutionError
-      const { SymbolResolutionError } = lspModule;
-      vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
+      const { SymbolResolutionError } = resolverModule;
+      vi.mocked(resolverModule.SymbolResolver).mockImplementation(function () {
         return {
           resolvePositionFromContent: vi.fn().mockImplementation(() => {
             throw new SymbolResolutionError(
@@ -204,7 +206,7 @@ describe('LSP Find References - Branch Coverage Tests', () => {
     });
 
     it('should rethrow non-SymbolResolutionError (line 135) - caught by outer catch', async () => {
-      vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
+      vi.mocked(resolverModule.SymbolResolver).mockImplementation(function () {
         return {
           resolvePositionFromContent: vi.fn().mockImplementation(() => {
             throw new TypeError('unexpected error');
@@ -218,7 +220,9 @@ describe('LSP Find References - Branch Coverage Tests', () => {
     });
 
     it('should fallback to pattern matching when LSP returns null (line 151)', async () => {
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        true
+      );
       vi.mocked(coreModule.findReferencesWithLSP).mockResolvedValue(null);
 
       vi.mocked(
@@ -240,7 +244,9 @@ describe('LSP Find References - Branch Coverage Tests', () => {
     });
 
     it('should fallback to pattern matching when LSP throws (line 152)', async () => {
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        true
+      );
       vi.mocked(coreModule.findReferencesWithLSP).mockRejectedValue(
         new Error('LSP crashed')
       );
@@ -254,7 +260,9 @@ describe('LSP Find References - Branch Coverage Tests', () => {
     });
 
     it('should merge LSP and pattern results when both return data (line 151)', async () => {
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        true
+      );
       const lspResult = {
         status: 'hasResults' as const,
         locations: [{ uri: '/test.ts', range: { start: { line: 0 } } }],

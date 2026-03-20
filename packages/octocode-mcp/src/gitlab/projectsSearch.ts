@@ -81,7 +81,6 @@ async function searchGitLabProjectsAPIInternal(
     const perPage = Math.min(params.perPage || 20, 100);
     const page = params.page || 1;
 
-    // Build query options
     const queryOptions: Record<string, unknown> = {
       search: params.search,
       topic: params.topic,
@@ -95,14 +94,12 @@ async function searchGitLabProjectsAPIInternal(
       page,
     };
 
-    // Remove undefined values
     Object.keys(queryOptions).forEach(key => {
       if (queryOptions[key] === undefined) {
         delete queryOptions[key];
       }
     });
 
-    // Fetch projects
     const rawProjects = (await gitlab.Projects.all(
       queryOptions
     )) as unknown as GitLabProject[];

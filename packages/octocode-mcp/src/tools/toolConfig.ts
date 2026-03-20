@@ -2,7 +2,7 @@ import {
   McpServer,
   RegisteredTool,
 } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata/index.js';
+import { TOOL_NAMES, DESCRIPTIONS } from './toolMetadata/proxies.js';
 import { ToolInvocationCallback } from '../types.js';
 import { registerGitHubSearchCodeTool } from './github_search_code/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from './github_fetch_content/github_fetch_content.js';
@@ -10,14 +10,14 @@ import { registerSearchGitHubReposTool } from './github_search_repos/github_sear
 import { registerSearchGitHubPullRequestsTool } from './github_search_pull_requests/github_search_pull_requests.js';
 import { registerViewGitHubRepoStructureTool } from './github_view_repo_structure/github_view_repo_structure.js';
 import { registerPackageSearchTool } from './package_search/package_search.js';
-import { registerGitHubCloneRepoTool } from './github_clone_repo/index.js';
-import { registerLocalRipgrepTool } from './local_ripgrep/index.js';
-import { registerLocalViewStructureTool } from './local_view_structure/index.js';
-import { registerLocalFindFilesTool } from './local_find_files/index.js';
-import { registerLocalFetchContentTool } from './local_fetch_content/index.js';
+import { registerGitHubCloneRepoTool } from './github_clone_repo/register.js';
+import { registerLocalRipgrepTool } from './local_ripgrep/register.js';
+import { registerLocalViewStructureTool } from './local_view_structure/register.js';
+import { registerLocalFindFilesTool } from './local_find_files/register.js';
+import { registerLocalFetchContentTool } from './local_fetch_content/register.js';
 import { registerLSPGotoDefinitionTool } from './lsp_goto_definition/lsp_goto_definition.js';
-import { registerLSPFindReferencesTool } from './lsp_find_references/index.js';
-import { registerLSPCallHierarchyTool } from './lsp_call_hierarchy/index.js';
+import { registerLSPFindReferencesTool } from './lsp_find_references/register.js';
+import { registerLSPCallHierarchyTool } from './lsp_call_hierarchy/register.js';
 
 export interface ToolConfig {
   name: string;

@@ -1,0 +1,29 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toMCPSchema } from '../../types/toolTypes.js';
+import {
+  BulkLSPFindReferencesSchema,
+  LSP_FIND_REFERENCES_DESCRIPTION,
+} from './scheme.js';
+import { executeFindReferences } from './execution.js';
+import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
+import { LspFindReferencesOutputSchema } from '../../scheme/outputSchemas.js';
+import { TOOL_NAME } from './constants.js';
+
+export function registerLSPFindReferencesTool(server: McpServer) {
+  return server.registerTool(
+    TOOL_NAME,
+    {
+      description: LSP_FIND_REFERENCES_DESCRIPTION,
+      inputSchema: toMCPSchema(BulkLSPFindReferencesSchema),
+      outputSchema: toMCPSchema(LspFindReferencesOutputSchema),
+      annotations: {
+        title: 'Find References',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    withBasicSecurityValidation(executeFindReferences, TOOL_NAME)
+  );
+}

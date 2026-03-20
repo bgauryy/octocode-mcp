@@ -51,42 +51,18 @@ export interface CloneRepoQuery {
   charLength?: number;
 }
 
-/**
- * Metadata persisted alongside a cloned repo for cache management.
- * Stored as `.octocode-clone-meta.json` inside the clone directory.
- */
-/**
- * Source of the cached content.
- *
- * - `'clone'`          — full or sparse git clone (complete for its scope)
- * - `'directoryFetch'` — HTTP directory fetch (only specific paths exist on disk)
- *
- * Older metadata without `source` is treated as `'clone'` for backward compat.
- */
+/** How this cache entry was produced (clone vs directory API fetch). */
 export type CacheSource = 'clone' | 'directoryFetch';
 
+/** Metadata in `.octocode-clone-meta.json` beside each cached repo directory. */
 export interface CloneCacheMeta {
-  /** ISO-8601 timestamp of when the clone was created */
   clonedAt: string;
-  /** ISO-8601 timestamp of when the cache expires */
   expiresAt: string;
-  /** Repository owner */
   owner: string;
-  /** Repository name */
   repo: string;
-  /** Branch that was cloned */
   branch: string;
-  /**
-   * Sparse path that was checked out (undefined = full clone).
-   * Used as part of the cache key so a full clone and a partial
-   * fetch of the same repo can coexist.
-   */
   sparse_path?: string;
-  /**
-   * Source of the cached content. Defaults to 'clone' for backward compat.
-   * Used to prevent directoryFetch cache from being treated as a full clone.
-   */
-  source?: CacheSource;
+  source: CacheSource;
   /** Approximate on-disk size in bytes, recorded at clone time for fast GC. */
   sizeBytes?: number;
 }

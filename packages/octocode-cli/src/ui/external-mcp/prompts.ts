@@ -35,9 +35,6 @@ type ClientChoice = {
   disabled?: boolean | string;
 };
 
-/**
- * Get formatted category name
- */
 function formatCategory(category: string): string {
   return category
     .split('-')
@@ -45,9 +42,6 @@ function formatCategory(category: string): string {
     .join(' ');
 }
 
-/**
- * Get category icon
- */
 function getCategoryIcon(category: MCPCategory): string {
   const icons: Record<MCPCategory, string> = {
     'browser-automation': '',
@@ -73,11 +67,6 @@ function getCategoryIcon(category: MCPCategory): string {
   return icons[category] || '📦';
 }
 
-/**
- * Format MCP entry for display
- * Note: ✓ checkmark is NOT shown here because we don't have client context
- * to check installation status. [Official] badge shown for official MCPs.
- */
 function formatMCPChoice(mcp: MCPRegistryEntry): string {
   let name = `${getCategoryIcon(mcp.category)} ${mcp.name}`;
   if (mcp.official) {
@@ -87,9 +76,6 @@ function formatMCPChoice(mcp: MCPRegistryEntry): string {
   return name;
 }
 
-/**
- * Select MCP client (IDE) for installation
- */
 export async function selectTargetClient(): Promise<{
   client: MCPClient;
   customPath?: string;
@@ -148,7 +134,6 @@ export async function selectTargetClient(): Promise<{
     });
   }
 
-  // Sort to put current client first, then available clients
   choices.sort((a, b) => {
     if (a.disabled && !b.disabled) return 1;
     if (!a.disabled && b.disabled) return -1;
@@ -186,9 +171,6 @@ export async function selectTargetClient(): Promise<{
   return { client: selected };
 }
 
-/**
- * Prompt for custom config path
- */
 async function promptCustomPath(): Promise<string | null> {
   console.log();
   console.log(
@@ -210,7 +192,6 @@ async function promptCustomPath(): Promise<string | null> {
 
   if (!customPath || !customPath.trim()) return null;
 
-  // Expand ~ to home directory
   if (customPath.startsWith('~')) {
     return customPath.replace('~', process.env.HOME || '');
   }
@@ -218,9 +199,6 @@ async function promptCustomPath(): Promise<string | null> {
   return customPath;
 }
 
-/**
- * Select how to browse MCPs
- */
 export async function selectBrowseMode(): Promise<
   'search' | 'category' | 'tag' | 'popular' | 'all' | 'back' | null
 > {
@@ -272,9 +250,6 @@ export async function selectBrowseMode(): Promise<
   return choice;
 }
 
-/**
- * Search MCPs by query - interactive search as you type
- */
 export async function searchMCPs(): Promise<MCPRegistryEntry | 'back' | null> {
   console.log();
   console.log(`  ${dim('[Step 3/6]')} ${bold('Select MCP')}`);
@@ -294,7 +269,6 @@ export async function searchMCPs(): Promise<MCPRegistryEntry | 'back' | null> {
         value: 'back' as const,
       };
 
-      // If no search term, show all MCPs with back option
       if (!term || !term.trim()) {
         return [
           ...MCP_REGISTRY.slice(0, 15).map(mcp => ({
@@ -307,7 +281,6 @@ export async function searchMCPs(): Promise<MCPRegistryEntry | 'back' | null> {
         ];
       }
 
-      // Search with the term
       const results = searchRegistry(term.trim());
 
       if (results.length === 0) {
@@ -337,9 +310,6 @@ export async function searchMCPs(): Promise<MCPRegistryEntry | 'back' | null> {
   return selected;
 }
 
-/**
- * Select category and then MCP
- */
 export async function selectByCategory(): Promise<
   MCPRegistryEntry | 'back' | null
 > {
@@ -379,16 +349,10 @@ export async function selectByCategory(): Promise<
   return await selectFromList(mcps, formatCategory(category));
 }
 
-/**
- * Format tag for display (capitalize first letter)
- */
 function formatTag(tag: string): string {
   return tag.charAt(0).toUpperCase() + tag.slice(1);
 }
 
-/**
- * Select tag and then MCP - interactive search through tags
- */
 export async function selectByTag(): Promise<MCPRegistryEntry | 'back' | null> {
   console.log();
   console.log(`  ${dim('[Step 3/6]')} ${bold('Select MCP')}`);
@@ -408,10 +372,9 @@ export async function selectByTag(): Promise<MCPRegistryEntry | 'back' | null> {
         value: 'back' as const,
       };
 
-      // Filter tags based on search term
       const filteredTags =
         !term || !term.trim()
-          ? allTags.slice(0, 20) // Show top 20 by popularity when no search
+          ? allTags.slice(0, 20)
           : allTags.filter(tag =>
               tag.toLowerCase().includes(term.toLowerCase().trim())
             );
@@ -445,28 +408,20 @@ export async function selectByTag(): Promise<MCPRegistryEntry | 'back' | null> {
   return await selectFromList(mcps, `Tag: ${formatTag(selectedTag)}`);
 }
 
-/**
- * Show popular MCPs
- */
 export async function selectPopular(): Promise<
   MCPRegistryEntry | 'back' | null
 > {
   console.log();
   console.log(`  ${dim('[Step 3/6]')} ${bold('Select MCP')}`);
 
-  // Get first 20 MCPs (they're roughly sorted by popularity in registry)
   const popular = MCP_REGISTRY.slice(0, 20);
   return await selectFromList(popular, 'Popular MCPs');
 }
 
-/**
- * Show all MCPs sorted alphabetically
- */
 export async function selectAll(): Promise<MCPRegistryEntry | 'back' | null> {
   console.log();
   console.log(`  ${dim('[Step 3/6]')} ${bold('Select MCP')}`);
 
-  // Sort all MCPs alphabetically by name
   const allMcps = [...MCP_REGISTRY].sort((a, b) =>
     a.name.localeCompare(b.name)
   );
@@ -476,9 +431,6 @@ export async function selectAll(): Promise<MCPRegistryEntry | 'back' | null> {
   );
 }
 
-/**
- * Select MCP from a list
- */
 async function selectFromList(
   mcps: MCPRegistryEntry[],
   title: string
@@ -511,9 +463,6 @@ async function selectFromList(
   return selected;
 }
 
-/**
- * Prompt for required environment variables
- */
 export async function promptEnvVars(
   mcp: MCPRegistryEntry
 ): Promise<Record<string, string> | 'back' | null> {
@@ -586,7 +535,6 @@ export async function promptEnvVars(
     const value = await input({
       message: `${env.name}:`,
       validate: (val: string) => {
-        // Allow empty for optional-looking vars
         if (!val.trim() && !env.name.includes('OPTIONAL')) {
           return `${env.name} is required`;
         }
@@ -602,9 +550,6 @@ export async function promptEnvVars(
   return values;
 }
 
-/**
- * Confirm installation
- */
 export async function confirmInstall(
   mcp: MCPRegistryEntry,
   client: MCPClient

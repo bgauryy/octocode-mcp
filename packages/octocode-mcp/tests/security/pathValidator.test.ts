@@ -21,16 +21,10 @@ describe('PathValidator', () => {
   let validator: PathValidator;
 
   beforeEach(() => {
-    validator = new PathValidator(testWorkspace);
+    validator = new PathValidator({ workspaceRoot: testWorkspace });
   });
 
   describe('constructor', () => {
-    it('should accept string argument for backwards compatibility', () => {
-      const v = new PathValidator(testWorkspace);
-      const result = v.validate(`${testWorkspace}/package.json`);
-      expect(result.isValid).toBe(true);
-    });
-
     it('should accept PathValidatorOptions object', () => {
       const v = new PathValidator({
         workspaceRoot: testWorkspace,
@@ -407,7 +401,7 @@ describe('PathValidator', () => {
         });
 
       try {
-        const v = new PathValidator(testWorkspace);
+        const v = new PathValidator({ workspaceRoot: testWorkspace });
         const result = v.validate(`${testWorkspace}/some-file`);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('Permission denied');
@@ -426,7 +420,7 @@ describe('PathValidator', () => {
         });
 
       try {
-        const v = new PathValidator(testWorkspace);
+        const v = new PathValidator({ workspaceRoot: testWorkspace });
         const result = v.validate(`${testWorkspace}/some-file`);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('Symlink loop');
@@ -445,7 +439,7 @@ describe('PathValidator', () => {
         });
 
       try {
-        const v = new PathValidator(testWorkspace);
+        const v = new PathValidator({ workspaceRoot: testWorkspace });
         const result = v.validate(`${testWorkspace}/some-file`);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('Path name too long');
@@ -464,7 +458,7 @@ describe('PathValidator', () => {
         });
 
       try {
-        const v = new PathValidator(testWorkspace);
+        const v = new PathValidator({ workspaceRoot: testWorkspace });
         const result = v.validate(`${testWorkspace}/some-file`);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('Unexpected error');
@@ -481,7 +475,7 @@ describe('PathValidator', () => {
         });
 
       try {
-        const v = new PathValidator(testWorkspace);
+        const v = new PathValidator({ workspaceRoot: testWorkspace });
         const result = v.validate(`${testWorkspace}/some-file`);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('Unexpected error');
@@ -542,7 +536,7 @@ describe('PathValidator', () => {
         .mockReturnValue(gitPath);
 
       try {
-        const v = new PathValidator(testWorkspace);
+        const v = new PathValidator({ workspaceRoot: testWorkspace });
         const result = v.validate(`${testWorkspace}/link-to-git`);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('ignored');
@@ -563,7 +557,7 @@ describe('PathValidator', () => {
         });
 
       try {
-        const v = new PathValidator(testWorkspace);
+        const v = new PathValidator({ workspaceRoot: testWorkspace });
         const result = v.validate(`${testWorkspace}/protected-file`);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('Permission denied');
@@ -584,7 +578,7 @@ describe('PathValidator', () => {
         });
 
       try {
-        const v = new PathValidator(testWorkspace);
+        const v = new PathValidator({ workspaceRoot: testWorkspace });
         const result = v.validate(`${testWorkspace}/loop-link`);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('Symlink loop');
@@ -605,7 +599,7 @@ describe('PathValidator', () => {
         });
 
       try {
-        const v = new PathValidator(testWorkspace);
+        const v = new PathValidator({ workspaceRoot: testWorkspace });
         const result = v.validate(`${testWorkspace}/very-long-name`);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('Path name too long');
@@ -626,7 +620,7 @@ describe('PathValidator', () => {
         });
 
       try {
-        const v = new PathValidator(testWorkspace);
+        const v = new PathValidator({ workspaceRoot: testWorkspace });
         const result = v.validate(`${testWorkspace}/problem-file`);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('Unexpected error');
@@ -644,7 +638,7 @@ describe('PathValidator', () => {
         .mockReturnValue(gitPath);
 
       try {
-        const v = new PathValidator(testWorkspace);
+        const v = new PathValidator({ workspaceRoot: testWorkspace });
         const result = v.validate(`${testWorkspace}/link-to-git`);
         expect(result.isValid).toBe(false);
         expect(result.error).toContain('ignored');

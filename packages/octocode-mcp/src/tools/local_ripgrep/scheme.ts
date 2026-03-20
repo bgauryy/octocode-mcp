@@ -8,11 +8,8 @@ import {
   BaseQuerySchemaLocal,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import {
-  LOCAL_RIPGREP,
-  TOOL_NAMES,
-  DESCRIPTIONS,
-} from '../toolMetadata/index.js';
+import { LOCAL_RIPGREP } from '../toolMetadata/localSchemaHelpers.js';
+import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/proxies.js';
 
 /**
  * Tool description for localSearchCode

@@ -1,7 +1,7 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { maskSensitiveData } from './security/mask.js';
 import { ContentSanitizer } from './security/contentSanitizer.js';
-import { jsonToYamlString } from './utils/minifier/index.js';
+import { jsonToYamlString } from './utils/minifier/jsonToYamlString.js';
 import { getConfigSync } from 'octocode-shared';
 import type { BulkToolResponse, StructuredToolResponse } from './types.js';
 import type {
@@ -54,14 +54,12 @@ export function createResult(options: {
 // ============================================================================
 // ROLE-BASED API (single-result / non-bulk tools)
 // ============================================================================
-//
 // Response patterns:
 // - **Bulk tools** (githubSearchCode, localSearchCode, etc.): Use createResponseFormat
 //   via bulk.ts → createBulkResponse. Single YAML block with instructions + results[].
 // - **Role-based** (createRoleBasedResult, ContentBuilder, QuickResult): For single-result
 //   or non-bulk tools that need structured role separation (system/assistant/user).
 //   Currently exported for future use; bulk tools do not use this pattern.
-//
 // ============================================================================
 
 /**

@@ -89,11 +89,7 @@ export async function cloneRepo(
   // Skip the cache entirely when the caller requests a forced refresh.
   // Only accept cache from a real clone, not from a directoryFetch.
   const cacheResult = isCacheHit(cloneDir);
-  if (
-    !forceRefresh &&
-    cacheResult.hit &&
-    cacheResult.meta.source !== 'directoryFetch'
-  ) {
+  if (!forceRefresh && cacheResult.hit && cacheResult.meta.source === 'clone') {
     return {
       localPath: cloneDir,
       cached: true,
@@ -126,7 +122,7 @@ export async function cloneRepo(
   }
 
   // ── 4. Write cache metadata ─────────────────────────────────────
-  const newMeta = createCacheMeta(owner, repo, branch, sparse_path, 'clone');
+  const newMeta = createCacheMeta(owner, repo, branch, 'clone', sparse_path);
   writeCacheMeta(cloneDir, newMeta);
 
   return {

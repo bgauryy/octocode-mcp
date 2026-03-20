@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerTools } from '../../src/tools/toolsManager.js';
-import { STATIC_TOOL_NAMES } from '../../src/tools/toolMetadata/index.js';
+import { STATIC_TOOL_NAMES } from '../../src/tools/toolNames.js';
 
 // Mock toolConfig with ALL_TOOLS containing only local tools for this test
 // The fn functions call server.registerTool to simulate real registration
@@ -66,10 +66,10 @@ vi.mock('../../src/tools/toolConfig.js', () => ({
   ],
 }));
 
-vi.mock('../../src/tools/toolMetadata/index.js', async () => {
+vi.mock('../../src/tools/toolMetadata/proxies.js', async () => {
   const actual = await vi.importActual<
-    typeof import('../../src/tools/toolMetadata/index.js')
-  >('../../src/tools/toolMetadata/index.js');
+    typeof import('../../src/tools/toolMetadata/proxies.js')
+  >('../../src/tools/toolMetadata/proxies.js');
   return {
     ...actual,
     isToolInMetadata: vi.fn().mockReturnValue(true),
@@ -95,16 +95,16 @@ vi.mock('../../src/session.js', () => ({
 }));
 
 // Mock local tool implementations
-vi.mock('../../src/tools/local_ripgrep/index.js', () => ({
+vi.mock('../../src/tools/local_ripgrep/register.js', () => ({
   searchContentRipgrep: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
-vi.mock('../../src/tools/local_view_structure/index.js', () => ({
+vi.mock('../../src/tools/local_view_structure/register.js', () => ({
   viewStructure: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
-vi.mock('../../src/tools/local_find_files/index.js', () => ({
+vi.mock('../../src/tools/local_find_files/register.js', () => ({
   findFiles: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
-vi.mock('../../src/tools/local_fetch_content/index.js', () => ({
+vi.mock('../../src/tools/local_fetch_content/register.js', () => ({
   fetchContent: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
 vi.mock('../../src/utils/bulkOperations.js', () => ({

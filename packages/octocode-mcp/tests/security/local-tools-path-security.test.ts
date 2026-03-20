@@ -815,7 +815,7 @@ describe('SEC-07: Sensitive File Protection (Ignored Patterns)', () => {
   let v: PathValidator;
 
   beforeEach(() => {
-    v = new PathValidator(WORKSPACE); // default includes home dir
+    v = new PathValidator({ workspaceRoot: WORKSPACE }); // default includes home dir
   });
 
   describe('Environment files', () => {
@@ -907,7 +907,7 @@ describe('SEC-07: Sensitive File Protection (Ignored Patterns)', () => {
 
 describe('SEC-08: Home Directory Boundary', () => {
   describe('Default mode (home dir included)', () => {
-    const v = new PathValidator(WORKSPACE); // includeHomeDir: true (default)
+    const v = new PathValidator({ workspaceRoot: WORKSPACE }); // includeHomeDir: true (default)
 
     it('should ALLOW paths within home directory', () => {
       expect(v.validate(HOME).isValid).toBe(true);
@@ -942,7 +942,7 @@ describe('SEC-08: Home Directory Boundary', () => {
 
   describe('Tilde expansion security', () => {
     it('tilde resolves to home directory, not workspace escape', () => {
-      const v = new PathValidator(WORKSPACE);
+      const v = new PathValidator({ workspaceRoot: WORKSPACE });
       const r = v.validate('~/');
       // If valid, must be within home OR workspace
       if (r.isValid) {
@@ -1022,7 +1022,7 @@ describe('SEC-09: End-to-End Attack Scenarios', () => {
         .spyOn(fs, 'realpathSync')
         .mockReturnValue(`${HOME}/.ssh/id_rsa`);
       try {
-        const v = new PathValidator(WORKSPACE);
+        const v = new PathValidator({ workspaceRoot: WORKSPACE });
         const r = v.validate(`${WORKSPACE}/innocent-link`);
         expect(r.isValid).toBe(false);
       } finally {

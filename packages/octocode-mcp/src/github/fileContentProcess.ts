@@ -5,12 +5,12 @@
 import type { GitHubFileContentApiResult } from '../tools/github_fetch_content/types.js';
 import { getConfigSync } from 'octocode-shared';
 import { ContentSanitizer } from '../security/contentSanitizer';
-import { minifyContent } from '../utils/minifier/index.js';
+import { minifyContent } from '../utils/minifier/minifier.js';
 import {
   applyPagination,
   createPaginationInfo,
-  generateGitHubPaginationHints,
-} from '../utils/pagination/index.js';
+} from '../utils/pagination/core.js';
+import { generateGitHubPaginationHints } from '../utils/pagination/hints.js';
 import { OctokitWithThrottling } from './client';
 
 function readConfiguredDefaultCharLength(): number {

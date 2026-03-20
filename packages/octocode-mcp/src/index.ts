@@ -23,12 +23,10 @@ import {
   logSessionInit,
   logSessionError,
 } from './session.js';
-import {
-  loadToolContent,
-  CompleteMetadata,
-} from './tools/toolMetadata/index.js';
+import { loadToolContent } from './tools/toolMetadata/state.js';
+import type { CompleteMetadata } from './types/metadata.js';
 import { version, name } from '../package.json';
-import { STARTUP_ERRORS } from './errorCodes.js';
+import { STARTUP_ERRORS } from './errors/domainErrors.js';
 import { startCacheGC, stopCacheGC } from './tools/github_clone_repo/cache.js';
 import { getOctocodeDir } from 'octocode-shared';
 
@@ -75,7 +73,7 @@ function createShutdownHandler(
       try {
         await server.close();
       } catch {
-        /* no-op */
+        // server.close() may throw if already closed; shutdown still proceeds to exit.
       }
 
       if (state.timeout) {
@@ -85,6 +83,7 @@ function createShutdownHandler(
 
       process.exit(0);
     } catch {
+      // Graceful shutdown failed; still clear timeout and exit with error.
       if (state.timeout) {
         clearTimeout(state.timeout);
         state.timeout = null;
@@ -106,7 +105,9 @@ function setupProcessHandlers(
   process.once('uncaughtException', error => {
     getLogger()?.error('Uncaught exception', { error: error.message });
     logSessionError('startup', STARTUP_ERRORS.UNCAUGHT_EXCEPTION.code).catch(
-      () => {}
+      () => {
+        /* Session log failure is non-fatal during crash handling */
+      }
     );
     gracefulShutdown('UNCAUGHT_EXCEPTION');
   });
@@ -114,7 +115,9 @@ function setupProcessHandlers(
   process.once('unhandledRejection', reason => {
     getLogger()?.error('Unhandled rejection', { reason: String(reason) });
     logSessionError('startup', STARTUP_ERRORS.UNHANDLED_REJECTION.code).catch(
-      () => {}
+      () => {
+        /* Session log failure is non-fatal during crash handling */
+      }
     );
     gracefulShutdown('UNHANDLED_REJECTION');
   });
@@ -249,7 +252,9 @@ async function startServer() {
     }
 
     // Background session logging
-    logSessionInit().catch(() => {});
+    logSessionInit().catch(() => {
+      /* Background session init log failure is non-fatal */
+    });
   } catch (startupError) {
     await logger?.error('Startup failed', { error: String(startupError) });
     await logSessionError('startup', STARTUP_ERRORS.STARTUP_FAILED.code);

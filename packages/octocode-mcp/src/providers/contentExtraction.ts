@@ -1,7 +1,7 @@
 import {
   applyPagination,
   createPaginationInfo,
-} from '../utils/pagination/index.js';
+} from '../utils/pagination/core.js';
 import type { PaginationInfo } from '../types.js';
 import type { FileContentQuery } from './providerQueries.js';
 

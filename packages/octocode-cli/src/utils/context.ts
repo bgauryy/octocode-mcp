@@ -10,9 +10,6 @@ interface AppContext {
   };
 }
 
-/**
- * Get the current application context (path, IDE, git info)
- */
 export function getAppContext(): AppContext {
   return {
     cwd: getShortCwd(),
@@ -41,7 +38,7 @@ function detectIDE(): AppContext['ide'] {
   if (env.TERM_PROGRAM === 'Apple_Terminal') {
     return 'Terminal';
   }
-  return 'Terminal'; // Default fallback
+  return 'Terminal';
 }
 
 function detectGit(): AppContext['git'] | undefined {
@@ -51,7 +48,7 @@ function detectGit(): AppContext['git'] | undefined {
   const branch = runCommand('git', ['branch', '--show-current']);
 
   return {
-    root: root.stdout.split('/').pop() || 'repo', // Just the repo name
+    root: root.stdout.split('/').pop() || 'repo',
     branch: branch.success ? branch.stdout : 'HEAD',
   };
 }

@@ -68,12 +68,10 @@ describe('octocodeCredentials (via shared package)', () => {
       const token = await getOctocodeToken('https://GitHub.com/');
 
       expect(token).toBe('ghp_test_token_12345');
-      // The actual normalization happens in octocode-shared, we just verify the call
       expect(getOctocodeToken).toHaveBeenCalledWith('https://GitHub.com/');
     });
 
     it('should handle expired tokens gracefully', async () => {
-      // When token is expired, getToken returns null
       vi.mocked(getOctocodeToken).mockResolvedValueOnce(null);
 
       const token = await getOctocodeToken();
@@ -98,7 +96,6 @@ describe('octocodeCredentials (via shared package)', () => {
     });
 
     it('should handle invalid expiresAt date', async () => {
-      // Invalid date returns null
       vi.mocked(getOctocodeToken).mockResolvedValueOnce(null);
 
       const token = await getOctocodeToken();
@@ -107,21 +104,11 @@ describe('octocodeCredentials (via shared package)', () => {
     });
 
     it('should handle read errors gracefully', async () => {
-      // On read error, getToken returns null
       vi.mocked(getOctocodeToken).mockResolvedValueOnce(null);
 
       const token = await getOctocodeToken();
 
       expect(token).toBeNull();
-    });
-  });
-
-  describe('re-export verification', () => {
-    it('should re-export getToken as getOctocodeToken from credentials module', async () => {
-      const { getOctocodeToken: reExported } =
-        await import('../../src/utils/credentials/index.js');
-      // Verify it's the same function (mocked in setup.ts)
-      expect(typeof reExported).toBe('function');
     });
   });
 });

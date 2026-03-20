@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, afterAll, vi } from 'vitest';
-import { initializeToolMetadata } from '../src/tools/toolMetadata/index.js';
+import { initializeToolMetadata } from '../src/tools/toolMetadata/state.js';
 import {
   consumeExpectedStderrWarning,
   resetExpectedStderrWarnings,

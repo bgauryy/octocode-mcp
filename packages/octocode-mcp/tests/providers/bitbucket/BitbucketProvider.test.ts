@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BitbucketProvider } from '../../../src/providers/bitbucket/BitbucketProvider.js';
 import {
-  parseBitbucketProjectId,
   transformCodeSearchResult,
   transformRepoSearchResult,
-  transformFileContentResult,
-  transformPullRequestResult,
+} from '../../../src/providers/bitbucket/bitbucketSearch.js';
+import { parseBitbucketProjectId } from '../../../src/providers/bitbucket/utils.js';
+import { transformFileContentResult } from '../../../src/providers/bitbucket/bitbucketContent.js';
+import {
   mapPRState,
-} from '../../../src/providers/bitbucket/BitbucketProvider.js';
+  transformPullRequestResult,
+} from '../../../src/providers/bitbucket/bitbucketPullRequests.js';
 
 import { searchBitbucketCodeAPI } from '../../../src/bitbucket/codeSearch.js';
 import {

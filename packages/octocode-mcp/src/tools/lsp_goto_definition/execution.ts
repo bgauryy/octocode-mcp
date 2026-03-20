@@ -8,12 +8,8 @@ import { readFile } from 'fs/promises';
 import { dirname, resolve as resolvePath } from 'path';
 
 import type { LSPGotoDefinitionQuery } from './scheme.js';
-import {
-  SymbolResolver,
-  SymbolResolutionError,
-  createClient,
-  isLanguageServerAvailable,
-} from '../../lsp/index.js';
+import { SymbolResolver, SymbolResolutionError } from '../../lsp/resolver.js';
+import { createClient, isLanguageServerAvailable } from '../../lsp/manager.js';
 import type {
   GotoDefinitionResult,
   CodeSnippet,
@@ -25,13 +21,11 @@ import {
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { getHints } from '../../hints/index.js';
-import { TOOL_NAMES } from '../toolMetadata/index.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
-import {
-  applyOutputSizeLimit,
-  serializeForPagination,
-} from '../../utils/pagination/index.js';
+import { applyOutputSizeLimit } from '../../utils/pagination/outputSizeLimit.js';
+import { serializeForPagination } from '../../utils/pagination/core.js';
 import { safeReadFile } from '../../lsp/validation.js';
 
 export const TOOL_NAME = TOOL_NAMES.LSP_GOTO_DEFINITION;
@@ -136,7 +130,7 @@ async function gotoDefinition(
         );
         if (result) return applyGotoDefinitionOutputLimit(result, query);
       } catch {
-        /* no-op */
+        // LSP goto-definition failed; fall back to heuristic resolver below.
       }
     }
 
@@ -286,7 +280,7 @@ async function gotoDefinitionWithLSP(
             }
           }
         } catch {
-          /* no-op */
+          // Import-chain or module-path resolution failed; keep original LSP locations.
         }
       }
     }
@@ -325,6 +319,7 @@ async function gotoDefinitionWithLSP(
           content: numberedContent,
         });
       } catch {
+        // Snippet enhancement failed; keep raw LSP location.
         enhancedLocations.push(loc);
       }
     }

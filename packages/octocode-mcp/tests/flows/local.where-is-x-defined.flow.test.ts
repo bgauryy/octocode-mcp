@@ -19,15 +19,26 @@ import {
   resetLocalResearchFlowRuntime,
 } from './runtime.mocks.js';
 
-vi.mock('../../src/utils/exec/index.js', async () => {
+vi.mock('../../src/utils/exec/safe.js', async () => {
   const actual = await vi.importActual<
-    typeof import('../../src/utils/exec/index.js')
-  >('../../src/utils/exec/index.js');
+    typeof import('../../src/utils/exec/safe.js')
+  >('../../src/utils/exec/safe.js');
   const runtime = await import('./runtime.mocks.js');
 
   return {
     ...actual,
     safeExec: runtime.mockSafeExec,
+  };
+});
+
+vi.mock('../../src/utils/exec/commandAvailability.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../src/utils/exec/commandAvailability.js')
+  >('../../src/utils/exec/commandAvailability.js');
+  const runtime = await import('./runtime.mocks.js');
+
+  return {
+    ...actual,
     checkCommandAvailability: runtime.mockCheckCommandAvailability,
   };
 });
@@ -39,10 +50,10 @@ vi.mock('child_process', async () => {
   };
 });
 
-vi.mock('../../src/lsp/index.js', async () => {
-  const actual = await vi.importActual<typeof import('../../src/lsp/index.js')>(
-    '../../src/lsp/index.js'
-  );
+vi.mock('../../src/lsp/manager.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../src/lsp/manager.js')
+  >('../../src/lsp/manager.js');
 
   return {
     ...actual,

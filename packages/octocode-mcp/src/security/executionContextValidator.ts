@@ -43,7 +43,7 @@ export function validateExecutionContext(
       allowedRoots.push(octocodeHome);
     }
   } catch {
-    // getOctocodeDir unavailable, skip
+    // Cannot resolve ~/.octocode; cwd check still uses workspace root only.
   }
 
   const isInAllowedRoot = allowedRoots.some(

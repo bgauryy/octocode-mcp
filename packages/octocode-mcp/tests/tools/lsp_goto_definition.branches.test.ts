@@ -32,7 +32,7 @@ vi.mock('../../src/lsp/validation.js', async importOriginal => {
   };
 });
 
-vi.mock('../../src/lsp/index.js', () => {
+vi.mock('../../src/lsp/resolver.js', () => {
   class MockSymbolResolutionError extends Error {
     searchRadius: number;
     constructor(message: string, searchRadius: number) {
@@ -57,12 +57,16 @@ vi.mock('../../src/lsp/index.js', () => {
       };
     }),
     SymbolResolutionError: MockSymbolResolutionError,
-    createClient: vi.fn(),
-    isLanguageServerAvailable: vi.fn().mockResolvedValue(true),
   };
 });
 
-import * as lspModule from '../../src/lsp/index.js';
+vi.mock('../../src/lsp/manager.js', () => ({
+  createClient: vi.fn(),
+  isLanguageServerAvailable: vi.fn().mockResolvedValue(true),
+}));
+
+import * as resolverModule from '../../src/lsp/resolver.js';
+import * as managerModule from '../../src/lsp/manager.js';
 import { safeReadFile } from '../../src/lsp/validation.js';
 import * as toolHelpers from '../../src/utils/file/toolHelpers.js';
 
@@ -78,7 +82,7 @@ describe('LSP Goto Definition - Branch Coverage', () => {
       isValid: true,
       sanitizedPath: '/workspace/src/source.ts',
     });
-    vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
+    vi.mocked(resolverModule.SymbolResolver).mockImplementation(function () {
       return {
         resolvePositionFromContent: vi.fn().mockReturnValue({
           position: { line: 3, character: 16 },
@@ -91,8 +95,8 @@ describe('LSP Goto Definition - Branch Coverage', () => {
         }),
       };
     });
-    vi.mocked(lspModule.createClient).mockResolvedValue(mockClient as any);
-    vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
+    vi.mocked(managerModule.createClient).mockResolvedValue(mockClient as any);
+    vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(true);
     vi.mocked(fs.stat).mockResolvedValue({ isFile: () => true } as any);
     const sampleContent = 'line1\nline2\nconst myFunc = () => {};\nline4';
     vi.mocked(fs.readFile).mockResolvedValue(sampleContent);

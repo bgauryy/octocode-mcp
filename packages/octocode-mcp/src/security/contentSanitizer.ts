@@ -1,12 +1,13 @@
 import { allRegexPatterns } from './regexes/index.js';
+import type { SensitiveDataPattern } from './regexes/types.js';
 import type { SanitizationResult, ValidationResult } from '../types.js';
 
 export class ContentSanitizer {
   public static sanitizeContent(
     content: string,
-    filePath?: string
+    filePath?: string,
+    patterns: SensitiveDataPattern[] = allRegexPatterns
   ): SanitizationResult {
-    // Guard: null/undefined content should not crash regex operations
     if (content == null || typeof content !== 'string') {
       return {
         content: content == null ? '' : String(content),
@@ -16,19 +17,20 @@ export class ContentSanitizer {
       };
     }
 
-    const secretsResult = this.detectSecrets(content, filePath);
+    const secretsResult = this.detectSecrets(content, filePath, patterns);
 
     return {
       content: secretsResult.sanitizedContent,
       hasSecrets: secretsResult.hasSecrets,
       secretsDetected: secretsResult.secretsDetected,
-      warnings: secretsResult.secretsDetected, // Alias
+      warnings: secretsResult.secretsDetected,
     };
   }
 
   private static detectSecrets(
     content: string,
-    filePath?: string
+    filePath?: string,
+    patterns: SensitiveDataPattern[] = allRegexPatterns
   ): {
     hasSecrets: boolean;
     secretsDetected: string[];
@@ -38,7 +40,7 @@ export class ContentSanitizer {
     const secretsDetectedSet = new Set<string>();
 
     try {
-      for (const pattern of allRegexPatterns) {
+      for (const pattern of patterns) {
         if (pattern.fileContext) {
           if (!filePath || !pattern.fileContext.test(filePath)) {
             continue;
@@ -55,7 +57,6 @@ export class ContentSanitizer {
         }
       }
     } catch {
-      // Security: Fail-closed - assume secrets may be present if detection fails
       return {
         hasSecrets: true,
         secretsDetected: ['detection-error'],
@@ -86,7 +87,6 @@ export class ContentSanitizer {
       };
     }
 
-    // Guard: depth limit prevents stack overflow on deeply nested objects
     if (_depth > 20) {
       return {
         sanitizedParams: {},
@@ -96,7 +96,6 @@ export class ContentSanitizer {
       };
     }
 
-    // Guard: cycle detection prevents infinite recursion on circular refs
     const visited = _visited ?? new WeakSet<object>();
     if (visited.has(params)) {
       return {
@@ -201,7 +200,7 @@ export class ContentSanitizer {
 
     return {
       sanitizedParams,
-      isValid: !hasValidationErrors, // Now actually validates
+      isValid: !hasValidationErrors,
       hasSecrets: hasSecrets,
       warnings: Array.from(warnings),
     };

@@ -7,8 +7,8 @@ import {
   BaseQuerySchemaLocal,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import { TOOL_NAMES } from '../toolMetadata/index.js';
-import { LSP_CALL_HIERARCHY, DESCRIPTIONS } from '../toolMetadata/index.js';
+import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/proxies.js';
+import { LSP_CALL_HIERARCHY } from '../toolMetadata/lspSchemaHelpers.js';
 
 /**
  * Tool description for lspCallHierarchy

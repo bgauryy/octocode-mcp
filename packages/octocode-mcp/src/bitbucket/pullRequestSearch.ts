@@ -19,7 +19,7 @@ import type {
 } from './types.js';
 import { generateCacheKey, withDataCache } from '../utils/http/cache.js';
 
-export interface BitbucketPRSearchQuery {
+interface BitbucketPRSearchQuery {
   workspace: string;
   repoSlug: string;
   prNumber?: number;
@@ -35,7 +35,7 @@ export interface BitbucketPRSearchQuery {
   withDiffstat?: boolean;
 }
 
-export interface BitbucketPRSearchResult {
+interface BitbucketPRSearchResult {
   pullRequests: BitbucketPullRequest[];
   pagination: {
     currentPage: number;
@@ -48,7 +48,7 @@ export interface BitbucketPRSearchResult {
   diffstat?: BitbucketDiffstatEntry[];
 }
 
-export interface BitbucketPRSupplementalData {
+interface BitbucketPRSupplementalData {
   comments?: BitbucketPRComment[];
   diff?: string;
   diffstat?: BitbucketDiffstatEntry[];
