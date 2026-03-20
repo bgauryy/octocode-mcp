@@ -2,6 +2,8 @@
 
 Use this reference when the scan output is directionally useful but not yet strong enough to justify a confident architecture claim.
 
+> For how to validate architecture findings with tools, see [validate & investigate](./validate-investigate.md) and the Architecture Playbooks in [playbooks.md](./playbooks.md). For metric definitions (instability, SDP, cyclomatic density), see [concepts.md](./concepts.md).
+
 ---
 
 ## Graph Techniques

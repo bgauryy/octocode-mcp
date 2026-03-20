@@ -91,6 +91,21 @@ export interface MagicNumberEntry extends CodeLocation {
   value: number;
 }
 
+export interface ConsoleLogEntry {
+  method: string;
+  lineStart: number;
+  lineEnd: number;
+  hasSensitiveArg: boolean;
+  argSnippet?: string;
+}
+
+export interface MessageChainEntry {
+  chain: string;
+  depth: number;
+  lineStart: number;
+  lineEnd: number;
+}
+
 export interface TreeSitterMetrics extends Metrics {
   statements: number;
 }
@@ -601,6 +616,8 @@ export interface FileEntry {
   symbolUsageSummary?: SymbolUsageSummary;
   boundaryRoleHints?: BoundaryRoleHint[];
   cfgFlags?: CfgFlags;
+  consoleLogs?: ConsoleLogEntry[];
+  messageChains?: MessageChainEntry[];
   issueIds?: string[];
 }
 

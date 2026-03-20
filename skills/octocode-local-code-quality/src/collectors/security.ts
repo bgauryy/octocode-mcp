@@ -2,7 +2,27 @@ import * as ts from 'typescript';
 
 import { getLineAndCharacter } from '../common/utils.js';
 
-import type { CodeLocation, FileEntry, SuspiciousString } from '../types/index.js';
+import type { CodeLocation, ConsoleLogEntry, FileEntry, SuspiciousString } from '../types/index.js';
+
+const SENSITIVE_LOG_PATTERNS = [
+  /password/i,
+  /passwd/i,
+  /\bsecret\b/i,
+  /\btoken\b/i,
+  /\bauth\b/i,
+  /credential/i,
+  /credit.?card/i,
+  /\bssn\b/i,
+  /social.?security/i,
+  /api[_-]?key/i,
+  /private[_-]?key/i,
+  /access[_-]?key/i,
+  /\bsession\b/i,
+];
+
+const CONSOLE_LOG_METHODS = new Set([
+  'log', 'debug', 'trace', 'info', 'warn', 'error', 'dir', 'table',
+]);
 
 const SECRET_PATTERNS = [
   /password\s*[:=]\s*['"`]/i,
@@ -81,6 +101,7 @@ export function collectSecurityData(
   const evalUsages: CodeLocation[] = [];
   const unsafeHtmlAssignments: CodeLocation[] = [];
   const suspiciousStrings: SuspiciousString[] = [];
+  const consoleLogs: ConsoleLogEntry[] = [];
   const regexLiterals: Array<{
     lineStart: number;
     lineEnd: number;
@@ -88,6 +109,36 @@ export function collectSecurityData(
   }> = [];
 
   const visit = (node: ts.Node): void => {
+    if (ts.isDebuggerStatement(node)) {
+      const loc = getLineAndCharacter(sourceFile, node);
+      consoleLogs.push({
+        method: 'debugger',
+        lineStart: loc.lineStart,
+        lineEnd: loc.lineEnd,
+        hasSensitiveArg: false,
+      });
+    }
+
+    if (ts.isCallExpression(node)) {
+      const expr = node.expression;
+      if (ts.isPropertyAccessExpression(expr)) {
+        const obj = expr.expression.getText(sourceFile);
+        const method = expr.name.getText(sourceFile);
+        if (obj === 'console' && CONSOLE_LOG_METHODS.has(method)) {
+          const loc = getLineAndCharacter(sourceFile, node);
+          const argText = node.arguments.map(a => a.getText(sourceFile)).join(' ');
+          const hasSensitiveArg = SENSITIVE_LOG_PATTERNS.some(p => p.test(argText));
+          consoleLogs.push({
+            method,
+            lineStart: loc.lineStart,
+            lineEnd: loc.lineEnd,
+            hasSensitiveArg,
+            argSnippet: argText.slice(0, 80),
+          });
+        }
+      }
+    }
+
     if (ts.isCallExpression(node)) {
       const text = node.expression.getText(sourceFile);
       if (text === 'eval' || text === 'Function') {
@@ -253,5 +304,6 @@ export function collectSecurityData(
   fileEntry.evalUsages = evalUsages;
   fileEntry.unsafeHtmlAssignments = unsafeHtmlAssignments;
   fileEntry.suspiciousStrings = suspiciousStrings;
+  fileEntry.consoleLogs = consoleLogs;
   fileEntry.regexLiterals = regexLiterals;
 }

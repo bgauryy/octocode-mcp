@@ -2,13 +2,12 @@
 
 Per-category guidance: which tools can help, what to check, and how to fix.
 
-For available tools, see the Tools section in [SKILL.md](../SKILL.md). For security taint tracing, see [validate & investigate](./validate-investigate.md).
-
-CLI scripts (`ast/search.js`, `ast/tree-search.js`, `scripts/index.js --scope`) complement Octocode tools for broad structural search and re-scanning.
+For tool descriptions and LSP rules, see the **Tools** section in [SKILL.md](../SKILL.md).
+For investigation methodology, tool selection guide, taint tracing, and false positive dismissal, see [validate & investigate](./validate-investigate.md).
 
 Use `--graph-advanced` for SCC clusters, chokepoints, bridge modules, and package chatter. Use `--flow` for `cfgFlags`, `flowTrace`, and richer evidence.
 
-The playbook tables below show CLI and Octocode approaches per category. **These are suggestions, not rigid sequences** — pick the tools that answer the question fastest.
+The tables below show CLI and Octocode MCP approaches per category. **These are suggestions, not rigid sequences** — pick the tools that answer the question fastest.
 
 ---
 
@@ -61,10 +60,13 @@ The playbook tables below show CLI and Octocode approaches per category. **These
 | `type-assertion-escape` | `ast-search --preset type-assertion` + `ast-search --preset non-null-assertion` | `localSearchCode("as any")` → review each occurrence | Replace with `unknown` + type guards, proper generics |
 | `missing-error-boundary` | `--features=missing-error-boundary` → check await counts (1=low, 2-3=med, 4+=high) | `localGetFileContent(startLine, endLine)` → check await calls; `lspCallHierarchy(incoming)` → check if callers wrap in try-catch | Wrap in try-catch, add `.catch()`, or document caller handling |
 | `promise-misuse` | `--features=promise-misuse` → list async-without-await | `localGetFileContent(startLine, endLine)` → check if await forgotten | Remove `async` keyword or add the missing `await` |
+| `message-chain` | `--features=message-chain` → read finding for depth and chain text | `localGetFileContent(startLine, endLine)` → read chain; `lspGotoDefinition` on root object → identify intermediate types | Add a delegating method on the root object (Tell, Don't Ask); replace chain with single call on immediate friend |
 
 ---
 
-## Performance Playbooks
+## Performance & Resource Playbooks
+
+> These categories appear under the **Code Quality** pillar in scan output.
 
 | Finding | CLI Validate | Octocode MCP Validate | Fix |
 |---------|-------------|----------------------|-----|
@@ -105,8 +107,10 @@ The playbook tables below show CLI and Octocode approaches per category. **These
 | `input-passthrough-risk` | `--features=input-passthrough-risk` → read finding for param confidence + callees | `lspCallHierarchy(outgoing)` → verify downstream callees validate input; `lspFindReferences` on param → check all usage points | Add validation at entry point; search for middleware/guard patterns upstream |
 | `path-traversal-risk` | `--features=path-traversal-risk` → read finding for source params + sink kinds | `lspCallHierarchy(incoming)` on fs.readFile/path.resolve call → trace if path param comes from user input → check for `path.resolve` + `startsWith` + `realpathSync` guards | Add multi-layer validation: normalize → prefix check → realpath → re-validate |
 | `command-injection-risk` | `--features=command-injection-risk` → read finding for exec vs spawn distinction | `lspCallHierarchy(incoming)` on exec/spawn call → check if args come from user input → verify spawn uses array args (safe) vs exec with string interpolation (dangerous) | Replace exec with spawn + array args; use command allowlist; never interpolate user input into command strings |
+| `debug-log-leakage` | `ast-search --preset debugger` + `ast-search --preset console-any` → filter debug/trace calls | `localGetFileContent(startLine, endLine)` → confirm call exists and is not inside a test file or LOG_LEVEL guard | Remove `debugger` statements; replace `console.debug/trace` with structured logger gated by log-level config |
+| `sensitive-data-logging` | `ast-search --preset console-any --root <dir>` → filter for sensitive argument patterns | `localGetFileContent(startLine, endLine)` → read full log call and its arguments; `lspCallHierarchy(incoming)` → trace where the sensitive value originates | Remove raw sensitive values from log args; use `{ ...obj, password: "[REDACTED]" }` pattern; configure pino/winston redact option at the logger level |
 
-For security taint tracing methodology, false positive dismissal criteria, and agentic security taint paths, see [validate & investigate](./validate-investigate.md).
+For taint tracing methodology, false positive dismissal criteria, and agentic security paths, see [validate & investigate](./validate-investigate.md).
 
 ---
 
@@ -119,6 +123,9 @@ For security taint tracing methodology, false positive dismissal criteria, and a
 | `excessive-mocking` | `ast-search -p 'vi.mock($$$A)' --include-tests` + `ast-search -p 'jest.mock($$$A)' --include-tests` — count | `localSearchCode("jest.mock\|vi.mock\|sinon")` → count mock calls | Reduce mocks by testing through public interfaces; use DI |
 | `shared-mutable-state` | Read finding → check `let`/`var` at describe scope | `localGetFileContent(startLine, endLine)` → confirm let/var at describe scope | Move to `beforeEach` or use `const` |
 | `missing-test-cleanup` | `ast-search -p 'beforeAll($$$A)' --include-tests` + check for `afterAll` in same file | `localSearchCode("beforeAll\|beforeEach\|afterAll\|afterEach")` → check pairing | Add corresponding `afterAll`/`afterEach` to clean up resources |
+| `focused-test` | `ast-search -p 'it.only($$$A)' --include-tests` + `ast-search -p 'describe.only($$$A)'` | `localSearchCode("\.only\|\.skip\|\.todo")` in test files → confirm committed focused/skipped tests | Remove `.only`/`.skip`/`.todo` before committing — use a pre-commit hook or lint rule to prevent regression |
+| `fake-timer-no-restore` | `ast-search -p 'vi.useFakeTimers($$$A)' --include-tests` + `ast-search -p 'jest.useFakeTimers($$$A)'` → check for matching restore | `localSearchCode("useFakeTimers\|useRealTimers")` → confirm each useFakeTimers has a corresponding useRealTimers | Add `afterEach(() => vi.useRealTimers())` or `jest.useRealTimers()` after each fake-timer setup |
+| `missing-mock-restoration` | `ast-search -p 'vi.spyOn($$$A)' --include-tests` + `ast-search -p 'jest.spyOn($$$A)'` → check for `.mockRestore()` | `localSearchCode("spyOn\|mockRestore\|restoreAllMocks")` → confirm each spy is restored | Add `mockRestore()` on each spy in `afterEach`, or use `vi.restoreAllMocks()`/`jest.restoreAllMocks()` in `afterEach` |
 
 ---
 

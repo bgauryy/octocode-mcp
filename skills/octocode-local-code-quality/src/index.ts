@@ -30,6 +30,7 @@ import {
   detectLowCohesion,
   detectLowMaintainability,
   detectMegaFolders,
+  detectMessageChains,
   detectMissingErrorBoundary,
   detectNamespaceImport,
   detectOrphanModules,
@@ -49,11 +50,13 @@ import {
 } from './detectors/index.js';
 import {
   detectCommandInjectionRisk,
+  detectDebugLogLeakage,
   detectEvalUsage,
   detectHardcodedSecrets,
   detectInputPassthroughRisk,
   detectPathTraversalRisk,
   detectPrototypePollutionRisk,
+  detectSensitiveDataLogging,
   detectSqlInjectionRisk,
   detectUnsafeHtml,
   detectUnsafeRegex,
@@ -276,6 +279,7 @@ export function buildIssueCatalog(
   for (const f of detectUnclearedTimers(fileSummaries)) addFinding(f);
   for (const f of detectListenerLeakRisk(fileSummaries)) addFinding(f);
   for (const f of detectUnboundedCollection(fileSummaries)) addFinding(f);
+  for (const f of detectMessageChains(fileSummaries)) addFinding(f);
   for (const f of detectSimilarFunctionBodies(
     flowMap,
     options.similarityThreshold
@@ -292,6 +296,8 @@ export function buildIssueCatalog(
   for (const f of detectPrototypePollutionRisk(fileSummaries)) addFinding(f);
   for (const f of detectPathTraversalRisk(fileSummaries)) addFinding(f);
   for (const f of detectCommandInjectionRisk(fileSummaries)) addFinding(f);
+  for (const f of detectDebugLogLeakage(fileSummaries)) addFinding(f);
+  for (const f of detectSensitiveDataLogging(fileSummaries)) addFinding(f);
 
   for (const f of detectLowAssertionDensity(fileSummaries)) addFinding(f);
   for (const f of detectTestNoAssertion(fileSummaries)) addFinding(f);

@@ -914,3 +914,53 @@ function computeMetricSimilarity(
   }
   return totalSimilarity / features.length;
 }
+
+export function detectMessageChains(fileSummaries: FileEntry[]): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  for (const entry of fileSummaries) {
+    if (!entry.messageChains || entry.messageChains.length === 0) continue;
+    // Group by line start — take the deepest chain at each location
+    const byLine = new Map<number, typeof entry.messageChains[0]>();
+    for (const chain of entry.messageChains) {
+      const existing = byLine.get(chain.lineStart);
+      if (!existing || chain.depth > existing.depth) {
+        byLine.set(chain.lineStart, chain);
+      }
+    }
+    for (const chain of byLine.values()) {
+      const severity = chain.depth >= 6 ? 'high' : 'medium';
+      findings.push({
+        severity,
+        category: 'message-chain',
+        file: entry.file,
+        lineStart: chain.lineStart,
+        lineEnd: chain.lineEnd,
+        title: `Message chain of depth ${chain.depth}: ${chain.chain.slice(0, 50)}`,
+        reason: `A property-access chain of ${chain.depth} steps violates the Law of Demeter — the caller navigates through ${chain.depth - 1} intermediate objects to reach its target. Deep chains tightly couple the caller to internal object structure, making refactoring brittle.`,
+        files: [entry.file],
+        suggestedFix: {
+          strategy: 'Apply the Law of Demeter — talk only to immediate friends.',
+          steps: [
+            'Identify the root object and the final method/property being used.',
+            'Add a delegating method to the root object (Tell, Don\'t Ask).',
+            'Replace the chain with a single call on the immediate object.',
+            'If the chain crosses module boundaries, consider whether the intermediate objects should be passed directly.',
+          ],
+        },
+        impact:
+          'Deep property chains tightly couple code to internal object structure. When intermediate objects change, every chain accessing them must be updated.',
+        tags: ['coupling', 'law-of-demeter', 'maintainability'],
+        lspHints: [
+          {
+            tool: 'lspGotoDefinition',
+            symbolName: chain.chain.split('.')[0],
+            lineHint: chain.lineStart,
+            file: entry.file,
+            expectedResult: `find the type of the root object to understand what intermediate types the chain traverses`,
+          },
+        ],
+      });
+    }
+  }
+  return findings;
+}

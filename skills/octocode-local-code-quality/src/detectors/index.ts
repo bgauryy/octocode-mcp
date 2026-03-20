@@ -61,6 +61,7 @@ export {
   detectHighHalsteadEffort,
   detectLowMaintainability,
   detectTypeAssertionEscape,
+  detectMessageChains,
   detectMissingErrorBoundary,
   detectPromiseMisuse,
   detectAwaitInLoop,
@@ -70,3 +71,18 @@ export {
   detectUnboundedCollection,
   detectSimilarFunctionBodies,
 } from './code-quality.js';
+
+export {
+  detectCommandInjectionRisk,
+  detectDebugLogLeakage,
+  detectEvalUsage,
+  detectHardcodedSecrets,
+  detectInputPassthroughRisk,
+  detectPathTraversalRisk,
+  detectPrototypePollutionRisk,
+  detectSensitiveDataLogging,
+  detectSqlInjectionRisk,
+  detectUnsafeHtml,
+  detectUnsafeRegex,
+  detectUnvalidatedInputSink,
+} from './security.js';
