@@ -4,7 +4,7 @@ import type {
   RepoStructureResult,
   DirectoryEntry,
 } from './types.js';
-import { TOOL_NAMES } from '../toolMetadata/index.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { shouldIgnoreFile, shouldIgnoreDir } from '../../utils/file/filters.js';

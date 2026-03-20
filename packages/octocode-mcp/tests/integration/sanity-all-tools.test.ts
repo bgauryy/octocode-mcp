@@ -4,16 +4,19 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { viewStructure } from '../../src/tools/local_view_structure/local_view_structure.js';
-import { findFiles } from '../../src/tools/local_find_files/index.js';
-import { searchContentRipgrep } from '../../src/tools/local_ripgrep/index.js';
-import { fetchContent } from '../../src/tools/local_fetch_content/index.js';
-import * as exec from '../../src/utils/exec/index.js';
+import { findFiles } from '../../src/tools/local_find_files/findFiles.js';
+import { searchContentRipgrep } from '../../src/tools/local_ripgrep/searchContentRipgrep.js';
+import { fetchContent } from '../../src/tools/local_fetch_content/fetchContent.js';
+import { safeExec } from '../../src/utils/exec/safe.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 import type { Stats } from 'fs';
 
 // Mocks
-vi.mock('../../src/utils/exec/index.js', () => ({
+vi.mock('../../src/utils/exec/safe.js', () => ({
   safeExec: vi.fn(),
+}));
+
+vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
   checkCommandAvailability: vi
     .fn()
     .mockResolvedValue({ available: true, command: 'ls' }),
@@ -48,7 +51,7 @@ vi.mock('fs/promises', () => ({
 import * as fsp from 'fs/promises';
 
 describe('Integration sanity: all tools', () => {
-  const mockSafeExec = vi.mocked(exec.safeExec);
+  const mockSafeExec = vi.mocked(safeExec);
   const mockValidate = vi.mocked(pathValidator.pathValidator.validate);
   const mockReaddir = mockReaddirFn;
   const mockLstat = mockLstatFn;

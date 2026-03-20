@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { logPromptCall } from '../session.js';
-import type { CompleteMetadata } from '../tools/toolMetadata/index.js';
+import type { CompleteMetadata } from '../types/metadata.js';
 
 type PromptHandler = (args: unknown) => Promise<{
   messages: Array<{

@@ -5,10 +5,10 @@ import {
   createMockMcpServer,
   type MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
-import { registerLocalFetchContentTool } from '../../src/tools/local_fetch_content/index.js';
-import { registerLocalRipgrepTool } from '../../src/tools/local_ripgrep/index.js';
-import { registerLSPCallHierarchyTool } from '../../src/tools/lsp_call_hierarchy/index.js';
-import { registerLSPFindReferencesTool } from '../../src/tools/lsp_find_references/index.js';
+import { registerLocalFetchContentTool } from '../../src/tools/local_fetch_content/register.js';
+import { registerLocalRipgrepTool } from '../../src/tools/local_ripgrep/register.js';
+import { registerLSPCallHierarchyTool } from '../../src/tools/lsp_call_hierarchy/register.js';
+import { registerLSPFindReferencesTool } from '../../src/tools/lsp_find_references/register.js';
 import { registerLSPGotoDefinitionTool } from '../../src/tools/lsp_goto_definition/lsp_goto_definition.js';
 
 type ToolRegistrar = (server: McpServer) => unknown;

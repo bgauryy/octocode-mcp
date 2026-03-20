@@ -10,9 +10,7 @@
 
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 
-// Re-export query types
 export type {
-  BaseProviderQuery,
   CodeSearchQuery,
   FileContentQuery,
   RepoSearchQuery,
@@ -20,7 +18,6 @@ export type {
   RepoStructureQuery,
 } from './providerQueries.js';
 
-// Re-export result types
 export type {
   UnifiedRepository,
   CodeSearchItem,
@@ -153,34 +150,6 @@ export interface ICodeHostProvider {
    */
   resolveDefaultBranch(projectId: string): Promise<string>;
 }
-
-// ============================================================================
-// EXECUTION TYPES
-// ============================================================================
-
-/**
- * Options for provider execution.
- */
-export interface ExecutionOptions {
-  /** Session ID for caching */
-  sessionId?: string;
-  /** MCP auth info */
-  authInfo?: AuthInfo;
-  /** Provider-specific token override */
-  token?: string;
-  /** Base URL override for self-hosted instances */
-  baseUrl?: string;
-}
-
-/**
- * Union type for all query types.
- */
-export type ProviderQuery =
-  | CodeSearchQuery
-  | FileContentQuery
-  | RepoSearchQuery
-  | PullRequestQuery
-  | RepoStructureQuery;
 
 // ============================================================================
 // TYPE GUARDS

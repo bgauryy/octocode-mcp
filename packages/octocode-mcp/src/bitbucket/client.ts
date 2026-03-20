@@ -20,7 +20,7 @@ import {
 // TYPES
 // ============================================================================
 
-export type BitbucketClient = ReturnType<
+type BitbucketClient = ReturnType<
   typeof BitbucketCloud.createBitbucketCloudClient
 >;
 

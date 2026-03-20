@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { executeWithErrorIsolation } from '../../src/utils/core/promise.js';
 import type { PromiseExecutionOptions } from '../../src/types';
-import { VALIDATION_ERRORS, PROMISE_ERRORS } from '../../src/errorCodes';
+import {
+  VALIDATION_ERRORS,
+  PROMISE_ERRORS,
+} from '../../src/errors/domainErrors.js';
 import { logSessionError } from '../../src/session';
 
 // Mock logSessionError

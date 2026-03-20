@@ -55,7 +55,7 @@ describe('github_clone_repo cache - branch coverage', () => {
       const octocodeDir = join(testBaseDir, 'cache-meta-valid-dir-gone');
       const cloneDir = getCloneDir(octocodeDir, 'owner', 'repo', 'main');
       mkdirSync(cloneDir, { recursive: true });
-      const meta = createCacheMeta('owner', 'repo', 'main');
+      const meta = createCacheMeta('owner', 'repo', 'main', 'clone');
       writeCacheMeta(cloneDir, meta);
 
       const realFs = await vi.importActual<typeof import('node:fs')>('node:fs');
@@ -122,7 +122,7 @@ describe('github_clone_repo cache - branch coverage', () => {
       const reposBase = getReposBaseDir(octocodeDir);
       const branchDir = join(reposBase, 'owner', 'repo', 'main');
       mkdirSync(branchDir, { recursive: true });
-      const expiredMeta = createCacheMeta('owner', 'repo', 'main');
+      const expiredMeta = createCacheMeta('owner', 'repo', 'main', 'clone');
       expiredMeta.expiresAt = new Date(Date.now() - 1000).toISOString();
       writeCacheMeta(branchDir, expiredMeta);
 
@@ -150,7 +150,7 @@ describe('github_clone_repo cache - branch coverage', () => {
       const reposBase = getReposBaseDir(octocodeDir);
       const branchDir = join(reposBase, 'owner', 'repo', 'main');
       mkdirSync(branchDir, { recursive: true });
-      const expiredMeta = createCacheMeta('owner', 'repo', 'main');
+      const expiredMeta = createCacheMeta('owner', 'repo', 'main', 'clone');
       expiredMeta.expiresAt = new Date(Date.now() - 1000).toISOString();
       writeCacheMeta(branchDir, expiredMeta);
 
@@ -199,7 +199,7 @@ describe('github_clone_repo cache - branch coverage', () => {
       const reposBase = getReposBaseDir(octocodeDir);
       const branchDir = join(reposBase, 'owner', 'repo', 'main');
       mkdirSync(branchDir, { recursive: true });
-      const expiredMeta = createCacheMeta('owner', 'repo', 'main');
+      const expiredMeta = createCacheMeta('owner', 'repo', 'main', 'clone');
       expiredMeta.expiresAt = new Date(Date.now() - 1000).toISOString();
       writeCacheMeta(branchDir, expiredMeta);
 

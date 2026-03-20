@@ -4,7 +4,7 @@ import { toMCPSchema } from '../../types/toolTypes.js';
 import { withSecurityValidation } from '../../security/withSecurityValidation.js';
 import type { ToolInvocationCallback } from '../../types.js';
 import type { GitHubPullRequestSearchQuery } from './types.js';
-import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/index.js';
+import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/proxies.js';
 import { GitHubPullRequestSearchBulkQuerySchema } from './scheme.js';
 import { invokeCallbackSafely } from '../utils.js';
 import { searchMultipleGitHubPullRequests } from './execution.js';

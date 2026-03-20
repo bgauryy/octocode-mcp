@@ -111,7 +111,6 @@ export function getOrCreateSession(options?: SessionOptions): PersistedSession {
   const existingSession = readSessionFromCache();
 
   if (existingSession) {
-    // Update lastActiveAt timestamp
     const updatedSession: PersistedSession = {
       ...existingSession,
       lastActiveAt: new Date().toISOString(),
@@ -246,5 +245,4 @@ export function _resetSessionState(): void {
   resetCacheState();
 }
 
-// Re-export SESSION_FILE constant
 export { SESSION_FILE } from './sessionDiskIO.js';

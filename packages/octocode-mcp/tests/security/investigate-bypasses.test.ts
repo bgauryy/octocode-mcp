@@ -10,7 +10,7 @@ import { execSync } from 'child_process';
 describe('🔍 Investigating Potential Bypasses', () => {
   // Use cwd as workspace to ensure tests work in CI
   const workspaceRoot = process.cwd();
-  const validator = new PathValidator(workspaceRoot);
+  const validator = new PathValidator({ workspaceRoot });
 
   describe('URL Encoding Analysis', () => {
     it('URL encoded %2e%2e - check if real bypass', () => {
@@ -58,7 +58,7 @@ describe('🔍 Investigating Potential Bypasses', () => {
 
   describe('Can MCP Tools Bypass with Encoding?', () => {
     it('Test if encoded paths work through actual command execution', async () => {
-      const { safeExec } = await import('../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../src/utils/exec/safe.js');
 
       try {
         await safeExec('ls', ['/Users/%2e%2e']);

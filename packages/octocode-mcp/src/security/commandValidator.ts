@@ -247,117 +247,90 @@ function validateCommandArgs(
   return { isValid: true };
 }
 
-/**
- * Identifies which argument positions contain search patterns vs paths
- * Patterns can safely contain regex metacharacters like |, (), etc.
- */
-function getPatternArgPositions(command: string, args: string[]): Set<number> {
-  const patternPositions = new Set<number>();
+const RG_GLOB_FLAGS = new Set([
+  '-g',
+  '--glob',
+  '--include',
+  '--exclude',
+  '--exclude-dir',
+]);
 
-  if (command === 'rg') {
-    // In ripgrep: pattern comes after flags, typically the first non-flag arg
-    let foundPattern = false;
-    for (let i = 0; i < args.length; i++) {
-      const arg = args[i]!;
-      if (arg === '--') {
-        const nextArgIndex = i + 1;
-        if (nextArgIndex < args.length) {
-          patternPositions.add(nextArgIndex);
-        }
-        break;
-      }
-      // Skip flags and their values
-      if (arg.startsWith('-')) {
-        // Flags whose values are glob patterns (can contain {}, *, etc.)
-        if (
-          ['-g', '--glob', '--include', '--exclude', '--exclude-dir'].includes(
-            arg
-          )
-        ) {
-          i++; // Move to the value
-          patternPositions.add(i); // Mark glob pattern as safe
-          continue;
-        }
-
-        // Other flags with values (ripgrep)
-        if (
-          [
-            '-A',
-            '-B',
-            '-C',
-            '-m',
-            '-t',
-            '--type',
-            '-T',
-            '--type-not',
-            '-j',
-            '--threads',
-            '--sort',
-            '--sortr',
-            '--max-filesize',
-            '-E',
-            '--encoding',
-            '--color',
-          ].includes(arg)
-        ) {
-          i++; // Skip the value
-        }
-        continue;
-      }
-      // First non-flag arg is the pattern
-      if (!foundPattern) {
-        patternPositions.add(i);
-        foundPattern = true;
-        // Continue loop to validate remaining args (path comes after pattern)
-      }
+function getRgPatternPositions(args: string[]): Set<number> {
+  const positions = new Set<number>();
+  let foundPattern = false;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg === '--') {
+      if (i + 1 < args.length) positions.add(i + 1);
+      break;
     }
-  } else if (command === 'grep') {
-    // In grep: pattern is the first non-flag argument, or the arg after --
-    // Also handle --include/--exclude patterns which can contain globs
-    let foundPattern = false;
-    for (let i = 0; i < args.length; i++) {
-      const arg = args[i]!;
-      if (arg === '--') {
-        // After --, next arg is the pattern
-        if (i + 1 < args.length) {
-          patternPositions.add(i + 1);
-        }
-        break;
+    if (arg.startsWith('-')) {
+      if (RG_GLOB_FLAGS.has(arg)) {
+        i++;
+        positions.add(i);
+      } else if (RG_ALLOWED_FLAGS_WITH_VALUES.has(arg)) {
+        i++;
       }
-      // --include=*.ext and --exclude=dir patterns are safe
-      if (arg.startsWith('--include=') || arg.startsWith('--exclude=')) {
-        patternPositions.add(i);
-      } else if (!arg.startsWith('-') && !foundPattern) {
-        // First non-flag argument is the search pattern
-        patternPositions.add(i);
-        foundPattern = true;
-      }
+      continue;
     }
-  } else if (command === 'find') {
-    // In find: patterns come after -name, -iname, -path, -regex options
-    // Also (, ), -o are structural elements that can contain ()
-    // Note: Using spawn() passes args directly without shell, so no backslash needed
-    for (let i = 0; i < args.length; i++) {
-      const arg = args[i]!;
-      const prevArg = i > 0 ? args[i - 1]! : '';
-
-      // Arguments that are search patterns
-      if (
-        ['-name', '-iname', '-path', '-regex', '-size', '-perm'].includes(
-          prevArg
-        )
-      ) {
-        patternPositions.add(i);
-      }
-
-      // Structural elements for grouping (unescaped because spawn passes them directly)
-      if (arg === '(' || arg === ')' || arg === '-o') {
-        patternPositions.add(i);
-      }
+    if (!foundPattern) {
+      positions.add(i);
+      foundPattern = true;
     }
   }
+  return positions;
+}
 
-  return patternPositions;
+function getGrepPatternPositions(args: string[]): Set<number> {
+  const positions = new Set<number>();
+  let foundPattern = false;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg === '--') {
+      if (i + 1 < args.length) positions.add(i + 1);
+      break;
+    }
+    if (arg.startsWith('--include=') || arg.startsWith('--exclude=')) {
+      positions.add(i);
+    } else if (!arg.startsWith('-') && !foundPattern) {
+      positions.add(i);
+      foundPattern = true;
+    }
+  }
+  return positions;
+}
+
+const FIND_PATTERN_ARGS = new Set([
+  '-name',
+  '-iname',
+  '-path',
+  '-regex',
+  '-size',
+  '-perm',
+]);
+
+function getFindPatternPositions(args: string[]): Set<number> {
+  const positions = new Set<number>();
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    const prevArg = i > 0 ? args[i - 1]! : '';
+    if (FIND_PATTERN_ARGS.has(prevArg)) positions.add(i);
+    if (arg === '(' || arg === ')' || arg === '-o') positions.add(i);
+  }
+  return positions;
+}
+
+function getPatternArgPositions(command: string, args: string[]): Set<number> {
+  switch (command) {
+    case 'rg':
+      return getRgPatternPositions(args);
+    case 'grep':
+      return getGrepPatternPositions(args);
+    case 'find':
+      return getFindPatternPositions(args);
+    default:
+      return new Set();
+  }
 }
 
 function findDisallowedRgFlag(args: string[]): string | null {

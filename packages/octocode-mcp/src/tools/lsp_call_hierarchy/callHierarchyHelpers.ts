@@ -93,7 +93,7 @@ export async function enhanceIncomingCalls(
         from: enhancedFrom,
       });
     } catch {
-      // Keep original if file read fails
+      // Incoming call enhancement failed; keep unmodified item.
       enhanced.push(call);
     }
   }
@@ -127,7 +127,7 @@ export async function enhanceOutgoingCalls(
         to: enhancedTo,
       });
     } catch {
-      // Keep original if file read fails
+      // Outgoing call enhancement failed; keep unmodified item.
       enhanced.push(call);
     }
   }
@@ -203,7 +203,6 @@ export async function createCallHierarchyItemFromSite(
     if (!fileContent) throw new Error('Cannot read file');
     const lines = fileContent.split(/\r?\n/);
 
-    // Look backwards for function declaration
     for (
       let i = site.lineNumber - 1;
       i >= 0 && i >= site.lineNumber - 20;
@@ -234,7 +233,6 @@ export async function createCallHierarchyItemFromSite(
       }
     }
 
-    // Get context
     const startLine = Math.max(0, site.lineNumber - 1 - contextLines);
     const endLine = Math.min(
       lines.length - 1,
@@ -242,7 +240,7 @@ export async function createCallHierarchyItemFromSite(
     );
     content = lines.slice(startLine, endLine + 1).join('\n');
   } catch {
-    // Use default values if file read fails
+    // File read or line slice failed; return call item with best-effort name and line text only.
   }
 
   return {
@@ -263,11 +261,8 @@ export function isFunctionAssignment(line: string): boolean {
   const eqIndex = line.indexOf('=');
   if (eqIndex === -1) return false;
   const afterEq = line.slice(eqIndex + 1);
-  // Check for "function" keyword after "="
   if (/\bfunction\b/.test(afterEq)) return true;
-  // Check for arrow function: "=>" after ")"
   if (/\)\s*=>/.test(afterEq)) return true;
-  // Check for single-param arrow: "identifier =>"
   if (/[a-zA-Z_$]\s*=>/.test(afterEq)) return true;
   return false;
 }

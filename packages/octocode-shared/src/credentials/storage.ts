@@ -363,10 +363,6 @@ export function getTokenSync(hostname: string = 'github.com'): string | null {
   return credentials.token.token;
 }
 
-// ============================================================================
-// RE-EXPORTS FROM FOCUSED MODULES
-// ============================================================================
-
 // Cache management
 export { invalidateCredentialsCache, _getCacheStats, _resetCredentialsCache };
 

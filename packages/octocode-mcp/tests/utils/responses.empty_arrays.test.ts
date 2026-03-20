@@ -29,7 +29,7 @@ vi.mock('../../src/providers/factory.js', () => ({
 }));
 
 import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code/github_search_code.js';
-import { TOOL_NAMES } from '../../src/tools/toolMetadata/index.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata/proxies.js';
 
 describe('Empty Arrays Removal in Responses', () => {
   let mockServer: MockMcpServer;

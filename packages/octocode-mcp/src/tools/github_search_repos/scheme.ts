@@ -3,7 +3,8 @@ import {
   BaseQuerySchema,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import { GITHUB_SEARCH_REPOS, TOOL_NAMES } from '../toolMetadata/index.js';
+import { GITHUB_SEARCH_REPOS } from '../toolMetadata/githubSchemaHelpers.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 
 export const GitHubReposSearchSingleQuerySchema = BaseQuerySchema.extend({
   keywordsToSearch: z

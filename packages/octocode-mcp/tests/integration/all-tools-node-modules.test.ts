@@ -4,10 +4,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { searchContentRipgrep } from '../../src/tools/local_ripgrep/index.js';
+import { searchContentRipgrep } from '../../src/tools/local_ripgrep/searchContentRipgrep.js';
 import { viewStructure } from '../../src/tools/local_view_structure/local_view_structure.js';
-import { findFiles } from '../../src/tools/local_find_files/index.js';
-import { fetchContent } from '../../src/tools/local_fetch_content/index.js';
+import { findFiles } from '../../src/tools/local_find_files/findFiles.js';
+import { fetchContent } from '../../src/tools/local_fetch_content/fetchContent.js';
 import type {
   SearchContentResult,
   ViewStructureResult,

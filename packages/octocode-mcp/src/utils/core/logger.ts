@@ -77,7 +77,7 @@ export class OctocodeLogger {
         });
       }
     } catch {
-      // Logging failure should never break the application - silently ignore
+      // MCP logging must not break tool execution; ignore sendLoggingMessage failures.
     }
   }
 }

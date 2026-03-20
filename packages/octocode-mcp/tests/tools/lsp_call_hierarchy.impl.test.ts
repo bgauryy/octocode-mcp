@@ -12,17 +12,19 @@ vi.mock('fs/promises', () => ({
 }));
 
 // Mock exec utilities
-vi.mock('../../src/utils/exec/index.js', () => ({
+vi.mock('../../src/utils/exec/safe.js', () => ({
   safeExec: vi
     .fn()
     .mockResolvedValue({ stdout: '', stderr: '', code: 0, success: true }),
+}));
+
+vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
   checkCommandAvailability: vi
     .fn()
     .mockResolvedValue({ available: true, command: 'rg' }),
 }));
 
-// Mock LSP module - the mock implementation must be self-contained
-vi.mock('../../src/lsp/index.js', () => {
+vi.mock('../../src/lsp/resolver.js', () => {
   class MockSymbolResolutionError extends Error {
     searchRadius: number;
     constructor(message: string, searchRadius: number) {
@@ -45,18 +47,22 @@ vi.mock('../../src/lsp/index.js', () => {
       }),
     })),
     SymbolResolutionError: MockSymbolResolutionError,
-    createClient: vi.fn().mockResolvedValue(null),
-    isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
   };
 });
 
+vi.mock('../../src/lsp/manager.js', () => ({
+  createClient: vi.fn().mockResolvedValue(null),
+  isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
+}));
+
 // Import mocked modules to access them
 import * as fs from 'fs/promises';
-import * as lspModule from '../../src/lsp/index.js';
-import * as execModule from '../../src/utils/exec/index.js';
+import * as managerModule from '../../src/lsp/manager.js';
+import { safeExec } from '../../src/utils/exec/safe.js';
+import { checkCommandAvailability } from '../../src/utils/exec/commandAvailability.js';
 
 // Import the module under test after mocks are set up
-import { registerLSPCallHierarchyTool } from '../../src/tools/lsp_call_hierarchy/index.js';
+import { registerLSPCallHierarchyTool } from '../../src/tools/lsp_call_hierarchy/register.js';
 
 describe('LSP Call Hierarchy Implementation Tests', () => {
   const sampleTypeScriptContent = `
@@ -87,15 +93,15 @@ export function caller() {
     vi.mocked(fs.readFile).mockResolvedValue(sampleTypeScriptContent);
 
     // Default: LSP not available
-    vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-    vi.mocked(lspModule.createClient).mockResolvedValue(null);
+    vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(false);
+    vi.mocked(managerModule.createClient).mockResolvedValue(null);
 
     // Default: ripgrep is available
-    vi.mocked(execModule.checkCommandAvailability).mockResolvedValue({
+    vi.mocked(checkCommandAvailability).mockResolvedValue({
       available: true,
       command: 'rg',
     });
-    vi.mocked(execModule.safeExec).mockResolvedValue({
+    vi.mocked(safeExec).mockResolvedValue({
       stdout: '',
       stderr: '',
       code: 0,
@@ -367,8 +373,10 @@ export function caller() {
     });
 
     it('should attempt LSP when available', async () => {
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
-      vi.mocked(lspModule.createClient).mockResolvedValue({
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        true
+      );
+      vi.mocked(managerModule.createClient).mockResolvedValue({
         stop: vi.fn(),
         prepareCallHierarchy: vi.fn().mockResolvedValue([]),
         getIncomingCalls: vi.fn().mockResolvedValue([]),
@@ -395,8 +403,10 @@ export function caller() {
 
   describe('Pattern Matching Fallback', () => {
     it('should use pattern matching when LSP unavailable', async () => {
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-      vi.mocked(execModule.checkCommandAvailability).mockResolvedValue({
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        false
+      );
+      vi.mocked(checkCommandAvailability).mockResolvedValue({
         available: true,
         command: 'rg',
       });
@@ -420,8 +430,10 @@ export function caller() {
     });
 
     it('should fall back to grep when ripgrep unavailable', async () => {
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-      vi.mocked(execModule.checkCommandAvailability)
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        false
+      );
+      vi.mocked(checkCommandAvailability)
         .mockResolvedValueOnce({ available: false, command: 'rg' }) // rg unavailable
         .mockResolvedValueOnce({ available: true, command: 'grep' }); // grep available
 
@@ -462,8 +474,10 @@ export function caller() {
 
   describe('Empty Results', () => {
     it('should return empty status when no callers found', async () => {
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-      vi.mocked(execModule.safeExec).mockResolvedValue({
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        false
+      );
+      vi.mocked(safeExec).mockResolvedValue({
         stdout: '',
         stderr: '',
         code: 1, // No matches

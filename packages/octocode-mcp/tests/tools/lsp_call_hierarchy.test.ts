@@ -10,7 +10,7 @@ import {
   extractFunctionBody,
   inferSymbolKind,
   createRange,
-} from '../../src/tools/lsp_call_hierarchy/index.js';
+} from '../../src/tools/lsp_call_hierarchy/callHierarchy.js';
 
 describe('LSP Call Hierarchy Tool', () => {
   beforeEach(() => {
@@ -26,7 +26,7 @@ describe('LSP Call Hierarchy Tool', () => {
       vi.resetModules();
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy/index.js');
+        await import('../../src/tools/lsp_call_hierarchy/register.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -56,7 +56,7 @@ describe('LSP Call Hierarchy Tool', () => {
       vi.resetModules();
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy/index.js');
+        await import('../../src/tools/lsp_call_hierarchy/register.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -74,7 +74,7 @@ describe('LSP Call Hierarchy Tool', () => {
       vi.resetModules();
 
       const { registerLSPCallHierarchyTool } =
-        await import('../../src/tools/lsp_call_hierarchy/index.js');
+        await import('../../src/tools/lsp_call_hierarchy/register.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),

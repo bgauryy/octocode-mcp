@@ -1,7 +1,3 @@
-/**
- * Raw GitHub file content fetching — handles API calls, branch fallback, base64 decoding.
- * Extracted from fileContent.ts to isolate the raw fetch logic.
- */
 import { RequestError } from 'octokit';
 import type { GetContentParameters, GitHubAPIResponse } from './githubAPI';
 import type { FileContentQuery } from '../tools/github_fetch_content/types.js';
@@ -13,31 +9,159 @@ import {
 } from './client';
 import { handleGitHubAPIError } from './errors';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
-import { TOOL_NAMES } from '../tools/toolMetadata/index.js';
-import { FILE_OPERATION_ERRORS } from '../errorCodes.js';
+import { TOOL_NAMES } from '../tools/toolMetadata/proxies.js';
+import { FILE_OPERATION_ERRORS } from '../errors/domainErrors.js';
 import { logSessionError } from '../session.js';
 
-/** Raw content result for caching (before line/match processing) */
 export interface RawContentResult {
   rawContent: string;
   branch?: string;
   resolvedRef: string;
 }
 
-/**
- * No-op kept for backward compatibility.
- * Branch cache is now managed centrally in client.ts via resolveDefaultBranch.
- * Use clearOctokitInstances() from client.ts for full cleanup.
- */
-export function clearDefaultBranchCache(): void {
-  // Branch resolution is now cached in client.ts (resolveDefaultBranch).
-  // This function is kept as a no-op for backward compatibility with tests.
+async function handle404WithBranch(
+  octokit: InstanceType<typeof OctokitWithThrottling>,
+  error: RequestError,
+  contentParams: GetContentParameters,
+  owner: string,
+  repo: string,
+  filePath: string,
+  branch: string,
+  authInfo?: AuthInfo
+): Promise<
+  | {
+      result: Awaited<ReturnType<typeof octokit.rest.repos.getContent>>;
+      actualBranch: string;
+    }
+  | GitHubAPIResponse<RawContentResult>
+> {
+  const defaultBranch = await resolveDefaultBranch(owner, repo, authInfo);
+  const isCommonDefaultGuess = branch === 'main' || branch === 'master';
+
+  if (isCommonDefaultGuess && branch !== defaultBranch) {
+    try {
+      const result = await octokit.rest.repos.getContent({
+        ...contentParams,
+        ref: defaultBranch,
+      });
+      return { result, actualBranch: defaultBranch };
+    } catch {
+      throw error;
+    }
+  }
+
+  const apiError = handleGitHubAPIError(error);
+  const suggestion =
+    branch === defaultBranch
+      ? undefined
+      : `Branch '${branch}' not found. Default branch is '${defaultBranch}'. Ask user: Do you want to get the file from '${defaultBranch}' instead?`;
+
+  const pathSuggestions = await findPathSuggestions(
+    octokit,
+    owner,
+    repo,
+    filePath,
+    branch || defaultBranch
+  );
+  if (pathSuggestions.length > 0) {
+    apiError.hints = [
+      ...(apiError.hints || []),
+      ...buildPathSuggestionHints(filePath, pathSuggestions),
+    ];
+  }
+  return { ...apiError, ...(suggestion && { scopesSuggestion: suggestion }) };
 }
 
-/**
- * Fetch RAW file content from GitHub API (for caching)
- * Does NOT apply startLine/endLine/matchString processing - that's done post-cache
- */
+async function handle404NoBranch(
+  octokit: InstanceType<typeof OctokitWithThrottling>,
+  error: RequestError,
+  owner: string,
+  repo: string,
+  filePath: string,
+  branch?: string
+): Promise<GitHubAPIResponse<RawContentResult>> {
+  const apiError = handleGitHubAPIError(error);
+  const pathSuggestions = await findPathSuggestions(
+    octokit,
+    owner,
+    repo,
+    filePath,
+    branch || 'main'
+  );
+  if (pathSuggestions.length > 0) {
+    apiError.hints = [
+      ...(apiError.hints || []),
+      ...buildPathSuggestionHints(filePath, pathSuggestions),
+    ];
+  }
+  return apiError;
+}
+
+async function decodeFileContent(data: {
+  content?: string;
+  size?: number;
+  type: string;
+}): Promise<GitHubAPIResponse<string>> {
+  const fileSize = data.size || 0;
+  const MAX_FILE_SIZE = 300 * 1024;
+
+  if (fileSize > MAX_FILE_SIZE) {
+    await logSessionError(
+      TOOL_NAMES.GITHUB_FETCH_CONTENT,
+      FILE_OPERATION_ERRORS.FILE_TOO_LARGE.code
+    );
+    return {
+      error: FILE_OPERATION_ERRORS.FILE_TOO_LARGE.message(
+        Math.round(fileSize / 1024),
+        Math.round(MAX_FILE_SIZE / 1024),
+        TOOL_NAMES.GITHUB_SEARCH_CODE
+      ),
+      type: 'unknown' as const,
+      status: 413,
+    };
+  }
+
+  const base64Content = (data.content || '').replace(/\s/g, '');
+  if (!data.content || !base64Content) {
+    await logSessionError(
+      TOOL_NAMES.GITHUB_FETCH_CONTENT,
+      FILE_OPERATION_ERRORS.FILE_EMPTY.code
+    );
+    return {
+      error: FILE_OPERATION_ERRORS.FILE_EMPTY.message,
+      type: 'unknown' as const,
+      status: 404,
+    };
+  }
+
+  try {
+    const buffer = Buffer.from(base64Content, 'base64');
+    if (buffer.indexOf(0) !== -1) {
+      await logSessionError(
+        TOOL_NAMES.GITHUB_FETCH_CONTENT,
+        FILE_OPERATION_ERRORS.BINARY_FILE.code
+      );
+      return {
+        error: FILE_OPERATION_ERRORS.BINARY_FILE.message,
+        type: 'unknown' as const,
+        status: 415,
+      };
+    }
+    return { data: buffer.toString('utf-8'), status: 200 };
+  } catch {
+    await logSessionError(
+      TOOL_NAMES.GITHUB_FETCH_CONTENT,
+      FILE_OPERATION_ERRORS.DECODE_FAILED.code
+    );
+    return {
+      error: FILE_OPERATION_ERRORS.DECODE_FAILED.message,
+      type: 'unknown' as const,
+      status: 422,
+    };
+  }
+}
+
+/** Raw GitHub file fetch for caching; line/match slicing happens after cache. */
 export async function fetchRawGitHubFileContent(
   params: FileContentQuery,
   authInfo?: AuthInfo
@@ -58,68 +182,35 @@ export async function fetchRawGitHubFileContent(
     try {
       result = await octokit.rest.repos.getContent(contentParams);
     } catch (error: unknown) {
-      if (error instanceof RequestError && error.status === 404 && branch) {
-        // Smart Fallback Logic — uses the centralized resolver (cached, API-backed)
-        const defaultBranch = await resolveDefaultBranch(owner, repo, authInfo);
-
-        const isCommonDefaultGuess = branch === 'main' || branch === 'master';
-
-        if (isCommonDefaultGuess && branch !== defaultBranch) {
-          try {
-            result = await octokit.rest.repos.getContent({
-              ...contentParams,
-              ref: defaultBranch,
-            });
-            actualBranch = defaultBranch;
-          } catch {
-            throw error; // Fallback failed, throw original error
+      if (error instanceof RequestError && error.status === 404) {
+        if (branch) {
+          const fallback = await handle404WithBranch(
+            octokit,
+            error,
+            contentParams,
+            owner,
+            repo,
+            filePath,
+            branch,
+            authInfo
+          );
+          if ('result' in fallback) {
+            result = fallback.result;
+            actualBranch = fallback.actualBranch;
+          } else {
+            return fallback;
           }
         } else {
-          const apiError = handleGitHubAPIError(error);
-          const suggestion =
-            branch === defaultBranch
-              ? undefined
-              : `Branch '${branch}' not found. Default branch is '${defaultBranch}'. Ask user: Do you want to get the file from '${defaultBranch}' instead?`;
-
-          const pathSuggestions = await findPathSuggestions(
+          return await handle404NoBranch(
             octokit,
+            error,
             owner,
             repo,
             filePath,
-            branch || defaultBranch
+            branch
           );
-
-          if (pathSuggestions.length > 0) {
-            apiError.hints = [
-              ...(apiError.hints || []),
-              ...buildPathSuggestionHints(filePath, pathSuggestions),
-            ];
-          }
-
-          return {
-            ...apiError,
-            ...(suggestion && { scopesSuggestion: suggestion }),
-          };
         }
       } else {
-        if (error instanceof RequestError && error.status === 404) {
-          const apiError = handleGitHubAPIError(error);
-          const pathSuggestions = await findPathSuggestions(
-            octokit,
-            owner,
-            repo,
-            filePath,
-            branch || 'main'
-          );
-          if (pathSuggestions.length > 0) {
-            apiError.hints = [
-              ...(apiError.hints || []),
-              ...buildPathSuggestionHints(filePath, pathSuggestions),
-            ];
-          }
-          return apiError;
-        }
-
         throw error;
       }
     }
@@ -141,94 +232,21 @@ export async function fetchRawGitHubFileContent(
     }
 
     if ('content' in data && data.type === 'file') {
-      const fileSize = data.size || 0;
-      const MAX_FILE_SIZE = 300 * 1024;
-
-      if (fileSize > MAX_FILE_SIZE) {
-        const fileSizeKB = Math.round(fileSize / 1024);
-        const maxSizeKB = Math.round(MAX_FILE_SIZE / 1024);
-
-        await logSessionError(
-          TOOL_NAMES.GITHUB_FETCH_CONTENT,
-          FILE_OPERATION_ERRORS.FILE_TOO_LARGE.code
-        );
-        return {
-          error: FILE_OPERATION_ERRORS.FILE_TOO_LARGE.message(
-            fileSizeKB,
-            maxSizeKB,
-            TOOL_NAMES.GITHUB_SEARCH_CODE
-          ),
-          type: 'unknown' as const,
-          status: 413,
-        };
-      }
-
-      if (!data.content) {
-        await logSessionError(
-          TOOL_NAMES.GITHUB_FETCH_CONTENT,
-          FILE_OPERATION_ERRORS.FILE_EMPTY.code
-        );
-        return {
-          error: FILE_OPERATION_ERRORS.FILE_EMPTY.message,
-          type: 'unknown' as const,
-          status: 404,
-        };
-      }
-
-      const base64Content = data.content.replace(/\s/g, '');
-
-      if (!base64Content) {
-        await logSessionError(
-          TOOL_NAMES.GITHUB_FETCH_CONTENT,
-          FILE_OPERATION_ERRORS.FILE_EMPTY.code
-        );
-        return {
-          error: FILE_OPERATION_ERRORS.FILE_EMPTY.message,
-          type: 'unknown' as const,
-          status: 404,
-        };
-      }
-
-      let decodedContent: string;
-      try {
-        const buffer = Buffer.from(base64Content, 'base64');
-
-        if (buffer.indexOf(0) !== -1) {
-          await logSessionError(
-            TOOL_NAMES.GITHUB_FETCH_CONTENT,
-            FILE_OPERATION_ERRORS.BINARY_FILE.code
-          );
-          return {
-            error: FILE_OPERATION_ERRORS.BINARY_FILE.message,
-            type: 'unknown' as const,
-            status: 415,
-          };
-        }
-
-        decodedContent = buffer.toString('utf-8');
-      } catch {
-        await logSessionError(
-          TOOL_NAMES.GITHUB_FETCH_CONTENT,
-          FILE_OPERATION_ERRORS.DECODE_FAILED.code
-        );
-        return {
-          error: FILE_OPERATION_ERRORS.DECODE_FAILED.message,
-          type: 'unknown' as const,
-          status: 422,
-        };
-      }
+      const decoded = await decodeFileContent(data);
+      if ('error' in decoded)
+        return decoded as GitHubAPIResponse<RawContentResult>;
 
       if (!actualBranch && !branch) {
         try {
           actualBranch = await resolveDefaultBranch(owner, repo, authInfo);
         } catch {
-          // Fall through — HEAD is acceptable as last resort
+          void 0;
         }
       }
 
       return {
         data: {
-          rawContent: decodedContent,
+          rawContent: decoded.data,
           branch: actualBranch || undefined,
           resolvedRef: actualBranch || branch || 'HEAD',
         },
@@ -246,8 +264,7 @@ export async function fetchRawGitHubFileContent(
       status: 415,
     };
   } catch (error: unknown) {
-    const apiError = handleGitHubAPIError(error);
-    return apiError;
+    return handleGitHubAPIError(error);
   }
 }
 
@@ -299,13 +316,11 @@ async function findPathSuggestions(
     const files = parentContent.data as GitHubApiFileItem[];
     const suggestions: string[] = [];
 
-    // 1. Case insensitive match
     const caseMatch = files.find(
       f => f.name.toLowerCase() === targetName.toLowerCase()
     );
     if (caseMatch) suggestions.push(caseMatch.path);
 
-    // 2. Common extensions (ts <-> js, tsx <-> jsx, etc)
     const nameNoExt = targetName.replace(/\.[^/.]+$/, '');
     const extMatches = files.filter(f => {
       if (f.name === targetName) return false;

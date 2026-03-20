@@ -1,14 +1,15 @@
 import type { ProviderType } from './providers/types.js';
-import { getGithubCLIToken } from './utils/exec/index.js';
+import { getGithubCLIToken } from './utils/exec/npm.js';
 import {
   resolveTokenFull,
   type FullTokenResolution,
   type GhCliTokenGetter,
-} from './utils/credentials/index.js';
-import { getConfigSync, invalidateConfigCache } from 'octocode-shared';
+  getConfigSync,
+  invalidateConfigCache,
+} from 'octocode-shared';
 import { version } from '../package.json';
 import type { ServerConfig, TokenSourceType } from './types.js';
-import { CONFIG_ERRORS } from './errorCodes.js';
+import { CONFIG_ERRORS } from './errors/domainErrors.js';
 import { maskSensitiveData } from './security/mask.js';
 import {
   getGitLabConfig as resolveGitLabConfig,
@@ -20,25 +21,6 @@ import {
   getBitbucketConfig as resolveBitbucketConfig,
   getBitbucketToken,
   getBitbucketHost,
-  isBitbucketConfigured,
-} from './bitbucketConfig.js';
-
-// Re-export GitLab functions for API compatibility
-export {
-  getGitLabConfig,
-  getGitLabToken,
-  getGitLabHost,
-  getGitLabTokenSource,
-  isGitLabConfigured,
-} from './gitlabConfig.js';
-
-// Re-export Bitbucket functions for API compatibility
-export {
-  getBitbucketConfig,
-  getBitbucketToken,
-  getBitbucketHost,
-  getBitbucketTokenSource,
-  getBitbucketUsername,
   isBitbucketConfigured,
 } from './bitbucketConfig.js';
 

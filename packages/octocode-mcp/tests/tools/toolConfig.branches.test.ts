@@ -8,10 +8,10 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../src/tools/toolMetadata/index.js', async importOriginal => {
+vi.mock('../../src/tools/toolMetadata/proxies.js', async importOriginal => {
   const mod =
     await importOriginal<
-      typeof import('../../src/tools/toolMetadata/index.js')
+      typeof import('../../src/tools/toolMetadata/proxies.js')
     >();
   return {
     ...mod,
@@ -75,7 +75,7 @@ describe('toolConfig branch coverage - getDescription fallback (line 26)', () =>
 
       // Initialize metadata first
       const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata/index.js');
+        await import('../../src/tools/toolMetadata/state.js');
       await initializeToolMetadata();
 
       // Now import toolConfig which uses DESCRIPTIONS
@@ -91,7 +91,7 @@ describe('toolConfig branch coverage - getDescription fallback (line 26)', () =>
   describe('when DESCRIPTIONS returns undefined (fallback branch)', () => {
     it('should return empty string when tool is not in DESCRIPTIONS', async () => {
       const { DESCRIPTIONS } =
-        await import('../../src/tools/toolMetadata/index.js');
+        await import('../../src/tools/toolMetadata/proxies.js');
 
       // Access a tool that doesn't exist - should return ''
       const unknownDescription = DESCRIPTIONS['completely_unknown_tool_xyz'];
@@ -100,7 +100,7 @@ describe('toolConfig branch coverage - getDescription fallback (line 26)', () =>
 
     it('should return empty string for undefined tool name', async () => {
       const { DESCRIPTIONS } =
-        await import('../../src/tools/toolMetadata/index.js');
+        await import('../../src/tools/toolMetadata/proxies.js');
 
       // Access with undefined-like key
       const result = DESCRIPTIONS[''];

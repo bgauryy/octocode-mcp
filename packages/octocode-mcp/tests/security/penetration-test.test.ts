@@ -11,7 +11,7 @@ describe('🔴 SECURITY PENETRATION TEST - PathValidator', () => {
   let validator: PathValidator;
 
   beforeEach(() => {
-    validator = new PathValidator(mockWorkspace);
+    validator = new PathValidator({ workspaceRoot: mockWorkspace });
   });
 
   describe('ATTACK 1: Path Traversal Variations', () => {

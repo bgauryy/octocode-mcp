@@ -1,10 +1,3 @@
-/**
- * MCP Configuration Sync
- *
- * Synchronizes MCP server configurations across all installed IDE clients.
- * Handles merging, conflict resolution, and batch writes.
- */
-
 import type { MCPClient, MCPConfig, MCPServer } from '../types/index.js';
 import {
   getMCPConfigPath,
@@ -14,9 +7,6 @@ import {
 } from '../utils/mcp-paths.js';
 import { readMCPConfig, writeMCPConfig } from '../utils/mcp-io.js';
 
-/**
- * Client config snapshot
- */
 export interface ClientConfigSnapshot {
   client: MCPClient;
   configPath: string;
@@ -25,9 +15,6 @@ export interface ClientConfigSnapshot {
   mcpCount: number;
 }
 
-/**
- * Diff result for a single MCP
- */
 export interface MCPDiff {
   mcpId: string;
   presentIn: MCPClient[];
@@ -36,9 +23,6 @@ export interface MCPDiff {
   variants: Map<MCPClient, MCPServer>;
 }
 
-/**
- * Full sync analysis result
- */
 export interface SyncAnalysis {
   clients: ClientConfigSnapshot[];
   allMCPs: Set<string>;
@@ -56,18 +40,12 @@ export interface SyncAnalysis {
   };
 }
 
-/**
- * User's resolution choice for a conflict
- */
 export interface ConflictResolution {
   mcpId: string;
   chosenConfig: MCPServer;
   sourceClient: MCPClient;
 }
 
-/**
- * Sync operation result
- */
 export interface SyncResult {
   success: boolean;
   clientResults: Map<
@@ -78,9 +56,6 @@ export interface SyncResult {
   errors: string[];
 }
 
-/**
- * Read configs from all available clients
- */
 export function readAllClientConfigs(): ClientConfigSnapshot[] {
   const availableClients = detectAvailableClients();
   const snapshots: ClientConfigSnapshot[] = [];
@@ -110,14 +85,9 @@ export function readAllClientConfigs(): ClientConfigSnapshot[] {
   return snapshots;
 }
 
-/**
- * Compare two MCP server configs for equality
- */
 export function areMCPServersEqual(a: MCPServer, b: MCPServer): boolean {
-  // Compare command
   if (a.command !== b.command) return false;
 
-  // Compare args
   const aArgs = a.args || [];
   const bArgs = b.args || [];
   if (aArgs.length !== bArgs.length) return false;
@@ -125,7 +95,6 @@ export function areMCPServersEqual(a: MCPServer, b: MCPServer): boolean {
     if (aArgs[i] !== bArgs[i]) return false;
   }
 
-  // Compare env vars
   const aEnvKeys = Object.keys(a.env || {}).sort();
   const bEnvKeys = Object.keys(b.env || {}).sort();
 
@@ -139,9 +108,6 @@ export function areMCPServersEqual(a: MCPServer, b: MCPServer): boolean {
   return true;
 }
 
-/**
- * Analyze configs across all clients and identify differences
- */
 export function analyzeSyncState(
   snapshots: ClientConfigSnapshot[]
 ): SyncAnalysis {
@@ -149,7 +115,6 @@ export function analyzeSyncState(
   const allMCPs = new Set<string>();
   const mcpToClients = new Map<string, Map<MCPClient, MCPServer>>();
 
-  // Gather all MCPs and their configs per client
   for (const snapshot of clientsWithConfig) {
     if (!snapshot.config?.mcpServers) continue;
 
@@ -163,7 +128,6 @@ export function analyzeSyncState(
     }
   }
 
-  // Build diffs
   const diffs: MCPDiff[] = [];
   const allClientIds = clientsWithConfig.map(s => s.client);
 
@@ -172,7 +136,6 @@ export function analyzeSyncState(
     const presentIn = Array.from(variants.keys());
     const missingIn = allClientIds.filter(c => !variants.has(c));
 
-    // Check for conflicts (different configs for same MCP)
     let hasConflict = false;
     const configs = Array.from(variants.values());
     if (configs.length > 1) {
@@ -194,7 +157,6 @@ export function analyzeSyncState(
     });
   }
 
-  // Categorize diffs
   const fullyConsistent = diffs.filter(
     d => d.missingIn.length === 0 && !d.hasConflict
   );
@@ -219,9 +181,6 @@ export function analyzeSyncState(
   };
 }
 
-/**
- * Build merged config for a client
- */
 export function buildMergedConfig(
   currentConfig: MCPConfig | null,
   mcpsToSync: Array<{ mcpId: string; server: MCPServer }>
@@ -237,9 +196,6 @@ export function buildMergedConfig(
   return merged;
 }
 
-/**
- * Get the canonical config for an MCP (first available or resolved)
- */
 export function getCanonicalConfig(
   diff: MCPDiff,
   resolution?: ConflictResolution
@@ -248,7 +204,6 @@ export function getCanonicalConfig(
     return resolution.chosenConfig;
   }
 
-  // If no conflict, return first variant
   if (!diff.hasConflict && diff.variants.size > 0) {
     return Array.from(diff.variants.values())[0];
   }
@@ -256,9 +211,6 @@ export function getCanonicalConfig(
   return null;
 }
 
-/**
- * Execute sync across all clients
- */
 export function executeSyncToClients(
   snapshots: ClientConfigSnapshot[],
   mcpsToSync: Array<{ mcpId: string; server: MCPServer }>,
@@ -294,7 +246,6 @@ export function executeSyncToClients(
     }
   }
 
-  // Track which MCPs were synced
   for (const { mcpId } of mcpsToSync) {
     if (!mcpsSynced.includes(mcpId)) {
       mcpsSynced.push(mcpId);
@@ -311,9 +262,6 @@ export function executeSyncToClients(
   };
 }
 
-/**
- * Prepare sync payload from analysis and resolutions
- */
 export function prepareSyncPayload(
   analysis: SyncAnalysis,
   resolutions: ConflictResolution[]
@@ -321,7 +269,6 @@ export function prepareSyncPayload(
   const payload: Array<{ mcpId: string; server: MCPServer }> = [];
   const resolutionMap = new Map(resolutions.map(r => [r.mcpId, r]));
 
-  // Add MCPs that need sync (no conflict, just missing from some clients)
   for (const diff of analysis.needsSync) {
     const server = getCanonicalConfig(diff);
     if (server) {
@@ -329,7 +276,6 @@ export function prepareSyncPayload(
     }
   }
 
-  // Add resolved conflicts
   for (const diff of analysis.conflicts) {
     const resolution = resolutionMap.get(diff.mcpId);
     if (resolution) {
@@ -340,18 +286,12 @@ export function prepareSyncPayload(
   return payload;
 }
 
-/**
- * Quick check if sync is needed
- */
 export function isSyncNeeded(analysis: SyncAnalysis): boolean {
   return (
     analysis.summary.needsSyncCount > 0 || analysis.summary.conflictCount > 0
   );
 }
 
-/**
- * Get human-readable client name
- */
 export function getClientDisplayName(client: MCPClient): string {
   return MCP_CLIENTS[client]?.name || client;
 }

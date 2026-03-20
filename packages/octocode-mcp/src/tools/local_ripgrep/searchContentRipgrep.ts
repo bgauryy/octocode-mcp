@@ -1,13 +1,13 @@
 import {
   checkCommandAvailability,
   getMissingCommandError,
-} from '../../utils/exec/index.js';
+} from '../../utils/exec/commandAvailability.js';
 import { applyWorkflowMode, type RipgrepQuery } from './scheme.js';
 import { createErrorResult } from '../../utils/file/toolHelpers.js';
-import { LOCAL_TOOL_ERROR_CODES } from '../../errorCodes.js';
-import { TOOL_NAMES } from '../toolMetadata/index.js';
+import { LOCAL_TOOL_ERROR_CODES } from '../../errors/localToolErrors.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import type { SearchContentResult } from '../../utils/core/types.js';
-import { ToolErrors } from '../../errorCodes.js';
+import { ToolErrors } from '../../errors/errorFactories.js';
 import {
   executeRipgrepSearchInternal,
   executeGrepSearch,
@@ -22,18 +22,14 @@ export async function searchContentRipgrep(
   const configuredQuery = applyWorkflowMode(query);
 
   try {
-    // Check if ripgrep is available
     const rgAvailability = await checkCommandAvailability('rg');
 
     if (rgAvailability.available) {
-      // Use ripgrep (preferred - faster, more features)
       return await executeRipgrepSearchInternal(configuredQuery);
     }
 
-    // rg not available - try grep fallback
     const grepAvailability = await checkCommandAvailability('grep');
     if (!grepAvailability.available) {
-      // Neither rg nor grep available
       const toolError = ToolErrors.commandNotAvailable(
         'rg or grep',
         `${getMissingCommandError('rg')} Alternatively, ensure grep is in PATH.`
@@ -54,7 +50,6 @@ export async function searchContentRipgrep(
       ) as SearchContentResult;
     }
 
-    // Use grep fallback
     return await executeGrepSearch(configuredQuery);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -80,22 +75,3 @@ export async function searchContentRipgrep(
     }) as SearchContentResult;
   }
 }
-
-// Re-export functions from executor module
-export {
-  executeRipgrepSearchInternal,
-  executeGrepSearch,
-} from './ripgrepExecutor.js';
-
-// Re-export functions from parser module
-export {
-  parseFilesOnlyOutput,
-  parseRipgrepOutput,
-  parseGrepOutputWrapper,
-} from './ripgrepParser.js';
-
-// Re-export functions from result builder module
-export {
-  buildSearchResult,
-  getFileModifiedTime,
-} from './ripgrepResultBuilder.js';

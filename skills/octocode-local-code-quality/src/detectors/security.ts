@@ -682,3 +682,140 @@ export function detectCommandInjectionRisk(
   }
   return findings;
 }
+export function detectDebugLogLeakage(
+  fileSummaries: FileEntry[]
+): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    for (const log of entry.consoleLogs || []) {
+      if (log.method === 'debugger') {
+        findings.push(
+          toSecurityFinding(
+            {
+              severity: 'high',
+              category: 'debug-log-leakage',
+              file: entry.file,
+              lineStart: log.lineStart,
+              lineEnd: log.lineEnd,
+              title: 'Debugger statement in production code',
+              reason:
+                'A `debugger` statement pauses execution when DevTools are open. In production it can expose internal state and halt the application.',
+              files: [entry.file],
+              suggestedFix: {
+                strategy: 'Remove the debugger statement before shipping.',
+                steps: [
+                  'Delete the `debugger;` line.',
+                  'Use structured logging (pino, winston) or feature-flagged debug helpers instead.',
+                ],
+              },
+              impact:
+                'Debugger statements in production can halt request processing and expose internal runtime state to anyone with browser DevTools open.',
+              tags: ['security', 'debug', 'production-safety'],
+            },
+            'security.debug-log-leakage',
+            'high',
+            { method: 'debugger', line: log.lineStart }
+          )
+        );
+      } else if (log.method === 'debug' || log.method === 'trace') {
+        findings.push(
+          toSecurityFinding(
+            {
+              severity: 'medium',
+              category: 'debug-log-leakage',
+              file: entry.file,
+              lineStart: log.lineStart,
+              lineEnd: log.lineEnd,
+              title: `console.${log.method}() in production code`,
+              reason: `console.${log.method}() is a development-only call. Left in production it leaks internal state, variable values, and execution paths — all useful to attackers.`,
+              files: [entry.file],
+              suggestedFix: {
+                strategy:
+                  'Replace with a structured logger that respects log-level configuration.',
+                steps: [
+                  `Remove or gate the console.${log.method}() call behind a LOG_LEVEL check.`,
+                  'Use a structured logger (pino, winston) with level filtering instead.',
+                  'Ensure debug/trace levels are disabled in production config.',
+                ],
+              },
+              impact:
+                'Debug/trace logs expose internal object state and execution flow, making reconnaissance easier for attackers and violating minimal disclosure.',
+              tags: ['security', 'debug', 'information-disclosure'],
+              lspHints: [
+                {
+                  tool: 'lspFindReferences',
+                  symbolName: `console.${log.method}`,
+                  lineHint: log.lineStart,
+                  file: entry.file,
+                  expectedResult: 'find all debug/trace log calls in this file to assess total leakage surface',
+                },
+              ],
+            },
+            'security.debug-log-leakage',
+            'medium',
+            { method: log.method, snippet: log.argSnippet, line: log.lineStart }
+          )
+        );
+      }
+    }
+  }
+  return findings;
+}
+
+export function detectSensitiveDataLogging(
+  fileSummaries: FileEntry[]
+): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    for (const log of entry.consoleLogs || []) {
+      if (log.method === 'debugger' || !log.hasSensitiveArg) continue;
+      findings.push(
+        toSecurityFinding(
+          {
+            severity: 'high',
+            category: 'sensitive-data-logging',
+            file: entry.file,
+            lineStart: log.lineStart,
+            lineEnd: log.lineEnd,
+            title: `Sensitive data logged via console.${log.method}()${log.argSnippet ? `: ${log.argSnippet.slice(0, 40)}` : ''}`,
+            reason: `console.${log.method}() argument matches a sensitive-data pattern (password, token, secret, credential, API key, session, SSN). Logging secrets writes them to stdout/stderr, log aggregators, error monitoring services, and persistent log files.`,
+            files: [entry.file],
+            suggestedFix: {
+              strategy:
+                'Remove or redact sensitive values before logging.',
+              steps: [
+                'Never log raw passwords, tokens, API keys, or session identifiers.',
+                'If logging for debugging, redact: log({ ...user, password: "[REDACTED]" }).',
+                'Use a structured logger with field-level redaction hooks (e.g. pino redact option).',
+                'Audit all log aggregation pipelines (Datadog, Splunk, CloudWatch) for secret exposure.',
+              ],
+            },
+            impact:
+              'Sensitive data in logs is written to stdout/stderr, forwarded to log aggregators (Splunk, Datadog, CloudWatch), and often stored long-term — creating a persistent credential leak accessible to anyone with log access.',
+            tags: ['security', 'sensitive-data', 'credential-leak', 'compliance'],
+            lspHints: [
+              {
+                tool: 'lspCallHierarchy',
+                symbolName: log.method,
+                lineHint: log.lineStart,
+                file: entry.file,
+                expectedResult: `trace incoming callers to understand where sensitive data originates before reaching console.${log.method}`,
+              },
+            ],
+          },
+          'security.sensitive-data-logging',
+          'high',
+          {
+            method: log.method,
+            snippet: log.argSnippet,
+            line: log.lineStart,
+            sanitizerStatus: 'missing',
+          }
+        )
+      );
+    }
+  }
+  return findings;
+}

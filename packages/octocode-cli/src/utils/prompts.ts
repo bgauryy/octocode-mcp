@@ -1,7 +1,3 @@
-/**
- * Dynamic Import for ES Module (@inquirer/prompts)
- */
-
 type SelectConfig<T> = {
   message: string;
   choices: Array<
@@ -87,7 +83,6 @@ type SearchFunction = <T>(config: {
   };
 }) => Promise<T>;
 
-// Separator is a class that can be instantiated with optional text
 type SeparatorInstance = {
   type: 'separator';
   separator: string;
@@ -97,7 +92,6 @@ type SeparatorClass = {
   new (separator?: string): SeparatorInstance;
 };
 
-// Initialize with placeholder functions that throw if called before loadInquirer()
 const notLoadedError = (): never => {
   throw new Error('Inquirer not loaded. Call loadInquirer() first.');
 };
@@ -143,13 +137,6 @@ export function isInquirerLoaded(): boolean {
   return loaded;
 }
 
-/**
- * Select wrapper (alias for select)
- *
- * @example
- * const value = await selectWithCancel({ message: 'Choose:', choices });
- * // Use value directly
- */
 export async function selectWithCancel<T>(config: SelectConfig<T>): Promise<T> {
   const inquirer = await import('@inquirer/prompts');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

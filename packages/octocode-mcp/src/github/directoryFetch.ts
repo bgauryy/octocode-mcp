@@ -156,8 +156,7 @@ export async function fetchDirectoryContents(
   // ── 1. Cache hit? ─────────────────────────────────────────────
   const cacheResult = isCacheHit(cloneDir);
   if (cacheResult.hit) {
-    const isCloneCache =
-      !cacheResult.meta.source || cacheResult.meta.source === 'clone';
+    const isCloneCache = cacheResult.meta.source === 'clone';
 
     if (isCloneCache) {
       // A full/sparse git clone is always a superset of what directoryFetch
@@ -275,13 +274,7 @@ export async function fetchDirectoryContents(
   // ── 7. Write cache metadata ───────────────────────────────────
   // Mark as 'directoryFetch' so the clone tool knows this is NOT
   // a full/sparse clone and will re-clone instead of trusting it.
-  const meta = createCacheMeta(
-    owner,
-    repo,
-    branch,
-    undefined,
-    'directoryFetch'
-  );
+  const meta = createCacheMeta(owner, repo, branch, 'directoryFetch');
   writeCacheMeta(cloneDir, meta);
 
   return {
@@ -400,6 +393,7 @@ function scanDirectoryStats(
     try {
       entries = readdirSync(current);
     } catch {
+      // Directory unreadable (permissions/missing); stop this walk branch.
       return;
     }
     for (const name of entries) {
@@ -415,7 +409,7 @@ function scanDirectoryStats(
           files.push({ path: relativePath, size: st.size, type: 'file' });
         }
       } catch {
-        // skip unreadable entries
+        // stat/read failed for one entry; skip it and continue the directory walk.
       }
     }
   }

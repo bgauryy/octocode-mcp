@@ -31,22 +31,22 @@ describe('Platform Utilities', () => {
 
   describe('Platform Detection (re-exports from octocode-shared)', () => {
     it('should re-export platform detection from octocode-shared', async () => {
-      const { isMac, isWindows, isLinux, HOME } =
+      const { isMac, isWindows, HOME } =
         await import('../../src/utils/platform.js');
-      // These are mocked values from octocode-shared mock
+      const { isLinux } = await import('octocode-shared');
       expect(isMac).toBe(true);
       expect(isWindows).toBe(false);
       expect(isLinux).toBe(false);
       expect(HOME).toBe('/Users/test');
     });
 
-    it('should re-export getPlatformName from octocode-shared', async () => {
-      const { getPlatformName } = await import('../../src/utils/platform.js');
+    it('should expose getPlatformName from octocode-shared', async () => {
+      const { getPlatformName } = await import('octocode-shared');
       expect(getPlatformName()).toBe('macOS');
     });
 
-    it('should re-export getArchitecture from octocode-shared', async () => {
-      const { getArchitecture } = await import('../../src/utils/platform.js');
+    it('should expose getArchitecture from octocode-shared', async () => {
+      const { getArchitecture } = await import('octocode-shared');
       expect(getArchitecture()).toBe('arm64');
     });
 
@@ -55,9 +55,8 @@ describe('Platform Utilities', () => {
       expect(getAppDataPath()).toBe('/Users/test');
     });
 
-    it('should re-export getLocalAppDataPath from octocode-shared', async () => {
-      const { getLocalAppDataPath } =
-        await import('../../src/utils/platform.js');
+    it('should expose getLocalAppDataPath from octocode-shared', async () => {
+      const { getLocalAppDataPath } = await import('octocode-shared');
       expect(getLocalAppDataPath()).toBe('/Users/test');
     });
   });

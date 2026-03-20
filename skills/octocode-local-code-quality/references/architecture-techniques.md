@@ -2,6 +2,8 @@
 
 Use this reference when the scan output is directionally useful but not yet strong enough to justify a confident architecture claim.
 
+> For how to validate architecture findings with tools, see [validate & investigate](./validate-investigate.md) and the Architecture Playbooks in [playbooks.md](./playbooks.md). For metric definitions (instability, SDP, cyclomatic density), see [concepts.md](./concepts.md).
+
 ---
 
 ## Graph Techniques
@@ -114,10 +116,6 @@ Interpretation:
 
 ---
 
-## Validation Rule
+## Validation
 
-These techniques are investigation tools, not proof. Any statement about live code should still be validated with Octocode local tools when available:
-
-1. `localSearchCode` to anchor the claim
-2. `lspGotoDefinition`, `lspFindReferences`, or `lspCallHierarchy` to confirm it
-3. `localGetFileContent` only after the exact location is known
+These techniques are investigation tools, not proof. Validate statements about live code with Octocode local tools before presenting as fact. See the Principles section in [SKILL.md](../SKILL.md).

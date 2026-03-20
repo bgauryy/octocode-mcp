@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
+import { LSPClient } from '../../src/lsp/client.js';
 import {
-  LSPClient,
   createClient,
   isLanguageServerAvailable,
-} from '../../src/lsp/index.js';
+} from '../../src/lsp/manager.js';
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as jsonrpc from 'vscode-jsonrpc/node.js';

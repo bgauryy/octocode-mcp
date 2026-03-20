@@ -17,7 +17,7 @@ import type {
 import { getBitbucketRepositoryIdentity } from './searchUtils.js';
 import { generateCacheKey, withDataCache } from '../utils/http/cache.js';
 
-export interface BitbucketCodeSearchQuery {
+interface BitbucketCodeSearchQuery {
   workspace: string;
   repoSlug?: string;
   searchQuery: string;

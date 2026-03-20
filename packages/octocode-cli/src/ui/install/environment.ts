@@ -1,7 +1,3 @@
-/**
- * Environment Check Display Components
- */
-
 import { c, bold, dim } from '../../utils/colors.js';
 import {
   type NodeEnvironmentStatus,
@@ -11,12 +7,8 @@ import {
 } from '../../features/node-check.js';
 import { Spinner } from '../../utils/spinner.js';
 
-// Cache for environment check results (only check once per session)
 let cachedEnvStatus: NodeEnvironmentStatus | null = null;
 
-/**
- * Print Node.js status
- */
 function printNodeStatus(installed: boolean, version: string | null): void {
   if (installed) {
     console.log(`  ${c('green', '✓')} Node.js: ${bold(version || 'unknown')}`);
@@ -25,9 +17,6 @@ function printNodeStatus(installed: boolean, version: string | null): void {
   }
 }
 
-/**
- * Print npm status
- */
 function printNpmStatus(installed: boolean, version: string | null): void {
   if (installed) {
     console.log(`  ${c('green', '✓')} npm: ${bold(version || 'unknown')}`);
@@ -38,9 +27,6 @@ function printNpmStatus(installed: boolean, version: string | null): void {
   }
 }
 
-/**
- * Print npm registry status
- */
 function printRegistryStatus(
   status: 'ok' | 'slow' | 'failed',
   latency: number | null
@@ -63,13 +49,11 @@ function printRegistryStatus(
         `  ${c('red', '✗')} Registry: ${c('red', 'Unreachable')} ${latency !== null ? dim(latencyStr) : ''}`
       );
       break;
+    default:
+      break;
   }
 }
 
-/**
- * Check and print environment status with loader for slow operations
- * Results are cached to avoid repeated network calls that can slow down menus
- */
 export async function checkAndPrintEnvironmentWithLoader(): Promise<NodeEnvironmentStatus> {
   if (cachedEnvStatus) {
     printNodeStatus(cachedEnvStatus.nodeInstalled, cachedEnvStatus.nodeVersion);
@@ -81,21 +65,17 @@ export async function checkAndPrintEnvironmentWithLoader(): Promise<NodeEnvironm
     return cachedEnvStatus;
   }
 
-  // 1. Check Node.js (Sync - fast local check)
   const nodeCheck = checkNodeInPath();
   printNodeStatus(nodeCheck.installed, nodeCheck.version);
 
-  // 2. Check npm (Sync - fast local check)
   const npmCheck = checkNpmInPath();
   printNpmStatus(npmCheck.installed, npmCheck.version);
 
-  // 3. Check Registry (Async - network call with 4s timeout)
   const registrySpinner = new Spinner('  Registry: Checking...').start();
   const registryCheck = await checkNpmRegistry();
   registrySpinner.clear();
   printRegistryStatus(registryCheck.status, registryCheck.latency);
 
-  // Cache the result
   cachedEnvStatus = {
     nodeInstalled: nodeCheck.installed,
     nodeVersion: nodeCheck.version,
@@ -103,25 +83,19 @@ export async function checkAndPrintEnvironmentWithLoader(): Promise<NodeEnvironm
     npmVersion: npmCheck.version,
     registryStatus: registryCheck.status,
     registryLatency: registryCheck.latency,
-    octocodePackageAvailable: true, // Not checked anymore
+    octocodePackageAvailable: true,
     octocodePackageVersion: null,
   };
 
   return cachedEnvStatus;
 }
 
-/**
- * Print node-doctor hint for deeper diagnostics
- */
 export function printNodeDoctorHint(): void {
   console.log(
     `  ${dim('For deeper diagnostics:')} ${c('cyan', 'npx node-doctor')}`
   );
 }
 
-/**
- * Check if environment has issues that warrant showing node-doctor hint
- */
 export function hasEnvironmentIssues(status: NodeEnvironmentStatus): boolean {
   return (
     !status.nodeInstalled ||

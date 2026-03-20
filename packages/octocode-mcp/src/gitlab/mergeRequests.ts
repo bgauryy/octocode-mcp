@@ -108,7 +108,6 @@ async function searchGitLabMergeRequestsAPIInternal(
       };
     }
 
-    // Build query options
     const queryOptions: Record<string, unknown> = {
       state: params.state === 'all' ? undefined : params.state,
       authorUsername: params.authorUsername,
@@ -124,7 +123,6 @@ async function searchGitLabMergeRequestsAPIInternal(
       page,
     };
 
-    // Remove undefined values
     Object.keys(queryOptions).forEach(key => {
       if (queryOptions[key] === undefined) {
         delete queryOptions[key];

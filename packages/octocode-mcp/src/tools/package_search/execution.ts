@@ -16,7 +16,7 @@ import {
   createSuccessResult,
   createErrorResult,
 } from '../utils.js';
-import { TOOL_NAMES } from '../toolMetadata/index.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 
 function isPackageSearchError(

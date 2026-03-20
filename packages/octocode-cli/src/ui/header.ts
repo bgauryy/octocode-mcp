@@ -1,13 +1,6 @@
-/**
- * UI Header Components
- */
-
 import { c, bold, dim } from '../utils/colors.js';
 import { getAppContext } from '../utils/context.js';
 
-/**
- * Print the ASCII logo
- */
 function printLogo(): void {
   const logo = [
     '        ▄▄██████▄▄',
@@ -29,9 +22,6 @@ function printLogo(): void {
   }
 }
 
-/**
- * Print the ASCII Title
- */
 function printTitle(): void {
   const title = [
     ' ██████╗  ██████╗████████╗ ██████╗  ██████╗ ██████╗ ██████╗ ███████╗',
@@ -47,9 +37,6 @@ function printTitle(): void {
   }
 }
 
-/**
- * Print welcome message
- */
 export function printWelcome(): void {
   console.log();
   printLogo();
@@ -61,10 +48,8 @@ export function printWelcome(): void {
   try {
     const ctx = getAppContext();
 
-    // Full path outside the box
     console.log(`  ${dim('📂')} ${ctx.cwd}`);
 
-    // Simple context line - only show IDE if detected (not plain Terminal)
     const isIDE = ctx.ide === 'Cursor' || ctx.ide === 'VS Code';
     if (isIDE || ctx.git) {
       let envLine = '';
@@ -79,14 +64,10 @@ export function printWelcome(): void {
     }
     console.log();
   } catch {
-    // Silently continue if context detection fails
     console.log();
   }
 }
 
-/**
- * Print goodbye message with helpful tips
- */
 export function printGoodbye(): void {
   console.log();
   console.log(

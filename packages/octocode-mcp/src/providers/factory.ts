@@ -166,7 +166,6 @@ export function getProvider(
     evictProviderInstances();
   }
 
-  // Get provider class from registry
   const ProviderClass = providerRegistry.get(type);
   if (!ProviderClass) {
     const available = [...providerRegistry.keys()].join(', ') || 'none';
@@ -180,7 +179,6 @@ export function getProvider(
     type,
   });
 
-  // Cache with timestamp and return
   const now = Date.now();
   instanceCache.set(cacheKey, {
     provider,

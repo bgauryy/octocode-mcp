@@ -5,8 +5,6 @@
 
 import type { HintContext, ToolHintGenerators } from '../../types/metadata.js';
 
-export const TOOL_NAME = 'githubSearchPullRequests';
-
 // Note: Static hints already cover all common cases including "Multiple PRs? Look for patterns"
 // Dynamic hints only for truly context-specific scenarios not covered by static
 export const hints: ToolHintGenerators = {

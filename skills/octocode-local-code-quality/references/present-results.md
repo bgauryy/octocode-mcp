@@ -2,6 +2,8 @@
 
 Read `summary.md` first — it has everything needed for a top-level presentation. Only drill into feature JSONs for investigation.
 
+For confidence tiers and how to label findings, see the **Confidence Tiers** table in [SKILL.md](../SKILL.md).
+
 ---
 
 ## Summary Sections

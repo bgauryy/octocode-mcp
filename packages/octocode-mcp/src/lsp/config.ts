@@ -15,7 +15,6 @@ import type {
 import { validateLSPServerPath } from './validation.js';
 import { LSPConfigFileSchema } from './schemas.js';
 
-// Re-export the registry from its new home
 export { LANGUAGE_SERVER_COMMANDS } from './lspRegistry.js';
 import { LANGUAGE_SERVER_COMMANDS } from './lspRegistry.js';
 
@@ -77,6 +76,7 @@ export async function loadUserConfig(
       try {
         return getConfigSync().lsp.configPath;
       } catch {
+        // getConfigSync unavailable; LSP config path comes from env/workspace only.
         return undefined;
       }
     })();

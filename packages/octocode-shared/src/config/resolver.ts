@@ -1,14 +1,8 @@
 /**
  * Configuration Resolver — Public API barrel
  *
- * Re-exports resolution and cache functions from resolverCache.ts.
  * Also provides the getConfigValue() convenience accessor.
  */
-
-// ============================================================================
-// RE-EXPORTS FROM RESOLVER CACHE (resolution + cache in one module)
-// ============================================================================
-
 export {
   resolveConfigSync,
   resolveConfig,

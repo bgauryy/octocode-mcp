@@ -9,6 +9,7 @@ import {
   computeMaintainabilityIndex,
   countLinesInNode,
 } from './metrics.js';
+import { collectMessageChains } from '../collectors/chains.js';
 import { collectTopLevelEffects } from '../collectors/effects.js';
 import { collectInputSourceProfile } from '../collectors/input-sources.js';
 import { collectPerformanceData } from '../collectors/performance.js';
@@ -472,6 +473,7 @@ export function analyzeSourceFile(
   collectSecurityData(sourceFile, fileRelative, fileEntry);
   if (!isTestFile(fileRelative)) {
     collectInputSourceProfile(sourceFile, fileRelative, fileEntry);
+    collectMessageChains(sourceFile, fileRelative, fileEntry);
   }
   collectPerformanceData(sourceFile, fileRelative, fileEntry);
   if (isTestFile(fileRelative)) {

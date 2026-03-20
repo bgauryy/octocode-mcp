@@ -4,7 +4,7 @@
 
 import path from 'path';
 import { pathValidator } from '../../security/pathValidator.js';
-import { ToolErrors } from '../../errorCodes.js';
+import { ToolErrors } from '../../errors/errorFactories.js';
 import type { BaseQuery } from '../core/types.js';
 import {
   createErrorResult,
@@ -16,8 +16,6 @@ import {
  */
 type LocalErrorResult = UnifiedErrorResult;
 
-// Re-export createErrorResult  during migration
-// Consumers should migrate to importing directly from '../response/error.js'
 export { createErrorResult };
 
 /**
@@ -147,7 +145,6 @@ export function checkLargeOutputSafety(
     return { shouldBlock: false };
   }
 
-  // Check if item count exceeds threshold
   if (itemCount > threshold) {
     const toolError = ToolErrors.outputTooLarge(itemCount, threshold);
 

@@ -1,5 +1,7 @@
 # RFC: Agent-Safe AST Artifact Reading
 
+> **Status: Implemented.** This RFC documents the design decisions behind `ast/tree-search.js`. For usage, see [ast-tree-search.md](./ast-tree-search.md). This file is architectural context only — not an actionable guide.
+
 ## Summary
 
 This RFC standardizes how agents inspect generated AST artifacts in `octocode-local-code-quality`.

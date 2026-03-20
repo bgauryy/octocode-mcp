@@ -8,23 +8,10 @@
  * - Global configuration (~/.octocode/.octocoderc)
  */
 
-// Re-export everything from credentials
 export * from './credentials/index.js';
-
-// Re-export everything from platform
 export * from './platform/index.js';
-
-// Re-export everything from session
 export * from './session/index.js';
-
-// Re-export everything from config
 export * from './config/index.js';
-
-// Re-export everything from logger
 export * from './logger/index.js';
-
-// Re-export centralized paths
 export * from './paths.js';
-
-// Re-export filesystem utilities
 export * from './fs-utils.js';

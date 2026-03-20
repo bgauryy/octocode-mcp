@@ -4,7 +4,7 @@ import { ContentSanitizer } from './contentSanitizer.js';
 import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types';
 import { logToolCall, logSessionError } from '../session.js';
 import { isLoggingEnabled as isSessionEnabled } from '../serverConfig.js';
-import { TOOL_ERRORS } from '../errorCodes.js';
+import { TOOL_ERRORS } from '../errors/domainErrors.js';
 import { isLocalTool } from '../tools/toolNames.js';
 
 /**

@@ -25,9 +25,6 @@ import { hints as lspGotoDefinitionHints } from '../tools/lsp_goto_definition/hi
 import { hints as lspFindReferencesHints } from '../tools/lsp_find_references/hints.js';
 import { hints as lspCallHierarchyHints } from '../tools/lsp_call_hierarchy/hints.js';
 
-// Re-export LOCAL_BASE_HINTS from local_ripgrep
-export { LOCAL_BASE_HINTS } from '../tools/local_ripgrep/hints.js';
-
 /**
  * Aggregated hints from all tool modules
  * Keys are actual tool names from STATIC_TOOL_NAMES
@@ -78,7 +75,6 @@ export function getDynamicHints(
   const hintGenerator = HINTS[toolName]?.[status];
   if (!hintGenerator) return [];
 
-  // Call the hint generator with context
   const rawHints = hintGenerator(context || {});
 
   // Filter out undefined values from conditional hints

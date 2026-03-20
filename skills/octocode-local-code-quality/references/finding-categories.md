@@ -67,6 +67,7 @@ All categories detected by the scan, grouped by pillar. Categories marked `--sem
 | `deep-override-chain` | medium — high | Method overridden beyond depth threshold in class hierarchy | `--semantic` |
 | `interface-compliance` | medium — high | Class `implements I` with missing or any-cast members | `--semantic` |
 | `narrowable-type` | low | Parameter declared broad but all callers pass narrow type | `--semantic` |
+| `message-chain` | medium — high | Property-access chains of depth ≥ 4 (`a.b.c.d`) violating the Law of Demeter. Medium at depth 4–5; high at depth ≥ 6. Deep chains tightly couple the caller to intermediate object structure | — |
 
 ---
 
@@ -81,6 +82,8 @@ All categories detected by the scan, grouped by pillar. Categories marked `--sem
 | `unused-npm-dependency` | low — medium | package.json dep not imported anywhere | — |
 | `package-boundary-violation` | medium — high | Cross-package import bypassing public API | — |
 | `barrel-explosion` | medium — high | Barrel with excessive re-exports or chain depth | — |
+| `redundant-re-export` | low — medium | Barrel re-export with 0 consumers through the barrel path; includes `export *` where <50% of symbols are consumed | — |
+| `redundant-comment` | low | Comment that restates what the code already says (narrating patterns: `// Import`, `// Define`, `// Return`, `// Set`, `// Get`, `// Handle`, `// Create`, etc.) | — |
 | `unused-import` | low | Imported symbol never semantically used (TypeChecker confirmed) | `--semantic` |
 | `orphan-implementation` | medium | Exported class with no external references and no interface | `--semantic` |
 | `move-to-caller` | low | Exported symbol consumed by exactly 1 file (candidate for inlining) | `--semantic` |
@@ -102,6 +105,8 @@ All categories detected by the scan, grouped by pillar. Categories marked `--sem
 | `input-passthrough-risk` | low — medium | Function receives external input and passes it to other functions without validation; severity by param confidence (high-confidence params like `req`, `body` = medium; medium-confidence like `input`, `event` = low; low-confidence like `data`, `args` = filtered out). Trace downstream with `lspCallHierarchy` | — |
 | `path-traversal-risk` | medium — high | Function receives external input that flows into `fs.readFile`, `path.resolve`, or `path.join` without validation (normalize → prefix check → realpath). High severity when no validation; medium when partial validation detected | — |
 | `command-injection-risk` | high — critical | Function receives external input that flows into `exec`/`execSync` (critical) or `spawn` with potential `shell:true` (high). exec with string interpolation enables arbitrary OS command execution | — |
+| `debug-log-leakage` | medium — high | `debugger` statements (high) or `console.debug`/`console.trace` calls (medium) in non-test production files. Information disclosure risk — exposes internal state and execution paths | — |
+| `sensitive-data-logging` | high | `console.*` calls whose argument text matches a sensitive-data pattern: password, token, secret, credential, API key, session, SSN, credit card. Logs write secrets to stdout, log aggregators, and persistent storage | — |
 
 ---
 

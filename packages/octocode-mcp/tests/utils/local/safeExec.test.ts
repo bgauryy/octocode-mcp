@@ -71,7 +71,7 @@ describe('safeExec', () => {
 
   describe('stderr handling', () => {
     it('should collect stderr output', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const promise = safeExec('ls', ['-la'], { cwd: process.cwd() });
 
       setTimeout(() => {
@@ -88,7 +88,7 @@ describe('safeExec', () => {
     });
 
     it('should accumulate stderr from multiple data events', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const promise = safeExec('ls', ['-la'], { cwd: process.cwd() });
 
       setTimeout(() => {
@@ -106,7 +106,7 @@ describe('safeExec', () => {
     it('should ignore stderr data after process is killed', async () => {
       vi.useFakeTimers();
 
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const promise = safeExec('ls', ['-la'], {
         cwd: process.cwd(),
         timeout: 100,
@@ -131,7 +131,7 @@ describe('safeExec', () => {
 
   describe('output size limit via stdout', () => {
     it('should reject when stdout exceeds maxOutputSize', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const maxSize = 100;
       const promise = safeExec('ls', ['-la'], {
         cwd: process.cwd(),
@@ -149,7 +149,7 @@ describe('safeExec', () => {
     });
 
     it('should handle multiple stdout chunks that cumulatively exceed limit', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const maxSize = 100;
       const promise = safeExec('ls', ['-la'], {
         cwd: process.cwd(),
@@ -170,7 +170,7 @@ describe('safeExec', () => {
     it('should ignore stdout data after process is killed', async () => {
       vi.useFakeTimers();
 
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const promise = safeExec('ls', ['-la'], {
         cwd: process.cwd(),
         timeout: 100,
@@ -195,7 +195,7 @@ describe('safeExec', () => {
 
   describe('output size limit via stderr', () => {
     it('should reject when stderr exceeds maxOutputSize', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const maxSize = 100;
       const promise = safeExec('ls', ['-la'], {
         cwd: process.cwd(),
@@ -213,7 +213,7 @@ describe('safeExec', () => {
     });
 
     it('should reject when combined stdout and stderr exceeds maxOutputSize', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const maxSize = 100;
       const promise = safeExec('ls', ['-la'], {
         cwd: process.cwd(),
@@ -231,7 +231,7 @@ describe('safeExec', () => {
     });
 
     it('should not reject when stderr is under maxOutputSize', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const maxSize = 100;
       const promise = safeExec('ls', ['-la'], {
         cwd: process.cwd(),
@@ -250,7 +250,7 @@ describe('safeExec', () => {
     });
 
     it('should handle multiple stderr chunks that cumulatively exceed limit', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const maxSize = 100;
       const promise = safeExec('ls', ['-la'], {
         cwd: process.cwd(),
@@ -271,7 +271,7 @@ describe('safeExec', () => {
 
   describe('spawn error handling', () => {
     it('should reject on spawn error event', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const promise = safeExec('ls', ['-la'], { cwd: process.cwd() });
 
       mockProcess.simulateError(new Error('ENOENT: command not found'));
@@ -282,7 +282,7 @@ describe('safeExec', () => {
     it('should ignore error event after process is already killed', async () => {
       vi.useFakeTimers();
 
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const promise = safeExec('ls', ['-la'], {
         cwd: process.cwd(),
         timeout: 100,
@@ -310,7 +310,7 @@ describe('safeExec', () => {
         throw new Error('Failed to spawn process');
       });
 
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
 
       // Use 'ls' which is allowed - the spawn mock will throw before command runs
       // The error from spawn is re-thrown as-is when it's an Error instance
@@ -325,7 +325,7 @@ describe('safeExec', () => {
         throw 'some string error';
       });
 
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
 
       // Non-Error throws are wrapped with a generic message by spawnWithTimeout
       await expect(safeExec('ls', [], { cwd: process.cwd() })).rejects.toThrow(
@@ -338,7 +338,7 @@ describe('safeExec', () => {
     it('should reject on timeout', async () => {
       vi.useFakeTimers();
 
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       // Use 'ls' which is an allowed command
       const promise = safeExec('ls', ['-la'], {
         cwd: process.cwd(),
@@ -362,7 +362,7 @@ describe('safeExec', () => {
     it('should use default timeout of 30 seconds', async () => {
       vi.useFakeTimers();
 
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       // Use 'ls' which is an allowed command
       const promise = safeExec('ls', ['-la'], { cwd: process.cwd() });
 
@@ -382,7 +382,7 @@ describe('safeExec', () => {
     it('should not reject twice when timeout fires after output size exceeded', async () => {
       vi.useFakeTimers();
 
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const maxSize = 50;
       const promise = safeExec('ls', ['-la'], {
         cwd: process.cwd(),
@@ -405,7 +405,7 @@ describe('safeExec', () => {
 
   describe('successful execution', () => {
     it('should resolve with success on exit code 0', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const promise = safeExec('ls', ['-la'], { cwd: process.cwd() });
 
       mockProcess.simulateSuccess('file1\nfile2\n', '');
@@ -418,7 +418,7 @@ describe('safeExec', () => {
     });
 
     it('should resolve with failure on non-zero exit code', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const promise = safeExec('ls', ['nonexistent'], { cwd: process.cwd() });
 
       mockProcess.simulateFailure(1, 'No such file or directory');
@@ -433,7 +433,7 @@ describe('safeExec', () => {
 
   describe('validation', () => {
     it('should reject invalid command', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
 
       await expect(
         safeExec('rm', ['-rf', '/'], { cwd: process.cwd() })
@@ -441,7 +441,7 @@ describe('safeExec', () => {
     });
 
     it('should reject execution outside workspace', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
 
       await expect(safeExec('ls', ['-la'], { cwd: '/tmp' })).rejects.toThrow(
         'Execution context validation failed'
@@ -458,7 +458,7 @@ describe('safeExec', () => {
       );
       validateCommandSpy.mockReturnValueOnce({ isValid: false });
 
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
 
       await expect(safeExec('ls', [], { cwd: process.cwd() })).rejects.toThrow(
         'Command validation failed: Command not allowed'
@@ -468,7 +468,7 @@ describe('safeExec', () => {
     });
 
     it('should reject arguments containing null bytes', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
 
       await expect(
         safeExec('ls', ['-la', 'path\0injected'], { cwd: process.cwd() })
@@ -476,7 +476,7 @@ describe('safeExec', () => {
     });
 
     it('should reject arguments exceeding max length', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       const longArg = 'a'.repeat(1001);
 
       await expect(
@@ -494,7 +494,7 @@ describe('safeExec', () => {
       );
       validateContextSpy.mockReturnValueOnce({ isValid: false });
 
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
 
       await expect(safeExec('ls', [], { cwd: process.cwd() })).rejects.toThrow(
         'Execution context validation failed: Invalid working directory'
@@ -504,7 +504,7 @@ describe('safeExec', () => {
     });
 
     it('should not forward non-allowlisted env overrides to child processes', async () => {
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
 
       const promise = safeExec('ls', ['-la'], {
         cwd: process.cwd(),
@@ -527,7 +527,7 @@ describe('safeExec', () => {
     it('should ignore close event when process was already killed', async () => {
       vi.useFakeTimers();
 
-      const { safeExec } = await import('../../../src/utils/exec/index.js');
+      const { safeExec } = await import('../../../src/utils/exec/safe.js');
       // Use 'ls' which is an allowed command
       const promise = safeExec('ls', ['-la'], {
         cwd: process.cwd(),

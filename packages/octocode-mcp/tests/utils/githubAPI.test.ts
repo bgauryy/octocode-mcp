@@ -88,7 +88,7 @@ vi.mock('../../src/security/contentSanitizer.js', () => ({
   ContentSanitizer: mockContentSanitizer,
 }));
 
-vi.mock('../../src/utils/minifier/index.js', () => ({
+vi.mock('../../src/utils/minifier/minifier.js', () => ({
   minifyContent: mockminifyContent,
 }));
 
@@ -97,17 +97,15 @@ vi.mock('../../src/github/client.js', () => ({
   clearOctokitInstances: vi.fn(),
 }));
 
-vi.mock('../../src/utils/exec/index.js', () => ({
+vi.mock('../../src/utils/exec/npm.js', () => ({
   getGithubCLIToken: vi.fn().mockResolvedValue('mocked-cli-token'),
 }));
 
 // Import after mocking
 import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
 import { searchGitHubReposAPI } from '../../src/github/repoSearch.js';
-import {
-  fetchGitHubFileContentAPI,
-  viewGitHubRepositoryStructureAPI,
-} from '../../src/github/fileOperations.js';
+import { fetchGitHubFileContentAPI } from '../../src/github/fileContent.js';
+import { viewGitHubRepositoryStructureAPI } from '../../src/github/repoStructure.js';
 import { searchGitHubPullRequestsAPI } from '../../src/github/pullRequestSearch.js';
 import type { GitHubCodeSearchQuery } from '../../src/tools/github_search_code/types.js';
 import { initialize, cleanup } from '../../src/serverConfig.js';

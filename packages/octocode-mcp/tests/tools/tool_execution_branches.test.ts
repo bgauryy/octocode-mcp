@@ -12,7 +12,7 @@ vi.mock('fs/promises', () => ({
 }));
 
 // Mock LSP client creation
-vi.mock('../../src/lsp/index.js', () => ({
+vi.mock('../../src/lsp/manager.js', () => ({
   createClient: vi.fn(),
 }));
 
@@ -64,7 +64,7 @@ vi.mock('../../src/tools/github_view_repo_structure/execution.js', () => ({
 
 // Import after mocks
 import * as fs from 'fs/promises';
-import { createClient } from '../../src/lsp/index.js';
+import { createClient } from '../../src/lsp/manager.js';
 import { executeBulkOperation } from '../../src/utils/response/bulk.js';
 import { findReferencesWithLSP } from '../../src/tools/lsp_find_references/lspReferencesCore.js';
 import { executeCallHierarchy } from '../../src/tools/lsp_call_hierarchy/execution.js';

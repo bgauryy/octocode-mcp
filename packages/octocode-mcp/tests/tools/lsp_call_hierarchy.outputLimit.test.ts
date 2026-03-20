@@ -4,21 +4,25 @@
  * and that charOffset/charLength work for manual pagination.
  */
 import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
-import { SymbolResolver } from '../../src/lsp/index.js';
-import * as lspIndex from '../../src/lsp/index.js';
+import { SymbolResolver } from '../../src/lsp/resolver.js';
+import * as managerModule from '../../src/lsp/manager.js';
 import * as toolHelpers from '../../src/utils/file/toolHelpers.js';
-import * as execIndex from '../../src/utils/exec/index.js';
+import { safeExec } from '../../src/utils/exec/safe.js';
+import { checkCommandAvailability } from '../../src/utils/exec/commandAvailability.js';
 import * as fsPromises from 'fs/promises';
-import { registerLSPCallHierarchyTool } from '../../src/tools/lsp_call_hierarchy/index.js';
+import { registerLSPCallHierarchyTool } from '../../src/tools/lsp_call_hierarchy/register.js';
 
 // Mocks
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
 }));
 
-vi.mock('../../src/lsp/index.js', () => ({
+vi.mock('../../src/lsp/resolver.js', () => ({
   SymbolResolver: vi.fn(),
   SymbolResolutionError: class extends Error {},
+}));
+
+vi.mock('../../src/lsp/manager.js', () => ({
   createClient: vi.fn(),
   isLanguageServerAvailable: vi.fn(),
 }));
@@ -32,8 +36,11 @@ vi.mock('../../src/utils/file/toolHelpers.js', () => ({
   })),
 }));
 
-vi.mock('../../src/utils/exec/index.js', () => ({
+vi.mock('../../src/utils/exec/safe.js', () => ({
   safeExec: vi.fn(),
+}));
+
+vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
   checkCommandAvailability: vi.fn(),
 }));
 
@@ -131,7 +138,7 @@ describe('lspCallHierarchy output size limits', () => {
       getIncomingCalls: vi.fn().mockResolvedValue([]),
       getOutgoingCalls: vi.fn().mockResolvedValue([]),
     };
-    (lspIndex.createClient as Mock).mockResolvedValue(mockLSPClient);
+    (managerModule.createClient as Mock).mockResolvedValue(mockLSPClient);
 
     // Default path and file mocks
     (toolHelpers.validateToolPath as Mock).mockReturnValue({
@@ -141,8 +148,8 @@ describe('lspCallHierarchy output size limits', () => {
     (fsPromises.readFile as Mock).mockResolvedValue(
       'function targetFunction() {\n  doSomething();\n}\n'
     );
-    (lspIndex.isLanguageServerAvailable as Mock).mockResolvedValue(true);
-    (execIndex.checkCommandAvailability as Mock).mockResolvedValue({
+    (managerModule.isLanguageServerAvailable as Mock).mockResolvedValue(true);
+    (checkCommandAvailability as Mock).mockResolvedValue({
       available: false,
     });
 
@@ -331,13 +338,13 @@ describe('lspCallHierarchy output size limits', () => {
 
     it('should NOT apply output limit when LSP returns null and pattern matching has empty results', async () => {
       // Make LSP return null (prepareCallHierarchy returns null)
-      (lspIndex.createClient as Mock).mockResolvedValue(null);
+      (managerModule.createClient as Mock).mockResolvedValue(null);
 
       // Pattern matching fallback: mock rg as unavailable, grep returns no matches
-      (execIndex.checkCommandAvailability as Mock).mockResolvedValue({
+      (checkCommandAvailability as Mock).mockResolvedValue({
         available: false,
       });
-      (execIndex.safeExec as Mock).mockResolvedValue({
+      (safeExec as Mock).mockResolvedValue({
         success: true,
         code: 0,
         stdout: '',

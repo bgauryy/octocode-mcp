@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { minifyContentSync } from '../../../src/utils/minifier/index.js';
+import { minifyContentSync } from '../../../src/utils/minifier/minifier.js';
 
 describe('minifierSync', () => {
   describe('minifyContentSync', () => {

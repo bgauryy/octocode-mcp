@@ -1,4 +1,4 @@
-# 🐙 Octocode CLI
+# Octocode CLI
 
 <div align="center">
 
@@ -6,117 +6,128 @@
 [![npm downloads](https://img.shields.io/npm/dm/octocode-cli.svg?style=flat-square)](https://www.npmjs.com/package/octocode-cli)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/LICENSE)
 
-**The unified installer and management hub for Octocode MCP servers and AI skills.**
+**Installer and management CLI for Octocode MCP servers and AI skills.**
 
-[Website](https://octocode.ai) • [Documentation](https://github.com/bgauryy/octocode-mcp/blob/main/docs/README.md) • [GitHub](https://github.com/bgauryy/octocode-mcp)
+[Website](https://octocode.ai) | [Documentation](https://github.com/bgauryy/octocode-mcp/blob/main/docs/README.md) | [GitHub](https://github.com/bgauryy/octocode-mcp)
 
 <img src="https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/packages/octocode-cli/assets/example.png" alt="Octocode CLI Demo" width="700" style="border-radius: 8px; margin: 20px 0;">
 
 </div>
 
-**Octocode CLI** is the essential companion for AI-assisted development. It streamlines the installation of [octocode-mcp](https://www.npmjs.com/package/octocode-mcp), manages authentication across multiple AI clients, and keeps your MCP configurations synchronized.
+Octocode CLI configures [octocode-mcp](https://www.npmjs.com/package/octocode-mcp) across AI editors, manages GitHub authentication, synchronizes MCP configs, and installs AI skills.
 
 ---
 
-## ✨ Key Features
+## Features
 
-- **🚀 One-Step Installation**: Instantly configure `octocode-mcp` for Cursor, Claude Desktop, Windsurf, Zed, and more.
-- **🔌 MCP Marketplace**: Browse and install over 70+ community-vetted MCP servers directly from your terminal.
-- **🧠 AI Skills Manager**: Install and update specialized AI coding skills for Claude Code (`research`, `local-search`, `implement`, `plan`, `pr-review`, `roast`).
-- **🔄 Universal Sync**: Keep your MCP configurations and authentication states synchronized across all your IDEs.
-- **🔐 Secure Authentication**: Enterprise-grade token management with encrypted storage and multiple auth providers.
+- **MCP installation** — configure `octocode-mcp` for Cursor, Claude Desktop, Windsurf, Zed, Claude Code, Trae, Antigravity, Opencode, and VS Code extensions (Cline, Roo-Cline, Continue).
+- **MCP marketplace** — browse and install 70+ community MCP servers from the terminal.
+- **Skills manager** — install 9 bundled `octocode-*` skills for Claude Code. Install all at once or a single named skill: `octocode skills install --skill <name>`.
+- **Config sync** — keep MCP configurations consistent across all IDEs.
+- **Authentication** — GitHub OAuth device flow with AES-256-GCM encrypted token storage; supports Octocode OAuth, `gh` CLI, and env-var tokens.
+- **Cache management** — inspect and clean cloned-repo cache, skills marketplace cache, and logs.
 
 ---
 
-## 🚀 Quick Start
-
-Get up and running in seconds. The interactive wizard will guide you through installation and authentication.
+## Quick Start
 
 ```bash
 npx octocode-cli
 ```
 
+The interactive menu covers MCP setup, skills, auth, and sync. For non-interactive use, see the [CLI Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md).
+
+### Interactive menu
+
+| Item | What it does |
+|------|-------------|
+| Octocode MCP | Install and configure octocode-mcp for your IDEs |
+| Octocode Skills | Quick-install bundled Octocode skills |
+| Manage System Skills | Marketplace, installed skills list, custom install path |
+| Manage Auth | Sign in/out via Octocode OAuth or gh CLI |
+| Manage System MCP | Sync configs, browse MCP marketplace, inspect settings |
+
+### CLI commands
+
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `install` | `i` | Configure octocode-mcp for an IDE |
+| `skills` | `sk` | List or install bundled skills |
+| `sync` | `sy` | Sync MCP configs across IDEs |
+| `auth` | `a`, `gh` | Auth menu (`auth login`, `logout`, `status`, `token`) |
+| `login` / `logout` | `l` | GitHub OAuth login/logout |
+| `token` | `t` | Print token; `--json` for machine output |
+| `status` | `s` | GitHub auth status |
+| `cache` | - | Inspect/clean disk cache |
+
+Full options and examples: [CLI Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md).
+
 ---
 
-## 📦 Installation & Usage
+## Installing Skills for Claude Code
 
-### Interactive Mode
-
-The recommended way to use Octocode CLI. Access all features through a unified menu:
-
-| Menu Item | Description |
-|-----------|-------------|
-| **🐙 Octocode MCP** | Install and configure Octocode MCP for your IDEs |
-| **🐙 Octocode Skills** | Install AI-powered research, planning & review skills |
-| **🧠 Manage System Skills** | Browse skills marketplace and manage installed skills |
-| **🔑 Manage Auth** | Sign in/out via Octocode OAuth or gh CLI |
-| **⚡ Manage System MCP** | Sync configs, browse MCP marketplace, inspect settings |
+Skills install into `~/.claude/skills/` (global) or `.claude/skills/` inside a project (project-scoped, committable).
 
 ```bash
-npx octocode-cli
+npx octocode-cli skills list                                        # see what's installed
+npx octocode-cli skills install --skill octocode-researcher         # install one skill
+npx octocode-cli skills install --skill octocode-researcher --force # update existing
+npx octocode-cli skills install                                     # install all
 ```
 
-### CLI Commands
+| Skill | When to use |
+|-------|-------------|
+| `octocode-researcher` | Code exploration — find, trace, definitions |
+| `octocode-research` | Deep research via HTTP research server |
+| `octocode-plan` | Plan → implement → verify |
+| `octocode-rfc-generator` | RFCs and design docs |
+| `octocode-pull-request-reviewer` | PR and staged-change review |
+| `octocode-local-code-quality` | Architecture, security, dead code audits |
+| `octocode-documentation-writer` | Generate project documentation |
+| `octocode-prompt-optimizer` | Harden prompts and SKILL files |
+| `octocode-roast` | Brutally honest code critique |
 
-For the complete CLI reference including all commands and options, see the [CLI Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md).
+To install project-scoped, set `"skillsDestDir"` in `~/.octocode/config.json` before running `skills install`, or use the interactive menu (Manage System Skills → Change path).
 
----
-
-## 🖥️ Supported Clients
-
-Octocode CLI supports a wide range of AI-first editors and tools.
-
-| Client | Description | Config Location (macOS) |
-|--------|-------------|-------------------------|
-| **Cursor** | AI-first code editor | `~/.cursor/mcp.json` |
-| **Claude Desktop** | Anthropic's desktop app | `~/Library/Application Support/Claude/` |
-| **Windsurf** | Codeium AI IDE | `~/.codeium/windsurf/mcp_config.json` |
-| **Zed** | High-performance editor | `~/.config/zed/settings.json` |
-| **Claude Code** | CLI Assistant | `~/.claude.json` |
-| **Trae** | Adaptive AI IDE | `~/Library/Application Support/Trae/mcp.json` |
-| **Antigravity** | Gemini-powered AI IDE | `~/.gemini/antigravity/mcp_config.json` |
-| **Opencode** | AI coding agent CLI | `~/.config/opencode/config.json` |
-| **VS Code Extensions** | Cline, Roo-Cline, Continue | *(Varies by extension)* |
+Full reference: [Skills Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md).
 
 ---
 
-## 🔧 Troubleshooting
+## Supported Clients
 
-If you encounter issues, try the following commands:
+| Client | Config Location (macOS) |
+|--------|-------------------------|
+| Cursor | `~/.cursor/mcp.json` |
+| Claude Desktop | `~/Library/Application Support/Claude/` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
+| Zed | `~/.config/zed/settings.json` |
+| Claude Code | `~/.claude.json` |
+| Trae | `~/Library/Application Support/Trae/mcp.json` |
+| Antigravity | `~/.gemini/antigravity/mcp_config.json` |
+| Opencode | `~/.config/opencode/config.json` |
+| VS Code (Cline, Roo-Cline, Continue) | Varies by extension |
+
+---
+
+## Troubleshooting
 
 ```bash
-# Diagnose environment issues
-npx node-doctor
-
-# Reset local credentials
-rm -rf ~/.octocode && octocode-cli login
-
-# Verify auth status
-octocode-cli status
+npx node-doctor                          # diagnose environment
+rm -rf ~/.octocode && octocode-cli login # reset credentials
+octocode-cli status                      # verify auth
 ```
 
-**Common Issues:**
-- **Token Expired**: Run `octocode-cli login` to refresh credentials.
-- **Browser Not Opening**: Copy the authorization URL manually from the terminal.
+- **Token expired** — run `octocode-cli login`.
+- **Browser not opening** — copy the authorization URL from the terminal.
 
 ---
 
 ## Privacy & Telemetry
 
-Octocode collects **de-identified** telemetry data to improve the tool, including command usage and error rates. We **never** collect source code, environment variables, or PII.
+De-identified telemetry (command usage, error rates) is collected to improve the tool. Source code, env vars, and PII are never collected. Opt out: `export LOG=false`
 
-You can opt-out at any time:
-
-```bash
-export LOG=false
-```
-
-For full details, please read our [Privacy Policy](https://github.com/bgauryy/octocode-mcp/blob/main/PRIVACY.md) and [Terms of Usage](https://github.com/bgauryy/octocode-mcp/blob/main/TERMS.md).
+[Privacy Policy](https://github.com/bgauryy/octocode-mcp/blob/main/PRIVACY.md) | [Terms of Usage](https://github.com/bgauryy/octocode-mcp/blob/main/TERMS.md)
 
 ---
 
-## 📄 License
-
-This project is licensed under the **MIT License**.
-
-Copyright © 2026 Octocode AI.
+MIT. Copyright 2026 Octocode AI.

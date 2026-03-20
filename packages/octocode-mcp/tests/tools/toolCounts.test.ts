@@ -9,10 +9,10 @@ vi.mock('../../src/serverConfig.js', () => ({
   isCloneEnabled: vi.fn(),
 }));
 
-vi.mock('../../src/tools/toolMetadata/index.js', async () => {
+vi.mock('../../src/tools/toolMetadata/proxies.js', async () => {
   const actual = await vi.importActual<
-    typeof import('../../src/tools/toolMetadata/index.js')
-  >('../../src/tools/toolMetadata/index.js');
+    typeof import('../../src/tools/toolMetadata/proxies.js')
+  >('../../src/tools/toolMetadata/proxies.js');
   return {
     ...actual,
     isToolInMetadata: vi.fn().mockReturnValue(true),
@@ -48,25 +48,33 @@ vi.mock(
 vi.mock('../../src/tools/package_search/package_search.js', () => ({
   registerPackageSearchTool: vi.fn().mockReturnValue({}),
 }));
-vi.mock('../../src/tools/github_clone_repo/index.js', () => ({
+vi.mock('../../src/tools/github_clone_repo/register.js', () => ({
   registerGitHubCloneRepoTool: vi.fn().mockReturnValue({}),
 }));
 
 // Mock local tools - export registration functions used by toolConfig
-vi.mock('../../src/tools/local_ripgrep/index.js', () => ({
+vi.mock('../../src/tools/local_ripgrep/register.js', () => ({
   registerLocalRipgrepTool: vi.fn().mockReturnValue({}),
+}));
+vi.mock('../../src/tools/local_ripgrep/searchContentRipgrep.js', () => ({
   searchContentRipgrep: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
-vi.mock('../../src/tools/local_view_structure/index.js', () => ({
+vi.mock('../../src/tools/local_view_structure/register.js', () => ({
   registerLocalViewStructureTool: vi.fn().mockReturnValue({}),
+}));
+vi.mock('../../src/tools/local_view_structure/local_view_structure.js', () => ({
   viewStructure: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
-vi.mock('../../src/tools/local_find_files/index.js', () => ({
+vi.mock('../../src/tools/local_find_files/register.js', () => ({
   registerLocalFindFilesTool: vi.fn().mockReturnValue({}),
+}));
+vi.mock('../../src/tools/local_find_files/findFiles.js', () => ({
   findFiles: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
-vi.mock('../../src/tools/local_fetch_content/index.js', () => ({
+vi.mock('../../src/tools/local_fetch_content/register.js', () => ({
   registerLocalFetchContentTool: vi.fn().mockReturnValue({}),
+}));
+vi.mock('../../src/tools/local_fetch_content/fetchContent.js', () => ({
   fetchContent: vi.fn().mockResolvedValue({ status: 'hasResults' }),
 }));
 vi.mock('../../src/utils/bulkOperations.js', () => ({

@@ -639,7 +639,7 @@ describe('directoryFetch', () => {
       );
     });
 
-    it('should use clone cache when source is undefined (backward compat)', async () => {
+    it('should refetch via API when meta omits source (invalid cache)', async () => {
       const cloneDir = join(testDir, 'repos', 'owner', 'repo', 'main');
       const dirPath = join(cloneDir, 'src');
 
@@ -653,9 +653,13 @@ describe('directoryFetch', () => {
           owner: 'owner',
           repo: 'repo',
           branch: 'main',
-          // no source field — backward compat treated as 'clone'
         })
       );
+
+      mockDirectoryListing([
+        { name: 'fresh.ts', path: 'src/fresh.ts', size: 10 },
+      ]);
+      mockFetchResponses({ 'src/fresh.ts': 'from api' });
 
       const result = await fetchDirectoryContents(
         'owner',
@@ -664,10 +668,9 @@ describe('directoryFetch', () => {
         'main'
       );
 
-      expect(result.cached).toBe(true);
-      expect(readFileSync(join(dirPath, 'legacy.ts'), 'utf-8')).toBe(
-        'old clone'
-      );
+      expect(result.cached).toBe(false);
+      expect(existsSync(join(dirPath, 'fresh.ts'))).toBe(true);
+      expect(readFileSync(join(dirPath, 'fresh.ts'), 'utf-8')).toBe('from api');
     });
 
     it('should throw when path not found in clone cache', async () => {

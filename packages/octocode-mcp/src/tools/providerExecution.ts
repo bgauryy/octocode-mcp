@@ -12,7 +12,7 @@ import { getActiveProvider, getActiveProviderConfig } from '../serverConfig.js';
 import { maskSensitiveData } from '../security/mask.js';
 import { handleProviderError } from './utils.js';
 
-export interface ProviderExecutionContext {
+interface ProviderExecutionContext {
   providerType: ProviderType;
   provider: ICodeHostProvider;
   capabilities: ProviderCapabilities;
@@ -31,17 +31,17 @@ export class ProviderInitializationError extends Error {
   }
 }
 
-export interface ProviderOperationSpec<TMeta, TData> {
+interface ProviderOperationSpec<TMeta, TData> {
   meta: TMeta;
   operation: () => Promise<ProviderResponse<TData>>;
 }
 
-export interface ProviderOperationSuccess<TMeta, TData> {
+interface ProviderOperationSuccess<TMeta, TData> {
   meta: TMeta;
   response: ProviderResponse<TData> & { data: TData };
 }
 
-export interface ProviderOperationFailure<TMeta, TData> {
+interface ProviderOperationFailure<TMeta, TData> {
   meta: TMeta;
   response: ProviderResponse<TData>;
 }

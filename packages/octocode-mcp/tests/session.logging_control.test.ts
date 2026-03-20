@@ -13,7 +13,7 @@ import {
   logRateLimit,
   resetSessionManager,
 } from '../src/session.js';
-import { TOOL_NAMES } from '../src/tools/toolMetadata/index.js';
+import { TOOL_NAMES } from '../src/tools/toolMetadata/proxies.js';
 import { initialize, cleanup } from '../src/serverConfig.js';
 import type { RateLimitData } from '../src/types.js';
 

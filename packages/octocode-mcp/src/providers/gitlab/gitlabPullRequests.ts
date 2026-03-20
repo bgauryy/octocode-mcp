@@ -253,7 +253,7 @@ export async function searchPullRequests(
             }
           }
         } catch {
-          // Ignore errors fetching notes
+          // MR notes are optional enrichment; return the merge request without them.
         }
         return enrichedMergeRequest;
       })

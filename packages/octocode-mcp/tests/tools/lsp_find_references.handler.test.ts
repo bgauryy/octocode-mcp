@@ -13,8 +13,7 @@ vi.mock('fs/promises', () => ({
   stat: vi.fn(),
 }));
 
-// Mock the LSP module
-vi.mock('../../src/lsp/index.js', () => ({
+vi.mock('../../src/lsp/resolver.js', () => ({
   SymbolResolver: vi.fn().mockImplementation(() => ({
     resolvePositionFromContent: vi.fn(),
     extractContext: vi.fn(),
@@ -26,6 +25,9 @@ vi.mock('../../src/lsp/index.js', () => ({
       this.searchRadius = searchRadius;
     }
   },
+}));
+
+vi.mock('../../src/lsp/manager.js', () => ({
   createClient: vi.fn().mockResolvedValue(null),
   isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
 }));
@@ -44,7 +46,7 @@ describe('LSP Find References Handler Tests', () => {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references/index.js');
+        await import('../../src/tools/lsp_find_references/register.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue('registered'),
@@ -64,7 +66,7 @@ describe('LSP Find References Handler Tests', () => {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references/index.js');
+        await import('../../src/tools/lsp_find_references/register.js');
 
       const mockServer = {
         registerTool: vi.fn((_name, _config, handler) => handler),
@@ -85,7 +87,7 @@ describe('LSP Find References Handler Tests', () => {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references/index.js');
+        await import('../../src/tools/lsp_find_references/register.js');
 
       const mockServer = {
         registerTool: vi.fn((_name, _config, handler) => handler),
@@ -124,7 +126,7 @@ describe('LSP Find References Handler Tests', () => {
       mockReadFile.mockResolvedValue('const test = 1;');
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references/index.js');
+        await import('../../src/tools/lsp_find_references/register.js');
 
       const mockServer = {
         registerTool: vi.fn((_name, _config, handler) => handler),
@@ -155,7 +157,7 @@ describe('LSP Find References Handler Tests', () => {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references/index.js');
+        await import('../../src/tools/lsp_find_references/register.js');
 
       const mockServer = {
         registerTool: vi.fn((_name, _config, handler) => handler),
@@ -239,7 +241,7 @@ describe('LSP Find References Handler Tests', () => {
       mockStat.mockRejectedValue(new Error('ENOENT: no such file'));
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references/index.js');
+        await import('../../src/tools/lsp_find_references/register.js');
 
       const mockServer = {
         registerTool: vi.fn((_name, _config, handler) => handler),
@@ -275,7 +277,7 @@ describe('LSP Find References Handler Tests', () => {
       mockReadFile.mockRejectedValue(new Error('Permission denied'));
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references/index.js');
+        await import('../../src/tools/lsp_find_references/register.js');
 
       const mockServer = {
         registerTool: vi.fn((_name, _config, handler) => handler),

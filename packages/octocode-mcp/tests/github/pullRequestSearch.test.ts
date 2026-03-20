@@ -41,11 +41,9 @@ vi.mock('../../src/security/contentSanitizer.js', () => ({
 }));
 
 // Import after mocks are set up
-import {
-  searchGitHubPullRequestsAPI,
-  fetchGitHubPullRequestByNumberAPI,
-  transformPullRequestItemFromREST,
-} from '../../src/github/pullRequestSearch.js';
+import { searchGitHubPullRequestsAPI } from '../../src/github/pullRequestSearch.js';
+import { fetchGitHubPullRequestByNumberAPI } from '../../src/github/prByNumber.js';
+import { transformPullRequestItemFromREST } from '../../src/github/prContentFetcher.js';
 import type { PullRequestSimple } from '../../src/github/githubAPI.js';
 
 // Type for mock PR items in tests - allows partial data

@@ -9,10 +9,6 @@ import {
   type LocalToolErrorCode,
 } from './localToolErrors.js';
 
-// Re-export for convenience
-export { LOCAL_TOOL_ERROR_CODES, LocalToolErrorCategory };
-export type { LocalToolErrorCode };
-
 /**
  * Custom error class that carries an error code
  * All tools should throw/return instances of this class

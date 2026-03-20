@@ -115,7 +115,7 @@ function createBulkOutputSchema(successDataSchema: z.ZodType<object>) {
     .strict();
 }
 
-export const BasePaginationSchema = z
+const BasePaginationSchema = z
   .object({
     currentPage: z
       .number()
@@ -133,7 +133,7 @@ export const BasePaginationSchema = z
   })
   .strict();
 
-export const SearchPaginationSchema = BasePaginationSchema.extend({
+const SearchPaginationSchema = BasePaginationSchema.extend({
   perPage: z.number().int().positive().describe('Results returned per page'),
   totalMatches: z
     .number()
@@ -142,7 +142,7 @@ export const SearchPaginationSchema = BasePaginationSchema.extend({
     .describe('Total matching results across all pages'),
 }).strict();
 
-export const FilesPaginationSchema = BasePaginationSchema.extend({
+const FilesPaginationSchema = BasePaginationSchema.extend({
   filesPerPage: z.number().int().positive().describe('Files returned per page'),
   totalFiles: z
     .number()
@@ -151,7 +151,7 @@ export const FilesPaginationSchema = BasePaginationSchema.extend({
     .describe('Total matching files across all pages'),
 }).strict();
 
-export const EntriesPaginationSchema = BasePaginationSchema.extend({
+const EntriesPaginationSchema = BasePaginationSchema.extend({
   entriesPerPage: z
     .number()
     .int()
@@ -164,7 +164,7 @@ export const EntriesPaginationSchema = BasePaginationSchema.extend({
     .describe('Total matching entries across all pages'),
 }).strict();
 
-export const MatchPaginationSchema = BasePaginationSchema.extend({
+const MatchPaginationSchema = BasePaginationSchema.extend({
   matchesPerPage: z
     .number()
     .int()
@@ -177,7 +177,7 @@ export const MatchPaginationSchema = BasePaginationSchema.extend({
     .describe('Total matches within the file'),
 }).strict();
 
-export const CharPaginationSchema = BasePaginationSchema.extend({
+const CharPaginationSchema = BasePaginationSchema.extend({
   charOffset: z
     .number()
     .int()
@@ -195,7 +195,7 @@ export const CharPaginationSchema = BasePaginationSchema.extend({
     .describe('Total number of characters in the full output'),
 }).strict();
 
-export const ContentPaginationSchema = BasePaginationSchema.extend({
+const ContentPaginationSchema = BasePaginationSchema.extend({
   byteOffset: z
     .number()
     .int()
@@ -234,7 +234,7 @@ export const ContentPaginationSchema = BasePaginationSchema.extend({
     .describe('Total number of characters in the full output'),
 }).strict();
 
-export const LspPaginationSchema = BasePaginationSchema.extend({
+const LspPaginationSchema = BasePaginationSchema.extend({
   totalResults: z
     .number()
     .int()
@@ -247,7 +247,7 @@ export const LspPaginationSchema = BasePaginationSchema.extend({
     .describe('Locations or calls returned per page'),
 }).strict();
 
-export const LspExactPositionSchema = z
+const LspExactPositionSchema = z
   .object({
     line: z.number().int().nonnegative().describe('Zero-based line number'),
     character: z
@@ -258,7 +258,7 @@ export const LspExactPositionSchema = z
   })
   .strict();
 
-export const LspRangeSchema = z
+const LspRangeSchema = z
   .object({
     start: LspExactPositionSchema.describe('Start position of the range'),
     end: LspExactPositionSchema.describe('End position of the range'),
@@ -266,7 +266,7 @@ export const LspRangeSchema = z
   .strict()
   .describe('A range in a text document expressed as start and end positions');
 
-export const LspSymbolKindSchema = z.enum([
+const LspSymbolKindSchema = z.enum([
   'function',
   'method',
   'class',
@@ -281,7 +281,7 @@ export const LspSymbolKindSchema = z.enum([
   'unknown',
 ]);
 
-export const LspCodeSnippetSchema = z
+const LspCodeSnippetSchema = z
   .object({
     uri: z.string().describe('File URI where the code snippet is located'),
     range: LspRangeSchema.describe('Position range of the symbol in the file'),
@@ -294,14 +294,14 @@ export const LspCodeSnippetSchema = z
   })
   .strict();
 
-export const LspReferenceLocationSchema = LspCodeSnippetSchema.extend({
+const LspReferenceLocationSchema = LspCodeSnippetSchema.extend({
   isDefinition: z
     .boolean()
     .optional()
     .describe('Whether this reference is the symbol definition itself'),
 }).strict();
 
-export const LspCallHierarchyItemSchema = z
+const LspCallHierarchyItemSchema = z
   .object({
     name: z.string().describe('Function or method name'),
     kind: LspSymbolKindSchema.describe('Symbol kind of the item'),
@@ -314,7 +314,7 @@ export const LspCallHierarchyItemSchema = z
   })
   .strict();
 
-export const LspIncomingCallSchema = z
+const LspIncomingCallSchema = z
   .object({
     from: LspCallHierarchyItemSchema.describe('Caller item'),
     fromRanges: z
@@ -323,7 +323,7 @@ export const LspIncomingCallSchema = z
   })
   .strict();
 
-export const LspOutgoingCallSchema = z
+const LspOutgoingCallSchema = z
   .object({
     to: LspCallHierarchyItemSchema.describe('Callee item'),
     fromRanges: z
@@ -332,7 +332,7 @@ export const LspOutgoingCallSchema = z
   })
   .strict();
 
-export const GitHubDirectoryFileEntrySchema = z
+const GitHubDirectoryFileEntrySchema = z
   .object({
     path: z.string().describe('Relative path within the fetched directory'),
     size: z.number().int().nonnegative().describe('File size in bytes'),
@@ -340,14 +340,14 @@ export const GitHubDirectoryFileEntrySchema = z
   })
   .strict();
 
-export const GitHubCodeSearchMatchIndexSchema = z
+const GitHubCodeSearchMatchIndexSchema = z
   .object({
     start: z.number().int().nonnegative().describe('Start offset of match'),
     end: z.number().int().nonnegative().describe('End offset of match'),
   })
   .strict();
 
-export const GitHubCodeSearchTextMatchSchema = z
+const GitHubCodeSearchTextMatchSchema = z
   .object({
     value: z.string().describe('Matched code snippet context'),
     matchIndices: z
@@ -357,7 +357,7 @@ export const GitHubCodeSearchTextMatchSchema = z
   })
   .strict();
 
-export const GitHubCodeSearchFileSchema = z
+const GitHubCodeSearchFileSchema = z
   .object({
     path: z.string().describe('Path of the matching file in the repository'),
     owner: z.string().optional().describe('Repository owner'),
@@ -373,13 +373,13 @@ export const GitHubCodeSearchFileSchema = z
   })
   .strict();
 
-export const GitHubCodeSearchRepositoryContextSchema = z
+const GitHubCodeSearchRepositoryContextSchema = z
   .object({
     branch: z.string().describe('Default branch of the repository'),
   })
   .strict();
 
-export const GitHubPullRequestCommentSchema = z
+const GitHubPullRequestCommentSchema = z
   .object({
     id: z.string().describe('Comment identifier'),
     author: z.string().describe('Comment author username'),
@@ -389,7 +389,7 @@ export const GitHubPullRequestCommentSchema = z
   })
   .strict();
 
-export const GitHubPullRequestFileChangeSchema = z
+const GitHubPullRequestFileChangeSchema = z
   .object({
     path: z.string().describe('File path inside the pull request diff'),
     status: z.string().describe('Git change status for the file'),
@@ -407,7 +407,7 @@ export const GitHubPullRequestFileChangeSchema = z
   })
   .strict();
 
-export const GitHubPullRequestOutputSchema = z
+const GitHubPullRequestOutputSchema = z
   .object({
     number: z.number().int().positive().describe('Pull request number'),
     title: z.string().describe('Pull request title'),
@@ -461,7 +461,7 @@ export const GitHubPullRequestOutputSchema = z
   })
   .strict();
 
-export const GitHubRepositoryOutputSchema = z
+const GitHubRepositoryOutputSchema = z
   .object({
     owner: z.string().describe('Repository owner'),
     repo: z.string().describe('Repository name'),
@@ -499,7 +499,7 @@ export const GitHubRepositoryOutputSchema = z
   })
   .strict();
 
-export const GitHubRepoStructureDirectoryEntrySchema = z
+const GitHubRepoStructureDirectoryEntrySchema = z
   .object({
     files: z.array(z.string()).describe('File names in the directory'),
     folders: z
@@ -508,7 +508,7 @@ export const GitHubRepoStructureDirectoryEntrySchema = z
   })
   .strict();
 
-export const GitHubRepoStructureSummarySchema = z
+const GitHubRepoStructureSummarySchema = z
   .object({
     totalFiles: z
       .number()
@@ -526,7 +526,7 @@ export const GitHubRepoStructureSummarySchema = z
   })
   .strict();
 
-export const GitHubBranchFallbackSchema = z
+const GitHubBranchFallbackSchema = z
   .object({
     requestedBranch: z.string().describe('Branch requested in the query'),
     actualBranch: z.string().describe('Branch actually used in the result'),
@@ -540,7 +540,7 @@ export const GitHubBranchFallbackSchema = z
   })
   .strict();
 
-export const PackageSearchPackageSchema = z
+const PackageSearchPackageSchema = z
   .object({
     name: z.string().describe('Package name'),
     repository: z
@@ -607,7 +607,7 @@ export const PackageSearchPackageSchema = z
   })
   .strict();
 
-export const LocalSearchCodeMatchSchema = z
+const LocalSearchCodeMatchSchema = z
   .object({
     value: z.string().describe('Matched line content with surrounding context'),
     line: z
@@ -624,7 +624,7 @@ export const LocalSearchCodeMatchSchema = z
   })
   .strict();
 
-export const LocalSearchCodeFileSchema = z
+const LocalSearchCodeFileSchema = z
   .object({
     path: z.string().describe('Absolute file path'),
     matchCount: z
@@ -645,7 +645,7 @@ export const LocalSearchCodeFileSchema = z
   })
   .strict();
 
-export const LocalMatchRangeSchema = z
+const LocalMatchRangeSchema = z
   .object({
     start: z
       .number()
@@ -660,7 +660,7 @@ export const LocalMatchRangeSchema = z
   })
   .strict();
 
-export const LocalFindFilesEntrySchema = z
+const LocalFindFilesEntrySchema = z
   .object({
     path: z.string().describe('Absolute file path'),
     type: z
@@ -681,7 +681,7 @@ export const LocalFindFilesEntrySchema = z
   })
   .strict();
 
-export const LocalViewStructureEntrySchema = z
+const LocalViewStructureEntrySchema = z
   .object({
     name: z.string().describe('Entry name'),
     type: z.enum(['file', 'dir', 'link']).describe('Directory entry type'),

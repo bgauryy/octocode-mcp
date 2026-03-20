@@ -1,7 +1,3 @@
-/**
- * Shell Command Utilities
- */
-
 import { spawnSync } from 'node:child_process';
 
 interface CommandResult {
@@ -11,12 +7,6 @@ interface CommandResult {
   exitCode: number | null;
 }
 
-/**
- * Safely run a command with arguments (no shell injection risk)
- * @param command - The command to run (e.g., 'npm', 'gh')
- * @param args - Array of arguments
- * @returns CommandResult with stdout, stderr, and exit code
- */
 export function runCommand(
   command: string,
   args: string[] = []
@@ -26,7 +16,7 @@ export function runCommand(
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: false,
-      timeout: 30000, // 30s timeout
+      timeout: 30000,
     });
 
     return {
@@ -45,23 +35,12 @@ export function runCommand(
   }
 }
 
-/**
- * Check if a command exists on the system
- * @param command - The command to check
- * @returns true if the command exists
- */
 export function commandExists(command: string): boolean {
   const checkCommand = process.platform === 'win32' ? 'where' : 'which';
   const result = runCommand(checkCommand, [command]);
   return result.success;
 }
 
-/**
- * Get the version of a command
- * @param command - The command to check
- * @param versionFlag - The flag to get version (default: --version)
- * @returns Version string or null if not found
- */
 export function getCommandVersion(
   command: string,
   versionFlag: string = '--version'
@@ -78,20 +57,13 @@ interface InteractiveCommandResult {
   exitCode: number | null;
 }
 
-/**
- * Run an interactive command that needs terminal access (stdin/stdout/stderr)
- * Used for commands like `gh auth login` that require user interaction
- * @param command - The command to run
- * @param args - Array of arguments
- * @returns Result with success status and exit code
- */
 export function runInteractiveCommand(
   command: string,
   args: string[] = []
 ): InteractiveCommandResult {
   try {
     const result = spawnSync(command, args, {
-      stdio: 'inherit', // Pass through stdin/stdout/stderr to terminal
+      stdio: 'inherit',
       shell: false,
     });
 

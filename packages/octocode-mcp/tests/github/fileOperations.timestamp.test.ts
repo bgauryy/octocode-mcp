@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchGitHubFileContentAPI } from '../../src/github/fileOperations.js';
+import { fetchGitHubFileContentAPI } from '../../src/github/fileContent.js';
 import { getOctokit } from '../../src/github/client.js';
 import { clearAllCache } from '../../src/utils/http/cache.js';
 

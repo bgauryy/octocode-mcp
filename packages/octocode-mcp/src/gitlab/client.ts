@@ -108,13 +108,11 @@ function getCacheKey(config?: ClientConfig): string {
 export async function getGitlab(config?: ClientConfig): Promise<GitLabClient> {
   const cacheKey = getCacheKey(config);
 
-  // Check cache
   const cached = clientCache.get<GitLabClient>(cacheKey);
   if (cached) {
     return cached;
   }
 
-  // Get configuration
   const host = config?.host || getGitLabHost();
   const token = config?.token || getGitLabToken();
 
@@ -131,7 +129,6 @@ export async function getGitlab(config?: ClientConfig): Promise<GitLabClient> {
     queryTimeout: DEFAULT_REQUEST_TIMEOUT_MS,
   });
 
-  // Cache and return
   clientCache.set(cacheKey, gitlab);
   return gitlab;
 }

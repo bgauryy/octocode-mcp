@@ -1,91 +1,85 @@
-/**
- * Public API — Tool execution functions and security validation.
- */
+export { fetchMultipleGitHubFileContents } from '../tools/github_fetch_content/execution.js';
+export type {
+  FileContentQuery,
+  ContentResultData,
+  ContentResult,
+} from '../tools/github_fetch_content/types.js';
 
-// --- GitHub Tools ---
-export {
-  fetchMultipleGitHubFileContents,
-  type FileContentQuery,
-  type ContentResultData,
-  type ContentResult,
-} from '../tools/github_fetch_content/index.js';
+export { searchMultipleGitHubCode } from '../tools/github_search_code/execution.js';
+export type {
+  GitHubCodeSearchQuery,
+  SearchResult,
+} from '../tools/github_search_code/types.js';
 
-export {
-  searchMultipleGitHubCode,
-  type GitHubCodeSearchQuery,
-  type SearchResult,
-} from '../tools/github_search_code/index.js';
+export { searchMultipleGitHubPullRequests } from '../tools/github_search_pull_requests/execution.js';
+export type {
+  GitHubPullRequestSearchQuery,
+  PullRequestInfo,
+  PRSearchPagination,
+  PullRequestSearchResultData,
+  PullRequestSearchResult,
+} from '../tools/github_search_pull_requests/types.js';
 
-export {
-  searchMultipleGitHubPullRequests,
-  type GitHubPullRequestSearchQuery,
-  type PullRequestInfo,
-  type PRSearchPagination,
-  type PullRequestSearchResultData,
-  type PullRequestSearchResult,
-} from '../tools/github_search_pull_requests/index.js';
+export { searchMultipleGitHubRepos } from '../tools/github_search_repos/execution.js';
+export type {
+  GitHubReposSearchQuery,
+  SimplifiedRepository,
+  RepoSearchResult,
+} from '../tools/github_search_repos/types.js';
 
-export {
-  searchMultipleGitHubRepos,
-  type GitHubReposSearchQuery,
-  type SimplifiedRepository,
-  type RepoSearchResult,
-} from '../tools/github_search_repos/index.js';
-
-export {
-  exploreMultipleRepositoryStructures,
-  type GitHubViewRepoStructureQuery,
-  type DirectoryEntry,
-  type RepoStructureResultData,
-  type RepoStructureResult,
-} from '../tools/github_view_repo_structure/index.js';
+export { exploreMultipleRepositoryStructures } from '../tools/github_view_repo_structure/execution.js';
+export type {
+  GitHubViewRepoStructureQuery,
+  DirectoryEntry,
+  RepoStructureResultData,
+  RepoStructureResult,
+} from '../tools/github_view_repo_structure/types.js';
 
 // --- Local Tools ---
-export {
-  registerLocalFetchContentTool,
-  fetchContent,
-  executeFetchContent,
-  type FetchContentQuery,
-  type FetchContentPagination,
-  type FetchContentResult,
-} from '../tools/local_fetch_content/index.js';
+export { registerLocalFetchContentTool } from '../tools/local_fetch_content/register.js';
+export { fetchContent } from '../tools/local_fetch_content/fetchContent.js';
+export { executeFetchContent } from '../tools/local_fetch_content/execution.js';
+export type {
+  FetchContentQuery,
+  FetchContentPagination,
+  FetchContentResult,
+} from '../tools/local_fetch_content/types.js';
 
-export {
-  registerLocalFindFilesTool,
-  findFiles,
-  executeFindFiles,
-  type FindFilesQuery,
-  type FoundFile,
-  type FindFilesPagination,
-  type FindFilesResult,
-} from '../tools/local_find_files/index.js';
+export { registerLocalFindFilesTool } from '../tools/local_find_files/register.js';
+export { findFiles } from '../tools/local_find_files/findFiles.js';
+export { executeFindFiles } from '../tools/local_find_files/execution.js';
+export type {
+  FindFilesQuery,
+  FoundFile,
+  FindFilesPagination,
+  FindFilesResult,
+} from '../tools/local_find_files/types.js';
 
-export {
-  registerLocalRipgrepTool,
-  searchContentRipgrep,
-  executeRipgrepSearch,
-  type RipgrepSearchQuery,
-  type RipgrepMatch,
-  type RipgrepMatchPagination,
-  type RipgrepFileMatches,
-  type SearchContentPagination,
-  type SearchStats,
-  type SearchContentResult,
-} from '../tools/local_ripgrep/index.js';
+export { registerLocalRipgrepTool } from '../tools/local_ripgrep/register.js';
+export { searchContentRipgrep } from '../tools/local_ripgrep/searchContentRipgrep.js';
+export { executeRipgrepSearch } from '../tools/local_ripgrep/execution.js';
+export type {
+  RipgrepSearchQuery,
+  RipgrepMatch,
+  RipgrepMatchPagination,
+  RipgrepFileMatches,
+  SearchContentPagination,
+  SearchStats,
+  SearchContentResult,
+} from '../tools/local_ripgrep/types.js';
 
-export {
-  registerLocalViewStructureTool,
-  viewStructure,
-  executeViewStructure,
-  type ViewStructureQuery,
-  type ViewStructurePagination,
-  type ViewStructureResult,
-} from '../tools/local_view_structure/index.js';
+export { registerLocalViewStructureTool } from '../tools/local_view_structure/register.js';
+export { viewStructure } from '../tools/local_view_structure/local_view_structure.js';
+export { executeViewStructure } from '../tools/local_view_structure/execution.js';
+export type {
+  ViewStructureQuery,
+  ViewStructurePagination,
+  ViewStructureResult,
+} from '../tools/local_view_structure/types.js';
 
-// --- LSP Tools ---
+export { registerLSPCallHierarchyTool } from '../tools/lsp_call_hierarchy/register.js';
+export { executeCallHierarchy } from '../tools/lsp_call_hierarchy/execution.js';
 export {
-  registerLSPCallHierarchyTool,
-  executeCallHierarchy,
   processCallHierarchy,
   parseRipgrepJsonOutput,
   parseGrepOutput,
@@ -93,29 +87,33 @@ export {
   inferSymbolKind,
   createRange,
   escapeRegex,
-  type LSPCallHierarchyQuery,
-  type CallHierarchyItem,
-  type IncomingCall,
-  type OutgoingCall,
-  type CallHierarchyResult,
-} from '../tools/lsp_call_hierarchy/index.js';
+} from '../tools/lsp_call_hierarchy/callHierarchy.js';
+export type {
+  LSPCallHierarchyQuery,
+  CallHierarchyItem,
+  IncomingCall,
+  OutgoingCall,
+  CallHierarchyResult,
+} from '../tools/lsp_call_hierarchy/types.js';
 
+export { registerLSPFindReferencesTool } from '../tools/lsp_find_references/register.js';
+export { executeFindReferences } from '../tools/lsp_find_references/execution.js';
 export {
-  registerLSPFindReferencesTool,
-  executeFindReferences,
   findReferences,
   findReferencesWithLSP,
   findReferencesWithPatternMatching,
-  type LSPFindReferencesQuery,
-  type ReferenceLocation,
-  type FindReferencesResult,
-} from '../tools/lsp_find_references/index.js';
+} from '../tools/lsp_find_references/lsp_find_references.js';
+export type {
+  LSPFindReferencesQuery,
+  ReferenceLocation,
+  FindReferencesResult,
+} from '../tools/lsp_find_references/types.js';
 
-export {
-  executeGotoDefinition,
-  type LSPGotoDefinitionQuery,
-  type GotoDefinitionResult,
-} from '../tools/lsp_goto_definition/index.js';
+export { executeGotoDefinition } from '../tools/lsp_goto_definition/execution.js';
+export type {
+  LSPGotoDefinitionQuery,
+  GotoDefinitionResult,
+} from '../tools/lsp_goto_definition/types.js';
 
 export type {
   ExactPosition,
@@ -127,22 +125,22 @@ export type {
 
 export type { LSPPaginationInfo } from '../tools/lsp_find_references/types.js';
 
-// --- Package Search ---
-export {
-  searchPackages,
-  type NpmPackageSearchQuery,
-  type PythonPackageSearchQuery,
-  type PackageSearchQuery,
-  type MinimalPackageResult,
-  type NpmPackageResult,
-  type PythonPackageResult,
-  type PackageResult,
-  type PackageResultWithRepo,
-  type DeprecationInfo,
-  type PackageSearchAPIResult,
-  type PackageSearchError,
-  type PackageSearchResult,
-} from '../tools/package_search/index.js';
+export { searchPackages } from '../tools/package_search/execution.js';
+export type {
+  NpmPackageSearchQuery,
+  PythonPackageSearchQuery,
+  PackageSearchQuery,
+  MinimalPackageResult,
+  NpmPackageResult,
+  PythonPackageResult,
+  PackageResult,
+  PackageResultWithRepo,
+  DeprecationInfo,
+  PackageSearchAPIResult,
+  PackageSearchError,
+  PackageSearchResult,
+} from '../tools/package_search/types.js';
 
-// --- Security Validation ---
 export { withBasicSecurityValidation } from '../security/withSecurityValidation.js';
+
+export { registerGitHubCloneRepoTool } from '../tools/github_clone_repo/register.js';

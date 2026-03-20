@@ -3,15 +3,22 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { LOCAL_TOOL_ERROR_CODES } from '../../src/errorCodes.js';
-import { findFiles } from '../../src/tools/local_find_files/index.js';
+import { LOCAL_TOOL_ERROR_CODES } from '../../src/errors/localToolErrors.js';
+import { findFiles } from '../../src/tools/local_find_files/findFiles.js';
 import type { FindFilesResult } from '../../src/utils/core/types.js';
-import * as exec from '../../src/utils/exec/index.js';
+import { safeExec } from '../../src/utils/exec/safe.js';
+import {
+  checkCommandAvailability,
+  getMissingCommandError,
+} from '../../src/utils/exec/commandAvailability.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 
 // Mock dependencies
-vi.mock('../../src/utils/exec/index.js', () => ({
+vi.mock('../../src/utils/exec/safe.js', () => ({
   safeExec: vi.fn(),
+}));
+
+vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
   checkCommandAvailability: vi
     .fn()
     .mockResolvedValue({ available: true, command: 'find' }),
@@ -48,7 +55,7 @@ const expectDefinedFiles = (result: FindFilesResult) => {
 };
 
 describe('localFindFiles', () => {
-  const mockSafeExec = vi.mocked(exec.safeExec);
+  const mockSafeExec = vi.mocked(safeExec);
   const mockValidate = vi.mocked(pathValidator.pathValidator.validate);
 
   beforeEach(() => {
@@ -575,7 +582,7 @@ describe('localFindFiles', () => {
     });
 
     it('should handle find command not available', async () => {
-      vi.mocked(exec.checkCommandAvailability).mockResolvedValueOnce({
+      vi.mocked(checkCommandAvailability).mockResolvedValueOnce({
         available: false,
         command: 'find',
       });

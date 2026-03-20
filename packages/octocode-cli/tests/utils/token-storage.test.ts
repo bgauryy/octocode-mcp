@@ -53,7 +53,7 @@ function createTestCredentials(overrides = {}) {
   };
 }
 
-describe('Token Storage (re-exports from octocode-shared)', () => {
+describe('Token Storage (CLI re-exports from octocode-shared)', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     // Reset mock return values after clearAllMocks
@@ -159,80 +159,6 @@ describe('Token Storage (re-exports from octocode-shared)', () => {
     });
   });
 
-  describe('updateToken', () => {
-    it('should delegate to shared package', async () => {
-      const shared = await import('octocode-shared');
-      const { updateToken } = await import('../../src/utils/token-storage.js');
-
-      vi.mocked(shared.updateToken).mockResolvedValue(true);
-
-      const token = { token: 'new-token', tokenType: 'oauth' as const };
-      const result = await updateToken('github.com', token);
-
-      expect(result).toBe(true);
-      expect(shared.updateToken).toHaveBeenCalledWith('github.com', token);
-    });
-  });
-
-  describe('listStoredHosts', () => {
-    it('should return hosts from shared package', async () => {
-      const shared = await import('octocode-shared');
-      const { listStoredHosts } =
-        await import('../../src/utils/token-storage.js');
-
-      vi.mocked(shared.listStoredHosts).mockResolvedValue([
-        'github.com',
-        'github.enterprise.com',
-      ]);
-
-      const result = await listStoredHosts();
-
-      expect(result).toEqual(['github.com', 'github.enterprise.com']);
-    });
-  });
-
-  describe('listStoredHostsSync', () => {
-    it('should delegate to shared package', async () => {
-      const shared = await import('octocode-shared');
-      const { listStoredHostsSync } =
-        await import('../../src/utils/token-storage.js');
-
-      vi.mocked(shared.listStoredHostsSync).mockReturnValue(['github.com']);
-
-      const result = listStoredHostsSync();
-
-      expect(result).toEqual(['github.com']);
-    });
-  });
-
-  describe('hasCredentials', () => {
-    it('should return result from shared package', async () => {
-      const shared = await import('octocode-shared');
-      const { hasCredentials } =
-        await import('../../src/utils/token-storage.js');
-
-      vi.mocked(shared.hasCredentials).mockResolvedValue(true);
-
-      const result = await hasCredentials('github.com');
-
-      expect(result).toBe(true);
-    });
-  });
-
-  describe('hasCredentialsSync', () => {
-    it('should delegate to shared package', async () => {
-      const shared = await import('octocode-shared');
-      const { hasCredentialsSync } =
-        await import('../../src/utils/token-storage.js');
-
-      vi.mocked(shared.hasCredentialsSync).mockReturnValue(true);
-
-      const result = hasCredentialsSync('github.com');
-
-      expect(result).toBe(true);
-    });
-  });
-
   describe('isTokenExpired', () => {
     it('should return false for non-expiring tokens', async () => {
       const shared = await import('octocode-shared');
@@ -265,22 +191,6 @@ describe('Token Storage (re-exports from octocode-shared)', () => {
       const result = isTokenExpired(creds);
 
       expect(result).toBe(true);
-    });
-  });
-
-  describe('isRefreshTokenExpired', () => {
-    it('should delegate to shared package', async () => {
-      const shared = await import('octocode-shared');
-      const { isRefreshTokenExpired } =
-        await import('../../src/utils/token-storage.js');
-
-      vi.mocked(shared.isRefreshTokenExpired).mockReturnValue(true);
-
-      const creds = createTestCredentials();
-      const result = isRefreshTokenExpired(creds);
-
-      expect(result).toBe(true);
-      expect(shared.isRefreshTokenExpired).toHaveBeenCalledWith(creds);
     });
   });
 
@@ -350,32 +260,6 @@ describe('Token Storage (re-exports from octocode-shared)', () => {
       const result = getCredentialsFilePath();
 
       expect(result).toBe('/home/user/.octocode/credentials.json');
-    });
-  });
-
-  describe('getTokenFromEnv', () => {
-    it('should return token from shared package', async () => {
-      const shared = await import('octocode-shared');
-      const { getTokenFromEnv } =
-        await import('../../src/utils/token-storage.js');
-
-      vi.mocked(shared.getTokenFromEnv).mockReturnValue('env-token');
-
-      const result = getTokenFromEnv();
-
-      expect(result).toBe('env-token');
-    });
-
-    it('should return null when no env token', async () => {
-      const shared = await import('octocode-shared');
-      const { getTokenFromEnv } =
-        await import('../../src/utils/token-storage.js');
-
-      vi.mocked(shared.getTokenFromEnv).mockReturnValue(null);
-
-      const result = getTokenFromEnv();
-
-      expect(result).toBeNull();
     });
   });
 

@@ -1,21 +1,5 @@
 # Octocode CLI Reference
 
-> Complete reference for the Octocode CLI commands and options.
-
-## Quick Start
-
-```bash
-# Run interactive mode (recommended for first-time users)
-npx octocode
-
-# Or use specific commands
-octocode install --ide cursor
-octocode login
-octocode status
-```
-
----
-
 ## Command Overview
 
 | Command | Aliases | Description |
@@ -23,12 +7,12 @@ octocode status
 | `install` | `i` | Install octocode-mcp for an IDE |
 | `login` | `l` | Authenticate with GitHub |
 | `logout` | - | Sign out from GitHub |
-| `auth` | - | Interactive GitHub authentication menu |
-| `skills` | - | Install/manage AI skills |
-| `cache` | - | Inspect/clean Octocode cache and logs |
-| `token` | - | Display or manage GitHub tokens |
-| `status` | - | Show environment and auth status |
-| `sync` | - | Sync MCP configurations across clients |
+| `auth` | `a`, `gh` | Auth menu or `auth login` / `logout` / `status` / `token` |
+| `skills` | `sk` | List or install bundled Octocode skills |
+| `cache` | - | Inspect/clean disk cache |
+| `token` | `t` | Print token; `--json` for machine output |
+| `status` | `s` | GitHub authentication status |
+| `sync` | `sy` | Sync MCP configs across IDEs |
 
 ---
 
@@ -36,44 +20,21 @@ octocode status
 
 ### `octocode install`
 
-Install octocode-mcp for a supported IDE.
-
 ```bash
-octocode install --ide <ide> [--method <method>] [--force]
+octocode install --ide <ide> [--method <npx|direct>] [--force]
 ```
-
-**Options:**
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
 | `--ide` | - | Target IDE (required) | - |
-| `--method` | `-m` | Installation method (`npx` or `direct`) | `npx` |
+| `--method` | `-m` | `npx` or `direct` | `npx` |
 | `--force` | `-f` | Overwrite existing configuration | `false` |
 
-**Supported IDEs:**
-
-- `cursor` - Cursor IDE
-- `claude` / `claude-desktop` - Claude Desktop App
-- `claude-code` - Claude Code
-- `windsurf` - Windsurf IDE
-- `zed` - Zed Editor
-- `vscode-cline` - VS Code with Cline extension
-- `vscode-roo` - VS Code with Roo extension
-- `vscode-continue` - VS Code with Continue extension
-- `opencode` - OpenCode
-- `trae` - Trae
-- `antigravity` - Antigravity
-
-**Examples:**
+Supported `--ide` values: `cursor`, `claude` / `claude-desktop`, `claude-code`, `windsurf`, `zed`, `vscode-cline`, `vscode-roo`, `vscode-continue`, `opencode`, `trae`, `antigravity`.
 
 ```bash
-# Install for Cursor using npx (recommended)
 octocode install --ide cursor
-
-# Install for Claude Desktop with direct method
-octocode install --ide claude --method direct
-
-# Force reinstall
+octocode install --ide claude-desktop --method direct
 octocode install --ide cursor --force
 ```
 
@@ -81,126 +42,94 @@ octocode install --ide cursor --force
 
 ### `octocode login`
 
-Authenticate with GitHub using OAuth.
-
 ```bash
-octocode login [--hostname <host>] [--git-protocol <protocol>]
+octocode login [--hostname <host>] [--git-protocol <ssh|https>]
 ```
-
-**Options:**
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
 | `--hostname` | `-H` | GitHub Enterprise hostname | `github.com` |
-| `--git-protocol` | `-p` | Git protocol (`ssh` or `https`) | - |
-
-**Examples:**
-
-```bash
-# Login to github.com
-octocode login
-
-# Login to GitHub Enterprise
-octocode login --hostname github.mycompany.com
-```
+| `--git-protocol` | `-p` | `ssh` or `https` | `https` |
 
 ---
 
 ### `octocode logout`
 
-Sign out from GitHub and remove stored credentials.
-
 ```bash
 octocode logout [--hostname <host>]
 ```
-
-**Options:**
-
-| Option | Short | Description | Default |
-|--------|-------|-------------|---------|
-| `--hostname` | `-H` | GitHub Enterprise hostname | `github.com` |
 
 ---
 
 ### `octocode auth`
 
-Interactive authentication menu for managing GitHub credentials.
-
 ```bash
-octocode auth
+octocode auth [login|logout|status|token]
 ```
 
-Opens an interactive menu with options to:
-- Login to GitHub
-- Logout from GitHub
-- Switch accounts
-- View authentication status
+Without a subcommand, opens an interactive menu. Subcommands delegate to the corresponding top-level commands.
 
 ---
 
 ### `octocode skills`
 
-Install and manage AI assistant skills for Claude Code.
+Installs skills for **Claude Code** into `~/.claude/skills/` (macOS/Linux) or `%LOCALAPPDATA%\Claude\skills\` (Windows) by default.
 
 ```bash
-octocode skills [--force]
+octocode skills list
+octocode skills install [--skill <name>] [--force]
 ```
-
-**Options:**
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--force` | `-f` | Reinstall existing skills | `false` |
+| `--skill` | `-k` | Install only this skill | all |
+| `--force` | `-f` | Overwrite already-installed skill | `false` |
 
-**Available Skills:**
+```bash
+octocode skills list
+octocode skills install --skill octocode-researcher
+octocode skills install -k octocode-plan
+octocode skills install --skill octocode-researcher --force
+octocode skills install
+```
 
-| Skill | Description |
+| Skill | When to use |
 |-------|-------------|
-| `octocode-research` | GitHub repository research workflows |
-| `octocode-implement` | Implementation guidance with references |
-| `octocode-pr-review` | Pull request review automation |
-| `octocode-researcher` | Primary code research and exploration |
-| `octocode-plan` | Task planning and decomposition |
-| `octocode-roast` | Code review with personality |
+| `octocode-researcher` | Code exploration — find, trace, definitions |
+| `octocode-research` | Deep research via HTTP research server |
+| `octocode-plan` | Plan → implement → verify |
+| `octocode-rfc-generator` | RFCs and design docs |
+| `octocode-pull-request-reviewer` | PR and staged-change review |
+| `octocode-local-code-quality` | Architecture, security, dead code audits |
+| `octocode-documentation-writer` | Generate project documentation |
+| `octocode-prompt-optimizer` | Harden prompts and SKILL files |
+| `octocode-roast` | Brutally honest code critique |
 
+**Install destination:** global (`~/.claude/skills/`) or project-scoped (`.claude/skills/`). Change via `~/.octocode/config.json` → `"skillsDestDir"` or interactive menu (Manage System Skills → Change path).
+
+Full guide: [Skills Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md).
 
 ---
 
 ### `octocode cache`
 
-Inspect or clean Octocode cache and log directories.
-
 ```bash
-octocode cache [status|clean] [--repos] [--skills] [--logs] [--all]
+octocode cache [status|clean] [--repos] [--skills] [--logs] [--all] [--tools|--local|--lsp|--api]
 ```
 
-**Subcommands:**
+`status` (default) shows disk usage. `clean` removes selected targets — requires at least one flag.
 
-- `status` (default): Show disk usage for repos, skills cache, and logs
-- `clean`: Remove selected cache directories
-
-**Options (for `clean`):**
-
-| Option | Short | Description | Default |
-|--------|-------|-------------|---------|
-| `--repos` | - | Remove cloned repositories cache (`~/.octocode/repos`) | `true` (when no flags) |
-| `--skills` | - | Remove skills marketplace cache files | `true` (when no flags) |
-| `--logs` | - | Remove Octocode logs directory | `false` |
-| `--all` | `-a` | Remove repos + skills + logs | `false` |
-
-**Examples:**
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--repos` | - | Cloned repositories cache (`~/.octocode/repos`) |
+| `--skills` | - | Marketplace skills cache |
+| `--logs` | - | Octocode logs directory |
+| `--all` | `-a` | Repos + skills + logs |
+| `--tools` / `--local` / `--lsp` / `--api` | - | In-memory only — clears on MCP restart, no disk to clean |
 
 ```bash
-# Show cache usage
 octocode cache status
-
-# Clean repos and skills cache (default clean behavior)
-octocode cache clean
-
-# Clean repos only
 octocode cache clean --repos
-
-# Clean everything including logs
 octocode cache clean --all
 ```
 
@@ -208,84 +137,54 @@ octocode cache clean --all
 
 ### `octocode token`
 
-Display or manage GitHub authentication tokens.
-
 ```bash
-octocode token [--type <type>] [--hostname <host>] [--source <source>] [--json]
+octocode token [--type <auto|octocode|gh>] [--hostname <host>] [--source] [--json]
 ```
-
-**Options:**
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--type` | - | Token type to display | - |
+| `--type` | `-t` | `auto` (env → gh → octocode), `octocode`, or `gh` | `auto` |
 | `--hostname` | `-H` | GitHub hostname | `github.com` |
-| `--source` | - | Token source (`octocode`, `gh`, `auto`) | `auto` |
-| `--json` | - | Output in JSON format | `false` |
+| `--source` | `-s` | Print source and user alongside token | off |
+| `--json` | `-j` | Output `{"token":"...","type":"..."}` | off |
 
 ---
 
 ### `octocode status`
 
-Show current environment and authentication status.
-
 ```bash
 octocode status [--hostname <host>]
 ```
-
-**Options:**
-
-| Option | Short | Description | Default |
-|--------|-------|-------------|---------|
-| `--hostname` | `-H` | GitHub hostname | `github.com` |
 
 ---
 
 ### `octocode sync`
 
-Synchronize MCP configurations across all configured clients.
-
 ```bash
 octocode sync [--force] [--dry-run] [--status]
 ```
 
-**Options:**
-
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
 | `--force` | `-f` | Auto-resolve conflicts | `false` |
-| `--dry-run` | - | Preview changes without applying | `false` |
-| `--status` | - | Show sync status only | `false` |
+| `--dry-run` | `-n` | Preview changes without applying | `false` |
+| `--status` | `-s` | Show sync status only | `false` |
 
 ---
 
 ## Global Options
-
-All commands support:
 
 | Option | Description |
 |--------|-------------|
 | `--help` | Show help for command |
 | `--version` | Show CLI version |
 
-**Examples:**
-
-```bash
-octocode --help
-octocode install --help
-octocode --version
-```
-
----
-
 ## Exit Codes
 
-| Code | Description |
-|------|-------------|
+| Code | Meaning |
+|------|---------|
 | `0` | Success |
-| `1` | Error (check output for details) |
-
----
+| `1` | Error (details in output) |
 
 ## Environment Variables
 
@@ -293,11 +192,8 @@ octocode --version
 |----------|-------------|
 | `GITHUB_TOKEN` | GitHub personal access token |
 | `GH_TOKEN` | GitHub token (alternative) |
-| `OCTOCODE_SKILLS_DIR` | Custom skills installation directory |
+| `OCTOCODE_HOME` | Override data directory (default `~/.octocode`) |
 
 ---
 
-## See Also
-
-- [CLI Docs Index](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/README.md)
-- [Skills Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md)
+[Skills Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md)

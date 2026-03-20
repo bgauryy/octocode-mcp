@@ -199,14 +199,21 @@ const { fsMocks, execMocks, pathValidatorMocks, mocks, createStats, helpers } =
 // STEP 2: Apply mocks to modules
 // =============================================================================
 vi.mock('fs', () => fsMocks);
-vi.mock('../../src/utils/exec/index.js', () => execMocks);
+vi.mock('../../src/utils/exec/safe.js', () => ({
+  safeExec: execMocks.safeExec,
+}));
+
+vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
+  checkCommandAvailability: execMocks.checkCommandAvailability,
+  getMissingCommandError: execMocks.getMissingCommandError,
+}));
 vi.mock('../../src/security/pathValidator.js', () => pathValidatorMocks);
 
 // =============================================================================
 // STEP 3: Import modules under test AFTER mocks are set up
 // =============================================================================
 const { viewStructure } =
-  await import('../../src/tools/local_view_structure/index.js');
+  await import('../../src/tools/local_view_structure/local_view_structure.js');
 
 // =============================================================================
 // TESTS

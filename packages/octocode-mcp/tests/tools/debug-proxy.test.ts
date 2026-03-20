@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import {
-  TOOL_NAMES,
-  STATIC_TOOL_NAMES,
-} from '../../src/tools/toolMetadata/index.js';
-import { HINTS } from '../../src/hints/index.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata/proxies.js';
+import { STATIC_TOOL_NAMES } from '../../src/tools/toolNames.js';
+import { HINTS } from '../../src/hints/dynamic.js';
 
 describe('Debug proxy', () => {
   it('should show values', () => {

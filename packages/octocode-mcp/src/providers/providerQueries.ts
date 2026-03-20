@@ -3,7 +3,11 @@
  * Unified query types for provider-agnostic code hosting operations.
  */
 
-import type { ProviderType } from './types.js';
+/**
+ * Supported code hosting providers.
+ * Default is 'github' .
+ */
+export type ProviderType = 'github' | 'gitlab' | 'bitbucket';
 
 /**
  * Base query interface with common fields across all providers.

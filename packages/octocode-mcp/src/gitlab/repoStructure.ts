@@ -78,7 +78,6 @@ export async function viewGitLabRepositoryStructureAPI(
     sessionId
   );
 
-  // Fetch and cache full tree
   const fullResult = await withDataCache<
     GitLabAPIResponse<GitLabRepoStructureResult>
   >(fullCacheKey, async () => fetchGitLabTreeFull(params), {
@@ -89,7 +88,6 @@ export async function viewGitLabRepositoryStructureAPI(
     return fullResult;
   }
 
-  // Apply pagination to cached result
   return applyStructurePagination(fullResult.data, params);
 }
 
@@ -99,13 +97,11 @@ async function fetchGitLabTreeFull(
   try {
     const gitlab = await getGitlab();
 
-    // Get project info for context
     const project = (await gitlab.Projects.show(
       params.projectId
     )) as unknown as GitLabProject;
     const workingRef = params.ref || project.default_branch || 'main';
 
-    // Fetch tree items
     const treeOptions: Record<string, unknown> = {
       ref: workingRef,
       path: params.path || undefined,
@@ -113,7 +109,6 @@ async function fetchGitLabTreeFull(
       perPage: 100,
     };
 
-    // Remove undefined values
     Object.keys(treeOptions).forEach(key => {
       if (treeOptions[key] === undefined) {
         delete treeOptions[key];
@@ -125,7 +120,6 @@ async function fetchGitLabTreeFull(
       treeOptions
     )) as unknown as GitLabTreeItem[];
 
-    // Filter ignored files/directories
     const filteredItems = allItems.filter(item => {
       if (item.type === 'tree') {
         return !shouldIgnoreDir(item.name);
@@ -133,7 +127,6 @@ async function fetchGitLabTreeFull(
       return !shouldIgnoreFile(item.path);
     });
 
-    // Sort: directories first, then by path
     filteredItems.sort((a, b) => {
       if (a.type !== b.type) {
         return a.type === 'tree' ? -1 : 1;
@@ -141,13 +134,11 @@ async function fetchGitLabTreeFull(
       return a.path.localeCompare(b.path);
     });
 
-    // Convert to internal format for caching
     const cachedItems = filteredItems.map(item => ({
       path: item.path,
       type: item.type === 'tree' ? ('dir' as const) : ('file' as const),
     }));
 
-    // Calculate counts
     const totalFiles = filteredItems.filter(i => i.type === 'blob').length;
     const totalFolders = filteredItems.filter(i => i.type === 'tree').length;
 
@@ -194,7 +185,6 @@ function applyStructurePagination(
   const endIdx = Math.min(startIdx + entriesPerPage, totalEntries);
   const paginatedItems = cachedItems.slice(startIdx, endIdx);
 
-  // Build structure from paginated items
   const structure = buildStructureFromItems(paginatedItems, result.path);
   const hasMore = entryPageNumber < totalPages;
 

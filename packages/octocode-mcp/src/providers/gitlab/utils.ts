@@ -70,7 +70,7 @@ export function mapGitLabMRState(state?: string): GitLabMRState | undefined {
   return state ? mapping[state] : undefined;
 }
 
-export function extractGitLabRateLimit(result: {
+function extractGitLabRateLimit(result: {
   rateLimitRemaining?: number;
   rateLimitReset?: number;
   retryAfter?: number;
@@ -142,4 +142,3 @@ export function handleGitLabAPIResponse<TData, TRaw>(
     provider,
   };
 }
-export type { GitLabRepoSortField, GitLabMRState };

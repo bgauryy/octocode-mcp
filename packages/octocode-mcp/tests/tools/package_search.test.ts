@@ -222,9 +222,9 @@ vi.mock('axios', () => ({
 // Mock executeNpmCommand and checkNpmAvailability (for npm CLI searches)
 const mockExecuteNpmCommand = vi.fn();
 const mockCheckNpmAvailability = vi.fn();
-vi.mock('../../src/utils/exec/index.js', async importOriginal => {
+vi.mock('../../src/utils/exec/npm.js', async importOriginal => {
   const actual =
-    await importOriginal<typeof import('../../src/utils/exec/index.js')>();
+    await importOriginal<typeof import('../../src/utils/exec/npm.js')>();
   return {
     ...actual,
     executeNpmCommand: (...args: unknown[]) => mockExecuteNpmCommand(...args),
@@ -321,19 +321,27 @@ function makeErrorFetchResponse(status: number, statusText: string) {
   };
 }
 
-// Mock toolMetadata
-vi.mock('../../src/tools/toolMetadata/index.js', async () => {
-  const actual = await vi.importActual('../../src/tools/toolMetadata/index.js');
+// Mock toolMetadata (proxies module — PACKAGE_SEARCH name + description)
+vi.mock('../../src/tools/toolMetadata/proxies.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../src/tools/toolMetadata/proxies.js')
+  >('../../src/tools/toolMetadata/proxies.js');
   return {
     ...actual,
-    TOOL_NAMES: {
-      ...(actual as { TOOL_NAMES: Record<string, string> }).TOOL_NAMES,
-      PACKAGE_SEARCH: 'packageSearch',
-    },
-    DESCRIPTIONS: {
-      ...(actual as { DESCRIPTIONS: Record<string, string> }).DESCRIPTIONS,
-      packageSearch: 'Search for packages in npm or Python ecosystems',
-    },
+    TOOL_NAMES: new Proxy(actual.TOOL_NAMES, {
+      get(target, prop: string | symbol) {
+        if (prop === 'PACKAGE_SEARCH') return 'packageSearch';
+        return Reflect.get(target, prop);
+      },
+    }),
+    DESCRIPTIONS: new Proxy(actual.DESCRIPTIONS, {
+      get(target, prop: string) {
+        if (prop === 'packageSearch') {
+          return 'Search for packages in npm or Python ecosystems';
+        }
+        return Reflect.get(target, prop);
+      },
+    }),
   };
 });
 

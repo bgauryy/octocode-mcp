@@ -19,9 +19,6 @@ import { Spinner } from '../../utils/spinner.js';
 type InspectMenuChoice = 'back' | string;
 type ServerMenuChoice = 'remove' | 'back';
 
-/**
- * Get display name for a client
- */
 function getClientDisplayName(client: ClientInstallStatus): string {
   const name = MCP_CLIENTS[client.client]?.name || client.client;
   return client.octocodeInstalled
@@ -29,9 +26,6 @@ function getClientDisplayName(client: ClientInstallStatus): string {
     : name;
 }
 
-/**
- * Inspect a specific MCP server configuration
- */
 async function inspectMCPServer(
   clientStatus: ClientInstallStatus,
   serverId: string,
@@ -58,7 +52,6 @@ async function inspectMCPServer(
   if (serverConfig.env && Object.keys(serverConfig.env).length > 0) {
     console.log(`  ${dim('Environment:')}`);
     Object.entries(serverConfig.env).forEach(([key, value]) => {
-      // Mask potential secrets
       const isSensitive =
         key.includes('KEY') || key.includes('TOKEN') || key.includes('SECRET');
       const displayValue = isSensitive ? '********' : value;
@@ -111,18 +104,14 @@ async function inspectMCPServer(
           spinner.fail(`Failed to remove: ${result.error}`);
         }
         console.log();
-        // Wait briefly so user sees the result
+
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
   }
 }
 
-/**
- * Inspect a client's MCP configuration
- */
 async function inspectClient(clientStatus: ClientInstallStatus): Promise<void> {
-  // Loop to keep user in client menu until they choose back
   let inMenu = true;
   while (inMenu) {
     const configPath = clientStatus.configPath;
@@ -193,15 +182,11 @@ async function inspectClient(clientStatus: ClientInstallStatus): Promise<void> {
   }
 }
 
-/**
- * Run the MCP inspection flow
- */
 export async function runInspectFlow(): Promise<void> {
   await loadInquirer();
 
   let inMenu = true;
   while (inMenu) {
-    // Refresh status each time
     const allClients = getAllClientInstallStatus();
     const configuredClients = allClients.filter(cl => cl.configExists);
 

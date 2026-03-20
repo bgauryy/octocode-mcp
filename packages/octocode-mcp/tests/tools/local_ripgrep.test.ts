@@ -3,16 +3,20 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { searchContentRipgrep } from '../../src/tools/local_ripgrep/index.js';
-import { LOCAL_TOOL_ERROR_CODES } from '../../src/errorCodes.js';
+import { searchContentRipgrep } from '../../src/tools/local_ripgrep/searchContentRipgrep.js';
+import { LOCAL_TOOL_ERROR_CODES } from '../../src/errors/localToolErrors.js';
 import { RipgrepQuerySchema } from '../../src/tools/local_ripgrep/scheme.js';
-import * as exec from '../../src/utils/exec/index.js';
+import { safeExec } from '../../src/utils/exec/safe.js';
+import { checkCommandAvailability } from '../../src/utils/exec/commandAvailability.js';
 import * as pathValidator from '../../src/security/pathValidator.js';
 import { promises as fs } from 'fs';
 
 // Mock dependencies
-vi.mock('../../src/utils/exec/index.js', () => ({
+vi.mock('../../src/utils/exec/safe.js', () => ({
   safeExec: vi.fn(),
+}));
+
+vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
   checkCommandAvailability: vi
     .fn()
     .mockResolvedValue({ available: true, command: 'rg' }),
@@ -46,7 +50,7 @@ const runRipgrep = (query: Record<string, unknown>) =>
 const mockFsReaddir = vi.mocked((fs as any).readdir);
 
 describe('localSearchCode', () => {
-  const mockSafeExec = vi.mocked(exec.safeExec);
+  const mockSafeExec = vi.mocked(safeExec);
   const mockValidate = vi.mocked(pathValidator.pathValidator.validate);
   const mockFsStat = vi.mocked(fs.stat);
   const mockFsReadFile = vi.mocked(fs.readFile);
@@ -2103,9 +2107,7 @@ describe('localSearchCode', () => {
   });
 
   describe('Grep fallback', () => {
-    const mockCheckCommandAvailability = vi.mocked(
-      exec.checkCommandAvailability
-    );
+    const mockCheckCommandAvailability = vi.mocked(checkCommandAvailability);
 
     it('should fall back to grep when ripgrep is unavailable', async () => {
       // Mock rg unavailable, grep available

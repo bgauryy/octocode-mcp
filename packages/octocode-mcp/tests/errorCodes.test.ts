@@ -11,10 +11,10 @@ import {
   SEARCH_ERRORS,
   STARTUP_ERRORS,
   PROMISE_ERRORS,
-  ALL_ERROR_CODES,
   TOOL_ERRORS,
-  redactPath,
-} from '../src/errorCodes.js';
+} from '../src/errors/domainErrors.js';
+import { ALL_ERROR_CODES } from '../src/errors/domainErrors.js';
+import { redactPath } from '../src/errors/pathUtils.js';
 
 describe('errorCodes', () => {
   describe('Error Constants', () => {

@@ -7,20 +7,11 @@
  * @module tools/lsp_find_references
  */
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { toMCPSchema } from '../../types/toolTypes.js';
 import { readFile, stat } from 'fs/promises';
 
-import {
-  BulkLSPFindReferencesSchema,
-  LSP_FIND_REFERENCES_DESCRIPTION,
-  type LSPFindReferencesQuery,
-} from './scheme.js';
-import {
-  SymbolResolver,
-  SymbolResolutionError,
-  isLanguageServerAvailable,
-} from '../../lsp/index.js';
+import { type LSPFindReferencesQuery } from './scheme.js';
+import { SymbolResolver, SymbolResolutionError } from '../../lsp/resolver.js';
+import { isLanguageServerAvailable } from '../../lsp/manager.js';
 import type {
   FindReferencesResult,
   ExactPosition,
@@ -30,35 +21,11 @@ import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
-import { ToolErrors } from '../../errorCodes.js';
+import { ToolErrors } from '../../errors/errorFactories.js';
 import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
-import { executeFindReferences, TOOL_NAME } from './execution.js';
-import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
+import { TOOL_NAME } from './constants.js';
 import { findReferencesWithLSP } from './lspReferencesCore.js';
 import { findReferencesWithPatternMatching } from './lspReferencesPatterns.js';
-import { LspFindReferencesOutputSchema } from '../../scheme/outputSchemas.js';
-
-/**
- * Register the LSP find references tool with the MCP server.
- */
-export function registerLSPFindReferencesTool(server: McpServer) {
-  return server.registerTool(
-    TOOL_NAME,
-    {
-      description: LSP_FIND_REFERENCES_DESCRIPTION,
-      inputSchema: toMCPSchema(BulkLSPFindReferencesSchema),
-      outputSchema: toMCPSchema(LspFindReferencesOutputSchema),
-      annotations: {
-        title: 'Find References',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    withBasicSecurityValidation(executeFindReferences, TOOL_NAME)
-  );
-}
 
 /**
  * Find all references to a symbol
@@ -77,7 +44,6 @@ export async function findReferences(
 
     const absolutePath = pathValidation.sanitizedPath!;
 
-    // Check file exists
     try {
       await stat(absolutePath);
     } catch (error) {
@@ -91,7 +57,6 @@ export async function findReferences(
       }) as FindReferencesResult;
     }
 
-    // Read file content
     let content: string;
     try {
       content = await readFile(absolutePath, 'utf-8');
@@ -106,7 +71,6 @@ export async function findReferences(
       }) as FindReferencesResult;
     }
 
-    // Resolve the symbol position
     const resolver = new SymbolResolver({ lineSearchRadius: 5 });
     let resolvedSymbol: { position: ExactPosition; foundAtLine: number };
     try {
@@ -135,7 +99,6 @@ export async function findReferences(
 
     const workspaceRoot = resolveWorkspaceRoot();
 
-    // Try LSP for semantic reference finding, then merge with pattern matching
     let lspResult: FindReferencesResult | null = null;
     if (await isLanguageServerAvailable(absolutePath)) {
       try {
@@ -146,18 +109,16 @@ export async function findReferences(
           query
         );
       } catch {
-        // LSP failed — fall through to pattern matching silently
+        // LSP find-references failed; pattern matching still returns full text coverage.
       }
     }
 
-    // Always run pattern matching for comprehensive coverage
     const patternResult = await findReferencesWithPatternMatching(
       absolutePath,
       workspaceRoot,
       query
     );
 
-    // Merge LSP + pattern results for best coverage
     return mergeReferenceResults(lspResult, patternResult, query);
   } catch (error) {
     return createErrorResult(error, query, {
@@ -180,7 +141,6 @@ export function mergeReferenceResults(
   patternResult: FindReferencesResult,
   query: LSPFindReferencesQuery
 ): FindReferencesResult {
-  // If LSP returned nothing useful, use pattern results directly
   if (
     !lspResult ||
     lspResult.status === 'empty' ||
@@ -189,25 +149,21 @@ export function mergeReferenceResults(
     return patternResult;
   }
 
-  // If pattern returned nothing, use LSP results directly
   if (patternResult.status === 'empty' || !patternResult.locations?.length) {
     return lspResult;
   }
 
-  // Build dedup set from LSP results (uri:startLine)
   const seen = new Set(
     lspResult.locations.map(
       (loc: ReferenceLocation) => `${loc.uri}:${loc.range.start.line}`
     )
   );
 
-  // Find pattern-only references that LSP missed
   const additionalRefs = patternResult.locations.filter(
     (loc: ReferenceLocation) => !seen.has(`${loc.uri}:${loc.range.start.line}`)
   );
 
   if (additionalRefs.length === 0) {
-    // LSP found everything — return LSP result as-is (higher fidelity)
     return {
       ...lspResult,
       hints: [
@@ -217,14 +173,12 @@ export function mergeReferenceResults(
     };
   }
 
-  // Merge: LSP results + pattern-only additions
   const mergedLocations = [...lspResult.locations, ...additionalRefs];
   const totalReferences = mergedLocations.length;
   const uniqueFiles = new Set(
     mergedLocations.map((ref: ReferenceLocation) => ref.uri)
   );
 
-  // Re-paginate the merged results
   const referencesPerPage = query.referencesPerPage ?? 20;
   const page = query.page ?? 1;
   const totalPages = Math.ceil(totalReferences / referencesPerPage);
@@ -258,15 +212,5 @@ export function mergeReferenceResults(
   };
 }
 
-// Re-export functions from focused modules
-export {
-  findReferencesWithLSP,
-  matchesFilePatterns,
-} from './lspReferencesCore.js';
-export {
-  findReferencesWithPatternMatching,
-  findWorkspaceRoot,
-  isLikelyDefinition,
-  buildRipgrepGlobArgs,
-  buildGrepFilterArgs,
-} from './lspReferencesPatterns.js';
+export { findReferencesWithLSP } from './lspReferencesCore.js';
+export { findReferencesWithPatternMatching } from './lspReferencesPatterns.js';

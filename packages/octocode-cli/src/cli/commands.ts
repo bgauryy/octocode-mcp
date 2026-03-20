@@ -1,7 +1,3 @@
-/**
- * CLI Commands
- */
-
 import type { CLICommand, ParsedArgs } from './types.js';
 import type { IDE, InstallMethod } from '../types/index.js';
 import { c, bold, dim } from '../utils/colors.js';
@@ -28,23 +24,23 @@ import { checkNodeInPath, checkNpmInPath } from '../features/node-check.js';
 import { IDE_INFO, CLIENT_INFO, INSTALL_METHOD_INFO } from '../ui/constants.js';
 import { Spinner } from '../utils/spinner.js';
 
-/**
- * Get display name for an IDE/client
- */
 function getIDEDisplayName(ide: string): string {
-  // Check CLIENT_INFO first (comprehensive)
   if (ide in CLIENT_INFO) {
     return CLIENT_INFO[ide as keyof typeof CLIENT_INFO].name;
   }
-  // Fallback to IDE_INFO (legacy)
+
   if (ide in IDE_INFO) {
     return IDE_INFO[ide as keyof typeof IDE_INFO].name;
   }
-  // Capitalize as fallback
+
   return ide.charAt(0).toUpperCase() + ide.slice(1);
 }
 import { copyDirectory, dirExists, listSubdirectories } from '../utils/fs.js';
-import { getSkillsSourceDir, getSkillsDestDir } from '../utils/skills.js';
+import {
+  getSkillsSourceDir,
+  getSkillsDestDir,
+  copySkill,
+} from '../utils/skills.js';
 import { quickSync } from '../ui/sync/index.js';
 import { clearSkillsCache, getSkillsCacheDir } from '../utils/skills-fetch.js';
 import {
@@ -58,9 +54,6 @@ import { existsSync, rmSync } from 'node:fs';
 
 type GetTokenSource = 'octocode' | 'gh' | 'auto';
 
-/**
- * Print node-doctor hint for CLI mode
- */
 function printNodeDoctorHintCLI(): void {
   console.log(
     `  ${dim('For deeper diagnostics:')} ${c('cyan', 'npx node-doctor')}`
@@ -68,11 +61,6 @@ function printNodeDoctorHintCLI(): void {
   console.log();
 }
 
-/**
- * Format token source for display
- * @param source - The token source type
- * @param envSource - Optional specific env var name when source is 'env'
- */
 function formatTokenSource(source: TokenSource, envSource?: string): string {
   switch (source) {
     case 'octocode':
@@ -80,7 +68,6 @@ function formatTokenSource(source: TokenSource, envSource?: string): string {
     case 'gh-cli':
       return c('magenta', 'gh cli');
     case 'env':
-      // Show specific env var name if available
       if (envSource) {
         const varName = envSource.replace('env:', '');
         return c('green', varName);
@@ -91,18 +78,16 @@ function formatTokenSource(source: TokenSource, envSource?: string): string {
   }
 }
 
-/**
- * Install command
- */
 const installCommand: CLICommand = {
   name: 'install',
   aliases: ['i'],
   description: 'Install octocode-mcp for an IDE',
-  usage: 'octocode install --ide <cursor|claude> --method <npx|direct>',
+  usage: 'octocode install --ide <ide> [--method <npx|direct>] [--force]',
   options: [
     {
       name: 'ide',
-      description: 'IDE to configure (cursor or claude)',
+      description:
+        'IDE to configure: cursor, claude-desktop, claude-code, windsurf, zed, vscode-cline, vscode-roo, vscode-continue, opencode, trae, antigravity',
       hasValue: true,
     },
     {
@@ -123,7 +108,6 @@ const installCommand: CLICommand = {
     const method = (args.options['method'] || 'npx') as InstallMethod;
     const force = Boolean(args.options['force'] || args.options['f']);
 
-    // Quick node environment check for npx method
     if (method === 'npx') {
       const nodeCheck = checkNodeInPath();
       const npmCheck = checkNpmInPath();
@@ -155,9 +139,7 @@ const installCommand: CLICommand = {
       }
     }
 
-    // Validate IDE
     if (!ide) {
-      // If no IDE specified, show available ones
       const available = detectAvailableIDEs();
       console.log();
       console.log(
@@ -183,10 +165,9 @@ const installCommand: CLICommand = {
       return;
     }
 
-    // Supported IDEs: legacy (cursor, claude) + all MCPClient types
     const supportedIDEs = [
       'cursor',
-      'claude', // Legacy alias for claude-desktop
+      'claude',
       'claude-desktop',
       'claude-code',
       'windsurf',
@@ -207,7 +188,6 @@ const installCommand: CLICommand = {
       return;
     }
 
-    // Validate method
     if (!['npx', 'direct'].includes(method)) {
       console.log();
       console.log(`  ${c('red', '✗')} Invalid method: ${method}`);
@@ -217,10 +197,8 @@ const installCommand: CLICommand = {
       return;
     }
 
-    // Get install preview
     const preview = getInstallPreview(ide, method);
 
-    // Check if already installed and force is not set
     if (preview.action === 'override' && !force) {
       console.log();
       console.log(`  ${c('yellow', '⚠')} Octocode is already configured.`);
@@ -232,7 +210,6 @@ const installCommand: CLICommand = {
       return;
     }
 
-    // Install
     console.log();
     console.log(`  ${bold('Installing octocode-mcp')}`);
     console.log(`    ${dim('IDE:')}    ${getIDEDisplayName(ide)}`);
@@ -270,9 +247,6 @@ const installCommand: CLICommand = {
   },
 };
 
-/**
- * Login command - authenticate with GitHub using OAuth device flow
- */
 const loginCommand: CLICommand = {
   name: 'login',
   aliases: ['l'],
@@ -320,7 +294,6 @@ const loginCommand: CLICommand = {
       typeof gitProtocolOpt === 'string' ? gitProtocolOpt : 'https'
     ) as 'ssh' | 'https';
 
-    // Show verification code and open browser
     let verificationShown = false;
 
     const spinner = new Spinner('Waiting for GitHub authentication...').start();
@@ -366,9 +339,6 @@ const loginCommand: CLICommand = {
   },
 };
 
-/**
- * Logout command - sign out from GitHub
- */
 const logoutCommand: CLICommand = {
   name: 'logout',
   description: 'Sign out from GitHub',
@@ -423,9 +393,6 @@ const logoutCommand: CLICommand = {
   },
 };
 
-/**
- * Auth command - check status or show menu
- */
 const authCommand: CLICommand = {
   name: 'auth',
   aliases: ['a', 'gh'],
@@ -436,7 +403,6 @@ const authCommand: CLICommand = {
     const hostname =
       (args.options['hostname'] as string | undefined) || 'github.com';
 
-    // Handle subcommands
     if (subcommand === 'login') {
       return loginCommand.handler(args);
     }
@@ -447,21 +413,18 @@ const authCommand: CLICommand = {
       return showAuthStatus();
     }
     if (subcommand === 'token') {
-      // Priority: octocode first, then gh CLI (for auth token subcommand)
       const octocodeResult = await getOctocodeToken(hostname);
       if (octocodeResult.token) {
         console.log(octocodeResult.token);
         return;
       }
 
-      // Fallback to gh CLI
       const ghResult = getGhCliToken(hostname);
       if (ghResult.token) {
         console.log(ghResult.token);
         return;
       }
 
-      // No token found - show helpful guidance
       console.log();
       console.log(`  ${c('yellow', '⚠')} No GitHub token found.`);
       console.log();
@@ -486,10 +449,8 @@ const authCommand: CLICommand = {
 
     const status = getAuthStatus();
 
-    // Show status first
     await showAuthStatus();
 
-    // Show interactive menu
     await loadInquirer();
 
     const choices = status.authenticated
@@ -509,7 +470,6 @@ const authCommand: CLICommand = {
     });
 
     if (action === 'login') {
-      // Re-run login command
       await loginCommand.handler({ command: 'login', args: [], options: {} });
     } else if (action === 'logout') {
       await oauthLogout();
@@ -523,16 +483,12 @@ const authCommand: CLICommand = {
       console.log(`  ${c('green', '✓')} Logged out`);
       console.log();
       console.log(`  ${dim('Starting new login...')}`);
-      // Re-run login command
+
       await loginCommand.handler({ command: 'login', args: [], options: {} });
     }
-    // 'back' does nothing
   },
 };
 
-/**
- * Show auth status
- */
 async function showAuthStatus(hostname: string = 'github.com'): Promise<void> {
   console.log();
   console.log(`  ${bold('🔐 GitHub Authentication')}`);
@@ -566,29 +522,37 @@ async function showAuthStatus(hostname: string = 'github.com'): Promise<void> {
   console.log();
 }
 
-/**
- * Skills command
- */
 const skillsCommand: CLICommand = {
   name: 'skills',
   aliases: ['sk'],
   description: 'Install Octocode skills for Claude Code',
-  usage: 'octocode skills [install|list]',
+  usage: 'octocode skills [install|list] [--skill <name>]',
   options: [
     {
       name: 'force',
       short: 'f',
       description: 'Overwrite existing skills',
     },
+    {
+      name: 'skill',
+      short: 'k',
+      description:
+        'Install a specific skill by name (folder under bundled skills/)',
+      hasValue: true,
+    },
   ],
   handler: async (args: ParsedArgs) => {
     const subcommand = args.args[0] || 'list';
     const force = Boolean(args.options['force'] || args.options['f']);
+    const rawSkill = args.options['skill'] ?? args.options['k'];
+    const specificSkill =
+      typeof rawSkill === 'string' && rawSkill.length > 0
+        ? rawSkill
+        : undefined;
 
     const srcDir = getSkillsSourceDir();
     const destDir = getSkillsDestDir();
 
-    // Check if skills source exists
     if (!dirExists(srcDir)) {
       console.log();
       console.log(`  ${c('red', '✗')} Skills directory not found`);
@@ -620,13 +584,61 @@ const skillsCommand: CLICommand = {
       }
 
       console.log();
-      console.log(`  ${dim('To install:')} octocode skills install`);
+      console.log(`  ${dim('To install all:')} octocode skills install`);
+      console.log(
+        `  ${dim('To install one:')} octocode skills install --skill <name> ${dim('(or -k <name>)')}`
+      );
       console.log(`  ${dim('Destination:')} ${destDir}`);
       console.log();
       return;
     }
 
     if (subcommand === 'install') {
+      if (specificSkill) {
+        console.log();
+        console.log(`  ${bold(`📦 Installing skill: ${specificSkill}`)}`);
+        console.log();
+
+        if (!availableSkills.includes(specificSkill)) {
+          console.log(`  ${c('red', '✗')} Skill not found: ${specificSkill}`);
+          console.log();
+          console.log(`  ${dim('Available skills:')}`);
+          for (const s of availableSkills) {
+            console.log(`    ${c('cyan', '•')} ${s}`);
+          }
+          console.log();
+          process.exitCode = 1;
+          return;
+        }
+
+        const skillDest = path.join(destDir, specificSkill);
+        if (dirExists(skillDest) && !force) {
+          console.log(
+            `  ${c('yellow', '⚠')} Skill already installed: ${specificSkill}`
+          );
+          console.log(
+            `  ${dim('Use')} ${c('cyan', '--force')} ${dim('to overwrite.')}`
+          );
+          console.log();
+          return;
+        }
+
+        const spinner = new Spinner(`Installing ${specificSkill}...`).start();
+        const ok = copySkill(specificSkill, destDir);
+
+        if (ok) {
+          spinner.succeed(`Installed ${specificSkill}!`);
+          console.log();
+          console.log(`  ${c('green', '✓')} Installed to ${skillDest}`);
+        } else {
+          spinner.fail(`Failed to install ${specificSkill}`);
+          process.exitCode = 1;
+        }
+
+        console.log();
+        return;
+      }
+
       console.log();
       console.log(`  ${bold('📦 Installing Octocode Skills')}`);
       console.log();
@@ -678,18 +690,16 @@ const skillsCommand: CLICommand = {
       return;
     }
 
-    // Unknown subcommand
     console.log();
     console.log(`  ${c('red', '✗')} Unknown subcommand: ${subcommand}`);
-    console.log(`  ${dim('Usage:')} octocode skills [install|list]`);
+    console.log(
+      `  ${dim('Usage:')} octocode skills [install|list] [--skill <name>]`
+    );
     console.log();
     process.exitCode = 1;
   },
 };
 
-/**
- * Token command - return the OAuth token
- */
 const tokenCommand: CLICommand = {
   name: 'token',
   aliases: ['t'],
@@ -733,7 +743,6 @@ const tokenCommand: CLICommand = {
     const typeArg =
       (typeof typeOpt === 'string' ? typeOpt : undefined) || 'auto';
 
-    // Validate and map type argument
     let tokenSource: GetTokenSource;
     switch (typeArg.toLowerCase()) {
       case 'octocode':
@@ -750,7 +759,6 @@ const tokenCommand: CLICommand = {
         tokenSource = 'auto';
         break;
       default:
-        // JSON output for invalid type
         if (jsonOutput) {
           console.log(JSON.stringify({ token: null, type: 'none' }));
           process.exitCode = 1;
@@ -766,7 +774,6 @@ const tokenCommand: CLICommand = {
 
     const result = await getToken(hostname, tokenSource);
 
-    // JSON output mode - machine-readable for MCP consumption
     if (jsonOutput) {
       const output = {
         token: result.token,
@@ -831,15 +838,11 @@ const tokenCommand: CLICommand = {
       console.log(`  ${dim('Token:')} ${result.token}`);
       console.log();
     } else {
-      // Output just the token for easy piping/scripting
       console.log(result.token);
     }
   },
 };
 
-/**
- * Status command - show authentication status
- */
 const statusCommand: CLICommand = {
   name: 'status',
   aliases: ['s'],
@@ -886,9 +889,6 @@ const statusCommand: CLICommand = {
   },
 };
 
-/**
- * Sync command - synchronize MCP configs across all clients
- */
 const syncCommand: CLICommand = {
   name: 'sync',
   aliases: ['sy'],
@@ -916,7 +916,6 @@ const syncCommand: CLICommand = {
     const dryRun = Boolean(args.options['dry-run'] || args.options['n']);
     const statusOnly = Boolean(args.options['status'] || args.options['s']);
 
-    // Status-only mode
     if (statusOnly) {
       console.log();
       console.log(`  ${bold('🔄 MCP Sync Status')}`);
@@ -927,7 +926,6 @@ const syncCommand: CLICommand = {
       const analysis = analyzeSyncState(snapshots);
       spinner.stop();
 
-      // Show client summary
       console.log(
         `  ${bold('Clients:')} ${analysis.summary.clientsWithConfig} with MCP configs`
       );
@@ -984,7 +982,6 @@ const syncCommand: CLICommand = {
       return;
     }
 
-    // Sync mode
     console.log();
     console.log(`  ${bold('🔄 MCP Sync')}`);
     console.log();
@@ -1026,9 +1023,6 @@ const syncCommand: CLICommand = {
   },
 };
 
-/**
- * Cache command - inspect and clean Octocode cache directories
- */
 const cacheCommand: CLICommand = {
   name: 'cache',
   description: 'Inspect and clean Octocode cache and logs',
@@ -1202,9 +1196,6 @@ const cacheCommand: CLICommand = {
   },
 };
 
-/**
- * All available commands
- */
 const commands: CLICommand[] = [
   installCommand,
   authCommand,
@@ -1217,9 +1208,6 @@ const commands: CLICommand[] = [
   syncCommand,
 ];
 
-/**
- * Find a command by name or alias
- */
 export function findCommand(name: string): CLICommand | undefined {
   return commands.find(cmd => cmd.name === name || cmd.aliases?.includes(name));
 }

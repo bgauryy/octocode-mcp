@@ -19,7 +19,7 @@ vi.mock(
 vi.mock(
   '../src/tools/github_view_repo_structure/github_view_repo_structure.js'
 );
-vi.mock('../src/utils/exec/index.js');
+vi.mock('../src/utils/exec/npm.js');
 vi.mock('../src/serverConfig.js');
 vi.mock('../src/tools/toolsManager.js');
 vi.mock('../src/providers/factory.js', () => ({
@@ -36,7 +36,7 @@ vi.mock('../src/session.js', () => ({
   logSessionInit: vi.fn().mockResolvedValue(undefined),
   logSessionError: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('../src/tools/toolMetadata/index.js', async importOriginal => ({
+vi.mock('../src/tools/toolMetadata/proxies.js', async importOriginal => ({
   ...(await importOriginal<object>()),
   loadToolContent: vi
     .fn()
@@ -66,7 +66,7 @@ import { registerFetchGitHubFileContentTool } from '../src/tools/github_fetch_co
 import { registerSearchGitHubReposTool } from '../src/tools/github_search_repos/github_search_repos.js';
 import { registerSearchGitHubPullRequestsTool } from '../src/tools/github_search_pull_requests/github_search_pull_requests.js';
 import { registerViewGitHubRepoStructureTool } from '../src/tools/github_view_repo_structure/github_view_repo_structure.js';
-import { getGithubCLIToken } from '../src/utils/exec/index.js';
+import { getGithubCLIToken } from '../src/utils/exec/npm.js';
 import {
   initialize,
   cleanup,
@@ -77,7 +77,7 @@ import {
   getActiveProvider,
 } from '../src/serverConfig.js';
 import { registerTools } from '../src/tools/toolsManager.js';
-import { TOOL_NAMES } from '../src/tools/toolMetadata/index.js';
+import { TOOL_NAMES } from '../src/tools/toolMetadata/proxies.js';
 import {
   allowExpectedStderrWarning,
   allowUnexpectedWarningFailureForCurrentTest,

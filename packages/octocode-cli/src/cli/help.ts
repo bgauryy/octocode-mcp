@@ -1,15 +1,8 @@
-/**
- * CLI Help Text
- */
-
 import { c, bold, dim } from '../utils/colors.js';
 import type { CLICommand } from './types.js';
 
 declare const __APP_VERSION__: string;
 
-/**
- * Show main help
- */
 export function showHelp(): void {
   console.log();
   console.log(
@@ -71,16 +64,20 @@ export function showHelp(): void {
   console.log(`    ${dim('# Get token from gh CLI')}`);
   console.log(`    ${c('yellow', 'octocode token --type=gh')}`);
   console.log();
+  console.log(`    ${dim('# Sync MCP configs across all IDEs')}`);
+  console.log(`    ${c('yellow', 'octocode sync')}`);
+  console.log(`    ${c('yellow', 'octocode sync --status')}`);
+  console.log();
   console.log(`    ${dim('# Install Octocode skills')}`);
   console.log(`    ${c('yellow', 'octocode skills install')}`);
+  console.log(
+    `    ${c('yellow', 'octocode skills install --skill octocode-researcher')}`
+  );
   console.log();
   console.log(c('magenta', `  ─── 🔍🐙 ${bold('https://octocode.ai')} ───`));
   console.log();
 }
 
-/**
- * Show help for a specific command
- */
 export function showCommandHelp(command: CLICommand): void {
   console.log();
   console.log(`  ${c('magenta', bold('🔍🐙 octocode ' + command.name))}`);
@@ -111,9 +108,6 @@ export function showCommandHelp(command: CLICommand): void {
   }
 }
 
-/**
- * Show version
- */
 export function showVersion(): void {
   const version =
     typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'unknown';

@@ -14,10 +14,8 @@ import { getOctokit } from '../../src/github/client';
 import { searchGitHubCodeAPI } from '../../src/github/codeSearch';
 import { searchGitHubReposAPI } from '../../src/github/repoSearch';
 import { searchGitHubPullRequestsAPI } from '../../src/github/pullRequestSearch';
-import {
-  fetchGitHubFileContentAPI,
-  viewGitHubRepositoryStructureAPI,
-} from '../../src/github/fileOperations';
+import { fetchGitHubFileContentAPI } from '../../src/github/fileContent.js';
+import { viewGitHubRepositoryStructureAPI } from '../../src/github/repoStructure.js';
 
 // Mock the GitHub client
 vi.mock('../../src/github/client');

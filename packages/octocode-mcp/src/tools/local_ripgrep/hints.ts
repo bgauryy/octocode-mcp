@@ -14,7 +14,7 @@ export const LOCAL_BASE_HINTS = {
   empty: [] as readonly string[],
 } as const;
 
-export const TOOL_NAME = 'localSearchCode';
+const TOOL_NAME = 'localSearchCode';
 
 /**
  * Filter out undefined values from hints array.

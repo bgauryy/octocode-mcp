@@ -1,5 +1,8 @@
 import type { PromiseResult, PromiseExecutionOptions } from '../../types.js';
-import { VALIDATION_ERRORS, PROMISE_ERRORS } from '../../errorCodes.js';
+import {
+  VALIDATION_ERRORS,
+  PROMISE_ERRORS,
+} from '../../errors/domainErrors.js';
 import { logSessionError } from '../../session.js';
 
 export async function executeWithErrorIsolation<T>(

@@ -10,7 +10,7 @@ import { registerSearchGitHubPullRequestsTool } from '../../src/tools/github_sea
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure/github_view_repo_structure.js';
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos/github_search_repos.js';
 import { registerGitHubCloneRepoTool } from '../../src/tools/github_clone_repo/register.js';
-import { TOOL_NAMES } from '../../src/tools/toolMetadata/index.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata/proxies.js';
 
 const mockGetProvider = vi.hoisted(() => vi.fn());
 

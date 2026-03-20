@@ -41,7 +41,7 @@ export interface RoleContentBlock {
 /**
  * Pagination information for paginated responses
  */
-export interface ResponsePagination {
+interface ResponsePagination {
   currentPage: number;
   totalPages: number;
   hasMore: boolean;
@@ -55,7 +55,7 @@ export interface ResponsePagination {
  * System content options
  * Contains instructions and metadata for the agent
  */
-export interface SystemContentOptions {
+interface SystemContentOptions {
   /** Primary instructions for the agent */
   instructions?: string;
   /** Actionable hints for next steps */
@@ -70,7 +70,7 @@ export interface SystemContentOptions {
  * Assistant content options
  * Contains formatted data for agent reasoning
  */
-export interface AssistantContentOptions {
+interface AssistantContentOptions {
   /** Brief summary of results (required) */
   summary: string;
   /** Detailed formatted data (optional) */
@@ -83,7 +83,7 @@ export interface AssistantContentOptions {
  * User content options
  * Contains human-friendly summary
  */
-export interface UserContentOptions {
+interface UserContentOptions {
   /** Human-friendly message */
   message: string;
   /** Status emoji (✅ ❌ ⚠️ 🔍 📭 etc.) */
@@ -111,11 +111,6 @@ export interface RoleBasedResultOptions {
 }
 
 /**
- * Result status for consistent status reporting
- */
-export type ResultStatus = 'success' | 'empty' | 'error' | 'partial';
-
-/**
  * Status emoji mapping
  */
 export const StatusEmojis = {
@@ -133,5 +128,3 @@ export const StatusEmojis = {
   reference: '🔗',
   call: '📞',
 } as const;
-
-export type StatusEmojiKey = keyof typeof StatusEmojis;

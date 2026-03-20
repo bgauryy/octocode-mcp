@@ -7,11 +7,8 @@ import {
   BaseQuerySchemaLocal,
   createBulkQuerySchema,
 } from '../../scheme/baseSchema.js';
-import {
-  LOCAL_VIEW_STRUCTURE,
-  TOOL_NAMES,
-  DESCRIPTIONS,
-} from '../toolMetadata/index.js';
+import { LOCAL_VIEW_STRUCTURE } from '../toolMetadata/localSchemaHelpers.js';
+import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/proxies.js';
 
 /**
  * Tool description for localViewStructure

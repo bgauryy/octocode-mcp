@@ -11,21 +11,16 @@ import {
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
-import {
-  SymbolResolver,
-  SymbolResolutionError,
-  isLanguageServerAvailable,
-} from '../../lsp/index.js';
+import { SymbolResolver, SymbolResolutionError } from '../../lsp/resolver.js';
+import { isLanguageServerAvailable } from '../../lsp/manager.js';
 import type { CallHierarchyResult } from '../../lsp/types.js';
 import type { LSPCallHierarchyQuery } from './scheme.js';
-import { ToolErrors } from '../../errorCodes.js';
+import { ToolErrors } from '../../errors/errorFactories.js';
 import { callHierarchyWithLSP } from './callHierarchyLsp.js';
 import { callHierarchyWithPatternMatching } from './callHierarchyPatterns.js';
-import {
-  applyOutputSizeLimit,
-  serializeForPagination,
-} from '../../utils/pagination/index.js';
-import { TOOL_NAME } from './execution.js';
+import { applyOutputSizeLimit } from '../../utils/pagination/outputSizeLimit.js';
+import { serializeForPagination } from '../../utils/pagination/core.js';
+import { TOOL_NAME } from './constants.js';
 
 /**
  * Process a single call hierarchy query
@@ -44,7 +39,6 @@ export async function processCallHierarchy(
 
     const absolutePath = pathValidation.sanitizedPath!;
 
-    // Read file content
     let content: string;
     try {
       content = await readFile(absolutePath, 'utf-8');
@@ -59,7 +53,6 @@ export async function processCallHierarchy(
       }) as CallHierarchyResult;
     }
 
-    // Resolve the symbol position using the resolver
     const resolver = new SymbolResolver({ lineSearchRadius: 5 });
     let resolvedSymbol;
     try {
@@ -86,7 +79,6 @@ export async function processCallHierarchy(
       throw error;
     }
 
-    // Try LSP first for semantic call hierarchy
     const workspaceRoot = resolveWorkspaceRoot();
 
     if (await isLanguageServerAvailable(absolutePath)) {
@@ -100,11 +92,10 @@ export async function processCallHierarchy(
         );
         if (result) return applyCallHierarchyOutputLimit(result, query);
       } catch {
-        // LSP failed — fall back to pattern matching silently
+        // LSP call hierarchy failed; pattern-matching fallback still produces a result.
       }
     }
 
-    // Fallback: Use pattern matching approach
     const patternResult = await callHierarchyWithPatternMatching(
       query,
       absolutePath,
@@ -129,7 +120,6 @@ function applyCallHierarchyOutputLimit(
   result: CallHierarchyResult,
   query: LSPCallHierarchyQuery
 ): CallHierarchyResult {
-  // Only apply to results with data (not empty/error)
   if (result.status !== 'hasResults') return result;
 
   const serialized = serializeForPagination(result, true);
@@ -142,7 +132,6 @@ function applyCallHierarchyOutputLimit(
 
   const { pagination } = sizeLimitResult;
 
-  // Add outputPagination metadata and warnings to the result
   const limitedResult: CallHierarchyResult = {
     ...result,
     outputPagination: {
@@ -155,7 +144,6 @@ function applyCallHierarchyOutputLimit(
     },
   };
 
-  // Append pagination hints to existing hints (hints is always set by LSP/pattern matching)
   limitedResult.hints = [
     ...(result.hints as string[]),
     ...sizeLimitResult.warnings,
@@ -165,7 +153,6 @@ function applyCallHierarchyOutputLimit(
   return limitedResult;
 }
 
-// Re-export testing utilities from helper modules
 export {
   parseRipgrepJsonOutput,
   parseGrepOutput,

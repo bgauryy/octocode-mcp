@@ -1,11 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import {
-  fetchGitHubFileContentAPI,
-  viewGitHubRepositoryStructureAPI,
-} from '../../src/github/fileOperations.js';
+import { fetchGitHubFileContentAPI } from '../../src/github/fileContent.js';
+import { viewGitHubRepositoryStructureAPI } from '../../src/github/repoStructure.js';
 import { getOctokit, resolveDefaultBranch } from '../../src/github/client.js';
 import { RequestError } from 'octokit';
-import * as minifierModule from '../../src/utils/minifier/index.js';
+import * as minifierModule from '../../src/utils/minifier/minifier.js';
 import { clearAllCache } from '../../src/utils/http/cache.js';
 
 // Helper to create RequestError with proper structure
@@ -28,7 +26,7 @@ function createRequestError(message: string, status: number) {
 
 // Mock dependencies
 vi.mock('../../src/github/client.js');
-vi.mock('../../src/utils/minifier/index.js');
+vi.mock('../../src/utils/minifier/minifier.js');
 
 describe('GitHub File Operations - processFileContentAPI coverage', () => {
   beforeEach(() => {

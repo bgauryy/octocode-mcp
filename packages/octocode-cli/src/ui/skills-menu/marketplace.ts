@@ -1,8 +1,3 @@
-/**
- * Skills Marketplace UI
- * Browse and install skills from community marketplaces
- */
-
 import { c, bold, dim } from '../../utils/colors.js';
 import { select, Separator, input, search } from '../../utils/prompts.js';
 import { Spinner } from '../../utils/spinner.js';
@@ -21,33 +16,17 @@ import {
 } from '../../utils/skills-fetch.js';
 import path from 'node:path';
 
-// ============================================================================
-// Types
-// ============================================================================
-
 type MarketplaceMenuChoice = MarketplaceSource | 'back';
 type SkillMenuChoice = MarketplaceSkill | 'back';
 type InstallChoice = 'install' | 'back';
 type OfficialFlowChoice = 'install-all' | 'browse' | 'back';
 
-// ============================================================================
-// Constants
-// ============================================================================
-
-/** Recommended skills shown first with a star */
 const RECOMMENDED_SKILLS = new Set([
   'octocode-research',
-  'octocode-pr-review',
+  'octocode-pull-request-reviewer',
   'octocode-researcher',
 ]);
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Wait for user to press enter
- */
 async function pressEnterToContinue(): Promise<void> {
   console.log();
   await input({
@@ -56,11 +35,7 @@ async function pressEnterToContinue(): Promise<void> {
   });
 }
 
-/**
- * Format marketplace for display
- */
 function formatMarketplace(source: MarketplaceSource, stars?: number): string {
-  // Local sources show "bundled" badge instead of stars
   if (isLocalSource(source)) {
     return `${bold(source.name)} ${c('cyan', '📦 bundled')} - ${dim(source.description)}`;
   }
@@ -68,9 +43,6 @@ function formatMarketplace(source: MarketplaceSource, stars?: number): string {
   return `${bold(source.name)}${c('yellow', starsText)} - ${dim(source.description)}`;
 }
 
-/**
- * Format skill for display
- */
 function formatSkill(skill: MarketplaceSkill, installed: boolean): string {
   const installedTag = installed ? c('green', '✓ ') : '';
   const starTag = RECOMMENDED_SKILLS.has(skill.name) ? c('yellow', ' ⭐') : '';
@@ -79,21 +51,11 @@ function formatSkill(skill: MarketplaceSkill, installed: boolean): string {
   return `${installedTag}${skill.displayName}${starTag} ${dim(desc)}${dim(ellipsis)}`;
 }
 
-/**
- * Check if skill is already installed
- */
 function isSkillInstalled(skillName: string): boolean {
   const destDir = getSkillsDestDir();
   return dirExists(path.join(destDir, skillName));
 }
 
-// ============================================================================
-// UI Flows
-// ============================================================================
-
-/**
- * Select marketplace source
- */
 async function selectMarketplace(
   starsMap: Map<string, number>
 ): Promise<MarketplaceMenuChoice> {
@@ -101,16 +63,13 @@ async function selectMarketplace(
   console.log(`  ${bold('Select a marketplace to browse:')}`);
   console.log();
 
-  // Separate local and GitHub sources
   const localSources = SKILLS_MARKETPLACES.filter(s => isLocalSource(s));
   const githubSources = SKILLS_MARKETPLACES.filter(s => !isLocalSource(s));
 
-  // Sort GitHub sources by stars
   const sortedGitHubSources = [...githubSources].sort(
     (a, b) => (starsMap.get(b.id) ?? 0) - (starsMap.get(a.id) ?? 0)
   );
 
-  // Local sources first, then GitHub sources sorted by stars
   const sortedMarketplaces = [...localSources, ...sortedGitHubSources];
 
   const choices: Array<{
@@ -154,9 +113,6 @@ async function selectMarketplace(
   return choice;
 }
 
-/**
- * Browse skills from a marketplace with inline search filtering
- */
 async function browseSkills(
   source: MarketplaceSource,
   skills: MarketplaceSkill[]
@@ -166,7 +122,6 @@ async function browseSkills(
   console.log(`  ${dim(source.url)}`);
   console.log();
 
-  // Sort skills: recommended first, then alphabetically
   const sortedSkills = [...skills].sort((a, b) => {
     const aRecommended = RECOMMENDED_SKILLS.has(a.name);
     const bRecommended = RECOMMENDED_SKILLS.has(b.name);
@@ -176,18 +131,16 @@ async function browseSkills(
     return a.displayName.localeCompare(b.displayName);
   });
 
-  // Create searchable choice list
   const skillChoices = sortedSkills.map(skill => {
     const installed = isSkillInstalled(skill.name);
     return {
       name: formatSkill(skill, installed),
       value: skill as SkillMenuChoice,
-      // Include searchable fields for filtering
+
       description: skill.category ? `[${skill.category}]` : undefined,
     };
   });
 
-  // Static choices (back option)
   const backChoice = {
     name: `${c('dim', '← Back to marketplaces')}`,
     value: 'back' as SkillMenuChoice,
@@ -196,12 +149,10 @@ async function browseSkills(
   const choice = await search<SkillMenuChoice>({
     message: `🔍 Type to filter skills (${skills.length} available)`,
     source: (term: string | undefined) => {
-      // If no search term, show all skills + back option
       if (!term || !term.trim()) {
         return [...skillChoices, backChoice];
       }
 
-      // Filter skills by search term
       const lowerTerm = term.toLowerCase();
       const filtered = skillChoices.filter(choice => {
         if (typeof choice.value === 'string') return false;
@@ -214,7 +165,6 @@ async function browseSkills(
         );
       });
 
-      // Always include back option
       return [...filtered, backChoice];
     },
     pageSize: 20,
@@ -229,9 +179,6 @@ async function browseSkills(
   return choice;
 }
 
-/**
- * Show skill details and install prompt
- */
 async function showSkillDetails(
   skill: MarketplaceSkill
 ): Promise<InstallChoice> {
@@ -298,9 +245,6 @@ async function showSkillDetails(
   return choice;
 }
 
-/**
- * Install a skill from marketplace
- */
 async function installSkill(skill: MarketplaceSkill): Promise<boolean> {
   const destDir = getSkillsDestDir();
 
@@ -329,13 +273,6 @@ async function installSkill(skill: MarketplaceSkill): Promise<boolean> {
   return result.success;
 }
 
-// ============================================================================
-// Bulk Install
-// ============================================================================
-
-/**
- * Show initial menu for Official skills - Install All or Browse
- */
 async function showOfficialFlowMenu(
   totalSkills: number,
   notInstalledCount: number
@@ -351,7 +288,6 @@ async function showOfficialFlowMenu(
     description?: string;
   }> = [];
 
-  // Show "Install All" option only if there are skills to install
   if (notInstalledCount > 0) {
     choices.push({
       name: `${c('green', '⚡')} Install All Skills (${notInstalledCount} to install)`,
@@ -398,13 +334,9 @@ async function showOfficialFlowMenu(
   return choice;
 }
 
-/**
- * Install all skills that are not yet installed
- */
 async function installAllSkills(skills: MarketplaceSkill[]): Promise<void> {
   const destDir = getSkillsDestDir();
 
-  // Filter to only non-installed skills
   const skillsToInstall = skills.filter(skill => !isSkillInstalled(skill.name));
 
   if (skillsToInstall.length === 0) {
@@ -476,20 +408,12 @@ async function installAllSkills(skills: MarketplaceSkill[]): Promise<void> {
   await pressEnterToContinue();
 }
 
-// ============================================================================
-// Main Flow
-// ============================================================================
-
-/**
- * Run the marketplace browser flow
- */
 export async function runMarketplaceFlow(): Promise<void> {
   console.log();
   console.log(
     `  ${c('yellow', '⚠')} ${dim('Community list • Skills install on your behalf')}`
   );
 
-  // Fetch stars for all marketplaces
   const starsSpinner = new Spinner('Fetching marketplace info...').start();
   let starsMap: Map<string, number>;
   try {
@@ -503,7 +427,6 @@ export async function runMarketplaceFlow(): Promise<void> {
   let inMarketplace = true;
 
   while (inMarketplace) {
-    // Select marketplace
     const source = await selectMarketplace(starsMap);
 
     if (source === 'back') {
@@ -511,7 +434,6 @@ export async function runMarketplaceFlow(): Promise<void> {
       continue;
     }
 
-    // Fetch skills from marketplace
     console.log();
     const spinner = new Spinner(
       `Loading skills from ${source.name}...`
@@ -520,7 +442,7 @@ export async function runMarketplaceFlow(): Promise<void> {
     let skills: MarketplaceSkill[];
     try {
       skills = await fetchMarketplaceSkills(source);
-      spinner.stop(); // Silent stop - count shown in browse view
+      spinner.stop();
     } catch (error) {
       spinner.fail(`Failed to load skills`);
       console.log();
@@ -540,7 +462,6 @@ export async function runMarketplaceFlow(): Promise<void> {
       continue;
     }
 
-    // Browse skills loop with inline search
     let inSkillsBrowser = true;
     while (inSkillsBrowser) {
       const skillChoice = await browseSkills(source, skills);
@@ -550,7 +471,6 @@ export async function runMarketplaceFlow(): Promise<void> {
         continue;
       }
 
-      // Show skill details
       const detailChoice = await showSkillDetails(skillChoice);
       if (detailChoice === 'install') {
         await installSkill(skillChoice);
@@ -559,12 +479,7 @@ export async function runMarketplaceFlow(): Promise<void> {
   }
 }
 
-/**
- * Run Octocode Skills flow - main menu entry point
- * Installs skills from https://github.com/bgauryy/octocode-mcp/tree/main/skills
- */
 export async function runOctocodeSkillsFlow(): Promise<void> {
-  // Find Octocode Skills source
   const source = SKILLS_MARKETPLACES.find(s => s.id === 'octocode-skills');
   if (!source) {
     console.log();
@@ -574,7 +489,6 @@ export async function runOctocodeSkillsFlow(): Promise<void> {
     return;
   }
 
-  // Fetch skills from GitHub
   console.log();
   const spinner = new Spinner(`Loading Octocode Skills...`).start();
 
@@ -601,12 +515,10 @@ export async function runOctocodeSkillsFlow(): Promise<void> {
     return;
   }
 
-  // Calculate not-installed count
   const notInstalledCount = skills.filter(
     s => !isSkillInstalled(s.name)
   ).length;
 
-  // Show initial menu - Install All or Browse
   let inFlow = true;
   while (inFlow) {
     const menuChoice = await showOfficialFlowMenu(

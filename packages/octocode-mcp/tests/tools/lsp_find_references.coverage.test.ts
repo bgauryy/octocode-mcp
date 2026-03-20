@@ -17,7 +17,7 @@ import * as path from 'path';
 import {
   findWorkspaceRoot,
   isLikelyDefinition,
-} from '../../src/tools/lsp_find_references/index.js';
+} from '../../src/tools/lsp_find_references/lspReferencesPatterns.js';
 
 // Mock fs/promises
 vi.mock('fs/promises', () => ({
@@ -35,8 +35,7 @@ vi.mock('util', () => ({
   promisify: (fn: Function) => fn,
 }));
 
-// Mock LSP module
-vi.mock('../../src/lsp/index.js', () => {
+vi.mock('../../src/lsp/resolver.js', () => {
   class MockSymbolResolutionError extends Error {
     searchRadius: number;
     constructor(message: string, searchRadius: number) {
@@ -59,15 +58,19 @@ vi.mock('../../src/lsp/index.js', () => {
       }),
     })),
     SymbolResolutionError: MockSymbolResolutionError,
-    createClient: vi.fn().mockResolvedValue(null),
-    isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
   };
 });
+
+vi.mock('../../src/lsp/manager.js', () => ({
+  createClient: vi.fn().mockResolvedValue(null),
+  isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
+}));
 
 // Import mocked modules
 import * as fs from 'fs/promises';
 import * as childProcess from 'child_process';
-import * as lspModule from '../../src/lsp/index.js';
+import * as resolverModule from '../../src/lsp/resolver.js';
+import * as managerModule from '../../src/lsp/manager.js';
 
 describe('LSP Find References Coverage Tests', () => {
   beforeEach(() => {
@@ -613,7 +616,7 @@ export function testFunction(param: string): string {
 
       // Re-import after resetting mocks
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references/index.js');
+        await import('../../src/tools/lsp_find_references/register.js');
 
       const mockServer = {
         registerTool: vi.fn(
@@ -631,11 +634,13 @@ export function testFunction(param: string): string {
       // Default mocks
       vi.mocked(fs.stat).mockResolvedValue({ isFile: () => true } as any);
       vi.mocked(fs.readFile).mockResolvedValue(sampleTypeScriptContent);
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-      vi.mocked(lspModule.createClient).mockResolvedValue(null);
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        false
+      );
+      vi.mocked(managerModule.createClient).mockResolvedValue(null);
 
       // Default SymbolResolver mock
-      vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
+      vi.mocked(resolverModule.SymbolResolver).mockImplementation(function () {
         return {
           resolvePositionFromContent: vi.fn().mockReturnValue({
             position: { line: 3, character: 16 },
@@ -958,7 +963,7 @@ export function testFunction(param: string): string {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references/index.js');
+        await import('../../src/tools/lsp_find_references/register.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),
@@ -977,7 +982,7 @@ export function testFunction(param: string): string {
       vi.resetModules();
 
       const { registerLSPFindReferencesTool } =
-        await import('../../src/tools/lsp_find_references/index.js');
+        await import('../../src/tools/lsp_find_references/register.js');
 
       const mockServer = {
         registerTool: vi.fn().mockReturnValue(undefined),

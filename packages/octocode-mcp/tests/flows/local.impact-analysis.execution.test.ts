@@ -3,9 +3,9 @@ import { readFileSync } from 'fs';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { processCallHierarchy } from '../../src/tools/lsp_call_hierarchy/callHierarchy.js';
-import { fetchContent } from '../../src/tools/local_fetch_content/index.js';
-import { searchContentRipgrep } from '../../src/tools/local_ripgrep/index.js';
-import { findReferences } from '../../src/tools/lsp_find_references/index.js';
+import { fetchContent } from '../../src/tools/local_fetch_content/fetchContent.js';
+import { searchContentRipgrep } from '../../src/tools/local_ripgrep/searchContentRipgrep.js';
+import { findReferences } from '../../src/tools/lsp_find_references/lsp_find_references.js';
 import { FLOW_CATALOG } from './catalog.js';
 import { getFlowFixturePath } from './harness.js';
 
@@ -15,8 +15,11 @@ const flowRuntime = vi.hoisted(() => ({
   spawn: vi.fn(),
 }));
 
-vi.mock('../../src/utils/exec/index.js', () => ({
+vi.mock('../../src/utils/exec/safe.js', () => ({
   safeExec: flowRuntime.safeExec,
+}));
+
+vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
   checkCommandAvailability: flowRuntime.checkCommandAvailability,
   getMissingCommandError: vi.fn().mockReturnValue('Command not available'),
 }));
@@ -29,10 +32,10 @@ vi.mock('../../src/security/commandValidator.js', () => ({
   validateCommand: vi.fn().mockReturnValue({ isValid: true }),
 }));
 
-vi.mock('../../src/lsp/index.js', async () => {
-  const actual = await vi.importActual<typeof import('../../src/lsp/index.js')>(
-    '../../src/lsp/index.js'
-  );
+vi.mock('../../src/lsp/manager.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../src/lsp/manager.js')
+  >('../../src/lsp/manager.js');
 
   return {
     ...actual,

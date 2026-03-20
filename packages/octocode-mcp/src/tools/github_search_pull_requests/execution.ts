@@ -3,7 +3,7 @@ import type {
   GitHubPullRequestSearchQuery,
   PullRequestSearchResult,
 } from './types.js';
-import { TOOL_NAMES } from '../toolMetadata/index.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import {
@@ -11,10 +11,8 @@ import {
   createSuccessResult,
   createErrorResult,
 } from '../utils.js';
-import {
-  applyOutputSizeLimit,
-  serializeForPagination,
-} from '../../utils/pagination/index.js';
+import { applyOutputSizeLimit } from '../../utils/pagination/outputSizeLimit.js';
+import { serializeForPagination } from '../../utils/pagination/core.js';
 import {
   buildPaginationHints,
   mapPullRequestProviderResultData,

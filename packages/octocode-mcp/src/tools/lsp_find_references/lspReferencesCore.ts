@@ -20,9 +20,9 @@ import type {
 } from '../../lsp/types.js';
 import type { LSPFindReferencesQuery } from './scheme.js';
 import type { SymbolKind } from '../../lsp/types.js';
-import { createClient } from '../../lsp/index.js';
+import { createClient } from '../../lsp/manager.js';
 import { getHints } from '../../hints/index.js';
-import { TOOL_NAME } from './execution.js';
+import { TOOL_NAME } from './constants.js';
 
 /**
  * Infer symbol kind from the definition line content.
@@ -94,7 +94,7 @@ export async function findReferencesWithLSP(
     try {
       await client.prepareCallHierarchy(filePath, position);
     } catch {
-      // Warm-up failure is non-fatal — proceed with references anyway
+      // prepareCallHierarchy warm-up is optional; findReferences still runs without project preload.
     }
 
     const includeDeclaration = query.includeDeclaration ?? true;
@@ -116,7 +116,6 @@ export async function findReferencesWithLSP(
       };
     }
 
-    // Step 1: Convert to raw reference locations (no file I/O yet)
     let rawLocations: RawReferenceLocation[] = locations.map(loc => {
       const relativeUri = path.relative(workspaceRoot, loc.uri);
       const isDefinition =
@@ -141,7 +140,6 @@ export async function findReferencesWithLSP(
 
     const totalUnfiltered = rawLocations.length;
 
-    // Step 2: Apply file pattern filtering
     const hasFilters =
       query.includePattern?.length || query.excludePattern?.length;
     const filteredLocations = hasFilters
@@ -171,7 +169,6 @@ export async function findReferencesWithLSP(
       };
     }
 
-    // Step 3: Paginate the filtered results
     const referencesPerPage = query.referencesPerPage ?? 20;
     const page = query.page ?? 1;
     const totalReferences = filteredLocations.length;
@@ -180,7 +177,6 @@ export async function findReferencesWithLSP(
     const endIndex = Math.min(startIndex + referencesPerPage, totalReferences);
     const paginatedRaw = filteredLocations.slice(startIndex, endIndex);
 
-    // Step 4: Lazy enhancement -- only enhance the current page with content
     const contextLines = query.contextLines ?? 2;
     const paginatedReferences: ReferenceLocation[] = [];
 
@@ -189,7 +185,6 @@ export async function findReferencesWithLSP(
       paginatedReferences.push(enhanced);
     }
 
-    // Determine if references span multiple files
     const uniqueFiles = new Set(filteredLocations.map(ref => ref.uri));
     const hasMultipleFiles = uniqueFiles.size > 1;
 
@@ -257,7 +252,6 @@ async function enhanceReferenceLocation(
 ): Promise<ReferenceLocation> {
   let content = raw.content;
 
-  // Get context if needed
   if (contextLines > 0) {
     try {
       const fileContent = await safeReadFile(raw.absoluteUri);
@@ -279,7 +273,7 @@ async function enhanceReferenceLocation(
         })
         .join('\n');
     } catch {
-      // Keep original content
+      // File read or snippet build failed; keep prior content (often single-line).
     }
   }
 

@@ -1,8 +1,3 @@
-/**
- * Skills Menu UI
- * Manages Octocode skills installation and configuration for Claude Code
- */
-
 import { c, bold, dim } from '../../utils/colors.js';
 import { loadInquirer, select, Separator, input } from '../../utils/prompts.js';
 import {
@@ -18,43 +13,31 @@ import {
   getDefaultSkillsDestDir,
   setCustomSkillsDestDir,
 } from '../../utils/skills.js';
+import { parseSkillFrontmatter } from '../../utils/parsers/frontmatter.js';
 import path from 'node:path';
 import open from 'open';
 import { Spinner } from '../../utils/spinner.js';
 import { runMarketplaceFlow } from './marketplace.js';
 
-// ============================================================================
-// Constants
-// ============================================================================
-
 const WHAT_ARE_SKILLS_URL = 'https://agentskills.io/what-are-skills';
 
-/** Recommended skills shown first with a star */
 const RECOMMENDED_SKILLS = new Set([
   'octocode-research',
-  'octocode-pr-review',
+  'octocode-pull-request-reviewer',
   'octocode-researcher',
 ]);
 
-// ============================================================================
-// Installed Skill Types (agentskills.io protocol)
-// ============================================================================
-
-/**
- * Installed skill info - parsed from SKILL.md following agentskills.io protocol
- */
 interface InstalledSkill {
-  /** Skill name from frontmatter */
   name: string;
-  /** Description from frontmatter */
+
   description: string;
-  /** Folder name on disk */
+
   folder: string;
-  /** Full path to skill directory */
+
   path: string;
-  /** Whether this is an Octocode bundled skill */
+
   isBundled: boolean;
-  /** Whether this is a recommended skill (shown first with star) */
+
   isRecommended: boolean;
 }
 
@@ -67,13 +50,6 @@ type SkillsMenuChoice =
   | 'back';
 type ManageSkillsChoice = InstalledSkill | 'back';
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Wait for user to press enter
- */
 async function pressEnterToContinue(): Promise<void> {
   console.log();
   await input({
@@ -82,31 +58,6 @@ async function pressEnterToContinue(): Promise<void> {
   });
 }
 
-/**
- * Parse YAML frontmatter from SKILL.md content (agentskills.io protocol)
- */
-function parseSkillMdFrontmatter(
-  content: string
-): { name: string; description: string } | null {
-  const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
-  if (!match) return null;
-
-  const frontmatter = match[1];
-  const nameMatch = frontmatter.match(/^name:\s*(.+)$/m);
-  const descMatch = frontmatter.match(/^description:\s*(.+)$/m);
-
-  if (!nameMatch || !descMatch) return null;
-
-  return {
-    name: nameMatch[1].trim(),
-    description: descMatch[1].trim(),
-  };
-}
-
-/**
- * Get all installed skills from the destination directory
- * Includes both bundled Octocode skills and marketplace/manually installed skills
- */
 function getAllInstalledSkills(): InstalledSkill[] {
   const destDir = getSkillsDestDir();
   const srcDir = getSkillsSourceDir();
@@ -125,7 +76,6 @@ function getAllInstalledSkills(): InstalledSkill[] {
     const skillPath = path.join(destDir, folder);
     const skillMdPath = path.join(skillPath, 'SKILL.md');
 
-    // Check if it's a bundled Octocode skill
     const isBundled =
       folder.startsWith('octocode-') &&
       dirExists(srcDir) &&
@@ -136,8 +86,8 @@ function getAllInstalledSkills(): InstalledSkill[] {
     if (fileExists(skillMdPath)) {
       const content = readFileContent(skillMdPath);
       if (content) {
-        const parsed = parseSkillMdFrontmatter(content);
-        if (parsed) {
+        const parsed = parseSkillFrontmatter(content);
+        if (parsed?.name && parsed.description) {
           skills.push({
             name: parsed.name,
             description: parsed.description,
@@ -151,7 +101,6 @@ function getAllInstalledSkills(): InstalledSkill[] {
       }
     }
 
-    // Fallback for skills without valid SKILL.md
     skills.push({
       name: formatSkillName(folder),
       description: 'No description available',
@@ -162,7 +111,6 @@ function getAllInstalledSkills(): InstalledSkill[] {
     });
   }
 
-  // Sort: recommended first, then alphabetically by name
   skills.sort((a, b) => {
     if (a.isRecommended !== b.isRecommended) {
       return a.isRecommended ? -1 : 1;
@@ -173,13 +121,6 @@ function getAllInstalledSkills(): InstalledSkill[] {
   return skills;
 }
 
-// ============================================================================
-// Local State Helpers (use state.ts for shared state)
-// ============================================================================
-
-/**
- * Get skills status info
- */
 function getSkillsInfo(): {
   srcDir: string;
   destDir: string;
@@ -226,13 +167,6 @@ function getSkillsInfo(): {
   return { srcDir, destDir, skillsStatus, notInstalled, sourceExists: true };
 }
 
-// ============================================================================
-// UI Components
-// ============================================================================
-
-/**
- * Show skills submenu
- */
 async function showSkillsMenu(
   installedCount: number
 ): Promise<SkillsMenuChoice> {
@@ -242,7 +176,6 @@ async function showSkillsMenu(
     description?: string;
   }> = [];
 
-  // Manage installed skills - shown if any skills are installed
   if (installedCount > 0) {
     choices.push({
       name: `📦 Manage installed skills ${dim(`(${installedCount})`)}`,
@@ -251,14 +184,12 @@ async function showSkillsMenu(
     });
   }
 
-  // Browse marketplace - always available
   choices.push({
     name: ' Browse Marketplace',
     value: 'marketplace',
     description: 'Community skills • installs on your behalf',
   });
 
-  // Change default skills path option
   choices.push({
     name: '📁 Change default skills path',
     value: 'change-path',
@@ -273,7 +204,6 @@ async function showSkillsMenu(
     }
   );
 
-  // Learn about skills - opens browser
   choices.push({
     name: `${c('cyan', '❓')} What are skills?`,
     value: 'learn',
@@ -301,9 +231,6 @@ async function showSkillsMenu(
   return choice;
 }
 
-/**
- * Show skills status
- */
 function showSkillsStatus(info: ReturnType<typeof getSkillsInfo>): void {
   const { destDir, skillsStatus, notInstalled } = info;
 
@@ -313,7 +240,6 @@ function showSkillsStatus(info: ReturnType<typeof getSkillsInfo>): void {
     return;
   }
 
-  // Show skills and their status
   console.log(`  ${bold('Skills:')}`);
   console.log();
   for (const skill of skillsStatus) {
@@ -329,12 +255,10 @@ function showSkillsStatus(info: ReturnType<typeof getSkillsInfo>): void {
   }
   console.log();
 
-  // Show installation path
   console.log(`  ${bold('Installation path:')}`);
   console.log(`  ${c('cyan', destDir)}`);
   console.log();
 
-  // Summary
   if (notInstalled.length === 0) {
     console.log(`  ${c('green', '✓')} All skills are installed!`);
   } else {
@@ -345,10 +269,6 @@ function showSkillsStatus(info: ReturnType<typeof getSkillsInfo>): void {
   console.log();
 }
 
-/**
- * Format skill name for display (remove octocode- prefix, capitalize)
- * Handles acronyms like PR, API, etc.
- */
 function formatSkillName(name: string): string {
   const acronyms = ['PR', 'API', 'UI', 'CLI', 'MCP', 'AI'];
   const formatted = name
@@ -363,13 +283,6 @@ function formatSkillName(name: string): string {
   );
 }
 
-// ============================================================================
-// Install/Uninstall Functions
-// ============================================================================
-
-/**
- * Show manage installed skills menu
- */
 async function selectInstalledSkill(
   skills: InstalledSkill[]
 ): Promise<ManageSkillsChoice> {
@@ -425,9 +338,6 @@ async function selectInstalledSkill(
 
 type SkillActionChoice = 'remove' | 'view' | 'back';
 
-/**
- * Show skill details and action menu
- */
 async function showSkillActions(
   skill: InstalledSkill
 ): Promise<SkillActionChoice> {
@@ -475,9 +385,6 @@ async function showSkillActions(
   return choice;
 }
 
-/**
- * Open skill location in file explorer (cross-platform: macOS/Windows/Linux)
- */
 async function openSkillLocation(skill: InstalledSkill): Promise<void> {
   console.log();
   console.log(`  ${c('cyan', '📂')} Opening ${bold(skill.name)} location...`);
@@ -494,9 +401,6 @@ async function openSkillLocation(skill: InstalledSkill): Promise<void> {
   console.log();
 }
 
-/**
- * Remove a specific skill
- */
 async function removeSkill(skill: InstalledSkill): Promise<boolean> {
   console.log();
   console.log(`  ${c('yellow', '⚠')} You are about to remove:`);
@@ -549,9 +453,6 @@ async function removeSkill(skill: InstalledSkill): Promise<boolean> {
   }
 }
 
-/**
- * Manage installed skills flow
- */
 async function manageInstalledSkills(): Promise<void> {
   let inManageMenu = true;
 
@@ -574,7 +475,6 @@ async function manageInstalledSkills(): Promise<void> {
       continue;
     }
 
-    // Show skill actions
     let inSkillActions = true;
     while (inSkillActions) {
       const action = await showSkillActions(selectedSkill);
@@ -584,7 +484,7 @@ async function manageInstalledSkills(): Promise<void> {
           const removed = await removeSkill(selectedSkill);
           if (removed) {
             await pressEnterToContinue();
-            inSkillActions = false; // Go back to skill list
+            inSkillActions = false;
           }
           break;
         }
@@ -603,20 +503,11 @@ async function manageInstalledSkills(): Promise<void> {
   }
 }
 
-// ============================================================================
-// Main Flow
-// ============================================================================
-
-/**
- * Run skills installation flow
- */
 export async function runSkillsMenu(): Promise<void> {
   await loadInquirer();
 
-  // Get skills info
   let info = getSkillsInfo();
 
-  // Handle source not found
   if (!info.sourceExists) {
     console.log(`  ${c('yellow', '⚠')} Skills source directory not found.`);
     console.log(`  ${dim('This may happen if running from source.')}`);
@@ -625,7 +516,6 @@ export async function runSkillsMenu(): Promise<void> {
     return;
   }
 
-  // Handle no skills available
   if (info.skillsStatus.length === 0) {
     console.log(`  ${dim('No skills available.')}`);
     console.log();
@@ -633,17 +523,13 @@ export async function runSkillsMenu(): Promise<void> {
     return;
   }
 
-  // Skills menu loop - allows going back from install
   let inSkillsMenu = true;
   while (inSkillsMenu) {
-    // Refresh skills info on each iteration
     info = getSkillsInfo();
 
-    // Get count of ALL installed skills (including marketplace)
     const installedSkills = getAllInstalledSkills();
     const installedCount = installedSkills.length;
 
-    // Show submenu
     const choice = await showSkillsMenu(installedCount);
 
     switch (choice) {
@@ -697,15 +583,15 @@ export async function runSkillsMenu(): Promise<void> {
           default: info.destDir,
           validate: (value: string) => {
             const trimmed = value.trim();
-            // Empty is allowed - means reset to default
+
             if (!trimmed) {
               return true;
             }
-            // Expand ~ to home directory
+
             const expanded = trimmed.startsWith('~')
               ? trimmed.replace('~', process.env.HOME || '')
               : trimmed;
-            // Check if it's an absolute path
+
             if (!path.isAbsolute(expanded)) {
               return 'Enter an absolute path (e.g., ~/.claude/skills)';
             }
@@ -715,7 +601,6 @@ export async function runSkillsMenu(): Promise<void> {
 
         const trimmedPath = newPath.trim();
 
-        // If empty, reset to default
         if (!trimmedPath) {
           setCustomSkillsDestDir(null);
           console.log();
@@ -726,13 +611,11 @@ export async function runSkillsMenu(): Promise<void> {
           break;
         }
 
-        // Expand ~ and normalize path
         const expandedPath = trimmedPath.startsWith('~')
           ? trimmedPath.replace('~', process.env.HOME || '')
           : trimmedPath;
         const normalizedPath = path.resolve(expandedPath);
 
-        // If same as current, no change needed
         if (normalizedPath === info.destDir) {
           console.log();
           console.log(`  ${dim('No change - path is already set.')}`);
@@ -741,7 +624,6 @@ export async function runSkillsMenu(): Promise<void> {
           break;
         }
 
-        // Create directory if it doesn't exist
         if (!dirExists(normalizedPath)) {
           const { mkdirSync } = await import('node:fs');
           try {
@@ -761,7 +643,6 @@ export async function runSkillsMenu(): Promise<void> {
           }
         }
 
-        // Save the custom path (or reset if it's the default)
         if (normalizedPath === defaultPath) {
           setCustomSkillsDestDir(null);
         } else {
@@ -784,7 +665,6 @@ export async function runSkillsMenu(): Promise<void> {
 
       case 'back':
       default:
-        // Exit skills menu and return to main menu
         inSkillsMenu = false;
         break;
     }

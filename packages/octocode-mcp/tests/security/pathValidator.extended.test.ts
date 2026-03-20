@@ -12,7 +12,7 @@ describe('PathValidator - Extended', () => {
   const testWorkspace = process.cwd();
 
   beforeEach(() => {
-    validator = new PathValidator(testWorkspace);
+    validator = new PathValidator({ workspaceRoot: testWorkspace });
   });
 
   describe('addAllowedRoot', () => {
@@ -158,7 +158,7 @@ describe('PathValidator - Extended', () => {
     });
 
     it('should resolve relative workspace root', () => {
-      const relativeValidator = new PathValidator('.');
+      const relativeValidator = new PathValidator({ workspaceRoot: '.' });
       const cwd = process.cwd();
       const result = relativeValidator.validate(`${cwd}/package.json`);
 

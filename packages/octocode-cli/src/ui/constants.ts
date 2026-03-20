@@ -1,8 +1,3 @@
-/**
- * UI Constants - Display text for IDEs and install methods
- */
-
-// Comprehensive client info (single source of truth)
 export const CLIENT_INFO = {
   cursor: {
     name: 'Cursor',
@@ -64,7 +59,7 @@ export const CLIENT_INFO = {
     description: 'Specify your own MCP config path',
     url: '',
   },
-  // Legacy alias for backward compatibility
+
   claude: {
     name: 'Claude Desktop',
     description: "Anthropic's Claude desktop app",
@@ -72,8 +67,6 @@ export const CLIENT_INFO = {
   },
 } as const;
 
-// Legacy IDE info - alias for backward compatibility
-// Points to CLIENT_INFO entries to maintain single source of truth
 export const IDE_INFO = {
   cursor: CLIENT_INFO.cursor,
   claude: CLIENT_INFO.claude,

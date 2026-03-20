@@ -1,8 +1,3 @@
-/**
- * Terminal Colors & Formatting
- * Zero-dependency ANSI color utilities
- */
-
 import type { ColorName } from '../types/index.js';
 
 const colors: Record<ColorName, string> = {
@@ -24,23 +19,11 @@ const colors: Record<ColorName, string> = {
   bgMagenta: '\x1b[45m',
 };
 
-/**
- * Apply color to text
- */
 export const c = (color: ColorName, text: string): string =>
   `${colors[color]}${text}${colors.reset}`;
 
-/**
- * Bold text
- */
 export const bold = (text: string): string => c('bright', text);
 
-/**
- * Dim text
- */
 export const dim = (text: string): string => c('dim', text);
 
-/**
- * Underline text
- */
 export const underline = (text: string): string => c('underscore', text);

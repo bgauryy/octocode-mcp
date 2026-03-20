@@ -3,9 +3,6 @@ import type { MCPRegistryEntry } from '../../configs/mcp-registry.js';
 import type { MCPClient } from '../../types/index.js';
 import { MCP_CLIENTS } from '../../utils/mcp-paths.js';
 
-/**
- * Print detailed information about an MCP
- */
 export function printMCPDetails(mcp: MCPRegistryEntry): void {
   console.log();
   console.log(c('blue', ' ┌' + '─'.repeat(60) + '┐'));
@@ -38,9 +35,6 @@ export function printMCPDetails(mcp: MCPRegistryEntry): void {
   console.log();
 }
 
-/**
- * Print the configuration that will be added
- */
 export function printInstallPreview(
   mcp: MCPRegistryEntry,
   client: MCPClient,
@@ -59,7 +53,6 @@ export function printInstallPreview(
   console.log(c('blue', ' └' + '─'.repeat(60) + '┘'));
   console.log();
 
-  // Build the server config
   const serverConfig = {
     command: mcp.installConfig.command,
     args: [...mcp.installConfig.args],
@@ -86,9 +79,6 @@ export function printInstallPreview(
   console.log();
 }
 
-/**
- * Print success message after installation
- */
 export function printInstallSuccess(
   mcp: MCPRegistryEntry,
   client: MCPClient,
@@ -128,9 +118,6 @@ export function printInstallSuccess(
   console.log();
 }
 
-/**
- * Print error message
- */
 export function printInstallError(error: string): void {
   console.log();
   console.log(c('red', ' ┌' + '─'.repeat(60) + '┐'));

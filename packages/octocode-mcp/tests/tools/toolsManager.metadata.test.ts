@@ -2,11 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerTools } from '../../src/tools/toolsManager.js';
 
-// Mock toolMetadata module
-vi.mock('../../src/tools/toolMetadata/index.js', async () => {
+vi.mock('../../src/tools/toolMetadata/proxies.js', async () => {
   const actual = await vi.importActual<
-    typeof import('../../src/tools/toolMetadata/index.js')
-  >('../../src/tools/toolMetadata/index.js');
+    typeof import('../../src/tools/toolMetadata/proxies.js')
+  >('../../src/tools/toolMetadata/proxies.js');
   return {
     ...actual,
     isToolInMetadata: vi.fn(),
@@ -74,9 +73,9 @@ vi.mock('../../src/session.js', () => ({
 
 import { ALL_TOOLS } from '../../src/tools/toolConfig.js';
 import { getServerConfig } from '../../src/serverConfig.js';
-import { isToolInMetadata } from '../../src/tools/toolMetadata/index.js';
+import { isToolInMetadata } from '../../src/tools/toolMetadata/proxies.js';
 import { logSessionError } from '../../src/session.js';
-import { TOOL_METADATA_ERRORS } from '../../src/errorCodes.js';
+import { TOOL_METADATA_ERRORS } from '../../src/errors/domainErrors.js';
 
 const mockGetServerConfig = vi.mocked(getServerConfig);
 const mockIsToolAvailableSync = vi.mocked(isToolInMetadata);

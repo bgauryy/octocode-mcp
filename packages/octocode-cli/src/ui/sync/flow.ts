@@ -1,9 +1,3 @@
-/**
- * MCP Sync UI Flow
- *
- * Interactive flow for syncing MCP configurations across clients.
- */
-
 import { c, bold, dim } from '../../utils/colors.js';
 import { loadInquirer, select, Separator, input } from '../../utils/prompts.js';
 import { Spinner } from '../../utils/spinner.js';
@@ -53,15 +47,11 @@ async function pressEnterToContinue(): Promise<void> {
   });
 }
 
-/**
- * Prompt user to resolve a single conflict
- */
 async function resolveConflict(
   diff: MCPDiff
 ): Promise<ConflictResolution | null> {
   printConflictDetails(diff, true);
 
-  // Build choices from variants
   const choices: Array<{
     name: string;
     value: { client: MCPClient; server: MCPServer } | 'skip' | 'back';
@@ -115,9 +105,6 @@ async function resolveConflict(
   };
 }
 
-/**
- * Main sync flow
- */
 export async function runSyncFlow(): Promise<void> {
   await loadInquirer();
 
@@ -143,7 +130,6 @@ export async function runSyncFlow(): Promise<void> {
           'Scanning client configurations...'
         ).start();
 
-        // Small delay for UX
         await new Promise(resolve => setTimeout(resolve, 300));
 
         const snapshots = readAllClientConfigs();
@@ -216,7 +202,7 @@ export async function runSyncFlow(): Promise<void> {
           console.log();
           printAllDiffs(analysis);
           await pressEnterToContinue();
-          // Stay in showStatus
+
           break;
         }
 
@@ -224,11 +210,10 @@ export async function runSyncFlow(): Promise<void> {
           console.log();
           printClientStatus(analysis.clients);
           await pressEnterToContinue();
-          // Stay in showStatus
+
           break;
         }
 
-        // Continue to next step
         if (analysis.conflicts.length > 0) {
           currentStep = 'resolveConflicts';
         } else {
@@ -261,7 +246,6 @@ export async function runSyncFlow(): Promise<void> {
           const resolution = await resolveConflict(conflicts[i]);
 
           if (resolution === null) {
-            // User chose skip or back - skip this MCP
             console.log(
               ` ${c('yellow', '⏭')} Skipping ${bold(conflicts[i].mcpId)}`
             );
@@ -357,7 +341,6 @@ export async function runSyncFlow(): Promise<void> {
 
         const spinner = new Spinner('Syncing configurations...').start();
 
-        // Small delay for UX
         await new Promise(resolve => setTimeout(resolve, 500));
 
         const result = executeSyncToClients(
@@ -382,14 +365,12 @@ export async function runSyncFlow(): Promise<void> {
         currentStep = 'done';
         break;
       }
+      default:
+        break;
     }
   }
 }
 
-/**
- * Quick sync - non-interactive, used by CLI
- * Returns true if sync was performed, false if not needed or error
- */
 export async function quickSync(options: {
   force?: boolean;
   dryRun?: boolean;
@@ -417,7 +398,6 @@ export async function quickSync(options: {
     };
   }
 
-  // Check for conflicts
   if (analysis.conflicts.length > 0 && !options.force) {
     return {
       success: false,
@@ -426,7 +406,6 @@ export async function quickSync(options: {
     };
   }
 
-  // Build payload - for conflicts with force, use first variant
   const resolutions: ConflictResolution[] = [];
   if (options.force) {
     for (const diff of analysis.conflicts) {

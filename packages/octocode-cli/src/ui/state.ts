@@ -1,10 +1,3 @@
-/**
- * Centralized Application State
- *
- * Single source of truth for all UI state.
- * All UI components should import state from this module.
- */
-
 import {
   getAllClientInstallStatus,
   type ClientInstallStatus,
@@ -16,13 +9,6 @@ import { getAuthStatusAsync } from '../features/github-oauth.js';
 import type { OctocodeAuthStatus } from '../types/index.js';
 import path from 'node:path';
 
-// ============================================================================
-// State Types
-// ============================================================================
-
-/**
- * Skill installation info
- */
 interface SkillInfo {
   name: string;
   installed: boolean;
@@ -30,40 +16,31 @@ interface SkillInfo {
   destPath: string;
 }
 
-/**
- * Skills state - counts bundled and all installed skills
- */
 export interface SkillsState {
   sourceExists: boolean;
   destDir: string;
   skills: SkillInfo[];
-  /** Count of bundled skills that are installed */
+
   installedCount: number;
-  /** Count of bundled skills not yet installed */
+
   notInstalledCount: number;
-  /** Total count of ALL installed skills (bundled + marketplace) */
+
   totalInstalledCount: number;
   allInstalled: boolean;
   hasSkills: boolean;
 }
 
-/**
- * Octocode MCP installation state
- */
 interface OctocodeState {
   installedClients: ClientInstallStatus[];
   availableClients: ClientInstallStatus[];
-  /** Total count of clients where Octocode is installed */
+
   installedCount: number;
-  /** Total count of clients available for installation */
+
   availableCount: number;
   isInstalled: boolean;
   hasMoreToInstall: boolean;
 }
 
-/**
- * Unified application state for all UI views
- */
 export interface AppState {
   octocode: OctocodeState;
   skills: SkillsState;
@@ -71,13 +48,6 @@ export interface AppState {
   githubAuth: OctocodeAuthStatus;
 }
 
-// ============================================================================
-// State Getters
-// ============================================================================
-
-/**
- * Get Octocode MCP installation state
- */
 function getOctocodeState(): OctocodeState {
   const allClients = getAllClientInstallStatus();
   const installedClients = allClients.filter(c => c.octocodeInstalled);
@@ -95,14 +65,10 @@ function getOctocodeState(): OctocodeState {
   };
 }
 
-/**
- * Get Skills state - includes counts for both bundled and all installed
- */
 function getSkillsState(): SkillsState {
   const srcDir = getSkillsSourceDir();
   const destDir = getSkillsDestDir();
 
-  // Count ALL installed skills (bundled + marketplace) from destination directory
   const totalInstalledCount = dirExists(destDir)
     ? listSubdirectories(destDir).filter(name => !name.startsWith('.')).length
     : 0;
@@ -146,10 +112,6 @@ function getSkillsState(): SkillsState {
   };
 }
 
-/**
- * Get unified application state
- * Uses async auth check to properly check credential storage
- */
 export async function getAppState(): Promise<AppState> {
   return {
     octocode: getOctocodeState(),

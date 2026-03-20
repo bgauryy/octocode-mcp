@@ -81,14 +81,37 @@ export function getCloneDir(
   return join(getReposBaseDir(octocodeDir), owner, repo, dirName);
 }
 
-/**
- * Read cache metadata. Returns null if absent or corrupt.
- */
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
+}
+
+function parseCacheMeta(raw: unknown): CloneCacheMeta | null {
+  if (!isRecord(raw)) return null;
+  if (typeof raw.clonedAt !== 'string') return null;
+  if (typeof raw.expiresAt !== 'string') return null;
+  if (typeof raw.owner !== 'string') return null;
+  if (typeof raw.repo !== 'string') return null;
+  if (typeof raw.branch !== 'string') return null;
+  if (raw.source !== 'clone' && raw.source !== 'directoryFetch') return null;
+  const meta: CloneCacheMeta = {
+    clonedAt: raw.clonedAt,
+    expiresAt: raw.expiresAt,
+    owner: raw.owner,
+    repo: raw.repo,
+    branch: raw.branch,
+    source: raw.source,
+  };
+  if (typeof raw.sparse_path === 'string') meta.sparse_path = raw.sparse_path;
+  if (typeof raw.sizeBytes === 'number') meta.sizeBytes = raw.sizeBytes;
+  return meta;
+}
+
+/** Read cache metadata. Returns null if absent, corrupt, or missing required fields. */
 export function readCacheMeta(cloneDir: string): CloneCacheMeta | null {
   const metaPath = join(cloneDir, META_FILE_NAME);
   if (!existsSync(metaPath)) return null;
   try {
-    return JSON.parse(readFileSync(metaPath, 'utf-8')) as CloneCacheMeta;
+    return parseCacheMeta(JSON.parse(readFileSync(metaPath, 'utf-8')));
   } catch {
     return null;
   }
@@ -106,7 +129,7 @@ export function writeCacheMeta(cloneDir: string, meta: CloneCacheMeta): void {
       'utf-8'
     );
   } catch {
-    /* no-op */
+    // Persisting meta is best-effort; clone remains usable without the sidecar file.
   }
 }
 
@@ -178,8 +201,8 @@ export function createCacheMeta(
   owner: string,
   repo: string,
   branch: string,
+  source: CacheSource,
   sparsePath?: string,
-  source?: CacheSource,
   sizeBytes?: number
 ): CloneCacheMeta {
   const now = new Date();
@@ -189,8 +212,8 @@ export function createCacheMeta(
     owner,
     repo,
     branch,
+    source,
     ...(sparsePath ? { sparse_path: sparsePath } : {}),
-    ...(source ? { source } : {}),
     ...(sizeBytes != null ? { sizeBytes } : {}),
   };
 }
@@ -223,165 +246,160 @@ export function removeCloneDir(cloneDir: string): void {
       rmSync(cloneDir, { recursive: true, force: true });
     }
   } catch {
-    /* no-op */
+    // Best-effort removal before re-clone; a leftover dir may still be overwritten or reported later.
   }
 }
 
+function isDir(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function listDir(path: string): string[] {
+  try {
+    return readdirSync(path);
+  } catch {
+    return [];
+  }
+}
+
+function* walkCloneDirs(reposBase: string): Generator<string> {
+  for (const ownerName of listDir(reposBase)) {
+    const ownerDir = join(reposBase, ownerName);
+    if (!isDir(ownerDir)) continue;
+    for (const repoName of listDir(ownerDir)) {
+      const repoDir = join(ownerDir, repoName);
+      if (!isDir(repoDir)) continue;
+      for (const branchName of listDir(repoDir)) {
+        const branchDir = join(repoDir, branchName);
+        if (isDir(branchDir)) yield branchDir;
+      }
+    }
+  }
+}
+
+function cleanupEmptyDirectories(reposBase: string): void {
+  for (const ownerName of [...listDir(reposBase)]) {
+    const ownerDir = join(reposBase, ownerName);
+    if (!isDir(ownerDir)) continue;
+
+    for (const repoName of [...listDir(ownerDir)]) {
+      const repoDir = join(ownerDir, repoName);
+      if (!isDir(repoDir)) continue;
+      if (listDir(repoDir).length === 0) {
+        try {
+          rmSync(repoDir, { recursive: true, force: true });
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
+
+    if (listDir(ownerDir).length === 0) {
+      try {
+        rmSync(ownerDir, { recursive: true, force: true });
+      } catch {
+        /* best-effort */
+      }
+    }
+  }
+}
+
+function evictExpiredEntries(reposBase: string): number {
+  let evicted = 0;
+  for (const branchDir of walkCloneDirs(reposBase)) {
+    try {
+      const meta = readCacheMeta(branchDir);
+      if (!meta || !isCacheValid(meta)) {
+        rmSync(branchDir, { recursive: true, force: true });
+        evicted++;
+      }
+    } catch {
+      /* skip single entry */
+    }
+  }
+  return evicted;
+}
+
+interface LiveCacheEntry {
+  branchDir: string;
+  clonedAtMs: number;
+  sizeBytes: number;
+}
+
+function collectLiveEntries(reposBase: string): LiveCacheEntry[] {
+  const entries: LiveCacheEntry[] = [];
+  for (const branchDir of walkCloneDirs(reposBase)) {
+    const meta = readCacheMeta(branchDir);
+    if (!meta) continue;
+    const clonedAtMs = Number.isNaN(Date.parse(meta.clonedAt))
+      ? 0
+      : Date.parse(meta.clonedAt);
+    entries.push({
+      branchDir,
+      clonedAtMs,
+      sizeBytes: meta.sizeBytes ?? getDirectorySizeBytes(branchDir),
+    });
+  }
+  return entries;
+}
+
+function evictByCapacity(
+  entries: LiveCacheEntry[],
+  maxSizeBytes: number,
+  maxCloneCount: number
+): number {
+  let totalSize = entries.reduce((sum, e) => sum + e.sizeBytes, 0);
+  let totalCount = entries.length;
+  if (totalSize <= maxSizeBytes && totalCount <= maxCloneCount) return 0;
+
+  entries.sort((a, b) => a.clonedAtMs - b.clonedAtMs);
+  let evicted = 0;
+  for (const entry of entries) {
+    if (totalSize <= maxSizeBytes && totalCount <= maxCloneCount) break;
+    try {
+      rmSync(entry.branchDir, { recursive: true, force: true });
+      evicted++;
+      totalSize -= entry.sizeBytes;
+      totalCount -= 1;
+    } catch {
+      /* best-effort */
+    }
+  }
+  return evicted;
+}
+
 /**
- * Scan all cached clone directories and remove any whose TTL has expired.
- *
- * Layout: {reposBase}/{owner}/{repo}/{branchDir}/
- * Each branchDir should contain a META_FILE_NAME with an `expiresAt` field.
+ * Scan all cached clone directories and remove any whose TTL has expired,
+ * then enforce capacity limits (max size, max count) via LRU eviction.
  *
  * Non-throwing: best-effort cleanup. Failures for individual entries
  * are silently skipped so one bad directory doesn't block the rest.
- *
- * Call this on server startup or before new clones to reclaim disk space.
  */
 export function evictExpiredClones(octocodeDir: string): number {
   const reposBase = getReposBaseDir(octocodeDir);
   if (!existsSync(reposBase)) return 0;
 
   let evicted = 0;
-
-  /** Helper: check if a path is a directory (non-throwing). */
-  function isDir(path: string): boolean {
-    try {
-      return statSync(path).isDirectory();
-    } catch {
-      return false;
-    }
-  }
-
-  /** Helper: list directory entries as strings (non-throwing). */
-  function listDir(path: string): string[] {
-    try {
-      return readdirSync(path);
-    } catch {
-      return [];
-    }
-  }
-
-  function cleanupEmptyDirectories(): void {
-    for (const ownerName of [...listDir(reposBase)]) {
-      const ownerDir = join(reposBase, ownerName);
-      if (!isDir(ownerDir)) continue;
-
-      for (const repoName of [...listDir(ownerDir)]) {
-        const repoDir = join(ownerDir, repoName);
-        if (!isDir(repoDir)) continue;
-
-        if (listDir(repoDir).length === 0) {
-          try {
-            rmSync(repoDir, { recursive: true, force: true });
-          } catch {
-            /* no-op */
-          }
-        }
-      }
-
-      if (listDir(ownerDir).length === 0) {
-        try {
-          rmSync(ownerDir, { recursive: true, force: true });
-        } catch {
-          /* no-op */
-        }
-      }
-    }
-  }
-
   try {
-    for (const ownerName of listDir(reposBase)) {
-      const ownerDir = join(reposBase, ownerName);
-      if (!isDir(ownerDir)) continue;
-
-      for (const repoName of listDir(ownerDir)) {
-        const repoDir = join(ownerDir, repoName);
-        if (!isDir(repoDir)) continue;
-
-        for (const branchName of listDir(repoDir)) {
-          const branchDir = join(repoDir, branchName);
-          if (!isDir(branchDir)) continue;
-
-          try {
-            const meta = readCacheMeta(branchDir);
-            if (!meta || !isCacheValid(meta)) {
-              rmSync(branchDir, { recursive: true, force: true });
-              evicted++;
-            }
-          } catch {
-            /* no-op */
-          }
-        }
-      }
-    }
+    evicted += evictExpiredEntries(reposBase);
   } catch {
     return evicted;
   }
 
-  cleanupEmptyDirectories();
+  cleanupEmptyDirectories(reposBase);
 
-  interface LiveCacheEntry {
-    branchDir: string;
-    clonedAtMs: number;
-    sizeBytes: number;
-  }
+  const lruEvicted = evictByCapacity(
+    collectLiveEntries(reposBase),
+    getMaxCacheSizeBytes(),
+    getMaxCloneCount()
+  );
+  evicted += lruEvicted;
 
-  const entries: LiveCacheEntry[] = [];
-
-  for (const ownerName of listDir(reposBase)) {
-    const ownerDir = join(reposBase, ownerName);
-    if (!isDir(ownerDir)) continue;
-
-    for (const repoName of listDir(ownerDir)) {
-      const repoDir = join(ownerDir, repoName);
-      if (!isDir(repoDir)) continue;
-
-      for (const branchName of listDir(repoDir)) {
-        const branchDir = join(repoDir, branchName);
-        if (!isDir(branchDir)) continue;
-
-        const meta = readCacheMeta(branchDir);
-        if (!meta) continue;
-
-        const clonedAtMs = Number.isNaN(Date.parse(meta.clonedAt))
-          ? 0
-          : Date.parse(meta.clonedAt);
-        entries.push({
-          branchDir,
-          clonedAtMs,
-          sizeBytes: meta.sizeBytes ?? getDirectorySizeBytes(branchDir),
-        });
-      }
-    }
-  }
-
-  const maxSizeBytes = getMaxCacheSizeBytes();
-  const maxCloneCount = getMaxCloneCount();
-
-  let totalSize = entries.reduce((sum, entry) => sum + entry.sizeBytes, 0);
-  let totalCount = entries.length;
-
-  if (totalSize > maxSizeBytes || totalCount > maxCloneCount) {
-    entries.sort((a, b) => a.clonedAtMs - b.clonedAtMs);
-
-    for (const entry of entries) {
-      if (totalSize <= maxSizeBytes && totalCount <= maxCloneCount) {
-        break;
-      }
-
-      try {
-        rmSync(entry.branchDir, { recursive: true, force: true });
-        evicted++;
-        totalSize -= entry.sizeBytes;
-        totalCount -= 1;
-      } catch {
-        /* no-op */
-      }
-    }
-
-    cleanupEmptyDirectories();
-  }
+  if (lruEvicted > 0) cleanupEmptyDirectories(reposBase);
 
   return evicted;
 }

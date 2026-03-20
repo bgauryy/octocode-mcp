@@ -7,9 +7,11 @@ import { describe, it, expect } from 'vitest';
 import {
   applyPagination,
   createPaginationInfo,
+} from '../../src/utils/pagination/core.js';
+import {
   generatePaginationHints,
   generateGitHubPaginationHints,
-} from '../../src/utils/pagination/index.js';
+} from '../../src/utils/pagination/hints.js';
 
 describe('UTF-8 Pagination - Byte/Character Separation', () => {
   // Test content with various UTF-8 characters

@@ -1,7 +1,3 @@
-/**
- * Node.js Environment Health Checks
- */
-
 import { execSync, exec } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -18,14 +14,10 @@ export interface NodeEnvironmentStatus {
   octocodePackageVersion: string | null;
 }
 
-// Latency thresholds in milliseconds
 const REGISTRY_OK_THRESHOLD = 1000;
 const REGISTRY_SLOW_THRESHOLD = 3000;
-const CHECK_TIMEOUT = 4000; // 4 second timeout for all network checks
+const CHECK_TIMEOUT = 4000;
 
-/**
- * Check if Node.js is installed and get version
- */
 export function checkNodeInPath(): {
   installed: boolean;
   version: string | null;
@@ -42,9 +34,6 @@ export function checkNodeInPath(): {
   }
 }
 
-/**
- * Check if npm is installed and get version
- */
 export function checkNpmInPath(): {
   installed: boolean;
   version: string | null;
@@ -61,9 +50,6 @@ export function checkNpmInPath(): {
   }
 }
 
-/**
- * Check npm registry connectivity and latency
- */
 export async function checkNpmRegistry(): Promise<{
   status: 'ok' | 'slow' | 'failed';
   latency: number | null;
@@ -103,11 +89,6 @@ export async function checkNpmRegistry(): Promise<{
   }
 }
 
-/**
- * Check if octocode-mcp package is available in npm registry (async - non-blocking)
- * Use this version for UI flows to allow spinner animations
- * Times out after 4 seconds to prevent menu from getting stuck
- */
 export async function checkOctocodePackageAsync(): Promise<{
   available: boolean;
   version: string | null;
@@ -122,9 +103,6 @@ export async function checkOctocodePackageAsync(): Promise<{
   }
 }
 
-/**
- * Run all Node.js environment checks
- */
 export async function checkNodeEnvironment(): Promise<NodeEnvironmentStatus> {
   const nodeCheck = checkNodeInPath();
   const npmCheck = checkNpmInPath();

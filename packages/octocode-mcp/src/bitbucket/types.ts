@@ -42,17 +42,17 @@ export interface BitbucketPaginatedResponse<T> {
 // SEARCH TYPES
 // ============================================================================
 
-export interface BitbucketCodeSearchSegment {
+interface BitbucketCodeSearchSegment {
   text: string;
   match?: boolean;
 }
 
-export interface BitbucketCodeSearchLine {
+interface BitbucketCodeSearchLine {
   line: number;
   segments: BitbucketCodeSearchSegment[];
 }
 
-export interface BitbucketCodeSearchContentMatch {
+interface BitbucketCodeSearchContentMatch {
   lines: BitbucketCodeSearchLine[];
 }
 
@@ -110,13 +110,6 @@ export interface BitbucketRepository {
 // ============================================================================
 // FILE CONTENT TYPES
 // ============================================================================
-
-export interface BitbucketFileContentQuery {
-  workspace: string;
-  repoSlug: string;
-  commit: string;
-  path: string;
-}
 
 export interface BitbucketFileContentResult {
   content: string;

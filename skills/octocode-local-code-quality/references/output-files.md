@@ -133,40 +133,9 @@ If `architecture.json` names a hotspot, use `file-inventory.json` to explain why
 
 ## Reading `ast-trees.txt`
 
-Compact indented text — one file per `## package — path` header, each node is `Kind[startLine:endLine]`, nesting depth = indentation level. Truncated subtrees end with `...`.
+For format, navigation commands, and usage guide, see [ast-tree-search.md](./ast-tree-search.md).
 
-```
-## my-package — packages/my-package/src/services/storage.ts
-SourceFile[18:426]
-  ImportDeclaration[18:23]
-  FunctionDeclaration[50:80]
-    Block[51:79]
-      IfStatement[52:55] ...
-      ReturnStatement[78]
-```
-
-### Navigation Commands
-
-Use the dedicated CLI against the exact scan artifact you are reading. Replace `<CURRENT_SCAN>` with the timestamped scan directory from `summary.md`.
-
-- Find functions: `node scripts/ast/tree-search.js -i <CURRENT_SCAN>/ast-trees.txt -k function_declaration --limit 25`
-- Find classes: `node scripts/ast/tree-search.js -i <CURRENT_SCAN>/ast-trees.txt -k class_declaration --limit 25`
-- Find control flow: `node scripts/ast/tree-search.js -i <CURRENT_SCAN>/ast-trees.txt -p 'IfStatement|SwitchStatement|ForStatement|WhileStatement' --limit 25`
-- Narrow to one file: `node scripts/ast/tree-search.js -i <CURRENT_SCAN>/ast-trees.txt --file "src/index" -k function_declaration --limit 10`
-- Raw text fallback: `rg 'FunctionDeclaration|IfStatement' <CURRENT_SCAN>/ast-trees.txt`
-
-See [ast-tree-search.md](./ast-tree-search.md) for the full CLI surface, including `--section`, `--context`, and JSON output.
-
-### CLI Control
-
-- On by default (`--emit-tree`). Suppress with `--no-tree`.
-- Tree depth controlled by `--tree-depth N` (default: 4).
-
-Use `ast-trees.txt` when you need to design or validate structural rules:
-
-- draft new architecture-smell searches for `ast-search`
-- confirm whether a code smell is a repeated shape or a one-off implementation
-- compare two suspicious files without reading full source first
+On by default (`--emit-tree`). Suppress with `--no-tree`. Tree depth: `--tree-depth N` (default: 4).
 
 ---
 

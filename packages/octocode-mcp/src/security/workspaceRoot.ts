@@ -43,7 +43,7 @@ export function resolveWorkspaceRoot(explicit?: string): string {
       }
     }
   } catch {
-    // Config not loaded yet, fall through
+    // Config not available yet; fall through to cwd default below.
   }
 
   return process.cwd();

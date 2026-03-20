@@ -1,7 +1,3 @@
-/**
- * GitHub CLI Authentication
- */
-
 import type { GitHubAuthStatus } from '../types/index.js';
 import {
   runCommand,
@@ -9,23 +5,13 @@ import {
   runInteractiveCommand,
 } from '../utils/shell.js';
 
-/**
- * GitHub CLI download URL
- */
 export const GH_CLI_URL = 'https://cli.github.com/';
 
-/**
- * Check if GitHub CLI is installed
- */
 export function isGitHubCLIInstalled(): boolean {
   return commandExists('gh');
 }
 
-/**
- * Check GitHub CLI authentication status
- */
 export function checkGitHubAuth(): GitHubAuthStatus {
-  // First check if gh is installed
   if (!isGitHubCLIInstalled()) {
     return {
       installed: false,
@@ -34,12 +20,9 @@ export function checkGitHubAuth(): GitHubAuthStatus {
     };
   }
 
-  // Run gh auth status
   const result = runCommand('gh', ['auth', 'status']);
 
   if (result.success) {
-    // Parse the output to get username
-    // Output format: "Logged in to github.com account USERNAME (keyring)"
     const usernameMatch = result.stdout.match(
       /Logged in to github\.com.*account\s+(\S+)/i
     );
@@ -52,7 +35,6 @@ export function checkGitHubAuth(): GitHubAuthStatus {
     };
   }
 
-  // Not authenticated
   return {
     installed: true,
     authenticated: false,
@@ -60,34 +42,26 @@ export function checkGitHubAuth(): GitHubAuthStatus {
   };
 }
 
-/**
- * Get GitHub CLI version
- */
 export function getGitHubCLIVersion(): string | null {
   const result = runCommand('gh', ['--version']);
   if (result.success) {
-    // Output: "gh version X.Y.Z (YYYY-MM-DD)"
     const match = result.stdout.match(/gh version ([\d.]+)/);
     return match ? match[1] : result.stdout.split('\n')[0];
   }
   return null;
 }
 
-/**
- * Get auth login command
- */
 export function getAuthLoginCommand(): string {
   return 'gh auth login';
 }
 
 interface GitHubAuthLoginOptions {
-  /** Use web browser flow directly */
   web?: boolean;
-  /** Hostname for GitHub Enterprise */
+
   hostname?: string;
-  /** Git protocol to configure (ssh or https) */
+
   gitProtocol?: 'ssh' | 'https';
-  /** Skip SSH key generation prompt */
+
   skipSshKey?: boolean;
 }
 
@@ -96,10 +70,6 @@ interface GitHubAuthResult {
   exitCode: number | null;
 }
 
-/**
- * Run `gh auth login` interactively
- * Opens browser for OAuth or prompts for token
- */
 export function runGitHubAuthLogin(
   options?: GitHubAuthLoginOptions
 ): GitHubAuthResult {
@@ -121,10 +91,6 @@ export function runGitHubAuthLogin(
   return runInteractiveCommand('gh', args);
 }
 
-/**
- * Run `gh auth logout` interactively
- * Logs out from GitHub CLI
- */
 export function runGitHubAuthLogout(hostname?: string): GitHubAuthResult {
   const args = ['auth', 'logout'];
 
@@ -135,10 +101,6 @@ export function runGitHubAuthLogout(hostname?: string): GitHubAuthResult {
   return runInteractiveCommand('gh', args);
 }
 
-/**
- * Get GitHub token from gh CLI
- * Runs `gh auth token` and returns the token or null if not authenticated
- */
 export function getGitHubCLIToken(hostname?: string): string | null {
   if (!isGitHubCLIInstalled()) {
     return null;

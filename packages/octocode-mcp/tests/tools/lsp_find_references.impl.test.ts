@@ -25,8 +25,7 @@ vi.mock('util', () => ({
   promisify: (fn: Function) => fn,
 }));
 
-// Mock LSP module - the mock implementation must be self-contained
-vi.mock('../../src/lsp/index.js', () => {
+vi.mock('../../src/lsp/resolver.js', () => {
   class MockSymbolResolutionError extends Error {
     searchRadius: number;
     constructor(message: string, searchRadius: number) {
@@ -49,18 +48,22 @@ vi.mock('../../src/lsp/index.js', () => {
       }),
     })),
     SymbolResolutionError: MockSymbolResolutionError,
-    createClient: vi.fn().mockResolvedValue(null),
-    isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
   };
 });
+
+vi.mock('../../src/lsp/manager.js', () => ({
+  createClient: vi.fn().mockResolvedValue(null),
+  isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
+}));
 
 // Import mocked modules to access them
 import * as fs from 'fs/promises';
 import * as childProcess from 'child_process';
-import * as lspModule from '../../src/lsp/index.js';
+import * as resolverModule from '../../src/lsp/resolver.js';
+import * as managerModule from '../../src/lsp/manager.js';
 
 // Import the module under test after mocks are set up
-import { registerLSPFindReferencesTool } from '../../src/tools/lsp_find_references/index.js';
+import { registerLSPFindReferencesTool } from '../../src/tools/lsp_find_references/register.js';
 
 describe('LSP Find References Implementation Tests', () => {
   const sampleTypeScriptContent = `
@@ -88,12 +91,12 @@ export function anotherFunction() {
     vi.mocked(fs.readFile).mockResolvedValue(sampleTypeScriptContent);
 
     // Default: LSP not available
-    vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
-    vi.mocked(lspModule.createClient).mockResolvedValue(null);
+    vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(false);
+    vi.mocked(managerModule.createClient).mockResolvedValue(null);
 
     // Restore SymbolResolver mock (reset by vi.resetAllMocks in afterEach)
     // Must use regular function (not arrow) because it's called with `new`
-    vi.mocked(lspModule.SymbolResolver).mockImplementation(function () {
+    vi.mocked(resolverModule.SymbolResolver).mockImplementation(function () {
       return {
         resolvePositionFromContent: vi.fn().mockReturnValue({
           position: { line: 3, character: 16 },
@@ -370,8 +373,12 @@ export function anotherFunction() {
         stop: vi.fn(),
         findReferences: vi.fn().mockResolvedValue([]),
       };
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
-      vi.mocked(lspModule.createClient).mockResolvedValue(mockClient as any);
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        true
+      );
+      vi.mocked(managerModule.createClient).mockResolvedValue(
+        mockClient as any
+      );
 
       const handler = createHandler();
       const result = await handler({
@@ -394,8 +401,10 @@ export function anotherFunction() {
       const testPath = `${process.cwd()}/src/test.ts`;
       const otherPath = `${process.cwd()}/src/other.ts`;
 
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(true);
-      vi.mocked(lspModule.createClient).mockResolvedValue({
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        true
+      );
+      vi.mocked(managerModule.createClient).mockResolvedValue({
         stop: vi.fn(),
         findReferences: vi.fn().mockResolvedValue([
           {
@@ -469,7 +478,9 @@ export function anotherFunction() {
       const testPath = `${process.cwd()}/src/test.ts`;
       const otherPath = `${process.cwd()}/src/other.ts`;
 
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        false
+      );
 
       vi.mocked(childProcess.exec).mockResolvedValue({
         stdout: [
@@ -533,7 +544,9 @@ export function anotherFunction() {
       const testPath = `${process.cwd()}/src/test.ts`;
       const otherPath = `${process.cwd()}/src/other.ts`;
 
-      vi.mocked(lspModule.isLanguageServerAvailable).mockResolvedValue(false);
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        false
+      );
 
       vi.mocked(childProcess.exec).mockImplementation((cmd: string) => {
         if (cmd.startsWith('rg ')) {

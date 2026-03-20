@@ -12,8 +12,7 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
 }));
 
-// Mock the LSP module
-vi.mock('../../src/lsp/index.js', () => ({
+vi.mock('../../src/lsp/resolver.js', () => ({
   SymbolResolver: vi.fn().mockImplementation(() => ({
     resolvePositionFromContent: vi.fn().mockReturnValue({
       position: { line: 10, character: 5 },
@@ -32,6 +31,9 @@ vi.mock('../../src/lsp/index.js', () => ({
       this.searchRadius = searchRadius;
     }
   },
+}));
+
+vi.mock('../../src/lsp/manager.js', () => ({
   createClient: vi.fn().mockResolvedValue(null),
   isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
 }));

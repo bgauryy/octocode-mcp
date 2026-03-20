@@ -56,7 +56,6 @@ export function byteToCharIndex(content: string, byteOffset: number): number {
   const buffer = Buffer.from(content, 'utf8');
   // Clamp to valid range
   const clampedOffset = Math.min(byteOffset, buffer.length);
-  // Get the substring up to the byte offset and return its length
   const substring = buffer.slice(0, clampedOffset).toString('utf8');
   return substring.length;
 }

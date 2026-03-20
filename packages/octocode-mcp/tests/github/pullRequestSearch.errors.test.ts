@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchGitHubPullRequestByNumberAPI } from '../../src/github/pullRequestSearch.js';
+import { fetchGitHubPullRequestByNumberAPI } from '../../src/github/prByNumber.js';
 import { getOctokit } from '../../src/github/client.js';
 import { clearAllCache } from '../../src/utils/http/cache.js';
 

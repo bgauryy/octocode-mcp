@@ -26,7 +26,7 @@ vi.mock('../../src/serverConfig.js', () => ({
 }));
 
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure/github_view_repo_structure.js';
-import { TOOL_NAMES } from '../../src/tools/toolMetadata/index.js';
+import { TOOL_NAMES } from '../../src/tools/toolMetadata/proxies.js';
 
 describe('GitHub View Repository Structure Tool', () => {
   let mockServer: MockMcpServer;

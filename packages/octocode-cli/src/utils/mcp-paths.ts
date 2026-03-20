@@ -1,16 +1,3 @@
-/**
- * MCP Config Path Resolution
- *
- * Supports multiple MCP clients with cross-platform paths:
- * - Cursor IDE
- * - Claude Desktop
- * - Claude Code CLI
- * - VS Code Cline extension
- * - VS Code Roo-Cline extension
- * - Windsurf IDE
- * - Custom paths
- */
-
 import path from 'node:path';
 import type {
   MCPClient,
@@ -20,13 +7,6 @@ import type {
 import { isWindows, isMac, HOME, getAppDataPath } from './platform.js';
 import { dirExists, fileExists } from './fs.js';
 
-// ============================================================================
-// Platform-specific base paths
-// ============================================================================
-
-/**
- * Get the base application support directory for the current platform
- */
 function getAppSupportDir(): string {
   if (isWindows) {
     return getAppDataPath();
@@ -34,13 +14,10 @@ function getAppSupportDir(): string {
   if (isMac) {
     return path.join(HOME, 'Library', 'Application Support');
   }
-  // Linux
+
   return process.env.XDG_CONFIG_HOME || path.join(HOME, '.config');
 }
 
-/**
- * Get the VS Code extensions globalStorage path
- */
 function getVSCodeGlobalStoragePath(): string {
   const appSupport = getAppSupportDir();
   if (isWindows) {
@@ -49,17 +26,10 @@ function getVSCodeGlobalStoragePath(): string {
   if (isMac) {
     return path.join(appSupport, 'Code', 'User', 'globalStorage');
   }
-  // Linux
+
   return path.join(appSupport, 'Code', 'User', 'globalStorage');
 }
 
-// ============================================================================
-// MCP Client Metadata
-// ============================================================================
-
-/**
- * Comprehensive MCP client information
- */
 export const MCP_CLIENTS: Record<MCPClient, MCPClientInfo> = {
   cursor: {
     id: 'cursor',
@@ -152,13 +122,6 @@ export const MCP_CLIENTS: Record<MCPClient, MCPClientInfo> = {
   },
 };
 
-// ============================================================================
-// MCP Config Path Resolution
-// ============================================================================
-
-/**
- * Get MCP config file path for a given client
- */
 export function getMCPConfigPath(
   client: MCPClient,
   customPath?: string
@@ -184,7 +147,7 @@ export function getMCPConfigPath(
       if (isMac) {
         return path.join(appSupport, 'Claude', 'claude_desktop_config.json');
       }
-      // Linux
+
       return path.join(appSupport, 'claude', 'claude_desktop_config.json');
 
     case 'claude-code':
@@ -216,33 +179,30 @@ export function getMCPConfigPath(
       if (isMac) {
         return path.join(appSupport, 'Trae', 'mcp.json');
       }
-      // Linux
+
       return path.join(appSupport, 'Trae', 'mcp.json');
 
     case 'antigravity':
       return path.join(HOME, '.gemini', 'antigravity', 'mcp_config.json');
 
     case 'vscode-continue':
-      // Continue uses ~/.continue/config.json
       return path.join(HOME, '.continue', 'config.json');
 
     case 'zed':
-      // Zed uses ~/.config/zed/settings.json on macOS/Linux
       if (isWindows) {
         return path.join(getAppDataPath(), 'Zed', 'settings.json');
       }
       if (isMac) {
         return path.join(HOME, '.config', 'zed', 'settings.json');
       }
-      // Linux
+
       return path.join(appSupport, 'zed', 'settings.json');
 
     case 'opencode':
-      // Opencode uses XDG Base Directory: ~/.config/opencode/config.json
       if (isWindows) {
         return path.join(getAppDataPath(), 'opencode', 'config.json');
       }
-      // macOS and Linux use XDG_CONFIG_HOME
+
       return path.join(appSupport, 'opencode', 'config.json');
 
     case 'custom':
@@ -253,9 +213,6 @@ export function getMCPConfigPath(
   }
 }
 
-/**
- * Check if an MCP client's config directory exists
- */
 export function clientConfigExists(
   client: MCPClient,
   customPath?: string
@@ -269,9 +226,6 @@ export function clientConfigExists(
   }
 }
 
-/**
- * Check if an MCP config file exists
- */
 export function configFileExists(
   client: MCPClient,
   customPath?: string
@@ -284,17 +238,9 @@ export function configFileExists(
   }
 }
 
-// ============================================================================
-// IDE Detection
-// ============================================================================
-
-/**
- * Detect which MCP client we're running inside based on environment variables
- */
 export function detectCurrentClient(): MCPClient | null {
   const env = process.env;
 
-  // Check Cursor first (most specific)
   if (
     env.CURSOR_AGENT ||
     env.CURSOR_TRACE_ID ||
@@ -304,38 +250,29 @@ export function detectCurrentClient(): MCPClient | null {
     return 'cursor';
   }
 
-  // Check Windsurf
   if (env.WINDSURF_SESSION) {
     return 'windsurf';
   }
 
-  // Check Claude Code
   if (env.CLAUDE_CODE) {
     return 'claude-code';
   }
 
-  // Check Zed
   if (env.ZED_TERM || env.ZED) {
     return 'zed';
   }
 
-  // Check Opencode
   if (env.OPENCODE) {
     return 'opencode';
   }
 
-  // Check VS Code (could be Cline, Roo, or Continue)
   if (env.VSCODE_PID || env.TERM_PROGRAM === 'vscode') {
-    // Default to Cline as it's more common
     return 'vscode-cline';
   }
 
   return null;
 }
 
-/**
- * Detect all available/installed MCP clients
- */
 export function detectAvailableClients(): MCPClient[] {
   const available: MCPClient[] = [];
 
@@ -362,9 +299,6 @@ export function detectAvailableClients(): MCPClient[] {
   return available;
 }
 
-/**
- * Get clients grouped by category
- */
 export function getClientsByCategory(): Record<
   MCPClientCategory,
   MCPClientInfo[]

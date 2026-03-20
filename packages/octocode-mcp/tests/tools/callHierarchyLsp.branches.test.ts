@@ -19,7 +19,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 // Mock LSP client creation
-vi.mock('../../src/lsp/index.js', () => ({
+vi.mock('../../src/lsp/manager.js', () => ({
   createClient: vi.fn(),
 }));
 
@@ -51,7 +51,7 @@ vi.mock('../../src/tools/lsp_call_hierarchy/callHierarchyHelpers.js', () => ({
 }));
 
 // Import mocked modules
-import * as lspModule from '../../src/lsp/index.js';
+import * as lspModule from '../../src/lsp/manager.js';
 
 describe('LSP Call Hierarchy - Branch Coverage Tests', () => {
   const baseQuery: LSPCallHierarchyQuery = {

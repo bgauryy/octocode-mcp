@@ -30,27 +30,8 @@ import type {
   RepoSearchResult as GHRepoSearchResult,
 } from '../../tools/github_search_repos/types.js';
 
-/**
- * Parse a unified projectId into owner and repo.
- * GitHub format: 'owner/repo'
- */
-export function parseGitHubProjectId(projectId?: string): {
-  owner?: string;
-  repo?: string;
-} {
-  if (!projectId) {
-    return { owner: undefined, repo: undefined };
-  }
-
-  const parts = projectId.split('/');
-  if (parts.length !== 2 || !parts[0] || !parts[1]) {
-    throw new Error(
-      `Invalid GitHub projectId format: '${projectId}'. Expected 'owner/repo'.`
-    );
-  }
-
-  return { owner: parts[0], repo: parts[1] };
-}
+import { parseGitHubProjectId } from './utils.js';
+export { parseGitHubProjectId } from './utils.js';
 
 /**
  * Transform GitHub code search result to unified format.

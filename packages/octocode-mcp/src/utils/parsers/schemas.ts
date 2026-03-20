@@ -19,7 +19,7 @@ const RipgrepSubmatchSchema = z.object({
   end: z.number(),
 });
 
-export const RipgrepJsonMatchSchema = z.object({
+const RipgrepJsonMatchSchema = z.object({
   type: z.literal('match'),
   data: z.object({
     path: RipgrepPathSchema,
@@ -30,7 +30,7 @@ export const RipgrepJsonMatchSchema = z.object({
   }),
 });
 
-export const RipgrepJsonContextSchema = z.object({
+const RipgrepJsonContextSchema = z.object({
   type: z.literal('context'),
   data: z.object({
     path: RipgrepPathSchema,
@@ -40,12 +40,12 @@ export const RipgrepJsonContextSchema = z.object({
   }),
 });
 
-export const RipgrepJsonBeginSchema = z.object({
+const RipgrepJsonBeginSchema = z.object({
   type: z.literal('begin'),
   data: z.object({ path: RipgrepPathSchema }),
 });
 
-export const RipgrepJsonEndSchema = z.object({
+const RipgrepJsonEndSchema = z.object({
   type: z.literal('end'),
   data: z.object({
     path: RipgrepPathSchema,
@@ -59,7 +59,7 @@ export const RipgrepJsonEndSchema = z.object({
   }),
 });
 
-export const RipgrepJsonSummarySchema = z.object({
+const RipgrepJsonSummarySchema = z.object({
   type: z.literal('summary'),
   data: z.object({
     elapsed_total: z.object({ human: z.string() }),
@@ -87,10 +87,6 @@ export const RipgrepJsonMessageSchema = z.discriminatedUnion('type', [
   RipgrepJsonSummarySchema,
 ]);
 
-export type ValidatedRipgrepJsonMessage = z.infer<
-  typeof RipgrepJsonMessageSchema
->;
-
 /**
  * Lightweight schema for ripgrep match-only parsing.
  * Used by LSP tools that only care about match entries.
@@ -107,5 +103,3 @@ export const RipgrepMatchOnlySchema = z.object({
       .optional(),
   }),
 });
-
-export type ValidatedRipgrepMatch = z.infer<typeof RipgrepMatchOnlySchema>;

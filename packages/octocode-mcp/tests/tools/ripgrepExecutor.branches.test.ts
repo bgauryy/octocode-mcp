@@ -10,15 +10,15 @@ import {
   estimateDirectoryStats,
 } from '../../src/tools/local_ripgrep/ripgrepExecutor.js';
 import type { RipgrepQuery } from '../../src/tools/local_ripgrep/scheme.js';
-import { safeExec } from '../../src/utils/exec/index.js';
+import { safeExec } from '../../src/utils/exec/safe.js';
 import { validateToolPath } from '../../src/utils/file/toolHelpers.js';
 import { promises as fs } from 'fs';
 import { RESOURCE_LIMITS } from '../../src/utils/core/constants.js';
 import { getGrepFeatureWarnings } from '../../src/commands/GrepCommandBuilder.js';
-import { LOCAL_TOOL_ERROR_CODES } from '../../src/errorCodes.js';
+import { LOCAL_TOOL_ERROR_CODES } from '../../src/errors/localToolErrors.js';
 
 // Mock dependencies
-vi.mock('../../src/utils/exec/index.js', () => ({
+vi.mock('../../src/utils/exec/safe.js', () => ({
   safeExec: vi.fn(),
 }));
 
@@ -35,12 +35,14 @@ vi.mock('../../src/utils/file/toolHelpers.js', () => ({
   })),
 }));
 
-vi.mock('../../src/hints/index.js', () => ({
-  getHints: vi.fn(() => ['Hint 1', 'Hint 2']),
+vi.mock('../../src/hints/dynamic.js', () => ({
   getLargeFileWorkflowHints: vi.fn(() => [
     'Chunking hint 1',
     'Chunking hint 2',
   ]),
+}));
+vi.mock('../../src/hints/index.js', () => ({
+  getHints: vi.fn(() => ['Hint 1', 'Hint 2']),
 }));
 
 vi.mock('fs', () => ({

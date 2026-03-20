@@ -9,7 +9,7 @@
 import { getMetadataDynamicHints } from '../../hints/static.js';
 import type { HintContext, ToolHintGenerators } from '../../types/metadata.js';
 
-export const TOOL_NAME = 'lspCallHierarchy';
+const TOOL_NAME = 'lspCallHierarchy';
 
 export const hints: ToolHintGenerators = {
   hasResults: (ctx: HintContext = {}) => {

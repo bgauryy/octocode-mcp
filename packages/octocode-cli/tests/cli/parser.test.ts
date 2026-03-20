@@ -112,6 +112,25 @@ describe('CLI Parser', () => {
       expect(result.command).toBe('login');
       expect(result.options).toEqual({ 'git-protocol': 'ssh' });
     });
+
+    it('should parse skills install --skill with value', () => {
+      const result = parseArgs([
+        'skills',
+        'install',
+        '--skill',
+        'octocode-plan',
+      ]);
+      expect(result.command).toBe('skills');
+      expect(result.args).toEqual(['install']);
+      expect(result.options).toEqual({ skill: 'octocode-plan' });
+    });
+
+    it('should parse skills install -k with value', () => {
+      const result = parseArgs(['skills', 'install', '-k', 'octocode-roast']);
+      expect(result.command).toBe('skills');
+      expect(result.args).toEqual(['install']);
+      expect(result.options).toEqual({ k: 'octocode-roast' });
+    });
   });
 
   describe('hasHelpFlag', () => {

@@ -261,10 +261,27 @@ describe('github_clone_repo cache', () => {
       expect(readCacheMeta(dir)).toBeNull();
     });
 
+    it('returns null when source field is missing', () => {
+      const dir = join(testBaseDir, 'no-source');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, '.octocode-clone-meta.json'),
+        JSON.stringify({
+          clonedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          owner: 'o',
+          repo: 'r',
+          branch: 'main',
+        }),
+        'utf-8'
+      );
+      expect(readCacheMeta(dir)).toBeNull();
+    });
+
     it('round-trips metadata', () => {
       const dir = join(testBaseDir, 'roundtrip');
       mkdirSync(dir, { recursive: true });
-      const meta = createCacheMeta('fb', 'react', 'main');
+      const meta = createCacheMeta('fb', 'react', 'main', 'clone');
       writeCacheMeta(dir, meta);
       const loaded = readCacheMeta(dir);
       expect(loaded).toEqual(meta);
@@ -273,7 +290,7 @@ describe('github_clone_repo cache', () => {
     it('round-trips metadata with sparse_path', () => {
       const dir = join(testBaseDir, 'sparse-roundtrip');
       mkdirSync(dir, { recursive: true });
-      const meta = createCacheMeta('fb', 'react', 'main', 'src/core');
+      const meta = createCacheMeta('fb', 'react', 'main', 'clone', 'src/core');
       writeCacheMeta(dir, meta);
       const loaded = readCacheMeta(dir);
       expect(loaded?.sparse_path).toBe('src/core');
@@ -282,12 +299,12 @@ describe('github_clone_repo cache', () => {
 
   describe('isCacheValid', () => {
     it('returns true for unexpired cache', () => {
-      const meta = createCacheMeta('fb', 'react', 'main');
+      const meta = createCacheMeta('fb', 'react', 'main', 'clone');
       expect(isCacheValid(meta)).toBe(true);
     });
 
     it('returns false for expired cache', () => {
-      const meta = createCacheMeta('fb', 'react', 'main');
+      const meta = createCacheMeta('fb', 'react', 'main', 'clone');
       meta.expiresAt = new Date(Date.now() - 1000).toISOString();
       expect(isCacheValid(meta)).toBe(false);
     });
@@ -297,7 +314,7 @@ describe('github_clone_repo cache', () => {
     it('returns hit=true when meta valid and dir exists', () => {
       const dir = join(testBaseDir, 'cache-hit');
       mkdirSync(dir, { recursive: true });
-      const meta = createCacheMeta('fb', 'react', 'main');
+      const meta = createCacheMeta('fb', 'react', 'main', 'clone');
       writeCacheMeta(dir, meta);
 
       const result = isCacheHit(dir);
@@ -315,7 +332,7 @@ describe('github_clone_repo cache', () => {
     it('returns hit=false when meta is expired', () => {
       const dir = join(testBaseDir, 'cache-expired');
       mkdirSync(dir, { recursive: true });
-      const meta = createCacheMeta('fb', 'react', 'main');
+      const meta = createCacheMeta('fb', 'react', 'main', 'clone');
       meta.expiresAt = new Date(Date.now() - 1000).toISOString();
       writeCacheMeta(dir, meta);
 
@@ -326,7 +343,7 @@ describe('github_clone_repo cache', () => {
     it('returns hit=false when directory was externally deleted', () => {
       const dir = join(testBaseDir, 'cache-gone');
       mkdirSync(dir, { recursive: true });
-      const meta = createCacheMeta('fb', 'react', 'main');
+      const meta = createCacheMeta('fb', 'react', 'main', 'clone');
       writeCacheMeta(dir, meta);
       // Delete the directory (meta goes with it)
       rmSync(dir, { recursive: true, force: true });
@@ -339,7 +356,7 @@ describe('github_clone_repo cache', () => {
   describe('createCacheMeta', () => {
     it('creates metadata with 24h TTL', () => {
       const before = Date.now();
-      const meta = createCacheMeta('fb', 'react', 'main');
+      const meta = createCacheMeta('fb', 'react', 'main', 'clone');
       const after = Date.now();
 
       const clonedAt = new Date(meta.clonedAt).getTime();
@@ -352,33 +369,22 @@ describe('github_clone_repo cache', () => {
     });
 
     it('omits sparse_path when not provided', () => {
-      const meta = createCacheMeta('fb', 'react', 'main');
+      const meta = createCacheMeta('fb', 'react', 'main', 'clone');
       expect(meta).not.toHaveProperty('sparse_path');
     });
 
     it('includes sparse_path when provided', () => {
-      const meta = createCacheMeta('fb', 'react', 'main', 'src/core');
+      const meta = createCacheMeta('fb', 'react', 'main', 'clone', 'src/core');
       expect(meta.sparse_path).toBe('src/core');
     });
 
-    it('omits source when not provided', () => {
-      const meta = createCacheMeta('fb', 'react', 'main');
-      expect(meta).not.toHaveProperty('source');
-    });
-
-    it('includes source when provided as clone', () => {
-      const meta = createCacheMeta('fb', 'react', 'main', undefined, 'clone');
+    it('sets source to clone', () => {
+      const meta = createCacheMeta('fb', 'react', 'main', 'clone');
       expect(meta.source).toBe('clone');
     });
 
-    it('includes source when provided as directoryFetch', () => {
-      const meta = createCacheMeta(
-        'fb',
-        'react',
-        'main',
-        undefined,
-        'directoryFetch'
-      );
+    it('sets source to directoryFetch', () => {
+      const meta = createCacheMeta('fb', 'react', 'main', 'directoryFetch');
       expect(meta.source).toBe('directoryFetch');
     });
 
@@ -387,15 +393,15 @@ describe('github_clone_repo cache', () => {
         'org',
         'repo',
         'main',
-        undefined,
         'clone',
+        undefined,
         12345
       );
       expect(meta.sizeBytes).toBe(12345);
     });
 
     it('omits sizeBytes when not provided', () => {
-      const meta = createCacheMeta('org', 'repo', 'main');
+      const meta = createCacheMeta('org', 'repo', 'main', 'clone');
       expect(meta).not.toHaveProperty('sizeBytes');
     });
   });
@@ -525,15 +531,15 @@ describe('github_clone_repo cache', () => {
       writeFileSync(join(midDir, 'a.txt'), 'mid', 'utf-8');
       writeFileSync(join(newDir, 'a.txt'), 'new', 'utf-8');
 
-      const oldMeta = createCacheMeta('owner', 'repo', 'old');
+      const oldMeta = createCacheMeta('owner', 'repo', 'old', 'clone');
       oldMeta.clonedAt = new Date(Date.now() - 30_000).toISOString();
       writeCacheMeta(oldDir, oldMeta);
 
-      const midMeta = createCacheMeta('owner', 'repo', 'mid');
+      const midMeta = createCacheMeta('owner', 'repo', 'mid', 'clone');
       midMeta.clonedAt = new Date(Date.now() - 20_000).toISOString();
       writeCacheMeta(midDir, midMeta);
 
-      const newMeta = createCacheMeta('owner', 'repo', 'new');
+      const newMeta = createCacheMeta('owner', 'repo', 'new', 'clone');
       newMeta.clonedAt = new Date(Date.now() - 10_000).toISOString();
       writeCacheMeta(newDir, newMeta);
 
@@ -558,11 +564,11 @@ describe('github_clone_repo cache', () => {
       writeFileSync(join(oldDir, 'a.txt'), 'x'.repeat(120), 'utf-8');
       writeFileSync(join(newDir, 'a.txt'), 'y'.repeat(120), 'utf-8');
 
-      const oldMeta = createCacheMeta('owner', 'repo', 'old');
+      const oldMeta = createCacheMeta('owner', 'repo', 'old', 'clone');
       oldMeta.clonedAt = new Date(Date.now() - 20_000).toISOString();
       writeCacheMeta(oldDir, oldMeta);
 
-      const newMeta = createCacheMeta('owner', 'repo', 'new');
+      const newMeta = createCacheMeta('owner', 'repo', 'new', 'clone');
       newMeta.clonedAt = new Date(Date.now() - 10_000).toISOString();
       writeCacheMeta(newDir, newMeta);
 
@@ -585,7 +591,7 @@ describe('github_clone_repo cache', () => {
 
     it('uses custom TTL from env var', () => {
       process.env.OCTOCODE_CACHE_TTL_MS = '60000'; // 1 minute
-      const meta = createCacheMeta('fb', 'react', 'main');
+      const meta = createCacheMeta('fb', 'react', 'main', 'clone');
       const clonedAt = new Date(meta.clonedAt).getTime();
       const expiresAt = new Date(meta.expiresAt).getTime();
       expect(expiresAt - clonedAt).toBe(60000);
@@ -601,7 +607,7 @@ describe('github_clone_repo cache', () => {
       const dir = join(testBaseDir, 'gc-test');
       const reposDir = join(dir, 'repos', 'owner', 'repo', 'main');
       mkdirSync(reposDir, { recursive: true });
-      const expiredMeta = createCacheMeta('owner', 'repo', 'main');
+      const expiredMeta = createCacheMeta('owner', 'repo', 'main', 'clone');
       expiredMeta.expiresAt = new Date(Date.now() - 1000).toISOString();
       writeCacheMeta(reposDir, expiredMeta);
 
@@ -628,13 +634,18 @@ describe('github_clone_repo cache', () => {
 
       const expiredDir = join(dir, 'repos', 'owner', 'repo', 'old-branch');
       mkdirSync(expiredDir, { recursive: true });
-      const expiredMeta = createCacheMeta('owner', 'repo', 'old-branch');
+      const expiredMeta = createCacheMeta(
+        'owner',
+        'repo',
+        'old-branch',
+        'clone'
+      );
       expiredMeta.expiresAt = new Date(Date.now() - 1000).toISOString();
       writeCacheMeta(expiredDir, expiredMeta);
 
       const validDir = join(dir, 'repos', 'owner', 'repo', 'main');
       mkdirSync(validDir, { recursive: true });
-      const validMeta = createCacheMeta('owner', 'repo', 'main');
+      const validMeta = createCacheMeta('owner', 'repo', 'main', 'clone');
       writeCacheMeta(validDir, validMeta);
 
       const count = evictExpiredClones(dir);
@@ -953,8 +964,12 @@ describe('cloneRepo', () => {
     // Simulate a directoryFetch having written metadata to the same cloneDir
     const cloneDir = getCloneDir(testDir, 'facebook', 'react', 'main');
     mkdirSync(cloneDir, { recursive: true });
-    const dirFetchMeta = createCacheMeta('facebook', 'react', 'main');
-    dirFetchMeta.source = 'directoryFetch';
+    const dirFetchMeta = createCacheMeta(
+      'facebook',
+      'react',
+      'main',
+      'directoryFetch'
+    );
     writeCacheMeta(cloneDir, dirFetchMeta);
 
     // Clone should NOT trust the directoryFetch metadata
@@ -1008,7 +1023,7 @@ describe('cloneRepo', () => {
     expect(existsSync(first.localPath)).toBe(true);
 
     // Manually expire the cache by rewriting the meta file
-    const expiredMeta = createCacheMeta('facebook', 'react', 'main');
+    const expiredMeta = createCacheMeta('facebook', 'react', 'main', 'clone');
     expiredMeta.expiresAt = new Date(Date.now() - 1000).toISOString();
     writeCacheMeta(first.localPath, expiredMeta);
 

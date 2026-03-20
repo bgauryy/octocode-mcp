@@ -1,14 +1,7 @@
-/**
- * Install Display Components
- */
-
 import { c, bold, dim } from '../../utils/colors.js';
 import type { MCPServer } from '../../types/index.js';
 import type { InstallResult } from '../../features/install.js';
 
-/**
- * Print configuration preview
- */
 export function printConfigPreview(config: MCPServer): void {
   const hasEnv = config.env && Object.keys(config.env).length > 0;
   const args = config.args ?? [];
@@ -34,13 +27,12 @@ export function printConfigPreview(config: MCPServer): void {
   });
   console.log(c('dim', '        ]') + (hasEnv ? c('dim', ',') : ''));
 
-  // Print env if present
   if (hasEnv && config.env) {
     console.log(c('dim', '        "env": {'));
     const envEntries = Object.entries(config.env);
     envEntries.forEach(([key, value], i) => {
       const isLast = i === envEntries.length - 1;
-      // Mask token values for security
+
       const lowerKey = key.toLowerCase();
       const isSensitive =
         lowerKey.includes('token') || lowerKey.includes('secret');
@@ -62,9 +54,6 @@ export function printConfigPreview(config: MCPServer): void {
   console.log();
 }
 
-/**
- * Print install error message
- */
 export function printInstallError(result: InstallResult): void {
   console.log();
   console.log(`  ${c('red', '✗')} ${bold('Installation failed')}`);
@@ -74,16 +63,12 @@ export function printInstallError(result: InstallResult): void {
   console.log();
 }
 
-/**
- * Print existing octocode configuration
- */
 export function printExistingOctocodeConfig(server: MCPServer): void {
   const boxWidth = 60;
 
   console.log();
   console.log(c('cyan', '  ┌' + '─'.repeat(boxWidth) + '┐'));
 
-  // Command line or URL
   let commandLine: string;
   if (server.url) {
     commandLine = server.url;
@@ -106,7 +91,6 @@ export function printExistingOctocodeConfig(server: MCPServer): void {
       c('cyan', '│')
   );
 
-  // Show env vars if present
   if (server.env && Object.keys(server.env).length > 0) {
     console.log(c('cyan', '  │') + ' '.repeat(boxWidth) + c('cyan', '│'));
     const envLabel = 'Environment:';
