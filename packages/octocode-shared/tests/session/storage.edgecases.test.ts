@@ -16,6 +16,7 @@ import * as fs from 'node:fs';
 import {
   SESSION_FILE,
   readSession,
+  writeSession,
   getOrCreateSession,
   updateSessionStats,
   incrementToolCalls,
@@ -28,6 +29,7 @@ import {
   flushSessionSync,
   _resetSessionState,
 } from '../../src/session/storage.js';
+import type { PersistedSession } from '../../src/session/types.js';
 import {
   FS_ERRORS,
   createTestSession,
@@ -651,6 +653,19 @@ describe('Session Storage Edge Cases', () => {
   // ─── Category 5: Exit Handler Edge Cases ──────────────────────────────────
 
   describe('Exit Handler Edge Cases', () => {
+    const signalTestSession = (): PersistedSession => ({
+      version: 1,
+      sessionId: 'signal-flush-test-session',
+      createdAt: '2026-01-09T10:00:00.000Z',
+      lastActiveAt: '2026-01-09T10:00:00.000Z',
+      stats: {
+        toolCalls: 7,
+        promptCalls: 0,
+        errors: 0,
+        rateLimits: 0,
+      },
+    });
+
     describe('Multiple Exit Handler Registration', () => {
       it('should not register duplicate exit handlers', () => {
         const exitSpy = vi.spyOn(process, 'on');
@@ -711,6 +726,77 @@ describe('Session Storage Edge Cases', () => {
         expect(sigtermCalls.length).toBe(1);
 
         onSpy.mockRestore();
+      });
+    });
+
+    describe('Process signals flush dirty session to disk', () => {
+      it('should flush session to disk when SIGINT is emitted', () => {
+        _resetSessionState();
+        const session = signalTestSession();
+        writeSession(session);
+
+        expect(mockFileStore.has(SESSION_FILE)).toBe(false);
+
+        process.emit('SIGINT');
+
+        const content = mockFileStore.get(SESSION_FILE);
+        expect(content).toBeDefined();
+        const onDisk = JSON.parse(content!);
+        expect(onDisk.sessionId).toBe(session.sessionId);
+        expect(onDisk.stats.toolCalls).toBe(7);
+      });
+
+      it('should flush session to disk when SIGTERM is emitted', () => {
+        _resetSessionState();
+        const session = signalTestSession();
+        session.sessionId = 'sigterm-flush-session';
+        writeSession(session);
+
+        expect(mockFileStore.has(SESSION_FILE)).toBe(false);
+
+        process.emit('SIGTERM');
+
+        const content = mockFileStore.get(SESSION_FILE);
+        expect(content).toBeDefined();
+        expect(JSON.parse(content!).sessionId).toBe('sigterm-flush-session');
+      });
+
+      it('should flush session to disk when exit is emitted', () => {
+        _resetSessionState();
+        const session = signalTestSession();
+        session.sessionId = 'exit-flush-session';
+        writeSession(session);
+
+        expect(mockFileStore.has(SESSION_FILE)).toBe(false);
+
+        process.emit('exit');
+
+        const content = mockFileStore.get(SESSION_FILE);
+        expect(content).toBeDefined();
+        expect(JSON.parse(content!).sessionId).toBe('exit-flush-session');
+      });
+    });
+
+    describe('Periodic flush timer', () => {
+      it('should write session to disk from setInterval after flush interval', () => {
+        vi.useFakeTimers();
+        try {
+          _resetSessionState();
+          const session = signalTestSession();
+          session.sessionId = 'timer-flush-session';
+          writeSession(session);
+
+          expect(mockFileStore.has(SESSION_FILE)).toBe(false);
+
+          vi.advanceTimersByTime(60_000);
+
+          const content = mockFileStore.get(SESSION_FILE);
+          expect(content).toBeDefined();
+          expect(JSON.parse(content!).sessionId).toBe('timer-flush-session');
+        } finally {
+          vi.useRealTimers();
+          _resetSessionState();
+        }
       });
     });
 

@@ -2,9 +2,18 @@
  * Tests for research-output utilities
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+vi.mock('node:fs', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    existsSync: vi.fn(actual.existsSync.bind(actual)),
+  };
+});
+
+import * as fs from 'node:fs';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   appendResearchFinding,
@@ -22,13 +31,17 @@ import {
 describe('research-output', () => {
   let tempDir: string;
 
-  beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), 'octocode-research-test-'));
+  beforeEach(async () => {
+    const actualFs = await vi.importActual<typeof import('node:fs')>('node:fs');
+    vi.mocked(fs.existsSync).mockImplementation(
+      actualFs.existsSync.bind(actualFs)
+    );
+    tempDir = fs.mkdtempSync(join(tmpdir(), 'octocode-research-test-'));
   });
 
   afterEach(() => {
-    if (tempDir && existsSync(tempDir)) {
-      rmSync(tempDir, { recursive: true, force: true });
+    if (tempDir && fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
 
@@ -49,7 +62,7 @@ describe('research-output', () => {
         'research',
         'findings.md'
       );
-      expect(existsSync(findingsPath)).toBe(true);
+      expect(fs.existsSync(findingsPath)).toBe(true);
     });
 
     it('should append finding to existing file', async () => {
@@ -94,6 +107,69 @@ describe('research-output', () => {
       expect(content).toContain('**Result:**');
       expect(content).toContain('---');
     });
+
+    it('should fall back to raw ISO timestamp when locale formatting throws', async () => {
+      const iso = '2025-06-15T12:30:00.000Z';
+      const toLocaleSpy = vi
+        .spyOn(Date.prototype, 'toLocaleString')
+        .mockImplementation(() => {
+          throw new Error('locale failure');
+        });
+
+      const finding: ResearchFinding = {
+        tool: 'mcp__octocode-local__localSearchCode',
+        timestamp: iso,
+        query: 'q',
+        summary: 's',
+      };
+
+      await appendResearchFinding(tempDir, finding);
+
+      toLocaleSpy.mockRestore();
+
+      const content = readFindings(tempDir);
+      expect(content).toContain(iso);
+    });
+
+    it('should mkdir parent .octocode when research dir exists but parent is missing', async () => {
+      const researchDir = join(tempDir, '.octocode', 'research');
+      const parentDir = dirname(researchDir);
+      const findingsPath = join(researchDir, 'findings.md');
+      const actualFs =
+        await vi.importActual<typeof import('node:fs')>('node:fs');
+
+      vi.mocked(fs.existsSync).mockImplementation(p => {
+        const s = String(p);
+        if (s === researchDir) return true;
+        if (s === parentDir) return false;
+        if (s === findingsPath) return false;
+        return actualFs.existsSync(p);
+      });
+
+      const mkdirSpy = vi
+        .spyOn(fs, 'mkdirSync')
+        .mockImplementation((p, opts) => {
+          return actualFs.mkdirSync(p, opts);
+        });
+
+      const appendSpy = vi
+        .spyOn(fs, 'appendFileSync')
+        .mockImplementation(() => {});
+
+      const finding: ResearchFinding = {
+        tool: 't',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        query: 'q',
+        summary: 's',
+      };
+
+      await appendResearchFinding(tempDir, finding);
+
+      expect(mkdirSpy).toHaveBeenCalledWith(parentDir, { recursive: true });
+
+      mkdirSpy.mockRestore();
+      appendSpy.mockRestore();
+    });
   });
 
   describe('summarizeQuery', () => {
@@ -104,6 +180,10 @@ describe('research-output', () => {
 
     it('should handle string input', () => {
       expect(summarizeQuery('test query')).toBe('test query');
+    });
+
+    it('should stringify non-object non-string primitives (e.g. number)', () => {
+      expect(summarizeQuery(12345)).toBe('12345');
     });
 
     it('should extract pattern from search query', () => {
@@ -124,6 +204,10 @@ describe('research-output', () => {
     it('should extract package from package search', () => {
       const input = { name: 'express', ecosystem: 'npm' };
       expect(summarizeQuery(input)).toBe('Package: npm/express');
+    });
+
+    it('should extract query field when pattern is absent', () => {
+      expect(summarizeQuery({ query: 'my query' })).toBe('Query: "my query"');
     });
 
     it('should truncate long input', () => {
@@ -174,11 +258,37 @@ describe('research-output', () => {
       expect(summarizeResponse(response)).toBe('This is the response text');
     });
 
+    it('should summarize status + data with string content', () => {
+      const response = { status: 200, data: { content: 'text' } };
+      expect(summarizeResponse(response)).toBe('text');
+    });
+
+    it('should summarize status + data with totalLines and path', () => {
+      const response = {
+        status: 'ok',
+        data: { totalLines: 42, path: 'src/x.ts' },
+      };
+      expect(summarizeResponse(response)).toBe('File: src/x.ts (42 lines)');
+    });
+
     it('should truncate long responses', () => {
       const longResponse = 'A'.repeat(1000);
       const result = summarizeResponse(longResponse, 100);
       expect(result.length).toBeLessThanOrEqual(100);
       expect(result.endsWith('...')).toBe(true);
+    });
+
+    it('should stringify non-string primitives', () => {
+      expect(summarizeResponse(42)).toBe('42');
+      expect(summarizeResponse(true)).toBe('true');
+    });
+
+    it('should return fallback when summarization throws', () => {
+      const circular: Record<string, unknown> = {};
+      circular.self = circular;
+      expect(summarizeResponse(circular)).toBe(
+        '(unable to summarize response)'
+      );
     });
   });
 

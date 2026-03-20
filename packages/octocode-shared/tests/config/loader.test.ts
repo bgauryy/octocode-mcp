@@ -9,6 +9,7 @@ import {
   loadConfigSync,
   configExists,
   getConfigPath,
+  getOctocodeDir,
   CONFIG_FILE_PATH,
 } from '../../src/config/loader.js';
 
@@ -49,6 +50,14 @@ describe('config/loader', () => {
       expect(path).toBe(CONFIG_FILE_PATH);
       expect(path).toContain('.octocode');
       expect(path).toContain('.octocoderc');
+    });
+  });
+
+  describe('getOctocodeDir', () => {
+    it('returns a path that includes the octocode directory segment', () => {
+      const dir = getOctocodeDir();
+      expect(typeof dir).toBe('string');
+      expect(dir).toContain('.octocode');
     });
   });
 
@@ -142,6 +151,20 @@ describe('config/loader', () => {
       expect(result.success).toBe(true);
       expect(result.config?.github?.apiUrl).toBe(
         'https://api.github.com/v3 // not a comment'
+      );
+    });
+
+    it('parses JSON strings containing backslash escape sequences', () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        '{"version": 1, "key": "value\\\\with\\\\backslash"}'
+      );
+
+      const result = loadConfigSync();
+
+      expect(result.success).toBe(true);
+      expect((result.config as Record<string, unknown>)?.key).toBe(
+        'value\\with\\backslash'
       );
     });
 

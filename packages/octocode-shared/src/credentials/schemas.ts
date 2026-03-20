@@ -10,7 +10,7 @@ import { z } from 'zod/v4';
 /**
  * Schema for OAuth token structure
  */
-export const OAuthTokenSchema = z.object({
+const OAuthTokenSchema = z.object({
   token: z.string(),
   tokenType: z.literal('oauth'),
   scopes: z.array(z.string()).optional(),
@@ -22,7 +22,7 @@ export const OAuthTokenSchema = z.object({
 /**
  * Schema for stored credentials for a GitHub host
  */
-export const StoredCredentialsSchema = z.object({
+const StoredCredentialsSchema = z.object({
   hostname: z.string(),
   username: z.string(),
   token: OAuthTokenSchema,

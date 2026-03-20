@@ -490,6 +490,24 @@ describe('Install Feature', () => {
       expect(getMCPConfigPath).toHaveBeenCalledWith('cursor', undefined);
       expect(result.installed).toBe(true);
     });
+
+    it('should report configExists when file exists but readMCPConfig returns null', async () => {
+      const { getMCPConfigPath, readMCPConfig } =
+        await import('../../src/utils/mcp-config.js');
+      const { fileExists } = await import('../../src/utils/fs.js');
+
+      vi.mocked(getMCPConfigPath).mockReturnValue('/path/to/corrupt.json');
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readMCPConfig).mockReturnValue(null);
+
+      const { checkExistingClientInstallation } =
+        await import('../../src/features/install.js');
+      const result = checkExistingClientInstallation('cursor');
+
+      expect(result.configPath).toBe('/path/to/corrupt.json');
+      expect(result.configExists).toBe(true);
+      expect(result.installed).toBe(false);
+    });
   });
 
   describe('installOctocodeForClient', () => {
@@ -546,6 +564,60 @@ describe('Install Feature', () => {
       expect(result.success).toBe(true);
       expect(result.configPath).toBe('/custom/path.json');
     });
+
+    it('should fail when already installed without force', async () => {
+      const { getMCPConfigPath, readMCPConfig, isOctocodeConfigured } =
+        await import('../../src/utils/mcp-config.js');
+
+      vi.mocked(getMCPConfigPath).mockReturnValue('/path/to/config.json');
+      vi.mocked(readMCPConfig).mockReturnValue({
+        mcpServers: { octocode: { command: 'npx', args: [] } },
+      });
+      vi.mocked(isOctocodeConfigured).mockReturnValue(true);
+
+      const { installOctocodeForClient } =
+        await import('../../src/features/install.js');
+      const result = installOctocodeForClient({
+        client: 'cursor',
+        method: 'npx',
+        force: false,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.alreadyInstalled).toBe(true);
+      expect(result.error).toContain('already configured');
+    });
+
+    it('should return writeMCPConfig error when write fails', async () => {
+      const {
+        getMCPConfigPath,
+        readMCPConfig,
+        isOctocodeConfigured,
+        mergeOctocodeConfig,
+        writeMCPConfig,
+      } = await import('../../src/utils/mcp-config.js');
+
+      vi.mocked(getMCPConfigPath).mockReturnValue('/path/to/config.json');
+      vi.mocked(readMCPConfig).mockReturnValue({ mcpServers: {} });
+      vi.mocked(isOctocodeConfigured).mockReturnValue(false);
+      vi.mocked(mergeOctocodeConfig).mockReturnValue({
+        mcpServers: { octocode: { command: 'npx', args: [] } },
+      });
+      vi.mocked(writeMCPConfig).mockReturnValue({
+        success: false,
+        error: 'disk full',
+      });
+
+      const { installOctocodeForClient } =
+        await import('../../src/features/install.js');
+      const result = installOctocodeForClient({
+        client: 'cursor',
+        method: 'npx',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('disk full');
+    });
   });
 
   describe('getInstallPreviewForClient', () => {
@@ -574,6 +646,63 @@ describe('Install Feature', () => {
       expect(preview.action).toBe('create');
       expect(preview.client).toBe('cursor');
       expect(preview.method).toBe('npx');
+    });
+
+    it('should return override action when octocode is already installed', async () => {
+      const {
+        getMCPConfigPath,
+        readMCPConfig,
+        isOctocodeConfigured,
+        getOctocodeServerConfig,
+        getConfiguredMethod,
+      } = await import('../../src/utils/mcp-config.js');
+      const { fileExists } = await import('../../src/utils/fs.js');
+
+      vi.mocked(getMCPConfigPath).mockReturnValue('/path/to/config.json');
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readMCPConfig).mockReturnValue({
+        mcpServers: { octocode: { command: 'npx', args: [] } },
+      });
+      vi.mocked(isOctocodeConfigured).mockReturnValue(true);
+      vi.mocked(getOctocodeServerConfig).mockReturnValue({
+        command: 'npx',
+        args: ['octocode-mcp@latest'],
+      });
+      vi.mocked(getConfiguredMethod).mockReturnValue('npx');
+
+      const { getInstallPreviewForClient } =
+        await import('../../src/features/install.js');
+      const preview = getInstallPreviewForClient('cursor', 'npx');
+
+      expect(preview.action).toBe('override');
+      expect(preview.existingMethod).toBe('npx');
+    });
+
+    it('should return add action when config exists but octocode is not installed', async () => {
+      const {
+        getMCPConfigPath,
+        readMCPConfig,
+        isOctocodeConfigured,
+        getOctocodeServerConfig,
+      } = await import('../../src/utils/mcp-config.js');
+      const { fileExists } = await import('../../src/utils/fs.js');
+
+      vi.mocked(getMCPConfigPath).mockReturnValue('/path/to/config.json');
+      vi.mocked(fileExists).mockReturnValue(true);
+      vi.mocked(readMCPConfig).mockReturnValue({
+        mcpServers: { other: { command: 'node', args: [] } },
+      });
+      vi.mocked(isOctocodeConfigured).mockReturnValue(false);
+      vi.mocked(getOctocodeServerConfig).mockReturnValue({
+        command: 'npx',
+        args: ['octocode-mcp@latest'],
+      });
+
+      const { getInstallPreviewForClient } =
+        await import('../../src/features/install.js');
+      const preview = getInstallPreviewForClient('cursor', 'npx');
+
+      expect(preview.action).toBe('add');
     });
   });
 });

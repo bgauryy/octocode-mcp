@@ -166,6 +166,66 @@ describe('Context Utilities', () => {
       process.cwd = originalCwd;
     });
 
+    it('should detect Terminal when TERM_PROGRAM is Apple_Terminal', async () => {
+      const os = await import('node:os');
+      vi.mocked(os.homedir).mockReturnValue('/Users/test');
+
+      const { runCommand } = await import('../../src/utils/shell.js');
+      vi.mocked(runCommand).mockReturnValue({
+        success: false,
+        stdout: '',
+        stderr: '',
+        exitCode: 1,
+      });
+
+      const originalEnv = { ...process.env };
+      delete process.env.CURSOR_AGENT;
+      delete process.env.CURSOR_TRACE_ID;
+      delete process.env.VSCODE_PID;
+      process.env.TERM_PROGRAM = 'Apple_Terminal';
+
+      const originalCwd = process.cwd;
+      process.cwd = vi.fn().mockReturnValue('/Users/test/project');
+
+      const { getAppContext } = await import('../../src/utils/context.js');
+      const context = getAppContext();
+
+      expect(context.ide).toBe('Terminal');
+
+      process.env = originalEnv;
+      process.cwd = originalCwd;
+    });
+
+    it('should detect Terminal as fallback when no IDE env matches', async () => {
+      const os = await import('node:os');
+      vi.mocked(os.homedir).mockReturnValue('/Users/test');
+
+      const { runCommand } = await import('../../src/utils/shell.js');
+      vi.mocked(runCommand).mockReturnValue({
+        success: false,
+        stdout: '',
+        stderr: '',
+        exitCode: 1,
+      });
+
+      const originalEnv = { ...process.env };
+      delete process.env.CURSOR_AGENT;
+      delete process.env.CURSOR_TRACE_ID;
+      delete process.env.VSCODE_PID;
+      delete process.env.TERM_PROGRAM;
+
+      const originalCwd = process.cwd;
+      process.cwd = vi.fn().mockReturnValue('/Users/test/project');
+
+      const { getAppContext } = await import('../../src/utils/context.js');
+      const context = getAppContext();
+
+      expect(context.ide).toBe('Terminal');
+
+      process.env = originalEnv;
+      process.cwd = originalCwd;
+    });
+
     it('should return undefined git when not in a repo', async () => {
       const os = await import('node:os');
       vi.mocked(os.homedir).mockReturnValue('/Users/test');

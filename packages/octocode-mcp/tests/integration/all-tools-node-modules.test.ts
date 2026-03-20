@@ -256,10 +256,8 @@ describe('Integration Tests: All Tools on node_modules', () => {
         }
       }
 
-      // Don't fail if no file found - subsequent tests will skip
-      if (!testFile) {
-        // Skip fetch_content tests when no suitable file found
-      }
+      expect(findResult).toHaveProperty('status');
+      expect(['hasResults', 'empty', 'error']).toContain(findResult.status);
     });
 
     it('should read full file content', async () => {

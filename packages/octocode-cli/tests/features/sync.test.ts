@@ -125,6 +125,20 @@ describe('areMCPServersEqual', () => {
     expect(areMCPServersEqual(a, b)).toBe(false);
   });
 
+  it('should return false when env keys match but a value differs (multi-key)', () => {
+    const a: MCPServer = {
+      command: 'npx',
+      args: ['test'],
+      env: { ALPHA: 'same', BETA: 'one' },
+    };
+    const b: MCPServer = {
+      command: 'npx',
+      args: ['test'],
+      env: { ALPHA: 'same', BETA: 'two' },
+    };
+    expect(areMCPServersEqual(a, b)).toBe(false);
+  });
+
   it('should handle missing env vars', () => {
     const a: MCPServer = {
       command: 'npx',
@@ -293,6 +307,76 @@ describe('analyzeSyncState', () => {
     expect(analysis.conflicts[0].mcpId).toBe('octocode');
     expect(analysis.conflicts[0].hasConflict).toBe(true);
   });
+
+  it('should skip clients whose config has no mcpServers', () => {
+    const snapshots: ClientConfigSnapshot[] = [
+      {
+        client: 'cursor',
+        configPath: '/path/cursor.json',
+        config: {
+          mcpServers: {
+            octocode: { command: 'npx', args: ['octocode-mcp@latest'] },
+          },
+        },
+        exists: true,
+        mcpCount: 1,
+      },
+      {
+        client: 'claude-desktop',
+        configPath: '/path/claude.json',
+        config: {} as MCPConfig,
+        exists: true,
+        mcpCount: 0,
+      },
+    ];
+
+    const analysis = analyzeSyncState(snapshots);
+    expect(analysis.summary.needsSyncCount).toBe(1);
+    expect(analysis.needsSync[0].missingIn).toContain('claude-desktop');
+  });
+
+  it('should use empty variants map when outer mcp map misses mcpId (defensive)', () => {
+    const originalGet = Map.prototype.get;
+    let octocodeOuterGets = 0;
+    const spy = vi.spyOn(Map.prototype, 'get').mockImplementation(function (
+      this: Map<unknown, unknown>,
+      key: unknown
+    ) {
+      const val = originalGet.call(this, key);
+      const values = [...this.values()];
+      const looksLikeOuterMcpToClients =
+        values.length > 0 && values.every(v => v instanceof Map);
+      if (looksLikeOuterMcpToClients && key === 'octocode') {
+        octocodeOuterGets++;
+        if (octocodeOuterGets === 2) {
+          return undefined;
+        }
+      }
+      return val;
+    });
+
+    const snapshots: ClientConfigSnapshot[] = [
+      {
+        client: 'cursor',
+        configPath: '/path/cursor.json',
+        config: {
+          mcpServers: {
+            octocode: { command: 'npx', args: ['octocode-mcp@latest'] },
+          },
+        },
+        exists: true,
+        mcpCount: 1,
+      },
+    ];
+
+    const analysis = analyzeSyncState(snapshots);
+    const diff = analysis.diffs.find(d => d.mcpId === 'octocode');
+    expect(diff).toBeDefined();
+    expect(diff!.presentIn).toEqual([]);
+    expect(diff!.missingIn).toContain('cursor');
+
+    spy.mockRestore();
+  });
 });
 
 describe('prepareSyncPayload', () => {
@@ -374,6 +458,63 @@ describe('prepareSyncPayload', () => {
     expect(payload).toHaveLength(1);
     expect(payload[0].mcpId).toBe('octocode');
     expect(payload[0].server.args).toContain('octocode-mcp@latest');
+  });
+
+  it('should combine needsSync entries and resolved conflicts in one payload', () => {
+    const needServer: MCPServer = { command: 'npx', args: ['need-mcp'] };
+    const analysis: SyncAnalysis = {
+      clients: [],
+      allMCPs: new Set(['need-id', 'conflict-id']),
+      diffs: [],
+      fullyConsistent: [],
+      needsSync: [
+        {
+          mcpId: 'need-id',
+          presentIn: ['cursor'],
+          missingIn: ['claude-desktop'],
+          hasConflict: false,
+          variants: new Map([['cursor', needServer]]),
+        },
+      ],
+      conflicts: [
+        {
+          mcpId: 'conflict-id',
+          presentIn: ['cursor', 'claude-desktop'],
+          missingIn: [],
+          hasConflict: true,
+          variants: new Map([
+            ['cursor', { command: 'npx', args: ['v1'] }],
+            ['claude-desktop', { command: 'npx', args: ['v2'] }],
+          ]),
+        },
+      ],
+      summary: {
+        totalClients: 2,
+        clientsWithConfig: 2,
+        totalUniqueMCPs: 2,
+        consistentMCPs: 0,
+        needsSyncCount: 1,
+        conflictCount: 1,
+      },
+    };
+
+    const resolutions: ConflictResolution[] = [
+      {
+        mcpId: 'conflict-id',
+        chosenConfig: { command: 'npx', args: ['resolved'] },
+        sourceClient: 'cursor',
+      },
+    ];
+
+    const payload = prepareSyncPayload(analysis, resolutions);
+    expect(payload).toHaveLength(2);
+    expect(payload.find(p => p.mcpId === 'need-id')).toEqual({
+      mcpId: 'need-id',
+      server: needServer,
+    });
+    expect(payload.find(p => p.mcpId === 'conflict-id')?.server.args).toEqual([
+      'resolved',
+    ]);
   });
 });
 

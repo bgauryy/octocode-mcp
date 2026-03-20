@@ -110,6 +110,38 @@ describe('Node Check', () => {
 
       expect(result.status).toBe('failed');
     });
+
+    it('should return slow status when latency exceeds ok threshold (1000ms)', async () => {
+      const nowSpy = vi.spyOn(Date, 'now');
+      nowSpy.mockReturnValueOnce(1_000).mockReturnValueOnce(2_500);
+
+      mockFetch.mockResolvedValue({ ok: true });
+
+      const { checkNpmRegistry } =
+        await import('../../src/features/node-check.js');
+      const result = await checkNpmRegistry();
+
+      expect(result.status).toBe('slow');
+      expect(result.latency).toBe(1_500);
+
+      nowSpy.mockRestore();
+    });
+
+    it('should return slow status when latency exceeds slow threshold (3000ms)', async () => {
+      const nowSpy = vi.spyOn(Date, 'now');
+      nowSpy.mockReturnValueOnce(0).mockReturnValueOnce(3_500);
+
+      mockFetch.mockResolvedValue({ ok: true });
+
+      const { checkNpmRegistry } =
+        await import('../../src/features/node-check.js');
+      const result = await checkNpmRegistry();
+
+      expect(result.status).toBe('slow');
+      expect(result.latency).toBe(3_500);
+
+      nowSpy.mockRestore();
+    });
   });
 
   describe('checkOctocodePackageAsync', () => {

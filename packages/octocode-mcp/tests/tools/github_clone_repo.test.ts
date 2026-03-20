@@ -432,7 +432,9 @@ describe('github_clone_repo cache', () => {
     });
 
     it('does nothing for non-existent directory', () => {
-      removeCloneDir(join(testBaseDir, 'does-not-exist'));
+      const nonExistent = join(testBaseDir, 'does-not-exist');
+      expect(() => removeCloneDir(nonExistent)).not.toThrow();
+      expect(existsSync(nonExistent)).toBe(false);
     });
   });
 
@@ -618,13 +620,13 @@ describe('github_clone_repo cache', () => {
 
     it('is idempotent — second call is a no-op', () => {
       mkdirSync(testBaseDir, { recursive: true });
-      startCacheGC(testBaseDir);
-      startCacheGC(testBaseDir);
+      expect(() => startCacheGC(testBaseDir)).not.toThrow();
+      expect(() => startCacheGC(testBaseDir)).not.toThrow();
       stopCacheGC();
     });
 
     it('stopCacheGC is safe when GC was never started', () => {
-      stopCacheGC();
+      expect(() => stopCacheGC()).not.toThrow();
     });
   });
 
