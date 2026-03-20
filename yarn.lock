@@ -7023,9 +7023,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"octocode-local-code-quality@workspace:skills/octocode-local-code-quality":
+"octocode-local-code-quality@workspace:skills/octocode-code-engineer":
   version: 0.0.0-use.local
-  resolution: "octocode-local-code-quality@workspace:skills/octocode-local-code-quality"
+  resolution: "octocode-local-code-quality@workspace:skills/octocode-code-engineer"
   dependencies:
     "@ast-grep/napi": "npm:^0.42.0"
     "@eslint/js": "npm:^9.27.0"

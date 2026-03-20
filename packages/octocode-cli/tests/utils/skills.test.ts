@@ -2,6 +2,7 @@
  * Skills Utilities Tests
  */
 
+import path from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the fs utilities module
@@ -23,6 +24,7 @@ import {
 } from '../../src/utils/fs.js';
 import {
   getSkillsSourcePath,
+  getSkillsSourceDir,
   copySkills,
   copySkill,
   getAvailableSkills,
@@ -79,6 +81,30 @@ describe('Skills Utilities', () => {
       // Should only check one path since first one exists
       expect(checkedPaths).toHaveLength(1);
       expect(checkedPaths[0]).toMatch(/skills$/);
+    });
+  });
+
+  describe('getSkillsSourceDir', () => {
+    it('should return fallback ../skills when no candidate directory exists', () => {
+      vi.mocked(dirExists).mockReturnValue(false);
+
+      const result = getSkillsSourceDir();
+
+      expect(result).toMatch(/skills$/);
+      expect(dirExists).toHaveBeenCalledTimes(3);
+    });
+
+    it('should return the second candidate when the first is missing', () => {
+      const checked: string[] = [];
+      vi.mocked(dirExists).mockImplementation((p: string) => {
+        checked.push(p);
+        return checked.length === 2;
+      });
+
+      const result = getSkillsSourceDir();
+
+      expect(result).toBe(checked[1]);
+      expect(checked).toHaveLength(2);
     });
   });
 
@@ -580,6 +606,26 @@ describe('Skills Config', () => {
 
       // Should end with .claude/skills or Claude/skills
       expect(result).toMatch(/[Cc]laude.*skills$/);
+    });
+
+    it('should return AppData Claude/skills path on Windows', async () => {
+      vi.doMock('../../src/utils/platform.js', () => ({
+        isWindows: true,
+        isMac: false,
+        HOME: 'C:\\Users\\test',
+        getAppDataPath: vi.fn(() => 'C:\\Users\\test\\AppData\\Roaming'),
+      }));
+
+      try {
+        const { getDefaultSkillsDestDir } =
+          await import('../../src/utils/skills.js');
+
+        expect(getDefaultSkillsDestDir()).toBe(
+          path.join('C:\\Users\\test\\AppData\\Roaming', 'Claude', 'skills')
+        );
+      } finally {
+        vi.doUnmock('../../src/utils/platform.js');
+      }
     });
   });
 

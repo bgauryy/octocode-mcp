@@ -2,6 +2,7 @@
  * MCP Paths Utilities Tests
  */
 
+import path from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock platform module
@@ -143,6 +144,72 @@ describe('MCP Paths Utilities', () => {
     });
   });
 
+  describe('getMCPConfigPath (platform branches)', () => {
+    it('should return Linux/XDG zed settings path when not Windows or Mac', async () => {
+      vi.resetModules();
+      vi.doMock('../../src/utils/platform.js', () => ({
+        isWindows: false,
+        isMac: false,
+        isLinux: true,
+        HOME: '/home/linuxuser',
+        getAppDataPath: vi.fn(() => 'C:\\Users\\test\\AppData\\Roaming'),
+      }));
+
+      const originalXdg = process.env.XDG_CONFIG_HOME;
+      delete process.env.XDG_CONFIG_HOME;
+
+      try {
+        const { getMCPConfigPath } =
+          await import('../../src/utils/mcp-paths.js');
+        expect(getMCPConfigPath('zed')).toBe(
+          '/home/linuxuser/.config/zed/settings.json'
+        );
+      } finally {
+        if (originalXdg !== undefined) {
+          process.env.XDG_CONFIG_HOME = originalXdg;
+        } else {
+          delete process.env.XDG_CONFIG_HOME;
+        }
+        vi.doUnmock('../../src/utils/platform.js');
+      }
+    });
+
+    it('should return Windows AppData opencode config path', async () => {
+      vi.resetModules();
+      vi.doMock('../../src/utils/platform.js', () => ({
+        isWindows: true,
+        isMac: false,
+        isLinux: false,
+        HOME: 'C:\\Users\\test',
+        getAppDataPath: vi.fn(() => 'C:\\Users\\test\\AppData\\Roaming'),
+      }));
+
+      try {
+        const { getMCPConfigPath } =
+          await import('../../src/utils/mcp-paths.js');
+
+        expect(getMCPConfigPath('opencode')).toBe(
+          path.join(
+            'C:\\Users\\test\\AppData\\Roaming',
+            'opencode',
+            'config.json'
+          )
+        );
+      } finally {
+        vi.doUnmock('../../src/utils/platform.js');
+      }
+    });
+
+    it('should throw for unknown MCP client id', async () => {
+      vi.resetModules();
+      const { getMCPConfigPath } = await import('../../src/utils/mcp-paths.js');
+
+      expect(() =>
+        getMCPConfigPath('definitely-not-a-client' as 'cursor')
+      ).toThrow('Unknown MCP client');
+    });
+  });
+
   describe('clientConfigExists', () => {
     it('should return true when config directory exists', async () => {
       const { dirExists } = await import('../../src/utils/fs.js');
@@ -263,6 +330,19 @@ describe('MCP Paths Utilities', () => {
       const result = detectCurrentClient();
 
       expect(result).toBe('zed');
+      process.env = originalEnv;
+    });
+
+    it('should detect Opencode from OPENCODE env var', async () => {
+      const originalEnv = { ...process.env };
+      process.env = {};
+      process.env.OPENCODE = '1';
+
+      const { detectCurrentClient } =
+        await import('../../src/utils/mcp-paths.js');
+      const result = detectCurrentClient();
+
+      expect(result).toBe('opencode');
       process.env = originalEnv;
     });
 

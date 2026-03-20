@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import fs from 'node:fs';
+import path from 'node:path';
 
 // Mock octocode-shared to control platform values
 vi.mock('octocode-shared', () => ({
@@ -166,6 +167,28 @@ describe('Platform Utilities', () => {
       const { findGitRoot } = await import('../../src/utils/platform.js');
       expect(findGitRoot('/Users/test/not-a-repo')).toBe(null);
     });
+
+    it('should return repo root at filesystem root when .git exists only there', async () => {
+      const root = path.parse(path.resolve('/')).root;
+      const rootGit = path.join(root, '.git');
+      vi.mocked(fs.existsSync).mockImplementation(
+        (p: fs.PathLike) => String(p) === rootGit
+      );
+
+      const { findGitRoot } = await import('../../src/utils/platform.js');
+      expect(findGitRoot(path.join('/tmp', 'nested', 'deep', 'project'))).toBe(
+        path.resolve(root)
+      );
+    });
+
+    it('should return null when existsSync throws', async () => {
+      vi.mocked(fs.existsSync).mockImplementation(() => {
+        throw new Error('EACCES');
+      });
+
+      const { findGitRoot } = await import('../../src/utils/platform.js');
+      expect(findGitRoot('/Users/test/any')).toBe(null);
+    });
   });
 
   describe('clearScreen', () => {
@@ -303,6 +326,82 @@ describe('Platform Utilities', () => {
         'open',
         ['/path/to/file.txt'],
         expect.any(Object)
+      );
+    });
+  });
+
+  describe('openFile cross-platform defaults', () => {
+    it('should use cmd /c start on Windows', async () => {
+      vi.resetModules();
+      vi.doMock('octocode-shared', () => ({
+        isWindows: true,
+        isMac: false,
+        isLinux: false,
+        HOME: 'C:\\Users\\test',
+        getAppDataPath: vi.fn(() => 'C:\\Users\\test\\AppData\\Roaming'),
+        getLocalAppDataPath: vi.fn(() => 'C:\\Users\\test\\AppData\\Local'),
+        getPlatformName: vi.fn(() => 'Windows'),
+        getArchitecture: vi.fn(() => 'x64'),
+      }));
+      vi.doMock('node:fs', () => ({
+        default: { existsSync: vi.fn() },
+        existsSync: vi.fn(),
+      }));
+      const spawnSync = vi.fn().mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+      vi.doMock('node:child_process', () => ({ spawnSync }));
+
+      const { openFile } = await import('../../src/utils/platform.js');
+      const result = openFile('C:\\path\\to\\file.txt');
+
+      expect(result).toBe(true);
+      expect(spawnSync).toHaveBeenCalledWith(
+        'cmd',
+        ['/c', 'start', '""', 'C:\\path\\to\\file.txt'],
+        expect.objectContaining({ shell: true, stdio: 'ignore' })
+      );
+    });
+
+    it('should use xdg-open on Linux', async () => {
+      vi.resetModules();
+      vi.doMock('octocode-shared', () => ({
+        isWindows: false,
+        isMac: false,
+        isLinux: true,
+        HOME: '/home/test',
+        getAppDataPath: vi.fn(() => '/home/test'),
+        getLocalAppDataPath: vi.fn(() => '/home/test'),
+        getPlatformName: vi.fn(() => 'Linux'),
+        getArchitecture: vi.fn(() => 'x64'),
+      }));
+      vi.doMock('node:fs', () => ({
+        default: { existsSync: vi.fn() },
+        existsSync: vi.fn(),
+      }));
+      const spawnSync = vi.fn().mockReturnValue({
+        status: 0,
+        stdout: '',
+        stderr: '',
+        pid: 123,
+        output: [],
+        signal: null,
+      });
+      vi.doMock('node:child_process', () => ({ spawnSync }));
+
+      const { openFile } = await import('../../src/utils/platform.js');
+      const result = openFile('/path/to/file.txt');
+
+      expect(result).toBe(true);
+      expect(spawnSync).toHaveBeenCalledWith(
+        'xdg-open',
+        ['/path/to/file.txt'],
+        expect.objectContaining({ stdio: 'ignore' })
       );
     });
   });

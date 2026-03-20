@@ -241,7 +241,8 @@ describe('github_clone_repo cache - branch coverage', () => {
       vi.useFakeTimers();
       try {
         startCacheGC(dir);
-        vi.advanceTimersByTime(10 * 60 * 1000);
+        expect(() => vi.advanceTimersByTime(10 * 60 * 1000)).not.toThrow();
+        expect(() => vi.advanceTimersByTime(10 * 60 * 1000)).not.toThrow();
       } finally {
         vi.useRealTimers();
       }

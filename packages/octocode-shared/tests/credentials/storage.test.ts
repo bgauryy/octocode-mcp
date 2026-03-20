@@ -2872,6 +2872,88 @@ describe('Token Storage', () => {
     });
   });
 
+  describe('decrypt invalid encrypted format', () => {
+    it('throws Invalid encrypted data format for empty, invalid, and two-part payloads', async () => {
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockReturnValue(mockKey.toString('hex'));
+
+      const { decrypt } =
+        await import('../../src/credentials/credentialEncryption.js');
+
+      expect(() => decrypt('')).toThrow('Invalid encrypted data format');
+      expect(() => decrypt('invalid')).toThrow('Invalid encrypted data format');
+      expect(() => decrypt('a:b')).toThrow('Invalid encrypted data format');
+    });
+  });
+
+  describe('readCredentialsStore read failures', () => {
+    it('returns empty store and masks GitHub token in logged reason when readFileSync throws', async () => {
+      const tokenSuffix = 'ghp_abc123456789012345678901234567890123';
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        if (String(path).includes('credentials.json')) {
+          throw new Error(`corrupt read ${tokenSuffix}`);
+        }
+        return '';
+      });
+
+      const stderrSpy = vi
+        .spyOn(process.stderr, 'write')
+        .mockImplementation(() => true);
+
+      const { readCredentialsStore } =
+        await import('../../src/credentials/storage.js');
+
+      const result = readCredentialsStore();
+
+      expect(result).toEqual({ version: 1, credentials: {} });
+      const stderrOutput = stderrSpy.mock.calls.map(c => String(c[0])).join('');
+      expect(stderrOutput).toContain('Could not read credentials file');
+      expect(stderrOutput).toContain('***MASKED***');
+      expect(stderrOutput).not.toContain(tokenSuffix);
+
+      stderrSpy.mockRestore();
+    });
+
+    it('returns empty store when readFileSync throws a non-Error value', async () => {
+      vi.mocked(fs.existsSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return true;
+        if (String(path).includes('credentials.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((path: unknown) => {
+        if (String(path).includes('.key')) return mockKey.toString('hex');
+        if (String(path).includes('credentials.json')) {
+          throw 'not an Error instance';
+        }
+        return '';
+      });
+
+      const stderrSpy = vi
+        .spyOn(process.stderr, 'write')
+        .mockImplementation(() => true);
+
+      const { readCredentialsStore } =
+        await import('../../src/credentials/storage.js');
+
+      const result = readCredentialsStore();
+
+      expect(result).toEqual({ version: 1, credentials: {} });
+      const stderrOutput = stderrSpy.mock.calls.map(c => String(c[0])).join('');
+      expect(stderrOutput).toContain('Could not read credentials file');
+
+      stderrSpy.mockRestore();
+    });
+  });
+
   describe('Credential Store Zod Validation', () => {
     it('should reject credentials with invalid structure', async () => {
       const invalidStore = {

@@ -176,6 +176,40 @@ describe('Spinner', () => {
       expect(stopResult).toBe(spinner);
     });
 
+    it('should clear previous interval when start is called twice', async () => {
+      const clearIntervalSpy = vi.spyOn(global, 'clearInterval');
+      const { Spinner } = await import('../../src/utils/spinner.js');
+      const spinner = new Spinner('First');
+
+      spinner.start();
+      spinner.start('Second');
+
+      expect(clearIntervalSpy).toHaveBeenCalled();
+      vi.advanceTimersByTime(80);
+      expect(writtenOutput.some(output => output.includes('Second'))).toBe(
+        true
+      );
+
+      spinner.stop();
+      clearIntervalSpy.mockRestore();
+    });
+
+    it('should update text, return this, and show new text on next tick', async () => {
+      const { Spinner } = await import('../../src/utils/spinner.js');
+      const spinner = new Spinner('Initial');
+
+      spinner.start();
+      const updateResult = spinner.update('Updated');
+
+      expect(updateResult).toBe(spinner);
+      vi.advanceTimersByTime(80);
+      expect(writtenOutput.some(output => output.includes('Updated'))).toBe(
+        true
+      );
+
+      spinner.stop();
+    });
+
     it('should stop gracefully when called multiple times', async () => {
       const { Spinner } = await import('../../src/utils/spinner.js');
       const spinner = new Spinner('Test');
