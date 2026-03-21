@@ -593,7 +593,7 @@ describe('CLI Commands', () => {
       expect(process.exitCode).toBeUndefined();
     });
 
-    it('should show help when clean is called with no flags', async () => {
+    it('should fail with guidance when clean is called with no flags', async () => {
       const { findCommand } = await import('../../src/cli/commands.js');
       const cacheCmd = findCommand('cache');
       expect(cacheCmd).toBeDefined();
@@ -605,9 +605,12 @@ describe('CLI Commands', () => {
       });
 
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('No target specified')
+        expect.stringContaining('Missing clean target')
       );
-      expect(process.exitCode).toBeUndefined();
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('octocode cache clean --all')
+      );
+      expect(process.exitCode).toBe(1);
     });
   });
 
