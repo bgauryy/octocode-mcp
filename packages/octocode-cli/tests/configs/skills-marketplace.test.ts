@@ -76,6 +76,17 @@ describe('Skills Marketplace Registry', () => {
       expect(buildWithClaude?.owner).toBe('davepoon');
       expect(buildWithClaude?.repo).toBe('buildwithclaude');
     });
+
+    it('should include webmaxru-agent-skills marketplace', () => {
+      const agentSkills = SKILLS_MARKETPLACES.find(
+        m => m.id === 'webmaxru-agent-skills'
+      );
+      expect(agentSkills).toBeDefined();
+      expect(agentSkills?.owner).toBe('webmaxru');
+      expect(agentSkills?.repo).toBe('agent-skills');
+      expect(agentSkills?.skillsPath).toBe('skills');
+      expect(agentSkills?.skillPattern).toBe('skill-folders');
+    });
   });
 
   describe('getMarketplaceById', () => {

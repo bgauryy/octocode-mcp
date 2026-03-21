@@ -135,6 +135,18 @@ export const SKILLS_MARKETPLACES: MarketplaceSource[] = [
       'Browser automation with persistent page state using Playwright',
     url: 'https://github.com/SawyerHood/dev-browser',
   },
+  {
+    id: 'webmaxru-agent-skills',
+    name: 'Agent Skills',
+    type: 'github',
+    owner: 'webmaxru',
+    repo: 'agent-skills',
+    branch: 'main',
+    skillsPath: 'skills',
+    skillPattern: 'skill-folders',
+    description: 'Web APIs and agent workflows skill collection',
+    url: 'https://github.com/webmaxru/agent-skills/tree/main/skills',
+  },
 ];
 
 export function getMarketplaceById(id: string): MarketplaceSource | undefined {

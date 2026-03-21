@@ -75,6 +75,7 @@ Access via the interactive menu: `npx octocode-cli` → Manage System Skills →
 | Superpowers | TDD, debugging, git worktrees |
 | Claude Scientific Skills | Scientific computing |
 | Dev Browser | Browser automation with Playwright |
+| Agent Skills | Web APIs and agent workflow skills |
 
 ---
 
