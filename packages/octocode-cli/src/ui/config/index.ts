@@ -25,7 +25,7 @@ const ALL_AVAILABLE_TOOLS = {
   github: [
     {
       id: 'githubSearchCode',
-      name: 'Search Code',
+      name: '- Search Code',
       description: 'Search for code patterns in GitHub repositories',
     },
     {
@@ -35,17 +35,17 @@ const ALL_AVAILABLE_TOOLS = {
     },
     {
       id: 'githubViewRepoStructure',
-      name: 'View Repo Structure',
+      name: '- View Repo Structure',
       description: 'Browse repository directory structure',
     },
     {
       id: 'githubSearchRepositories',
-      name: 'Search Repositories',
+      name: '- Search Repositories',
       description: 'Search for GitHub repositories',
     },
     {
       id: 'githubSearchPullRequests',
-      name: 'Search Pull Requests',
+      name: '- Search Pull Requests',
       description: 'Search for pull requests and view diffs',
     },
     {
@@ -63,7 +63,7 @@ const ALL_AVAILABLE_TOOLS = {
     },
     {
       id: 'localViewStructure',
-      name: 'View Structure',
+      name: '- View Structure',
       description: 'Browse local directory structure',
     },
     {
@@ -201,7 +201,7 @@ function formatDisplayValue(
 
   if (option.type === 'boolean') {
     const isEnabled = value === '1' || value.toLowerCase() === 'true';
-    const icon = isEnabled ? c('green', '✓') : c('dim', '○');
+    const icon = isEnabled ? c('green', '✅') : c('dim', '○');
     const label = isEnabled ? c('green', 'enabled') : c('dim', 'disabled');
     return `${icon} ${label}${modifiedMarker}`;
   }
@@ -240,23 +240,23 @@ async function showConfigMenu(): Promise<ConfigMenuChoice> {
     message: '',
     choices: [
       {
-        name: '🔧 Edit configuration',
+        name: '- Edit configuration',
         value: 'edit',
         description: 'Configure all octocode-mcp settings for a client',
       },
       {
-        name: '📋 View all configuration options',
+        name: '- View all configuration options',
         value: 'view',
         description: 'Show available environment variables and their defaults',
       },
       {
-        name: '📄 Show current JSON config',
+        name: '- Show current JSON config',
         value: 'show-json',
         description: 'Display the actual MCP config JSON for a client',
       },
       new Separator() as unknown as { name: string; value: ConfigMenuChoice },
       {
-        name: `${c('dim', '← Back to main menu')}`,
+        name: `${c('dim', '- Back to main menu')}`,
         value: 'back',
       },
     ],
@@ -315,23 +315,23 @@ async function promptOpenConfigFile(configPath: string): Promise<void> {
     message: 'Open config file?',
     choices: [
       {
-        name: '📝 Open in Cursor',
+        name: '- Open in Cursor',
         value: 'cursor',
         description: 'Open in Cursor IDE',
       },
       {
-        name: '📝 Open in VS Code',
+        name: '- Open in VS Code',
         value: 'vscode',
         description: 'Open in Visual Studio Code',
       },
       {
-        name: '📄 Open in default app',
+        name: '- Open in default app',
         value: 'default',
         description: 'Open with system default application',
       },
       new Separator() as unknown as { name: string; value: OpenChoice },
       {
-        name: `${c('dim', '← Skip')}`,
+        name: `${c('dim', '- Skip')}`,
         value: 'no',
       },
     ],
@@ -352,9 +352,9 @@ async function promptOpenConfigFile(configPath: string): Promise<void> {
 
   const success = openInEditor(configPath, openChoice);
   if (success) {
-    console.log(`  ${c('green', '✓')} Opened ${configPath}`);
+    console.log(`  ${c('green', '✅')} Opened ${configPath}`);
   } else {
-    console.log(`  ${c('yellow', '⚠')} Could not open file automatically`);
+    console.log(`  ${c('yellow', 'WARN')} Could not open file automatically`);
     console.log(`  ${dim('Try opening manually:')} ${c('cyan', configPath)}`);
   }
   console.log();
@@ -380,7 +380,7 @@ async function editBooleanOption(
     message: `${option.name}:`,
     choices: [
       {
-        name: `${c('green', '✓')} Enable`,
+        name: `${c('green', '✅')} Enable`,
         value: 'enable',
       },
       {
@@ -389,7 +389,7 @@ async function editBooleanOption(
       },
       new Separator() as unknown as { name: string; value: BoolChoice },
       {
-        name: `${c('dim', '← Cancel')}`,
+        name: `${c('dim', '- Cancel')}`,
         value: 'cancel',
       },
     ],
@@ -524,7 +524,7 @@ async function editArrayOption(
     message: `${option.name}:`,
     choices: [
       {
-        name: '📝 Select tools',
+        name: 'EDIT Select tools',
         value: 'select',
         description: 'Choose which tools to include',
       },
@@ -538,7 +538,7 @@ async function editArrayOption(
       },
       new Separator() as unknown as { name: string; value: ArrayAction },
       {
-        name: `${c('dim', '← Cancel')}`,
+        name: `${c('dim', '- Cancel')}`,
         value: 'cancel',
       },
     ],
@@ -597,7 +597,7 @@ async function editArrayOption(
   } as unknown as (typeof choices)[number]);
 
   choices.push({
-    name: `${c('dim', '← Cancel (keep current)')}`,
+    name: `${c('dim', '- Cancel (keep current)')}`,
     value: '__cancel__',
     checked: false,
     description: 'Go back without changes',
@@ -756,13 +756,13 @@ async function showEditConfigMenu(
 
   if (modifiedCount > 0) {
     choices.push({
-      name: `${c('green', '💾')} Save changes ${c('yellow', `(${modifiedCount})`)}`,
+      name: `${c('green', 'Save')} Save changes ${c('yellow', `(${modifiedCount})`)}`,
       value: 'save',
       description: 'Save configuration and exit',
     });
   } else {
     choices.push({
-      name: `${c('dim', '💾')} Save changes`,
+      name: `${c('dim', 'Save')} Save changes`,
       value: 'save',
       description: dim('No changes to save'),
     });
@@ -774,7 +774,7 @@ async function showEditConfigMenu(
     description: 'Clear all custom configuration',
   });
   choices.push({
-    name: `${c('dim', '← Back')}`,
+    name: `${c('dim', '- Back')}`,
     value: 'back',
   });
 
@@ -806,7 +806,7 @@ async function runEditConfigFlow(): Promise<void> {
   const config = readMCPConfig(configPath);
   if (!config) {
     console.log();
-    console.log(`  ${c('red', '✗')} Failed to read config file: ${configPath}`);
+    console.log(`  ${c('red', 'X')} Failed to read config file: ${configPath}`);
     console.log();
     return;
   }
@@ -814,7 +814,7 @@ async function runEditConfigFlow(): Promise<void> {
   if (!isOctocodeConfigured(config)) {
     console.log();
     console.log(
-      `  ${c('yellow', '⚠')} Octocode is not configured for ${clientInfo.name}.`
+      `  ${c('yellow', 'WARN')} Octocode is not configured for ${clientInfo.name}.`
     );
     console.log(
       `  ${dim('Please install Octocode first using "Install octocode-mcp".')}`
@@ -883,7 +883,7 @@ async function runEditConfigFlow(): Promise<void> {
         if (result.success) {
           spinner.succeed('Configuration saved!');
           console.log();
-          console.log(`  ${c('green', '✓')} Config saved to: ${configPath}`);
+          console.log(`  ${c('green', '✅')} Config saved to: ${configPath}`);
           if (result.backupPath) {
             console.log(`  ${dim('Backup:')} ${result.backupPath}`);
           }
@@ -895,7 +895,7 @@ async function runEditConfigFlow(): Promise<void> {
         } else {
           spinner.fail('Failed to save configuration');
           console.log();
-          console.log(`  ${c('red', '✗')} ${result.error || 'Unknown error'}`);
+          console.log(`  ${c('red', 'X')} ${result.error || 'Unknown error'}`);
           console.log();
         }
         editing = false;
@@ -980,7 +980,7 @@ async function showCurrentJsonConfig(): Promise<void> {
   const config = readMCPConfig(configPath);
   if (!config) {
     console.log();
-    console.log(`  ${c('red', '✗')} Failed to read config file: ${configPath}`);
+    console.log(`  ${c('red', 'X')} Failed to read config file: ${configPath}`);
     console.log();
     return;
   }
@@ -988,7 +988,7 @@ async function showCurrentJsonConfig(): Promise<void> {
   if (!isOctocodeConfigured(config)) {
     console.log();
     console.log(
-      `  ${c('yellow', '⚠')} Octocode is not configured for ${clientInfo.name}.`
+      `  ${c('yellow', 'WARN')} Octocode is not configured for ${clientInfo.name}.`
     );
     console.log(
       `  ${dim('Please install Octocode first using "Install octocode-mcp".')}`

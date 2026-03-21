@@ -91,7 +91,7 @@ export function printInstallSuccess(
   console.log(c('green', ' ┌' + '─'.repeat(60) + '┐'));
   console.log(
     c('green', ' │ ') +
-      `${c('green', '✓')} ${bold('MCP installed successfully!')}` +
+      `${c('green', '✅')} ${bold('MCP installed successfully!')}` +
       ' '.repeat(30) +
       c('green', '│')
   );
@@ -123,7 +123,7 @@ export function printInstallError(error: string): void {
   console.log(c('red', ' ┌' + '─'.repeat(60) + '┐'));
   console.log(
     c('red', ' │ ') +
-      `${c('red', '✗')} ${bold('Installation failed')}` +
+      `${c('red', 'X')} ${bold('Installation failed')}` +
       ' '.repeat(38) +
       c('red', '│')
   );

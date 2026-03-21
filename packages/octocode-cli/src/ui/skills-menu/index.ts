@@ -7,19 +7,12 @@ import {
   fileExists,
   readFileContent,
 } from '../../utils/fs.js';
-import {
-  getSkillsSourceDir,
-  getSkillsDestDir,
-  getDefaultSkillsDestDir,
-  setCustomSkillsDestDir,
-} from '../../utils/skills.js';
+import { getSkillsSourceDir, getSkillsDestDir } from '../../utils/skills.js';
 import { parseSkillFrontmatter } from '../../utils/parsers/frontmatter.js';
 import path from 'node:path';
 import open from 'open';
 import { Spinner } from '../../utils/spinner.js';
 import { runMarketplaceFlow } from './marketplace.js';
-
-const WHAT_ARE_SKILLS_URL = 'https://agentskills.io/what-are-skills';
 
 const RECOMMENDED_SKILLS = new Set([
   'octocode-research',
@@ -41,13 +34,7 @@ interface InstalledSkill {
   isRecommended: boolean;
 }
 
-type SkillsMenuChoice =
-  | 'manage'
-  | 'view'
-  | 'marketplace'
-  | 'change-path'
-  | 'learn'
-  | 'back';
+type SkillsMenuChoice = 'manage' | 'view' | 'marketplace' | 'back';
 type ManageSkillsChoice = InstalledSkill | 'back';
 
 async function pressEnterToContinue(): Promise<void> {
@@ -178,24 +165,17 @@ async function showSkillsMenu(
 
   if (installedCount > 0) {
     choices.push({
-      name: `📦 Manage installed skills ${dim(`(${installedCount})`)}`,
+      name: `- Manage installed skills ${dim(`(${installedCount})`)}`,
       value: 'manage',
       description: 'View, remove, or inspect individual skills',
     });
   }
 
   choices.push({
-    name: ' Browse Marketplace',
+    name: '- Browse Marketplace',
     value: 'marketplace',
     description: 'Community skills • installs on your behalf',
   });
-
-  choices.push({
-    name: '📁 Change default skills path',
-    value: 'change-path',
-    description: 'Set custom installation directory',
-  });
-
   choices.push(
     new Separator() as unknown as {
       name: string;
@@ -203,15 +183,8 @@ async function showSkillsMenu(
       description?: string;
     }
   );
-
   choices.push({
-    name: `${c('cyan', '❓')} What are skills?`,
-    value: 'learn',
-    description: 'Learn about Claude Code skills • opens browser',
-  });
-
-  choices.push({
-    name: `${c('dim', '← Back to main menu')}`,
+    name: `${c('dim', '- Back to main menu')}`,
     value: 'back',
   });
 
@@ -245,7 +218,7 @@ function showSkillsStatus(info: ReturnType<typeof getSkillsInfo>): void {
   for (const skill of skillsStatus) {
     if (skill.installed) {
       console.log(
-        `    ${c('green', '✓')} ${skill.name} - ${c('green', 'installed')}`
+        `    ${c('green', '✅')} ${skill.name} - ${c('green', 'installed')}`
       );
     } else {
       console.log(
@@ -260,10 +233,10 @@ function showSkillsStatus(info: ReturnType<typeof getSkillsInfo>): void {
   console.log();
 
   if (notInstalled.length === 0) {
-    console.log(`  ${c('green', '✓')} All skills are installed!`);
+    console.log(`  ${c('green', '✅')} All skills are installed!`);
   } else {
     console.log(
-      `  ${c('yellow', 'ℹ')} ${notInstalled.length} skill(s) not installed`
+      `  ${c('yellow', 'INFO')} ${notInstalled.length} skill(s) not installed`
     );
   }
   console.log();
@@ -299,7 +272,7 @@ async function selectInstalledSkill(
   }> = [];
 
   for (const skill of skills) {
-    const starTag = skill.isRecommended ? c('yellow', '⭐ ') : '';
+    const starTag = skill.isRecommended ? c('yellow', '') : '';
     const sourceTag = skill.isBundled
       ? c('cyan', ' [bundled]')
       : c('magenta', ' [community]');
@@ -316,7 +289,7 @@ async function selectInstalledSkill(
     new Separator() as unknown as { name: string; value: ManageSkillsChoice }
   );
   choices.push({
-    name: `${c('dim', '← Back to skills menu')}`,
+    name: `${c('dim', '- Back to skills menu')}`,
     value: 'back',
   });
 
@@ -341,9 +314,7 @@ type SkillActionChoice = 'remove' | 'view' | 'back';
 async function showSkillActions(
   skill: InstalledSkill
 ): Promise<SkillActionChoice> {
-  const recommendedTag = skill.isRecommended
-    ? c('yellow', '⭐ recommended ')
-    : '';
+  const recommendedTag = skill.isRecommended ? c('yellow', 'recommended ') : '';
   const sourceTag = skill.isBundled
     ? c('cyan', '[bundled]')
     : c('magenta', '[community]');
@@ -356,16 +327,16 @@ async function showSkillActions(
 
   const choices: Array<{ name: string; value: SkillActionChoice }> = [
     {
-      name: `${c('red', '🗑️')} Remove this skill`,
+      name: `${c('red', 'Delete')} Remove this skill`,
       value: 'remove',
     },
     {
-      name: `📂 Open skill location`,
+      name: `- Open skill location`,
       value: 'view',
     },
     new Separator() as unknown as { name: string; value: SkillActionChoice },
     {
-      name: `${c('dim', '← Back')}`,
+      name: `${c('dim', '- Back')}`,
       value: 'back',
     },
   ];
@@ -387,13 +358,13 @@ async function showSkillActions(
 
 async function openSkillLocation(skill: InstalledSkill): Promise<void> {
   console.log();
-  console.log(`  ${c('cyan', '📂')} Opening ${bold(skill.name)} location...`);
+  console.log(`  ${c('cyan', 'Path')} Opening ${bold(skill.name)} location...`);
   console.log(`  ${dim(skill.path)}`);
   console.log();
 
   try {
     await open(skill.path);
-    console.log(`  ${c('green', '✓')} Opened in file explorer`);
+    console.log(`  ${c('green', '✅')} Opened in file explorer`);
   } catch {
     console.log(`  ${c('yellow', '!')} Could not open location automatically`);
     console.log(`  ${dim('Path:')} ${c('cyan', skill.path)}`);
@@ -403,19 +374,19 @@ async function openSkillLocation(skill: InstalledSkill): Promise<void> {
 
 async function removeSkill(skill: InstalledSkill): Promise<boolean> {
   console.log();
-  console.log(`  ${c('yellow', '⚠')} You are about to remove:`);
+  console.log(`  ${c('yellow', 'WARN')} You are about to remove:`);
   console.log(`    ${bold(skill.name)}`);
   console.log(`    ${dim(skill.path)}`);
   console.log();
 
   const choices = [
     {
-      name: `${c('red', '🗑️')} Yes, remove this skill`,
+      name: `${c('red', 'Delete')} Yes, remove this skill`,
       value: true,
     },
     new Separator() as unknown as { name: string; value: boolean },
     {
-      name: `${c('dim', '← Cancel')}`,
+      name: `${c('dim', '- Cancel')}`,
       value: false,
     },
   ];
@@ -443,12 +414,12 @@ async function removeSkill(skill: InstalledSkill): Promise<boolean> {
   if (removeDirectory(skill.path)) {
     spinner.succeed(`Removed ${skill.name}`);
     console.log();
-    console.log(`  ${c('green', '✓')} Skill removed successfully`);
+    console.log(`  ${c('green', '✅')} Skill removed successfully`);
     return true;
   } else {
     spinner.fail(`Failed to remove ${skill.name}`);
     console.log();
-    console.log(`  ${c('red', '✗')} Could not remove skill directory`);
+    console.log(`  ${c('red', 'X')} Could not remove skill directory`);
     return false;
   }
 }
@@ -461,7 +432,7 @@ async function manageInstalledSkills(): Promise<void> {
 
     if (installedSkills.length === 0) {
       console.log();
-      console.log(`  ${c('yellow', 'ℹ')} No skills installed`);
+      console.log(`  ${c('yellow', 'INFO')} No skills installed`);
       console.log(`  ${dim('Browse the marketplace to install skills')}`);
       console.log();
       await pressEnterToContinue();
@@ -509,7 +480,7 @@ export async function runSkillsMenu(): Promise<void> {
   let info = getSkillsInfo();
 
   if (!info.sourceExists) {
-    console.log(`  ${c('yellow', '⚠')} Skills source directory not found.`);
+    console.log(`  ${c('yellow', 'WARN')} Skills source directory not found.`);
     console.log(`  ${dim('This may happen if running from source.')}`);
     console.log();
     await pressEnterToContinue();
@@ -545,124 +516,6 @@ export async function runSkillsMenu(): Promise<void> {
         showSkillsStatus(info);
         await pressEnterToContinue();
         break;
-
-      case 'learn': {
-        console.log();
-        console.log(
-          `  ${c('cyan', '📖')} Opening ${bold('What are Skills?')} in your browser...`
-        );
-        console.log(`  ${dim(WHAT_ARE_SKILLS_URL)}`);
-        console.log();
-
-        try {
-          await open(WHAT_ARE_SKILLS_URL);
-          console.log(`  ${c('green', '✓')} Opened in browser`);
-        } catch {
-          console.log(
-            `  ${c('yellow', '!')} Could not open browser automatically`
-          );
-          console.log(
-            `  ${dim('Please visit:')} ${c('cyan', WHAT_ARE_SKILLS_URL)}`
-          );
-        }
-
-        console.log();
-        await pressEnterToContinue();
-        break;
-      }
-
-      case 'change-path': {
-        const defaultPath = getDefaultSkillsDestDir();
-
-        console.log();
-        console.log(`  ${dim(`Leave empty for default: ${defaultPath}`)}`);
-        console.log();
-
-        const newPath = await input({
-          message: '  Skills path:',
-          default: info.destDir,
-          validate: (value: string) => {
-            const trimmed = value.trim();
-
-            if (!trimmed) {
-              return true;
-            }
-
-            const expanded = trimmed.startsWith('~')
-              ? trimmed.replace('~', process.env.HOME || '')
-              : trimmed;
-
-            if (!path.isAbsolute(expanded)) {
-              return 'Enter an absolute path (e.g., ~/.claude/skills)';
-            }
-            return true;
-          },
-        });
-
-        const trimmedPath = newPath.trim();
-
-        if (!trimmedPath) {
-          setCustomSkillsDestDir(null);
-          console.log();
-          console.log(`  ${c('green', '✓')} Skills path reset to default:`);
-          console.log(`  ${c('cyan', defaultPath)}`);
-          console.log();
-          await pressEnterToContinue();
-          break;
-        }
-
-        const expandedPath = trimmedPath.startsWith('~')
-          ? trimmedPath.replace('~', process.env.HOME || '')
-          : trimmedPath;
-        const normalizedPath = path.resolve(expandedPath);
-
-        if (normalizedPath === info.destDir) {
-          console.log();
-          console.log(`  ${dim('No change - path is already set.')}`);
-          console.log();
-          await pressEnterToContinue();
-          break;
-        }
-
-        if (!dirExists(normalizedPath)) {
-          const { mkdirSync } = await import('node:fs');
-          try {
-            mkdirSync(normalizedPath, { recursive: true });
-            console.log();
-            console.log(
-              `  ${c('green', '✓')} Created directory: ${c('cyan', normalizedPath)}`
-            );
-          } catch (error) {
-            console.log();
-            const errMsg =
-              error instanceof Error ? error.message : String(error);
-            console.log(`  ${c('red', '✗')} Failed to create directory:`);
-            console.log(`  ${dim(errMsg)}`);
-            await pressEnterToContinue();
-            break;
-          }
-        }
-
-        if (normalizedPath === defaultPath) {
-          setCustomSkillsDestDir(null);
-        } else {
-          setCustomSkillsDestDir(normalizedPath);
-        }
-        console.log();
-        console.log(`  ${c('green', '✓')} Skills path updated to:`);
-        console.log(`  ${c('cyan', normalizedPath)}`);
-        console.log();
-        console.log(
-          `  ${dim('Note: Existing skills are not moved automatically.')}`
-        );
-        console.log(
-          `  ${dim('You may need to reinstall skills to the new location.')}`
-        );
-        console.log();
-        await pressEnterToContinue();
-        break;
-      }
-
       case 'back':
       default:
         inSkillsMenu = false;

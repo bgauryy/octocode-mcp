@@ -13,7 +13,7 @@ This file **overrides** the root [`AGENTS.md`](https://github.com/bgauryy/octoco
 - **MCP installation** — one-step setup for `octocode-mcp` across multiple IDEs.
 - **GitHub authentication** — OAuth device flow with AES-256-GCM encrypted token storage.
 - **Configuration sync** — keep MCP configs consistent across editors.
-- **Skills manager** — install and update 9 bundled `octocode-*` skills for Claude Code.
+- **Skills manager** — install and update 9 bundled `octocode-*` skills across AI clients (Claude Code, Claude Desktop, Cursor, Codex, Opencode).
 - **MCP marketplace** — browse and install 70+ community MCP servers.
 - **Cache management** — inspect and clean cloned repos, marketplace cache, and logs.
 
@@ -159,7 +159,9 @@ tests/
 | `sync` | Sync MCP configs across IDEs | `--force`, `--dry-run`, `--status` |
 | `cache` | Cache size / clean | `status` / `clean`, `--repos`, `--skills`, `--logs`, `--all` |
 | `skills list` | List bundled skills + install state | - |
-| `skills install` | Copy bundled skills to Claude dir | `--skill`, `--force` |
+| `skills install` | Install bundled skills to one or more client dirs | `--skill`, `--targets`, `--mode`, `--force` |
+| `skills remove` | Remove one installed skill from one or more targets | `--skill`, `--targets` |
+| `mcp` | Non-interactive MCP marketplace management | `list`, `status`, `install --id`, `remove --id`, `--client`, `--config` |
 
 ---
 
@@ -204,7 +206,7 @@ Key decisions:
 - Inquirer prompts loaded dynamically for faster startup.
 - AES-256-GCM encryption with platform file storage.
 - Centralized MCP registry of 70+ validated servers.
-- Markdown-based skill definitions for Claude Code.
+- Markdown-based skill definitions installable across supported AI clients.
 
 ---
 

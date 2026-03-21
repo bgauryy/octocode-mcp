@@ -56,7 +56,7 @@ export function printConfigPreview(config: MCPServer): void {
 
 export function printInstallError(result: InstallResult): void {
   console.log();
-  console.log(`  ${c('red', '✗')} ${bold('Installation failed')}`);
+  console.log(`  ${c('red', 'X')} ${bold('Installation failed')}`);
   if (result.error) {
     console.log(`  ${dim('Error:')} ${result.error}`);
   }

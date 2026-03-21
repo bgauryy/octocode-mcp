@@ -11,19 +11,17 @@ let cachedEnvStatus: NodeEnvironmentStatus | null = null;
 
 function printNodeStatus(installed: boolean, version: string | null): void {
   if (installed) {
-    console.log(`  ${c('green', '✓')} Node.js: ${bold(version || 'unknown')}`);
+    console.log(`  ${c('green', '✅')} Node ${bold(version || 'unknown')}`);
   } else {
-    console.log(`  ${c('red', '✗')} Node.js: ${c('red', 'Not found in PATH')}`);
+    console.log(`  ${c('red', 'X')} Node ${c('red', 'not found')}`);
   }
 }
 
 function printNpmStatus(installed: boolean, version: string | null): void {
   if (installed) {
-    console.log(`  ${c('green', '✓')} npm: ${bold(version || 'unknown')}`);
+    console.log(`  ${c('green', '✅')} npm ${bold(version || 'unknown')}`);
   } else {
-    console.log(
-      `  ${c('yellow', '⚠')} npm: ${c('yellow', 'Not found in PATH')}`
-    );
+    console.log(`  ${c('yellow', 'WARN')} npm ${c('yellow', 'not found')}`);
   }
 }
 
@@ -35,18 +33,16 @@ function printRegistryStatus(
 
   switch (status) {
     case 'ok':
-      console.log(
-        `  ${c('green', '✓')} Registry: ${c('green', 'OK')} ${dim(latencyStr)}`
-      );
+      console.log(`  ${c('green', '✅')} Registry ${dim(latencyStr)}`);
       break;
     case 'slow':
       console.log(
-        `  ${c('yellow', '⚠')} Registry: ${c('yellow', 'Slow')} ${dim(latencyStr)}`
+        `  ${c('yellow', 'WARN')} Registry ${c('yellow', 'slow')} ${dim(latencyStr)}`
       );
       break;
     case 'failed':
       console.log(
-        `  ${c('red', '✗')} Registry: ${c('red', 'Unreachable')} ${latency !== null ? dim(latencyStr) : ''}`
+        `  ${c('red', 'X')} Registry ${c('red', 'unreachable')} ${latency !== null ? dim(latencyStr) : ''}`
       );
       break;
     default:

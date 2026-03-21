@@ -1,5 +1,10 @@
 import type { CLICommand, ParsedArgs } from './types.js';
-import type { IDE, InstallMethod } from '../types/index.js';
+import type {
+  IDE,
+  InstallMethod,
+  MCPClient,
+  MCPServer,
+} from '../types/index.js';
 import { c, bold, dim } from '../utils/colors.js';
 import {
   installOctocode,
@@ -19,7 +24,7 @@ import {
 } from '../features/github-oauth.js';
 import { GH_CLI_URL } from '../features/gh-auth.js';
 import type { TokenSource } from '../types/index.js';
-import { loadInquirer, select } from '../utils/prompts.js';
+import { loadInquirer, select, checkbox } from '../utils/prompts.js';
 import { checkNodeInPath, checkNpmInPath } from '../features/node-check.js';
 import { IDE_INFO, CLIENT_INFO, INSTALL_METHOD_INFO } from '../ui/constants.js';
 import { Spinner } from '../utils/spinner.js';
@@ -35,12 +40,13 @@ function getIDEDisplayName(ide: string): string {
 
   return ide.charAt(0).toUpperCase() + ide.slice(1);
 }
-import { copyDirectory, dirExists, listSubdirectories } from '../utils/fs.js';
 import {
-  getSkillsSourceDir,
-  getSkillsDestDir,
-  copySkill,
-} from '../utils/skills.js';
+  copyDirectory,
+  dirExists,
+  listSubdirectories,
+  removeDirectory,
+} from '../utils/fs.js';
+import { getSkillsSourceDir, getSkillsDestDir } from '../utils/skills.js';
 import { quickSync } from '../ui/sync/index.js';
 import { clearSkillsCache, getSkillsCacheDir } from '../utils/skills-fetch.js';
 import {
@@ -50,9 +56,286 @@ import {
 } from '../features/sync.js';
 import path from 'node:path';
 import { paths, getDirectorySizeBytes, formatBytes } from 'octocode-shared';
-import { existsSync, rmSync } from 'node:fs';
+import { MCP_REGISTRY } from '../configs/mcp-registry.js';
+import { MCP_CLIENTS, getMCPConfigPath } from '../utils/mcp-paths.js';
+import { readMCPConfig, writeMCPConfig } from '../utils/mcp-io.js';
+import { existsSync, rmSync, mkdirSync, symlinkSync } from 'node:fs';
+import { HOME, isWindows, getAppDataPath } from '../utils/platform.js';
 
 type GetTokenSource = 'octocode' | 'gh' | 'auto';
+type SkillInstallMode = 'copy' | 'symlink';
+type SkillInstallStrategy = SkillInstallMode | 'hybrid';
+type SkillInstallTarget =
+  | 'claude-code'
+  | 'claude-desktop'
+  | 'cursor'
+  | 'codex'
+  | 'opencode';
+
+function normalizeSkillTarget(target: string): SkillInstallTarget | null {
+  const normalized = target.trim().toLowerCase();
+  switch (normalized) {
+    case 'claude':
+    case 'claude-code':
+    case 'claudecode':
+      return 'claude-code';
+    case 'claude-desktop':
+    case 'claudedesktop':
+      return 'claude-desktop';
+    case 'cursor':
+      return 'cursor';
+    case 'codex':
+      return 'codex';
+    case 'opencode':
+      return 'opencode';
+    default:
+      return null;
+  }
+}
+
+function getSkillsDirForTarget(
+  target: SkillInstallTarget,
+  defaultDestDir: string
+): string {
+  if (target === 'claude-code') {
+    return defaultDestDir;
+  }
+
+  if (isWindows) {
+    const appData = getAppDataPath();
+    switch (target) {
+      case 'claude-desktop':
+        return path.join(appData, 'Claude Desktop', 'skills');
+      case 'cursor':
+        return path.join(HOME, '.cursor', 'skills');
+      case 'codex':
+        return path.join(HOME, '.codex', 'skills');
+      case 'opencode':
+        return path.join(HOME, '.opencode', 'skills');
+      default:
+        return defaultDestDir;
+    }
+  }
+
+  switch (target) {
+    case 'claude-desktop':
+      return path.join(HOME, '.claude-desktop', 'skills');
+    case 'cursor':
+      return path.join(HOME, '.cursor', 'skills');
+    case 'codex':
+      return path.join(HOME, '.codex', 'skills');
+    case 'opencode':
+      return path.join(HOME, '.opencode', 'skills');
+    default:
+      return defaultDestDir;
+  }
+}
+
+function installSkillToDestination(
+  sourcePath: string,
+  destinationPath: string,
+  mode: SkillInstallMode,
+  force: boolean
+): 'installed' | 'skipped' | 'failed' {
+  try {
+    if (existsSync(destinationPath)) {
+      if (!force) {
+        return 'skipped';
+      }
+      rmSync(destinationPath, { recursive: true, force: true });
+    }
+
+    if (mode === 'symlink') {
+      const symlinkType: 'dir' | 'junction' = isWindows ? 'junction' : 'dir';
+      symlinkSync(sourcePath, destinationPath, symlinkType);
+      return 'installed';
+    }
+
+    if (copyDirectory(sourcePath, destinationPath)) {
+      return 'installed';
+    }
+    return 'failed';
+  } catch {
+    return 'failed';
+  }
+}
+
+function isClaudeTarget(target: SkillInstallTarget): boolean {
+  return target === 'claude-code' || target === 'claude-desktop';
+}
+
+function resolveModeForTarget(
+  strategy: SkillInstallStrategy,
+  target: SkillInstallTarget
+): SkillInstallMode {
+  if (strategy === 'hybrid') {
+    return isClaudeTarget(target) ? 'copy' : 'symlink';
+  }
+  return strategy;
+}
+
+async function promptInstallTargets(): Promise<SkillInstallTarget[]> {
+  await loadInquirer();
+
+  const targetPreset = await select<
+    'claude-only' | 'all' | 'custom' | 'cancel'
+  >({
+    message: 'Install skills to which platforms?',
+    choices: [
+      {
+        name: '- Claude locations (claude-code + claude-desktop)',
+        value: 'claude-only',
+      },
+      {
+        name: '- All supported platforms',
+        value: 'all',
+      },
+      {
+        name: '- Custom selection',
+        value: 'custom',
+      },
+      {
+        name: `${dim('- Cancel')}`,
+        value: 'cancel',
+      },
+    ],
+    loop: false,
+  });
+
+  if (targetPreset === 'cancel') {
+    return [];
+  }
+
+  if (targetPreset === 'claude-only') {
+    return ['claude-code', 'claude-desktop'];
+  }
+
+  if (targetPreset === 'all') {
+    return ['claude-code', 'claude-desktop', 'cursor', 'codex', 'opencode'];
+  }
+
+  const selected = await checkbox<SkillInstallTarget>({
+    message: 'Select target platforms',
+    choices: [
+      { name: '- claude-code', value: 'claude-code', checked: true },
+      { name: '- claude-desktop', value: 'claude-desktop', checked: true },
+      { name: '- cursor', value: 'cursor' },
+      { name: '- codex', value: 'codex' },
+      { name: '- opencode', value: 'opencode' },
+    ],
+    required: true,
+    loop: false,
+  });
+
+  return selected;
+}
+
+async function promptInstallStrategy(): Promise<SkillInstallStrategy | null> {
+  await loadInquirer();
+  const selected = await select<SkillInstallStrategy | 'cancel'>({
+    message: 'How should skills be installed?',
+    choices: [
+      {
+        name: '- Hybrid (copy for Claude targets, symlink for others)',
+        value: 'hybrid',
+      },
+      {
+        name: '- Full copies everywhere',
+        value: 'copy',
+      },
+      {
+        name: '- Symlinks everywhere',
+        value: 'symlink',
+      },
+      {
+        name: `${dim('- Cancel')}`,
+        value: 'cancel',
+      },
+    ],
+    loop: false,
+  });
+
+  return selected === 'cancel' ? null : selected;
+}
+
+function normalizeMCPClient(value: string): MCPClient | null {
+  const normalized = value.trim().toLowerCase();
+  switch (normalized) {
+    case 'claude':
+    case 'claude-desktop':
+    case 'claudedesktop':
+      return 'claude-desktop';
+    case 'claude-code':
+    case 'claudecode':
+      return 'claude-code';
+    case 'cursor':
+      return 'cursor';
+    case 'windsurf':
+      return 'windsurf';
+    case 'trae':
+      return 'trae';
+    case 'antigravity':
+      return 'antigravity';
+    case 'zed':
+      return 'zed';
+    case 'vscode-cline':
+    case 'cline':
+      return 'vscode-cline';
+    case 'vscode-roo':
+    case 'roo':
+    case 'roo-cline':
+      return 'vscode-roo';
+    case 'vscode-continue':
+    case 'continue':
+      return 'vscode-continue';
+    case 'opencode':
+      return 'opencode';
+    case 'custom':
+      return 'custom';
+    default:
+      return null;
+  }
+}
+
+function parseMCPEnv(envArg?: string): {
+  values: Record<string, string>;
+  error?: string;
+} {
+  if (!envArg || envArg.trim().length === 0) {
+    return { values: {} };
+  }
+
+  const entries = envArg
+    .split(',')
+    .map(part => part.trim())
+    .filter(Boolean);
+
+  const values: Record<string, string> = {};
+  const namePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+  for (const entry of entries) {
+    const eqIdx = entry.indexOf('=');
+    if (eqIdx <= 0) {
+      return {
+        values: {},
+        error: `Invalid --env pair: "${entry}" (expected KEY=VALUE)`,
+      };
+    }
+
+    const key = entry.slice(0, eqIdx).trim();
+    const val = entry.slice(eqIdx + 1);
+    if (!namePattern.test(key)) {
+      return {
+        values: {},
+        error: `Invalid env var name: "${key}"`,
+      };
+    }
+
+    values[key] = val;
+  }
+
+  return { values };
+}
 
 function printNodeDoctorHintCLI(): void {
   console.log(
@@ -525,8 +808,9 @@ async function showAuthStatus(hostname: string = 'github.com'): Promise<void> {
 const skillsCommand: CLICommand = {
   name: 'skills',
   aliases: ['sk'],
-  description: 'Install Octocode skills for Claude Code',
-  usage: 'octocode skills [install|list] [--skill <name>]',
+  description: 'Install Octocode skills across AI clients',
+  usage:
+    'octocode skills [install|remove|list] [--skill <name>] [--targets <list>] [--mode <copy|symlink>]',
   options: [
     {
       name: 'force',
@@ -536,9 +820,22 @@ const skillsCommand: CLICommand = {
     {
       name: 'skill',
       short: 'k',
-      description:
-        'Install a specific skill by name (folder under bundled skills/)',
+      description: 'Skill folder name (used by install/remove)',
       hasValue: true,
+    },
+    {
+      name: 'targets',
+      short: 't',
+      description:
+        'Comma-separated targets: claude-code, claude-desktop, cursor, codex, opencode',
+      hasValue: true,
+    },
+    {
+      name: 'mode',
+      short: 'm',
+      description: 'Install mode: copy (default) or symlink',
+      hasValue: true,
+      default: 'copy',
     },
   ],
   handler: async (args: ParsedArgs) => {
@@ -549,9 +846,81 @@ const skillsCommand: CLICommand = {
       typeof rawSkill === 'string' && rawSkill.length > 0
         ? rawSkill
         : undefined;
+    const rawTargets = args.options['targets'] ?? args.options['t'];
+    const rawMode = args.options['mode'] ?? args.options['m'];
+    let installMode: SkillInstallMode = 'copy';
+    if (typeof rawMode === 'string' && rawMode.trim().length > 0) {
+      const normalizedMode = rawMode.trim().toLowerCase();
+      if (normalizedMode !== 'copy' && normalizedMode !== 'symlink') {
+        console.log();
+        console.log(
+          `  ${c('red', 'X')} Invalid --mode value: ${c('yellow', rawMode)}`
+        );
+        console.log(`  ${dim('Allowed values:')} copy, symlink`);
+        console.log(
+          `  ${dim('Example:')} octocode skills install --mode symlink`
+        );
+        console.log();
+        process.exitCode = 1;
+        return;
+      }
+      installMode = normalizedMode;
+    }
+    const hasExplicitTargets =
+      typeof rawTargets === 'string' && rawTargets.trim().length > 0;
+    const hasExplicitMode = typeof rawMode === 'string' && rawMode.length > 0;
 
     const srcDir = getSkillsSourceDir();
     const destDir = getSkillsDestDir();
+
+    let selectedTargets: SkillInstallTarget[] = ['claude-code'];
+    if (typeof rawTargets === 'string' && rawTargets.trim().length > 0) {
+      const parsed = rawTargets
+        .split(',')
+        .map(s => normalizeSkillTarget(s))
+        .filter((s): s is SkillInstallTarget => s !== null);
+      selectedTargets = [...new Set(parsed)];
+      if (selectedTargets.length === 0) {
+        console.log();
+        console.log(`  ${c('red', 'X')} No valid targets provided`);
+        console.log(
+          `  ${dim('Valid targets:')} claude-code, claude-desktop, cursor, codex, opencode`
+        );
+        console.log();
+        process.exitCode = 1;
+        return;
+      }
+    }
+    let installStrategy: SkillInstallStrategy = installMode;
+
+    if (
+      (subcommand === 'install' || subcommand === 'remove') &&
+      process.stdout.isTTY &&
+      (!hasExplicitTargets || !hasExplicitMode)
+    ) {
+      const promptedTargets = await promptInstallTargets();
+      if (promptedTargets.length === 0) {
+        console.log();
+        console.log(`  ${c('yellow', 'WARN')} Skills install cancelled`);
+        console.log();
+        return;
+      }
+      selectedTargets = promptedTargets;
+
+      const promptedStrategy = await promptInstallStrategy();
+      if (!promptedStrategy) {
+        console.log();
+        console.log(`  ${c('yellow', 'WARN')} Skills install cancelled`);
+        console.log();
+        return;
+      }
+      installStrategy = promptedStrategy;
+    }
+
+    const targetDestinations = selectedTargets.map(target => ({
+      target,
+      destDir: getSkillsDirForTarget(target, destDir),
+    }));
 
     if (!dirExists(srcDir)) {
       console.log();
@@ -568,16 +937,26 @@ const skillsCommand: CLICommand = {
 
     if (subcommand === 'list') {
       console.log();
-      console.log(`  ${bold('📚 Available Octocode Skills')}`);
+      console.log(`  ${bold('Available Octocode Skills')}`);
+      console.log();
+
+      console.log(`  ${bold('Install destinations:')}`);
+      for (const destination of targetDestinations) {
+        console.log(
+          `    ${c('cyan', '•')} ${destination.target}: ${destination.destDir}`
+        );
+      }
       console.log();
 
       if (availableSkills.length === 0) {
         console.log(`  ${dim('No skills available.')}`);
       } else {
         for (const skill of availableSkills) {
-          const installed = dirExists(path.join(destDir, skill));
+          const installed = targetDestinations.every(destination =>
+            dirExists(path.join(destination.destDir, skill))
+          );
           const status = installed
-            ? c('green', '✓ installed')
+            ? c('green', 'installed')
             : dim('not installed');
           console.log(`  ${c('cyan', '•')} ${skill} ${status}`);
         }
@@ -588,7 +967,9 @@ const skillsCommand: CLICommand = {
       console.log(
         `  ${dim('To install one:')} octocode skills install --skill <name> ${dim('(or -k <name>)')}`
       );
-      console.log(`  ${dim('Destination:')} ${destDir}`);
+      console.log(
+        `  ${dim('Multi-install:')} octocode skills install --targets claude-code,cursor,codex --mode symlink`
+      );
       console.log();
       return;
     }
@@ -596,7 +977,7 @@ const skillsCommand: CLICommand = {
     if (subcommand === 'install') {
       if (specificSkill) {
         console.log();
-        console.log(`  ${bold(`📦 Installing skill: ${specificSkill}`)}`);
+        console.log(`  ${bold(`Installing skill: ${specificSkill}`)}`);
         console.log();
 
         if (!availableSkills.includes(specificSkill)) {
@@ -611,25 +992,43 @@ const skillsCommand: CLICommand = {
           return;
         }
 
-        const skillDest = path.join(destDir, specificSkill);
-        if (dirExists(skillDest) && !force) {
-          console.log(
-            `  ${c('yellow', '⚠')} Skill already installed: ${specificSkill}`
+        const spinner = new Spinner(`Installing ${specificSkill}...`).start();
+        const sourcePath = path.join(srcDir, specificSkill);
+        let installed = 0;
+        let skipped = 0;
+        let failed = 0;
+
+        for (const destination of targetDestinations) {
+          if (!dirExists(destination.destDir)) {
+            mkdirSync(destination.destDir, { recursive: true, mode: 0o700 });
+          }
+          const result = installSkillToDestination(
+            sourcePath,
+            path.join(destination.destDir, specificSkill),
+            resolveModeForTarget(installStrategy, destination.target),
+            force
           );
-          console.log(
-            `  ${dim('Use')} ${c('cyan', '--force')} ${dim('to overwrite.')}`
-          );
-          console.log();
-          return;
+          if (result === 'installed') installed++;
+          else if (result === 'skipped') skipped++;
+          else failed++;
         }
 
-        const spinner = new Spinner(`Installing ${specificSkill}...`).start();
-        const ok = copySkill(specificSkill, destDir);
-
-        if (ok) {
+        if (failed === 0) {
           spinner.succeed(`Installed ${specificSkill}!`);
           console.log();
-          console.log(`  ${c('green', '✓')} Installed to ${skillDest}`);
+          console.log(
+            `  ${c('green', '✅')} Installed to ${installed}/${targetDestinations.length} targets`
+          );
+          for (const destination of targetDestinations) {
+            console.log(
+              `    ${c('cyan', '•')} ${destination.target}: ${path.join(destination.destDir, specificSkill)}`
+            );
+          }
+          if (skipped > 0) {
+            console.log(
+              `  ${c('yellow', 'WARN')} Skipped ${skipped} existing target(s) ${dim('(use --force to overwrite)')}`
+            );
+          }
         } else {
           spinner.fail(`Failed to install ${specificSkill}`);
           process.exitCode = 1;
@@ -640,7 +1039,7 @@ const skillsCommand: CLICommand = {
       }
 
       console.log();
-      console.log(`  ${bold('📦 Installing Octocode Skills')}`);
+      console.log(`  ${bold('Installing Octocode Skills')}`);
       console.log();
 
       if (availableSkills.length === 0) {
@@ -652,40 +1051,116 @@ const skillsCommand: CLICommand = {
       const spinner = new Spinner('Installing skills...').start();
       let installed = 0;
       let skipped = 0;
+      let failed = 0;
 
       for (const skill of availableSkills) {
         const skillSrc = path.join(srcDir, skill);
-        const skillDest = path.join(destDir, skill);
-
-        if (dirExists(skillDest) && !force) {
-          skipped++;
-          continue;
-        }
-
-        if (copyDirectory(skillSrc, skillDest)) {
-          installed++;
+        for (const destination of targetDestinations) {
+          if (!dirExists(destination.destDir)) {
+            mkdirSync(destination.destDir, { recursive: true, mode: 0o700 });
+          }
+          const result = installSkillToDestination(
+            skillSrc,
+            path.join(destination.destDir, skill),
+            resolveModeForTarget(installStrategy, destination.target),
+            force
+          );
+          if (result === 'installed') {
+            installed++;
+          } else if (result === 'skipped') {
+            skipped++;
+          } else {
+            failed++;
+          }
         }
       }
 
-      spinner.succeed('Skills installation complete!');
+      if (failed === 0) {
+        spinner.succeed('Skills installation complete!');
+      } else {
+        spinner.fail('Skills installation completed with errors');
+      }
       console.log();
 
       if (installed > 0) {
         console.log(
-          `  ${c('green', '✓')} Installed ${installed} skill(s) to ${destDir}`
+          `  ${c('green', '✅')} Installed ${installed} skill target(s)`
         );
       }
       if (skipped > 0) {
         console.log(
-          `  ${c('yellow', '⚠')} Skipped ${skipped} existing skill(s)`
+          `  ${c('yellow', 'WARN')} Skipped ${skipped} existing skill target(s)`
         );
         console.log(
           `  ${dim('Use')} ${c('cyan', '--force')} ${dim('to overwrite.')}`
         );
       }
+      if (failed > 0) {
+        console.log(`  ${c('red', 'X')} Failed ${failed} skill target(s)`);
+        process.exitCode = 1;
+      }
 
       console.log();
-      console.log(`  ${bold('Skills are now available in Claude Code!')}`);
+      console.log(`  ${bold('Targets:')}`);
+      for (const destination of targetDestinations) {
+        console.log(
+          `    ${c('cyan', '•')} ${destination.target}: ${destination.destDir}`
+        );
+      }
+
+      console.log();
+      console.log(`  ${bold('Skills installation finished.')}`);
+      console.log();
+      return;
+    }
+
+    if (subcommand === 'remove') {
+      if (!specificSkill) {
+        console.log();
+        console.log(
+          `  ${c('red', 'X')} Missing required option: ${c('cyan', '--skill <name>')}`
+        );
+        console.log();
+        console.log(`  ${dim('Usage:')} octocode skills remove --skill <name>`);
+        console.log();
+        process.exitCode = 1;
+        return;
+      }
+
+      console.log();
+      console.log(`  ${bold(`Removing skill: ${specificSkill}`)}`);
+      console.log();
+
+      let removed = 0;
+      let missing = 0;
+      for (const destination of targetDestinations) {
+        const skillPath = path.join(destination.destDir, specificSkill);
+        if (!dirExists(skillPath)) {
+          missing++;
+          continue;
+        }
+
+        if (removeDirectory(skillPath)) {
+          removed++;
+        } else {
+          console.log(
+            `  ${c('red', 'X')} Failed to remove from ${destination.target}: ${skillPath}`
+          );
+          process.exitCode = 1;
+        }
+      }
+
+      if (removed > 0) {
+        console.log(
+          `  ${c('green', '✅')} Removed from ${removed}/${targetDestinations.length} targets`
+        );
+      }
+      if (missing > 0) {
+        console.log(
+          `  ${c('yellow', 'WARN')} Not found in ${missing} target(s) ${dim('(already absent)')}`
+        );
+      }
+
       console.log();
       return;
     }
@@ -693,7 +1168,7 @@ const skillsCommand: CLICommand = {
     console.log();
     console.log(`  ${c('red', '✗')} Unknown subcommand: ${subcommand}`);
     console.log(
-      `  ${dim('Usage:')} octocode skills [install|list] [--skill <name>]`
+      `  ${dim('Usage:')} octocode skills [install|remove|list] [--skill <name>]`
     );
     console.log();
     process.exitCode = 1;
@@ -1023,6 +1498,310 @@ const syncCommand: CLICommand = {
   },
 };
 
+const mcpCommand: CLICommand = {
+  name: 'mcp',
+  description: 'Non-interactive MCP marketplace management',
+  usage:
+    'octocode mcp [list|install|remove|status] [--id <mcp-id>] [--client <client>|--config <path>] [--search <text>] [--category <name>] [--env KEY=VALUE[,KEY=VALUE]] [--force]',
+  options: [
+    {
+      name: 'id',
+      description: 'MCP registry id (required for install/remove)',
+      hasValue: true,
+    },
+    {
+      name: 'client',
+      short: 'c',
+      description:
+        'Target client: cursor, claude-desktop, claude-code, windsurf, trae, antigravity, zed, vscode-cline, vscode-roo, vscode-continue, opencode',
+      hasValue: true,
+    },
+    {
+      name: 'config',
+      description: 'Custom MCP config path (uses custom client)',
+      hasValue: true,
+    },
+    {
+      name: 'search',
+      description: 'Filter list by id/name/description/tags',
+      hasValue: true,
+    },
+    {
+      name: 'category',
+      description: 'Filter list by category',
+      hasValue: true,
+    },
+    {
+      name: 'env',
+      description: 'Comma-separated env values: KEY=VALUE,KEY2=VALUE2',
+      hasValue: true,
+    },
+    {
+      name: 'installed',
+      description: 'List only MCPs installed in target config',
+    },
+    {
+      name: 'force',
+      short: 'f',
+      description: 'Overwrite existing MCP entry on install',
+    },
+  ],
+  handler: async (args: ParsedArgs) => {
+    const subcommand = (args.args[0] || 'list').toLowerCase();
+    const rawId = args.options['id'];
+    const mcpId =
+      typeof rawId === 'string' && rawId.trim().length > 0
+        ? rawId.trim()
+        : undefined;
+    const rawClient = args.options['client'] ?? args.options['c'];
+    const rawConfig = args.options['config'];
+    const rawSearch = args.options['search'];
+    const rawCategory = args.options['category'];
+    const rawEnv = args.options['env'];
+    const installedOnly = Boolean(args.options['installed']);
+    const force = Boolean(args.options['force'] || args.options['f']);
+
+    let client: MCPClient = 'claude-code';
+    let customPath: string | undefined;
+
+    if (typeof rawConfig === 'string' && rawConfig.trim().length > 0) {
+      client = 'custom';
+      customPath = rawConfig.trim();
+    } else if (typeof rawClient === 'string' && rawClient.trim().length > 0) {
+      const normalizedClient = normalizeMCPClient(rawClient);
+      if (!normalizedClient) {
+        console.log();
+        console.log(
+          `  ${c('red', 'X')} Invalid --client value: ${c('yellow', rawClient)}`
+        );
+        console.log(
+          `  ${dim('Allowed values:')} cursor, claude-desktop, claude-code, windsurf, trae, antigravity, zed, vscode-cline, vscode-roo, vscode-continue, opencode`
+        );
+        console.log();
+        process.exitCode = 1;
+        return;
+      }
+      client = normalizedClient;
+    }
+
+    const configPath = getMCPConfigPath(client, customPath);
+    const config = readMCPConfig(configPath) || { mcpServers: {} };
+    const installedMap = config.mcpServers || {};
+
+    if (subcommand === 'list') {
+      let entries = MCP_REGISTRY;
+
+      if (typeof rawSearch === 'string' && rawSearch.trim().length > 0) {
+        const query = rawSearch.trim().toLowerCase();
+        entries = entries.filter(
+          entry =>
+            entry.id.toLowerCase().includes(query) ||
+            entry.name.toLowerCase().includes(query) ||
+            entry.description.toLowerCase().includes(query) ||
+            entry.tags?.some(tag => tag.toLowerCase().includes(query))
+        );
+      }
+
+      if (typeof rawCategory === 'string' && rawCategory.trim().length > 0) {
+        const category = rawCategory.trim().toLowerCase();
+        entries = entries.filter(entry => entry.category === category);
+      }
+
+      if (installedOnly) {
+        const installedIds = new Set(Object.keys(installedMap));
+        entries = entries.filter(entry => installedIds.has(entry.id));
+      }
+
+      console.log();
+      console.log(`  ${bold('MCP Marketplace (non-interactive)')}`);
+      console.log(`  ${dim('Config:')} ${configPath}`);
+      console.log(`  ${dim('Results:')} ${entries.length}`);
+      console.log();
+
+      if (entries.length === 0) {
+        console.log(`  ${dim('No MCP entries matched your filters.')}`);
+        console.log();
+        return;
+      }
+
+      for (const entry of entries) {
+        const status = installedMap[entry.id]
+          ? c('green', 'installed')
+          : dim('not installed');
+        console.log(
+          `  ${c('cyan', '•')} ${entry.id} ${dim('(' + entry.category + ')')} ${status}`
+        );
+      }
+
+      console.log();
+      return;
+    }
+
+    if (subcommand === 'status') {
+      const installedIds = Object.keys(installedMap).sort((a, b) =>
+        a.localeCompare(b)
+      );
+      console.log();
+      console.log(`  ${bold('MCP Config Status')}`);
+      console.log(`  ${dim('Client:')} ${MCP_CLIENTS[client]?.name || client}`);
+      console.log(`  ${dim('Config:')} ${configPath}`);
+      console.log(`  ${dim('Installed MCPs:')} ${installedIds.length}`);
+      console.log();
+
+      for (const id of installedIds) {
+        console.log(`  ${c('cyan', '•')} ${id}`);
+      }
+
+      if (installedIds.length === 0) {
+        console.log(`  ${dim('No MCP servers configured yet.')}`);
+      }
+
+      console.log();
+      return;
+    }
+
+    if (subcommand === 'install') {
+      if (!mcpId) {
+        console.log();
+        console.log(
+          `  ${c('red', 'X')} Missing required option: --id <mcp-id>`
+        );
+        console.log();
+        process.exitCode = 1;
+        return;
+      }
+
+      const entry = MCP_REGISTRY.find(
+        item => item.id.toLowerCase() === mcpId.toLowerCase()
+      );
+      if (!entry) {
+        console.log();
+        console.log(`  ${c('red', 'X')} MCP not found in registry: ${mcpId}`);
+        console.log();
+        process.exitCode = 1;
+        return;
+      }
+
+      const envResult = parseMCPEnv(
+        typeof rawEnv === 'string' ? rawEnv : undefined
+      );
+      if (envResult.error) {
+        console.log();
+        console.log(`  ${c('red', 'X')} ${envResult.error}`);
+        console.log();
+        process.exitCode = 1;
+        return;
+      }
+
+      if (installedMap[entry.id] && !force) {
+        console.log();
+        console.log(
+          `  ${c('yellow', 'WARN')} MCP already installed: ${entry.id}`
+        );
+        console.log(
+          `  ${dim('Use --force to overwrite existing configuration.')}`
+        );
+        console.log();
+        process.exitCode = 1;
+        return;
+      }
+
+      const serverConfig: MCPServer = {
+        command: entry.installConfig.command,
+        args: [...entry.installConfig.args],
+      };
+
+      const mergedEnv = {
+        ...(entry.installConfig.env || {}),
+        ...envResult.values,
+      };
+      if (Object.keys(mergedEnv).length > 0) {
+        serverConfig.env = mergedEnv;
+      }
+
+      const nextConfig = {
+        ...config,
+        mcpServers: {
+          ...installedMap,
+          [entry.id]: serverConfig,
+        },
+      };
+
+      const result = writeMCPConfig(configPath, nextConfig);
+      if (!result.success) {
+        console.log();
+        console.log(`  ${c('red', 'X')} Failed to write MCP config`);
+        console.log(`  ${dim(result.error || 'Unknown write error')}`);
+        console.log();
+        process.exitCode = 1;
+        return;
+      }
+
+      console.log();
+      console.log(`  ${c('green', '✅')} Installed MCP: ${entry.id}`);
+      console.log(`  ${dim('Client:')} ${MCP_CLIENTS[client]?.name || client}`);
+      console.log(`  ${dim('Config:')} ${configPath}`);
+      console.log();
+      return;
+    }
+
+    if (subcommand === 'remove') {
+      if (!mcpId) {
+        console.log();
+        console.log(
+          `  ${c('red', 'X')} Missing required option: --id <mcp-id>`
+        );
+        console.log();
+        process.exitCode = 1;
+        return;
+      }
+
+      const installedKey = Object.keys(installedMap).find(
+        key => key.toLowerCase() === mcpId.toLowerCase()
+      );
+
+      if (!installedKey) {
+        console.log();
+        console.log(`  ${c('yellow', 'WARN')} MCP not installed: ${mcpId}`);
+        console.log(`  ${dim('Nothing to remove from target config.')}`);
+        console.log();
+        process.exitCode = 1;
+        return;
+      }
+
+      const nextServers = { ...installedMap };
+      delete nextServers[installedKey];
+
+      const result = writeMCPConfig(configPath, {
+        ...config,
+        mcpServers: nextServers,
+      });
+
+      if (!result.success) {
+        console.log();
+        console.log(`  ${c('red', 'X')} Failed to update MCP config`);
+        console.log(`  ${dim(result.error || 'Unknown write error')}`);
+        console.log();
+        process.exitCode = 1;
+        return;
+      }
+
+      console.log();
+      console.log(`  ${c('green', '✅')} Removed MCP: ${mcpId}`);
+      console.log(`  ${dim('Client:')} ${MCP_CLIENTS[client]?.name || client}`);
+      console.log(`  ${dim('Config:')} ${configPath}`);
+      console.log();
+      return;
+    }
+
+    console.log();
+    console.log(`  ${c('red', 'X')} Unknown mcp subcommand: ${subcommand}`);
+    console.log(`  ${dim('Usage:')} octocode mcp [list|install|remove|status]`);
+    console.log();
+    process.exitCode = 1;
+  },
+};
+
 const cacheCommand: CLICommand = {
   name: 'cache',
   description: 'Inspect and clean Octocode cache and logs',
@@ -1127,9 +1906,11 @@ const cacheCommand: CLICommand = {
       if (!targetRepos && !targetSkills && !targetLogs && !targetTools) {
         console.log();
         console.log(
-          `  ${c('yellow', '⚠')} No target specified. Use --repos, --skills, --logs, --tools, or --all`
+          `  ${c('red', 'X')} Missing clean target. Use --repos, --skills, --logs, --tools, or --all`
         );
+        console.log(`  ${dim('Example:')} octocode cache clean --all`);
         console.log();
+        process.exitCode = 1;
         return;
       }
       const cleanRepos = targetRepos;
@@ -1202,6 +1983,7 @@ const commands: CLICommand[] = [
   loginCommand,
   logoutCommand,
   skillsCommand,
+  mcpCommand,
   cacheCommand,
   tokenCommand,
   statusCommand,

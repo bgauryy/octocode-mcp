@@ -314,7 +314,7 @@ export async function runExternalMCPFlow(): Promise<void> {
 
   console.log();
   console.log(
-    `  ${c('yellow', '⚠')} ${dim('70+ community servers • MCPs install on your behalf')}`
+    `  ${c('yellow', 'WARN')} ${dim('70+ community servers • MCPs install on your behalf')}`
   );
 
   const state: FlowState = {
@@ -402,12 +402,12 @@ export async function runExternalMCPFlow(): Promise<void> {
           message: 'What would you like to do?',
           choices: [
             {
-              name: `${c('green', '✓')} Continue to install`,
+              name: `${c('green', '✅')} Continue to install`,
               value: 'continue' as const,
             },
             new Separator() as unknown as { name: string; value: DetailChoice },
             {
-              name: `${c('dim', '← Back to MCP list')}`,
+              name: `${c('dim', '- Back to MCP list')}`,
               value: 'back' as const,
             },
           ],

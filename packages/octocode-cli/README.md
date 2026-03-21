@@ -22,7 +22,7 @@ Octocode CLI configures [octocode-mcp](https://www.npmjs.com/package/octocode-mc
 
 - **MCP installation** — configure `octocode-mcp` for Cursor, Claude Desktop, Windsurf, Zed, Claude Code, Trae, Antigravity, Opencode, and VS Code extensions (Cline, Roo-Cline, Continue).
 - **MCP marketplace** — browse and install 70+ community MCP servers from the terminal.
-- **Skills manager** — install 9 bundled `octocode-*` skills for Claude Code. Install all at once or a single named skill: `octocode skills install --skill <name>`.
+- **Skills manager** — install 9 bundled `octocode-*` skills across clients (Claude Code, Claude Desktop, Cursor, Codex, Opencode). Supports single-skill, multi-target, copy, and symlink modes.
 - **Config sync** — keep MCP configurations consistent across all IDEs.
 - **Authentication** — GitHub OAuth device flow with AES-256-GCM encrypted token storage; supports Octocode OAuth, `gh` CLI, and env-var tokens.
 - **Cache management** — inspect and clean cloned-repo cache, skills marketplace cache, and logs.
@@ -43,7 +43,7 @@ The interactive menu covers MCP setup, skills, auth, and sync. For non-interacti
 |------|-------------|
 | Octocode MCP | Install and configure octocode-mcp for your IDEs |
 | Octocode Skills | Quick-install bundled Octocode skills |
-| Manage System Skills | Marketplace, installed skills list, custom install path |
+| Manage System Skills | Marketplace and installed skills list |
 | Manage Auth | Sign in/out via Octocode OAuth or gh CLI |
 | Manage System MCP | Sync configs, browse MCP marketplace, inspect settings |
 
@@ -52,8 +52,9 @@ The interactive menu covers MCP setup, skills, auth, and sync. For non-interacti
 | Command | Aliases | Description |
 |---------|---------|-------------|
 | `install` | `i` | Configure octocode-mcp for an IDE |
-| `skills` | `sk` | List or install bundled skills |
+| `skills` | `sk` | List, install, or remove bundled skills |
 | `sync` | `sy` | Sync MCP configs across IDEs |
+| `mcp` | - | Non-interactive MCP marketplace management (`list`, `status`, `install`, `remove`) |
 | `auth` | `a`, `gh` | Auth menu (`auth login`, `logout`, `status`, `token`) |
 | `login` / `logout` | `l` | GitHub OAuth login/logout |
 | `token` | `t` | Print token; `--json` for machine output |
@@ -64,16 +65,23 @@ Full options and examples: [CLI Reference](https://github.com/bgauryy/octocode-m
 
 ---
 
-## Installing Skills for Claude Code
+## Installing Skills Across Clients
 
-Skills install into `~/.claude/skills/` (global) or `.claude/skills/` inside a project (project-scoped, committable).
+Default install target is `claude-code` (`~/.claude/skills/`). You can install to multiple targets with `--targets` and choose `copy` or `symlink` mode.
 
 ```bash
 npx octocode-cli skills list                                        # see what's installed
 npx octocode-cli skills install --skill octocode-researcher         # install one skill
 npx octocode-cli skills install --skill octocode-researcher --force # update existing
-npx octocode-cli skills install                                     # install all
+npx octocode-cli skills install                                     # install all (default target)
+npx octocode-cli skills install --skill octocode-researcher --targets cursor # one provider
+npx octocode-cli skills install --targets claude-code,cursor,codex  # multi-target install
+npx octocode-cli skills install --skill octocode-researcher --targets claude-code,claude-desktop,cursor,codex,opencode # all providers
+npx octocode-cli skills install --targets claude-code,cursor --mode symlink
+npx octocode-cli skills remove --skill octocode-researcher --targets claude-code,cursor
 ```
+
+Supported skills `--targets`: `claude-code`, `claude-desktop`, `cursor`, `codex`, `opencode`.
 
 | Skill | When to use |
 |-------|-------------|
@@ -87,7 +95,7 @@ npx octocode-cli skills install                                     # install al
 | `octocode-prompt-optimizer` | Harden prompts and SKILL files |
 | `octocode-roast` | Brutally honest code critique |
 
-To install project-scoped, set `"skillsDestDir"` in `~/.octocode/config.json` before running `skills install`, or use the interactive menu (Manage System Skills → Change path).
+Set `"skillsDestDir"` in `~/.octocode/config.json` to customize the `claude-code` destination (for example, project-scoped `.claude/skills`).
 
 Full reference: [Skills Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md).
 

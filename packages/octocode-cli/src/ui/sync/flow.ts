@@ -78,11 +78,11 @@ async function resolveConflict(
     }
   );
   choices.push({
-    name: `${c('yellow', '⏭')} Skip this MCP (don't sync)`,
+    name: `${c('yellow', 'Skip')} Skip this MCP (don't sync)`,
     value: 'skip',
   });
   choices.push({
-    name: `${c('dim', '← Back')}`,
+    name: `${c('dim', '- Back')}`,
     value: 'back',
   });
 
@@ -110,7 +110,7 @@ export async function runSyncFlow(): Promise<void> {
 
   console.log();
   console.log(c('blue', '━'.repeat(66)));
-  console.log(` 🔄 ${bold('Sync System MCP')}`);
+  console.log(` Sync ${bold('Sync System MCP')}`);
   console.log(c('blue', '━'.repeat(66)));
   console.log();
   console.log(` ${dim('Synchronize MCP servers across all your IDE clients')}`);
@@ -140,7 +140,7 @@ export async function runSyncFlow(): Promise<void> {
         if (state.analysis.summary.clientsWithConfig < 2) {
           console.log();
           console.log(
-            ` ${c('yellow', '⚠')} ${bold('Not enough clients to sync')}`
+            ` ${c('yellow', 'WARN')} ${bold('Not enough clients to sync')}`
           );
           console.log(
             ` ${dim('Found only')} ${state.analysis.summary.clientsWithConfig} ${dim('client(s) with MCP configs.')}`
@@ -174,20 +174,20 @@ export async function runSyncFlow(): Promise<void> {
           message: 'What would you like to do?',
           choices: [
             {
-              name: `${c('green', '✓')} Continue to sync`,
+              name: `${c('green', '✅')} Continue to sync`,
               value: 'continue' as const,
             },
             {
-              name: `${c('cyan', 'ℹ')} Show MCP details`,
+              name: `${c('cyan', 'INFO')} Show MCP details`,
               value: 'details' as const,
             },
             {
-              name: `${c('cyan', 'ℹ')} Show client details`,
+              name: `${c('cyan', 'INFO')} Show client details`,
               value: 'clients' as const,
             },
             new Separator() as unknown as { name: string; value: StatusChoice },
             {
-              name: `${c('dim', '← Back to menu')}`,
+              name: `${c('dim', '- Back to menu')}`,
               value: 'back' as const,
             },
           ],
@@ -231,7 +231,7 @@ export async function runSyncFlow(): Promise<void> {
 
         console.log();
         console.log(
-          ` ${c('yellow', '⚠')} ${bold(`Resolve ${conflicts.length} conflict(s)`)}`
+          ` ${c('yellow', 'WARN')} ${bold(`Resolve ${conflicts.length} conflict(s)`)}`
         );
         console.log(
           ` ${dim('You need to choose which configuration to use for each conflicting MCP.')}`
@@ -247,14 +247,14 @@ export async function runSyncFlow(): Promise<void> {
 
           if (resolution === null) {
             console.log(
-              ` ${c('yellow', '⏭')} Skipping ${bold(conflicts[i].mcpId)}`
+              ` ${c('yellow', 'Skip')} Skipping ${bold(conflicts[i].mcpId)}`
             );
             continue;
           }
 
           state.resolutions.push(resolution);
           console.log(
-            ` ${c('green', '✓')} Using config from ${bold(getClientDisplayName(resolution.sourceClient))}`
+            ` ${c('green', '✅')} Using config from ${bold(getClientDisplayName(resolution.sourceClient))}`
           );
         }
 
@@ -271,7 +271,7 @@ export async function runSyncFlow(): Promise<void> {
 
         if (payload.length === 0) {
           console.log();
-          console.log(` ${c('yellow', '⚠')} ${bold('No MCPs to sync')}`);
+          console.log(` ${c('yellow', 'WARN')} ${bold('No MCPs to sync')}`);
           console.log(
             ` ${dim('All conflicts were skipped or no sync is needed.')}`
           );
@@ -298,7 +298,7 @@ export async function runSyncFlow(): Promise<void> {
           message: 'Proceed with sync?',
           choices: [
             {
-              name: `${c('green', '✓')} Yes, sync all clients`,
+              name: `${c('green', '✅')} Yes, sync all clients`,
               value: 'proceed' as const,
             },
             new Separator() as unknown as {
@@ -306,11 +306,11 @@ export async function runSyncFlow(): Promise<void> {
               value: ConfirmChoice;
             },
             {
-              name: `${c('dim', '← Back to review')}`,
+              name: `${c('dim', '- Back to review')}`,
               value: 'back' as const,
             },
             {
-              name: `${c('dim', '✗ Cancel')}`,
+              name: `${c('dim', 'X Cancel')}`,
               value: 'cancel' as const,
             },
           ],

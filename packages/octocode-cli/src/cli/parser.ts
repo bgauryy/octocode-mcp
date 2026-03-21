@@ -4,6 +4,7 @@ import type { ParsedArgs } from './types.js';
 const OPTIONS_WITH_VALUES = new Set([
   'ide',
   'method',
+  'm',
   'output',
   'o',
   'hostname',
@@ -14,9 +15,18 @@ const OPTIONS_WITH_VALUES = new Set([
   't',
   'skill',
   'k',
+  'targets',
+  'mode',
   'model',
   'resume',
   'r',
+  'id',
+  'client',
+  'c',
+  'search',
+  'category',
+  'env',
+  'config',
 ]);
 
 export function parseArgs(argv: string[] = process.argv.slice(2)): ParsedArgs {

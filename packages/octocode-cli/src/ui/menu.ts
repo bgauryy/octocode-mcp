@@ -68,7 +68,7 @@ function printInstalledIDEs(installedClients: ClientInstallStatus[]): void {
   for (const client of installedClients) {
     const clientName = MCP_CLIENTS[client.client]?.name || client.client;
     console.log(
-      `    ${dim('•')} ${dim(clientName)} ${dim('→')} ${c('cyan', client.configPath)}`
+      `    ${dim('•')} ${dim(clientName)} ${dim('->')} ${c('cyan', client.configPath)}`
     );
   }
 }
@@ -80,7 +80,7 @@ function buildSkillsMenuItem(skills: SkillsState): {
 } {
   if (!skills.sourceExists || !skills.hasSkills) {
     return {
-      name: '🧠 Manage System Skills',
+      name: '- Manage System Skills',
       value: 'skills',
       description: dim('Not available'),
     };
@@ -88,7 +88,7 @@ function buildSkillsMenuItem(skills: SkillsState): {
 
   if (skills.allInstalled) {
     return {
-      name: `🧠 Manage System Skills ${c('green', '✓')}`,
+      name: `- Manage System Skills ${c('green', '✅')}`,
       value: 'skills',
       description: `${skills.totalInstalledCount} installed • Research, PR Review & more`,
     };
@@ -96,16 +96,16 @@ function buildSkillsMenuItem(skills: SkillsState): {
 
   if (skills.totalInstalledCount > 0) {
     return {
-      name: '🧠 Manage System Skills',
+      name: '- Manage System Skills',
       value: 'skills',
       description: `${skills.totalInstalledCount}/${skills.skills.length} installed • Get more skills!`,
     };
   }
 
   return {
-    name: `🧠 ${bold('Manage System Skills')} ${c('cyan', '★')}`,
+    name: `- ${bold('Manage System Skills')} ${c('cyan', '[NEW]')}`,
     value: 'skills',
-    description: `${c('cyan', '→')} Install skills for AI-powered coding workflows`,
+    description: `Install skills for AI-powered coding workflows`,
   };
 }
 
@@ -120,14 +120,14 @@ function buildOctocodeSkillsMenuItem(skills: SkillsState): {
 
   if (octocodeSkillsInstalled > 0) {
     return {
-      name: `🐙 Octocode Skills ${c('green', '✓')}`,
+      name: `- Octocode Skills ${c('green', '✅')}`,
       value: 'octocode-skills',
       description: `${octocodeSkillsInstalled} installed • Research, planning & review`,
     };
   }
 
   return {
-    name: '🐙 Octocode Skills',
+    name: '- Octocode Skills',
     value: 'octocode-skills',
     description: 'Install AI-powered research, planning & review skills',
   };
@@ -161,16 +161,16 @@ function buildAuthMenuItem(auth: OctocodeAuthStatus): {
     const user = auth.username ? `@${auth.username}` : '';
     const userPart = user ? `${user} ` : '';
     return {
-      name: `🔑 Manage Auth ${c('green', '✓')}`,
+      name: `- Manage Auth ${c('green', '✅')}`,
       value: 'auth',
       description: `${userPart}via ${source}`,
     };
   }
 
   return {
-    name: `🔑 ${bold('Manage Auth')} ${c('red', '✗ Required!')}`,
+    name: `- ${bold('Manage Auth')} ${c('red', '[Required]')}`,
     value: 'auth',
-    description: `${c('yellow', '→')} Sign in to access GitHub`,
+    description: `Sign in to access GitHub`,
   };
 }
 
@@ -206,21 +206,21 @@ function buildOctocodeMenuItem(state: AppState): {
 
     if (state.githubAuth.authenticated) {
       return {
-        name: `🐙 Octocode MCP ${c('green', '✓')}`,
+        name: `- Octocode MCP ${c('green', '✅')}`,
         value: 'octocode',
         description: `Configure Octocode MCP - ${state.octocode.installedCount} ${clientLabel} configured`,
       };
     }
 
     return {
-      name: `🐙 Octocode MCP ${c('red', '✗')}`,
+      name: `- Octocode MCP ${c('red', '[X]')}`,
       value: 'octocode',
       description: `Configure Octocode MCP - ${state.octocode.installedCount} ${clientLabel} configured`,
     };
   }
 
   return {
-    name: `🐙 ${bold('Octocode Configuration')}`,
+    name: `- ${bold('Octocode Configuration')}`,
     value: 'octocode',
     description: 'Configure Octocode MCP - 0 IDEs configured',
   };
@@ -230,7 +230,7 @@ function printContextualHints(state: AppState): void {
   if (!state.githubAuth.authenticated) {
     console.log();
     console.log(
-      `  ${c('yellow', '⚠')} ${bold('Auth required!')} Run ${c('cyan', '🔑 Manage Auth')} to access GitHub repos`
+      `  ${c('yellow', 'Warning:')} ${bold('Auth required!')} Run ${c('cyan', 'Manage Auth')} to access GitHub repos`
     );
   } else if (
     state.octocode.isInstalled &&
@@ -238,36 +238,9 @@ function printContextualHints(state: AppState): void {
   ) {
     console.log();
     console.log(
-      `  ${c('cyan', '💡')} ${dim('Boost your AI coding:')} Install ${c('magenta', 'Skills')} for research, PR review & more!`
+      `  ${c('cyan', 'Tip:')} ${dim('Boost your AI coding:')} Install ${c('magenta', 'Skills')} for research, PR review & more!`
     );
   }
-
-  console.log();
-  console.log(`  ${c('yellow', 'Hints:')}`);
-  console.log(
-    c('yellow', `     ▸ Prompts:  Use /research, /plan, /implement in chat`)
-  );
-  console.log(
-    c('yellow', `     ▸ Skills:   Add via 🐙 Octocode Skills in main menu`)
-  );
-  console.log(
-    c(
-      'yellow',
-      `     ▸ Context:  Add AGENTS.md to your project (you can ask octocode)`
-    )
-  );
-  console.log(
-    c(
-      'yellow',
-      `     ▸ Auth:     Supports Octocode OAuth and gh CLI (if installed)`
-    )
-  );
-  console.log(
-    c(
-      'yellow',
-      `     ▸ MCP:      Manage all system MCP servers via Manage System MCP`
-    )
-  );
 }
 
 async function showMainMenu(state: AppState): Promise<MenuChoice> {
@@ -291,7 +264,7 @@ async function showMainMenu(state: AppState): Promise<MenuChoice> {
   choices.push(buildAuthMenuItem(state.githubAuth));
 
   choices.push({
-    name: '⚡ Manage System MCP',
+    name: '- Manage System MCP',
     value: 'mcp-config',
     description: 'Add, sync and configure MCP across all IDEs',
   });
@@ -336,14 +309,14 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
     if (state.octocode.hasMoreToInstall) {
       const availableNames = getClientNames(state.octocode.availableClients);
       choices.push({
-        name: '📦 Add Octocode',
+        name: '- Add Octocode',
         value: 'install',
         description: availableNames,
       });
     }
   } else {
     choices.push({
-      name: `📦 ${bold('Install')} ${c('red', '✗')}`,
+      name: `- ${bold('Install')} ${c('red', '[X]')}`,
       value: 'install',
       description: 'Setup for Cursor, Claude, Windsurf...',
     });
@@ -351,7 +324,7 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
 
   if (state.octocode.isInstalled) {
     choices.push({
-      name: '⚙️  Configure Octocode',
+      name: '- Configure Octocode',
       value: 'configure',
       description: 'Server options & preferences',
     });
@@ -366,7 +339,7 @@ async function showOctocodeMenu(state: AppState): Promise<OctocodeMenuChoice> {
   );
 
   choices.push({
-    name: `${c('dim', '← Back to main menu')}`,
+    name: `${c('dim', '- Back to main menu')}`,
     value: 'back',
   });
 
@@ -436,19 +409,19 @@ async function showMCPConfigMenu(): Promise<MCPConfigChoice> {
   }> = [];
 
   choices.push({
-    name: 'ℹ Show MCP details',
+    name: '- Show MCP details',
     value: 'inspect',
     description: 'View and manage configured MCP servers',
   });
 
   choices.push({
-    name: '🔄 Sync Configurations',
+    name: '- Sync Configurations',
     value: 'sync',
     description: 'Sync MCP configs across all IDEs',
   });
 
   choices.push({
-    name: '🔌 MCP Marketplace',
+    name: '- MCP Marketplace',
     value: 'marketplace',
     description: 'Browse and install community MCP servers',
   });
@@ -462,7 +435,7 @@ async function showMCPConfigMenu(): Promise<MCPConfigChoice> {
   );
 
   choices.push({
-    name: `${c('dim', '← Back to main menu')}`,
+    name: `${c('dim', '- Back to main menu')}`,
     value: 'back',
   });
 
@@ -538,7 +511,7 @@ async function showAuthMenu(
     const envVar =
       status.envTokenSource?.replace('env:', '') || 'environment variable';
     choices.push({
-      name: `ℹ️  Using ${c('cyan', envVar)} ${dim('(takes priority)')}`,
+      name: `- Using ${c('cyan', envVar)} ${dim('(takes priority)')}`,
       value: 'back',
       description: 'Token set via environment variable',
     });
@@ -555,7 +528,7 @@ async function showAuthMenu(
   if (hasGhCli) {
     const userPart = ghAuth.username ? ` (@${ghAuth.username})` : '';
     choices.push({
-      name: `🗑️  Delete gh CLI token${userPart}`,
+      name: `- Delete gh CLI token${userPart}`,
       value: 'gh-logout',
       description: 'Opens gh auth logout',
     });
@@ -567,7 +540,7 @@ async function showAuthMenu(
       : '';
     const storageType = 'file';
     choices.push({
-      name: `🗑️  Delete Octocode token${userPart}`,
+      name: `- Delete Octocode token${userPart}`,
       value: 'logout',
       description: `Remove from ${storageType}`,
     });
@@ -575,7 +548,7 @@ async function showAuthMenu(
 
   if (!hasOctocode) {
     choices.push({
-      name: `🔐 Sign In via Octocode ${c('green', '(Recommended)')}`,
+      name: `- Sign In via Octocode ${c('green', '(Recommended)')}`,
       value: 'login',
       description: 'Quick browser sign in',
     });
@@ -583,7 +556,7 @@ async function showAuthMenu(
 
   if (!hasGhCli) {
     choices.push({
-      name: '🔐 Sign In via gh CLI',
+      name: '- Sign In via gh CLI',
       value: 'gh-guidance',
       description: ghAuth.installed
         ? 'Use existing GitHub CLI'
@@ -600,7 +573,7 @@ async function showAuthMenu(
   );
 
   choices.push({
-    name: `${c('dim', '← Back')}`,
+    name: `${c('dim', '- Back')}`,
     value: 'back',
   });
 
@@ -623,7 +596,7 @@ async function showAuthMenu(
 async function runLoginFlow(): Promise<boolean> {
   console.log();
   console.log(c('blue', '━'.repeat(66)));
-  console.log(`  ${bold('🔐 GitHub Authentication')}`);
+  console.log(`  ${bold('GitHub Authentication')}`);
   console.log(c('blue', '━'.repeat(66)));
   console.log();
   console.log(
@@ -675,18 +648,18 @@ async function runLoginFlow(): Promise<boolean> {
     console.log(c('green', '  ┌' + '─'.repeat(50) + '┐'));
     console.log(
       c('green', '  │ ') +
-        `${c('green', '✓')} ${bold('Authentication successful!')}` +
+        `${c('green', '✅')} ${bold('Authentication successful!')}` +
         ' '.repeat(22) +
         c('green', '│')
     );
     console.log(c('green', '  └' + '─'.repeat(50) + '┘'));
     console.log();
     console.log(
-      `  ${c('green', '✓')} Logged in as ${c('cyan', '@' + (result.username || 'unknown'))}`
+      `  ${c('green', '✅')} Logged in as ${c('cyan', '@' + (result.username || 'unknown'))}`
     );
     console.log(`  ${dim('Credentials stored in:')} ${getStoragePath()}`);
     console.log();
-    console.log(`  ${c('cyan', '💡')} ${bold("What's next?")}`);
+    console.log(`  ${c('cyan', 'Tip:')} ${bold("What's next?")}`);
     console.log(
       `     ${dim('•')} Install ${c('magenta', 'Skills')} for AI-powered research & PR reviews`
     );
@@ -700,7 +673,7 @@ async function runLoginFlow(): Promise<boolean> {
     console.log(c('red', '  ┌' + '─'.repeat(50) + '┐'));
     console.log(
       c('red', '  │ ') +
-        `${c('red', '✗')} ${bold('Authentication failed')}` +
+        `${c('red', 'X')} ${bold('Authentication failed')}` +
         ' '.repeat(27) +
         c('red', '│')
     );
@@ -725,7 +698,7 @@ async function runLogoutFlow(): Promise<boolean> {
   const status = await getAuthStatusAsync();
 
   console.log();
-  console.log(`  ${bold('🔓 Sign Out')}`);
+  console.log(`  ${bold('Sign Out')}`);
   console.log(
     `  ${dim('Signed in as:')} ${c('cyan', '@' + (status.username || 'unknown'))}`
   );
@@ -734,7 +707,7 @@ async function runLogoutFlow(): Promise<boolean> {
   const result = await oauthLogout();
 
   if (result.success) {
-    console.log(`  ${c('green', '✓')} Signed out successfully`);
+    console.log(`  ${c('green', '✅')} Signed out successfully`);
 
     const ghAuth = checkGitHubAuth();
     if (ghAuth.authenticated) {
@@ -744,7 +717,7 @@ async function runLogoutFlow(): Promise<boolean> {
     }
   } else {
     console.log(
-      `  ${c('red', '✗')} Sign out failed: ${result.error || 'Unknown error'}`
+      `  ${c('red', 'X')} Sign out failed: ${result.error || 'Unknown error'}`
     );
   }
   console.log();
@@ -775,7 +748,7 @@ async function showGhCliGuidance(): Promise<void> {
     message: '',
     choices: [
       {
-        name: ' Open GitHub CLI website',
+        name: '- Open GitHub CLI website',
         value: 'open-site',
       },
       new Separator() as unknown as {
@@ -783,7 +756,7 @@ async function showGhCliGuidance(): Promise<void> {
         value: GhGuidanceChoice;
       },
       {
-        name: `${c('dim', '← Back')}`,
+        name: `${c('dim', '- Back')}`,
         value: 'back',
       },
     ],
@@ -807,7 +780,7 @@ async function showGhCliGuidance(): Promise<void> {
       await open(GH_CLI_URL);
       console.log();
       console.log(
-        `  ${c('green', '✓')} Opened ${c('cyan', GH_CLI_URL)} in browser`
+        `  ${c('green', '✅')} Opened ${c('cyan', GH_CLI_URL)} in browser`
       );
     } catch {
       console.log();
@@ -838,7 +811,7 @@ function getDetailedAuthSource(status: OctocodeAuthStatus): string {
 }
 
 function displayAuthStatus(status: OctocodeAuthStatus): void {
-  console.log(`  ${bold('🔐 GitHub Authentication')}`);
+  console.log(`  ${bold('GitHub Authentication')}`);
   console.log();
 
   if (status.authenticated) {
@@ -849,43 +822,43 @@ function displayAuthStatus(status: OctocodeAuthStatus): void {
         ? status.envTokenSource.replace('env:', '')
         : 'environment variable';
       console.log(
-        `  ${c('green', '✓')} Using ${c('cyan', envVarName)} ${dim('(token configured)')}`
+        `  ${c('green', '✅')} Using ${c('cyan', envVarName)} ${dim('(token configured)')}`
       );
     } else {
       console.log(
-        `  ${c('green', '✓')} Signed in as ${c('cyan', '@' + (status.username || 'unknown'))} ${dim(`via ${source}`)}`
+        `  ${c('green', '✅')} Signed in as ${c('cyan', '@' + (status.username || 'unknown'))} ${dim(`via ${source}`)}`
       );
     }
 
     if (status.tokenExpired) {
       console.log(
-        `  ${c('yellow', '⚠')} Session expired - please sign in again`
+        `  ${c('yellow', 'Warning:')} Session expired - please sign in again`
       );
     }
 
     console.log();
     console.log(
-      `  ${c('green', '✓')} ${dim('Ready to access GitHub repositories!')}`
+      `  ${c('green', '✅')} ${dim('Ready to access GitHub repositories!')}`
     );
   } else {
     console.log(c('yellow', '  ┌' + '─'.repeat(56) + '┐'));
     console.log(
       c('yellow', '  │ ') +
-        `${c('yellow', '⚠')} ${bold('Authentication Required')}` +
+        `${c('yellow', 'Warning:')} ${bold('Authentication Required')}` +
         ' '.repeat(31) +
         c('yellow', '│')
     );
     console.log(c('yellow', '  └' + '─'.repeat(56) + '┘'));
     console.log();
     console.log(`  ${dim('Without auth, Octocode cannot:')}`);
-    console.log(`     ${c('red', '✗')} Access private repositories`);
-    console.log(`     ${c('red', '✗')} Search code in your organization`);
+    console.log(`     ${c('red', 'X')} Access private repositories`);
+    console.log(`     ${c('red', 'X')} Search code in your organization`);
     console.log(
-      `     ${c('red', '✗')} Provide full GitHub research capabilities`
+      `     ${c('red', 'X')} Provide full GitHub research capabilities`
     );
     console.log();
     console.log(
-      `  ${c('cyan', '→')} Select ${c('green', '"Sign In via Octocode"')} below to authenticate`
+      `  ${c('cyan', '->')} Select ${c('green', '"Sign In via Octocode"')} below to authenticate`
     );
   }
   console.log();
@@ -947,7 +920,7 @@ async function runAuthFlow(): Promise<void> {
         const ghResult = runGitHubAuthLogout();
         if (ghResult.success) {
           console.log();
-          console.log(`  ${c('green', '✓')} Signed out of gh CLI`);
+          console.log(`  ${c('green', '✅')} Signed out of gh CLI`);
         } else {
           console.log();
           console.log(`  ${c('yellow', '!')} Sign out was cancelled`);
@@ -997,9 +970,7 @@ async function handleMenuChoice(choice: MenuChoice): Promise<boolean> {
 }
 
 function printEnvHeader(): void {
-  console.log(c('blue', '━'.repeat(66)));
-  console.log(`  🔍 ${bold('Environment')}`);
-  console.log(c('blue', '━'.repeat(66)));
+  console.log(`  ${bold('Environment')}`);
 }
 
 async function displayEnvironmentStatus(
@@ -1012,7 +983,7 @@ async function displayEnvironmentStatus(
   if (hasEnvironmentIssues(envStatus)) {
     console.log();
     console.log(
-      `  ${dim('💡')} ${dim('Run')} ${c('cyan', 'npx node-doctor')} ${dim('for diagnostics')}`
+      `  ${dim('Tip:')} ${dim('Run')} ${c('cyan', 'npx node-doctor')} ${dim('for diagnostics')}`
     );
   }
 }

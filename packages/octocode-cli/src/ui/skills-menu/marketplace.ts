@@ -1,7 +1,7 @@
 import { c, bold, dim } from '../../utils/colors.js';
 import { select, Separator, input, search } from '../../utils/prompts.js';
 import { Spinner } from '../../utils/spinner.js';
-import { dirExists } from '../../utils/fs.js';
+import { dirExists, removeDirectory } from '../../utils/fs.js';
 import { getSkillsDestDir } from '../../utils/skills.js';
 import {
   SKILLS_MARKETPLACES,
@@ -18,7 +18,7 @@ import path from 'node:path';
 
 type MarketplaceMenuChoice = MarketplaceSource | 'back';
 type SkillMenuChoice = MarketplaceSkill | 'back';
-type InstallChoice = 'install' | 'back';
+type InstallChoice = 'install' | 'delete' | 'back';
 type OfficialFlowChoice = 'install-all' | 'browse' | 'back';
 
 const RECOMMENDED_SKILLS = new Set([
@@ -37,15 +37,15 @@ async function pressEnterToContinue(): Promise<void> {
 
 function formatMarketplace(source: MarketplaceSource, stars?: number): string {
   if (isLocalSource(source)) {
-    return `${bold(source.name)} ${c('cyan', '📦 bundled')} - ${dim(source.description)}`;
+    return `${bold(source.name)} ${c('cyan', 'bundled')} - ${dim(source.description)}`;
   }
-  const starsText = stars ? ` ⭐ ${stars.toLocaleString()}` : '';
+  const starsText = stars ? ` ${stars.toLocaleString()}` : '';
   return `${bold(source.name)}${c('yellow', starsText)} - ${dim(source.description)}`;
 }
 
 function formatSkill(skill: MarketplaceSkill, installed: boolean): string {
-  const installedTag = installed ? c('green', '✓ ') : '';
-  const starTag = RECOMMENDED_SKILLS.has(skill.name) ? c('yellow', ' ⭐') : '';
+  const installedTag = installed ? c('green', '✅ ') : '';
+  const starTag = RECOMMENDED_SKILLS.has(skill.name) ? c('yellow', ' *') : '';
   const desc = skill.description.slice(0, 50);
   const ellipsis = skill.description.length > 50 ? '...' : '';
   return `${installedTag}${skill.displayName}${starTag} ${dim(desc)}${dim(ellipsis)}`;
@@ -93,7 +93,7 @@ async function selectMarketplace(
     }
   );
   choices.push({
-    name: `${c('dim', '← Back to skills menu')}`,
+    name: `${c('dim', '- Back to skills menu')}`,
     value: 'back',
   });
 
@@ -123,11 +123,18 @@ async function browseSkills(
   console.log();
 
   const sortedSkills = [...skills].sort((a, b) => {
+    const aInstalled = isSkillInstalled(a.name);
+    const bInstalled = isSkillInstalled(b.name);
+    if (aInstalled !== bInstalled) {
+      return aInstalled ? -1 : 1;
+    }
+
     const aRecommended = RECOMMENDED_SKILLS.has(a.name);
     const bRecommended = RECOMMENDED_SKILLS.has(b.name);
     if (aRecommended !== bRecommended) {
       return aRecommended ? -1 : 1;
     }
+
     return a.displayName.localeCompare(b.displayName);
   });
 
@@ -142,12 +149,12 @@ async function browseSkills(
   });
 
   const backChoice = {
-    name: `${c('dim', '← Back to marketplaces')}`,
+    name: `${c('dim', '- Back to marketplaces')}`,
     value: 'back' as SkillMenuChoice,
   };
 
   const choice = await search<SkillMenuChoice>({
-    message: `🔍 Type to filter skills (${skills.length} available)`,
+    message: `Type to filter skills (${skills.length} available)`,
     source: (term: string | undefined) => {
       if (!term || !term.trim()) {
         return [...skillChoices, backChoice];
@@ -185,7 +192,7 @@ async function showSkillDetails(
   const installed = isSkillInstalled(skill.name);
   const destDir = getSkillsDestDir();
   const recommendedTag = RECOMMENDED_SKILLS.has(skill.name)
-    ? c('yellow', ' ⭐ recommended')
+    ? c('yellow', ' recommended')
     : '';
 
   console.log();
@@ -206,12 +213,6 @@ async function showSkillDetails(
   console.log(`  ${c('cyan', path.join(destDir, skill.name))}`);
   console.log();
 
-  if (installed) {
-    console.log(`  ${c('yellow', '⚠')} This skill is already installed`);
-    console.log(`  ${dim('Installing will overwrite the existing version')}`);
-    console.log();
-  }
-
   const choices: Array<{
     name: string;
     value: InstallChoice;
@@ -219,18 +220,28 @@ async function showSkillDetails(
     {
       name: installed
         ? `${c('yellow', '⬆')} Reinstall skill`
-        : `${c('green', '✓')} Install skill`,
+        : `${c('green', '✅')} Install skill`,
       value: 'install',
-    },
-    new Separator() as unknown as { name: string; value: InstallChoice },
-    {
-      name: `${c('dim', '← Back')}`,
-      value: 'back',
     },
   ];
 
+  if (installed) {
+    choices.push({
+      name: `${c('red', 'Delete')} Delete skill`,
+      value: 'delete',
+    });
+  }
+
+  choices.push(
+    new Separator() as unknown as { name: string; value: InstallChoice }
+  );
+  choices.push({
+    name: `${c('dim', '- Back')}`,
+    value: 'back',
+  });
+
   const choice = await select<InstallChoice>({
-    message: installed ? 'Reinstall this skill?' : 'Install this skill?',
+    message: installed ? 'Choose an action:' : 'Install this skill?',
     choices,
     loop: false,
     theme: {
@@ -256,7 +267,7 @@ async function installSkill(skill: MarketplaceSkill): Promise<boolean> {
   if (result.success) {
     spinner.succeed(`Installed ${skill.displayName}!`);
     console.log();
-    console.log(`  ${c('green', '✓')} Skill installed successfully`);
+    console.log(`  ${c('green', '✅')} Skill installed successfully`);
     console.log(
       `  ${dim('Location:')} ${c('cyan', path.join(destDir, skill.name))}`
     );
@@ -265,7 +276,7 @@ async function installSkill(skill: MarketplaceSkill): Promise<boolean> {
   } else {
     spinner.fail(`Failed to install ${skill.displayName}`);
     console.log();
-    console.log(`  ${c('red', '✗')} Installation failed: ${result.error}`);
+    console.log(`  ${c('red', 'X')} Installation failed: ${result.error}`);
   }
 
   console.log();
@@ -273,12 +284,59 @@ async function installSkill(skill: MarketplaceSkill): Promise<boolean> {
   return result.success;
 }
 
+async function deleteSkill(skill: MarketplaceSkill): Promise<boolean> {
+  const destDir = getSkillsDestDir();
+  const skillPath = path.join(destDir, skill.name);
+
+  console.log();
+  const confirm = await select<'yes' | 'no'>({
+    message: 'Delete this installed skill?',
+    choices: [
+      { name: `${c('red', 'Delete')} Yes, delete skill`, value: 'yes' },
+      new Separator() as unknown as { name: string; value: 'yes' | 'no' },
+      { name: `${c('dim', '- Cancel')}`, value: 'no' },
+    ],
+    loop: false,
+    theme: {
+      prefix: '  ',
+      style: {
+        highlight: (text: string) => c('magenta', text),
+        message: (text: string) => bold(text),
+      },
+    },
+  });
+
+  if (confirm !== 'yes') {
+    return false;
+  }
+
+  console.log();
+  const spinner = new Spinner(`Deleting ${skill.displayName}...`).start();
+
+  if (removeDirectory(skillPath)) {
+    spinner.succeed(`Deleted ${skill.displayName}`);
+    console.log();
+    console.log(`  ${c('green', '✅')} Skill deleted successfully`);
+    console.log();
+    await pressEnterToContinue();
+    return true;
+  }
+
+  spinner.fail(`Failed to delete ${skill.displayName}`);
+  console.log();
+  console.log(`  ${c('red', 'X')} Could not delete skill directory`);
+  console.log(`  ${dim('Path:')} ${c('cyan', skillPath)}`);
+  console.log();
+  await pressEnterToContinue();
+  return false;
+}
+
 async function showOfficialFlowMenu(
   totalSkills: number,
   notInstalledCount: number
 ): Promise<OfficialFlowChoice> {
   console.log();
-  console.log(`  ${bold('🐙 Octocode Skills')}`);
+  console.log(`  ${bold('Octocode Skills')}`);
   console.log(`  ${dim(`${totalSkills} skills available`)}`);
   console.log();
 
@@ -290,20 +348,20 @@ async function showOfficialFlowMenu(
 
   if (notInstalledCount > 0) {
     choices.push({
-      name: `${c('green', '⚡')} Install All Skills (${notInstalledCount} to install)`,
+      name: `${c('green', 'Fast')} Install All Skills (${notInstalledCount} to install)`,
       value: 'install-all',
       description: dim('One-click install of all Octocode skills'),
     });
   } else {
     choices.push({
-      name: `${c('green', '✓')} All skills installed!`,
+      name: `${c('green', '✅')} All skills installed!`,
       value: 'browse',
       description: dim('Browse to reinstall or view details'),
     });
   }
 
   choices.push({
-    name: `${c('cyan', '📋')} Browse Skills Individually`,
+    name: `${c('cyan', 'List')} Browse Skills Individually`,
     value: 'browse',
     description: dim('View details and install one by one'),
   });
@@ -315,7 +373,7 @@ async function showOfficialFlowMenu(
     }
   );
   choices.push({
-    name: `${c('dim', '← Back')}`,
+    name: `${c('dim', '- Back')}`,
     value: 'back',
   });
 
@@ -341,7 +399,7 @@ async function installAllSkills(skills: MarketplaceSkill[]): Promise<void> {
 
   if (skillsToInstall.length === 0) {
     console.log();
-    console.log(`  ${c('green', '✓')} All skills are already installed!`);
+    console.log(`  ${c('green', '✅')} All skills are already installed!`);
     console.log();
     await pressEnterToContinue();
     return;
@@ -388,14 +446,14 @@ async function installAllSkills(skills: MarketplaceSkill[]): Promise<void> {
 
   if (installed > 0) {
     console.log(
-      `  ${c('green', '✓')} Successfully installed ${installed} skill(s)`
+      `  ${c('green', '✅')} Successfully installed ${installed} skill(s)`
     );
     console.log(`  ${dim('Location:')} ${c('cyan', destDir)}`);
   }
 
   if (errors.length > 0) {
     console.log();
-    console.log(`  ${c('red', '✗')} Failed to install:`);
+    console.log(`  ${c('red', 'X')} Failed to install:`);
     for (const { skill, error } of errors) {
       console.log(`    ${c('red', '•')} ${skill}: ${dim(error)}`);
     }
@@ -411,7 +469,7 @@ async function installAllSkills(skills: MarketplaceSkill[]): Promise<void> {
 export async function runMarketplaceFlow(): Promise<void> {
   console.log();
   console.log(
-    `  ${c('yellow', '⚠')} ${dim('Community list • Skills install on your behalf')}`
+    `  ${c('yellow', 'WARN')} ${dim('Community list • Skills install on your behalf')}`
   );
 
   const starsSpinner = new Spinner('Fetching marketplace info...').start();
@@ -447,7 +505,7 @@ export async function runMarketplaceFlow(): Promise<void> {
       spinner.fail(`Failed to load skills`);
       console.log();
       console.log(
-        `  ${c('red', '✗')} ${error instanceof Error ? error.message : 'Unknown error'}`
+        `  ${c('red', 'X')} ${error instanceof Error ? error.message : 'Unknown error'}`
       );
       console.log();
       await pressEnterToContinue();
@@ -456,7 +514,9 @@ export async function runMarketplaceFlow(): Promise<void> {
 
     if (skills.length === 0) {
       console.log();
-      console.log(`  ${c('yellow', '⚠')} No skills found in this marketplace`);
+      console.log(
+        `  ${c('yellow', 'WARN')} No skills found in this marketplace`
+      );
       console.log();
       await pressEnterToContinue();
       continue;
@@ -474,6 +534,8 @@ export async function runMarketplaceFlow(): Promise<void> {
       const detailChoice = await showSkillDetails(skillChoice);
       if (detailChoice === 'install') {
         await installSkill(skillChoice);
+      } else if (detailChoice === 'delete') {
+        await deleteSkill(skillChoice);
       }
     }
   }
@@ -483,7 +545,7 @@ export async function runOctocodeSkillsFlow(): Promise<void> {
   const source = SKILLS_MARKETPLACES.find(s => s.id === 'octocode-skills');
   if (!source) {
     console.log();
-    console.log(`  ${c('red', '✗')} Octocode Skills source not found`);
+    console.log(`  ${c('red', 'X')} Octocode Skills source not found`);
     console.log();
     await pressEnterToContinue();
     return;
@@ -500,7 +562,7 @@ export async function runOctocodeSkillsFlow(): Promise<void> {
     spinner.fail(`Failed to load skills`);
     console.log();
     console.log(
-      `  ${c('red', '✗')} ${error instanceof Error ? error.message : 'Unknown error'}`
+      `  ${c('red', 'X')} ${error instanceof Error ? error.message : 'Unknown error'}`
     );
     console.log();
     await pressEnterToContinue();
@@ -509,7 +571,7 @@ export async function runOctocodeSkillsFlow(): Promise<void> {
 
   if (skills.length === 0) {
     console.log();
-    console.log(`  ${c('yellow', '⚠')} No skills found`);
+    console.log(`  ${c('yellow', 'WARN')} No skills found`);
     console.log();
     await pressEnterToContinue();
     return;
@@ -543,6 +605,8 @@ export async function runOctocodeSkillsFlow(): Promise<void> {
           const detailChoice = await showSkillDetails(skillChoice);
           if (detailChoice === 'install') {
             await installSkill(skillChoice);
+          } else if (detailChoice === 'delete') {
+            await deleteSkill(skillChoice);
           }
         }
         break;

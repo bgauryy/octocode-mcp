@@ -45,26 +45,26 @@ function formatCategory(category: string): string {
 function getCategoryIcon(category: MCPCategory): string {
   const icons: Record<MCPCategory, string> = {
     'browser-automation': '',
-    database: '🗄️',
-    'cloud-platform': '☁️',
-    'developer-tools': '🛠️',
-    'file-system': '📁',
-    communication: '💬',
-    'search-web': '🔍',
-    'ai-services': '🤖',
-    'workflow-automation': '⚡',
-    'version-control': '📝',
-    'data-visualization': '📊',
-    'coding-agents': '🧑‍💻',
-    security: '🔒',
-    productivity: '📋',
-    monitoring: '📈',
-    finance: '💰',
-    'social-media': '📱',
-    aggregator: '🔗',
-    other: '📦',
+    database: 'DB',
+    'cloud-platform': 'CLOUD',
+    'developer-tools': 'DEV',
+    'file-system': 'FS',
+    communication: 'CHAT',
+    'search-web': 'Search',
+    'ai-services': 'AI',
+    'workflow-automation': 'Fast',
+    'version-control': 'EDIT',
+    'data-visualization': 'DATA',
+    'coding-agents': 'AGENT',
+    security: 'SEC',
+    productivity: 'List',
+    monitoring: 'MON',
+    finance: 'FIN',
+    'social-media': 'SOCIAL',
+    aggregator: 'LINK',
+    other: 'Package',
   };
-  return icons[category] || '📦';
+  return icons[category] || 'Package';
 }
 
 function formatMCPChoice(mcp: MCPRegistryEntry): string {
@@ -120,7 +120,7 @@ export async function selectTargetClient(): Promise<{
     if (isAvailable) {
       name += ` ${c('green', '○')}`;
     } else {
-      name += ` ${c('dim', '✗')}`;
+      name += ` ${c('dim', 'X')}`;
     }
 
     if (currentClient === clientId) {
@@ -144,12 +144,12 @@ export async function selectTargetClient(): Promise<{
 
   choices.push(new Separator() as unknown as ClientChoice);
   choices.push({
-    name: `${c('cyan', '⚙')} Custom Path - ${dim('Specify your own config path')}`,
+    name: `${c('cyan', '-')} Custom Path - ${dim('Specify your own config path')}`,
     value: 'custom' as MCPClient,
   });
   choices.push(new Separator() as unknown as ClientChoice);
   choices.push({
-    name: `${c('dim', '← Back')}`,
+    name: `${c('dim', '- Back')}`,
     value: 'back',
   });
 
@@ -174,7 +174,7 @@ export async function selectTargetClient(): Promise<{
 async function promptCustomPath(): Promise<string | null> {
   console.log();
   console.log(
-    `  ${c('blue', 'ℹ')} Enter the full path to your MCP config file`
+    `  ${c('blue', 'INFO')} Enter the full path to your MCP config file`
   );
   console.log(`  ${dim('Leave empty to go back')}`);
   console.log();
@@ -215,28 +215,28 @@ export async function selectBrowseMode(): Promise<
     | 'back';
   const choices: Array<{ name: string; value: BrowseChoice }> = [
     {
-      name: `🔍 Search MCPs - ${dim('Find by name, description, or tags')}`,
+      name: `- Search MCPs - ${dim('Find by name, description, or tags')}`,
       value: 'search',
     },
     {
-      name: `📂 Browse by Category - ${dim(`${getAllCategories().length} categories`)}`,
+      name: `- Browse by Category - ${dim(`${getAllCategories().length} categories`)}`,
       value: 'category',
     },
     {
-      name: `🏷️  Browse by Tag - ${dim(`${getAllTags().length} tags`)}`,
+      name: `- Browse by Tag - ${dim(`${getAllTags().length} tags`)}`,
       value: 'tag',
     },
     {
-      name: `⭐ Popular MCPs - ${dim('Top 20 most popular')}`,
+      name: `- Popular MCPs - ${dim('Top 20 most popular')}`,
       value: 'popular',
     },
     {
-      name: `📋 Full List (A-Z) - ${dim(`All ${MCP_REGISTRY.length} MCPs alphabetically`)}`,
+      name: `- Full List (A-Z) - ${dim(`All ${MCP_REGISTRY.length} MCPs alphabetically`)}`,
       value: 'all',
     },
     new Separator() as unknown as { name: string; value: BrowseChoice },
     {
-      name: `${c('dim', '← Back')}`,
+      name: `${c('dim', '- Back')}`,
       value: 'back',
     },
   ];
@@ -255,7 +255,7 @@ export async function searchMCPs(): Promise<MCPRegistryEntry | 'back' | null> {
   console.log(`  ${dim('[Step 3/6]')} ${bold('Select MCP')}`);
   console.log();
   console.log(
-    `  ${c('blue', 'ℹ')} Type to search by name, description, or tags`
+    `  ${c('blue', 'INFO')} Type to search by name, description, or tags`
   );
   console.log();
 
@@ -265,7 +265,7 @@ export async function searchMCPs(): Promise<MCPRegistryEntry | 'back' | null> {
     message: 'Search MCPs:',
     source: term => {
       const backOption = {
-        name: `${c('dim', '← Back to browse options')}`,
+        name: `${c('dim', '- Back to browse options')}`,
         value: 'back' as const,
       };
 
@@ -286,7 +286,7 @@ export async function searchMCPs(): Promise<MCPRegistryEntry | 'back' | null> {
       if (results.length === 0) {
         return [
           {
-            name: `${c('yellow', '⚠')} No MCPs found matching "${term}"`,
+            name: `${c('yellow', 'WARN')} No MCPs found matching "${term}"`,
             value: 'back' as const,
             disabled: 'Try different keywords',
           },
@@ -332,7 +332,7 @@ export async function selectByCategory(): Promise<
 
   choices.push(new Separator() as unknown as CategoryChoice);
   choices.push({
-    name: `${c('dim', '← Back')}`,
+    name: `${c('dim', '- Back')}`,
     value: 'back',
   });
 
@@ -357,7 +357,9 @@ export async function selectByTag(): Promise<MCPRegistryEntry | 'back' | null> {
   console.log();
   console.log(`  ${dim('[Step 3/6]')} ${bold('Select MCP')}`);
   console.log();
-  console.log(`  ${c('blue', 'ℹ')} Type to filter ${getAllTags().length} tags`);
+  console.log(
+    `  ${c('blue', 'INFO')} Type to filter ${getAllTags().length} tags`
+  );
   console.log();
 
   const allTags = getAllTags();
@@ -368,7 +370,7 @@ export async function selectByTag(): Promise<MCPRegistryEntry | 'back' | null> {
     message: 'Search tags:',
     source: term => {
       const backOption = {
-        name: `${c('dim', '← Back to browse options')}`,
+        name: `${c('dim', '- Back to browse options')}`,
         value: 'back' as const,
       };
 
@@ -382,7 +384,7 @@ export async function selectByTag(): Promise<MCPRegistryEntry | 'back' | null> {
       if (filteredTags.length === 0) {
         return [
           {
-            name: `${c('yellow', '⚠')} No tags found matching "${term}"`,
+            name: `${c('yellow', 'WARN')} No tags found matching "${term}"`,
             value: 'back' as const,
             disabled: 'Try different keywords',
           },
@@ -392,7 +394,7 @@ export async function selectByTag(): Promise<MCPRegistryEntry | 'back' | null> {
 
       return [
         ...filteredTags.map(tag => ({
-          name: `🏷️  ${formatTag(tag)} (${getTagCount(tag)} MCPs)`,
+          name: `- ${formatTag(tag)} (${getTagCount(tag)} MCPs)`,
           value: tag,
         })),
         { name: '─'.repeat(40), value: 'back' as const, disabled: true },
@@ -446,7 +448,7 @@ async function selectFromList(
 
   choices.push(new Separator() as unknown as MCPChoice);
   choices.push({
-    name: `${c('dim', '← Back')}`,
+    name: `${c('dim', '- Back')}`,
     value: 'back',
   });
 
@@ -478,7 +480,7 @@ export async function promptEnvVars(
   console.log(c('yellow', ' ┌' + '─'.repeat(60) + '┐'));
   console.log(
     c('yellow', ' │ ') +
-      `${c('yellow', '⚠')} ${bold('Environment Variables Required')}` +
+      `${c('yellow', 'WARN')} ${bold('Environment Variables Required')}` +
       ' '.repeat(26) +
       c('yellow', '│')
   );
@@ -504,7 +506,7 @@ export async function promptEnvVars(
     message: 'Would you like to configure these now?',
     choices: [
       {
-        name: `${c('green', '✓')} Configure environment variables`,
+        name: `${c('green', '✅')} Configure environment variables`,
         value: 'configure' as const,
       },
       {
@@ -513,7 +515,7 @@ export async function promptEnvVars(
       },
       new Separator() as unknown as { name: string; value: EnvChoice },
       {
-        name: `${c('dim', '← Back')}`,
+        name: `${c('dim', '- Back')}`,
         value: 'back' as const,
       },
     ],
@@ -562,16 +564,16 @@ export async function confirmInstall(
     message: `Install ${mcp.name} to ${clientInfo?.name || client}?`,
     choices: [
       {
-        name: `${c('green', '✓')} Proceed with installation`,
+        name: `${c('green', '✅')} Proceed with installation`,
         value: 'proceed' as const,
       },
       new Separator() as unknown as { name: string; value: ConfirmChoice },
       {
-        name: `${c('dim', '← Back to edit options')}`,
+        name: `${c('dim', '- Back to edit options')}`,
         value: 'back' as const,
       },
       {
-        name: `${c('dim', '✗ Cancel')}`,
+        name: `${c('dim', 'X Cancel')}`,
         value: 'cancel' as const,
       },
     ],

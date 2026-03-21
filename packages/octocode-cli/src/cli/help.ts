@@ -17,13 +17,16 @@ export function showHelp(): void {
     `    ${c('magenta', 'install')}     Configure octocode-mcp for an IDE`
   );
   console.log(
-    `    ${c('magenta', 'skills')}      Install Octocode skills for Claude Code`
+    `    ${c('magenta', 'skills')}      Install Octocode skills across AI clients`
   );
   console.log(
     `    ${c('magenta', 'cache')}       Inspect and clean Octocode cache directories`
   );
   console.log(
     `    ${c('magenta', 'sync')}        Sync MCP configurations across all IDEs`
+  );
+  console.log(
+    `    ${c('magenta', 'mcp')}         Manage MCP marketplace non-interactively`
   );
   console.log(
     `    ${c('magenta', 'auth')}        Manage GitHub authentication`
@@ -68,10 +71,27 @@ export function showHelp(): void {
   console.log(`    ${c('yellow', 'octocode sync')}`);
   console.log(`    ${c('yellow', 'octocode sync --status')}`);
   console.log();
+  console.log(`    ${dim('# MCP marketplace via CLI')}`);
+  console.log(`    ${c('yellow', 'octocode mcp list --search browser')}`);
+  console.log(
+    `    ${c('yellow', 'octocode mcp install --id playwright-mcp --client cursor --force')}`
+  );
+  console.log(
+    `    ${c('yellow', 'octocode mcp remove --id playwright-mcp --client cursor')}`
+  );
+  console.log();
   console.log(`    ${dim('# Install Octocode skills')}`);
   console.log(`    ${c('yellow', 'octocode skills install')}`);
   console.log(
     `    ${c('yellow', 'octocode skills install --skill octocode-researcher')}`
+  );
+  console.log(
+    `    ${c('yellow', 'octocode skills install --targets claude-code,cursor,codex --mode symlink')}`
+  );
+  console.log();
+  console.log(`    ${dim('# Remove one installed skill')}`);
+  console.log(
+    `    ${c('yellow', 'octocode skills remove --skill octocode-researcher --targets claude-code,cursor')}`
   );
   console.log();
   console.log(c('magenta', `  ─── 🔍🐙 ${bold('https://octocode.ai')} ───`));

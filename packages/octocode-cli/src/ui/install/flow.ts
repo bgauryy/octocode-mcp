@@ -47,7 +47,7 @@ export async function runInstallFlow(): Promise<void> {
 
   console.log();
   console.log(c('blue', '━'.repeat(66)));
-  console.log(`  📦 ${bold('Configure MCP server for your environment')}`);
+  console.log(`  ${bold('Configure MCP server for your environment')}`);
   console.log(c('blue', '━'.repeat(66)));
   console.log();
 
@@ -90,7 +90,7 @@ export async function runInstallFlow(): Promise<void> {
         console.log(c('yellow', '  ┌' + '─'.repeat(60) + '┐'));
         console.log(
           c('yellow', '  │ ') +
-            `${c('yellow', '⚠')} ${bold('Octocode is already configured!')}` +
+            `${c('yellow', 'WARN')} ${bold('Octocode is already configured!')}` +
             ' '.repeat(28) +
             c('yellow', '│')
         );
@@ -109,12 +109,12 @@ export async function runInstallFlow(): Promise<void> {
           message: 'What would you like to do?',
           choices: [
             {
-              name: `${c('green', '✓')} Update existing configuration`,
+              name: `${c('green', '✅')} Update existing configuration`,
               value: 'update' as const,
             },
             new Separator() as unknown as { name: string; value: UpdateChoice },
             {
-              name: `${c('dim', '← Back to client selection')}`,
+              name: `${c('dim', '- Back to client selection')}`,
               value: 'back' as const,
             },
           ],
@@ -200,15 +200,15 @@ async function showConfirmationAndPrompt(
   console.log();
   if (state.hasExistingOctocode) {
     console.log(
-      `  ${c('yellow', '⚠')} Will ${c('yellow', 'UPDATE')} existing octocode configuration`
+      `  ${c('yellow', 'WARN')} Will ${c('yellow', 'UPDATE')} existing octocode configuration`
     );
   } else if (preview.action === 'add') {
     console.log(
-      `  ${c('blue', 'ℹ')} Config file exists, will ${c('green', 'ADD')} octocode entry`
+      `  ${c('blue', 'INFO')} Config file exists, will ${c('green', 'ADD')} octocode entry`
     );
   } else {
     console.log(
-      `  ${c('green', '✓')} Will ${c('green', 'CREATE')} new config file`
+      `  ${c('green', '✅')} Will ${c('green', 'CREATE')} new config file`
     );
   }
 
@@ -254,7 +254,7 @@ async function showConfirmationAndPrompt(
   console.log(`    ${dim('Action:')}       ${actionStatus}`);
   console.log();
 
-  console.log(`  ${c('yellow', '⚠')} ${bold('Note:')}`);
+  console.log(`  ${c('yellow', 'WARN')} ${bold('Note:')}`);
   console.log(
     `  ${dim('Nothing is saved to any server. Configuration is stored locally at:')}`
   );
@@ -265,16 +265,16 @@ async function showConfirmationAndPrompt(
     message: 'What would you like to do?',
     choices: [
       {
-        name: `${c('green', '✓')} Proceed with configuration`,
+        name: `${c('green', '✅')} Proceed with configuration`,
         value: 'proceed' as const,
       },
       new Separator() as unknown as { name: string; value: FinalChoice },
       {
-        name: `${c('dim', '← Back to edit options')}`,
+        name: `${c('dim', '- Back to edit options')}`,
         value: 'back' as const,
       },
       {
-        name: `${c('dim', '✗ Cancel')}`,
+        name: `${c('dim', 'X Cancel')}`,
         value: 'cancel' as const,
       },
     ],
@@ -332,7 +332,7 @@ function printInstallSuccessForClient(
   console.log(c('green', '  ┌' + '─'.repeat(60) + '┐'));
   console.log(
     c('green', '  │ ') +
-      `${c('green', '✓')} ${bold('Octocode installed successfully!')}` +
+      `${c('green', '✅')} ${bold('Octocode installed successfully!')}` +
       ' '.repeat(26) +
       c('green', '│')
   );

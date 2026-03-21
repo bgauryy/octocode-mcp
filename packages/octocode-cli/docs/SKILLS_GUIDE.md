@@ -1,6 +1,6 @@
 # Skills Guide
 
-Skills are markdown instruction sets that teach Claude Code how to perform specific tasks — code exploration, PR review, architecture audits, documentation, and more.
+Skills are markdown instruction sets that teach AI coding clients how to perform specific tasks — code exploration, PR review, architecture audits, documentation, and more.
 
 ---
 
@@ -24,22 +24,30 @@ Skills are markdown instruction sets that teach Claude Code how to perform speci
 
 ## Installation
 
-Skills install into Claude Code's skills directory and are picked up automatically.
+Skills install into one or more client skill directories and are picked up automatically.
 
 ```bash
 npx octocode-cli skills list                                         # check install status
 npx octocode-cli skills install --skill octocode-researcher          # install one
 npx octocode-cli skills install -k octocode-plan                     # short flag
 npx octocode-cli skills install --skill octocode-researcher --force  # update
-npx octocode-cli skills install                                      # install all
+npx octocode-cli skills install                                      # install all to default target
+npx octocode-cli skills install --targets claude-code,cursor,codex   # multi-target install
+npx octocode-cli skills install --targets claude-code,cursor --mode symlink # symlink mode
+npx octocode-cli skills remove --skill octocode-researcher --targets claude-code,cursor # remove from targets
 ```
+
+`skills install` without `--targets`/`--mode` opens prompts to choose platforms and install strategy.
 
 ### Install destinations
 
-| Scope | Path (macOS/Linux) | Path (Windows) |
+| Target | Path (macOS/Linux) | Path (Windows) |
 |-------|-------------------|----------------|
-| **Global** (default) | `~/.claude/skills/` | `%LOCALAPPDATA%\Claude\skills\` |
-| **Project** | `.claude/skills/` inside repo | `.claude\skills\` inside repo |
+| `claude-code` (default) | `~/.claude/skills/` | `%APPDATA%\Claude\skills\` |
+| `claude-desktop` | `~/.claude-desktop/skills/` | `%APPDATA%\Claude Desktop\skills\` |
+| `cursor` | `~/.cursor/skills/` | `%USERPROFILE%\.cursor\skills\` |
+| `codex` | `~/.codex/skills/` | `%USERPROFILE%\.codex\skills\` |
+| `opencode` | `~/.opencode/skills/` | `%USERPROFILE%\.opencode\skills\` |
 
 **Project-scoped install** — set `"skillsDestDir"` in `~/.octocode/config.json` before running `skills install`:
 
@@ -47,9 +55,9 @@ npx octocode-cli skills install                                      # install a
 { "skillsDestDir": "/your/project/.claude/skills" }
 ```
 
-Or change it via the interactive menu: `npx octocode-cli` → Manage System Skills → Change path.
+`skillsDestDir` customizes the `claude-code` destination only.
 
-Commit `.claude/skills/` to share skills with your team.
+Commit `.claude/skills/` (or your chosen target directory) to share skills with your team.
 
 ---
 
@@ -133,7 +141,7 @@ Keep SKILL.md under 500 lines. Use `references/` for extended content.
 ## Troubleshooting
 
 **Skills not loading:**
-1. `ls ~/.claude/skills/` — verify the skill folder exists.
+1. `ls ~/.claude/skills/` (or target path) — verify the skill folder exists.
 2. Check `SKILL.md` has valid frontmatter (`name` and `description` fields).
 
 **Skill not triggering:** mention the skill name explicitly, or check that the `description` field matches your use case.

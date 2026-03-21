@@ -21,7 +21,7 @@ interface ClientChoice {
 
 function getClientStatusIndicator(status: ClientInstallStatus): string {
   if (status.octocodeInstalled) {
-    return c('green', '✓ Installed');
+    return c('green', '✅ installed');
   }
   if (status.configExists) {
     return c('blue', '○ Ready');
@@ -93,7 +93,7 @@ async function promptNoConfigurationsFound(
   console.log(c('yellow', '  ┌' + '─'.repeat(60) + '┐'));
   console.log(
     c('yellow', '  │ ') +
-      `${c('yellow', 'ℹ')} No octocode configurations found` +
+      `${c('yellow', 'INFO')} No octocode configurations found` +
       ' '.repeat(24) +
       c('yellow', '│')
   );
@@ -104,7 +104,7 @@ async function promptNoConfigurationsFound(
 
   if (availableClients.length === 0) {
     console.log(
-      `  ${c('red', '✗')} ${dim('No MCP clients detected on this system.')}`
+      `  ${c('red', 'X')} ${dim('No MCP clients detected on this system.')}`
     );
     console.log();
     console.log(`  ${dim('Supported clients:')}`);
@@ -117,12 +117,12 @@ async function promptNoConfigurationsFound(
 
     const choices: ClientChoice[] = [
       {
-        name: `${c('cyan', '⚙')} Custom Path - ${dim('Specify your own MCP config path')}`,
+        name: `${c('cyan', '-')} Custom Path - ${dim('Specify your own MCP config path')}`,
         value: 'custom' as MCPClient,
       },
       new Separator() as unknown as ClientChoice,
       {
-        name: `${c('dim', '← Back')}`,
+        name: `${c('dim', '- Back')}`,
         value: 'back',
       },
     ];
@@ -170,12 +170,12 @@ async function promptNoConfigurationsFound(
 
   choices.push(new Separator() as unknown as ClientChoice);
   choices.push({
-    name: `${c('cyan', '⚙')} Custom Path - ${dim('Specify your own MCP config path')}`,
+    name: `${c('cyan', '-')} Custom Path - ${dim('Specify your own MCP config path')}`,
     value: 'custom' as MCPClient,
   });
   choices.push(new Separator() as unknown as ClientChoice);
   choices.push({
-    name: `${c('dim', '← Back')}`,
+    name: `${c('dim', '- Back')}`,
     value: 'back',
   });
 
@@ -211,7 +211,7 @@ async function promptExistingConfigurations(
 ): Promise<{ client: MCPClient; customPath?: string } | null> {
   console.log();
   console.log(
-    `  ${c('green', '✓')} Found ${bold(String(installedClients.length))} octocode configuration${installedClients.length > 1 ? 's' : ''}`
+    `  ${c('green', '✅')} Found ${bold(String(installedClients.length))} octocode configuration${installedClients.length > 1 ? 's' : ''}`
   );
   console.log();
 
@@ -219,7 +219,7 @@ async function promptExistingConfigurations(
 
   for (const { clientId } of installedClients) {
     const client = MCP_CLIENTS[clientId];
-    let name = `${c('green', '✓')} ${client.name} - ${dim('View/Edit configuration')}`;
+    let name = `${c('green', '✅')} ${client.name} - ${dim('View/Edit configuration')}`;
 
     if (currentClient === clientId) {
       name += ` ${c('yellow', '(Current)')}`;
@@ -247,12 +247,12 @@ async function promptExistingConfigurations(
 
   choices.push(new Separator() as unknown as ClientChoice);
   choices.push({
-    name: `${c('cyan', '⚙')} Custom Path - ${dim('Specify your own MCP config path')}`,
+    name: `${c('cyan', '-')} Custom Path - ${dim('Specify your own MCP config path')}`,
     value: 'custom' as MCPClient,
   });
   choices.push(new Separator() as unknown as ClientChoice);
   choices.push({
-    name: `${c('dim', '← Back')}`,
+    name: `${c('dim', '- Back')}`,
     value: 'back',
   });
 
@@ -289,7 +289,7 @@ async function promptInstallToNewClient(
   currentClient: MCPClient | null
 ): Promise<{ client: MCPClient; customPath?: string } | null> {
   console.log();
-  console.log(`  ${c('blue', 'ℹ')} Select a client for new installation:`);
+  console.log(`  ${c('blue', 'INFO')} Select a client for new installation:`);
   console.log();
 
   const choices: ClientChoice[] = [];
@@ -318,7 +318,7 @@ async function promptInstallToNewClient(
 
   choices.push(new Separator() as unknown as ClientChoice);
   choices.push({
-    name: `${c('dim', '← Back to configurations')}`,
+    name: `${c('dim', '- Back to configurations')}`,
     value: 'back',
   });
 
@@ -351,7 +351,7 @@ function expandPath(inputPath: string): string {
 async function promptCustomPath(): Promise<string | null> {
   console.log();
   console.log(
-    `  ${c('blue', 'ℹ')} Enter the full path to your MCP config file (JSON)`
+    `  ${c('blue', 'INFO')} Enter the full path to your MCP config file (JSON)`
   );
   console.log(`  ${dim('Leave empty to go back')}`);
   console.log();
@@ -413,7 +413,7 @@ type LocalToolsChoice = 'enable' | 'disable' | 'back';
 
 export async function promptLocalTools(): Promise<boolean | null> {
   console.log();
-  console.log(`  ${c('blue', 'ℹ')} ${bold('Local Tools')}`);
+  console.log(`  ${c('blue', 'INFO')} ${bold('Local Tools')}`);
   console.log(
     `  ${dim('Enable local filesystem tools for searching and reading files')}`
   );
@@ -433,7 +433,7 @@ export async function promptLocalTools(): Promise<boolean | null> {
       },
       new Separator() as unknown as { name: string; value: LocalToolsChoice },
       {
-        name: `${c('dim', '← Back')}`,
+        name: `${c('dim', '- Back')}`,
         value: 'back' as const,
       },
     ],
@@ -451,7 +451,7 @@ export async function promptGitHubAuth(): Promise<{
   token?: string;
 } | null> {
   console.log();
-  console.log(`  ${c('blue', 'ℹ')} ${bold('GitHub Authentication')}`);
+  console.log(`  ${c('blue', 'INFO')} ${bold('GitHub Authentication')}`);
   console.log(`  ${dim('Required for accessing GitHub repositories.')}`);
   console.log();
 
@@ -472,7 +472,7 @@ export async function promptGitHubAuth(): Promise<{
       },
       new Separator() as unknown as { name: string; value: GitHubAuthMethod },
       {
-        name: `${c('dim', '← Back')}`,
+        name: `${c('dim', '- Back')}`,
         value: 'back' as const,
       },
     ],
@@ -484,7 +484,7 @@ export async function promptGitHubAuth(): Promise<{
   if (method === 'gh-cli') {
     console.log();
     console.log(
-      `  ${c('cyan', '→')} Make sure gh CLI is installed and authenticated:`
+      `  ${c('cyan', '->')} Make sure gh CLI is installed and authenticated:`
     );
     console.log(`    ${dim('https://cli.github.com/')}`);
     console.log();
@@ -518,7 +518,7 @@ export async function promptGitHubAuth(): Promise<{
     }
 
     console.log();
-    console.log(`  ${c('yellow', '⚠')} ${bold('Security Note:')}`);
+    console.log(`  ${c('yellow', 'WARN')} ${bold('Security Note:')}`);
     console.log(
       `  ${dim('Your token will be saved in the MCP configuration file.')}`
     );

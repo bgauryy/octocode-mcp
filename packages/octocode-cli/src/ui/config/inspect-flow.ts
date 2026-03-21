@@ -33,7 +33,7 @@ async function inspectMCPServer(
 ): Promise<void> {
   console.log();
   console.log(c('blue', '━'.repeat(66)));
-  console.log(`  🔍 ${bold('MCP Server Details')}`);
+  console.log(`  ${bold('MCP Server Details')}`);
   console.log(c('blue', '━'.repeat(66)));
   console.log();
 
@@ -64,13 +64,13 @@ async function inspectMCPServer(
     message: '',
     choices: [
       {
-        name: `${c('red', '🗑')} Remove Server`,
+        name: `${c('red', 'Delete')} - Remove Server`,
         value: 'remove',
         description: 'Remove this server from configuration',
       },
       new Separator() as unknown as { name: string; value: ServerMenuChoice },
       {
-        name: `${c('dim', '← Back')}`,
+        name: `${c('dim', '- Back')}`,
         value: 'back',
       },
     ],
@@ -119,7 +119,9 @@ async function inspectClient(clientStatus: ClientInstallStatus): Promise<void> {
 
     if (!config || !config.mcpServers) {
       console.log();
-      console.log(`  ${c('yellow', '⚠')} No MCP configuration found or empty.`);
+      console.log(
+        `  ${c('yellow', 'WARN')} No MCP configuration found or empty.`
+      );
       console.log();
       await new Promise(resolve => setTimeout(resolve, 1500));
       return;
@@ -129,7 +131,7 @@ async function inspectClient(clientStatus: ClientInstallStatus): Promise<void> {
 
     if (serverIds.length === 0) {
       console.log();
-      console.log(`  ${c('yellow', '⚠')} No MCP servers configured.`);
+      console.log(`  ${c('yellow', 'WARN')} No MCP servers configured.`);
       console.log();
       await new Promise(resolve => setTimeout(resolve, 1500));
       return;
@@ -147,7 +149,7 @@ async function inspectClient(clientStatus: ClientInstallStatus): Promise<void> {
       value: InspectMenuChoice;
       description?: string;
     }> = serverIds.map(id => ({
-      name: id === 'octocode' ? `🐙 ${id}` : `🔌 ${id}`,
+      name: id === 'octocode' ? `${id}` : `MCP ${id}`,
       value: id,
       description: config.mcpServers![id].command,
     }));
@@ -156,7 +158,7 @@ async function inspectClient(clientStatus: ClientInstallStatus): Promise<void> {
       new Separator() as unknown as { name: string; value: InspectMenuChoice }
     );
     choices.push({
-      name: `${c('dim', '← Back')}`,
+      name: `${c('dim', '- Back')}`,
       value: 'back',
     });
 
@@ -192,14 +194,14 @@ export async function runInspectFlow(): Promise<void> {
 
     if (configuredClients.length === 0) {
       console.log();
-      console.log(`  ${c('yellow', '⚠')} No configured MCP clients found.`);
+      console.log(`  ${c('yellow', 'WARN')} No configured MCP clients found.`);
       console.log();
       return;
     }
 
     console.log();
     console.log(c('blue', '━'.repeat(66)));
-    console.log(`  ℹ ${bold('MCP Configuration Details')}`);
+    console.log(`  Info: ${bold('MCP Configuration Details')}`);
     console.log(c('blue', '━'.repeat(66)));
     console.log();
 
@@ -217,7 +219,7 @@ export async function runInspectFlow(): Promise<void> {
       new Separator() as unknown as { name: string; value: InspectMenuChoice }
     );
     choices.push({
-      name: `${c('dim', '← Back')}`,
+      name: `${c('dim', '- Back')}`,
       value: 'back',
     });
 

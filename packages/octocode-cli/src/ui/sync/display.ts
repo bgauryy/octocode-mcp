@@ -31,7 +31,9 @@ export function printSyncSummary(analysis: SyncAnalysis): void {
   );
 
   if (summary.consistentMCPs > 0) {
-    console.log(`   ${c('green', '✓')} ${summary.consistentMCPs} fully synced`);
+    console.log(
+      `   ${c('green', '✅')} ${summary.consistentMCPs} fully synced`
+    );
     for (const diff of analysis.fullyConsistent) {
       console.log(`       ${dim('•')} ${diff.mcpId}`);
     }
@@ -58,7 +60,7 @@ export function printSyncSummary(analysis: SyncAnalysis): void {
     }
     console.log();
     console.log(
-      `   ${c('cyan', 'ℹ')} ${dim('Continue to choose which config to use for each conflict')}`
+      `   ${c('cyan', 'INFO')} ${dim('Continue to choose which config to use for each conflict')}`
     );
   }
 
@@ -88,7 +90,7 @@ function printMCPDiff(diff: MCPDiff): void {
     ? c('red', '!')
     : diff.missingIn.length > 0
       ? c('yellow', '○')
-      : c('green', '✓');
+      : c('green', '✅');
 
   console.log(`   ${icon} ${bold(diff.mcpId)}`);
 
@@ -111,7 +113,7 @@ function printMCPDiff(diff: MCPDiff): void {
 
 export function printAllDiffs(analysis: SyncAnalysis): void {
   if (analysis.fullyConsistent.length > 0) {
-    console.log(` ${c('green', '✓')} ${bold('Fully Synced:')}`);
+    console.log(` ${c('green', '✅')} ${bold('Fully Synced:')}`);
     for (const diff of analysis.fullyConsistent) {
       console.log(`     ${c('dim', '•')} ${diff.mcpId}`);
     }
@@ -165,7 +167,7 @@ export function printConflictDetails(
   console.log(c('yellow', ' ┌' + '─'.repeat(60) + '┐'));
   console.log(
     c('yellow', ' │ ') +
-      `${c('yellow', '⚠')} Conflict: ${bold(diff.mcpId)}` +
+      `${c('yellow', 'WARN')} Conflict: ${bold(diff.mcpId)}` +
       ' '.repeat(Math.max(0, 43 - diff.mcpId.length)) +
       c('yellow', '│')
   );
@@ -225,7 +227,7 @@ export function printSyncPreview(
   }
   console.log();
 
-  console.log(` ${c('yellow', '⚠')} ${bold('Note:')}`);
+  console.log(` ${c('yellow', 'WARN')} ${bold('Note:')}`);
   console.log(
     `   ${dim('Backups will be created before modifying any config.')}`
   );
@@ -239,7 +241,7 @@ export function printSyncResult(result: SyncResult): void {
     console.log(c('green', ' ┌' + '─'.repeat(60) + '┐'));
     console.log(
       c('green', ' │ ') +
-        `${c('green', '✓')} ${bold('Sync Complete!')}` +
+        `${c('green', '✅')} ${bold('Sync Complete!')}` +
         ' '.repeat(43) +
         c('green', '│')
     );
@@ -248,7 +250,7 @@ export function printSyncResult(result: SyncResult): void {
     console.log(c('red', ' ┌' + '─'.repeat(60) + '┐'));
     console.log(
       c('red', ' │ ') +
-        `${c('red', '✗')} ${bold('Sync completed with errors')}` +
+        `${c('red', 'X')} ${bold('Sync completed with errors')}` +
         ' '.repeat(32) +
         c('red', '│')
     );
@@ -260,7 +262,7 @@ export function printSyncResult(result: SyncResult): void {
   if (result.mcpsSynced.length > 0) {
     console.log(` ${bold('Synced MCPs:')} ${result.mcpsSynced.length}`);
     for (const mcpId of result.mcpsSynced) {
-      console.log(`   ${c('green', '✓')} ${mcpId}`);
+      console.log(`   ${c('green', '✅')} ${mcpId}`);
     }
     console.log();
   }
@@ -269,12 +271,12 @@ export function printSyncResult(result: SyncResult): void {
   for (const [client, clientResult] of result.clientResults) {
     const name = getClientDisplayName(client);
     if (clientResult.success) {
-      console.log(`   ${c('green', '✓')} ${name}`);
+      console.log(`   ${c('green', '✅')} ${name}`);
       if (clientResult.backupPath) {
         console.log(`     ${dim('Backup:')} ${clientResult.backupPath}`);
       }
     } else {
-      console.log(`   ${c('red', '✗')} ${name}`);
+      console.log(`   ${c('red', 'X')} ${name}`);
       if (clientResult.error) {
         console.log(`     ${c('red', 'Error:')} ${clientResult.error}`);
       }
@@ -297,7 +299,7 @@ export function printNoSyncNeeded(): void {
   console.log(c('green', ' ┌' + '─'.repeat(60) + '┐'));
   console.log(
     c('green', ' │ ') +
-      `${c('green', '✓')} ${bold('All MCPs are already in sync!')}` +
+      `${c('green', '✅')} ${bold('All MCPs are already in sync!')}` +
       ' '.repeat(28) +
       c('green', '│')
   );
