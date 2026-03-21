@@ -76,6 +76,9 @@ Access via the interactive menu: `npx octocode-cli` → Manage System Skills →
 | Claude Scientific Skills | Scientific computing |
 | Dev Browser | Browser automation with Playwright |
 | Agent Skills | Web APIs and agent workflow skills |
+| Everything Claude Code | Large cross-domain skill library |
+| Antigravity Awesome Skills | Massive community skills collection |
+| Obsidian Skills | Obsidian and Markdown agent skills |
 
 ---
 

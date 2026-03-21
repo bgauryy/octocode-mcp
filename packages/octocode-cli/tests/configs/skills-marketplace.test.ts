@@ -87,6 +87,13 @@ describe('Skills Marketplace Registry', () => {
       expect(agentSkills?.skillsPath).toBe('skills');
       expect(agentSkills?.skillPattern).toBe('skill-folders');
     });
+
+    it('should include newly added popular marketplaces', () => {
+      const ids = SKILLS_MARKETPLACES.map(m => m.id);
+      expect(ids).toContain('everything-claude-code');
+      expect(ids).toContain('antigravity-awesome-skills');
+      expect(ids).toContain('obsidian-skills');
+    });
   });
 
   describe('getMarketplaceById', () => {
