@@ -13,7 +13,7 @@ Specialized AI agent skills that extend OctoCode's capabilities.
 | Plan implementation steps before coding | **Plan** | "Plan this refactor", "Research & plan this feature" |
 | Technical decisions requiring formal RFC with alternatives | **RFC** | "Create RFC for caching", "Design doc for API v2", "How should we build X?" |
 | Review a pull request or local changes | **PR Reviewer** | "Review PR #123", "Review my changes", "Is this PR safe to merge?" |
-| Repo-wide code quality scan (duplicates, complexity, cycles) | **Local Code Scan** | "Analyze code quality", "Find duplicates", "Find dependency cycles", "Scan for tech debt" |
+| Understand, write, plan, review, or analyze code with codebase awareness | **Code Engineer** | "How does X work?", "Implement this safely", "Plan this refactor", "Audit quality", "Check architecture" |
 | Brutal code criticism with fixes | **Roast** | "Roast my code", "Find code sins", "What's wrong with this?" |
 | Strengthen prompts / agent instructions | **Prompt Optimizer** | "Optimize this SKILL.md", "Agent skips steps" |
 | Generate repo documentation | **Documentation Writer** | "Document this project", "Create developer docs" |
@@ -111,17 +111,19 @@ Brutal code critique with file:line citations. Severity: gentle → nuclear. Sin
 
 ---
 
-### 8. OctoCode Local Code Scan
-**Location:** `octocode-local-code-scan/`
+### 8. OctoCode Code Engineer
+**Location:** `octocode-code-engineer/`
 
-AST-based repo-wide code quality scanner. Detects duplicate function bodies, repeated control-flow patterns, high-complexity functions, dependency cycles, critical dependency chains, and dead modules. Produces a prioritized JSON report with file:line references and suggested fixes. Optionally uses tree-sitter for richer metadata. Pairs with Octocode MCP local + LSP tools for investigation.
+Code engineering platform for any task requiring deep file-level comprehension. Combines a CLI scanner (dependency graph + AST + semantic analysis), AST engine (`@ast-grep/napi` with 16 structural presets), and Octocode MCP local/LSP tools into a unified workflow. Four composable modes: Explore, Code, Analyze, Audit. Enforces coding standards: architecture-first thinking, TDD, no duplications, dual-layer verification (agentic + deterministic).
 
 | When | Example |
 |------|---------|
-| Code quality audit | "Analyze code quality", "Scan for tech debt" |
-| Duplicate detection | "Find duplicate code", "Find repeated patterns" |
-| Dependency analysis | "Find dependency cycles", "Show critical paths" |
-| Complexity check | "Check complexity", "Find oversized functions" |
+| Understand code | "How does X work?", "Explore this module", "Where should this live?" |
+| Write code safely | "Implement this", "Add feature", "Fix this bug" |
+| Plan refactors | "Plan this refactor", "Safe to rename?", "Blast radius?" |
+| Architecture health | "Check architecture", "Find cycles", "Dependency analysis" |
+| Quality audit | "Audit code", "Find issues", "Scan for problems" |
+| Security / test gaps | "Security review", "Test coverage gaps", "Unused deps" |
 
 ---
 

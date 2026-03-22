@@ -112,15 +112,14 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 |------|---------|----------|
 | `--critical-complexity-threshold N` | 30 | Complexity for HIGH findings + critical path weighting |
 | `--cognitive-complexity-threshold N` | 15 | Cognitive complexity threshold |
-| `--cyclomatic-density-threshold N` | 0.5 | CC/LOC ratio threshold |
 | `--halstead-effort-threshold N` | 500000 | Halstead effort threshold |
 | `--maintainability-index-threshold N` | 20 | MI below this triggers a finding (0-100 scale) |
 | `--parameter-threshold N` | 5 | Max function parameters before flagging |
 | `--any-threshold N` | 5 | Max `any` type usages per file |
-| `--magic-number-threshold N` | 3 | Max magic number occurrences per file |
 | `--god-module-statements N` | 500 | Statement threshold for `god-module` |
 | `--god-module-exports N` | 20 | Export threshold for `god-module` |
 | `--god-function-statements N` | 100 | Statement threshold for `god-function` |
+| `--god-function-mi-threshold N` | 10 | MI threshold for `god-function` (fires when MI < N and LOC > 30) |
 | `--min-function-statements N` | 6 | Min function body statements for duplicate matching |
 | `--min-flow-statements N` | 6 | Min control-flow statements for duplicate matching |
 | `--flow-dup-threshold N` | 3 | Min occurrences for a repeated flow to become a finding |
@@ -133,6 +132,7 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 |------|---------|----------|
 | `--type-hierarchy-threshold N` | 4 | Max inheritance depth before flagging |
 | `--override-chain-threshold N` | 3 | Max method override depth before flagging |
+| `--shotgun-threshold N` | 8 | Unique-file threshold for `shotgun-surgery` |
 
 ### Thresholds — Security
 

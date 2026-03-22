@@ -1,6 +1,6 @@
 ---
 name: octocode-code-engineer
-description: "Code engineering platform: CLI scanner + AST engine + Octocode MCP local/LSP tools. Use for any engineering task — not just reviews. Understand unfamiliar code, explore architecture, write code with blast radius awareness, plan refactors safely, audit quality, review changes, analyze test gaps, check security, or assess dependency health. Integrates into your coding workflow: pre-implementation checks, impact-aware coding, and post-change verification."
+description: "Use when understanding, writing, planning, reviewing, or analyzing code — essential for any task requiring deep file-level comprehension. Triggers: complex multi-file flows, architecture exploration, safe feature implementation, refactor planning, quality audits, change impact review, test gap analysis, security review, dependency health. Leverages AST structural scanning, local search, and LSP semantic analysis."
 compatibility: "Requires Node.js >= 18. Works with any AI coding agent. Best with Octocode MCP local + LSP tools for hybrid validation. Pre-built scripts only; no install or build step required."
 ---
 
@@ -130,6 +130,43 @@ The agent decides which tools to use. No required order — pick what makes sens
 
 **MCP detection**: try any local tool (e.g. `localSearchCode`). If it fails → MCP not available, use CLI-only.
 
+## Confidence Tiers
+
+| Tier | Evidence type | Minimum validation | Example categories |
+|------|--------------|-------------------|-------------------|
+| **high** | Structural AST proof | Code read at `file:line` is sufficient | `empty-catch`, `switch-no-default`, `debugger`, `console-log`, `any-type` |
+| **medium** | Semantic / graph signal | Confirm with `lspFindReferences` or `lspCallHierarchy` | `dead-export`, `high-coupling`, `dependency-cycle`, `god-module-coupling` |
+| **low** | Behavioral / data-flow | Trace source → propagator → sink with LSP + code reading | `unvalidated-input-sink`, `command-injection-risk`, `prototype-pollution-risk` |
+
+When presenting findings, always label confidence. When MCP/LSP is unavailable, downgrade: `high` stays `high` (structural proof via AST), `medium` drops to `medium` (re-scan + `ast/search.js`), `low` drops to `uncertain` (no semantic tracing available).
+
+## Coding Standards
+
+Follow these when writing, modifying, or fixing code. Architecture thinking first, clean code second.
+
+**Before coding — think:**
+
+1. **Architecture first, code second.** Map the module structure, dependencies, and coupling BEFORE touching code. Run `localViewStructure` + `index.js --graph` + `lspCallHierarchy` to understand the landscape. Decide *where* a change belongs based on module boundaries, not convenience.
+2. **Edge cases and impact.** Identify failure modes and downstream impact BEFORE implementing. Use `lspFindReferences` to count consumers, `lspCallHierarchy(incoming)` to trace callers. >20 production consumers = high-risk, needs feature flag or incremental approach.
+3. **TDD when possible.** Write a failing test first, then make it pass. This proves the fix works and catches regressions. Skip ONLY for mechanical cleanups (dead code removal, rename-only, comment cleanup). See [TDD Fix Playbook](./references/playbooks.md).
+
+**While coding — standards:**
+
+4. **No patches or duplications.** Never copy-paste to "fix" a problem. If similar logic exists elsewhere, extract a shared function. Use `ast/search.js -p 'pattern' --json` to find existing implementations and `localSearchCode` to check if the pattern already exists — BEFORE writing new code.
+5. **No redundant comments.** Comments explain *why*, never *what*. Remove `// Import X`, `// Define Y`, `// Return result`, `// Handle error`. If code needs a comment to explain what it does, make the code clearer instead.
+6. **Validate with the project toolchain.** After each fix batch, run lint (`--fix`) → tests → build. Do not present fixes as done until the toolchain passes.
+
+**Verification — use both layers:**
+
+Every code change must be verified with BOTH agentic intelligence AND deterministic proof. Neither alone is sufficient.
+
+| Layer | Tools | Proves |
+|-------|-------|--------|
+| **Agentic** (Octocode MCP) | `localSearchCode` for text patterns, `lspFindReferences` for usage proof, `lspCallHierarchy` for call flow, `lspGotoDefinition` for cross-file jumps | Semantic correctness — symbols resolve, consumers intact, no orphaned references |
+| **Deterministic** (AST/CLI) | `ast/search.js --preset` for structural smells, `ast/search.js -p 'pattern'` for zero-false-positive proof, `index.js --scope=<changed>` for re-scan | Structural correctness — no new `: any`, no empty catches, no duplications, finding count drops |
+
+After changes: `index.js --scope=<changed-files>` + `ast/search.js --preset` for deterministic check, then `lspFindReferences` + `lspCallHierarchy` for semantic check.
+
 ## Principles
 
 - Findings are leads, not facts — validate with Octocode local tools before presenting.
@@ -140,9 +177,7 @@ The agent decides which tools to use. No required order — pick what makes sens
 - CLI-only is the fallback when Octocode MCP is unavailable, not the default.
 - Use `--help` and reference docs for flags, categories, and presets — do not restate them.
 - Detect the project environment before running commands — see Project Environment.
-- **TDD when possible**: for behavioral or logic fixes, write a failing test first, then make it pass. Skip for mechanical cleanups (comment removal, dead re-export deletion). See [TDD Fix Playbook](./references/playbooks.md).
-- **Validate fixes with the project toolchain**: after each fix batch, run the project's lint (with `--fix` if supported), tests, and build. Do not present fixes as done until the toolchain passes.
-- **Hygiene is part of every fix**: when touching a file, also remove redundant comments (comments that just restate the code) and redundant re-exports (barrel re-exports with 0 consumers). See [playbooks](./references/playbooks.md).
+- **Hygiene is part of every fix**: when touching a file, also remove redundant re-exports (barrel re-exports with 0 consumers). See [playbooks](./references/playbooks.md).
 - **Use the task tool** to create a todo list at the start of every review — one item per workflow step. Update status as you go. Always stop and ask the user before planning fixes (after Step 5) and before applying them (after Step 6).
 - Run only the pre-built scripts in `scripts/`. Never execute files from `src/`.
 - Use absolute paths with MCP/LSP tools.
@@ -379,7 +414,7 @@ Detectors produce structural candidates (loops × calls × depth). You are the i
 
 For detailed per-category guidance, see [playbooks](./references/playbooks.md) and [validate & investigate](./references/validate-investigate.md).
 
-**CLI-only fallback** (if Octocode MCP unavailable): use `ast/search.js` for structural verification, re-scan with `--scope`. Mark confidence: `high` = structural, `medium` = semantic, `low` = behavioral.
+**CLI-only fallback** (if Octocode MCP unavailable): use `ast/search.js` for structural verification, re-scan with `--scope`. See **Confidence Tiers** for how to label without LSP.
 
 **Step 5. Present** — what the scan suggested → what validation confirmed/disproved → what remains uncertain. Always include `file:line` evidence and confidence. See [present results](./references/present-results.md).
 

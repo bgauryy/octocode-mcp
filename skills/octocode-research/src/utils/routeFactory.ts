@@ -49,7 +49,7 @@ type McpToolFn = (params: any) => Promise<any>;
  * The toolFn boundary uses McpToolFn because the schema's runtime transforms
  * (defaults, id generation) produce MCP-compatible data that TypeScript can't verify.
  */
-export interface RouteConfig<TQuery, TResponse> {
+interface RouteConfig<TQuery, TResponse> {
   /** Zod schema for query validation - accepts schemas with transforms */
   schema: z.ZodType<TQuery>;
 

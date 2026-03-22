@@ -6,7 +6,6 @@
 
 import {
   getErrorStatus,
-  getErrorHeader,
   hasStatusIn,
   hasCodeIn,
   messageMatches,
@@ -72,8 +71,6 @@ export const RETRY_CONFIGS = {
   },
 } as const satisfies Record<string, RetryConfig>;
 
-type RetryCategory = keyof typeof RETRY_CONFIGS;
-
 /**
  * Context for retry logging
  */
@@ -133,17 +130,6 @@ export async function withRetry<T>(
   throw lastError;
 }
 
-/**
- * Convenience wrapper that selects config by category
- */
-export async function withCategoryRetry<T>(
-  category: RetryCategory,
-  operation: () => Promise<T>,
-  context?: RetryContext
-): Promise<T> {
-  return withRetry(operation, RETRY_CONFIGS[category], context);
-}
-
 // =============================================================================
 // Error Type Detection
 // =============================================================================
@@ -161,9 +147,6 @@ const TIMEOUT_PATTERNS = [/timeout/i, /timed?\s*out/i] as const;
 const FILE_BUSY_CODES = ['EBUSY', 'EAGAIN', 'ENOTEMPTY'] as const;
 
 const CONNECTION_REFUSED_CODES = ['ECONNREFUSED', 'ENOTFOUND', 'EHOSTUNREACH'] as const;
-
-const SYMBOL_NOT_FOUND_CODES = ['SYMBOL_NOT_FOUND', 'NOT_FOUND'] as const;
-const SYMBOL_NOT_FOUND_PATTERNS = [/symbol\s*not\s*found/i, /definition\s*not\s*found/i] as const;
 
 /**
  * Check if error indicates GitHub rate limiting
@@ -226,55 +209,9 @@ function isConnectionRefused(err: unknown): boolean {
   return hasCodeIn(err, CONNECTION_REFUSED_CODES);
 }
 
-/**
- * Check if symbol was not found (LSP)
- */
-export function isSymbolNotFound(err: unknown): boolean {
-  // Check error codes first (more reliable)
-  if (hasCodeIn(err, SYMBOL_NOT_FOUND_CODES)) {
-    return true;
-  }
-
-  // Fall back to message patterns
-  return messageMatches(err, SYMBOL_NOT_FOUND_PATTERNS);
-}
-
 // =============================================================================
 // Utilities
 // =============================================================================
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Get suggested retry delay from error (if available)
- */
-export function getRetryAfter(err: unknown): number | null {
-  if (isRateLimited(err)) {
-    const retryAfter = getErrorHeader(err, 'retry-after');
-    if (retryAfter) {
-      return parseInt(retryAfter, 10) * 1000;
-    }
-    return 60000; // Default 60s for rate limits
-  }
-
-  if (isLspNotReady(err)) {
-    return 3000; // 3s for LSP warm-up
-  }
-
-  return null;
-}
-
-/**
- * Determine if an error is recoverable
- */
-export function isRecoverable(err: unknown): boolean {
-  return (
-    isRateLimited(err) ||
-    isLspNotReady(err) ||
-    isTimeout(err) ||
-    isServerError(err) ||
-    isFileBusy(err) ||
-    isConnectionRefused(err)
-  );
-}

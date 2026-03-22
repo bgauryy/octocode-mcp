@@ -24,19 +24,13 @@ interface McpToolResponse {
   isError?: boolean;
 }
 
-/**
- * Research context from the MCP response
- */
-export interface ResearchContext {
+interface ResearchContext {
   mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }
 
-/**
- * Single result item from bulk response
- */
-export interface BulkResultItem {
+interface BulkResultItem {
   id: number;
   status: 'hasResults' | 'empty' | 'error';
   data: Record<string, unknown>;
@@ -57,10 +51,7 @@ export interface ParsedResponse {
   status: 'hasResults' | 'empty' | 'error' | 'unknown';
 }
 
-/**
- * Parsed bulk response with all results
- */
-export interface ParsedBulkResponse {
+interface ParsedBulkResponse {
   /** All results from bulk query */
   results: BulkResultItem[];
   /** Categorized hints by status */
@@ -170,19 +161,6 @@ export function parseToolResponse(response: McpToolResponse): ParsedResponse {
 
   // No data found
   return emptyResult;
-}
-
-/**
- * Convenience function to get data field with type safety
- */
-export function getDataField<T>(
-  response: McpToolResponse,
-  field: string,
-  defaultValue: T
-): T {
-  const { data } = parseToolResponse(response);
-  const value = data[field];
-  return value !== undefined ? (value as T) : defaultValue;
 }
 
 /**

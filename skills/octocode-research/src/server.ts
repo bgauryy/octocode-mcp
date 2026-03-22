@@ -1,5 +1,8 @@
 import express, { type Express, type Request, type Response, type NextFunction } from 'express';
 import type { Server } from 'http';
+import { writeFileSync, unlinkSync, mkdirSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 import { toolsRoutes } from './routes/tools.js';
 import { promptsRoutes } from './routes/prompts.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -11,6 +14,8 @@ import { getAllCircuitStates, clearAllCircuits, stopCircuitCleanup } from './uti
 import { agentLog, successLog, errorLog, dimLog, warnLog } from './utils/colors.js';
 import { fireAndForgetWithTimeout } from './utils/asyncTimeout.js';
 import { errorQueue } from './utils/errorQueue.js';
+
+declare const __PACKAGE_VERSION__: string;
 
 const HOST = process.env.OCTOCODE_RESEARCH_HOST || 'localhost';
 
@@ -31,7 +36,7 @@ const getPort = (raw?: string): number => {
   return port;
 };
 
-const PORT = getPort(process.env.OCTOCODE_RESEARCH_PORT);
+const PORT = getPort(process.env.OCTOCODE_RESEARCH_PORT || process.env.OCTOCODE_PORT);
 
 const MAX_IDLE_TIME_MS = 30 * 60 * 1000;  // 30 minutes idle before restart
 const IDLE_CHECK_INTERVAL_MS = 120 * 1000; // Check every 2 minute
@@ -40,6 +45,27 @@ let server: Server | null = null;
 let lastRequestTime: number = Date.now();
 let idleCheckInterval: NodeJS.Timeout | null = null;
 let isShuttingDown = false;
+
+// PID file for daemon lifecycle management
+const OCTOCODE_DIR = process.env.OCTOCODE_HOME || join(homedir(), '.octocode');
+export const PID_FILE = join(OCTOCODE_DIR, `research-server-${PORT}.pid`);
+
+function writePidFile(): void {
+  try {
+    mkdirSync(OCTOCODE_DIR, { recursive: true, mode: 0o700 });
+    writeFileSync(PID_FILE, String(process.pid), { mode: 0o600 });
+  } catch {
+    // Non-fatal — server works without PID file
+  }
+}
+
+function removePidFile(): void {
+  try {
+    unlinkSync(PID_FILE);
+  } catch {
+    // Already removed or never written
+  }
+}
 
 /**
  * Check if server has been idle and should restart
@@ -52,7 +78,6 @@ function checkIdleRestart(): void {
     console.log(warnLog(`⚠️ Server idle for ${idleSeconds}s (>${MAX_IDLE_TIME_MS / 1000}s). Initiating restart...`));
     gracefulShutdown('IDLE_TIMEOUT');
   } else if (idleTime > MAX_IDLE_TIME_MS / 2) {
-    // Log warning at 50% threshold (30 minutes)
     console.log(dimLog(`⏰ Idle: ${idleSeconds}s / ${MAX_IDLE_TIME_MS / 1000}s`));
   }
 }
@@ -110,9 +135,10 @@ export async function createServer(): Promise<Express> {
       status: initialized ? 'ok' : 'initializing',
       host: HOST,
       port: PORT,
-      version: '2.2.0',
+      version: __PACKAGE_VERSION__,
       uptime: Math.floor(process.uptime()),
-      processManager: 'pm2',
+      processManager: 'self (detached daemon)',
+      pid: process.pid,
       // Idle tracking info
       idle: {
         currentMs: idleTimeMs,
@@ -150,11 +176,13 @@ export async function createServer(): Promise<Express> {
         code: 'NOT_FOUND',
         availableRoutes: [
           'GET  /health',
+          'GET  /tools/initContext',
           'GET  /tools/list',
+          'GET  /tools/info',
           'GET  /tools/info/:toolName',
+          'GET  /tools/metadata',
           'GET  /tools/schemas',
           'GET  /tools/system',
-          'GET  /tools/initContext',
           'POST /tools/call/:toolName',
           'GET  /prompts/list',
           'GET  /prompts/info/:promptName',
@@ -170,11 +198,11 @@ export async function createServer(): Promise<Express> {
 }
 
 /**
- * Graceful shutdown handler for PM2
- * PM2 sends SIGINT, we clean up and exit (PM2 handles restart)
+ * Graceful shutdown handler.
+ * Triggered by SIGTERM, SIGINT, or idle timeout. Cleans up all resources
+ * including PID file, circuit breakers, and HTTP connections.
  */
 function gracefulShutdown(signal: string): void {
-  // Prevent double-shutdown (e.g., SIGINT + SIGTERM in quick succession)
   if (isShuttingDown) {
     console.log(dimLog(`Already shutting down, ignoring ${signal}`));
     return;
@@ -183,25 +211,27 @@ function gracefulShutdown(signal: string): void {
 
   console.log(agentLog(`\n🛑 Received ${signal}. Starting graceful shutdown...`));
 
-  // Force exit safety net (PM2 kill_timeout is 120s, we exit at 110s)
-  const FORCE_EXIT_TIMEOUT_MS = 110 * 1000;
+  const FORCE_EXIT_TIMEOUT_MS = 30 * 1000;
   setTimeout(() => {
     console.log(warnLog('⚠️ Force exiting due to drain timeout'));
     process.exit(1);
   }, FORCE_EXIT_TIMEOUT_MS).unref();
 
-  // 1. Stop idle check interval first
+  // 1. Remove PID file immediately
+  removePidFile();
+
+  // 2. Stop idle check interval
   stopIdleCheck();
 
-  // 2. Stop circuit cleanup interval
+  // 3. Stop circuit cleanup interval
   stopCircuitCleanup();
   console.log(successLog('✅ Circuit cleanup interval stopped'));
 
-  // 3. Clear circuit breakers
+  // 4. Clear circuit breakers
   clearAllCircuits();
   console.log(successLog('✅ Circuit breakers cleared'));
   
-  // 4. Close HTTP server (waits for connections to drain)
+  // 5. Close HTTP server (waits for connections to drain)
   if (server) {
     console.log(dimLog('⏳ Waiting for connections to drain...'));
     server.close((err) => {
@@ -210,7 +240,7 @@ function gracefulShutdown(signal: string): void {
         process.exit(1);
       }
       console.log(successLog('✅ HTTP server closed'));
-      process.exit(0); // PM2 handles restart
+      process.exit(0);
     });
   } else {
     process.exit(0);
@@ -223,7 +253,8 @@ export async function startServer(): Promise<void> {
   await new Promise<void>((resolve) => {
     const httpServer = app.listen(PORT, HOST, () => {
       server = httpServer;
-      console.log(agentLog(`🔍 Octocode Research Server running on http://${HOST}:${PORT}`));
+      writePidFile();
+      console.log(agentLog(`🔍 Octocode Research Server running on http://${HOST}:${PORT} (pid: ${process.pid})`));
       console.log(dimLog(`⏳ initializing context...`));
       
       // Start background initialization (Warm Start)
@@ -244,17 +275,13 @@ export async function startServer(): Promise<void> {
           console.log(dimLog(`  GET  /tools/initContext       - System prompt + schemas (LOAD FIRST)`));
           console.log(dimLog(`  GET  /tools/system            - System prompt only`));
           console.log(dimLog(`  GET  /tools/list              - List all tools`));
+          console.log(dimLog(`  GET  /tools/info              - All tools with details`));
           console.log(dimLog(`  GET  /tools/info/:toolName    - Tool schema (BEFORE calling)`));
+          console.log(dimLog(`  GET  /tools/metadata          - Raw MCP metadata`));
           console.log(dimLog(`  GET  /tools/schemas           - All tools schemas`));
           console.log(dimLog(`  POST /tools/call/:toolName    - Execute tool`));
           console.log(dimLog(`  GET  /prompts/list            - List prompts`));
           console.log(dimLog(`  GET  /prompts/info/:name      - Get prompt content`));
-
-          // Signal PM2 that we're ready
-          if (process.send) {
-            process.send('ready');
-            console.log(dimLog('📡 PM2 ready signal sent'));
-          }
 
           // Log session initialization after server is ready
           fireAndForgetWithTimeout(
@@ -272,7 +299,7 @@ export async function startServer(): Promise<void> {
   });
 }
 
-// Signal handlers - PM2 sends SIGINT for graceful shutdown
+// Signal handlers — server is a detached daemon, handles its own signals
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 

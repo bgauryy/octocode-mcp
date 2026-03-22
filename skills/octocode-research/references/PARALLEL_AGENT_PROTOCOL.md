@@ -2,6 +2,25 @@
 
 **CRITICAL: When spawning parallel agents, follow this EXACT protocol.**
 
+## When to Use Parallel Agents
+
+| Condition | Action |
+|-----------|--------|
+| Single domain | Sequential OK |
+| Multiple domains / repos / subsystems | **MUST use parallel Task agents** |
+
+**Domain = separate repos, services, languages, or unrelated subsystems.** Same repo across files = single domain (sequential).
+
+| Separate Domains (→ Parallel) | Same Domain (→ Sequential) |
+|------|------|
+| Different repos (react vs vue) | Same repo, different files |
+| Different services (auth vs payments) | Same service, different modules |
+| Different runtimes (JS frontend vs Python backend) | Same language, different packages |
+
+**Agent selection**: Deep exploration → `Explore`/`opus`. Quick lookup → `Explore`/`haiku`.
+
+---
+
 ## Spawn Phase
 
 **Step 1**: Generate session ID and prepare output directory

@@ -101,11 +101,12 @@ Octocode MCP (local search + LSP)    → semantic validation against live code
 STRUCTURE → SEARCH → FETCH   (see shape → find it → read evidence)
 ```
 
-**When coding** — the agent wraps every change:
+**When coding** — architecture first, then clean code:
 ```
-Pre-check: blast radius → consumer map → architecture safety
-Code:      implement the change
-Verify:    re-scan → check references → lint + test + build
+Think:   blast radius → consumer map → architecture safety → edge cases
+Code:    TDD when possible → no patches/duplications → no junk comments
+Verify:  deterministic (AST re-scan + presets) + agentic (LSP refs + calls)
+         → lint + test + build
 ```
 
 **When auditing** — the agent validates before presenting:
@@ -158,12 +159,19 @@ Incremental caching stores per-file AST results. Unchanged files skip re-parsing
 ## When to Use / When Not
 
 **Use when:**
-- Writing code and want the agent to check blast radius before changing things
-- Exploring unfamiliar code — "how does X work?", "where should this live?"
-- Implementing features with impact awareness (consumers, coupling, test coverage)
-- Planning a refactor and need safety analysis
+- Understanding code — "how does X work?", "explore this module", "where should this live?"
+- Writing code with codebase awareness — blast radius, consumers, coupling, edge cases
+- Planning refactors — impact analysis, test/prod split, decomposition candidates
 - Architecture, quality, or security review needed
 - Finding dead code, coverage gaps, or dependency issues
+
+**Coding standards enforced:**
+- Architecture-first thinking (map structure before coding)
+- TDD when possible (failing test → fix → pass)
+- No patches/duplications (find existing patterns first)
+- No redundant comments (explain *why*, not *what*)
+- Dual-layer verification: agentic (Octocode LSP) + deterministic (AST/CLI)
+- Confidence tiers: high (structural proof), medium (semantic signal), low (behavioral trace)
 
 **Don't use for:**
 - Syntax errors → `tsc`

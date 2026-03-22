@@ -9,8 +9,8 @@ export const promptsRoutes = Router();
 // Apply readiness check middleware to all prompts routes
 promptsRoutes.use(checkReadiness);
 
-// Package version for response metadata
-const PACKAGE_VERSION = '2.0.0';
+declare const __PACKAGE_VERSION__: string;
+const PACKAGE_VERSION = __PACKAGE_VERSION__;
 
 interface PromptArg {
   name: string;
@@ -43,7 +43,7 @@ interface PromptInfo {
  *       ]
  *     }
  *   ],
- *   "_meta": { "totalCount": 5, "version": "2.0.0" }
+ *   "_meta": { "totalCount": 5, "version": "2.2.0" }
  * }
  */
 promptsRoutes.get('/list', async (
