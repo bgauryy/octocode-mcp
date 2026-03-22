@@ -59,6 +59,8 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 
 `--scope` focuses on specific paths (comma-separated, relative to root). Use `file:symbol` syntax to drill into a specific function or exported variable — only findings whose line range overlaps with that symbol are returned. The full dependency graph is still built so architecture findings involving scoped files are reported. Combinable with `--features`/`--exclude`.
 
+**Symbol scope fallback**: if the scanner cannot resolve a `file:symbol` target (e.g., the symbol name doesn't match an exported function or the file uses patterns that prevent resolution), it falls back to file-level scope and emits a warning: `"symbol scope could not resolve: <path>. Falling back to file-level scope."` If you see this warning, check the exact exported function name and try again, or use file-level scope directly.
+
 `--features` and `--exclude` are mutually exclusive. Both accept pillar names (`architecture`, `code-quality`, `dead-code`, `security`, `test-quality`) and individual category names, comma-separated.
 
 `--semantic` enables TypeChecker + LanguageService analysis (additional categories). Off by default since it adds ~3-5s. Semantic categories require `--semantic` to appear in results.
@@ -66,6 +68,37 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 `--out` changes the output destination. If the path ends with `.json`, writes a single monolithic file (legacy mode). Otherwise, writes to the given directory instead of the default timestamped directory.
 
 `--parser` selects the parse engine: `auto` (default — uses tree-sitter with TS fallback), `typescript` (TS compiler only), or `tree-sitter` (tree-sitter only).
+
+---
+
+## Feature and Category Index
+
+Use this section to quickly verify feature coverage.
+
+### Pillar features (`--features=...`)
+
+- `architecture`
+- `code-quality`
+- `dead-code`
+- `security`
+- `test-quality`
+
+### Semantic-only categories
+
+Require `--semantic` to appear in results. The set of semantic categories evolves across versions — run `--help` or `--semantic --help` to see the current list for your installed version.
+
+### How to list all available categories in your current version
+
+```bash
+node <SKILL_DIR>/scripts/index.js --help
+```
+
+Then verify which categories were emitted in a run:
+
+```bash
+cat .octocode/scan/<latest>/summary.md
+cat .octocode/scan/<latest>/findings.json | jq '.optimizationFindings[].category' | sort -u
+```
 
 ---
 
@@ -153,6 +186,26 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 |------|---------|----------|
 | `--tree-depth N` | 4 | AST tree depth when tree snapshots are emitted |
 | `--barrel-symbol-threshold N` | 30 | Re-export count threshold for `barrel-explosion` |
+
+---
+
+## Scope Sanity Checks
+
+Low or zero findings can mean the codebase is clean — or the scope missed analyzable files. Before trusting a clean result:
+
+1. **Confirm the scope has source files**: `--scope=docs/` or a path with only `.md` files will produce 0 findings. Use `localViewStructure` or `ls` to verify the scope contains `.ts`/`.js`/`.tsx` files.
+2. **Test-quality needs test files**: `--features=test-quality` without `--include-tests` will produce 0 findings — test files are excluded by default.
+3. **Suspiciously low count? Broaden one level**: try removing `--scope` or removing `--features` temporarily to compare against a baseline full run. If the full run has findings and the scoped run doesn't, the scope was too narrow.
+4. **Scoped scans affect downstream tools**: `ast-trees.txt` from a scoped scan only contains AST trees for scoped files. If you later run `tree-search.js -i .octocode/scan`, it picks the latest scan — which may be the narrow one. Either point to a full-scan timestamp explicitly or re-run a full scan.
+
+```bash
+# Baseline (broad)
+node <SKILL_DIR>/scripts/index.js --graph --flow
+# Test-quality focused
+node <SKILL_DIR>/scripts/index.js --features=test-quality --include-tests --scope=<test-containing-path>
+# Source-quality focused
+node <SKILL_DIR>/scripts/index.js --features=code-quality,security --scope=src/
+```
 
 ---
 

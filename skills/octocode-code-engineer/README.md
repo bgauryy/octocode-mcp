@@ -19,7 +19,7 @@ An AI agent skill that makes your coding agent **understand the codebase while i
 
 Unlike `tsc`, ESLint, or tests that check local correctness, this skill answers: **what's the blast radius? where should this code live? who calls this? is this safe to change?**
 
-It combines a **CLI scanner** (dependency graph + AST + semantic analysis), an **AST engine** (`@ast-grep/napi` with 16 structural presets), and **Octocode MCP local/LSP tools** (search, go-to-definition, find-references, call-hierarchy) into one platform that integrates into your coding workflow — not a separate review step.
+It combines a **CLI scanner** (dependency graph + AST + semantic analysis), an **AST engine** (`@ast-grep/napi` with structural presets), and **Octocode MCP local/LSP tools** (search, go-to-definition, find-references, call-hierarchy) into one platform that integrates into your coding workflow — not a separate review step.
 
 It has two public surfaces:
 
@@ -98,7 +98,7 @@ Three analysis layers work together in every mode:
 
 ```
 CLI Scanner (graph + AST + semantic) → broad hypotheses with file:line
-AST Engine (16 presets, structural proof) → zero false-positive pattern detection
+AST Engine (structural presets, proof)    → zero false-positive pattern detection
 Octocode MCP (local search + LSP)    → semantic validation against live code
 ```
 
@@ -126,7 +126,7 @@ Scan → Triage → Validate each finding with LSP → Present with evidence
 
 ## What It Detects
 
-**76+ detection categories** across 7 pillars:
+**Detection categories** across 7 pillars (run `--help` for the current full list):
 
 | Pillar | Categories | Highlights |
 |--------|-----------|------------|
@@ -136,7 +136,7 @@ Scan → Triage → Validate each finding with LSP → Present with evidence
 | **Security** | 9 | Secrets, eval, SQL injection, prototype pollution, path traversal, command injection, unvalidated input |
 | **Dead Code** | 11 | Dead exports, dead re-exports, unused deps, boundary violations, barrel explosion |
 | **Test Quality** | 8 | Low assertions, excessive mocks, shared mutable state, missing cleanup, focused tests |
-| **Semantic** | +8 | Unused parameters, over-abstraction, DIP violations, shotgun surgery (requires `--semantic`) |
+| **Semantic** | additional | Unused parameters, over-abstraction, DIP violations, shotgun surgery (requires `--semantic`; run `--help` for current count) |
 
 Especially strong for **agentic/MCP repos**: catches prompt-to-path, prompt-to-command, tool boundary leaks.
 

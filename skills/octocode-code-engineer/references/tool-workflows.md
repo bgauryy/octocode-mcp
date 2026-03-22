@@ -2,7 +2,7 @@
 
 Complete reference for code analysis using all available tools. General approaches first, then workflows for quality audits, architecture analysis, pre-implementation checks, refactoring, interface changes, and exploration.
 
-For target-repo behavior contracts, CLI/API checklists, docs sync, rollout, and explanation guidance, see [change-checklists.md](./change-checklists.md).
+Target-repo behavior contracts, CLI/API safety checks, docs sync, and rollout guidance are included directly in this document (workflows 18-21).
 
 ---
 
@@ -106,31 +106,10 @@ STRUCTURE → SEARCH → FETCH
 
 ---
 
-## AST Presets Reference
+## AST Details
 
-16 built-in presets for `ast/search.js --preset <name> --json --root <dir>`:
-
-| Preset | Finds |
-|--------|-------|
-| `empty-catch` | `catch (e) {}` — silently swallowed errors |
-| `console-log` | `console.log(...)` left in production |
-| `console-any` | Any `console.*()` call |
-| `debugger` | `debugger;` statements |
-| `todo-fixme` | TODO/FIXME/HACK/XXX/BUG comments |
-| `any-type` | `: any` annotations |
-| `type-assertion` | `x as Type` assertions |
-| `non-null-assertion` | `x!` non-null assertions |
-| `fat-arrow-body` | `() => { return x }` — could be expression |
-| `nested-ternary` | `a ? (b ? 1 : 2) : 3` |
-| `throw-string` | `throw "oops"` — should be Error |
-| `switch-no-default` | `switch` without `default` |
-| `class-declaration` | All class declarations |
-| `async-function` | `async function` declarations |
-| `export-default` | `export default` statements |
-| `import-star` | `import * as X` namespace imports |
-
-Custom patterns: `-p 'eval($$$A)'`, `-p 'import { $$$N } from $MOD'`, `-k function_declaration`
-Advanced rules: `--rule '{"rule":{"kind":"string","regex":"password|secret|token"}}'`
+For AST presets, pattern/rule syntax, and exact AST tool usage, use [ast-reference.md](./ast-reference.md).  
+This document stays workflow-only.
 
 ---
 
@@ -255,7 +234,7 @@ lspCallHierarchy(incoming, depth=1)                               → trace sour
 lspFindReferences(lineHint=N)                                     → all call sites
 ```
 
-See [validate-investigate.md](./validate-investigate.md) for taint-tracing and false-positive dismissal.
+See [validation-playbooks.md](./validation-playbooks.md) for taint-tracing and false-positive dismissal.
 
 ### 8 — Scoped Deep-Dive (File or Function)
 
@@ -300,9 +279,9 @@ ast/search.js --preset <preset> --json --root <changed-dir>       → verify sme
 localGetFileContent(matchString="fixedCode", contextLines=3)      → spot-check fix
 lspFindReferences(lineHint=N)                                     → symbols still resolve
 lspCallHierarchy(incoming, depth=1)                               → callers still connected
-<pm> run lint --fix                                               → auto-fix + check
-<pm> run test                                                     → no regressions
-<pm> run build                                                    → compiles clean
+Run project lint script (with auto-fix if supported)              → auto-fix + check
+Run project test script                                          → no regressions
+Run project build script                                         → compiles clean
 ```
 
 ---
@@ -550,7 +529,7 @@ localSearchCode(pattern="similar-feature", filesOnly=true)        → analogous 
 # === AFTER CODING ===
 
 # Step 6: Verify the behavior
-<pm> run test                                                     → happy path + regression coverage
+Run project test script                                           → happy path + regression coverage
 
 # Step 7: Verify no new issues
 index.js --scope=<changed-files> --features=code-quality,architecture
@@ -566,8 +545,8 @@ lspCallHierarchy(incoming, depth=1)                               → callers st
 # update docs, examples, help output, and migration notes when behavior changed
 
 # Step 10: Project toolchain
-<pm> run lint --fix
-<pm> run build
+Run project lint script (with auto-fix if supported)
+Run project build script
 ```
 
 **Decision gates**:
@@ -595,8 +574,8 @@ localFindFiles(names=["README.md", "*.md"])                        → user docs
 node <entry> --help                                                → help / usage output
 node <entry> <happy-path>                                          → stdout + exit code
 node <entry> <bad-input>                                           → stderr + exit code
-<pm> run test:cli                                                  → if present
-<pm> run test:e2e                                                  → if present
+Run CLI test script if the project has one                         → if present
+Run e2e test script if the project has one                         → if present
 ```
 
 **Checklist**: names, aliases, defaults, positional args, stdout/stderr, exit codes, env/config inputs, machine-readable output, backward compatibility.
@@ -617,9 +596,9 @@ lspFindReferences(lineHint=N, includeDeclaration=false)            → shared ty
 lspCallHierarchy(outgoing, depth=1)                                → handler -> service flow
 
 # Step 3: Verify the contract
-<pm> run test:integration                                          → if present
-<pm> run contract                                                  → if present
-<pm> run test                                                      → fallback regression coverage
+Run integration test script if the project has one                 → if present
+Run contract test script if the project has one                    → if present
+Run project test script                                            → fallback regression coverage
 ```
 
 **Checklist**: request schema, response shape, status codes, error bodies, auth, pagination, idempotency, versioning, deprecation, migration notes.
@@ -638,8 +617,8 @@ localSearchCode(pattern="flag-name|endpoint-name|env-var-name", filesOnly=true) 
 # feature flag / rollout / telemetry / rollback decided when needed
 
 # Step 3: Verify docs-specific tooling
-<pm> run docs:build                                                → if present
-<pm> run docs:check                                                → if present
+Run docs build script if the project has one                       → if present
+Run docs check script if the project has one                       → if present
 ```
 
 **Output**: updated docs list + compatibility note + rollout / rollback plan, or an explicit statement that no public docs or rollout work was needed.

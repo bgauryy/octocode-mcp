@@ -133,9 +133,9 @@ If `architecture.json` names a hotspot, use `file-inventory.json` to explain why
 
 ## Reading `ast-trees.txt`
 
-For format, navigation commands, and usage guide, see [ast-tree-search.md](./ast-tree-search.md).
+Flattened AST snapshot: `## <package> — <filepath>` section headers, then indented `Kind[startLine:endLine]` nodes (2 spaces = 1 depth level, `...` = truncated children). On by default (`--emit-tree`). Suppress with `--no-tree`. Tree depth: `--tree-depth N` (default: 4).
 
-On by default (`--emit-tree`). Suppress with `--no-tree`. Tree depth: `--tree-depth N` (default: 4).
+Query with `tree-search.js` (`-k`, `-p`, `--file`, `-C`). For format details and tool reference, see [ast-reference.md](./ast-reference.md).
 
 ---
 
