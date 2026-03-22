@@ -1,4 +1,3 @@
-import type { Response } from 'express';
 import { z } from 'zod/v4';
 
 /**
@@ -88,28 +87,3 @@ function formatZodError(error: z.ZodError): string {
     .join('; ');
 }
 
-/**
- * Send standardized tool result response.
- */
-export function sendToolResult(
-  res: Response,
-  result: {
-    content?: Array<{ type: string; text?: string }>;
-    isError?: boolean;
-  }
-): void {
-  const textContent = result.content?.find(
-    (c) => c.type === 'text' && 'text' in c
-  );
-
-  const isError = result.isError ?? false;
-
-  res.status(isError ? 500 : 200).json({
-    success: !isError,
-    data: textContent?.text ?? null,
-    raw: result,
-  });
-}
-
-// Legacy function for backwards compatibility (deprecated)
-// Internal alias: parseQueryToArray = parseAndValidate

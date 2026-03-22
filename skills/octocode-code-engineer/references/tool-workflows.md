@@ -1,6 +1,8 @@
 # Tool Workflows — Research Methodology & Patterns
 
-Complete reference for code analysis using all available tools. General approaches first, then workflows for quality audits, architecture analysis, pre-implementation checks, refactoring, and exploration.
+Complete reference for code analysis using all available tools. General approaches first, then workflows for quality audits, architecture analysis, pre-implementation checks, refactoring, interface changes, and exploration.
+
+Target-repo behavior contracts, CLI/API safety checks, docs sync, and rollout guidance are included directly in this document (workflows 18-21).
 
 ---
 
@@ -104,31 +106,10 @@ STRUCTURE → SEARCH → FETCH
 
 ---
 
-## AST Presets Reference
+## AST Details
 
-16 built-in presets for `ast/search.js --preset <name> --json --root <dir>`:
-
-| Preset | Finds |
-|--------|-------|
-| `empty-catch` | `catch (e) {}` — silently swallowed errors |
-| `console-log` | `console.log(...)` left in production |
-| `console-any` | Any `console.*()` call |
-| `debugger` | `debugger;` statements |
-| `todo-fixme` | TODO/FIXME/HACK/XXX/BUG comments |
-| `any-type` | `: any` annotations |
-| `type-assertion` | `x as Type` assertions |
-| `non-null-assertion` | `x!` non-null assertions |
-| `fat-arrow-body` | `() => { return x }` — could be expression |
-| `nested-ternary` | `a ? (b ? 1 : 2) : 3` |
-| `throw-string` | `throw "oops"` — should be Error |
-| `switch-no-default` | `switch` without `default` |
-| `class-declaration` | All class declarations |
-| `async-function` | `async function` declarations |
-| `export-default` | `export default` statements |
-| `import-star` | `import * as X` namespace imports |
-
-Custom patterns: `-p 'eval($$$A)'`, `-p 'import { $$$N } from $MOD'`, `-k function_declaration`
-Advanced rules: `--rule '{"rule":{"kind":"string","regex":"password|secret|token"}}'`
+For AST presets, pattern/rule syntax, and exact AST tool usage, use [ast-reference.md](./ast-reference.md).  
+This document stays workflow-only.
 
 ---
 
@@ -253,7 +234,7 @@ lspCallHierarchy(incoming, depth=1)                               → trace sour
 lspFindReferences(lineHint=N)                                     → all call sites
 ```
 
-See [validate-investigate.md](./validate-investigate.md) for taint-tracing and false-positive dismissal.
+See [validation-playbooks.md](./validation-playbooks.md) for taint-tracing and false-positive dismissal.
 
 ### 8 — Scoped Deep-Dive (File or Function)
 
@@ -298,9 +279,9 @@ ast/search.js --preset <preset> --json --root <changed-dir>       → verify sme
 localGetFileContent(matchString="fixedCode", contextLines=3)      → spot-check fix
 lspFindReferences(lineHint=N)                                     → symbols still resolve
 lspCallHierarchy(incoming, depth=1)                               → callers still connected
-<pm> run lint --fix                                               → auto-fix + check
-<pm> run test                                                     → no regressions
-<pm> run build                                                    → compiles clean
+Run project lint script (with auto-fix if supported)              → auto-fix + check
+Run project test script                                          → no regressions
+Run project build script                                         → compiles clean
 ```
 
 ---
@@ -517,6 +498,9 @@ Before and after making code changes, check blast radius and verify safety. Use 
 ```
 # === BEFORE CODING ===
 
+# Step 0: Define the behavior contract
+# current behavior, desired behavior, invariants, non-goals, user-facing contract
+
 # Step 1: Understand the target area
 localViewStructure(path="target/dir", depth=2)                    → module layout
 localGetFileContent(matchString="targetFunction", contextLines=10) → read current code
@@ -544,23 +528,97 @@ localSearchCode(pattern="similar-feature", filesOnly=true)        → analogous 
 
 # === AFTER CODING ===
 
-# Step 6: Verify no new issues
+# Step 6: Verify the behavior
+Run project test script                                           → happy path + regression coverage
+
+# Step 7: Verify no new issues
 index.js --scope=<changed-files> --features=code-quality,architecture
 ast/search.js --preset any-type --json --root <changed-dir>       → no new `: any`?
 ast/search.js --preset empty-catch --json --root <changed-dir>    → no new swallowed errors?
 
-# Step 7: Verify references intact
+# Step 8: Verify references intact
 lspFindReferences(lineHint=N)                                     → moved/renamed symbols resolve
 lspCallHierarchy(incoming, depth=1)                               → callers still connected
 
-# Step 8: Project toolchain
-<pm> run lint --fix
-<pm> run test
-<pm> run build
+# Step 9: User-facing contract and docs
+# run CLI / API / integration / contract checks when relevant
+# update docs, examples, help output, and migration notes when behavior changed
+
+# Step 10: Project toolchain
+Run project lint script (with auto-fix if supported)
+Run project build script
 ```
 
 **Decision gates**:
 - Step 2: >20 production consumers = high-risk change, consider feature flag or incremental migration
 - Step 3: change touches cycle member or hotfile = extra caution, verify with re-scan after
-- Step 6: new findings = fix before committing
-- Step 8: any failure = investigate before proceeding
+- Step 7: new findings = fix before committing
+- Step 9: docs or contract drift = fix before committing
+- Step 10: any failure = investigate before proceeding
+
+### 19 — CLI Change Safety
+
+Use when changing commands, flags, help text, output, or exit behavior.
+
+```
+# Step 1: Find the CLI entry and surface
+localSearchCode(pattern="process.argv|commander|yargs|cac|clipanion|bin", filesOnly=true)
+localFindFiles(names=["*cli*", "bin", "*.command.*"])             → likely entry points
+localGetFileContent(matchString="command", contextLines=8)         → commands / options / defaults
+
+# Step 2: Find affected tests and docs
+localSearchCode(pattern="--flag-name|command-name", filesOnly=true) → tests, scripts, docs using it
+localFindFiles(names=["README.md", "*.md"])                        → user docs and examples
+
+# Step 3: Verify behavior
+node <entry> --help                                                → help / usage output
+node <entry> <happy-path>                                          → stdout + exit code
+node <entry> <bad-input>                                           → stderr + exit code
+Run CLI test script if the project has one                         → if present
+Run e2e test script if the project has one                         → if present
+```
+
+**Checklist**: names, aliases, defaults, positional args, stdout/stderr, exit codes, env/config inputs, machine-readable output, backward compatibility.
+
+### 20 — API Contract Safety
+
+Use when changing handlers, endpoints, schemas, DTOs, or serialized responses.
+
+```
+# Step 1: Find the public surface
+localSearchCode(pattern="router\\.|app\\.|handler|endpoint|resolver|mutation|query", filesOnly=true)
+localSearchCode(pattern="zod|joi|schema|OpenAPI|response", filesOnly=true) → contract files
+localGetFileContent(matchString="route", contextLines=8)           → request / response code
+
+# Step 2: Trace affected internals
+localSearchCode(pattern="type Response|interface Response|Dto|DTO", filesOnly=true)
+lspFindReferences(lineHint=N, includeDeclaration=false)            → shared type consumers
+lspCallHierarchy(outgoing, depth=1)                                → handler -> service flow
+
+# Step 3: Verify the contract
+Run integration test script if the project has one                 → if present
+Run contract test script if the project has one                    → if present
+Run project test script                                            → fallback regression coverage
+```
+
+**Checklist**: request schema, response shape, status codes, error bodies, auth, pagination, idempotency, versioning, deprecation, migration notes.
+
+### 21 — Docs and Rollout Sync
+
+Use when public behavior changed or a risky change needs an operational plan.
+
+```
+# Step 1: Find docs and examples
+localFindFiles(names=["README.md", "*.md", "openapi*.yaml", "openapi*.json", ".env.example"])
+localSearchCode(pattern="flag-name|endpoint-name|env-var-name", filesOnly=true) → docs/examples using old behavior
+
+# Step 2: Update completion criteria
+# docs/help/examples/migration notes updated
+# feature flag / rollout / telemetry / rollback decided when needed
+
+# Step 3: Verify docs-specific tooling
+Run docs build script if the project has one                       → if present
+Run docs check script if the project has one                       → if present
+```
+
+**Output**: updated docs list + compatibility note + rollout / rollback plan, or an explicit statement that no public docs or rollout work was needed.

@@ -1,18 +1,8 @@
 /**
- * MCP Protocol Types for /tools/list and /prompts/list endpoints
- * Based on: https://modelcontextprotocol.io/docs/concepts/tools
+ * MCP Protocol utilities for /tools endpoints
  */
 
-// JSON Schema type for tool input schemas
-export interface JsonSchema {
-  $schema?: string;
-  type: 'object';
-  properties: Record<string, JsonSchemaProperty>;
-  required?: string[];
-  additionalProperties?: boolean;
-}
-
-export interface JsonSchemaProperty {
+interface JsonSchemaProperty {
   type: string;
   description?: string;
   items?: JsonSchemaProperty;
@@ -28,60 +18,17 @@ export interface JsonSchemaProperty {
   default?: unknown;
 }
 
-/**
- * MCP Tool representation for /tools/list
- */
-interface McpTool {
-  name: string;
-  description: string;
-  inputSchema: JsonSchema;
+interface JsonSchema {
+  $schema?: string;
+  type: 'object';
+  properties: Record<string, JsonSchemaProperty>;
+  required?: string[];
+  additionalProperties?: boolean;
 }
 
 /**
- * MCP Prompt argument for /prompts/list
- */
-export interface McpPromptArgument {
-  name: string;
-  description: string;
-  required?: boolean;
-}
-
-/**
- * MCP Prompt representation for /prompts/list
- */
-export interface McpPrompt {
-  name: string;
-  description: string;
-  arguments?: McpPromptArgument[];
-}
-
-/**
- * Response metadata
- */
-export interface ListResponseMeta {
-  totalCount: number;
-  version: string;
-}
-
-/**
- * Response type for GET /tools/list
- */
-export interface ListToolsResponse {
-  tools: McpTool[];
-  _meta?: ListResponseMeta;
-}
-
-/**
- * Response type for GET /prompts/list
- */
-export interface ListPromptsResponse {
-  prompts: McpPrompt[];
-  _meta?: ListResponseMeta;
-}
-
-/**
- * Transform description-based schema to JSON Schema format
- * This is a fallback transformer when full JSON schemas are not available
+ * Transform description-based schema to JSON Schema format.
+ * Fallback transformer when full JSON schemas are not available.
  */
 export function transformToJsonSchema(
   schemaDescriptions: Record<string, string>,
@@ -89,15 +36,13 @@ export function transformToJsonSchema(
 ): JsonSchema {
   const properties: Record<string, JsonSchemaProperty> = {};
   
-  // Create properties from descriptions
   for (const [key, description] of Object.entries(schemaDescriptions)) {
     properties[key] = {
-      type: 'string', // Default type - could be enhanced with type inference
+      type: 'string',
       description,
     };
   }
 
-  // Wrap in queries array structure (standard MCP bulk query pattern)
   return {
     $schema: 'http://json-schema.org/draft-07/schema#',
     type: 'object',

@@ -10,29 +10,6 @@
 import { z } from 'zod/v4';
 
 // =============================================================================
-// Import authoritative schemas from octocode-mcp (Source of Truth)
-// =============================================================================
-import {
-  // Local Tool Schemas
-  RipgrepQuerySchema,
-  FetchContentQuerySchema,
-  FindFilesQuerySchema,
-  ViewStructureQuerySchema,
-  // LSP Tool Schemas
-  LSPGotoDefinitionQuerySchema,
-  LSPFindReferencesQuerySchema,
-  LSPCallHierarchyQuerySchema,
-  // GitHub Tool Schemas
-  GitHubCodeSearchQuerySchema,
-  FileContentQuerySchema,
-  GitHubReposSearchSingleQuerySchema,
-  GitHubViewRepoStructureQuerySchema,
-  GitHubPullRequestSearchQuerySchema,
-  // Package Search Schemas
-  NpmPackageQuerySchema,
-} from 'octocode-mcp/public';
-
-// =============================================================================
 // Import HTTP preprocessing utilities
 // =============================================================================
 import {
@@ -536,43 +513,3 @@ export const packageSearchSchema = z
   })
   .transform(withResearchDefaults);
 
-// =============================================================================
-// Type Exports (derived from schemas)
-// =============================================================================
-
-export type LocalSearchQuery = z.output<typeof localSearchSchema>;
-export type LocalContentQuery = z.output<typeof localContentSchema>;
-export type LocalFindQuery = z.output<typeof localFindSchema>;
-export type LocalStructureQuery = z.output<typeof localStructureSchema>;
-
-export type LspDefinitionQuery = z.output<typeof lspDefinitionSchema>;
-export type LspReferencesQuery = z.output<typeof lspReferencesSchema>;
-export type LspCallsQuery = z.output<typeof lspCallsSchema>;
-
-export type GithubSearchQuery = z.output<typeof githubSearchSchema>;
-export type GithubContentQuery = z.output<typeof githubContentSchema>;
-export type GithubReposQuery = z.output<typeof githubReposSchema>;
-export type GithubStructureQuery = z.output<typeof githubStructureSchema>;
-export type GithubPRsQuery = z.output<typeof githubPRsSchema>;
-
-export type PackageSearchQuery = z.output<typeof packageSearchSchema>;
-
-// =============================================================================
-// Re-export MCP schemas for reference (if needed by consumers)
-// =============================================================================
-export {
-  // These are the authoritative schemas from octocode-mcp
-  RipgrepQuerySchema,
-  FetchContentQuerySchema,
-  FindFilesQuerySchema,
-  ViewStructureQuerySchema,
-  LSPGotoDefinitionQuerySchema,
-  LSPFindReferencesQuerySchema,
-  LSPCallHierarchyQuerySchema,
-  GitHubCodeSearchQuerySchema,
-  FileContentQuerySchema,
-  GitHubReposSearchSingleQuerySchema,
-  GitHubViewRepoStructureQuerySchema,
-  GitHubPullRequestSearchQuerySchema,
-  NpmPackageQuerySchema,
-};

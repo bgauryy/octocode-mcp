@@ -150,6 +150,3 @@ export function withResearchDefaults<T extends Record<string, unknown>>(
       (data.reasoning as string | undefined) ?? RESEARCH_DEFAULTS.reasoning,
   };
 }
-
-/** @deprecated Use withResearchDefaults() instead */
-export const researchDefaults = RESEARCH_DEFAULTS;

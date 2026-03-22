@@ -15,8 +15,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { getMcpContent } from '../mcpCache.js';
 import { transformToJsonSchema } from '../types/mcp.js';
-import { zodToJsonSchema } from 'zod-to-json-schema';
-import type { z } from 'zod/v4';
+import { z } from 'zod/v4';
 
 // Import Zod schemas from octocode-mcp (source of truth)
 import {
@@ -66,8 +65,8 @@ export const toolsRoutes = Router();
 // Apply readiness check middleware to all tools routes
 toolsRoutes.use(checkReadiness);
 
-// Package version for response metadata
-const PACKAGE_VERSION = '2.0.0';
+declare const __PACKAGE_VERSION__: string;
+const PACKAGE_VERSION = __PACKAGE_VERSION__;
 
 interface ToolsInfoQuery {
   schema?: string;
@@ -98,20 +97,9 @@ const TOOL_ZOD_SCHEMAS: Record<string, z.ZodType> = {
   packageSearch: PackageSearchQuerySchema,
 };
 
-/**
- * Convert a Zod v4 schema to JSON Schema via zod-to-json-schema.
- * The library expects Zod v3 types; schemas are structurally compatible at runtime.
- */
-function toJsonSchema(
-  schema: z.ZodType,
-  name: string
-): Record<string, unknown> | null {
+function toJsonSchema(schema: z.ZodType): Record<string, unknown> | null {
   try {
-    type ZodToJsonSchemaInput = Parameters<typeof zodToJsonSchema>[0];
-    return zodToJsonSchema(schema as unknown as ZodToJsonSchemaInput, {
-      name,
-      $refStrategy: 'none',
-    }) as Record<string, unknown>;
+    return z.toJSONSchema(schema) as Record<string, unknown>;
   } catch {
     return null;
   }
@@ -119,7 +107,7 @@ function toJsonSchema(
 
 function getToolJsonSchema(toolName: string): Record<string, unknown> | null {
   const zodSchema = TOOL_ZOD_SCHEMAS[toolName];
-  return zodSchema ? toJsonSchema(zodSchema, toolName) : null;
+  return zodSchema ? toJsonSchema(zodSchema) : null;
 }
 
 /**
@@ -378,7 +366,7 @@ toolsRoutes.get('/schemas', async (
  * Response:
  * {
  *   "instructions": "## Expert Code Forensics Agent...",
- *   "_meta": { "charCount": 5432, "version": "2.0.0" }
+ *   "_meta": { "charCount": 5432, "version": "2.2.0" }
  * }
  */
 toolsRoutes.get('/system', async (
@@ -419,7 +407,7 @@ toolsRoutes.get('/system', async (
  *   "success": true,
  *   "system_prompt": "## Expert Code Forensics Agent...",
  *   "tools_schema": { "localSearchCode": {...}, ... },
- *   "_meta": { "promptCharCount": 5432, "toolsCount": 13, "version": "2.0.0" }
+ *   "_meta": { "promptCharCount": 5432, "toolsCount": 13, "version": "2.2.0" }
  * }
  */
 toolsRoutes.get('/initContext', async (

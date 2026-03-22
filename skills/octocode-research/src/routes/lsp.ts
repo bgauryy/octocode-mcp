@@ -93,84 +93,83 @@ lspRoutes.get(
   })
 );
 
-// Helper: Extract locations from LSP result
+type LspLocation = { uri: string; line: number; preview?: string };
+
+function extractStartLine(obj: Record<string, unknown>): number {
+  const range = isObject(obj.range) ? obj.range : {};
+  const start = isObject(range.start) ? range.start : {};
+  return (hasNumberProperty(start, 'line') ? start.line : 0) + 1;
+}
+
+function extractDefinitionLocation(data: Record<string, unknown>): LspLocation[] {
+  if (!hasProperty(data, 'definition') || !isObject(data.definition)) return [];
+  const def = data.definition as Record<string, unknown>;
+  if (typeof def.uri !== 'string') return [];
+
+  return [{
+    uri: def.uri,
+    line: extractStartLine(def),
+    preview: typeof def.preview === 'string' ? def.preview : undefined,
+  }];
+}
+
+function extractReferenceLocations(data: Record<string, unknown>): LspLocation[] {
+  if (!hasProperty(data, 'references')) return [];
+  return safeArray<Record<string, unknown>>(data, 'references').map((ref) => ({
+    uri: safeString(ref, 'uri'),
+    line: extractStartLine(ref),
+    preview: hasStringProperty(ref, 'preview') ? ref.preview : undefined,
+  }));
+}
+
+function extractGenericLocations(data: Record<string, unknown>): LspLocation[] {
+  if (!hasProperty(data, 'locations')) return [];
+  return safeArray<Record<string, unknown>>(data, 'locations').map((loc) => ({
+    uri: safeString(loc, 'uri'),
+    line: extractStartLine(loc),
+    preview: hasStringProperty(loc, 'content') ? loc.content : undefined,
+  }));
+}
+
 function extractLocations(
   data: Record<string, unknown>,
   type: 'definition' | 'references'
-): Array<{ uri: string; line: number; preview?: string }> {
-  // Handle definition results
-  if (type === 'definition' && hasProperty(data, 'definition') && isObject(data.definition)) {
-    const def = data.definition as Record<string, unknown>;
-    if (typeof def.uri === 'string') {
-      const range = isObject(def.range) ? def.range as Record<string, unknown> : {};
-      const start = isObject(range.start) ? range.start as Record<string, unknown> : {};
-      return [
-        {
-          uri: def.uri,
-          line: (typeof start.line === 'number' ? start.line : 0) + 1,
-          preview: typeof def.preview === 'string' ? def.preview : undefined,
-        },
-      ];
+): LspLocation[] {
+  if (type === 'definition') {
+    const defs = extractDefinitionLocation(data);
+    if (defs.length > 0) return defs;
+  }
+
+  if (type === 'references') {
+    const refs = extractReferenceLocations(data);
+    if (refs.length > 0) return refs;
+  }
+
+  return extractGenericLocations(data);
+}
+
+function getCallsArray(data: Record<string, unknown>): Record<string, unknown>[] {
+  for (const key of ['calls', 'incomingCalls', 'outgoingCalls']) {
+    if (hasProperty(data, key) && Array.isArray(data[key])) {
+      return data[key] as Record<string, unknown>[];
     }
   }
-
-  // Handle references results
-  if (type === 'references' && hasProperty(data, 'references')) {
-    const refs = safeArray<Record<string, unknown>>(data, 'references');
-    return refs.map((ref) => {
-      const range = isObject(ref.range) ? ref.range : {};
-      const start = isObject(range.start) ? range.start : {};
-      return {
-        uri: safeString(ref, 'uri'),
-        line: (hasNumberProperty(start, 'line') ? start.line : 0) + 1,
-        preview: hasStringProperty(ref, 'preview') ? ref.preview : undefined,
-      };
-    });
-  }
-
-  // Handle locations array (generic) - MCP returns range.start.line
-  if (hasProperty(data, 'locations')) {
-    const locs = safeArray<Record<string, unknown>>(data, 'locations');
-    return locs.map((loc) => {
-      const range = isObject(loc.range) ? loc.range : {};
-      const start = isObject(range.start) ? range.start : {};
-      return {
-        uri: safeString(loc, 'uri'),
-        line: (hasNumberProperty(start, 'line') ? start.line : 0) + 1,
-        preview: hasStringProperty(loc, 'content') ? loc.content : undefined,
-      };
-    });
-  }
-
   return [];
 }
 
-// Helper: Extract locations from call hierarchy result
 function extractCallHierarchyLocations(
   data: Record<string, unknown>
-): Array<{ uri: string; line: number; preview?: string }> {
-  // Handle calls array
-  let calls: Record<string, unknown>[] = [];
-  if (hasProperty(data, 'calls') && Array.isArray(data.calls)) {
-    calls = data.calls;
-  } else if (hasProperty(data, 'incomingCalls') && Array.isArray(data.incomingCalls)) {
-    calls = data.incomingCalls;
-  } else if (hasProperty(data, 'outgoingCalls') && Array.isArray(data.outgoingCalls)) {
-    calls = data.outgoingCalls;
-  }
-
-  return calls.map((call) => {
+): LspLocation[] {
+  return getCallsArray(data).map((call) => {
     const item = isObject(call.from) ? call.from : isObject(call.to) ? call.to : call;
-    const itemObj = isObject(item) ? item : {};
-    const range = isObject(itemObj.range) ? itemObj.range : {};
-    const start = isObject(range.start) ? range.start : {};
+    const itemObj = isObject(item) ? item as Record<string, unknown> : {};
 
-    const lineFromStart = hasNumberProperty(start, 'line') ? start.line : 0;
+    const lineFromRange = extractStartLine(itemObj) - 1; // undo +1 from extractStartLine
     const lineFromItem = hasNumberProperty(itemObj, 'line') ? itemObj.line : 0;
 
     return {
       uri: safeString(itemObj, 'uri'),
-      line: (lineFromStart || lineFromItem) + 1,
+      line: (lineFromRange || lineFromItem) + 1,
       preview: hasStringProperty(itemObj, 'name') ? itemObj.name : undefined,
     };
   });

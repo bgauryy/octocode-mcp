@@ -35,7 +35,7 @@ const querySchema = z.record(z.string(), z.unknown()).refine(
  * Schema for tool call request body.
  * Requires a queries array with 1-3 items.
  */
-export const toolCallBodySchema = z.object({
+const toolCallBodySchema = z.object({
   queries: z
     .array(querySchema)
     .min(1, 'At least one query is required')
@@ -45,7 +45,7 @@ export const toolCallBodySchema = z.object({
 /**
  * Inferred type from the schema
  */
-export type ToolCallBody = z.infer<typeof toolCallBodySchema>;
+type ToolCallBody = z.infer<typeof toolCallBodySchema>;
 
 // =============================================================================
 // Validation Function
@@ -54,7 +54,7 @@ export type ToolCallBody = z.infer<typeof toolCallBodySchema>;
 /**
  * Validation result type
  */
-export interface ValidationResult<T> {
+interface ValidationResult<T> {
   success: boolean;
   data?: T;
   error?: {

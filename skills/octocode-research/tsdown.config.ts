@@ -1,5 +1,8 @@
 import { defineConfig } from 'tsdown';
 import { builtinModules } from 'module';
+import { readFileSync } from 'fs';
+
+const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
 export default defineConfig({
   entry: {
@@ -38,5 +41,6 @@ export default defineConfig({
 
   define: {
     'process.env.NODE_ENV': '"production"',
+    '__PACKAGE_VERSION__': JSON.stringify(pkg.version),
   },
 });

@@ -6,34 +6,6 @@
  */
 
 /**
- * Check if value is a non-empty string
- */
-export function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0;
-}
-
-/**
- * Check if value is a positive finite number
- */
-export function isPositiveNumber(value: unknown): value is number {
-  return typeof value === 'number' && value > 0 && Number.isFinite(value);
-}
-
-/**
- * Check if value is a non-negative finite number
- */
-export function isNonNegativeNumber(value: unknown): value is number {
-  return typeof value === 'number' && value >= 0 && Number.isFinite(value);
-}
-
-/**
- * Check if value is an array of non-empty strings
- */
-export function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every(isNonEmptyString);
-}
-
-/**
  * Check if value is an array (of any type)
  */
 export function isArray(value: unknown): value is unknown[] {

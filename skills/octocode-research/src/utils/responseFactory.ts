@@ -5,38 +5,8 @@
  * @module utils/responseFactory
  */
 
-import type { FileMatch, PaginationInfo } from '../types/responses.js';
-import { extractFiles, extractPagination, extractTotalMatches } from '../types/responses.js';
 import { isObject, hasProperty, isArray, hasStringProperty, hasNumberProperty } from '../types/guards.js';
 
-// =============================================================================
-// Common Extractors (Type-Safe)
-// =============================================================================
-
-/**
- * Extract file matches from search results with proper typing
- */
-export function extractFileMatches(data: unknown): FileMatch[] {
-  return extractFiles(data);
-}
-
-/**
- * Extract pagination info with proper typing
- */
-export function extractPaginationInfo(data: unknown): PaginationInfo | undefined {
-  return extractPagination(data);
-}
-
-/**
- * Extract total match count with proper typing
- */
-export function extractMatchCount(data: unknown): number {
-  return extractTotalMatches(data);
-}
-
-/**
- * Safely extract string property
- */
 export function safeString(obj: unknown, key: string, fallback = ''): string {
   if (hasStringProperty(obj, key)) {
     return obj[key];
@@ -44,9 +14,6 @@ export function safeString(obj: unknown, key: string, fallback = ''): string {
   return fallback;
 }
 
-/**
- * Safely extract number property
- */
 export function safeNumber(obj: unknown, key: string, fallback = 0): number {
   if (hasNumberProperty(obj, key)) {
     return obj[key];
@@ -54,9 +21,6 @@ export function safeNumber(obj: unknown, key: string, fallback = 0): number {
   return fallback;
 }
 
-/**
- * Safely extract array property
- */
 export function safeArray<T>(obj: unknown, key: string): T[] {
   if (isObject(obj) && hasProperty(obj, key) && isArray(obj[key])) {
     return obj[key] as T[];
@@ -64,9 +28,6 @@ export function safeArray<T>(obj: unknown, key: string): T[] {
   return [];
 }
 
-/**
- * Extract match locations from a file result
- */
 export function extractMatchLocations(matches: unknown[]): Array<{
   line: number;
   column?: number;
@@ -86,9 +47,6 @@ export function extractMatchLocations(matches: unknown[]): Array<{
   });
 }
 
-/**
- * Transform pagination from MCP format to skill format
- */
 export function transformPagination(pagination: unknown): { page: number; total: number; hasMore: boolean } | undefined {
   if (!isObject(pagination)) return undefined;
   

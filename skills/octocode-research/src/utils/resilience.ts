@@ -4,8 +4,8 @@
  * @module utils/resilience
  */
 
-import { withCircuitBreaker, type CircuitBreakerConfig } from './circuitBreaker.js';
-import { withRetry, type RetryConfig, RETRY_CONFIGS } from './retry.js';
+import { withCircuitBreaker } from './circuitBreaker.js';
+import { withRetry, RETRY_CONFIGS } from './retry.js';
 import { withTimeout } from './asyncTimeout.js';
 
 /** Default timeout for MCP tool calls (30 seconds) */
@@ -51,16 +51,6 @@ const TOOL_CIRCUIT_MAP: Record<string, string> = {
   // Package - unified (could split npm/pypi later if needed)
   packageSearch: 'package',
 };
-
-/**
- * Combined resilience configuration
- */
-export interface ResilienceConfig {
-  circuitBreaker?: Partial<CircuitBreakerConfig>;
-  retry?: RetryConfig;
-  /** Fallback value when circuit is open */
-  fallback?: () => unknown;
-}
 
 /**
  * Pre-configured resilience strategies

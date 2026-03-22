@@ -259,7 +259,7 @@ export function logWarn(message: string, data?: unknown): void {
 // Public API - Tools Logger
 // ============================================================================
 
-export interface ToolLogEntry {
+interface ToolLogEntry {
   tool: string;
   route: string;
   method: string;
@@ -271,56 +271,9 @@ export interface ToolLogEntry {
   requestId?: string;
 }
 
-/**
- * Log a tool invocation (async, non-blocking).
- */
 export function logToolCall(entry: ToolLogEntry): void {
   const logEntry = formatLogEntry('TOOL', `${entry.method} ${entry.route}`, entry);
   writeLogAsync(TOOLS_LOG, logEntry);
-}
-
-/**
- * Log a successful tool result.
- */
-export function logToolSuccess(
-  tool: string,
-  route: string,
-  method: string,
-  params: Record<string, unknown>,
-  duration: number,
-  resultSize: number
-): void {
-  logToolCall({
-    tool,
-    route,
-    method,
-    params,
-    duration,
-    success: true,
-    resultSize,
-  });
-}
-
-/**
- * Log a failed tool invocation.
- */
-export function logToolError(
-  tool: string,
-  route: string,
-  method: string,
-  params: Record<string, unknown>,
-  duration: number,
-  error: string
-): void {
-  logToolCall({
-    tool,
-    route,
-    method,
-    params,
-    duration,
-    success: false,
-    error,
-  });
 }
 
 // ============================================================================
@@ -335,60 +288,11 @@ export function getLogsPath(): string {
 }
 
 /**
- * Get the path to the errors log file.
- */
-export function getErrorLogPath(): string {
-  return ERROR_LOG;
-}
-
-/**
- * Get the path to the tools log file.
- */
-export function getToolsLogPath(): string {
-  return TOOLS_LOG;
-}
-
-/**
  * Initialize logger synchronously (call at startup).
  * After startup, all operations are async.
  */
 export function initializeLogger(): void {
   ensureLogsDirSync();
-}
-
-// ============================================================================
-// Express Middleware Integration
-// ============================================================================
-
-/**
- * Create a logging middleware that logs tool invocations.
- * Use this to wrap route handlers for automatic logging.
- */
-export function createToolLogger(toolName: string) {
-  return (
-    req: { method: string; path: string; query: unknown },
-    res: { statusCode: number; on: (event: string, cb: () => void) => void },
-    next: () => void
-  ): void => {
-    const start = Date.now();
-
-    res.on('finish', () => {
-      const duration = Date.now() - start;
-      const success = res.statusCode < 400;
-
-      logToolCall({
-        tool: toolName,
-        route: req.path,
-        method: req.method,
-        params: req.query as Record<string, unknown>,
-        duration,
-        success,
-        error: success ? undefined : `HTTP ${res.statusCode}`,
-      });
-    });
-
-    next();
-  };
 }
 
 // ============================================================================
