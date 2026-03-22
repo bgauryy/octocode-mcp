@@ -21,6 +21,11 @@ Unlike `tsc`, ESLint, or tests that check local correctness, this skill answers:
 
 It combines a **CLI scanner** (dependency graph + AST + semantic analysis), an **AST engine** (`@ast-grep/napi` with 16 structural presets), and **Octocode MCP local/LSP tools** (search, go-to-definition, find-references, call-hierarchy) into one platform that integrates into your coding workflow — not a separate review step.
 
+It has two public surfaces:
+
+- **CLI surface** — `scripts/index.js`, `scripts/ast/search.js`, and `scripts/ast/tree-search.js`
+- **Artifact API** — `summary.md`, `summary.json`, `findings.json`, `architecture.json`, and `file-inventory.json`
+
 Just ask your AI agent — it uses this skill automatically for any engineering task.
 
 ---
@@ -40,7 +45,8 @@ The skill has four modes that compose together. The agent picks the right one ba
 
 | Capability | Ask the agent | What happens |
 |-----------|--------------|-------------|
-| **Smart Coding** | "implement this", "add feature", "fix this bug" | Pre-check (blast radius, consumers, coupling) → code → verify |
+| **Smart Coding** | "implement this", "add feature", "fix this bug" | Behavior contract → pre-check (blast radius, consumers, coupling) → code → verify |
+| **Interface Change Safety** | "change CLI", "rename flag", "modify endpoint", "change payload" | Public contract map → compatibility check → docs/migration → verify |
 | **Refactoring Planning** | "plan this refactor", "safe to rename" | Impact analysis → test/prod split → decomposition candidates |
 
 ### Analyze & Improve
@@ -101,12 +107,14 @@ Octocode MCP (local search + LSP)    → semantic validation against live code
 STRUCTURE → SEARCH → FETCH   (see shape → find it → read evidence)
 ```
 
-**When coding** — architecture first, then clean code:
+**When coding** — behavior first, then architecture:
 ```
-Think:   blast radius → consumer map → architecture safety → edge cases
+Think:   behavior contract → blast radius → consumer map → architecture safety
+         → CLI/API contract impact → edge cases
 Code:    TDD when possible → no patches/duplications → no junk comments
-Verify:  deterministic (AST re-scan + presets) + agentic (LSP refs + calls)
-         → lint + test + build
+Verify:  tests + relevant CLI/API checks + docs/examples sync
+         → deterministic (AST re-scan + presets) + agentic (LSP refs + calls)
+         → lint + build
 ```
 
 **When auditing** — the agent validates before presenting:
@@ -166,10 +174,13 @@ Incremental caching stores per-file AST results. Unchanged files skip re-parsing
 - Finding dead code, coverage gaps, or dependency issues
 
 **Coding standards enforced:**
+- Behavior-first contract (current vs desired, acceptance criteria, invariants)
 - Architecture-first thinking (map structure before coding)
+- CLI/API contracts treated as code for public changes
 - TDD when possible (failing test → fix → pass)
 - No patches/duplications (find existing patterns first)
 - No redundant comments (explain *why*, not *what*)
+- Docs/examples/migration notes updated when behavior changes
 - Dual-layer verification: agentic (Octocode LSP) + deterministic (AST/CLI)
 - Confidence tiers: high (structural proof), medium (semantic signal), low (behavioral trace)
 

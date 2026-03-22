@@ -110,6 +110,23 @@ Severity order: `critical` > `high` > `medium` > `low` > `info`.
 
 ---
 
+## Implementation / Change Template
+
+For implementation, bug-fix, or refactor requests, explain the behavior change before the diff summary.
+
+```markdown
+## Change Summary
+- **Behavior Contract**: <current -> desired>, <invariants>, <non-goals if relevant>
+- **Interface Impact**: <CLI/API/public contract changes> or `none`
+- **Docs Impact**: <docs/help/examples/migration notes updated> or `none`
+- **Verification**: <tests>, <contract or integration checks>, <lint/build>, <scan or LSP proof>
+- **Residual Risk**: <flag rollout / migration / follow-up> or `none`
+```
+
+If nothing changed publicly, say that explicitly instead of making the reader infer it.
+
+---
+
 ## Example Output
 
 A condensed real scan result for reference:

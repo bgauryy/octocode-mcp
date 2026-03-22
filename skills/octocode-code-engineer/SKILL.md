@@ -12,6 +12,15 @@ The scanner is a hypothesis generator, not a source of truth. Every finding must
 
 **Architecture principle: deterministic detection + AI-powered validation.** Detectors use cheap structural AST signals (loop depth, call count, fan-in/fan-out, statement count) to flag candidates. They intentionally do NOT hardcode domain-specific heuristics (regex patterns, method name lists, keyword matching). The AI agent is the smart layer — it uses its tools (AST search, LSP, localGetFileContent) to read the actual code, confirm or dismiss the hypothesis, and explain the evidence. This separation keeps detectors fast, maintainable, and language-generic while the agent adapts to any codebase.
 
+## Skill Surfaces
+
+This skill has two agent-facing surfaces:
+
+- **CLI surface** — `scripts/index.js` runs full scans, `scripts/ast/search.js` queries live source by AST shape, and `scripts/ast/tree-search.js` queries generated `ast-trees.txt`.
+- **Artifact API** — `summary.md` / `summary.json` provide the overview, `findings.json` is the prioritized validation queue, `architecture.json` carries graph signals, and `file-inventory.json` carries per-file structure.
+
+Normal loop: CLI produces artifacts → the agent reads the artifact API → Octocode local/LSP tools validate the live code.
+
 ## Capabilities
 
 Use this skill throughout your engineering workflow — not just for reviews.
@@ -27,7 +36,8 @@ Use this skill throughout your engineering workflow — not just for reviews.
 
 | Mode | Trigger | What it does |
 |------|---------|-------------|
-| **Smart Coding** | "implement this", "code this safely", "add feature", "fix this" | Pre-check (blast radius, consumers, coupling) → code → verify (re-scan, lint, test, build) |
+| **Smart Coding** | "implement this", "code this safely", "add feature", "fix this" | Behavior contract → pre-check (blast radius, consumers, coupling) → code → verify (tests, contracts, docs, re-scan) |
+| **Interface Change Safety** | "change CLI", "rename flag", "modify endpoint", "change payload" | Public contract map → compatibility check → caller impact → docs/migration → verify |
 | **Refactoring Planning** | "plan this refactor", "safe to rename", "how to restructure" | Impact analysis → blast radius → test/prod split → decomposition candidates |
 
 **Analyze & Improve**
@@ -54,11 +64,13 @@ Structure (localViewStructure, ast/tree-search.js, index.js --graph)
 
 **Code** (implement with awareness):
 ```
-Pre-check: blast radius (lspFindReferences → consumer count, test/prod split)
+Behavior contract (current vs desired, invariants, acceptance criteria)
+  → Pre-check: blast radius (lspFindReferences → consumer count, test/prod split)
+  → Interface contract (CLI/API compatibility, error semantics, docs impact)
   → Architecture safety (index.js --scope=<target> --graph → coupling/cycle risk)
   → Existing patterns (ast/search.js, localSearchCode → follow conventions)
   → Code the change
-  → Verify: lint + test + build + re-scan --scope=<changed>
+  → Verify: tests + lint + build + contract checks + docs/examples + re-scan --scope=<changed>
 ```
 
 **Analyze** (architecture health):
@@ -146,15 +158,17 @@ Follow these when writing, modifying, or fixing code. Architecture thinking firs
 
 **Before coding — think:**
 
-1. **Architecture first, code second.** Map the module structure, dependencies, and coupling BEFORE touching code. Run `localViewStructure` + `index.js --graph` + `lspCallHierarchy` to understand the landscape. Decide *where* a change belongs based on module boundaries, not convenience.
-2. **Edge cases and impact.** Identify failure modes and downstream impact BEFORE implementing. Use `lspFindReferences` to count consumers, `lspCallHierarchy(incoming)` to trace callers. >20 production consumers = high-risk, needs feature flag or incremental approach.
-3. **TDD when possible.** Write a failing test first, then make it pass. This proves the fix works and catches regressions. Skip ONLY for mechanical cleanups (dead code removal, rename-only, comment cleanup). See [TDD Fix Playbook](./references/playbooks.md).
+1. **Behavior first.** Write down current behavior, desired behavior, acceptance criteria, invariants, non-goals, and key edge cases BEFORE touching code. If the change is user-facing, include a concrete CLI/API example.
+2. **Architecture first, code second.** Map the module structure, dependencies, and coupling BEFORE touching code. Run `localViewStructure` + `index.js --graph` + `lspCallHierarchy` to understand the landscape. Decide *where* a change belongs based on module boundaries, not convenience.
+3. **Interface contracts are code.** Treat CLI flags, help output, stdout/stderr, exit codes, request/response schemas, status codes, and error shapes as part of the implementation. Map compatibility and versioning before changing them.
+4. **Edge cases and impact.** Identify failure modes and downstream impact BEFORE implementing. Use `lspFindReferences` to count consumers, `lspCallHierarchy(incoming)` to trace callers. >20 production consumers = high-risk, needs feature flag or incremental approach.
+5. **TDD when possible.** Write a failing test first, then make it pass. This proves the fix works and catches regressions. Skip ONLY for mechanical cleanups (dead code removal, rename-only, comment cleanup). See [TDD Fix Playbook](./references/playbooks.md).
 
 **While coding — standards:**
 
-4. **No patches or duplications.** Never copy-paste to "fix" a problem. If similar logic exists elsewhere, extract a shared function. Use `ast/search.js -p 'pattern' --json` to find existing implementations and `localSearchCode` to check if the pattern already exists — BEFORE writing new code.
-5. **No redundant comments.** Comments explain *why*, never *what*. Remove `// Import X`, `// Define Y`, `// Return result`, `// Handle error`. If code needs a comment to explain what it does, make the code clearer instead.
-6. **Validate with the project toolchain.** After each fix batch, run lint (`--fix`) → tests → build. Do not present fixes as done until the toolchain passes.
+6. **No patches or duplications.** Never copy-paste to "fix" a problem. If similar logic exists elsewhere, extract a shared function. Use `ast/search.js -p 'pattern' --json` to find existing implementations and `localSearchCode` to check if the pattern already exists — BEFORE writing new code.
+7. **No redundant comments.** Comments explain *why*, never *what*. Remove `// Import X`, `// Define Y`, `// Return result`, `// Handle error`. If code needs a comment to explain what it does, make the code clearer instead.
+8. **Validate with the project toolchain.** After each fix batch, run lint (`--fix`) → tests → build. Do not present fixes as done until the toolchain passes.
 
 **Verification — use both layers:**
 
@@ -167,6 +181,16 @@ Every code change must be verified with BOTH agentic intelligence AND determinis
 
 After changes: `index.js --scope=<changed-files>` + `ast/search.js --preset` for deterministic check, then `lspFindReferences` + `lspCallHierarchy` for semantic check.
 
+**When changing external behavior in the target repo:**
+
+- **CLI changes**: validate `--help`, commands/subcommands, flags/options, env/config inputs, stdout/stderr, exit codes, and one backward-compatible path when applicable.
+- **API changes**: validate request/response schemas, status codes, error shapes, auth/pagination/versioning, and contract/integration tests when present.
+- **Functional changes**: prove happy path, negative path, edge cases, invariants, and regression coverage.
+- **Docs changes**: update README/help output/examples/OpenAPI or reference docs/migration notes when external behavior changes.
+- **Risky changes**: define feature flag, rollout, telemetry, migration/backfill, and rollback plan.
+
+See [target change checklists](./references/change-checklists.md) for the detailed checklist per change type.
+
 ## Principles
 
 - Findings are leads, not facts — validate with Octocode local tools before presenting.
@@ -175,6 +199,9 @@ After changes: `index.js --scope=<changed-files>` + `ast/search.js --preset` for
 - Read `summary.md` first: scope, health scores, analysis signals, hotspots, recommended validation.
 - Let the problem drive tool choice — pick the tools that fit the finding, not a fixed sequence.
 - CLI-only is the fallback when Octocode MCP is unavailable, not the default.
+- Public interfaces are contracts — CLI flags/help output/exit codes, request/response schemas, and error semantics need explicit compatibility checks.
+- When behavior changes, update docs/examples/help output in the same task.
+- Explain changes as behavior delta + interface impact + verification + residual risk, not just a diff summary.
 - Use `--help` and reference docs for flags, categories, and presets — do not restate them.
 - Detect the project environment before running commands — see Project Environment.
 - **Hygiene is part of every fix**: when touching a file, also remove redundant re-exports (barrel re-exports with 0 consumers). See [playbooks](./references/playbooks.md).
@@ -205,6 +232,8 @@ After detecting the project environment, identify these three commands for post-
 | **Build** | `scripts.build` in `package.json`. | Skip build step, warn user |
 
 Run all three after every fix batch. If lint `--fix` auto-corrects files, stage those corrections as part of the fix. If tests fail, investigate before continuing — the fix may have introduced a regression.
+
+Also detect interface-specific scripts when they exist: `test:e2e`, `test:integration`, `test:cli`, `contract`, `contract:test`, `docs`, `docs:build`, `docs:check`. If a change touches public behavior, run the relevant ones before declaring success.
 
 ## Quick Start
 
@@ -280,14 +309,22 @@ lspCallHierarchy chain                                           → follow call
 
 Use when implementing features, fixing bugs, refactoring, or making any code change. Wraps every change with pre-check and verification.
 
-**Step 1. Understand the target** (uses Explore internally):
+**Step 1. Define the behavior contract**:
+```
+Current behavior                                                → what users/callers see today
+Desired behavior                                                → exact target outcome
+Acceptance criteria                                             → happy path + negative path
+Invariants / non-goals                                          → what must NOT change
+```
+
+**Step 2. Understand the target** (uses Explore internally):
 ```
 localViewStructure(path="target/dir", depth=2)                   → module layout
 localGetFileContent(matchString="targetFunction", contextLines=10) → current code
 lspGotoDefinition(lineHint=N)                                    → follow definitions
 ```
 
-**Step 2. Pre-check — blast radius**:
+**Step 3. Pre-check — blast radius**:
 ```
 lspFindReferences(lineHint=N, includeDeclaration=false)          → total consumers
 lspFindReferences(excludePattern=["**/tests/**"])                → production consumers
@@ -295,28 +332,33 @@ lspFindReferences(includePattern=["**/tests/**"])                → test covera
 lspCallHierarchy(incoming, depth=1)                              → direct callers
 ```
 
-**Step 3. Architecture safety**:
+**Step 4. Architecture safety + existing patterns**:
 ```
 index.js --scope=<target-files> --features=architecture --graph  → coupling/cycle risk
 ast/search.js -p 'similar-pattern' --json --root <nearby-dir>   → follow existing conventions
+localSearchCode(pattern="similar-feature", filesOnly=true)       → analogous implementations
 ```
 
-**Step 4. Implement the change**.
+**Step 5. Implement the change**.
 
-**Step 5. Verify**:
+**Step 6. Verify behavior, contracts, and code health**:
 ```
+<pm> run test                                                    → happy path + regression coverage
 index.js --scope=<changed-files> --features=code-quality,architecture → no new issues
 ast/search.js --preset any-type --json --root <changed-dir>      → no new : any
 lspFindReferences(lineHint=N)                                    → moved/renamed symbols resolve
-<pm> run lint --fix && <pm> run test && <pm> run build           → toolchain passes
+<pm> run lint --fix && <pm> run build                            → toolchain passes
 ```
 
-**If LSP unavailable** (Steps 2, 5): fall back to `localSearchCode` for usage counting, `ast/search.js` for structural verification, and scan JSON (`architecture.json` hotFiles/fan-in) for dependency data. Mark confidence as `medium` (structural) instead of `high` (semantic).
+For public changes in the target repo, also run the relevant CLI / integration / contract checks and update docs, examples, and help output before declaring done. See [target change checklists](./references/change-checklists.md).
+
+**If LSP unavailable** (Steps 3, 6): fall back to `localSearchCode` for usage counting, `ast/search.js` for structural verification, and scan JSON (`architecture.json` hotFiles/fan-in) for dependency data. Mark confidence as `medium` (structural) instead of `high` (semantic).
 
 **Decision gates**:
-- Step 2: >20 production consumers = high-risk, consider feature flag or incremental approach
-- Step 3: target touches cycle member or hotfile = extra caution
-- Step 5: new findings or test failures = fix before committing
+- Step 3: >20 production consumers = high-risk, consider feature flag or incremental approach
+- Step 4: target touches cycle member or hotfile = extra caution
+- Step 6: docs/contract drift, new findings, or test failures = fix before committing
+- Breaking public behavior needs a migration note or explicit user approval
 
 ---
 
@@ -424,14 +466,16 @@ For detailed per-category guidance, see [playbooks](./references/playbooks.md) a
 1. Immediate fixes for validated high-signal problems
 2. Short follow-up checks for suspected issues
 3. Structural improvements for recurring patterns
-4. Re-scan scope and validation steps
+4. Contract/docs/rollout work for public behavior changes
+5. Re-scan scope and validation steps
 
 **After presenting the plan, ask:** "Should I apply these fixes?"
 
 **Step 7. Apply fixes** (on user approval):
 1. TDD-first for behavioral fixes — write failing test → fix → pass → full suite. Skip TDD for mechanical cleanups.
 2. When touching a file: remove redundant comments (restate the code) and dead re-exports (0 consumers via `lspFindReferences`).
-3. Validate with project toolchain: lint (`--fix`) → tests → build.
+3. If public behavior changes: update docs/examples/help output and note compatibility or migration impact.
+4. Validate with project toolchain: lint (`--fix`) → tests → build.
 
 **Step 8. Verify** — re-scan with `--scope`, compare finding counts, report before/after delta.
 
@@ -443,7 +487,8 @@ Use these when you need specifics instead of copying detailed reference material
 - [Output files](./references/output-files.md) — JSON schemas, key reference, reading guide
 - [AST tree search](./references/ast-tree-search.md) — `ast/tree-search.js` usage and examples
 - [AST search](./references/ast-search.md) — `ast/search.js` patterns, rules, presets
-- [Tool workflows](./references/tool-workflows.md) — 18 hybrid workflows: audits, architecture, smart coding, quality, refactoring, exploration, testing, security, reviews
+- [Tool workflows](./references/tool-workflows.md) — 21 hybrid workflows: audits, architecture, smart coding, interface changes, quality, refactoring, exploration, testing, security, reviews
+- [Target change checklists](./references/change-checklists.md) — behavior contract, target CLI/API contract checks, docs sync, rollout, explanation checklist
 - [Validation and investigation](./references/validate-investigate.md) — reasoning loop, hybrid validation, taint tracing, lspHints
 - [Playbooks](./references/playbooks.md) — per-category validate & fix, TDD, validation, comments, re-exports
 - [Finding categories](./references/finding-categories.md) — all detectable categories by pillar
