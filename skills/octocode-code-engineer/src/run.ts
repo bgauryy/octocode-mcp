@@ -5,8 +5,8 @@
  * which requires native addons (tree-sitter, @ast-grep/napi) and
  * pure-JS packages (typescript) that cannot be bundled.
  */
-import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
