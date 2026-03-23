@@ -28,7 +28,7 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 | Single category | `--features=cognitive-complexity` |
 | Mix pillars + categories | `--features=dead-code,dependency-cycle` |
 | Everything except X | `--exclude=architecture` |
-| Exclude specific categories | `--exclude=dead-export,magic-number` |
+| Exclude specific categories | `--exclude=dead-export,unsafe-any` |
 | Cap findings (diverse) | `--findings-limit 500` |
 | Cap findings (pure severity) | `--findings-limit 500 --no-diversify` |
 | Include tests | `--include-tests` |
@@ -45,7 +45,7 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 | Enable semantic analysis | `--semantic` |
 | Semantic + scope combo | `--semantic --scope=packages/my-package` |
 | Only semantic categories | `--semantic --features=unused-parameter,shotgun-surgery` |
-| Deep hierarchy threshold | `--semantic --type-hierarchy-threshold 6` |
+| Deeper override-chain threshold | `--semantic --override-chain-threshold 6` |
 | Detect near-clones | `--similarity-threshold 0.8` |
 | Strict security | `--secret-entropy-threshold 4.0 --secret-min-length 16` |
 | Strict test quality | `--mock-threshold 5 --include-tests --features=test-quality` |
@@ -163,7 +163,6 @@ cat .octocode/scan/<latest>/findings.json | jq '.optimizationFindings[].category
 
 | Flag | Default | Controls |
 |------|---------|----------|
-| `--type-hierarchy-threshold N` | 4 | Max inheritance depth before flagging |
 | `--override-chain-threshold N` | 3 | Max method override depth before flagging |
 | `--shotgun-threshold N` | 8 | Unique-file threshold for `shotgun-surgery` |
 

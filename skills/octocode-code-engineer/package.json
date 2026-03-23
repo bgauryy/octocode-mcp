@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "AST-based code quality analysis with duplicate detection, complexity metrics, and dependency graph intelligence",
+  "description": "AST-based code quality analysis with duplicate detection, complexity metrics, and dependency graph intelligence. TypeScript in src/ compiles to scripts/ (yarn build or npm run build).",
   "author": "Guy Bary <bgauryy@octocodeai.com>",
   "homepage": "https://octocode.ai",
   "repository": "bgauryy/octocode-mcp.git",
@@ -17,8 +17,9 @@
     "octocode"
   ],
   "scripts": {
-    "build": "tsc && node minify-scripts.mjs",
-    "build:watch": "tsc --watch",
+    "build": "tsc -p tsconfig.json && node minify-scripts.mjs",
+    "build:watch": "tsc -p tsconfig.json --watch",
+    "prepare": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",

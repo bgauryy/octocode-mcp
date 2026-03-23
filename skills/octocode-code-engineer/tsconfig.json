@@ -1,4 +1,5 @@
 {
+  // Compiles src/**/*.ts → scripts/ (same paths). Then minify-scripts.mjs minifies *.js there.
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",

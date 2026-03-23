@@ -7,6 +7,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,13 +16,42 @@ const __filename = fileURLToPath(import.meta.url);
 // Go up one level from scripts/ to reach the skill root
 const skillDir = dirname(dirname(__filename));
 const nodeModulesDir = join(skillDir, 'node_modules');
+const require = createRequire(import.meta.url);
 
-if (!existsSync(join(nodeModulesDir, 'typescript'))) {
-  process.stderr.write('[octocode-scan] First run: installing dependencies...\n');
-  const result = spawnSync('npm', ['install', '--prefix', skillDir], {
-    stdio: 'inherit',
-    shell: false,
-  });
+const REQUIRED_PACKAGES = [
+  'typescript',
+  '@ast-grep/napi',
+  'tree-sitter',
+  'tree-sitter-typescript',
+];
+
+function isDependencyAvailable(pkgName: string): boolean {
+  if (existsSync(join(nodeModulesDir, pkgName))) {
+    return true;
+  }
+
+  try {
+    require.resolve(pkgName, { paths: [skillDir] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const missingPackages = REQUIRED_PACKAGES.filter(pkg => !isDependencyAvailable(pkg));
+
+if (missingPackages.length > 0) {
+  process.stderr.write(
+    `[octocode-scan] Missing dependencies (${missingPackages.join(', ')}). Installing...\n`
+  );
+  const result = spawnSync(
+    'npm',
+    ['install', '--prefix', skillDir, '--no-audit', '--no-fund'],
+    {
+      stdio: 'inherit',
+      shell: false,
+    }
+  );
   if (result.status !== 0) {
     process.stderr.write(
       `[octocode-scan] Failed to install dependencies.\n` +
