@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import { ALL_CATEGORIES, DEFAULT_OPTS, PILLAR_CATEGORIES } from '../types/index.js';
 
-import type { AnalysisOptions } from '../types/index.js';
+import type { AnalysisOptions, Thresholds } from '../types/index.js';
 
 function parseNumeric(raw: string | undefined, fallback: number): number {
   const n = parseInt(raw ?? '', 10);
@@ -105,13 +105,17 @@ const BOOL_FLAGS: Record<
   },
 };
 
-const INT_FLAGS: Record<string, keyof AnalysisOptions> = {
+const CORE_INT_FLAGS: Record<string, keyof AnalysisOptions> = {
   '--findings-limit': 'findingsLimit',
+  '--deep-link-topn': 'deepLinkTopN',
+  '--tree-depth': 'treeDepth',
+  '--max-recs-per-category': 'maxRecsPerCategory',
+};
+
+const THRESHOLD_INT_FLAGS: Record<string, keyof Thresholds> = {
   '--min-function-statements': 'minFunctionStatements',
   '--min-flow-statements': 'minFlowStatements',
   '--critical-complexity-threshold': 'criticalComplexityThreshold',
-  '--deep-link-topn': 'deepLinkTopN',
-  '--tree-depth': 'treeDepth',
   '--coupling-threshold': 'couplingThreshold',
   '--fan-in-threshold': 'fanInThreshold',
   '--fan-out-threshold': 'fanOutThreshold',
@@ -126,14 +130,13 @@ const INT_FLAGS: Record<string, keyof AnalysisOptions> = {
   '--maintainability-index-threshold': 'maintainabilityIndexThreshold',
   '--any-threshold': 'anyThreshold',
   '--flow-dup-threshold': 'flowDupThreshold',
-  '--max-recs-per-category': 'maxRecsPerCategory',
   '--override-chain-threshold': 'overrideChainThreshold',
   '--shotgun-threshold': 'shotgunThreshold',
   '--secret-min-length': 'secretMinLength',
   '--mock-threshold': 'mockThreshold',
 };
 
-const FLOAT_FLAGS: Record<string, keyof AnalysisOptions> = {
+const THRESHOLD_FLOAT_FLAGS: Record<string, keyof Thresholds> = {
   '--secret-entropy-threshold': 'secretEntropyThreshold',
   '--similarity-threshold': 'similarityThreshold',
   '--sdp-min-delta': 'sdpMinDelta',
@@ -161,7 +164,7 @@ const SPECIAL_FLAGS: Record<string, FlagHandler> = {
     return i + 1;
   },
   '--layer-order': (opts, argv, i) => {
-    opts.layerOrder = argv[i + 1].split(',').map(s => s.trim());
+    opts.thresholds.layerOrder = argv[i + 1].split(',').map(s => s.trim());
     return i + 1;
   },
   '--help': () => {
@@ -175,7 +178,7 @@ const SPECIAL_FLAGS: Record<string, FlagHandler> = {
 };
 
 export function parseArgs(argv: string[]): AnalysisOptions {
-  const opts: AnalysisOptions = { ...DEFAULT_OPTS };
+  const opts: AnalysisOptions = { ...DEFAULT_OPTS, thresholds: { ...DEFAULT_OPTS.thresholds } };
   let excludeSet: Set<string> | null = null;
 
   for (let i = 0; i < argv.length; i++) {
@@ -186,17 +189,24 @@ export function parseArgs(argv: string[]): AnalysisOptions {
       continue;
     }
 
-    if (INT_FLAGS[arg]) {
-      const key = INT_FLAGS[arg];
+    if (CORE_INT_FLAGS[arg]) {
+      const key = CORE_INT_FLAGS[arg];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (opts as any)[key] = parseNumeric(argv[++i], (DEFAULT_OPTS as any)[key]);
       continue;
     }
 
-    if (FLOAT_FLAGS[arg]) {
-      const key = FLOAT_FLAGS[arg];
+    if (THRESHOLD_INT_FLAGS[arg]) {
+      const key = THRESHOLD_INT_FLAGS[arg];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (opts as any)[key] = parseDecimal(argv[++i], (DEFAULT_OPTS as any)[key]);
+      (opts.thresholds as any)[key] = parseNumeric(argv[++i], (DEFAULT_OPTS.thresholds as any)[key]);
+      continue;
+    }
+
+    if (THRESHOLD_FLOAT_FLAGS[arg]) {
+      const key = THRESHOLD_FLOAT_FLAGS[arg];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (opts.thresholds as any)[key] = parseDecimal(argv[++i], (DEFAULT_OPTS.thresholds as any)[key]);
       continue;
     }
 

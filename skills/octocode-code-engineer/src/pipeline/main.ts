@@ -211,8 +211,8 @@ function runSemanticPhase(
       }
     }
     return runSemanticDetectors(semanticCtx, profiles, {
-      overrideChainThreshold: options.overrideChainThreshold,
-      shotgunThreshold: options.shotgunThreshold,
+      overrideChainThreshold: options.thresholds.overrideChainThreshold,
+      shotgunThreshold: options.thresholds.shotgunThreshold,
     });
   } catch (err: unknown) {
     parseErrors.push({
@@ -791,7 +791,7 @@ function analyzeAndReport(state: ScanState): void {
   const { options, effectiveParser, summary, flowMap, controlMap, trees, fileSummaries, parseErrors, dependencyState, allPkgJsonDeps, allPkgJsonDevDeps, isLegacyMode, outputDir, outputPath, treeSitterAvailable, treeSitterError } = state;
 
   const { duplicateFunctions, redundantFlows, duplicateFlowHints } =
-    groupDuplicates(flowMap, controlMap, options.flowDupThreshold);
+    groupDuplicates(flowMap, controlMap, options.thresholds.flowDupThreshold);
 
   const fileCriticalityByPath = new Map<string, FileCriticality>(
     fileSummaries.map(item => [

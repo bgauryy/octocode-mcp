@@ -116,6 +116,118 @@ export {
 } from './reporting/summary-md.js';
 export type { SummaryMdOptions } from './reporting/summary-md.js';
 
+type FindingDraft = Omit<Finding, 'id'>;
+type DetectorFn = () => Iterable<FindingDraft>;
+
+function collectArchitectureFindings(
+  dependencySummary: DependencySummary,
+  dependencyState: DependencyState,
+  fileSummaries: FileEntry[],
+  options: AnalysisOptions,
+  fileCriticalityByPath: Map<string, FileCriticality>,
+  consumedFromModule: Map<string, Set<string>>,
+  testConsumedFromModule: Map<string, Set<string>>,
+  pkgJsonDeps: Record<string, string>,
+  pkgJsonDevDeps: Record<string, string>
+): DetectorFn[] {
+  const hotFiles = computeHotFiles(dependencyState, dependencySummary, fileCriticalityByPath);
+  const detectors: DetectorFn[] = [
+    () => detectTestOnlyModules(dependencySummary),
+    () => detectDependencyCycles(dependencySummary, dependencyState),
+    () => detectCriticalPaths(dependencySummary, dependencyState, options.thresholds.criticalComplexityThreshold),
+    () => detectDeadFiles(dependencySummary, dependencyState),
+    () => detectDeadExports(dependencyState, consumedFromModule, testConsumedFromModule),
+    () => detectDeadReExports(dependencyState, consumedFromModule),
+    () => detectSdpViolations(dependencyState, options.thresholds.sdpMinDelta, options.thresholds.sdpMaxSourceInstability),
+    () => detectHighCoupling(dependencyState, options.thresholds.couplingThreshold),
+    () => detectGodModuleCoupling(dependencyState, options.thresholds.fanInThreshold, options.thresholds.fanOutThreshold),
+    () => detectOrphanModules(dependencyState),
+    () => detectUnreachableModules(dependencyState),
+    () => detectUnusedNpmDeps(dependencyState.externalCounts, pkgJsonDeps, pkgJsonDevDeps),
+    () => detectBoundaryViolations(dependencyState),
+    () => detectBarrelExplosion(dependencyState, options.thresholds.barrelSymbolThreshold),
+    () => detectGodModules(fileSummaries, dependencyState, options.thresholds.godModuleStatements, options.thresholds.godModuleExports),
+    () => detectMegaFolders(fileSummaries),
+    () => detectLowCohesion(dependencyState),
+    () => detectDistanceFromMainSequence(dependencyState),
+    () => detectFeatureEnvy(dependencyState),
+    () => detectUntestedCriticalCode(dependencyState, hotFiles, fileCriticalityByPath),
+    () => detectImportSideEffectRisk(fileSummaries, dependencyState, dependencySummary, hotFiles),
+    () => detectNamespaceImport(dependencyState),
+    () => detectCommonJsInEsm(dependencyState),
+    () => detectExportStarLeak(dependencyState),
+  ];
+  if (options.thresholds.layerOrder.length >= 2) {
+    detectors.push(() => detectLayerViolations(dependencyState, options.thresholds.layerOrder));
+  }
+  return detectors;
+}
+
+function collectCodeQualityFindings(
+  duplicates: DuplicateGroup[],
+  controlDuplicates: RedundantFlowGroup[],
+  fileSummaries: FileEntry[],
+  options: AnalysisOptions,
+  flowMap: Map<string, FlowMapEntry[]>
+): DetectorFn[] {
+  return [
+    () => detectDuplicateFunctionBodies(duplicates),
+    () => detectDuplicateFlowStructures(controlDuplicates, options.thresholds.flowDupThreshold),
+    () => detectFunctionOptimization(fileSummaries, options.thresholds.criticalComplexityThreshold),
+    () => detectGodFunctions(fileSummaries, options.thresholds.godFunctionStatements, options.thresholds.godFunctionMiThreshold),
+    () => detectCognitiveComplexity(fileSummaries, options.thresholds.cognitiveComplexityThreshold),
+    () => detectExcessiveParameters(fileSummaries, options.thresholds.parameterThreshold),
+    () => detectEmptyCatchBlocks(fileSummaries),
+    () => detectSwitchNoDefault(fileSummaries),
+    () => detectUnsafeAny(fileSummaries, options.thresholds.anyThreshold),
+    () => detectHighHalsteadEffort(fileSummaries, options.thresholds.halsteadEffortThreshold),
+    () => detectLowMaintainability(fileSummaries, options.thresholds.maintainabilityIndexThreshold),
+    () => detectTypeAssertionEscape(fileSummaries),
+    () => detectMissingErrorBoundary(fileSummaries),
+    () => detectPromiseMisuse(fileSummaries),
+    () => detectAwaitInLoop(fileSummaries),
+    () => detectSyncIo(fileSummaries),
+    () => detectUnclearedTimers(fileSummaries),
+    () => detectListenerLeakRisk(fileSummaries),
+    () => detectUnboundedCollection(fileSummaries),
+    () => detectMessageChains(fileSummaries),
+    () => detectSimilarFunctionBodies(flowMap, options.thresholds.similarityThreshold),
+  ];
+}
+
+function collectSecurityFindings(fileSummaries: FileEntry[]): DetectorFn[] {
+  return [
+    () => detectHardcodedSecrets(fileSummaries),
+    () => detectEvalUsage(fileSummaries),
+    () => detectUnsafeHtml(fileSummaries),
+    () => detectSqlInjectionRisk(fileSummaries),
+    () => detectUnsafeRegex(fileSummaries),
+    () => detectUnvalidatedInputSink(fileSummaries),
+    () => detectInputPassthroughRisk(fileSummaries),
+    () => detectPrototypePollutionRisk(fileSummaries),
+    () => detectPathTraversalRisk(fileSummaries),
+    () => detectCommandInjectionRisk(fileSummaries),
+    () => detectDebugLogLeakage(fileSummaries),
+    () => detectSensitiveDataLogging(fileSummaries),
+  ];
+}
+
+function collectTestQualityFindings(
+  fileSummaries: FileEntry[],
+  options: AnalysisOptions
+): DetectorFn[] {
+  return [
+    () => detectLowAssertionDensity(fileSummaries),
+    () => detectTestNoAssertion(fileSummaries),
+    () => detectExcessiveMocking(fileSummaries, options.thresholds.mockThreshold),
+    () => detectSharedMutableState(fileSummaries),
+    () => detectMissingTestCleanup(fileSummaries),
+    () => detectFocusedTests(fileSummaries),
+    () => detectFakeTimersWithoutRestore(fileSummaries),
+    () => detectMissingMockRestoration(fileSummaries),
+  ];
+}
+
 export function buildIssueCatalog(
   duplicates: DuplicateGroup[],
   controlDuplicates: RedundantFlowGroup[],
@@ -126,19 +238,19 @@ export function buildIssueCatalog(
   pkgJsonDeps: Record<string, string> = {},
   pkgJsonDevDeps: Record<string, string> = {},
   fileCriticalityByPath: Map<string, FileCriticality> = new Map(),
-  semanticFindings: Array<Omit<Finding, 'id'>> = [],
+  semanticFindings: Array<FindingDraft> = [],
   flowMap: Map<string, FlowMapEntry[]> = new Map(),
-  additionalFindings: Array<Omit<Finding, 'id'>> = []
+  additionalFindings: Array<FindingDraft> = []
 ): {
-  allFindings: Array<Omit<Finding, 'id'>>;
+  allFindings: Array<FindingDraft>;
   findings: Finding[];
   byFile: Map<string, string[]>;
   totalBeforeTruncation: number;
   droppedCategories: string[];
 } {
-  const rawFindings: Array<Omit<Finding, 'id'>> = [];
+  const rawFindings: Array<FindingDraft> = [];
 
-  const addFinding = (finding: Omit<Finding, 'id'>): void => {
+  const addFinding = (finding: FindingDraft): void => {
     if (options.features && !options.features.has(finding.category)) return;
     rawFindings.push(finding);
   };
@@ -146,178 +258,20 @@ export function buildIssueCatalog(
   const { production: consumedFromModule, test: testConsumedFromModule } =
     buildConsumedFromModule(dependencyState);
 
-  for (const f of detectDuplicateFunctionBodies(duplicates)) addFinding(f);
-  for (const f of detectDuplicateFlowStructures(
-    controlDuplicates,
-    options.flowDupThreshold
-  ))
-    addFinding(f);
-  for (const f of detectFunctionOptimization(
-    fileSummaries,
-    options.criticalComplexityThreshold
-  ))
-    addFinding(f);
-  for (const f of detectTestOnlyModules(dependencySummary)) addFinding(f);
-  for (const f of detectDependencyCycles(dependencySummary, dependencyState))
-    addFinding(f);
-  for (const f of detectCriticalPaths(
-    dependencySummary,
-    dependencyState,
-    options.criticalComplexityThreshold
-  ))
-    addFinding(f);
-  for (const f of detectDeadFiles(dependencySummary, dependencyState))
-    addFinding(f);
-  for (const f of detectDeadExports(
-    dependencyState,
-    consumedFromModule,
-    testConsumedFromModule
-  ))
-    addFinding(f);
-  for (const f of detectDeadReExports(dependencyState, consumedFromModule))
-    addFinding(f);
-  for (const f of detectSdpViolations(
-    dependencyState,
-    options.sdpMinDelta,
-    options.sdpMaxSourceInstability
-  ))
-    addFinding(f);
-  for (const f of detectHighCoupling(
-    dependencyState,
-    options.couplingThreshold
-  ))
-    addFinding(f);
-  for (const f of detectGodModuleCoupling(
-    dependencyState,
-    options.fanInThreshold,
-    options.fanOutThreshold
-  ))
-    addFinding(f);
-  for (const f of detectOrphanModules(dependencyState)) addFinding(f);
-  for (const f of detectUnreachableModules(dependencyState)) addFinding(f);
+  const detectors: DetectorFn[] = [
+    ...collectArchitectureFindings(
+      dependencySummary, dependencyState, fileSummaries, options,
+      fileCriticalityByPath, consumedFromModule, testConsumedFromModule,
+      pkgJsonDeps, pkgJsonDevDeps
+    ),
+    ...collectCodeQualityFindings(duplicates, controlDuplicates, fileSummaries, options, flowMap),
+    ...collectSecurityFindings(fileSummaries),
+    ...collectTestQualityFindings(fileSummaries, options),
+  ];
 
-  for (const f of detectUnusedNpmDeps(
-    dependencyState.externalCounts,
-    pkgJsonDeps,
-    pkgJsonDevDeps
-  ))
-    addFinding(f);
-  for (const f of detectBoundaryViolations(dependencyState)) addFinding(f);
-  for (const f of detectBarrelExplosion(
-    dependencyState,
-    options.barrelSymbolThreshold
-  ))
-    addFinding(f);
-  for (const f of detectGodModules(
-    fileSummaries,
-    dependencyState,
-    options.godModuleStatements,
-    options.godModuleExports
-  ))
-    addFinding(f);
-  for (const f of detectMegaFolders(fileSummaries)) addFinding(f);
-  for (const f of detectGodFunctions(
-    fileSummaries,
-    options.godFunctionStatements,
-    options.godFunctionMiThreshold
-  ))
-    addFinding(f);
-  for (const f of detectCognitiveComplexity(
-    fileSummaries,
-    options.cognitiveComplexityThreshold
-  ))
-    addFinding(f);
-  if (options.layerOrder.length >= 2) {
-    for (const f of detectLayerViolations(dependencyState, options.layerOrder))
-      addFinding(f);
+  for (const detect of detectors) {
+    for (const f of detect()) addFinding(f);
   }
-  for (const f of detectLowCohesion(dependencyState)) addFinding(f);
-  for (const f of detectDistanceFromMainSequence(dependencyState))
-    addFinding(f);
-  for (const f of detectFeatureEnvy(dependencyState)) addFinding(f);
-
-  const hotFilesForDetector = computeHotFiles(
-    dependencyState,
-    dependencySummary,
-    fileCriticalityByPath
-  );
-  for (const f of detectUntestedCriticalCode(
-    dependencyState,
-    hotFilesForDetector,
-    fileCriticalityByPath
-  ))
-    addFinding(f);
-
-  for (const f of detectImportSideEffectRisk(
-    fileSummaries,
-    dependencyState,
-    dependencySummary,
-    hotFilesForDetector
-  ))
-    addFinding(f);
-
-  for (const f of detectNamespaceImport(dependencyState)) addFinding(f);
-  for (const f of detectCommonJsInEsm(dependencyState)) addFinding(f);
-  for (const f of detectExportStarLeak(dependencyState)) addFinding(f);
-
-  for (const f of detectExcessiveParameters(
-    fileSummaries,
-    options.parameterThreshold
-  ))
-    addFinding(f);
-  for (const f of detectEmptyCatchBlocks(fileSummaries)) addFinding(f);
-  for (const f of detectSwitchNoDefault(fileSummaries)) addFinding(f);
-  for (const f of detectUnsafeAny(fileSummaries, options.anyThreshold))
-    addFinding(f);
-  for (const f of detectHighHalsteadEffort(
-    fileSummaries,
-    options.halsteadEffortThreshold
-  ))
-    addFinding(f);
-  for (const f of detectLowMaintainability(
-    fileSummaries,
-    options.maintainabilityIndexThreshold
-  ))
-    addFinding(f);
-  for (const f of detectTypeAssertionEscape(fileSummaries)) addFinding(f);
-  for (const f of detectMissingErrorBoundary(fileSummaries)) addFinding(f);
-  for (const f of detectPromiseMisuse(fileSummaries)) addFinding(f);
-
-  for (const f of detectAwaitInLoop(fileSummaries)) addFinding(f);
-  for (const f of detectSyncIo(fileSummaries)) addFinding(f);
-  for (const f of detectUnclearedTimers(fileSummaries)) addFinding(f);
-  for (const f of detectListenerLeakRisk(fileSummaries)) addFinding(f);
-  for (const f of detectUnboundedCollection(fileSummaries)) addFinding(f);
-  for (const f of detectMessageChains(fileSummaries)) addFinding(f);
-  for (const f of detectSimilarFunctionBodies(
-    flowMap,
-    options.similarityThreshold
-  ))
-    addFinding(f);
-
-  for (const f of detectHardcodedSecrets(fileSummaries)) addFinding(f);
-  for (const f of detectEvalUsage(fileSummaries)) addFinding(f);
-  for (const f of detectUnsafeHtml(fileSummaries)) addFinding(f);
-  for (const f of detectSqlInjectionRisk(fileSummaries)) addFinding(f);
-  for (const f of detectUnsafeRegex(fileSummaries)) addFinding(f);
-  for (const f of detectUnvalidatedInputSink(fileSummaries)) addFinding(f);
-  for (const f of detectInputPassthroughRisk(fileSummaries)) addFinding(f);
-  for (const f of detectPrototypePollutionRisk(fileSummaries)) addFinding(f);
-  for (const f of detectPathTraversalRisk(fileSummaries)) addFinding(f);
-  for (const f of detectCommandInjectionRisk(fileSummaries)) addFinding(f);
-  for (const f of detectDebugLogLeakage(fileSummaries)) addFinding(f);
-  for (const f of detectSensitiveDataLogging(fileSummaries)) addFinding(f);
-
-  for (const f of detectLowAssertionDensity(fileSummaries)) addFinding(f);
-  for (const f of detectTestNoAssertion(fileSummaries)) addFinding(f);
-  for (const f of detectExcessiveMocking(fileSummaries, options.mockThreshold))
-    addFinding(f);
-  for (const f of detectSharedMutableState(fileSummaries)) addFinding(f);
-  for (const f of detectMissingTestCleanup(fileSummaries)) addFinding(f);
-  for (const f of detectFocusedTests(fileSummaries)) addFinding(f);
-  for (const f of detectFakeTimersWithoutRestore(fileSummaries)) addFinding(f);
-  for (const f of detectMissingMockRestoration(fileSummaries)) addFinding(f);
-
   for (const f of semanticFindings) addFinding(f);
   for (const f of additionalFindings) addFinding(f);
 

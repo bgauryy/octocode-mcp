@@ -91,3 +91,55 @@ Use this to confirm broad feature coverage during reviews:
 
 For exact category names in your CLI version, use `index.js --help` and `findings.json` category extraction from [cli-reference.md](./cli-reference.md).
 
+---
+
+## Worked examples
+
+Three end-to-end validation flows showing how to arrive at **confirmed**, **dismissed**, and **uncertain**.
+
+### Example 1: Confirmed — dead export
+
+**Finding**: `findings.json` reports `dead-export` for `formatDate` in `src/utils/dates.ts` (line 42).
+
+| Step | Tool call | Result | Decision |
+|------|-----------|--------|----------|
+| 1 | `localSearchCode(pattern="formatDate", path="src/utils/dates.ts")` | Match at line 42 — `export function formatDate(...)`. Gets `lineHint=42`. | — |
+| 2 | `lspFindReferences(path="src/utils/dates.ts", lineHint=42, includeDeclaration=false)` | **0 references** outside the declaration. | No consumers. |
+| 3 | `localSearchCode(pattern="formatDate", filesOnly=true)` | Only `src/utils/dates.ts` appears. No re-exports, no test imports. | No indirect usage. |
+
+**Verdict**: **Confirmed** (high confidence). Zero consumers in production and test code. Safe to remove the export or delete the function entirely.
+
+---
+
+### Example 2: Dismissed — false-positive coupling hotspot
+
+**Finding**: `architecture.json` lists `src/config/env.ts` as a coupling hotspot (fanIn=45, fanOut=2).
+
+| Step | Tool call | Result | Decision |
+|------|-----------|--------|----------|
+| 1 | `localGetFileContent(path="src/config/env.ts", fullContent=true)` | File exports `const ENV = { ... }` — a read-only config object assembled from `process.env`. 25 lines, no logic. | Pure config. |
+| 2 | `lspFindReferences(path="src/config/env.ts", lineHint=3, includeDeclaration=false)` | 45 references across 32 files, all are `import { ENV } from '../config/env'` followed by property reads. No mutations. | All consumers read-only. |
+| 3 | Cross-check: does high fan-in cause churn risk? `localFindFiles(path="src/config", modifiedWithin="90d")` | Not modified in 90 days. | Stable. |
+
+**Verdict**: **Dismissed**. High fan-in is expected and harmless for a read-only config module. No logic, no mutation, no churn. The scanner flags structural coupling but the semantics show this is a stable leaf — not a refactoring target.
+
+---
+
+### Example 3: Uncertain — god function with partial evidence
+
+**Finding**: `findings.json` reports `god-function` for `processOrder` in `src/orders/handler.ts` (line 88, 120 statements, cognitive complexity 35).
+
+| Step | Tool call | Result | Decision |
+|------|-----------|--------|----------|
+| 1 | `localGetFileContent(path="src/orders/handler.ts", startLine=88, endLine=210)` | Large function with validation, discount calculation, inventory check, payment call, email dispatch. Multiple concerns interleaved. | Confirms size and complexity. |
+| 2 | `lspCallHierarchy(path="src/orders/handler.ts", lineHint=88, direction="incoming", depth=1)` | 3 callers: `POST /orders` route handler, a batch job, and 1 test. | Moderate blast radius. |
+| 3 | `lspCallHierarchy(path="src/orders/handler.ts", lineHint=88, direction="outgoing", depth=1)` | Calls 8 functions across 5 files: `validateOrder`, `calcDiscount`, `checkInventory`, `chargePayment`, `sendConfirmation`, `logAudit`, `updateMetrics`, `notifyWarehouse`. | Orchestrates many side effects. |
+| 4 | `lspFindReferences(path="src/orders/handler.ts", lineHint=88, includePattern=["**/tests/**"])` | 1 test reference — a single happy-path integration test. No edge-case coverage. | Sparse test coverage. |
+
+**Verdict**: **Uncertain** (medium confidence). The function is objectively large and complex, and orchestrates many side effects — consistent with a god function. However, it may be intentionally serving as a transaction script (single orchestration point for atomicity). Cannot confirm it's harmful without knowing:
+- Whether the callers expect atomic all-or-nothing behavior
+- Whether extracting sub-steps would break transaction boundaries
+- Whether the team considers this an acceptable orchestration pattern
+
+**Recommendation**: flag for team review. If refactoring, extract pure computation helpers (validation, discount) first — those are side-effect-free and safe. Defer side-effect orchestration changes until transaction semantics are clarified.
+

@@ -17,6 +17,7 @@ import { computeHotFiles } from '../detectors/index.js';
 import { PILLAR_CATEGORIES } from '../types/index.js';
 
 import type {
+  AgentOutputData,
   AnalysisOptions,
   DependencyState,
   DependencySummary,
@@ -24,6 +25,7 @@ import type {
   FileCriticality,
   FileEntry,
   Finding,
+  ScanSummaryData,
   TreeEntry,
 } from '../types/index.js';
 
@@ -46,12 +48,12 @@ export interface FullReport {
   repoRoot: string;
   options: Record<string, unknown>;
   parser: Record<string, unknown>;
-  summary: Record<string, unknown>;
+  summary: ScanSummaryData;
   fileInventory: FileEntry[];
   duplicateFlows: Record<string, unknown>;
   dependencyGraph: DependencySummary;
   dependencyFindings: Finding[];
-  agentOutput: Record<string, unknown>;
+  agentOutput: AgentOutputData;
   optimizationOpportunities: DuplicateFlowHint[];
   optimizationFindings: Finding[];
   parseErrors: { file: string; message: string }[];

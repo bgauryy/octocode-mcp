@@ -3336,9 +3336,7 @@ describe('buildIssueCatalog detector paths', () => {
     ...DEFAULT_OPTS,
     root: '/repo',
     findingsLimit: 500,
-    anyThreshold: 5,
-    halsteadEffortThreshold: 500_000,
-    maintainabilityIndexThreshold: 20,
+    thresholds: { ...DEFAULT_OPTS.thresholds, anyThreshold: 5, halsteadEffortThreshold: 500_000, maintainabilityIndexThreshold: 20 },
   };
 
   it('detects dead exports via declaredExportsByFile without consumedFromModule', () => {
@@ -4394,7 +4392,7 @@ describe('buildIssueCatalog detector paths via buildIssueCatalog', () => {
         ],
       },
     ];
-    const optsWithFlow = { ...opts, flowDupThreshold: 3 };
+    const optsWithFlow = { ...opts, thresholds: { ...opts.thresholds, flowDupThreshold: 3 } };
     const { findings } = buildIssueCatalog(
       [],
       controlDuplicates,
@@ -4411,7 +4409,7 @@ describe('buildIssueCatalog detector paths via buildIssueCatalog', () => {
   it('detectLayerViolations: layerOrder triggers when lower layer imports from upper', () => {
     const state = emptyState();
     addEdge(state, 'src/repository/db.ts', 'src/service/handler.ts');
-    const optsWithLayers = { ...opts, layerOrder: ['service', 'repository'] };
+    const optsWithLayers = { ...opts, thresholds: { ...opts.thresholds, layerOrder: ['service', 'repository'] } };
     const { findings } = buildIssueCatalog(
       [],
       [],

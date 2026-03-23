@@ -12,9 +12,9 @@ describe('parseArgs', () => {
     expect(opts.graph).toBe(false);
     expect(opts.parser).toBe('auto');
     expect(opts.findingsLimit).toBe(Infinity);
-    expect(opts.minFunctionStatements).toBe(6);
-    expect(opts.minFlowStatements).toBe(6);
-    expect(opts.criticalComplexityThreshold).toBe(30);
+    expect(opts.thresholds.minFunctionStatements).toBe(6);
+    expect(opts.thresholds.minFlowStatements).toBe(6);
+    expect(opts.thresholds.criticalComplexityThreshold).toBe(30);
     expect(opts.deepLinkTopN).toBe(12);
     expect(opts.treeDepth).toBe(4);
     expect(opts.packageRoot).toMatch(/packages$/);
@@ -64,18 +64,18 @@ describe('parseArgs', () => {
 
   it('parses --min-function-statements', () => {
     expect(
-      parseArgs(['--min-function-statements', '12']).minFunctionStatements
+      parseArgs(['--min-function-statements', '12']).thresholds.minFunctionStatements
     ).toBe(12);
   });
 
   it('parses --min-flow-statements', () => {
-    expect(parseArgs(['--min-flow-statements', '8']).minFlowStatements).toBe(8);
+    expect(parseArgs(['--min-flow-statements', '8']).thresholds.minFlowStatements).toBe(8);
   });
 
   it('parses --critical-complexity-threshold', () => {
     expect(
       parseArgs(['--critical-complexity-threshold', '25'])
-        .criticalComplexityThreshold
+        .thresholds.criticalComplexityThreshold
     ).toBe(25);
   });
 
@@ -88,56 +88,56 @@ describe('parseArgs', () => {
   });
 
   it('parses --coupling-threshold', () => {
-    expect(parseArgs(['--coupling-threshold', '20']).couplingThreshold).toBe(
+    expect(parseArgs(['--coupling-threshold', '20']).thresholds.couplingThreshold).toBe(
       20
     );
   });
 
   it('parses --fan-in-threshold', () => {
-    expect(parseArgs(['--fan-in-threshold', '25']).fanInThreshold).toBe(25);
+    expect(parseArgs(['--fan-in-threshold', '25']).thresholds.fanInThreshold).toBe(25);
   });
 
   it('parses --fan-out-threshold', () => {
-    expect(parseArgs(['--fan-out-threshold', '18']).fanOutThreshold).toBe(18);
+    expect(parseArgs(['--fan-out-threshold', '18']).thresholds.fanOutThreshold).toBe(18);
   });
 
   it('parses --god-module-statements', () => {
     expect(
-      parseArgs(['--god-module-statements', '600']).godModuleStatements
+      parseArgs(['--god-module-statements', '600']).thresholds.godModuleStatements
     ).toBe(600);
   });
 
   it('parses --god-module-exports', () => {
-    expect(parseArgs(['--god-module-exports', '30']).godModuleExports).toBe(30);
+    expect(parseArgs(['--god-module-exports', '30']).thresholds.godModuleExports).toBe(30);
   });
 
   it('parses --god-function-statements', () => {
     expect(
-      parseArgs(['--god-function-statements', '150']).godFunctionStatements
+      parseArgs(['--god-function-statements', '150']).thresholds.godFunctionStatements
     ).toBe(150);
   });
 
   it('parses --cognitive-complexity-threshold', () => {
     expect(
       parseArgs(['--cognitive-complexity-threshold', '20'])
-        .cognitiveComplexityThreshold
+        .thresholds.cognitiveComplexityThreshold
     ).toBe(20);
   });
 
   it('parses --barrel-symbol-threshold', () => {
     expect(
-      parseArgs(['--barrel-symbol-threshold', '50']).barrelSymbolThreshold
+      parseArgs(['--barrel-symbol-threshold', '50']).thresholds.barrelSymbolThreshold
     ).toBe(50);
   });
 
   it('parses --layer-order as comma-separated list', () => {
     const opts = parseArgs(['--layer-order', 'ui,service,repository']);
-    expect(opts.layerOrder).toEqual(['ui', 'service', 'repository']);
+    expect(opts.thresholds.layerOrder).toEqual(['ui', 'service', 'repository']);
   });
 
   it('trims whitespace in --layer-order values', () => {
     const opts = parseArgs(['--layer-order', ' ui , service , repo ']);
-    expect(opts.layerOrder).toEqual(['ui', 'service', 'repo']);
+    expect(opts.thresholds.layerOrder).toEqual(['ui', 'service', 'repo']);
   });
 
   it('parses --features with pillar name', () => {
@@ -220,20 +220,20 @@ describe('parseArgs', () => {
       'no',
     ]);
     expect(opts.findingsLimit).toBe(DEFAULT_OPTS.findingsLimit);
-    expect(opts.couplingThreshold).toBe(DEFAULT_OPTS.couplingThreshold);
-    expect(opts.fanInThreshold).toBe(DEFAULT_OPTS.fanInThreshold);
-    expect(opts.fanOutThreshold).toBe(DEFAULT_OPTS.fanOutThreshold);
-    expect(opts.godModuleStatements).toBe(DEFAULT_OPTS.godModuleStatements);
-    expect(opts.godModuleExports).toBe(DEFAULT_OPTS.godModuleExports);
-    expect(opts.godFunctionStatements).toBe(DEFAULT_OPTS.godFunctionStatements);
-    expect(opts.cognitiveComplexityThreshold).toBe(
-      DEFAULT_OPTS.cognitiveComplexityThreshold
+    expect(opts.thresholds.couplingThreshold).toBe(DEFAULT_OPTS.thresholds.couplingThreshold);
+    expect(opts.thresholds.fanInThreshold).toBe(DEFAULT_OPTS.thresholds.fanInThreshold);
+    expect(opts.thresholds.fanOutThreshold).toBe(DEFAULT_OPTS.thresholds.fanOutThreshold);
+    expect(opts.thresholds.godModuleStatements).toBe(DEFAULT_OPTS.thresholds.godModuleStatements);
+    expect(opts.thresholds.godModuleExports).toBe(DEFAULT_OPTS.thresholds.godModuleExports);
+    expect(opts.thresholds.godFunctionStatements).toBe(DEFAULT_OPTS.thresholds.godFunctionStatements);
+    expect(opts.thresholds.cognitiveComplexityThreshold).toBe(
+      DEFAULT_OPTS.thresholds.cognitiveComplexityThreshold
     );
-    expect(opts.barrelSymbolThreshold).toBe(DEFAULT_OPTS.barrelSymbolThreshold);
-    expect(opts.minFunctionStatements).toBe(DEFAULT_OPTS.minFunctionStatements);
-    expect(opts.minFlowStatements).toBe(DEFAULT_OPTS.minFlowStatements);
-    expect(opts.criticalComplexityThreshold).toBe(
-      DEFAULT_OPTS.criticalComplexityThreshold
+    expect(opts.thresholds.barrelSymbolThreshold).toBe(DEFAULT_OPTS.thresholds.barrelSymbolThreshold);
+    expect(opts.thresholds.minFunctionStatements).toBe(DEFAULT_OPTS.thresholds.minFunctionStatements);
+    expect(opts.thresholds.minFlowStatements).toBe(DEFAULT_OPTS.thresholds.minFlowStatements);
+    expect(opts.thresholds.criticalComplexityThreshold).toBe(
+      DEFAULT_OPTS.thresholds.criticalComplexityThreshold
     );
     expect(opts.deepLinkTopN).toBe(DEFAULT_OPTS.deepLinkTopN);
     expect(opts.treeDepth).toBe(DEFAULT_OPTS.treeDepth);
@@ -260,8 +260,8 @@ describe('parseArgs', () => {
     expect(opts.graph).toBe(true);
     expect(opts.parser).toBe('typescript');
     expect(opts.findingsLimit).toBe(100);
-    expect(opts.couplingThreshold).toBe(10);
-    expect(opts.layerOrder).toEqual(['a', 'b', 'c']);
+    expect(opts.thresholds.couplingThreshold).toBe(10);
+    expect(opts.thresholds.layerOrder).toEqual(['a', 'b', 'c']);
   });
 
   it('sets packageRoot relative to root', () => {
@@ -282,12 +282,12 @@ describe('parseArgs', () => {
 
   it('--override-chain-threshold sets threshold', () => {
     const opts = parseArgs(['--override-chain-threshold', '5']);
-    expect(opts.overrideChainThreshold).toBe(5);
+    expect(opts.thresholds.overrideChainThreshold).toBe(5);
   });
 
   it('NaN guards for semantic thresholds', () => {
     const opts = parseArgs(['--override-chain-threshold', 'xyz']);
-    expect(opts.overrideChainThreshold).toBe(3);
+    expect(opts.thresholds.overrideChainThreshold).toBe(3);
   });
 
   it('--no-diversify sets noDiversify to true', () => {
@@ -360,8 +360,8 @@ describe('parseArgs', () => {
       '30',
     ]);
     expect(opts.findingsLimit).toBe(10);
-    expect(opts.minFunctionStatements).toBe(8);
-    expect(opts.criticalComplexityThreshold).toBe(30);
+    expect(opts.thresholds.minFunctionStatements).toBe(8);
+    expect(opts.thresholds.criticalComplexityThreshold).toBe(30);
   });
 
   it('parses --secret-entropy-threshold 4.0 and --similarity-threshold 0.9', () => {
@@ -371,16 +371,16 @@ describe('parseArgs', () => {
       '--similarity-threshold',
       '0.9',
     ]);
-    expect(opts.secretEntropyThreshold).toBe(4);
-    expect(opts.similarityThreshold).toBe(0.9);
+    expect(opts.thresholds.secretEntropyThreshold).toBe(4);
+    expect(opts.thresholds.similarityThreshold).toBe(0.9);
   });
 
   it('parses float flags with decimal values', () => {
     expect(
-      parseArgs(['--secret-entropy-threshold', '5.5']).secretEntropyThreshold
+      parseArgs(['--secret-entropy-threshold', '5.5']).thresholds.secretEntropyThreshold
     ).toBe(5.5);
     expect(
-      parseArgs(['--similarity-threshold', '0.75']).similarityThreshold
+      parseArgs(['--similarity-threshold', '0.75']).thresholds.similarityThreshold
     ).toBe(0.75);
   });
 
@@ -398,7 +398,7 @@ describe('parseArgs', () => {
     expect(opts.parser).toBe('typescript');
     expect(opts.root).toBe('/some/path');
     expect(opts.out).toBe('result.json');
-    expect(opts.layerOrder).toEqual(['ui', 'service', 'repo']);
+    expect(opts.thresholds.layerOrder).toEqual(['ui', 'service', 'repo']);
   });
 
   it('parses --out=output.json form', () => {

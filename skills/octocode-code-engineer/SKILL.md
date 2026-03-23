@@ -1,409 +1,391 @@
 ---
 name: octocode-code-engineer
-description: "Use when the user asks to understand, write, implement, plan, review, or analyze code. Triggers: 'how does X work', 'implement this feature', 'add this safely', 'fix this bug', 'refactor this', 'explore this module', 'where should this live', 'audit code quality', 'check architecture', 'find test gaps', 'security review', 'analyze dependencies', 'what is the blast radius', 'scan for problems', 'find cycles', multi-file flow tracing, change impact analysis, or any task requiring deep file-level comprehension. Combines AST structural scanning, dependency graph analysis, local search, and LSP semantic analysis for full codebase awareness. For research-only exploration use octocode-researcher. For formal design documents use octocode-rfc-generator."
-compatibility: "Requires Node.js >= 18. Works with any AI coding agent. Best with Octocode MCP local + LSP tools for hybrid validation. Pre-built scripts only; no install or build step required."
+description: "Codebase-aware code engineering — understand, analyze, plan, and implement with architecture, quality, and blast radius awareness. Triggers: 'how does X work', 'implement this', 'fix this bug', 'refactor this', 'audit code quality', 'check architecture', 'find test gaps', 'security review', 'find cycles', 'dependency analysis', or any task requiring deep file-level comprehension"
+compatibility: "Requires Node.js >= 18. Full power with Octocode MCP (ENABLE_LOCAL=true) for LSP + local tools. Falls back to CLI-only (AST structural search) when MCP unavailable."
 ---
 
 # Octocode Code Engineer
 
-Code engineering platform — understand, build, and improve code with full codebase awareness.
+Analyze, plan, and implement code changes with full codebase awareness — architecture, blast radius, quality, and test coverage inform every decision.
 
-The scanner is a hypothesis generator, not a source of truth. Every finding must be validated before it becomes a recommendation.
+**Core principle: deterministic detection + AI-powered validation.** AST detectors flag structural candidates cheaply. The agent validates with tools, confirms or dismisses, and explains. Scanner = hypothesis generator, not source of truth.
 
-**Architecture principle: deterministic detection + AI-powered validation.** Detectors use cheap structural AST signals (loop depth, call count, fan-in/fan-out, statement count) to flag candidates. They intentionally do NOT hardcode domain-specific heuristics (regex patterns, method name lists, keyword matching). The AI agent is the smart layer — it uses its tools (AST search, LSP, localGetFileContent) to read the actual code, confirm or dismiss the hypothesis, and explain the evidence. This separation keeps detectors fast, maintainable, and language-generic while the agent adapts to any codebase.
+## When NOT to Use This Skill
 
-## Skill Surfaces
+This skill analyzes **structure and architecture** via AST and LSP. It is the wrong tool for:
 
-This skill has two agent-facing surfaces:
+| Problem | Why not here | Better approach |
+|---------|-------------|----------------|
+| **Syntax errors / won't compile** | Scanner requires parseable code; broken syntax yields 0 findings or misleading results | Fix syntax first (compiler/linter errors), then scan |
+| **Code style / formatting** | Style is subjective and enforced by linters, not structural analysis | Use ESLint, Prettier, or project-level lint rules |
+| **Runtime debugging** (crashes, wrong output, perf profiling) | AST is static — it cannot observe runtime values, timing, or memory | Use debugger, logging, profiling tools, or browser devtools |
+| **Software Composition Analysis (SCA)** | Vulnerability scanning of dependencies is a different domain | Use `npm audit`, Snyk, Dependabot, or similar SCA tools |
+| **Generating boilerplate / scaffolding** | This skill analyzes existing code; it doesn't generate project templates | Use framework CLIs (`create-react-app`, `nest new`, etc.) |
 
-- **CLI surface** — `scripts/index.js` runs full scans, `scripts/ast/search.js` queries live source by AST shape, and `scripts/ast/tree-search.js` queries generated `ast-trees.txt`.
-- **Artifact API** — `summary.md` / `summary.json` provide the overview, `findings.json` is the prioritized validation queue, `architecture.json` carries graph signals, and `file-inventory.json` carries per-file structure.
+If the task is **purely** one of the above, skip this skill entirely. If the task *includes* one of these alongside structural concerns (e.g., "fix this bug **and** check what else is fragile"), use this skill for the structural part.
 
-Normal loop: CLI produces artifacts → the agent reads the artifact API → Octocode local/LSP tools validate the live code.
+## Task Sizing
 
-## Capabilities
+Before starting, classify the task. This controls how many workflow steps to run and how thorough each step is.
 
-Use this skill throughout your engineering workflow — not just for reviews.
+| Size | Examples | Steps to run | Depth |
+|------|----------|-------------|-------|
+| **S** — focused, low-risk | Rename variable, fix typo, move constant, one-line bug fix | UNDERSTAND → RESEARCH → IMPLEMENT → VERIFY (lite) | Search target, read context, change, lint+test |
+| **M** — bounded change, some consumers | Add function, fix multi-file bug, add test coverage, small refactor | UNDERSTAND → STRUCTURE (lite) → RESEARCH → IMPLEMENT → VERIFY | Check blast radius for changed symbols, run tests |
+| **L** — cross-cutting, architectural | New feature, large refactor, architecture audit, full health check | All steps: UNDERSTAND → STRUCTURE → RESEARCH → SCAN → OUTPUT → PLAN → IMPLEMENT → VERIFY | Full scan, validate findings, plan with blast radius, delta verification |
 
-**Understand & Navigate**
-
-| Mode | Trigger | What it does |
-|------|---------|-------------|
-| **Codebase Exploration** | "how does X work", "explore this module", "understand this codebase" | Structure → Search → Fetch funnel with LSP semantic tracing |
-| **Pre-Implementation Check** | "before I build X", "where should this live" | Layout → existing patterns → dependency map → pick safe location |
-
-**Build & Change**
-
-| Mode | Trigger | What it does |
-|------|---------|-------------|
-| **Smart Coding** | "implement this", "code this safely", "add feature", "fix this" | Behavior contract → pre-check (blast radius, consumers, coupling) → code → verify (tests, contracts, docs, re-scan) |
-| **Interface Change Safety** | "change CLI", "rename flag", "modify endpoint", "change payload" | Public contract map → compatibility check → caller impact → docs/migration → verify |
-| **Refactoring Planning** | "plan this refactor", "safe to rename", "how to restructure" | Impact analysis → blast radius → test/prod split → decomposition candidates |
-
-**Analyze & Improve**
-
-| Mode | Trigger | What it does |
-|------|---------|-------------|
-| **Architecture Analysis** | "check architecture", "find cycles", "dependency analysis" | Dependency graph, cycles, SCC clusters, coupling hotspots, chokepoints, layer violations |
-| **Quality Audit** | "audit code", "find issues", "scan for problems" | Scan → triage → validate → present → plan fixes → apply → verify |
-| **Code Quality Review** | "review this module", "is this code good" | AST smell sweep + complexity + dead code + maintainability |
-| **Code Review** | "review impact of changes", "what does this PR touch" | Change impact → architecture delta → new issues → test coverage |
-| **Test Strategy** | "test coverage gaps", "what needs testing" | Coverage mapping + test quality (requires `--include-tests`) + critical untested code (graph-based, always on) |
-| **Security Analysis** | "security review", "find vulnerabilities", "check sensitive flows" | Map project security context → identify critical paths (auth, payments, user data, DB, external services) → trace sensitive flows with LSP → validate scanner findings → check exposure points (APIs, logs, errors, third-party) |
-| **Dependency Health** | "unused deps", "import analysis" | Dead-code scan + reference counting + import mapping |
-
-## Flow at a Glance
-
-Use the mode-specific steps in [Workflow](#workflow) as the canonical process:
-- **Explore**: Structure → Search → Fetch → Present evidence
-- **Code**: Contract → Pre-check → Implement → Verify
-- **Analyze**: Scan graph → Validate hotspots → Report
-- **Audit**: Scan → Triage → Validate → Present → (with approval) plan/apply/verify
+**Default to M** when unsure. Upgrade to L if you discover high fan-in, cycles, or >20 consumers during research. Downgrade to S if the change is trivially scoped.
 
 ## Tools
 
-Three layers work together — use any combination that fits the problem.
-
-**Layer 1: CLI scan scripts** — broad hypothesis generation, structural proof
+**CLI scan scripts** — hypothesis generation, structural proof
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/index.js` | Full scan with `--scope`, `--graph`, `--flow`, `--semantic`; scoped re-scan for verification |
-| `scripts/ast/search.js` | Structural search on source files (`@ast-grep/napi`); presets (`--list-presets`), pattern/kind/rule modes; zero false-positive structural checks |
-| `scripts/ast/tree-search.js` | Fast AST triage from scan artifacts; decides where to look before deeper tools |
+| `<SKILL_DIR>/scripts/run.js` | **Full scan (auto-installs deps on first run)** — `--scope`, `--graph`, `--flow`, `--semantic`, `--features`; use `--help` for all flags |
+| `<SKILL_DIR>/scripts/ast/search.js` | Structural search on **live source** files; presets (`--list-presets`), `-p` pattern / `-k` kind / `--rule` JSON / `--preset` modes |
+| `<SKILL_DIR>/scripts/ast/tree-search.js` | Search generated `ast-trees.txt` from scan; `-k` kind (PascalCase or snake_case), `-p` regex, `--file`/`--section` filters, `-C` context, `--json` |
 
-**Layer 2: Octocode local tools** — fast text search, file discovery, targeted reading
+`<SKILL_DIR>` = the directory containing this `SKILL.md` file. Resolve it from the skill's absolute path before running any script.
 
-| Tool | Purpose |
-|------|---------|
-| `localSearchCode` | The bridge tool — provides `lineHint` for all LSP calls; `filesOnly=true` for fast discovery |
-| `localGetFileContent` | `matchString` jumps to exact section; `charOffset` pagination for large files; `fullContent` for small files |
-| `localViewStructure` | Project layout at any depth; `filesOnly`/`directoriesOnly` filters |
-| `localFindFiles` | `sortBy=size` finds hotspots; `modifiedWithin` finds active code; multi-name patterns |
+> **Dependencies**: `run.js` auto-installs `node_modules` on first use (requires `npm` on PATH). The AST search scripts (`ast/search.js`, `ast/tree-search.js`) need deps already installed — run the full scan once first, or run `npm install` in `<SKILL_DIR>` manually.
 
-**Layer 3: LSP tools** — semantic proof (definitions, usages, call chains)
+**Octocode MCP tools** — search, read, semantic proof
 
-| Tool | Purpose |
-|------|---------|
-| `lspFindReferences` | Definitive consumer count; `includePattern`/`excludePattern` for test/prod split; works on types, vars, exports |
-| `lspCallHierarchy` | `incoming` = who calls this; `outgoing` = what does this call; `fromRanges[]` for exact sites. **Functions only** — fails on types/vars |
-| `lspGotoDefinition` | Jump to where a symbol is defined; cross-file resolution |
+| Tool | Key params | Purpose |
+|------|-----------|---------|
+| `localViewStructure` | `path`, `depth`(1-5), `pattern`(glob), `directoriesOnly`, `filesOnly`, `extension`, `sortBy`(name/size/time/ext), `details` | Project layout, file/folder names, structure assessment |
+| `localFindFiles` | `path`, `name`/`iname`/`names`(glob), `modifiedWithin`("7d","2h"), `sizeGreater`/`sizeLess`, `sortBy`(modified/size/name), `type`(f/d), `excludeDir` | Find files by metadata — time, size, name patterns |
+| `localSearchCode` | `pattern`, `path`, `filesOnly`(fast), `type`(ts/js/py), `perlRegex`, `wholeWord`, `contextLines`, `count`, `mode`(discovery/paginated/detailed) | Text search — **always run first** to get `lineHint` for LSP calls |
+| `localGetFileContent` | `path`, `matchString`+`matchStringContextLines`, `startLine`/`endLine`, `fullContent` | Targeted reading by match or range; `fullContent` for small files |
+| `lspFindReferences` | `lineHint` (required), `includePattern`/`excludePattern` for test/prod split | Consumer count. Works on types, vars, exports |
+| `lspCallHierarchy` | `lineHint` (required), `incoming`/`outgoing`, `depth` | Call chains. **Functions only** — fails on types/vars |
+| `lspGotoDefinition` | `lineHint` (required) | Cross-file definition jump |
 
-### Research Approach
+**MCP detection**: try `localSearchCode` on a known pattern. If it fails → MCP unavailable, fall back to CLI-only mode (AST scripts + `localGetFileContent` if available).
 
-Three primitives power every investigation: **Search** (find targets), **Fetch** (read evidence), **Structure** (see shape). Chain them as a funnel:
+**CLI-only fallback**: when MCP is unavailable, use `ast/search.js` for structural checks, re-scan with `--scope` for validation, and mark confidence as lower since semantic proof is missing.
+
+**Parallel batching**: batch independent tool calls in a single round — e.g., run `localViewStructure` + `localFindFiles` + `localSearchCode` together when they don't depend on each other's output. This cuts latency on every step.
+
+### Tool chains — how tools feed each other
+
+Every tool produces output that unlocks the next. Never use tools in isolation — chain them.
 
 ```
-STRUCTURE → SEARCH → FETCH
- 80-90%      90-99%    100%
+Structure ──→ Search ──→ LSP ──→ Content
+    ↑            ↑         ↓         ↓
+    └── Scan ────┴── AST ──┴── evidence
 ```
 
-**Core rules:**
-- `localSearchCode` is the default first step → produces `lineHint` for all LSP tools. Never guess `lineHint`.
-- `ast/search.js` for structural proof (zero false positives); `ast/tree-search.js` for fast triage from scan artifacts.
-- `lspFindReferences` for types/vars/exports; `lspCallHierarchy` for functions only (fails on types).
-- `localGetFileContent(matchString=...)` for targeted reading; prefer `fullContent` for smaller files (about <200 lines).
-- Use `localViewStructure` before deep reading.
-- If a finding includes `lspHints[]`, run those first.
+| Source | Produces | Feeds into |
+|--------|----------|------------|
+| `localViewStructure` | project shape, file paths | `localSearchCode` scope, `--scope` for scan |
+| `localFindFiles` | file paths, sizes, hotspot candidates | `localSearchCode` scope, `--scope` for scan |
+| `localSearchCode` | `lineHint`, file list | **all LSP tools** (required input), `localGetFileContent` |
+| `index.js` (scan) | `findings.json` with `lspHints[]`, `architecture.json` | LSP validation calls, `ast/search.js` for structural proof |
+| `ast/tree-search.js` | candidate files/functions from scan snapshot | `ast/search.js` for live proof, `localGetFileContent` for reading |
+| `ast/search.js` | structural matches + locations (zero false-positive) | `localGetFileContent` for context, `lspFindReferences` for semantic reach |
+| `lspGotoDefinition` | definition location (cross-file) | `lspCallHierarchy` at that location, `lspFindReferences`, `localGetFileContent` |
+| `lspFindReferences` | consumer list + count | `ast/search.js` to check import patterns, `localGetFileContent` to read consumers |
+| `lspCallHierarchy` | call chain (incoming/outgoing) | `lspGotoDefinition` for next hop, `lspCallHierarchy` to keep chaining |
+| `localGetFileContent` | code content | **final evidence** — confirms or dismisses |
 
-For the complete methodology (all tool tables, flags, decision tables, AST presets, efficiency tips) and all validated hybrid workflows, see [tool workflows](./references/tool-workflows.md).
-
-The agent decides which tools to use. No required order — pick what makes sense for the finding. If Octocode MCP is unavailable, fall back to CLI-only and mark confidence explicitly.
-
-**MCP detection**: try any local tool (e.g. `localSearchCode`). If it fails → MCP not available, use CLI-only.
-
-## Confidence Tiers
-
-| Tier | Evidence type | Minimum validation | Example categories |
-|------|--------------|-------------------|-------------------|
-| **high** | Structural AST proof | Code read at `file:line` is sufficient | `empty-catch`, `switch-no-default`, `debugger`, `console-log`, `any-type` |
-| **medium** | Semantic / graph signal | Confirm with `lspFindReferences` or `lspCallHierarchy` | `dead-export`, `high-coupling`, `dependency-cycle`, `god-module-coupling` |
-| **low** | Behavioral / data-flow | Trace source → propagator → sink with LSP + code reading | `unvalidated-input-sink`, `command-injection-risk`, `prototype-pollution-risk` |
-
-When presenting findings, always label confidence. When MCP/LSP is unavailable, downgrade: `high` stays `high` (structural proof via AST), `medium` drops to `medium` (re-scan + `ast/search.js`), `low` drops to `uncertain` (no semantic tracing available).
-
-## Coding Standards
-
-Follow these when writing, modifying, or fixing code. Architecture thinking first, clean code second.
-
-**Phase 1 — Before coding (think):**
-
-1. **Behavior first.** Write down current behavior, desired behavior, acceptance criteria, invariants, non-goals, and key edge cases BEFORE touching code. If the change is user-facing, include a concrete CLI/API example.
-2. **Architecture first, code second.** Map the module structure, dependencies, and coupling BEFORE touching code. Run `localViewStructure` + `index.js --graph` + `lspCallHierarchy` to understand the landscape. Decide *where* a change belongs based on module boundaries, not convenience.
-3. **Interface contracts are code.** Treat CLI flags, help output, stdout/stderr, exit codes, request/response schemas, status codes, and error shapes as part of the implementation. Map compatibility and versioning before changing them.
-4. **Edge cases and impact.** Identify failure modes and downstream impact BEFORE implementing. Use `lspFindReferences` to count consumers, `lspCallHierarchy(incoming)` to trace callers. As a default heuristic, >20 production consumers is high risk and often needs a feature flag or incremental approach.
-5. **TDD when possible.** Write a failing test first, then make it pass. This proves the fix works and catches regressions. Skip ONLY for mechanical cleanups (dead code removal, rename-only, comment cleanup). See the TDD section in [validation playbooks](./references/validation-playbooks.md).
-
-**Phase 2 — While coding (standards):**
-
-1. **No patches or duplications.** Never copy-paste to "fix" a problem. If similar logic exists elsewhere, extract a shared function. Use `ast/search.js -p 'pattern' --json` to find existing implementations and `localSearchCode` to check if the pattern already exists — BEFORE writing new code.
-2. **No redundant comments.** Comments explain *why*, never *what*. Remove `// Import X`, `// Define Y`, `// Return result`, `// Handle error`. If code needs a comment to explain what it does, make the code clearer instead.
-3. **Validate with the project toolchain.** After each fix batch, run whatever lint, test, and build scripts the project provides (see Project Environment). Do not present fixes as done until the toolchain passes.
-
-**Phase 3 — After coding (verify with both layers):**
-
-Every code change must be verified with BOTH agentic intelligence AND deterministic proof. Neither alone is sufficient.
-
-| Layer | Tools | Proves |
-|-------|-------|--------|
-| **Agentic** (Octocode MCP) | `localSearchCode` for text patterns, `lspFindReferences` for usage proof, `lspCallHierarchy` for call flow, `lspGotoDefinition` for cross-file jumps | Semantic correctness — symbols resolve, consumers intact, no orphaned references |
-| **Deterministic** (AST/CLI) | `ast/search.js --preset` for structural smells, `ast/search.js -p 'pattern'` for zero-false-positive proof, `index.js --scope=<changed>` for re-scan | Structural correctness — no new `: any`, no empty catches, no duplications, finding count drops |
-
-After changes: `index.js --scope=<changed-files>` + `ast/search.js --preset` for deterministic check, then `lspFindReferences` + `lspCallHierarchy` for semantic check.
-
-**When changing external behavior in the target repo:**
-
-- **CLI changes**: validate `--help`, commands/subcommands, flags/options, env/config inputs, stdout/stderr, exit codes, and one backward-compatible path when applicable.
-- **API changes**: validate request/response schemas, status codes, error shapes, auth/pagination/versioning, and contract/integration tests when present.
-- **Functional changes**: prove happy path, negative path, edge cases, invariants, and regression coverage.
-- **Docs changes**: update README/help output/examples/OpenAPI or reference docs/migration notes when external behavior changes.
-- **Risky changes**: define feature flag, rollout, telemetry, migration/backfill, and rollback plan.
-
-See [tool workflows](./references/tool-workflows.md) for detailed public-change checklist workflows.
-
-## Principles
-
-- **Validate before presenting.** Findings are leads, not facts; always verify with code + semantic context.
-- **Read order for audits.** `summary.md` first, then `findings.json`, then pillar files as needed.
-- **Audit gates are mandatory.** Ask before planning fixes and before applying fixes.
-- **Public contracts are code.** If behavior changes, validate contract compatibility and update docs/examples in the same task.
-- **Prefer references over duplication.** Use the 5 reference docs for details instead of restating long rule lists here.
-
-### FORBIDDEN
-
-- **NEVER** present scanner findings as confirmed facts without tool validation.
-- **NEVER** guess `lineHint` — always get it from `localSearchCode` first.
-- **NEVER** use `lspCallHierarchy` on types or variables — it only works on functions. Use `lspFindReferences` instead.
-- **NEVER** point `ast/search.js` at `.octocode/scan/` output files — it searches live source files only.
-- **Avoid by default** using `fullContent` on large files (>200 lines) — use `matchString` for targeted reading.
-- **Avoid by default** executing ad-hoc source entrypoints from `src/`; prefer stable scripts in `scripts/` unless the target repo explicitly uses source execution in its workflow.
-- **NEVER** jump to fixing code without explicit user approval.
-- **NEVER** recommend broad refactors from a single noisy finding.
-- **NEVER** present live-code claims without validation when MCP/LSP tools are available.
-- **NEVER** use relative paths with MCP/LSP tools — always use absolute paths.
-
-## Project Environment
-
-**Do not assume any toolchain.** Before running any lint, test, or build commands:
-
-1. Read `package.json` `scripts` to discover what exists and what the actual command names are.
-2. Detect the package manager from the lockfile (`yarn.lock`, `pnpm-lock.yaml`, `package-lock.json`).
-3. In monorepos, check `workspaces` config to decide scope (root vs package-level).
-4. If a script doesn't exist, skip it and warn the user — do not invent commands.
-
-After every fix batch, run whatever lint, test, and build scripts the project provides. If tests fail, investigate before continuing.
-
-## Error Recovery
-
-| Failure | What it means | What to do |
-|---------|--------------|------------|
-| Scan produces 0 findings | Codebase may be clean, or scope/features too narrow | Check `--scope` and `--features` flags. Try without `--scope`. Read `summary.md` for parse errors. If truly 0 findings, report the codebase as healthy. See **Scope sanity checks** in [CLI reference](./references/cli-reference.md). |
-| `--scope=file:symbol` warns "could not resolve" | Symbol name doesn't match an export, or the file uses patterns that prevent resolution | Falls back to file-level scope automatically. Check the exact exported function name and retry, or use file-level scope directly. |
-| LSP tool returns empty/error | MCP may be unavailable, or `lineHint` is wrong | Verify MCP is running (try `localSearchCode` as a health check). If MCP is down, switch to CLI-only mode and mark confidence as `medium`. If `lineHint` is wrong, re-run `localSearchCode` to get a fresh one. |
-| `ast/search.js` finds 0 matches | Pattern may not exist, or `--root` points to wrong directory | Check the `--root` path. Try a broader pattern. Use `--limit 0` to see all matches. Try `-k` (kind) instead of `-p` (pattern) for structural shape matching. |
-| Project has no lint/test/build scripts | Cannot run post-fix validation toolchain | Warn the user that automated validation is limited. Skip the missing steps. Still run `index.js --scope` + `ast/search.js --preset` for deterministic verification. |
-| Scan and LSP disagree on a finding | Conflicting evidence — structural vs semantic | Report both signals explicitly. Lower confidence to `uncertain`. Explain what each tool found and where they diverge. Let the user decide. |
-
-## Quick Start
-
-**Placeholders** used throughout this skill:
-
-- `<SKILL_DIR>` — absolute path to this skill's directory (where `SKILL.md` lives). All script paths are relative to it.
-- `<CURRENT_SCAN>` — timestamped scan output directory (e.g., `.octocode/scan/2026-03-19T00-01-19-468Z`). Find it at the top of `summary.md` or use the latest directory in `.octocode/scan/`.
-- `<TARGET_ROOT>` — root of the codebase being analyzed. Defaults to cwd, override with `--root`.
-
-Minimum path for a fresh scan — adapt based on the question:
-
-```bash
-# 1. Scan (from target repo root)
-node <SKILL_DIR>/scripts/index.js --graph --flow
-# 2. Summary
-cat .octocode/scan/<latest>/summary.md
-# 3. Top findings
-cat .octocode/scan/<latest>/findings.json | jq '.optimizationFindings[:5]'
-# 4. Structural search (source files)
-node <SKILL_DIR>/scripts/ast/search.js -p 'console.log($$$ARGS)' --root ./src --json
-# 5. AST snapshot search (scan output)
-node <SKILL_DIR>/scripts/ast/tree-search.js -i .octocode/scan -k function_declaration --limit 25
-```
-
-Use `--help` on any script for the full flag reference.
+**Key chains:**
+- **AST → LSP**: `ast/search.js` finds structural candidate → `localSearchCode` for `lineHint` → `lspFindReferences` for semantic reach
+- **LSP → AST**: `lspCallHierarchy` finds hotspot function → `ast/tree-search.js` checks its nesting/complexity shape
+- **Scanner → LSP → AST**: `findings.json` `lspHints[]` → LSP validates → `ast/search.js --preset` confirms pattern
+- **Graph → LSP → Content**: `architecture.json` `hotFiles[]` → `lspFindReferences` for real fanIn → `localGetFileContent` to read why
 
 ## Workflow
 
-> Start by selecting the mode that matches the user goal.
-
-### Choose Your Mode
-
-| Your goal | Mode | Entry point |
-|-----------|------|------------|
-| Understand code, explore a module, trace a flow | **Explore** | Structure → Search → Fetch |
-| Write code, implement features, fix bugs | **Code** | Pre-check → Implement → Verify |
-| Check architecture health, find cycles/coupling | **Analyze** | Full scan → Validate → Report |
-| Audit quality, review code, find issues to fix | **Audit** | Scan → Triage → Validate → Fix → Verify |
-
-**Decision rules:**
-- User says "implement", "add", "fix", "build", "code" → **Code**
-- User says "understand", "explore", "how does X work", "trace" → **Explore**
-- User says "architecture", "cycles", "coupling", "dependencies" → **Analyze**
-- User says "audit", "review", "scan", "find issues", "quality" → **Audit**
-- Ambiguous? Start with **Explore** to understand the target, then switch to **Code** or **Audit**.
-
-Modes compose — e.g. "implement X" triggers **Code** mode, which uses **Explore** internally to understand the target area first.
-
----
-
-### Explore Mode
-
-Use when understanding code — tracing flows, learning a codebase, finding where things live, pre-implementation research.
-
-1. **Orient** — `localViewStructure` + `localFindFiles` + `ast/tree-search.js` to see the shape before searching.
-2. **Search** — `localSearchCode` for text + `lineHint`, `ast/search.js` for structural proof, LSP for semantic usages.
-3. **Deep-dive** — `localGetFileContent(matchString=...)` to read evidence, `lspGotoDefinition` + `lspCallHierarchy` chain to trace across files.
-4. **Present** — explain with `file:line` citations, call chains, dependency maps.
-
-For full command sequences, see [Workflow 13 in tool-workflows.md](./references/tool-workflows.md) (codebase exploration) and [Workflow 2](./references/tool-workflows.md) (symbol deep dive).
-
----
-
-### Code Mode
-
-Use when implementing features, fixing bugs, refactoring, or making any code change. Wraps every change with pre-check and verification.
-
-**Step 1. Define the behavior contract**: current behavior, desired behavior, acceptance criteria (happy + negative path), invariants/non-goals. If user-facing, include a concrete CLI/API example.
-
-**Step 2. Understand the target** — use Explore Mode internally to map the module layout and read current code.
-
-**Step 3. Pre-check — blast radius**: `lspFindReferences` (total consumers, prod-only via `excludePattern`, test coverage via `includePattern`) + `lspCallHierarchy(incoming)` for direct callers.
-
-**Step 4. Architecture safety + existing patterns**: `index.js --scope=<target> --features=architecture --graph` for coupling/cycle risk + `ast/search.js` / `localSearchCode` to find analogous implementations and follow conventions.
-
-**Step 5. Implement the change**.
-
-**Step 6. Verify**: run project tests, `index.js --scope=<changed>` + `ast/search.js --preset` for deterministic check, `lspFindReferences` for semantic check, project lint + build.
-
-For public changes: also run CLI / integration / contract checks and update docs/examples/help output. For the expanded 10-step version with full tool commands, see [Workflow 18 in tool-workflows.md](./references/tool-workflows.md). For CLI/API contract safety, see [Workflows 19-21](./references/tool-workflows.md).
-
-**If LSP unavailable** (Steps 3, 6): fall back to `localSearchCode` for usage counting, `ast/search.js` for structural verification, and scan JSON (`architecture.json` hotFiles/fan-in) for dependency data. Mark confidence as `medium` (structural) instead of `high` (semantic).
-
-**Decision gates**:
-- Step 3: >20 production consumers = high-risk, consider feature flag or incremental approach
-- Step 4: target touches cycle member or hotfile = extra caution
-- Step 6: docs/contract drift, new findings, or test failures = fix before committing
-- Breaking public behavior needs a migration note or explicit user approval
-
----
-
-### Analyze Mode
-
-Use for architecture health checks, dependency analysis, cycle detection, coupling assessment.
-
-1. **Full architecture scan** — `index.js --graph --graph-advanced --flow --features=architecture`. Read `summary.md` for health scores, `architecture.json` for cycles/hotFiles/SCC/chokepoints, `graph.md` for visualization.
-2. **Validate hotspots with LSP** — `lspFindReferences` for fan-in per module, `lspCallHierarchy(outgoing)` for fan-out, `ast/search.js` for cross-module import patterns.
-3. **Present** — architecture health report with cycle list, SCC clusters, chokepoints, hotfiles (ranked), boundary violations, critical paths, fan-in/fan-out per module.
-
-For the full command sequence, see [Workflow 17 in tool-workflows.md](./references/tool-workflows.md).
-
----
-
-### Audit Mode
-
-Use for quality audits, code reviews, finding and fixing issues. This is the full review loop.
-
-**Step 1. Scan** — get hypotheses:
-
-```bash
-node <SKILL_DIR>/scripts/index.js [flags]          # default entry point
-node <SKILL_DIR>/scripts/index.js --graph --flow    # good starting point
-node <SKILL_DIR>/scripts/index.js --help            # full flag reference
+```
+UNDERSTAND → STRUCTURE → RESEARCH → SCAN → OUTPUT → PLAN → IMPLEMENT → VERIFY
 ```
 
-| Flag | When to use |
-|------|-------------|
-| `--features=architecture` | Cycles, coupling, reachability, dependency pressure |
-| `--features=code-quality` | Complexity, maintainability, duplication, performance smells |
-| `--features=dead-code` | Dead exports, unused deps, boundary violations |
-| `--features=security` | Sink-risk, validation-sensitive findings |
-| `--features=test-quality` | Flaky or misleading test patterns |
-| `--graph` | Dependency structure, hotspots, critical paths |
-| `--flow` | Path-sensitive claims, control-flow evidence |
-| `--semantic` | Type-aware design signals (adds ~3-5s; run `--help` for current category list) |
-| `--scope=<path>` | Narrow to specific path, file, or `file:symbol` (see [scope sanity checks](./references/cli-reference.md)) |
+Skip steps based on task size (see Task Sizing above). S tasks skip STRUCTURE, SCAN, OUTPUT, PLAN. M tasks skip SCAN and OUTPUT. L tasks run all steps.
 
-**Step 2. Read outputs** — in this order (stop when you have enough context):
+---
 
-| Priority | File | Use for |
-|----------|------|---------|
-| **1st** | `summary.md` | Health scores, severity ordering, analysis signals, top recommendations |
-| **2nd** | `findings.json` | Full prioritized finding queue with `lspHints`, `impact`, `suggestedFix` |
-| **3rd** | `architecture.json` | Only when architecture findings dominate — cycles, hotFiles, SCC, chokepoints |
-| As needed | `summary.json` | Machine-readable metadata, `agentOutput`, `investigationPrompts` |
-| As needed | `code-quality.json` | Complexity, duplicates, god modules/functions |
-| As needed | `dead-code.json` | Dead exports, boundary violations, unused deps |
-| As needed | `security.json` / `test-quality.json` | Pillar-specific findings |
-| As needed | `file-inventory.json` | Per-file functions, flows, dependencies, effects |
-| As needed | `ast-trees.txt` | AST snapshot for structural triage |
-| As needed | `graph.md` | Mermaid dependency graph (with `--graph`) |
+### Step 1: UNDERSTAND
 
-For JSON key schemas and field reference, see [output files](./references/output-files.md).
-For AST tool choice and syntax, use [ast reference](./references/ast-reference.md).
+Clarify scope before touching tools.
 
-**Step 3. Triage** — prioritize findings with high severity, clusters in the same call path, security-sensitive items, architecture signals that align with hotspots. Label each: `observed`, `suspected`, or `validated`.
+| Task type | What to capture |
+|-----------|----------------|
+| Explore | What to learn, which modules, depth |
+| Implement / fix | Current vs desired behavior, acceptance criteria, edge cases |
+| Audit / review | Scope, which pillars (quality, security, architecture) |
+| Architecture | Which concerns (cycles, coupling, hotspots, layers) |
 
-**Step 4. Validate** — every finding must be confirmed before presenting as fact.
+> **GATEWAY** — Only ask the user for clarification when the request is genuinely ambiguous (missing target, conflicting requirements, unclear scope). If the intent and target are clear, proceed directly.
 
-Detectors produce structural candidates (loops × calls × depth). You are the intelligence layer. Read the code, trace the graph, and decide:
+---
 
-1. **Check `lspHints`** — if the finding has `lspHints[]`, run those tool calls first. They're pre-computed shortcuts to the fastest validation.
-2. **Read evidence** — `localGetFileContent(matchString=functionName)` to see the actual code.
-3. **Trace context** — `lspCallHierarchy` / `lspFindReferences` to understand callers, consumers, blast radius.
-4. **Decide** — `confirmed` (evidence supports), `dismissed` (false positive — explain why), `uncertain` (need more data — say what's missing).
+### Step 2: STRUCTURE — Layout, names, scale
 
-For per-category validation tables and fix tactics, see [validation playbooks](./references/validation-playbooks.md).
+**Skip for S tasks.** For M tasks, run only Skeleton + the queries relevant to your target area.
 
-**CLI-only fallback** (if Octocode MCP unavailable): use `ast/search.js` for structural verification, re-scan with `--scope`. See **Confidence Tiers** for how to label without LSP.
+Build a mental model before searching code. Pick queries based on what you need to know:
 
-**Step 5. Present** — what the scan suggested → what validation confirmed/disproved → what remains uncertain. Always include `file:line` evidence and confidence. See reporting guidance in [output files](./references/output-files.md).
+| What | Query | Flags | When needed |
+|------|-------|-------|-------------|
+| Skeleton | `localViewStructure` | `directoriesOnly=true, depth=3` | Always (M and L) |
+| Source files | `localViewStructure` | `extension=".ts", filesOnly=true` | When you need to find relevant files |
+| God files | `localFindFiles` | `sizeGreater="50K", sortBy=size` | L tasks, audit, architecture review |
+| Active areas | `localFindFiles` | `modifiedWithin="7d", sortBy=modified` | When investigating recent changes |
+| Entry points | `localFindFiles` | `name="index.*"` | When understanding module boundaries |
+| Test shape | `localViewStructure` | `pattern="*.test.*"` | When assessing test coverage |
+| Vague dirs | `localFindFiles` | `type="d", name="*util*"` | During audit/architecture tasks |
 
-> **GATE — User approval required.**
-> Ask: "Want me to plan fixes?" **Do NOT proceed to Step 6 without explicit user approval.**
+Batch the queries you need in parallel.
 
-**Step 6. Plan fixes** (on user request) — prioritized improvement plan:
-1. Immediate fixes for validated high-signal problems
-2. Short follow-up checks for suspected issues
-3. Structural improvements for recurring patterns
-4. Contract/docs/rollout work for public behavior changes
-5. Re-scan scope and validation steps
+**Structure → Scan decision table** (L tasks only — use what you find here to pick scan flags in Step 4):
 
-> **GATE — User approval required.**
-> Ask: "Should I apply these fixes?" **Do NOT proceed to Step 7 without explicit user approval.**
+| Structure signal | Recommended scan flags |
+|-----------------|----------------------|
+| Files > 50K, deep nesting | `--features=code-quality --scope=<file>` |
+| `utils/` sprawl, unclear module boundaries | `--features=architecture --graph` |
+| No test dirs, sparse test files | `--features=test-quality --include-tests` |
+| Many config files, env handling | `--features=security` |
+| High file count, complex imports | `--graph --graph-advanced --features=architecture` |
+| Recently active hotspot cluster | `--scope=<hotspot-dir> --flow --semantic` |
 
-**Step 7. Apply fixes** (on user approval):
-1. TDD-first for behavioral fixes — write failing test → fix → pass → full suite. Skip TDD for mechanical cleanups.
-2. When touching a file: remove redundant comments (restate the code) and dead re-exports (0 consumers via `lspFindReferences`).
-3. If public behavior changes: update docs/examples/help output and note compatibility or migration impact.
-4. Validate with whatever lint, test, and build scripts the project provides.
+> **GATEWAY** — For L tasks: flag unusual or disorganized structure — this context shapes how you interpret findings later. For M tasks: proceed to RESEARCH.
 
-**Step 8. Verify** — re-scan with `--scope`, compare finding counts, report before/after delta.
+---
+
+### Step 3: RESEARCH
+
+Funnel: **Search → Trace → Read** — each stage narrows scope.
+
+| Goal | Tools |
+|------|-------|
+| See the shape | `localViewStructure`, `localFindFiles`, `ast/tree-search.js` |
+| Find targets | `localSearchCode` (produces `lineHint`) + `ast/search.js` for structural proof |
+| Trace semantics | `lspGotoDefinition` → `lspCallHierarchy` → `lspFindReferences` |
+| Trace code paths & flows | `lspCallHierarchy(outgoing)` → chain hop-by-hop → `lspCallHierarchy(incoming)` to close the loop. Use `localSearchCode` → `lspGotoDefinition` → repeat for cross-file tracing |
+| Read evidence | `localGetFileContent(matchString=...)` |
+
+For **S tasks**: search for the target, read context, trace immediate callers/consumers if modifying a shared symbol. That's enough.
+
+For **M tasks**: add blast radius check (`lspFindReferences` with test/prod split) for any symbol you plan to change.
+
+For **L tasks**: also use scan outputs (from Step 4) for duplication and architecture signals:
+- Find duplication: `code-quality.json` `duplicateFlows` → `ast/search.js -p` on candidate patterns → `localGetFileContent` to compare bodies
+- Identify critical parts: `architecture.json` `hotFiles[]` + `criticalPaths[]` + `chokepoints[]` → `lspFindReferences` to validate fanIn/fanOut
+
+**Rules**: never guess `lineHint`. `lspFindReferences` for types/vars; `lspCallHierarchy` for functions only. If a finding has `lspHints[]`, run those first.
+
+See [tool workflows](./references/tool-workflows.md) for full methodology.
+
+> **GATEWAY** — If research reveals unexpected complexity or ambiguity (e.g., >20 consumers, cycle membership, unclear ownership), pause and share what you found before continuing.
+
+---
+
+### Step 4: SCAN (L tasks only)
+
+Choose flags based on the task and structure signals from Step 2:
+
+```bash
+node <SKILL_DIR>/scripts/index.js [flags]    # run from target repo root
+```
+
+**Note:** AST tree output (`ast-trees.txt`) is generated by default. Use `--no-tree` to suppress it. No need to add `--emit-tree` unless it was previously suppressed.
+
+| Task | Recommended flags |
+|------|-------------------|
+| **Default / general audit** | `--graph --flow` |
+| Architecture review | `--graph --graph-advanced --features=architecture` |
+| Code quality audit | `--features=code-quality --flow` |
+| Find duplicated code | `--features=code-quality --flow --similarity-threshold 0.8` |
+| Dead code cleanup | `--features=dead-code` |
+| Security review | `--flow --features=security` |
+| Test quality check | `--features=test-quality --include-tests` |
+| Type-aware design signals | `--semantic` (adds ~3-5s) |
+| Full health check | `--graph --flow --all --graph-advanced` |
+| Scoped deep-dive | `--scope=<path> --graph --flow --semantic` |
+| Post-fix verification | `--scope=<changed-files> --no-cache --features=code-quality,architecture` |
+
+Additional useful flags:
+
+| Flag | When |
+|------|------|
+| `--scope=<path>` | Narrow to path, file, or `file:symbol` |
+| `--exclude=X,Y` | Run everything EXCEPT given pillars/categories. Mutually exclusive with `--features` |
+| `--similarity-threshold 0.8` | Tune near-clone detection sensitivity (default 0.85) |
+| `--flow-dup-threshold 2` | Lower bar for repeated flow patterns (default 3) |
+| `--no-cache` | Force re-parse all files (useful after changes) |
+| `--json` | Print report JSON to stdout |
+| `--layer-order ui,service,repo` | Layer violation detection |
+
+**AST search** — two tools, different inputs:
+
+`ast/search.js` searches **live source** (zero false positives, always current):
+```bash
+node <SKILL_DIR>/scripts/ast/search.js -p 'console.log($$$ARGS)' --root ./src --json
+node <SKILL_DIR>/scripts/ast/search.js --preset empty-catch --root ./src
+node <SKILL_DIR>/scripts/ast/search.js -k function_declaration --root ./src
+node <SKILL_DIR>/scripts/ast/search.js --list-presets
+```
+
+`ast/tree-search.js` searches **scan artifacts** (`ast-trees.txt`). Fast triage of structure without re-parsing:
+```bash
+node <SKILL_DIR>/scripts/ast/tree-search.js -i .octocode/scan -k ClassDeclaration
+node <SKILL_DIR>/scripts/ast/tree-search.js -i .octocode/scan -p 'IfStatement|ForOfStatement' --file 'src/api'
+node <SKILL_DIR>/scripts/ast/tree-search.js -i .octocode/scan -k MethodDeclaration -C 2 --json
+```
+
+When `-i` points to `.octocode/scan`, it auto-picks the latest scan by modification time. Point to a specific scan dir to avoid picking a shallow rescan.
+
+See [CLI reference](./references/cli-reference.md) and [AST reference](./references/ast-reference.md) for all flags and presets.
+
+---
+
+### Step 5: OUTPUT — Read, validate, rate (L tasks only)
+
+Read scan outputs in priority order — stop when you have enough context:
+
+| File | Content | Read when |
+|------|---------|-----------|
+| `summary.md` | Health scores, pillar grades, top recommendations, investigation prompts | **Always first** — drives triage |
+| `findings.json` | Prioritized queue with `lspHints[]`, `flowTrace[]`, `correlatedSignals[]`, `impact`, `suggestedFix` | Drill into specific categories |
+| `architecture.json` | Cycles, `criticalPaths[]`, `hotFiles[]` (riskScore/fanIn/fanOut/inCycle/onCriticalPath), `chokepoints[]`, `sccClusters[]` | Architecture, critical paths, coupling |
+| `code-quality.json` | Quality findings + `duplicateFlows { duplicateFunctions[], redundantFlows[] }` | Duplication, complexity, performance |
+| `dead-code.json`, `security.json`, `test-quality.json` | Pillar-specific findings | Targeted pillar drill-down |
+| `file-inventory.json` | Per-file: functions, `flows[]`, `cfgFlags`, `effectProfile`, `topLevelEffects[]`, `dependencyProfile`, `issueIds[]` | Deep file investigation, flow behavior, side-effect risk |
+
+See [output files](./references/output-files.md) for schemas. Start with `summary.md` — use it to decide which JSONs to open. Filter large `findings.json`: `jq '.optimizationFindings[:10]'` or `select(.severity == "high")`.
+
+**Validate + rate.** Findings are hypotheses. Chain tools to confirm or dismiss:
+
+1. **`lspHints[]` + `flowTrace[]`** — run pre-computed LSP calls first. Walk `flowTrace[]` hops with `lspGotoDefinition` → `lspCallHierarchy` to confirm paths.
+2. **Read + trace** — `localGetFileContent(matchString=...)` for code context. `lspCallHierarchy(incoming)` for callers, `lspFindReferences` for all usages.
+3. **Cross-validate** — `correlatedSignals[]` link related findings (group = stronger signal). Chokepoint in `architecture.json` + finding in same file = convergent signal, rate higher.
+4. **Structural proof** — `ast/search.js --preset` or `-p` to confirm the pattern exists in live source. Zero false-positive structural evidence.
+5. **Rate**: `confirmed` / `dismissed` (explain why) / `uncertain` (say what's missing).
+
+See [validation playbooks](./references/validation-playbooks.md) for per-category validation tactics and convergent signal patterns.
+
+When MCP is unavailable: use `ast/search.js` for structural checks and re-scan with `--scope`. Mark confidence accordingly.
+
+> **GATEWAY** — Present validated + rated findings. For audit/review tasks, ask before planning. For implementation tasks where the user already specified what to do, proceed to PLAN.
+
+---
+
+### Step 6: PLAN
+
+**Skip for S tasks** — go straight to IMPLEMENT.
+
+Architecture-first, quality-aware planning. Every plan must answer: what changes, what breaks, what tests cover it.
+
+**Priority order**: confirmed critical fixes → architecture improvements → quality cleanup → docs/contract work.
+
+**Pre-change checks** — scale to risk:
+
+| Check | Tools | When required |
+|-------|-------|---------------|
+| Blast radius | `lspFindReferences(excludePattern=["**/tests/**"])` | M and L — any shared symbol |
+| Test coverage | `lspFindReferences(includePattern=["**/tests/**"])` | M and L — 0 test refs = write tests first |
+| Cycle membership | `architecture.json` cycles | L only — or when research flagged cycles |
+| Hotspot status | `architecture.json` hotFiles | L only — or when research flagged hotspots |
+| Existing patterns | `ast/search.js -p 'pattern'` + `localSearchCode` | M and L — follow codebase conventions |
+| Caller contracts | `lspCallHierarchy(incoming, depth=1)` | When changing function signatures |
+
+**Decision gates**: >20 production consumers = high-risk, consider feature flag or incremental migration. 0 test refs = write tests before changing. Target in cycle = plan carefully to avoid deepening it.
+
+**Plan format**: for each change, state the target file, what changes, blast radius (consumer count), test coverage status, and risk level.
+
+> **GATEWAY** — Present the plan. For L tasks or high-risk changes, ask before applying. For M tasks with clear user intent, proceed.
+
+---
+
+### Step 7: IMPLEMENT
+
+Scale effort to task size. For the full command sequence, see [Workflow 18 — Smart Coding](./references/tool-workflows.md).
+
+**S tasks** — minimal ceremony:
+1. Make the change
+2. Run lint + test
+3. Verify changed symbols still resolve if renamed/moved
+
+**M tasks** — impact-aware:
+
+| Phase | Action |
+|-------|--------|
+| **Before** | Blast radius + test coverage already checked in PLAN. Define current → desired behavior. |
+| **Code** | Write tests for changed behavior → implement → pass → full suite. Clean code: no `any`, no empty catches, no console.log. |
+| **After** | `lspFindReferences` to verify moved/renamed symbols resolve. Run lint + test + build. |
+
+**L tasks** — full verification:
+
+| Phase | Action | Tools |
+|-------|--------|-------|
+| **Before** | Behavior contract defined. Blast radius, architecture safety, existing patterns checked in PLAN. | — |
+| **Code** | TDD: failing test → fix → pass → full suite. Clean code. | project test script |
+| **After** | Re-scan changed files — no new findings | `index.js --scope=<changed> --no-cache --features=code-quality,architecture` |
+| | AST smell gates | `ast/search.js --preset any-type,empty-catch,console-log --root <changed>` |
+| | References intact | `lspFindReferences` + `lspCallHierarchy(incoming)` |
+| | Docs, lint, build | project lint + build scripts |
+
+**Gates (all sizes)**: new lint/test failures = fix first. **L gates**: >20 prod consumers = feature flag. Touches cycle/hotfile = extra caution. New scan findings = fix first. Docs drift = fix first.
+
+---
+
+### Step 8: VERIFY
+
+Scale verification to task size.
+
+**S tasks**: lint + test pass. Done.
+
+**M tasks**: lint + test + build pass. Verify changed symbols resolve (`lspFindReferences` spot-check).
+
+**L tasks** — prove the change improved things:
+
+| Layer | Tools | Proves |
+|-------|-------|--------|
+| **Deterministic** | `index.js --scope=<changed> --no-cache` + `ast/search.js --preset` | No new smells, finding count doesn't rise |
+| **Semantic** | `lspFindReferences` + `lspCallHierarchy` | Symbols resolve, consumers intact |
+| **Delta** | Compare scan `--json` output before vs after (`jq '.totalFindings'`) | Quantitative improvement |
+| **Toolchain** | project lint + test + build scripts | No regressions, compiles clean |
+
+**Delta comparison**: to measure improvement, run `index.js --scope=<target> --json` before starting changes (save the finding count). After changes, re-scan with `--no-cache` and compare.
+
+For public-facing changes: also verify CLI help/flags, API schemas, docs are updated.
+
+> **GATEWAY** — Present what changed, verification results. For L tasks, include before/after delta (finding counts, severity breakdown). Report any new issues.
+
+---
+
+## FORBIDDEN
+
+- Present scanner findings as facts without validation.
+- Guess `lineHint` — always from `localSearchCode`.
+- Use `lspCallHierarchy` on types/variables — use `lspFindReferences`.
+- Point `ast/search.js` at `.octocode/scan/` — it searches live source only.
+- Fix code without explicit user approval.
+- Use relative paths with MCP/LSP tools.
+- Broad refactors from a single noisy finding.
+- Skip blast radius check before modifying high-consumer symbols (M and L tasks).
+- Introduce `any`, empty catches, or console.log in production code.
+
+## Error Recovery
+
+| Failure | Action |
+|---------|--------|
+| 0 findings | Check `--scope`/`--features`. Try without scope. Read `summary.md` for parse errors. Verify scope contains `.ts`/`.js` files. |
+| LSP empty/error | Health-check MCP with `localSearchCode`. If down → CLI-only mode. |
+| `ast/search.js` 0 matches | Check `--root`. Try broader pattern or `-k` instead of `-p`. Run `--list-presets` to verify preset name. |
+| Scan vs LSP disagree | Report both. Lower confidence. Let user decide. |
+| Large `findings.json` | Filter: `jq '.optimizationFindings[] | select(.severity == "high")'`. Read `summary.md` first. |
+| `<SKILL_DIR>` path wrong | Resolve from the absolute path of this SKILL.md file. The scripts directory is a sibling. |
 
 ## References
 
-Use only these 5 docs. They are intentionally non-overlapping. **SKILL.md** is the normative document (principles, decision rules, gates, constraints). **References** are operational documents (runnable procedures, exact commands, schemas).
-
-| Reference | Primary purpose |
-|-----------|-----------------|
-| [Tool workflows](./references/tool-workflows.md) | **Canonical command cookbook** — end-to-end task execution flows (explore, code, analyze, audit, contract safety) with full tool commands |
-| [CLI reference](./references/cli-reference.md) | Exact scanner flags, presets, command syntax, scope sanity checks |
-| [Output files](./references/output-files.md) | Artifact read order, schema fields, and reporting signals |
-| [AST reference](./references/ast-reference.md) | AST triage + AST structural proof (`tree-search` + `search`), all presets |
-| [Validation playbooks](./references/validation-playbooks.md) | Validation loop, category fix tactics, architecture interpretation, metrics cheat sheet |
-
-### MUST read docs when needed
-
-| Situation | MUST read |
-|-----------|-----------|
-| Need exact command flags/presets | [CLI reference](./references/cli-reference.md) |
-| Need to run a mode end-to-end | [Tool workflows](./references/tool-workflows.md) |
-| Need AST triage/proof syntax | [AST reference](./references/ast-reference.md) |
-| Need validation verdict + fix path | [Validation playbooks](./references/validation-playbooks.md) |
-| Need output schema/reporting/read order | [Output files](./references/output-files.md) |
+| Reference | When to read |
+|-----------|-------------|
+| [Tool workflows](./references/tool-workflows.md) | End-to-end command sequences, **Workflow 18 for smart coding** |
+| [CLI reference](./references/cli-reference.md) | Scanner flags, presets, scope |
+| [Output files](./references/output-files.md) | Artifact schemas, read order |
+| [AST reference](./references/ast-reference.md) | AST triage + structural proof |
+| [Validation playbooks](./references/validation-playbooks.md) | Per-category validation + fix tactics |

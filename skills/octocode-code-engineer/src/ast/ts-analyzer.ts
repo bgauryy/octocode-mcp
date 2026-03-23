@@ -72,7 +72,7 @@ export function buildDependencyCriticality(
   for (const fn of fileSummary.functions) {
     const complexity = Number(fn.complexity) || 0;
     totalComplexity += complexity;
-    if (complexity >= options.criticalComplexityThreshold) {
+    if (complexity >= options.thresholds.criticalComplexityThreshold) {
       highComplexity += 1;
     }
   }
@@ -339,7 +339,7 @@ export function analyzeSourceFile(
         entry.declared = true;
       }
 
-      if (statementCount >= options.minFunctionStatements) {
+      if (statementCount >= options.thresholds.minFunctionStatements) {
         const bodyHash = body
           ? makeFingerprint(body)
           : hashString(fileRelative);
@@ -374,7 +374,7 @@ export function analyzeSourceFile(
       fileEntry.flows.push(flowEntry);
       packageFileSummary.flowCount += 1;
 
-      if (statementCount >= options.minFlowStatements) {
+      if (statementCount >= options.thresholds.minFlowStatements) {
         const flowHash = makeFingerprint(node);
         increment(maps.controlMap, `${flowHash}|${node.kind}`, {
           ...flowEntry,

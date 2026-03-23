@@ -32,7 +32,7 @@ describe('sanity checks', () => {
     expect(parsed.json).toBe(true);
     expect(parsed.includeTests).toBe(true);
     expect(parsed.parser).toBe('typescript');
-    expect(parsed.minFunctionStatements).toBe(10);
+    expect(parsed.thresholds.minFunctionStatements).toBe(10);
     expect(parsed.findingsLimit).toBe(120);
     expect(parsed.packageRoot).toMatch(/packages$/);
   });
