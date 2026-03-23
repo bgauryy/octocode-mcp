@@ -296,7 +296,7 @@ export function analyzeTreeSitterFile(
 
       fileEntry.functions.push(entry);
 
-      if (maps && statementCount >= options.minFunctionStatements) {
+      if (maps && statementCount >= options.thresholds.minFunctionStatements) {
         const body = node.namedChildren.find(
           child => child.type === 'statement_block'
         );
@@ -325,7 +325,7 @@ export function analyzeTreeSitterFile(
       };
       fileEntry.flows.push(flowEntry);
 
-      if (maps && statementCount >= options.minFlowStatements) {
+      if (maps && statementCount >= options.thresholds.minFlowStatements) {
         const flowHash = makeTreeSitterFingerprint(node);
         increment(maps.controlMap, `${flowHash}|${node.type}`, {
           ...flowEntry,

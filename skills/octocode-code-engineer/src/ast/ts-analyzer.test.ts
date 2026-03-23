@@ -400,7 +400,7 @@ describe('analyzeSourceFile', () => {
       src,
       'pkg',
       summary,
-      { ...testOpts, minFunctionStatements: 6 },
+      { ...testOpts, thresholds: { ...testOpts.thresholds, minFunctionStatements: 6 } },
       maps,
       [],
       emptyProfile

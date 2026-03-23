@@ -4,7 +4,7 @@ import path from 'node:path';
 import { PILLAR_CATEGORIES, SEVERITY_ORDER } from '../types/index.js';
 
 import type { ReportAnalysisSummary } from './analysis.js';
-import type { Finding } from '../types/index.js';
+import type { AgentOutputData, Finding, FindingStats, ScanSummaryData } from '../types/index.js';
 
 export function severityBreakdown(findings: Finding[]): Record<string, number> {
   const counts: Record<string, number> = {
@@ -194,24 +194,9 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
     reportAnalysis = null,
   } = opts;
   const allFindings = report.optimizationFindings || [];
-  const summary = report.summary as Record<string, unknown>;
-  const agentOutput = report.agentOutput as Record<string, unknown>;
-  const findingStats = (agentOutput?.findingStats ??
-    null) as
-    | {
-        overall?: {
-          totalFindings: number;
-          severityBreakdown: Record<string, number>;
-        };
-        pillars?: Record<
-          string,
-          {
-            totalFindings: number;
-            severityBreakdown: Record<string, number>;
-          }
-        >;
-      }
-    | null;
+  const summary: ScanSummaryData = report.summary;
+  const agentOutput: AgentOutputData = report.agentOutput;
+  const findingStats: FindingStats | null = agentOutput?.findingStats ?? null;
   const depGraph = report.dependencyGraph;
   const relativeScanDir = path.relative(root, dir) || '.';
   const exampleFileFilter = ((scope?.[0] ?? 'src/index').split(':')[0] || 'src/index')
@@ -246,53 +231,10 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
   lines.push(`| **Total** | **${overallFindingStats.totalFindings}** |`);
   lines.push('');
 
-  const totalBefore = overallFindingStats.totalFindings || (agentOutput as Record<string, unknown>)
-    ?.totalBeforeTruncation as number | undefined;
-  const dropped = (agentOutput as Record<string, unknown>)
-    ?.droppedCategories as string[] | undefined;
-  if (totalBefore && totalBefore > allFindings.length) {
-    lines.push(
-      `> **Truncated**: Showing ${allFindings.length} of ${totalBefore} findings (\`--findings-limit ${allFindings.length}\`).`
-    );
-    if (dropped && dropped.length > 0) {
-      lines.push(
-        `> Dropped categories: ${dropped.map(c => `\`${c}\``).join(', ')}`
-      );
-    }
-    lines.push('');
-  }
-
-  if (activeFeatures) {
-    const featureLabels = summarizeActiveFeatures(activeFeatures);
-    lines.push(
-      `> **Features filter**: \`--features=${featureLabels.join(',')}\``
-    );
-    lines.push('');
-  }
-
-  if (scope && scope.length > 0) {
-    const scopeDisplay = scope.map(s => path.relative(root, s)).filter(Boolean);
-    if (scopeDisplay.length > 0) {
-      let scopeLabel = scopeDisplay.map(p => `\`${p}\``).join(', ');
-      if (scopeSymbols && scopeSymbols.size > 0) {
-        const symParts: string[] = [];
-        for (const [absFile, names] of scopeSymbols) {
-          const rel = path.relative(root, absFile);
-          symParts.push(...names.map(n => `\`${rel}:${n}\``));
-        }
-        scopeLabel = symParts.join(', ');
-      }
-      lines.push(`> **Scoped scan**: Only showing findings for: ${scopeLabel}`);
-      lines.push('');
-    }
-  }
-
-  if (semanticEnabled) {
-    lines.push(
-      '> **Semantic analysis**: TypeChecker + LanguageService enabled (14 additional categories)'
-    );
-    lines.push('');
-  }
+  renderScanAnnotations(lines, {
+    allFindings, overallFindingStats, agentOutput,
+    activeFeatures, scope, root, scopeSymbols, semanticEnabled,
+  });
 
   const renderPillarCategories = (
     pillarKey: string,
@@ -304,147 +246,41 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
     for (const cat of pillarCats) {
       const count = breakdown[cat] || 0;
       const skipped = isFiltered && !activeFeatures!.has(cat);
-      if (skipped) {
-        lines.push(`- \`${cat}\`: — *(skipped)*`);
-      } else {
-        lines.push(`- \`${cat}\`: ${count}`);
-      }
+      lines.push(skipped ? `- \`${cat}\`: — *(skipped)*` : `- \`${cat}\`: ${count}`);
     }
     lines.push('');
   };
 
-  const totalFiles = (summary.totalFiles as number) || 1;
+  const totalFiles = summary.totalFiles || 1;
   const archStats = findingStats?.pillars?.['architecture'];
   const qualStats = findingStats?.pillars?.['code-quality'];
   const deadStats = findingStats?.pillars?.['dead-code'];
   const secStats = findingStats?.pillars?.['security'];
   const testStats = findingStats?.pillars?.['test-quality'];
-  const overallHealth = computeHealthScoreFromSeverityBreakdown(
-    overallFindingStats.severityBreakdown,
-    totalFiles
-  );
-  const archHealth = computeHealthScoreFromSeverityBreakdown(
-    archStats?.severityBreakdown ?? severityBreakdown(architectureFindings),
-    totalFiles
-  );
-  const qualHealth = computeHealthScoreFromSeverityBreakdown(
-    qualStats?.severityBreakdown ?? severityBreakdown(codeQualityFindings),
-    totalFiles
-  );
-  const deadHealth = computeHealthScoreFromSeverityBreakdown(
-    deadStats?.severityBreakdown ?? severityBreakdown(deadCodeFindings),
-    totalFiles
-  );
-  const secHealth = computeHealthScoreFromSeverityBreakdown(
-    secStats?.severityBreakdown ?? severityBreakdown(securityFindings),
-    totalFiles
-  );
-  const testHealth = computeHealthScoreFromSeverityBreakdown(
-    testStats?.severityBreakdown ?? severityBreakdown(testQualityFindings),
-    totalFiles
-  );
 
-  lines.push('## Health Scores\n');
-  lines.push('| Pillar | Score | Grade |');
-  lines.push('|--------|-------|-------|');
-  const grade = (s: number) =>
-    s >= 80 ? 'A' : s >= 60 ? 'B' : s >= 40 ? 'C' : s >= 20 ? 'D' : 'F';
-  const pushHealthRow = (label: string, pillarKey: string, score: number): void => {
-    if (!isPillarActive(pillarKey, activeFeatures)) {
-      lines.push(`| ${label} | — | skipped |`);
-      return;
-    }
-    lines.push(`| ${label} | ${score}/100 | ${grade(score)} |`);
-  };
-  const pushPillarSummary = (
-    pillarKey: string,
-    findingsCount: number,
-    score: number,
-    artifactKey?: string,
-    artifactName?: string
-  ): void => {
-    if (!isPillarActive(pillarKey, activeFeatures)) {
-      lines.push('> skipped by feature filter\n');
-      return;
-    }
+  const pillarHealth = computePillarHealthScores(totalFiles, overallFindingStats, {
+    archStats, qualStats, deadStats, secStats, testStats,
+    architectureFindings, codeQualityFindings, deadCodeFindings,
+    securityFindings, testQualityFindings,
+  });
 
-    if (artifactKey && outputFiles[artifactKey]) {
-      lines.push(
-        `> ${findingsCount} findings (score: ${score}/100) — see [\`${artifactName}\`](./${outputFiles[artifactKey]})\n`
-      );
-      return;
-    }
+  const pushPillarSummary = buildPillarSummaryPusher(lines, activeFeatures, outputFiles);
 
-    if (artifactName) {
-      lines.push(
-        `> ${findingsCount} findings (score: ${score}/100) — no \`${artifactName}\` written for this scan\n`
-      );
-      return;
-    }
+  renderHealthScores(lines, pillarHealth, activeFeatures);
 
-    lines.push(`> ${findingsCount} findings (score: ${score}/100)\n`);
-  };
-  lines.push(
-    `| **Overall** | **${overallHealth}/100** | **${grade(overallHealth)}** |`
-  );
-  pushHealthRow('Architecture', 'architecture', archHealth);
-  pushHealthRow('Code Quality', 'code-quality', qualHealth);
-  pushHealthRow('Dead Code & Hygiene', 'dead-code', deadHealth);
-  pushHealthRow('Security', 'security', secHealth);
-  pushHealthRow('Test Quality', 'test-quality', testHealth);
-  lines.push('');
-
-  const tagCloud = collectTagCloud(allFindings);
-  if (tagCloud.length > 0) {
-    lines.push('## Top Concern Tags\n');
-    lines.push(
-      'Searchable tags across all findings — use to filter `findings.json` with `jq`.\n'
-    );
-    for (const { tag, count } of tagCloud.slice(0, 12)) {
-      lines.push(`- \`${tag}\`: ${count} findings`);
-    }
-    lines.push('');
-  }
+  renderTagCloud(lines, allFindings);
 
   if (reportAnalysis) {
-    lines.push('## Analysis Signals\n');
-    lines.push(
-      `- **Graph Signal**: ${reportAnalysis.strongestGraphSignal?.summary || 'No dominant graph signal in this scan.'}`
-    );
-    lines.push(
-      `- **AST Signal**: ${reportAnalysis.strongestAstSignal?.summary || 'No dominant AST signal in this scan.'}`
-    );
-    lines.push(
-      `- **Combined Interpretation**: ${reportAnalysis.combinedInterpretation?.summary || 'No combined interpretation available yet.'}`
-    );
-    lines.push(
-      `- **Confidence**: ${reportAnalysis.combinedInterpretation?.confidence || reportAnalysis.strongestGraphSignal?.confidence || reportAnalysis.strongestAstSignal?.confidence || 'low'}`
-    );
-    const validationSummary = reportAnalysis.recommendedValidation
-      ? `${reportAnalysis.recommendedValidation.summary} (tools: ${reportAnalysis.recommendedValidation.tools.join(' -> ')})`
-      : 'Use Octocode local tools to confirm the strongest signal before presenting it as fact.';
-    lines.push(`- **Recommended Validation**: ${validationSummary}`);
-    const megaFolderSignal = reportAnalysis.graphSignals.find(
-      signal => signal.kind === 'mega-folder-cluster'
-    );
-    if (megaFolderSignal) {
-      lines.push(`- **Structural Layout Alert**: ${megaFolderSignal.summary}`);
-    }
-    if (reportAnalysis.investigationPrompts.length > 0) {
-      lines.push('');
-      lines.push('**Investigation Prompts**');
-      for (const prompt of reportAnalysis.investigationPrompts.slice(0, 4)) {
-        lines.push(`- ${prompt}`);
-      }
-    }
-    lines.push('');
+    renderAnalysisSignals(lines, reportAnalysis);
   }
+
+  renderAgentInstructions(lines, outputFiles, allFindings);
 
   lines.push('## Architecture Health\n');
   pushPillarSummary(
     'architecture',
     archStats?.totalFindings ?? architectureFindings.length,
-    archHealth,
+    pillarHealth.archHealth,
     'architecture',
     'architecture.json'
   );
@@ -478,11 +314,7 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
     deadStats,
     secStats,
     testStats,
-    archHealth,
-    qualHealth,
-    deadHealth,
-    secHealth,
-    testHealth,
+    ...pillarHealth,
     activeFeatures,
     outputFiles,
     renderPillarCategories,
@@ -507,6 +339,269 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
   }
 
   return lines.join('\n');
+}
+
+interface PillarHealthScores {
+  overallHealth: number;
+  archHealth: number;
+  qualHealth: number;
+  deadHealth: number;
+  secHealth: number;
+  testHealth: number;
+}
+
+function computePillarHealthScores(
+  totalFiles: number,
+  overallFindingStats: { totalFindings: number; severityBreakdown: Record<string, number> },
+  ctx: {
+    archStats?: { severityBreakdown: Record<string, number> };
+    qualStats?: { severityBreakdown: Record<string, number> };
+    deadStats?: { severityBreakdown: Record<string, number> };
+    secStats?: { severityBreakdown: Record<string, number> };
+    testStats?: { severityBreakdown: Record<string, number> };
+    architectureFindings: Finding[];
+    codeQualityFindings: Finding[];
+    deadCodeFindings: Finding[];
+    securityFindings: Finding[];
+    testQualityFindings: Finding[];
+  }
+): PillarHealthScores {
+  const score = (
+    stats: { severityBreakdown: Record<string, number> } | undefined,
+    fallback: Finding[]
+  ) => computeHealthScoreFromSeverityBreakdown(
+    stats?.severityBreakdown ?? severityBreakdown(fallback), totalFiles
+  );
+  return {
+    overallHealth: computeHealthScoreFromSeverityBreakdown(overallFindingStats.severityBreakdown, totalFiles),
+    archHealth: score(ctx.archStats, ctx.architectureFindings),
+    qualHealth: score(ctx.qualStats, ctx.codeQualityFindings),
+    deadHealth: score(ctx.deadStats, ctx.deadCodeFindings),
+    secHealth: score(ctx.secStats, ctx.securityFindings),
+    testHealth: score(ctx.testStats, ctx.testQualityFindings),
+  };
+}
+
+function gradeScore(s: number): string {
+  return s >= 80 ? 'A' : s >= 60 ? 'B' : s >= 40 ? 'C' : s >= 20 ? 'D' : 'F';
+}
+
+function renderHealthScores(
+  lines: string[],
+  health: PillarHealthScores,
+  activeFeatures: Set<string> | null
+): void {
+  lines.push('## Health Scores\n');
+  lines.push('| Pillar | Score | Grade |');
+  lines.push('|--------|-------|-------|');
+  const pushRow = (label: string, pillarKey: string, score: number): void => {
+    if (!isPillarActive(pillarKey, activeFeatures)) {
+      lines.push(`| ${label} | — | skipped |`);
+      return;
+    }
+    lines.push(`| ${label} | ${score}/100 | ${gradeScore(score)} |`);
+  };
+  lines.push(
+    `| **Overall** | **${health.overallHealth}/100** | **${gradeScore(health.overallHealth)}** |`
+  );
+  pushRow('Architecture', 'architecture', health.archHealth);
+  pushRow('Code Quality', 'code-quality', health.qualHealth);
+  pushRow('Dead Code & Hygiene', 'dead-code', health.deadHealth);
+  pushRow('Security', 'security', health.secHealth);
+  pushRow('Test Quality', 'test-quality', health.testHealth);
+  lines.push('');
+}
+
+function buildPillarSummaryPusher(
+  lines: string[],
+  activeFeatures: Set<string> | null,
+  outputFiles: Record<string, string>
+): (pillarKey: string, count: number, score: number, artifactKey?: string, artifactName?: string) => void {
+  return (pillarKey, findingsCount, score, artifactKey, artifactName): void => {
+    if (!isPillarActive(pillarKey, activeFeatures)) {
+      lines.push('> skipped by feature filter\n');
+      return;
+    }
+    if (artifactKey && outputFiles[artifactKey]) {
+      lines.push(
+        `> ${findingsCount} findings (score: ${score}/100) — see [\`${artifactName}\`](./${outputFiles[artifactKey]})\n`
+      );
+      return;
+    }
+    if (artifactName) {
+      lines.push(
+        `> ${findingsCount} findings (score: ${score}/100) — no \`${artifactName}\` written for this scan\n`
+      );
+      return;
+    }
+    lines.push(`> ${findingsCount} findings (score: ${score}/100)\n`);
+  };
+}
+
+function renderScanAnnotations(
+  lines: string[],
+  ctx: {
+    allFindings: Finding[];
+    overallFindingStats: { totalFindings: number; severityBreakdown: Record<string, number> };
+    agentOutput: AgentOutputData;
+    activeFeatures: Set<string> | null;
+    scope: string[] | null;
+    root: string;
+    scopeSymbols: Map<string, string[]> | null;
+    semanticEnabled: boolean;
+  }
+): void {
+  const { allFindings, overallFindingStats, agentOutput } = ctx;
+  const totalBefore: number | undefined =
+    overallFindingStats.totalFindings || agentOutput?.totalBeforeTruncation;
+  const dropped = agentOutput?.droppedCategories;
+  if (totalBefore && totalBefore > allFindings.length) {
+    lines.push(
+      `> **Truncated**: Showing ${allFindings.length} of ${totalBefore} findings (\`--findings-limit ${allFindings.length}\`).`
+    );
+    if (dropped && dropped.length > 0) {
+      lines.push(`> Dropped categories: ${dropped.map(c => `\`${c}\``).join(', ')}`);
+    }
+    lines.push('');
+  }
+
+  if (ctx.activeFeatures) {
+    const featureLabels = summarizeActiveFeatures(ctx.activeFeatures);
+    lines.push(`> **Features filter**: \`--features=${featureLabels.join(',')}\``);
+    lines.push('');
+  }
+
+  if (ctx.scope && ctx.scope.length > 0) {
+    const scopeDisplay = ctx.scope.map(s => path.relative(ctx.root, s)).filter(Boolean);
+    if (scopeDisplay.length > 0) {
+      let scopeLabel = scopeDisplay.map(p => `\`${p}\``).join(', ');
+      if (ctx.scopeSymbols && ctx.scopeSymbols.size > 0) {
+        const symParts: string[] = [];
+        for (const [absFile, names] of ctx.scopeSymbols) {
+          const rel = path.relative(ctx.root, absFile);
+          symParts.push(...names.map(n => `\`${rel}:${n}\``));
+        }
+        scopeLabel = symParts.join(', ');
+      }
+      lines.push(`> **Scoped scan**: Only showing findings for: ${scopeLabel}`);
+      lines.push('');
+    }
+  }
+
+  if (ctx.semanticEnabled) {
+    lines.push(
+      '> **Semantic analysis**: TypeChecker + LanguageService enabled (14 additional categories)'
+    );
+    lines.push('');
+  }
+}
+
+function renderTagCloud(lines: string[], allFindings: Finding[]): void {
+  const tagCloud = collectTagCloud(allFindings);
+  if (tagCloud.length === 0) return;
+  lines.push('## Top Concern Tags\n');
+  lines.push(
+    'Searchable tags across all findings — use to filter `findings.json` with `jq`.\n'
+  );
+  for (const { tag, count } of tagCloud.slice(0, 12)) {
+    lines.push(`- \`${tag}\`: ${count} findings`);
+  }
+  lines.push('');
+}
+
+function renderAnalysisSignals(
+  lines: string[],
+  reportAnalysis: ReportAnalysisSummary
+): void {
+  lines.push('## Analysis Signals\n');
+  lines.push(
+    `- **Graph Signal**: ${reportAnalysis.strongestGraphSignal?.summary || 'No dominant graph signal in this scan.'}`
+  );
+  lines.push(
+    `- **AST Signal**: ${reportAnalysis.strongestAstSignal?.summary || 'No dominant AST signal in this scan.'}`
+  );
+  lines.push(
+    `- **Combined Interpretation**: ${reportAnalysis.combinedInterpretation?.summary || 'No combined interpretation available yet.'}`
+  );
+  lines.push(
+    `- **Confidence**: ${reportAnalysis.combinedInterpretation?.confidence || reportAnalysis.strongestGraphSignal?.confidence || reportAnalysis.strongestAstSignal?.confidence || 'low'}`
+  );
+  const validationSummary = reportAnalysis.recommendedValidation
+    ? `${reportAnalysis.recommendedValidation.summary} (tools: ${reportAnalysis.recommendedValidation.tools.join(' -> ')})`
+    : 'Use Octocode local tools to confirm the strongest signal before presenting it as fact.';
+  lines.push(`- **Recommended Validation**: ${validationSummary}`);
+  const megaFolderSignal = reportAnalysis.graphSignals.find(
+    signal => signal.kind === 'mega-folder-cluster'
+  );
+  if (megaFolderSignal) {
+    lines.push(`- **Structural Layout Alert**: ${megaFolderSignal.summary}`);
+  }
+  if (reportAnalysis.investigationPrompts.length > 0) {
+    lines.push('');
+    lines.push('**Investigation Prompts**');
+    for (const prompt of reportAnalysis.investigationPrompts.slice(0, 4)) {
+      lines.push(`- ${prompt}`);
+    }
+  }
+  lines.push('');
+}
+
+function renderAgentInstructions(
+  lines: string[],
+  outputFiles: Record<string, string>,
+  allFindings: Finding[]
+): void {
+  const hasCriticalOrHigh = allFindings.some(
+    f => f.severity === 'critical' || f.severity === 'high'
+  );
+  lines.push('## Agent Instructions — Validate Before Presenting\n');
+  lines.push(
+    '> **Core rule**: Findings are hypotheses from deterministic AST/graph detectors. '
+    + 'Validate with Octocode local + LSP tools before presenting any finding as fact.\n'
+  );
+
+  lines.push('### Triage Order\n');
+  lines.push('1. **This file first** — health scores + analysis signals drive triage priority');
+  if (hasCriticalOrHigh) {
+    lines.push(
+      '2. **High/critical findings** — filter `findings.json`: '
+      + '`jq \'.optimizationFindings[] | select(.severity == "critical" or .severity == "high")\' findings.json`'
+    );
+  } else {
+    lines.push('2. **Findings by severity** — start from the top of `findings.json` (already sorted by severity)');
+  }
+  lines.push('3. **Pillar JSONs** — drill into `architecture.json`, `code-quality.json`, etc. only for categories that need investigation');
+  lines.push('4. **`file-inventory.json`** — per-file deep dives: functions, flows, `effectProfile`, `cfgFlags`, `dependencyProfile`');
+  lines.push('');
+
+  lines.push('### Validation Tool Chain\n');
+  lines.push('Each finding includes `lspHints[]`, `correlatedSignals[]`, and `recommendedValidation`. Use them.\n');
+  lines.push('```');
+  lines.push('Finding → localSearchCode (get lineHint) → LSP tool → localGetFileContent → verdict');
+  lines.push('```\n');
+  lines.push('| Step | Tool | Purpose |');
+  lines.push('|------|------|---------|');
+  lines.push('| 1. Search | `localSearchCode(pattern, path)` | **Always first** — get `lineHint` for LSP. Never guess lineHint. |');
+  lines.push('| 2. Locate | `lspGotoDefinition(lineHint)` | Jump to definition across files |');
+  lines.push('| 3. Consumers | `lspFindReferences(lineHint)` | Count usages, split test/prod with `includePattern`/`excludePattern` |');
+  lines.push('| 4. Call flow | `lspCallHierarchy(lineHint, incoming/outgoing)` | Trace call chains — **functions only**, fails on types/vars |');
+  lines.push('| 5. Read code | `localGetFileContent(path, matchString=...)` | Confirm code at reported location |');
+  lines.push('| 6. AST proof | `ast/search.js -p <pattern> --root <path>` | Structural proof on **live source** — zero false positives |');
+  if (outputFiles.astTrees) {
+    lines.push('| 7. AST triage | `ast/tree-search.js -i <scan-dir> -k <Kind>` | Fast triage on scan snapshot — `-k FunctionDeclaration`, `-p \'IfStatement\\|ForStatement\'`, `--file` filter, `-C 2` context |');
+  }
+  lines.push('');
+
+  lines.push('### False Positive Checklist\n');
+  lines.push('Before reporting a finding to the user:\n');
+  lines.push('- [ ] Ran `lspHints[]` from the finding — result matches expectation?');
+  lines.push('- [ ] Code exists at reported `file:lineStart` — confirmed with `localGetFileContent`?');
+  lines.push('- [ ] Pattern confirmed in live source — `ast/search.js -p` or `localSearchCode`?');
+  lines.push('- [ ] Not in generated, vendored, or test-only code?');
+  lines.push('- [ ] `correlatedSignals[]` — multiple signals on same file strengthen confidence');
+  lines.push('- [ ] Consumer count verified with `lspFindReferences` — matches claimed impact?');
+  lines.push('');
+  lines.push('**Rate each finding**: `confirmed` (evidence supports) · `dismissed` (explain why) · `uncertain` (state what\'s missing)\n');
 }
 
 function renderHotspots(
@@ -616,14 +711,9 @@ function renderPillarSections(
 
 function renderRecommendations(
   lines: string[],
-  agentOutput: Record<string, unknown>
+  agentOutput: AgentOutputData
 ): void {
-  const topRecs = (agentOutput?.topRecommendations ?? []) as Array<{
-    severity: string;
-    title: string;
-    file: string;
-    category: string;
-  }>;
+  const topRecs = agentOutput?.topRecommendations ?? [];
   if (topRecs.length > 0) {
     lines.push('## Top Recommendations\n');
     for (const rec of topRecs.slice(0, 10)) {

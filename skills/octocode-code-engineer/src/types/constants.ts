@@ -2,23 +2,64 @@ import path from 'node:path';
 
 import * as ts from 'typescript';
 
-import type { AnalysisOptions } from './interfaces.js';
+import type { AnalysisOptions, Thresholds } from './core.js';
 
-export const DEFAULT_OPTS: AnalysisOptions = {
+export const DEFAULT_THRESHOLDS: Thresholds = {
+  // Architecture
+  couplingThreshold: 15,
+  fanInThreshold: 20,
+  fanOutThreshold: 15,
+  godModuleStatements: 500,
+  godModuleExports: 20,
+  barrelSymbolThreshold: 30,
+  sdpMinDelta: 0.15,
+  sdpMaxSourceInstability: 0.6,
+  layerOrder: [],
+
+  // Code quality
   minFunctionStatements: 6,
   minFlowStatements: 6,
+  criticalComplexityThreshold: 30,
+  godFunctionStatements: 100,
+  godFunctionMiThreshold: 10,
+  cognitiveComplexityThreshold: 15,
+  parameterThreshold: 5,
+  halsteadEffortThreshold: 500_000,
+  maintainabilityIndexThreshold: 20,
+  anyThreshold: 5,
+  flowDupThreshold: 3,
+  similarityThreshold: 0.85,
+
+  // Semantic
+  overrideChainThreshold: 3,
+  shotgunThreshold: 8,
+
+  // Security
+  secretEntropyThreshold: 4.5,
+  secretMinLength: 20,
+
+  // Test quality
+  mockThreshold: 10,
+};
+
+export const DEFAULT_OPTS: AnalysisOptions = {
   root: process.cwd(),
+  out: null,
+  json: false,
+  packageRoot: path.join(process.cwd(), 'packages'),
+  parser: 'auto',
   includeTests: false,
   emitTree: true,
-  json: false,
-  graph: false,
-  out: null,
   treeDepth: 4,
-  findingsLimit: Infinity,
-  parser: 'auto',
-  criticalComplexityThreshold: 30,
-  deepLinkTopN: 12,
-  packageRoot: path.join(process.cwd(), 'packages'),
+  noCache: false,
+  clearCache: false,
+  semantic: false,
+  graph: false,
+  graphAdvanced: false,
+  flow: false,
+  scope: null,
+  scopeSymbols: null,
+  features: null,
   ignoreDirs: new Set([
     '.git',
     '.next',
@@ -30,39 +71,11 @@ export const DEFAULT_OPTS: AnalysisOptions = {
     'coverage',
     'out',
   ]),
-  couplingThreshold: 15,
-  fanInThreshold: 20,
-  fanOutThreshold: 15,
-  godModuleStatements: 500,
-  godModuleExports: 20,
-  godFunctionStatements: 100,
-  godFunctionMiThreshold: 10,
-  cognitiveComplexityThreshold: 15,
-  barrelSymbolThreshold: 30,
-  layerOrder: [],
-  parameterThreshold: 5,
-  halsteadEffortThreshold: 500_000,
-  maintainabilityIndexThreshold: 20,
-  anyThreshold: 5,
-  flowDupThreshold: 3,
-  maxRecsPerCategory: 2,
-  features: null,
-  scope: null,
-  scopeSymbols: null,
-  noCache: false,
-  clearCache: false,
-  semantic: false,
-  overrideChainThreshold: 3,
-  shotgunThreshold: 8,
-  sdpMinDelta: 0.15,
-  sdpMaxSourceInstability: 0.6,
-  secretEntropyThreshold: 4.5,
-  secretMinLength: 20,
-  similarityThreshold: 0.85,
-  mockThreshold: 10,
+  findingsLimit: Infinity,
   noDiversify: false,
-  graphAdvanced: false,
-  flow: false,
+  maxRecsPerCategory: 2,
+  deepLinkTopN: 12,
+  thresholds: { ...DEFAULT_THRESHOLDS },
 };
 
 export const PILLAR_CATEGORIES: Record<string, string[]> = {

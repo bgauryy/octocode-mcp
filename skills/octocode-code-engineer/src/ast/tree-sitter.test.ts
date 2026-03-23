@@ -370,8 +370,7 @@ function f() {
       const maps = emptyMaps();
       const opts = {
         ...testOpts,
-        minFunctionStatements: 6,
-        minFlowStatements: 1,
+        thresholds: { ...testOpts.thresholds, minFunctionStatements: 6, minFlowStatements: 1 },
       };
       analyzeTreeSitterFile('/repo/src/big.ts', code, opts, 'test-pkg', maps);
       expect(maps.flowMap.size).toBeGreaterThan(0);

@@ -7,6 +7,7 @@ import {
   diverseTopRecommendations,
   diversifyFindings,
   formatFileSize,
+  generateSummaryMd,
   severityBreakdown,
 } from './summary-md.js';
 import {
@@ -18,6 +19,7 @@ import {
   TEST_QUALITY_CATEGORIES,
 } from './writer.js';
 
+import type { FullReport } from './writer.js';
 import type { Finding } from '../types/index.js';
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
@@ -417,5 +419,235 @@ describe('diverseTopRecommendations', () => {
     expect(result[0].id).toBe('1');
     expect(result[1].id).toBe('2');
     expect(result[2].id).toBe('3');
+  });
+});
+
+function makeMinimalReport(
+  overrides: Partial<FullReport> = {}
+): FullReport {
+  return {
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    repoRoot: '/test',
+    options: {},
+    parser: {},
+    summary: {
+      totalFiles: 10,
+      totalFunctions: 50,
+      totalFlows: 20,
+      totalDependencyFiles: 10,
+      totalPackages: 1,
+    },
+    fileInventory: [],
+    duplicateFlows: {},
+    dependencyGraph: {
+      totalModules: 5,
+      totalEdges: 8,
+      cycles: [],
+      criticalPaths: [],
+      rootsCount: 2,
+      leavesCount: 1,
+      testOnlyModules: [],
+      unresolvedEdgeCount: 0,
+    } as FullReport['dependencyGraph'],
+    dependencyFindings: [],
+    agentOutput: {
+      totalFindings: 2,
+      findingStats: {
+        overall: {
+          totalFindings: 2,
+          severityBreakdown: { critical: 0, high: 1, medium: 1, low: 0, info: 0 },
+        },
+      },
+      topRecommendations: [
+        {
+          id: 'AST-0001',
+          file: 'src/a.ts',
+          severity: 'high',
+          category: 'cognitive-complexity',
+          title: 'High complexity in foo',
+          reason: 'too complex',
+        },
+      ],
+    },
+    optimizationOpportunities: [],
+    optimizationFindings: [
+      makeFinding({ severity: 'high', category: 'cognitive-complexity' }),
+      makeFinding({ severity: 'medium', category: 'dead-export' }),
+    ],
+    parseErrors: [],
+    ...overrides,
+  };
+}
+
+describe('generateSummaryMd', () => {
+  it('includes report header with generated date and root', () => {
+    const md = generateSummaryMd({
+      dir: '/tmp/scan',
+      report: makeMinimalReport(),
+      outputFiles: { summary: 'summary.json' },
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('# Code Quality Scan Report');
+    expect(md).toContain('2026-01-01T00:00:00.000Z');
+    expect(md).toContain('`/test`');
+  });
+
+  it('includes scan scope metrics from summary', () => {
+    const md = generateSummaryMd({
+      dir: '/tmp/scan',
+      report: makeMinimalReport(),
+      outputFiles: { summary: 'summary.json' },
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('Files analyzed | 10');
+    expect(md).toContain('Functions | 50');
+    expect(md).toContain('Flow nodes | 20');
+  });
+
+  it('includes findings overview severity table', () => {
+    const md = generateSummaryMd({
+      dir: '/tmp/scan',
+      report: makeMinimalReport(),
+      outputFiles: { summary: 'summary.json' },
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('## Findings Overview');
+    expect(md).toContain('High | 1');
+    expect(md).toContain('**Total** | **2**');
+  });
+
+  it('includes health scores section', () => {
+    const md = generateSummaryMd({
+      dir: '/tmp/scan',
+      report: makeMinimalReport(),
+      outputFiles: { summary: 'summary.json' },
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('## Health Scores');
+    expect(md).toContain('**Overall**');
+  });
+
+  it('includes features filter when activeFeatures is provided', () => {
+    const md = generateSummaryMd({
+      dir: '/tmp/scan',
+      report: makeMinimalReport(),
+      outputFiles: { summary: 'summary.json' },
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+      activeFeatures: new Set(['cognitive-complexity', 'dead-export']),
+    });
+    expect(md).toContain('**Features filter**');
+  });
+
+  it('includes scope annotation when scope is provided', () => {
+    const md = generateSummaryMd({
+      dir: '/tmp/scan',
+      report: makeMinimalReport(),
+      outputFiles: { summary: 'summary.json' },
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+      scope: ['/test/src/foo'],
+      root: '/test',
+    });
+    expect(md).toContain('**Scoped scan**');
+    expect(md).toContain('src/foo');
+  });
+
+  it('includes top recommendations from agentOutput', () => {
+    const md = generateSummaryMd({
+      dir: '/tmp/scan',
+      report: makeMinimalReport(),
+      outputFiles: { summary: 'summary.json' },
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('## Top Recommendations');
+    expect(md).toContain('High complexity in foo');
+  });
+
+  it('includes output files table', () => {
+    const md = generateSummaryMd({
+      dir: '/tmp/scan',
+      report: makeMinimalReport(),
+      outputFiles: { summary: 'summary.json', findings: 'findings.json' },
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('## Output Files');
+    expect(md).toContain('summary.json');
+    expect(md).toContain('findings.json');
+  });
+
+  it('includes agent instructions section', () => {
+    const md = generateSummaryMd({
+      dir: '/tmp/scan',
+      report: makeMinimalReport(),
+      outputFiles: { summary: 'summary.json', findings: 'findings.json' },
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('## Agent Instructions');
+    expect(md).toContain('Validate Before Presenting');
+    expect(md).toContain('localSearchCode');
+    expect(md).toContain('lspGotoDefinition');
+    expect(md).toContain('lspFindReferences');
+    expect(md).toContain('lspCallHierarchy');
+    expect(md).toContain('False Positive Checklist');
+    expect(md).toContain('ast/search.js');
+  });
+
+  it('includes AST triage row when astTrees output exists', () => {
+    const md = generateSummaryMd({
+      dir: '/tmp/scan',
+      report: makeMinimalReport(),
+      outputFiles: { summary: 'summary.json', astTrees: 'ast-trees.txt' },
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('ast/tree-search.js');
+    expect(md).toContain('AST triage');
+  });
+
+  it('shows high/critical filter when high severity findings exist', () => {
+    const report = makeMinimalReport();
+    const md = generateSummaryMd({
+      dir: '/tmp/scan',
+      report,
+      outputFiles: { summary: 'summary.json' },
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('High/critical findings');
+  });
+
+  it('includes parse errors section when present', () => {
+    const report = makeMinimalReport({
+      parseErrors: [{ file: 'bad.ts', message: 'Unexpected token' }],
+    });
+    const md = generateSummaryMd({
+      dir: '/tmp/scan',
+      report,
+      outputFiles: { summary: 'summary.json' },
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('## Parse Errors');
+    expect(md).toContain('bad.ts');
   });
 });

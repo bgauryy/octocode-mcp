@@ -23,7 +23,7 @@
     "test:watch": "vitest",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
-    "analyze": "node scripts/index.js",
+    "analyze": "node scripts/run.js",
     "analyze:json": "node scripts/index.js --json --out .octocode/scan/scan.json",
     "analyze:full": "node scripts/index.js --include-tests --findings-limit 500 --deep-link-topn 30 --out .octocode/scan/scan.json",
     "analyze:graph": "node scripts/index.js --graph --out .octocode/scan/scan.json",

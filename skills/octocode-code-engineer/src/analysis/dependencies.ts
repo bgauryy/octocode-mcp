@@ -21,6 +21,203 @@ import type {
   ReExportRef,
 } from '../types/index.js';
 
+function nodeLineRange(
+  sourceFile: ts.SourceFile,
+  node: ts.Node
+): { lineStart: number; lineEnd: number } {
+  return {
+    lineStart:
+      sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+        .line + 1,
+    lineEnd:
+      sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
+  };
+}
+
+function hasExportModifier(node: ts.Node): boolean {
+  if (!ts.canHaveModifiers(node)) return false;
+  return Boolean(
+    ts
+      .getModifiers(node)
+      ?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword)
+  );
+}
+
+interface DependencyCollectorContext {
+  sourceFile: ts.SourceFile;
+  importedSymbols: ImportedSymbolRef[];
+  reExports: ReExportRef[];
+  pushDeclaredExport: (item: ExportSymbol) => void;
+  resolveSpecifier: (specifier: string | undefined) => string | null;
+}
+
+function collectImportSymbols(
+  node: ts.ImportDeclaration,
+  ctx: DependencyCollectorContext
+): void {
+  if (!node.moduleSpecifier || !ts.isStringLiteral(node.moduleSpecifier))
+    return;
+  const sourceModule = node.moduleSpecifier.text;
+  const resolvedModule = ctx.resolveSpecifier(sourceModule) ?? undefined;
+  const loc = nodeLineRange(ctx.sourceFile, node);
+  const clause = node.importClause;
+  if (!clause) return;
+  if (clause.name) {
+    ctx.importedSymbols.push({
+      sourceModule,
+      resolvedModule,
+      importedName: 'default',
+      localName: clause.name.text,
+      isTypeOnly: clause.isTypeOnly,
+      ...loc,
+    });
+  }
+  if (!clause.namedBindings) return;
+  if (ts.isNamespaceImport(clause.namedBindings)) {
+    ctx.importedSymbols.push({
+      sourceModule,
+      resolvedModule,
+      importedName: '*',
+      localName: clause.namedBindings.name.text,
+      isTypeOnly: clause.isTypeOnly,
+      ...loc,
+    });
+  } else {
+    for (const element of clause.namedBindings.elements) {
+      ctx.importedSymbols.push({
+        sourceModule,
+        resolvedModule,
+        importedName: element.propertyName?.text ?? element.name.text,
+        localName: element.name.text,
+        isTypeOnly: clause.isTypeOnly || element.isTypeOnly,
+        ...loc,
+      });
+    }
+  }
+}
+
+function collectReExportDeclaration(
+  node: ts.ExportDeclaration,
+  ctx: DependencyCollectorContext
+): void {
+  if (!node.moduleSpecifier || !ts.isStringLiteral(node.moduleSpecifier))
+    return;
+  const sourceModule = node.moduleSpecifier.text;
+  const resolvedModule = ctx.resolveSpecifier(sourceModule) ?? undefined;
+  if (node.exportClause && ts.isNamedExports(node.exportClause)) {
+    for (const element of node.exportClause.elements) {
+      ctx.reExports.push({
+        sourceModule,
+        resolvedModule,
+        exportedAs: element.name.text,
+        importedName: element.propertyName?.text ?? element.name.text,
+        isStar: false,
+        isTypeOnly: node.isTypeOnly || element.isTypeOnly,
+        ...nodeLineRange(ctx.sourceFile, element),
+      });
+    }
+  } else {
+    ctx.reExports.push({
+      sourceModule,
+      resolvedModule,
+      exportedAs: '*',
+      importedName: '*',
+      isStar: true,
+      isTypeOnly: node.isTypeOnly,
+      ...nodeLineRange(ctx.sourceFile, node),
+    });
+  }
+}
+
+function collectDeclaredExportFromNode(
+  node: ts.Node,
+  ctx: DependencyCollectorContext
+): void {
+  const loc = nodeLineRange(ctx.sourceFile, node);
+
+  if (ts.isExportAssignment(node)) {
+    ctx.pushDeclaredExport({ name: 'default', kind: 'value', isDefault: true, ...loc });
+    return;
+  }
+
+  if (
+    (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) &&
+    hasExportModifier(node)
+  ) {
+    ctx.pushDeclaredExport({
+      name: node.name?.text || 'default',
+      kind: 'value',
+      isDefault: !node.name,
+      ...loc,
+    });
+    return;
+  }
+
+  if (ts.isEnumDeclaration(node) && hasExportModifier(node)) {
+    ctx.pushDeclaredExport({ name: node.name.text, kind: 'value', ...loc });
+    return;
+  }
+
+  if (
+    (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) &&
+    hasExportModifier(node)
+  ) {
+    ctx.pushDeclaredExport({ name: node.name.text, kind: 'type', ...loc });
+    return;
+  }
+
+  if (ts.isVariableStatement(node) && hasExportModifier(node)) {
+    for (const decl of node.declarationList.declarations) {
+      if (ts.isIdentifier(decl.name)) {
+        ctx.pushDeclaredExport({
+          name: decl.name.text,
+          kind: 'value',
+          ...nodeLineRange(ctx.sourceFile, decl),
+        });
+      }
+    }
+    return;
+  }
+
+  if (
+    ts.isExportDeclaration(node) &&
+    !node.moduleSpecifier &&
+    node.exportClause &&
+    ts.isNamedExports(node.exportClause)
+  ) {
+    for (const element of node.exportClause.elements) {
+      ctx.pushDeclaredExport({
+        name: element.name.text,
+        kind: element.isTypeOnly ? 'type' : 'unknown',
+        ...nodeLineRange(ctx.sourceFile, element),
+      });
+    }
+  }
+}
+
+function collectRequireCall(
+  node: ts.CallExpression,
+  ctx: DependencyCollectorContext
+): void {
+  if (
+    !ts.isIdentifier(node.expression) ||
+    node.expression.text !== 'require' ||
+    node.arguments.length !== 1 ||
+    !ts.isStringLiteral(node.arguments[0])
+  )
+    return;
+  const sourceModule = node.arguments[0].text;
+  const resolvedModule = ctx.resolveSpecifier(sourceModule) ?? undefined;
+  ctx.importedSymbols.push({
+    sourceModule,
+    resolvedModule,
+    importedName: '*',
+    localName: 'require',
+    isTypeOnly: false,
+    ...nodeLineRange(ctx.sourceFile, node),
+  });
+}
+
 export function collectModuleDependencies(
   sourceFile: ts.SourceFile,
   filePath: string,
@@ -31,17 +228,6 @@ export function collectModuleDependencies(
   const external = new Set<string>();
   const unresolved = new Set<string>();
   const declaredExports: ExportSymbol[] = [];
-  const importedSymbols: ImportedSymbolRef[] = [];
-  const reExports: ReExportRef[] = [];
-
-  const hasExportModifier = (node: ts.Node): boolean => {
-    if (!ts.canHaveModifiers(node)) return false;
-    return Boolean(
-      ts
-        .getModifiers(node)
-        ?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword)
-    );
-  };
 
   const pushDeclaredExport = (item: ExportSymbol): void => {
     if (
@@ -54,26 +240,20 @@ export function collectModuleDependencies(
   };
 
   const resolveSpecifier = (specifier: string | undefined): string | null => {
-    if (!specifier || typeof specifier !== 'string') {
-      return null;
-    }
-
+    if (!specifier || typeof specifier !== 'string') return null;
     if (!isRelativeImport(specifier)) {
       external.add(specifier);
       return null;
     }
-
     const resolved = resolveImportTarget(currentDirectory, specifier);
     if (!resolved) {
       unresolved.add(specifier);
       return null;
     }
-
     if (!resolved.startsWith(repoRoot)) {
       external.add(specifier);
       return null;
     }
-
     const relativeResolved = normalizeDependencyValue(
       path.relative(repoRoot, resolved)
     );
@@ -81,227 +261,19 @@ export function collectModuleDependencies(
     return relativeResolved;
   };
 
-  const importLine = (
-    node: ts.Node
-  ): { lineStart: number; lineEnd: number } => {
-    const start = sourceFile.getLineAndCharacterOfPosition(
-      node.getStart(sourceFile)
-    );
-    const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
-    return { lineStart: start.line + 1, lineEnd: end.line + 1 };
+  const ctx: DependencyCollectorContext = {
+    sourceFile,
+    importedSymbols: [],
+    reExports: [],
+    pushDeclaredExport,
+    resolveSpecifier,
   };
 
   const visit = (node: ts.Node): void => {
-    if (
-      ts.isImportDeclaration(node) &&
-      node.moduleSpecifier &&
-      ts.isStringLiteral(node.moduleSpecifier)
-    ) {
-      const sourceModule = node.moduleSpecifier.text;
-      const resolvedModule = resolveSpecifier(sourceModule) ?? undefined;
-      const loc = importLine(node);
-      const clause = node.importClause;
-      if (clause) {
-        if (clause.name) {
-          importedSymbols.push({
-            sourceModule,
-            resolvedModule,
-            importedName: 'default',
-            localName: clause.name.text,
-            isTypeOnly: clause.isTypeOnly,
-            ...loc,
-          });
-        }
-        if (clause.namedBindings) {
-          if (ts.isNamespaceImport(clause.namedBindings)) {
-            importedSymbols.push({
-              sourceModule,
-              resolvedModule,
-              importedName: '*',
-              localName: clause.namedBindings.name.text,
-              isTypeOnly: clause.isTypeOnly,
-              ...loc,
-            });
-          } else {
-            for (const element of clause.namedBindings.elements) {
-              importedSymbols.push({
-                sourceModule,
-                resolvedModule,
-                importedName: element.propertyName?.text ?? element.name.text,
-                localName: element.name.text,
-                isTypeOnly: clause.isTypeOnly || element.isTypeOnly,
-                ...loc,
-              });
-            }
-          }
-        }
-      }
-    }
-
-    if (
-      ts.isExportDeclaration(node) &&
-      node.moduleSpecifier &&
-      ts.isStringLiteral(node.moduleSpecifier)
-    ) {
-      const sourceModule = node.moduleSpecifier.text;
-      const resolvedModule = resolveSpecifier(sourceModule) ?? undefined;
-      if (node.exportClause && ts.isNamedExports(node.exportClause)) {
-        for (const element of node.exportClause.elements) {
-          reExports.push({
-            sourceModule,
-            resolvedModule,
-            exportedAs: element.name.text,
-            importedName: element.propertyName?.text ?? element.name.text,
-            isStar: false,
-            isTypeOnly: node.isTypeOnly || element.isTypeOnly,
-            lineStart:
-              sourceFile.getLineAndCharacterOfPosition(
-                element.getStart(sourceFile)
-              ).line + 1,
-            lineEnd:
-              sourceFile.getLineAndCharacterOfPosition(element.getEnd()).line +
-              1,
-          });
-        }
-      } else {
-        reExports.push({
-          sourceModule,
-          resolvedModule,
-          exportedAs: '*',
-          importedName: '*',
-          isStar: true,
-          isTypeOnly: node.isTypeOnly,
-          lineStart:
-            sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
-              .line + 1,
-          lineEnd:
-            sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
-        });
-      }
-    }
-
-    if (ts.isExportAssignment(node)) {
-      pushDeclaredExport({
-        name: 'default',
-        kind: 'value',
-        isDefault: true,
-        lineStart:
-          sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
-            .line + 1,
-        lineEnd:
-          sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
-      });
-    }
-
-    if (ts.isFunctionDeclaration(node) && hasExportModifier(node)) {
-      pushDeclaredExport({
-        name: node.name?.text || 'default',
-        kind: 'value',
-        isDefault: node.name ? false : true,
-        lineStart:
-          sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
-            .line + 1,
-        lineEnd:
-          sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
-      });
-    }
-
-    if (ts.isClassDeclaration(node) && hasExportModifier(node)) {
-      pushDeclaredExport({
-        name: node.name?.text || 'default',
-        kind: 'value',
-        isDefault: node.name ? false : true,
-        lineStart:
-          sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
-            .line + 1,
-        lineEnd:
-          sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
-      });
-    }
-
-    if (ts.isEnumDeclaration(node) && hasExportModifier(node)) {
-      pushDeclaredExport({
-        name: node.name.text,
-        kind: 'value',
-        lineStart:
-          sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
-            .line + 1,
-        lineEnd:
-          sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
-      });
-    }
-
-    if (
-      (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) &&
-      hasExportModifier(node)
-    ) {
-      pushDeclaredExport({
-        name: node.name.text,
-        kind: 'type',
-        lineStart:
-          sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
-            .line + 1,
-        lineEnd:
-          sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
-      });
-    }
-
-    if (ts.isVariableStatement(node) && hasExportModifier(node)) {
-      for (const decl of node.declarationList.declarations) {
-        if (ts.isIdentifier(decl.name)) {
-          pushDeclaredExport({
-            name: decl.name.text,
-            kind: 'value',
-            lineStart:
-              sourceFile.getLineAndCharacterOfPosition(
-                decl.getStart(sourceFile)
-              ).line + 1,
-            lineEnd:
-              sourceFile.getLineAndCharacterOfPosition(decl.getEnd()).line + 1,
-          });
-        }
-      }
-    }
-
-    if (
-      ts.isExportDeclaration(node) &&
-      !node.moduleSpecifier &&
-      node.exportClause &&
-      ts.isNamedExports(node.exportClause)
-    ) {
-      for (const element of node.exportClause.elements) {
-        pushDeclaredExport({
-          name: element.name.text,
-          kind: element.isTypeOnly ? 'type' : 'unknown',
-          lineStart:
-            sourceFile.getLineAndCharacterOfPosition(
-              element.getStart(sourceFile)
-            ).line + 1,
-          lineEnd:
-            sourceFile.getLineAndCharacterOfPosition(element.getEnd()).line + 1,
-        });
-      }
-    }
-
-    if (
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === 'require' &&
-      node.arguments.length === 1 &&
-      ts.isStringLiteral(node.arguments[0])
-    ) {
-      const sourceModule = node.arguments[0].text;
-      const resolvedModule = resolveSpecifier(sourceModule) ?? undefined;
-      importedSymbols.push({
-        sourceModule,
-        resolvedModule,
-        importedName: '*',
-        localName: 'require',
-        isTypeOnly: false,
-        ...importLine(node),
-      });
-    }
-
+    if (ts.isImportDeclaration(node)) collectImportSymbols(node, ctx);
+    if (ts.isExportDeclaration(node) && node.moduleSpecifier) collectReExportDeclaration(node, ctx);
+    collectDeclaredExportFromNode(node, ctx);
+    if (ts.isCallExpression(node)) collectRequireCall(node, ctx);
     ts.forEachChild(node, visit);
   };
 
@@ -311,8 +283,8 @@ export function collectModuleDependencies(
     externalDependencies: [...external].sort(),
     unresolvedDependencies: [...unresolved].sort(),
     declaredExports,
-    importedSymbols,
-    reExports,
+    importedSymbols: ctx.importedSymbols,
+    reExports: ctx.reExports,
   };
 }
 

@@ -26,7 +26,7 @@ for (const filePath of files) {
   let code = fs.readFileSync(filePath, 'utf8');
   const shebang = code.startsWith('#!') ? code.slice(0, code.indexOf('\n') + 1) : '';
   if (shebang) code = code.slice(shebang.length);
-  const result = await minify(code, { compress: true, mangle: true, format: { ecma: 2020 } });
+  const result = await minify(code, { compress: true, mangle: true, module: true, format: { ecma: 2022 } });
   if (result.error) throw result.error;
   fs.writeFileSync(filePath, shebang + (result.code ?? ''), 'utf8');
 }

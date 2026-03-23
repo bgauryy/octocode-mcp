@@ -13,61 +13,39 @@
 
 ---
 
+## The Problem
+
+AI coding agents are fast — but without codebase awareness, they produce **patches**. Feature by feature, fix by fix, the repo accumulates junk: duplicated logic, dead exports, dependency cycles, god modules, untested critical paths, copy-paste patterns where a shared abstraction should exist. The agent doesn't know what's already there, so it reinvents it. It doesn't see the dependency graph, so it deepens coupling. It doesn't check blast radius, so it breaks things silently.
+
+As the codebase grows, the problem compounds: agents lose the ability to reason about it effectively. Context windows fill up, navigation gets noisy, and the agent starts making worse decisions — more patches, more duplication, more breakage. **The code the agent wrote yesterday makes the agent worse at coding today.** Maintainability degrades in a feedback loop that's hard to reverse manually.
+
 ## What Is This
 
-An AI agent skill that makes your coding agent **understand the codebase while it works** — not just when you ask for a review. It powers every engineering task: exploring unfamiliar code, writing features with blast radius awareness, refactoring safely, checking architecture, auditing quality, and more.
+An AI agent skill that solves this by making your coding agent **understand the codebase while it works** — not after the damage is done. Before writing a line of code, the agent maps the structure, checks for existing patterns, measures blast radius, and verifies architecture safety. After coding, it re-scans to prove nothing got worse.
 
-Unlike `tsc`, ESLint, or tests that check local correctness, this skill answers: **what's the blast radius? where should this code live? who calls this? is this safe to change?**
-
-It combines a **CLI scanner** (dependency graph + AST + semantic analysis), an **AST engine** (`@ast-grep/napi` with structural presets), and **Octocode MCP local/LSP tools** (search, go-to-definition, find-references, call-hierarchy) into one platform that integrates into your coding workflow — not a separate review step.
-
-It has two public surfaces:
-
-- **CLI surface** — `scripts/index.js`, `scripts/ast/search.js`, and `scripts/ast/tree-search.js`
-- **Artifact API** — `summary.md`, `summary.json`, `findings.json`, `architecture.json`, and `file-inventory.json`
+It answers the questions your linter can't: *what's the blast radius? where should this code live? who calls this? is this safe to change? does this already exist?*
 
 Just ask your AI agent — it uses this skill automatically for any engineering task.
 
 ---
 
-## What It Can Do
-
-The skill has four modes that compose together. The agent picks the right one based on your request.
-
-### Understand & Navigate
-
-| Capability | Ask the agent | What happens |
-|-----------|--------------|-------------|
-| **Codebase Exploration** | "how does X work", "explore this module" | Structure → Search → Fetch with LSP semantic tracing |
-| **Pre-Implementation Check** | "where should this live", "before I build X" | Layout → existing patterns → dependency map → safe location |
-
-### Build & Change
-
-| Capability | Ask the agent | What happens |
-|-----------|--------------|-------------|
-| **Smart Coding** | "implement this", "add feature", "fix this bug" | Behavior contract → pre-check (blast radius, consumers, coupling) → code → verify |
-| **Interface Change Safety** | "change CLI", "rename flag", "modify endpoint", "change payload" | Public contract map → compatibility check → docs/migration → verify |
-| **Refactoring Planning** | "plan this refactor", "safe to rename" | Impact analysis → test/prod split → decomposition candidates |
-
-### Analyze & Improve
-
-| Capability | Ask the agent | What happens |
-|-----------|--------------|-------------|
-| **Architecture Analysis** | "check architecture", "find cycles" | Dependency graph, cycles, SCC clusters, coupling hotspots, chokepoints |
-| **Quality Audit** | "audit code", "scan for problems" | Scan → validate → present → plan fixes → apply → verify |
-| **Code Quality Review** | "review this module", "is this code good" | AST smell sweep + complexity + dead code + maintainability |
-| **Code Review** | "review impact of changes" | Change impact → architecture delta → new issues → test coverage |
-| **Test Strategy** | "test coverage gaps", "what needs testing" | Coverage mapping + test quality + critical untested code |
-| **Security Analysis** | "security review", "find vulnerabilities" | AST sink patterns + LSP taint tracing + sanitizer detection |
-| **Dependency Health** | "unused deps", "import analysis" | Dead-code scan + reference counting + import mapping |
-
----
-
 ## Setup
 
-### Octocode MCP (recommended)
+### 1. Install the Skill (default: Claude)
 
-For full power — the agent scans, then confirms findings with LSP-powered semantic tools:
+```bash
+npx octocode-cli skills install --skill octocode-code-engineer
+```
+
+Multi-target install (e.g. all supported targets):
+
+```bash
+npx octocode-cli skills install --skill octocode-code-engineer --targets claude-code,claude-desktop,cursor,codex,opencode
+```
+
+### 2. Octocode MCP with Local Tools (required)
+
+This skill needs **Octocode MCP** with `ENABLE_LOCAL` to work at full power. Add this to your MCP configuration:
 
 ```json
 {
@@ -75,9 +53,7 @@ For full power — the agent scans, then confirms findings with LSP-powered sema
     "octocode": {
       "command": "npx",
       "type": "stdio",
-      "args": [
-        "octocode-mcp@latest"
-      ],
+      "args": ["octocode-mcp@latest"],
       "env": {
         "ENABLE_LOCAL": "true"
       }
@@ -86,69 +62,73 @@ For full power — the agent scans, then confirms findings with LSP-powered sema
 }
 ```
 
-`ENABLE_LOCAL: true` unlocks local search, file content, directory structure, and LSP tools (go-to-definition, find-references, call-hierarchy) that the agent uses to validate findings against live code.
+**`ENABLE_LOCAL: true`** unlocks:
+- **Local search** — find code patterns across your codebase
+- **File content** — read files with targeted matching
+- **Directory structure** — explore project layout
+- **LSP tools** — go-to-definition, find-references, call-hierarchy for semantic validation
 
-> **Without Octocode MCP**, the skill still works in CLI-only mode with AST structural search. Octocode MCP adds semantic precision.
+> Without `ENABLE_LOCAL`, the skill falls back to CLI-only mode (AST structural search only — no semantic validation).
 
 ---
 
-## How It Works
+## What You Can Do
 
-Three analysis layers work together in every mode:
+Just tell your agent what you need. It picks the right mode automatically.
 
-```
-CLI Scanner (graph + AST + semantic) → broad hypotheses with file:line
-AST Engine (structural presets, proof)    → zero false-positive pattern detection
-Octocode MCP (local search + LSP)    → semantic validation against live code
-```
+### Explore & Understand
 
-**When exploring** — the agent chains them as a research funnel:
-```
-STRUCTURE → SEARCH → FETCH   (see shape → find it → read evidence)
-```
+| Ask the agent | What happens |
+|--------------|-------------|
+| "how does X work", "explore this module" | Traces code flow with structure, search, and LSP |
+| "where should this live", "before I build X" | Maps layout, patterns, and dependencies to find the right location |
 
-**When coding** — behavior first, then architecture:
-```
-Think:   behavior contract → blast radius → consumer map → architecture safety
-         → CLI/API contract impact → edge cases
-Code:    TDD when possible → no patches/duplications → no junk comments
-Verify:  tests + relevant CLI/API checks + docs/examples sync
-         → deterministic (AST re-scan + presets) + agentic (LSP refs + calls)
-         → lint + build
-```
+### Build & Change
 
-**When auditing** — the agent validates before presenting:
-```
-Scan → Triage → Validate each finding with LSP → Present with evidence
-```
+| Ask the agent | What happens |
+|--------------|-------------|
+| "implement this", "add feature", "fix this bug" | Checks blast radius and consumers before coding, verifies after |
+| "plan this refactor", "safe to rename" | Impact analysis with test/prod split |
+| "change CLI flag", "modify endpoint" | Maps public contracts, checks compatibility, updates docs |
+
+### Analyze & Improve
+
+| Ask the agent | What happens |
+|--------------|-------------|
+| "check architecture", "find cycles" | Dependency graph, coupling hotspots, chokepoints |
+| "audit code", "scan for problems" | Scans, validates findings with LSP, presents with evidence |
+| "security review", "find vulnerabilities" | Detects sink patterns, traces taint paths |
+| "test coverage gaps", "unused deps" | Coverage mapping, dead-code detection, import analysis |
 
 ---
 
 ## What It Detects
 
-**Detection categories** across 7 pillars (run `--help` for the current full list):
+**76+ detection categories** across 7 pillars:
 
-| Pillar | Categories | Highlights |
-|--------|-----------|------------|
-| **Architecture** | 22 | Cycles, coupling, SCC clusters, chokepoints, layer violations, orphan/unreachable modules, boundary chatter, startup risk |
-| **Code Quality** | 21 | Complexity, god modules/functions, duplicates, maintainability, `any` usage, empty catches, promise misuse |
-| **Performance** | 5 | Await-in-loop, sync I/O, uncleared timers, listener leaks, unbounded collections |
-| **Security** | 9 | Secrets, eval, SQL injection, prototype pollution, path traversal, command injection, unvalidated input |
-| **Dead Code** | 11 | Dead exports, dead re-exports, unused deps, boundary violations, barrel explosion |
-| **Test Quality** | 8 | Low assertions, excessive mocks, shared mutable state, missing cleanup, focused tests |
-| **Semantic** | additional | Unused parameters, over-abstraction, DIP violations, shotgun surgery (requires `--semantic`; run `--help` for current count) |
-
-Especially strong for **agentic/MCP repos**: catches prompt-to-path, prompt-to-command, tool boundary leaks.
+| Pillar | Highlights |
+|--------|------------|
+| **Architecture** | Cycles, coupling, chokepoints, layer violations, orphan modules |
+| **Code Quality** | Complexity, god modules, duplicates, `any` usage, empty catches |
+| **Performance** | Await-in-loop, sync I/O, uncleared timers, listener leaks |
+| **Security** | Secrets, eval, SQL injection, path traversal, command injection |
+| **Dead Code** | Dead exports, unused deps, boundary violations |
+| **Test Quality** | Low assertions, excessive mocks, missing cleanup |
+| **Semantic** | Over-abstraction, DIP violations, shotgun surgery |
 
 ---
 
-## What You Get
+## How It Works
 
-- **Health scores** per pillar with letter grades
-- **Prioritized findings** with severity, confidence, `file:line` evidence, impact, and suggested fixes
-- **Architecture graph** (Mermaid dependency visualization)
-- **lspHints** on each finding — so the agent can confirm with Octocode MCP before presenting as fact
-- **Smart output** — category-diverse truncation, chain dedup, computed remediation, architecture heuristics
+Three layers work together:
+
+```
+CLI Scanner (graph + AST)  →  flag structural candidates
+AST Engine (presets)       →  zero false-positive patterns
+Octocode MCP (LSP)        →  validate against live code
+```
+
+Findings are **hypotheses, not facts**. The agent validates each one with LSP tools before presenting it to you — confirmed, dismissed, or uncertain with evidence.
 
 ---
 
@@ -157,38 +137,17 @@ Especially strong for **agentic/MCP repos**: catches prompt-to-path, prompt-to-c
 | Metric | Value |
 |--------|-------|
 | Cold scan (400-file monorepo) | ~3s |
-| Cold scan + `--semantic` | ~5-8s |
-| Cached scan (no changes) | <1s |
-
-Incremental caching stores per-file AST results. Unchanged files skip re-parsing.
+| With `--semantic` | ~5-8s |
+| Cached (no changes) | <1s |
 
 ---
 
-## When to Use / When Not
+## What It's Not For
 
-**Use when:**
-- Understanding code — "how does X work?", "explore this module", "where should this live?"
-- Writing code with codebase awareness — blast radius, consumers, coupling, edge cases
-- Planning refactors — impact analysis, test/prod split, decomposition candidates
-- Architecture, quality, or security review needed
-- Finding dead code, coverage gaps, or dependency issues
-
-**Coding standards enforced:**
-- Behavior-first contract (current vs desired, acceptance criteria, invariants)
-- Architecture-first thinking (map structure before coding)
-- CLI/API contracts treated as code for public changes
-- TDD when possible (failing test → fix → pass)
-- No patches/duplications (find existing patterns first)
-- No redundant comments (explain *why*, not *what*)
-- Docs/examples/migration notes updated when behavior changes
-- Dual-layer verification: agentic (Octocode LSP) + deterministic (AST/CLI)
-- Confidence tiers: high (structural proof), medium (semantic signal), low (behavioral trace)
-
-**Don't use for:**
-- Syntax errors → `tsc`
-- Style enforcement → ESLint / Prettier
-- Runtime debugging → tests / debugger
-- Deep taint analysis / SCA → Semgrep or dedicated tools
+- Syntax errors → use `tsc`
+- Style enforcement → use ESLint / Prettier
+- Runtime debugging → use tests / debugger
+- Deep taint analysis / SCA → use Semgrep or dedicated tools
 
 ---
 

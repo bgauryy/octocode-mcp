@@ -1,13 +1,22 @@
 export type {
-  AnalysisLens,
   AnalysisOptions,
-  AnalysisSignal,
-  BoundaryRoleHint,
-  CfgFlags,
-  Chokepoint,
   CodeLocation,
   ConsoleLogEntry,
   ControlMapEntry,
+  FlowEntry,
+  FlowMapEntry,
+  FunctionEntry,
+  HalsteadMetrics,
+  Location,
+  MagicNumberEntry,
+  MessageChainEntry,
+  Metrics,
+  Thresholds,
+  TreeSitterMetrics,
+} from './core.js';
+
+export type {
+  Chokepoint,
   CriticalModule,
   CriticalPath,
   Cycle,
@@ -17,59 +26,75 @@ export type {
   DependencySummary,
   DuplicateFlowHint,
   DuplicateGroup,
-  EffectProfile,
   ExportSymbol,
   FileCriticality,
-  FileEntry,
-  Finding,
-  FlowEntry,
-  FlowMapEntry,
   FlowMaps,
-  FlowTraceStep,
-  FocusedTestCall,
-  FunctionEntry,
-  HalsteadMetrics,
   HotFile,
   ImportedSymbolRef,
-  InputSourceInfo,
-  Location,
-  MagicNumberEntry,
-  MessageChainEntry,
-  Metrics,
-  MockControlCall,
   ModuleCount,
-  NodeBudget,
-  NodeTree,
-  PackageFileSummary,
   PackageGraphNode,
   PackageGraphSummary,
   PackageHotspot,
-  PackageInfo,
   ReExportRef,
-  RecommendedValidation,
   RedundantFlowGroup,
   SccCluster,
+  TestOnlyModule,
+  WalkResult,
+} from './dependency.js';
+
+export type {
+  AnalysisLens,
+  AnalysisSignal,
+  FlowTraceStep,
+  RecommendedValidation,
+} from './analysis.js';
+
+export type {
+  AgentOutputData,
+  Finding,
+  FindingStats,
+  PillarFindingStats,
+  ScanSummaryData,
+  TopRecommendation,
+} from './findings.js';
+
+export type {
+  BoundaryRoleHint,
+  CfgFlags,
+  EffectProfile,
+  FocusedTestCall,
+  InputSourceInfo,
+  MockControlCall,
   SuspiciousString,
   SymbolUsageSummary,
-  SyntaxNode,
   TestBlock,
-  TestOnlyModule,
   TestProfile,
   TimerCall,
   TimerControlCall,
   TopLevelEffect,
   TopLevelEffectKind,
+} from './collectors.js';
+
+export type {
+  NodeBudget,
+  NodeTree,
+  SyntaxNode,
   TreeEntry,
   TreeSitterFileEntry,
-  TreeSitterMetrics,
   TreeSitterRuntime,
-  WalkResult,
-} from './interfaces.js';
+} from './tree-sitter.js';
+
+export type {
+  FileEntry,
+  PackageFileSummary,
+  PackageInfo,
+} from './file-entry.js';
 
 export {
   ALL_CATEGORIES,
   ALLOWED_EXTS,
   DEFAULT_OPTS,
+  DEFAULT_THRESHOLDS,
   IMPORT_RESOLVE_EXTS,
   PILLAR_CATEGORIES,
   SEMANTIC_CATEGORIES,
