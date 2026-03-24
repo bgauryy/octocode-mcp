@@ -1,7 +1,7 @@
 # CLI Reference
 
 ```bash
-node <SKILL_DIR>/scripts/index.js [flags]
+node <SKILL_DIR>/scripts/run.js [flags]
 ```
 
 Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — subsequent runs skip unchanged files (~4x faster).
@@ -90,7 +90,7 @@ Require `--semantic` to appear in results. The set of semantic categories evolve
 ### How to list all available categories in your current version
 
 ```bash
-node <SKILL_DIR>/scripts/index.js --help
+node <SKILL_DIR>/scripts/run.js --help
 ```
 
 Then verify which categories were emitted in a run:
@@ -138,6 +138,8 @@ cat .octocode/scan/<latest>/findings.json | jq '.optimizationFindings[].category
 | `--fan-out-threshold N` | 15 | Fan-out threshold for `god-module-coupling` |
 | `--layer-order <layers>` | _(none)_ | Comma-separated layer names for violation detection |
 | `--deep-link-topn N` | 12 | Max critical dependency paths to report |
+| `--sdp-min-delta N` | 0.15 | Min instability delta for SDP violations |
+| `--sdp-max-source-instability N` | 0.6 | Max source instability to report SDP violations |
 
 ### Thresholds — Code Quality
 
@@ -199,11 +201,11 @@ Low or zero findings can mean the codebase is clean — or the scope missed anal
 
 ```bash
 # Baseline (broad)
-node <SKILL_DIR>/scripts/index.js --graph --flow
+node <SKILL_DIR>/scripts/run.js --graph --flow
 # Test-quality focused
-node <SKILL_DIR>/scripts/index.js --features=test-quality --include-tests --scope=<test-containing-path>
+node <SKILL_DIR>/scripts/run.js --features=test-quality --include-tests --scope=<test-containing-path>
 # Source-quality focused
-node <SKILL_DIR>/scripts/index.js --features=code-quality,security --scope=src/
+node <SKILL_DIR>/scripts/run.js --features=code-quality,security --scope=src/
 ```
 
 ---

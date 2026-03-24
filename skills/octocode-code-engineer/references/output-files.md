@@ -7,8 +7,10 @@ Each scan writes to `.octocode/scan/<timestamp>/`:
 | `summary.md` | Health scores, tags, severity, per-pillar counts, top recs, change risk hotspots | **Always first** |
 | `summary.json` | Machine-readable scan metadata, `agentOutput`, `analysisSummary`, `investigationPrompts`, `parseErrors[]` | Programmatic access |
 | `architecture.json` | Dep graph, arch findings, `hotFiles[]`, `graphSignals[]`, chokepoints, optional advanced graph overlays | Cycles, coupling, SDP, D metric, test gaps, side-effect risk |
-| `code-quality.json` | Up to 28 quality findings, severity/category breakdowns | Duplicates, complexity, perf |
-| `dead-code.json` | Up to 10 hygiene findings, severity/category breakdowns | Dead code cleanup |
+| `code-quality.json` | Quality findings, severity/category breakdowns | Duplicates, complexity, perf |
+| `dead-code.json` | Dead-code findings, severity/category breakdowns | Dead code cleanup |
+| `security.json` | Security findings, severity/category breakdowns (emitted only when findings exist) | Secrets, sinks, unsafe eval |
+| `test-quality.json` | Test quality findings, severity/category breakdowns (emitted only when findings exist, requires `--include-tests`) | Mock density, brittle tests |
 | `file-inventory.json` | Per-file: functions, flows, metrics, `issueIds[]` | Deep-diving a specific file |
 | `findings.json` | ALL findings sorted by severity with `ruleId`, `analysisLens`, `confidence`, `impact`, `correlatedSignals[]`, `recommendedValidation`, and optional `flowTrace[]` | Complete sorted list |
 | `ast-trees.txt` | `Kind[startLine:endLine]` per file (on by default, disable with `--no-tree`) | Structural overview |
@@ -102,6 +104,26 @@ findings[], findingsCount, severityBreakdown, categoryBreakdown
 ```
 generatedAt, findings[], findingsCount, severityBreakdown, categoryBreakdown
 ```
+
+### `security.json`
+
+Emitted only when security findings exist. Same schema as `dead-code.json`:
+
+```
+generatedAt, findings[], findingsCount, severityBreakdown, categoryBreakdown
+```
+
+Categories: `hardcoded-secret`, `eval-usage`, `command-injection-risk`, `path-traversal-risk`, `sql-injection-risk`, `unsafe-html`, `unsafe-regex`, `prototype-pollution-risk`, `sensitive-data-logging`, `debug-log-leakage`, `input-passthrough-risk`, `unvalidated-input-sink`.
+
+### `test-quality.json`
+
+Emitted only when test quality findings exist (requires `--include-tests`). Same schema as `dead-code.json`:
+
+```
+generatedAt, findings[], findingsCount, severityBreakdown, categoryBreakdown
+```
+
+Categories: `test-no-assertion`, `low-assertion-density`, `excessive-mocking`, `shared-mutable-state`, `missing-test-cleanup`, `focused-test`, `fake-timer-no-restore`, `missing-mock-restoration`.
 
 ### `file-inventory.json`
 
