@@ -12,15 +12,8 @@
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
   "type": "module",
-  "scripts": {
-    "build": "yarn lint && vite build && tsc --emitDeclarationOnly",
-    "build:dev": "vite build && tsc --emitDeclarationOnly",
-    "clean": "rm -rf dist/",
-    "lint": "eslint src tests",
-    "test": "vitest run --coverage",
-    "typecheck": "tsc --noEmit",
-    "verify": "yarn lint && yarn typecheck && yarn test"
-  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -124,20 +117,28 @@
   },
   "files": [
     "dist",
+    "assets",
     "README.md",
     "LICENSE"
   ],
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "yarn lint && node build.mjs && tsc --emitDeclarationOnly",
+    "build:dev": "node build.mjs && tsc --emitDeclarationOnly",
+    "clean": "rm -rf dist/",
+    "lint": "eslint src tests",
+    "test": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "verify": "yarn lint && yarn typecheck && yarn test"
+  },
   "devDependencies": {
     "@types/node": "^22.15.29",
     "@vitest/coverage-v8": "^4.0.16",
+    "esbuild": "^0.27.2",
     "eslint": "^9.18.0",
     "typescript": "^5.9.3",
-    "vite": "^7.3.0",
     "vitest": "^4.0.16"
-  },
-  "engines": {
-    "node": ">=20.0.0"
   }
 }

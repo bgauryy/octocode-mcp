@@ -153,4 +153,196 @@ describe('ignoredPathFilter', () => {
       expect(shouldIgnoreFile('.pip/pip.conf')).toBe(true);
     });
   });
+
+  describe('cryptocurrency wallet files', () => {
+    it('should block wallet.dat', () => {
+      expect(shouldIgnoreFile('wallet.dat')).toBe(true);
+    });
+
+    it('should block ethereum keystore paths', () => {
+      expect(shouldIgnoreFile('.ethereum/keystore/UTC--key')).toBe(true);
+    });
+
+    it('should block electrum wallet paths', () => {
+      expect(shouldIgnoreFile('.electrum/wallets/default_wallet')).toBe(true);
+    });
+
+    it('should block bitcoin wallet directory via path', () => {
+      expect(shouldIgnorePath('.bitcoin')).toBe(true);
+      expect(shouldIgnorePath('/home/user/.bitcoin')).toBe(true);
+    });
+
+    it('should block ethereum directory via path', () => {
+      expect(shouldIgnorePath('.ethereum')).toBe(true);
+    });
+
+    it('should block electrum directory via path', () => {
+      expect(shouldIgnorePath('.electrum')).toBe(true);
+    });
+  });
+
+  describe('browser credential stores', () => {
+    it('should block Login Data files', () => {
+      expect(shouldIgnoreFile('Login Data')).toBe(true);
+    });
+
+    it('should block Cookies file', () => {
+      expect(shouldIgnoreFile('Cookies')).toBe(true);
+    });
+
+    it('should block Firefox logins.json', () => {
+      expect(shouldIgnoreFile('.mozilla/firefox/profile/logins.json')).toBe(
+        true
+      );
+    });
+
+    it('should block Firefox key database', () => {
+      expect(shouldIgnoreFile('.mozilla/firefox/profile/key4.db')).toBe(true);
+    });
+
+    it('should block Chrome paths', () => {
+      expect(shouldIgnorePath('.config/google-chrome/Default/something')).toBe(
+        true
+      );
+    });
+
+    it('should block Chromium paths', () => {
+      expect(shouldIgnorePath('.config/chromium/Default/data')).toBe(true);
+    });
+  });
+
+  describe('password manager databases', () => {
+    it('should block KeePass .kdbx files', () => {
+      expect(shouldIgnoreFile('passwords.kdbx')).toBe(true);
+      expect(shouldIgnoreFile('keepass.kdbx')).toBe(true);
+    });
+
+    it('should block KeePass .kdb (legacy)', () => {
+      expect(shouldIgnoreFile('secrets.kdb')).toBe(true);
+    });
+
+    it('should block 1Password sqlite', () => {
+      expect(shouldIgnoreFile('1Password.sqlite')).toBe(true);
+    });
+
+    it('should block password-store directory via path', () => {
+      expect(shouldIgnorePath('.password-store')).toBe(true);
+      expect(shouldIgnorePath('/home/user/.password-store')).toBe(true);
+    });
+  });
+
+  describe('VPN configuration files', () => {
+    it('should block OpenVPN .ovpn files', () => {
+      expect(shouldIgnoreFile('client.ovpn')).toBe(true);
+    });
+
+    it('should block WireGuard configs', () => {
+      expect(shouldIgnoreFile('wireguard.conf')).toBe(true);
+      expect(shouldIgnoreFile('wg0.conf')).toBe(true);
+    });
+  });
+
+  describe('cloud provider directories', () => {
+    it('should block .azure directory', () => {
+      expect(shouldIgnorePath('.azure')).toBe(true);
+      expect(shouldIgnorePath('/home/user/.azure')).toBe(true);
+    });
+
+    it('should block .kube directory', () => {
+      expect(shouldIgnorePath('.kube')).toBe(true);
+      expect(shouldIgnorePath('/home/user/.kube/config')).toBe(true);
+    });
+
+    it('should block .docker directory', () => {
+      expect(shouldIgnorePath('.docker')).toBe(true);
+    });
+
+    it('should block .terraform directory', () => {
+      expect(shouldIgnorePath('.terraform')).toBe(true);
+      expect(shouldIgnorePath('/project/.terraform/plugins')).toBe(true);
+    });
+
+    it('should block cloud credential files', () => {
+      expect(shouldIgnoreFile('service-account.json')).toBe(true);
+      expect(shouldIgnoreFile('service_account_key.json')).toBe(true);
+      expect(shouldIgnoreFile('application_default_credentials.json')).toBe(
+        true
+      );
+    });
+  });
+
+  describe('core dumps and crash files', () => {
+    it('should block core dump files', () => {
+      expect(shouldIgnoreFile('core')).toBe(true);
+      expect(shouldIgnoreFile('core.12345')).toBe(true);
+    });
+
+    it('should block Windows dump files', () => {
+      expect(shouldIgnoreFile('crash.dmp')).toBe(true);
+      expect(shouldIgnoreFile('mini.mdmp')).toBe(true);
+    });
+  });
+
+  describe('macOS and Windows credential files', () => {
+    it('should block macOS keychain files', () => {
+      expect(shouldIgnoreFile('login.keychain')).toBe(true);
+      expect(shouldIgnoreFile('login.keychain-db')).toBe(true);
+    });
+
+    it('should block macOS Keychain directory via path', () => {
+      expect(shouldIgnorePath('Library/Keychains/login')).toBe(true);
+    });
+
+    it('should block Windows credential files', () => {
+      expect(shouldIgnoreFile('NTUSER.DAT')).toBe(true);
+      expect(shouldIgnoreFile('SAM')).toBe(true);
+    });
+  });
+
+  describe('shell and database history', () => {
+    it('should block shell history files', () => {
+      expect(shouldIgnoreFile('.bash_history')).toBe(true);
+      expect(shouldIgnoreFile('.zsh_history')).toBe(true);
+    });
+
+    it('should block database history files', () => {
+      expect(shouldIgnoreFile('.mysql_history')).toBe(true);
+      expect(shouldIgnoreFile('.psql_history')).toBe(true);
+      expect(shouldIgnoreFile('.redis_history')).toBe(true);
+      expect(shouldIgnoreFile('.mongo_history')).toBe(true);
+    });
+  });
+
+  describe('terraform state and variables', () => {
+    it('should block terraform state files', () => {
+      expect(shouldIgnoreFile('terraform.tfstate')).toBe(true);
+      expect(shouldIgnoreFile('terraform.tfstate.backup')).toBe(true);
+    });
+
+    it('should block terraform variable files', () => {
+      expect(shouldIgnoreFile('terraform.tfvars')).toBe(true);
+    });
+  });
+
+  describe('code signing and GPG keys', () => {
+    it('should block GPG key files', () => {
+      expect(shouldIgnoreFile('signing.gpg')).toBe(true);
+      expect(shouldIgnoreFile('key.asc')).toBe(true);
+    });
+
+    it('should block certificate signing requests', () => {
+      expect(shouldIgnoreFile('server.csr')).toBe(true);
+    });
+  });
+
+  describe('RDP and session files', () => {
+    it('should block RDP files', () => {
+      expect(shouldIgnoreFile('server.rdp')).toBe(true);
+    });
+
+    it('should block session and cookie files', () => {
+      expect(shouldIgnoreFile('cookies.txt')).toBe(true);
+      expect(shouldIgnoreFile('.cookies')).toBe(true);
+    });
+  });
 });

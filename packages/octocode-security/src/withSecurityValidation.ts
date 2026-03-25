@@ -16,7 +16,7 @@ const SECURITY_VALIDATION_FAILED_CODE = 'TOOL_SECURITY_VALIDATION_FAILED';
  * the outer timeout dominates: e.g. 3 queries at 55s each would exceed 60s total,
  * so the outer timeout fires before all complete.
  */
-const TOOL_TIMEOUT_MS = 60_000;
+const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
 
 /**
  * Dependency injection interface for @octocode/security.
@@ -25,6 +25,8 @@ const TOOL_TIMEOUT_MS = 60_000;
 export interface SecurityDepsConfig {
   /** Custom sanitizer implementation (defaults to ContentSanitizer). */
   sanitizer?: ISanitizer;
+  /** Default timeout for all tool invocations in ms (default: 60000). */
+  defaultTimeoutMs?: number;
   logToolCall?: (
     toolName: string,
     repos: string[],
@@ -41,6 +43,10 @@ let _deps: SecurityDepsConfig = {};
 
 function getSanitizer(): ISanitizer {
   return _deps.sanitizer ?? ContentSanitizer;
+}
+
+function getTimeoutMs(override?: number): number {
+  return override ?? _deps.defaultTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS;
 }
 
 /**
@@ -85,8 +91,11 @@ function sanitizeToolResult(result: ToolResult): ToolResult {
 function withToolTimeout(
   toolName: string,
   promise: Promise<ToolResult>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  timeoutMs?: number
 ): Promise<ToolResult> {
+  const timeout = getTimeoutMs(timeoutMs);
+
   if (signal?.aborted) {
     return Promise.resolve(
       createErrorResult(`Tool '${toolName}' was cancelled before execution.`)
@@ -97,10 +106,10 @@ function withToolTimeout(
     const timer = setTimeout(() => {
       resolve(
         createErrorResult(
-          `Tool '${toolName}' timed out after ${TOOL_TIMEOUT_MS / 1000}s. Try reducing query complexity or scope.`
+          `Tool '${toolName}' timed out after ${timeout / 1000}s. Try reducing query complexity or scope.`
         )
       );
-    }, TOOL_TIMEOUT_MS);
+    }, timeout);
 
     const onAbort = () => {
       clearTimeout(timer);
@@ -153,11 +162,13 @@ export function withSecurityValidation<
     sanitizedArgs: T,
     authInfo?: TAuth,
     sessionId?: string
-  ) => Promise<ToolResult>
+  ) => Promise<ToolResult>,
+  options?: { timeoutMs?: number }
 ): (
   args: unknown,
   extra: { authInfo?: TAuth; sessionId?: string; signal?: AbortSignal }
 ) => Promise<ToolResult> {
+  const toolTimeoutMs = options?.timeoutMs;
   return async (
     args: unknown,
     {
@@ -186,7 +197,8 @@ export function withSecurityValidation<
       const rawResult = await withToolTimeout(
         toolName,
         toolHandler(validation.sanitizedParams as T, authInfo, sessionId),
-        signal
+        signal,
+        toolTimeoutMs
       );
       return sanitizeToolResult(rawResult);
     } catch (error) {
@@ -216,8 +228,10 @@ export function withSecurityValidation<
  */
 export function withBasicSecurityValidation<T extends object>(
   toolHandler: (sanitizedArgs: T) => Promise<ToolResult>,
-  toolName?: string
+  toolName?: string,
+  options?: { timeoutMs?: number }
 ): (args: unknown, extra?: { signal?: AbortSignal }) => Promise<ToolResult> {
+  const toolTimeoutMs = options?.timeoutMs;
   return async (
     args: unknown,
     extra?: { signal?: AbortSignal }
@@ -251,7 +265,8 @@ export function withBasicSecurityValidation<T extends object>(
       const rawResult = await withToolTimeout(
         toolName || 'tool',
         toolHandler(validation.sanitizedParams as T),
-        signal
+        signal,
+        toolTimeoutMs
       );
       return sanitizeToolResult(rawResult);
     } catch (error) {
@@ -293,5 +308,3 @@ function handleBulk(toolName: string, params: Record<string, unknown>): void {
       .catch(() => {});
   }
 }
-
-export { extractResearchFields, extractRepoOwnerFromParams };

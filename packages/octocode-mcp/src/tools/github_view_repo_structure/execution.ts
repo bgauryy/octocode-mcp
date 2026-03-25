@@ -70,7 +70,7 @@ export async function exploreMultipleRepositoryStructures(
           )
         );
 
-        if (!providerResult.ok) {
+        if (providerResult.ok === false) {
           return providerResult.result;
         }
 

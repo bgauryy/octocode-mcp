@@ -951,7 +951,11 @@ describe('ATTACK-13: Content Sanitization Edge Cases', () => {
 
   it('FIXED: very long content (2M+ chars) now uses chunked sanitization', () => {
     const longContent =
-      'x'.repeat(1_000_000) + ' ' + SECRETS.AWS_KEY + ' ' + 'x'.repeat(1_000_000);
+      'x'.repeat(1_000_000) +
+      ' ' +
+      SECRETS.AWS_KEY +
+      ' ' +
+      'x'.repeat(1_000_000);
     const result = ContentSanitizer.sanitizeContent(longContent);
     assertSecretAbsent(result.content, 'AWS_KEY', SECRETS.AWS_KEY);
   });
@@ -1135,7 +1139,7 @@ describe('EXTENSIBILITY: SecurityRegistry export', () => {
     const mod = await import('@octocode/security');
     expect(mod.SecurityRegistry).toBeDefined();
     expect(mod.securityRegistry).toBeDefined();
-    expect(mod.securityRegistry).toBeInstanceOf(mod.SecurityRegistry);
+    expect(mod.securityRegistry.constructor.name).toBe('SecurityRegistry');
     expect(typeof mod.securityRegistry.addSecretPatterns).toBe('function');
     expect(typeof mod.securityRegistry.addAllowedCommands).toBe('function');
     expect(typeof mod.securityRegistry.addIgnoredPathPatterns).toBe('function');

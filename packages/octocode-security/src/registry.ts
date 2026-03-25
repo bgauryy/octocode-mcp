@@ -41,6 +41,7 @@ export interface ISecurityRegistry {
   readonly extraAllowedRoots: readonly string[];
   readonly extraIgnoredPathPatterns: readonly RegExp[];
   readonly extraIgnoredFilePatterns: readonly RegExp[];
+  readonly version: number;
   addSecretPatterns(patterns: SensitiveDataPattern[]): void;
   addAllowedCommands(commands: string[]): void;
   addAllowedRoots(roots: string[]): void;
@@ -55,43 +56,52 @@ export class SecurityRegistry implements ISecurityRegistry {
   private _extraAllowedRoots: string[] = [];
   private _extraIgnoredPathPatterns: RegExp[] = [];
   private _extraIgnoredFilePatterns: RegExp[] = [];
+  private _version = 0;
 
-  /** User-registered secret detection patterns. */
+  /** Monotonic counter incremented on every mutation. Used for cache invalidation. */
+  get version(): number {
+    return this._version;
+  }
+
+  /** User-registered secret detection patterns (frozen copy). */
   get extraSecretPatterns(): readonly SensitiveDataPattern[] {
-    return this._extraSecretPatterns;
+    return Object.freeze([...this._extraSecretPatterns]);
   }
 
-  /** User-registered allowed commands. */
+  /** User-registered allowed commands (frozen copy). */
   get extraAllowedCommands(): readonly string[] {
-    return this._extraAllowedCommands;
+    return Object.freeze([...this._extraAllowedCommands]);
   }
 
-  /** User-registered additional root directories for path validation. */
+  /** User-registered additional root directories (frozen copy). */
   get extraAllowedRoots(): readonly string[] {
-    return this._extraAllowedRoots;
+    return Object.freeze([...this._extraAllowedRoots]);
   }
 
-  /** User-registered ignored path patterns. */
+  /** User-registered ignored path patterns (frozen copy). */
   get extraIgnoredPathPatterns(): readonly RegExp[] {
-    return this._extraIgnoredPathPatterns;
+    return Object.freeze([...this._extraIgnoredPathPatterns]);
   }
 
-  /** User-registered ignored file patterns. */
+  /** User-registered ignored file patterns (frozen copy). */
   get extraIgnoredFilePatterns(): readonly RegExp[] {
-    return this._extraIgnoredFilePatterns;
+    return Object.freeze([...this._extraIgnoredFilePatterns]);
   }
 
   /**
    * Register additional secret detection patterns.
-   * These are merged with the built-in patterns at call time.
+   * Deduplicates by pattern name — duplicate names are silently skipped.
    */
   addSecretPatterns(patterns: SensitiveDataPattern[]): void {
     for (const p of patterns) {
       if (!p.name || !p.regex) {
         throw new Error('Each pattern must have a name and regex');
       }
+      if (!this._extraSecretPatterns.some(e => e.name === p.name)) {
+        this._extraSecretPatterns.push(p);
+      }
     }
-    this._extraSecretPatterns.push(...patterns);
+    this._version++;
   }
 
   /**
@@ -107,6 +117,7 @@ export class SecurityRegistry implements ISecurityRegistry {
         this._extraAllowedCommands.push(cmd);
       }
     }
+    this._version++;
   }
 
   /**
@@ -122,22 +133,33 @@ export class SecurityRegistry implements ISecurityRegistry {
         this._extraAllowedRoots.push(root);
       }
     }
+    this._version++;
   }
 
   /**
    * Register additional ignored path patterns.
-   * These are checked alongside the built-in patterns in shouldIgnorePath().
+   * Deduplicates by regex source — duplicate sources are silently skipped.
    */
   addIgnoredPathPatterns(patterns: RegExp[]): void {
-    this._extraIgnoredPathPatterns.push(...patterns);
+    for (const p of patterns) {
+      if (!this._extraIgnoredPathPatterns.some(e => e.source === p.source)) {
+        this._extraIgnoredPathPatterns.push(p);
+      }
+    }
+    this._version++;
   }
 
   /**
    * Register additional ignored file patterns.
-   * These are checked alongside the built-in patterns in shouldIgnoreFile().
+   * Deduplicates by regex source — duplicate sources are silently skipped.
    */
   addIgnoredFilePatterns(patterns: RegExp[]): void {
-    this._extraIgnoredFilePatterns.push(...patterns);
+    for (const p of patterns) {
+      if (!this._extraIgnoredFilePatterns.some(e => e.source === p.source)) {
+        this._extraIgnoredFilePatterns.push(p);
+      }
+    }
+    this._version++;
   }
 
   /** Remove all user-registered extensions. Useful for testing. */
@@ -147,6 +169,7 @@ export class SecurityRegistry implements ISecurityRegistry {
     this._extraAllowedRoots = [];
     this._extraIgnoredPathPatterns = [];
     this._extraIgnoredFilePatterns = [];
+    this._version++;
   }
 }
 
@@ -157,5 +180,6 @@ const GLOBAL_KEY = '__octocode_security_registry__';
  * (e.g. vitest transforms, dual ESM/CJS loading, or bundler code-splitting).
  */
 export const securityRegistry: SecurityRegistry =
-  (globalThis as Record<string, unknown>)[GLOBAL_KEY] as SecurityRegistry ??
-  ((globalThis as Record<string, unknown>)[GLOBAL_KEY] = new SecurityRegistry());
+  ((globalThis as Record<string, unknown>)[GLOBAL_KEY] as SecurityRegistry) ??
+  ((globalThis as Record<string, unknown>)[GLOBAL_KEY] =
+    new SecurityRegistry());

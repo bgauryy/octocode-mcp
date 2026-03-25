@@ -59,7 +59,7 @@ export class ContentSanitizer {
       };
     }
     if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
-      const nestedValidation = this.validateInputParameters(
+      const nestedValidation = this.validateRecursive(
         item as Record<string, unknown>,
         depth + 1,
         visited
@@ -124,11 +124,7 @@ export class ContentSanitizer {
     hasSecrets: boolean;
     isValid: boolean;
   } {
-    const nestedValidation = this.validateInputParameters(
-      value,
-      depth + 1,
-      visited
-    );
+    const nestedValidation = this.validateRecursive(value, depth + 1, visited);
     if (!nestedValidation.isValid) {
       warnings.add(
         `Invalid nested object in parameter ${key}: ${nestedValidation.warnings.join(', ')}`
@@ -170,7 +166,10 @@ export class ContentSanitizer {
       content: secretsResult.sanitizedContent,
       hasSecrets: secretsResult.hasSecrets,
       secretsDetected: secretsResult.secretsDetected,
-      warnings: secretsResult.secretsDetected,
+      warnings:
+        secretsResult.secretsDetected.length > 0
+          ? [`${secretsResult.secretsDetected.length} secret(s) redacted`]
+          : [],
     };
   }
 
@@ -214,7 +213,10 @@ export class ContentSanitizer {
       try {
         let chunkStart = 0;
         while (chunkStart < sanitizedContent.length) {
-          const chunkEnd = Math.min(chunkStart + this.CHUNK_SIZE, sanitizedContent.length);
+          const chunkEnd = Math.min(
+            chunkStart + this.CHUNK_SIZE,
+            sanitizedContent.length
+          );
           const chunk = sanitizedContent.slice(chunkStart, chunkEnd);
           const chunkMatches = chunk.match(pattern.regex);
           if (chunkMatches && chunkMatches.length > 0) {
@@ -298,9 +300,15 @@ export class ContentSanitizer {
   }
 
   public static validateInputParameters(
+    params: Record<string, unknown>
+  ): ValidationResult {
+    return this.validateRecursive(params, 0, new WeakSet<object>());
+  }
+
+  private static validateRecursive(
     params: Record<string, unknown>,
-    _depth = 0,
-    _visited?: WeakSet<object>
+    depth: number,
+    visited: WeakSet<object>
   ): ValidationResult {
     if (!params || typeof params !== 'object') {
       return {
@@ -311,7 +319,7 @@ export class ContentSanitizer {
       };
     }
 
-    if (_depth > 20) {
+    if (depth > 20) {
       return {
         sanitizedParams: {},
         isValid: false,
@@ -320,7 +328,6 @@ export class ContentSanitizer {
       };
     }
 
-    const visited = _visited ?? new WeakSet<object>();
     if (visited.has(params)) {
       return {
         sanitizedParams: {},
@@ -358,7 +365,7 @@ export class ContentSanitizer {
         const arrResult = this.sanitizeArrayValue(
           key,
           value,
-          _depth,
+          depth,
           visited,
           warnings
         );
@@ -369,7 +376,7 @@ export class ContentSanitizer {
         const objResult = this.sanitizeNestedObject(
           key,
           value as Record<string, unknown>,
-          _depth,
+          depth,
           visited,
           warnings
         );

@@ -11,95 +11,65 @@
  * contain secrets. Users need to explore their codebase freely.
  *
  * Coverage (BLOCKED):
- * ✓ Environment files with secrets (.env*)
- * ✓ Private SSH keys (id_rsa, id_ed25519, etc.)
- * ✓ Cloud provider credential files (AWS, GCP, Azure)
- * ✓ Browser password stores (Login Data, logins.json)
- * ✓ Password managers (KeePass, 1Password, pass)
- * ✓ Cryptocurrency wallets (wallet.dat, keystore)
- * ✓ Shell & database history files (contain typed passwords)
- * ✓ Token files with actual tokens
- * ✓ Explicit secret files (secrets.yml, credentials, etc.)
+ * - Environment files with secrets (.env*)
+ * - Private SSH keys (id_rsa, id_ed25519, etc.)
+ * - Cloud provider credential files (AWS, GCP, Azure)
+ * - Browser password stores (Login Data, logins.json)
+ * - Password managers (KeePass, 1Password, pass)
+ * - Cryptocurrency wallets (wallet.dat, keystore)
+ * - Shell & database history files (contain typed passwords)
+ * - Token files with actual tokens
+ * - Explicit secret files (secrets.yml, credentials, etc.)
  *
  * Explicitly ALLOWED for code exploration:
- * ✓ Config files (config.json, settings.json, *.conf)
- * ✓ Log files (*.log)
- * ✓ Database schema files (*.sql)
- * ✓ SQLite databases (*.db, *.sqlite) - content sanitized
- * ✓ Backups (*.bak, *.old, *~)
- * ✓ Public certificates (*.crt, *.cer)
- * ✓ Jupyter notebooks (*.ipynb)
- * ✓ CI/CD configs (visible in repos anyway)
+ * - Config files (config.json, settings.json, *.conf)
+ * - Log files (*.log)
+ * - Database schema files (*.sql)
+ * - SQLite databases (*.db, *.sqlite) - content sanitized
+ * - Backups (*.bak, *.old, *~)
+ * - Public certificates (*.crt, *.cer)
+ * - Jupyter notebooks (*.ipynb)
+ * - CI/CD configs (visible in repos anyway)
  *
+ * Each pattern uses `(?:^|\/)name(?:\/|$)` to match a path component at any
+ * position (start, middle, or end) while respecting directory boundaries.
  */
 
 /**
- * Directories and paths that contain sensitive security data
+ * Directories and paths that contain sensitive security data.
+ * Each regex matches a single directory name at any position in a path.
  */
 export const IGNORED_PATH_PATTERNS: RegExp[] = [
   // Git directory (internal git data)
-  /^\.git$/,
-  /^\.git\//,
-  /\/\.git$/,
-  /\/\.git\//,
+  /(?:^|\/)\.git(?:\/|$)/,
 
   // SSH directory (contains private keys)
-  /^\.ssh$/,
-  /^\.ssh\//,
-  /\/\.ssh$/,
-  /\/\.ssh\//,
+  /(?:^|\/)\.ssh(?:\/|$)/,
 
   // AWS credentials directory
-  /^\.aws$/,
-  /^\.aws\//,
-  /\/\.aws$/,
-  /\/\.aws\//,
+  /(?:^|\/)\.aws(?:\/|$)/,
 
   // Docker credentials directory
-  /^\.docker$/,
-  /^\.docker\//,
-  /\/\.docker$/,
-  /\/\.docker\//,
+  /(?:^|\/)\.docker(?:\/|$)/,
 
   // Google Cloud credentials directory
-  /^\.config\/gcloud$/,
-  /^\.config\/gcloud\//,
-  /\/\.config\/gcloud$/,
-  /\/\.config\/gcloud\//,
+  /(?:^|\/)\.config\/gcloud(?:\/|$)/,
 
   // Azure credentials directory
-  /^\.azure$/,
-  /^\.azure\//,
-  /\/\.azure$/,
-  /\/\.azure\//,
+  /(?:^|\/)\.azure(?:\/|$)/,
 
   // Kubernetes config directory
-  /^\.kube$/,
-  /^\.kube\//,
-  /\/\.kube$/,
-  /\/\.kube\//,
+  /(?:^|\/)\.kube(?:\/|$)/,
 
   // Terraform directories (can contain secrets in state)
-  /^\.terraform$/,
-  /^\.terraform\//,
-  /\/\.terraform$/,
-  /\/\.terraform\//,
+  /(?:^|\/)\.terraform(?:\/|$)/,
 
   // Generic sensitive directories (common naming conventions)
-  /^secrets$/,
-  /^secrets\//,
-  /\/secrets$/,
-  /\/secrets\//,
-  /^private$/,
-  /^private\//,
-  /\/private$/,
-  /\/private\//,
+  /(?:^|\/)secrets(?:\/|$)/,
+  /(?:^|\/)private(?:\/|$)/,
 
   // Password managers (pass - Unix password manager)
-  /^\.password-store$/,
-  /^\.password-store\//,
-  /\/\.password-store$/,
-  /\/\.password-store\//,
+  /(?:^|\/)\.password-store(?:\/|$)/,
 
   // Browser credential storage
   /\.mozilla\/firefox\//,
@@ -112,36 +82,15 @@ export const IGNORED_PATH_PATTERNS: RegExp[] = [
   /Library\/Keychains\//,
 
   // Email clients
-  /^\.thunderbird$/,
-  /^\.thunderbird\//,
-  /\/\.thunderbird$/,
-  /\/\.thunderbird\//,
-  /^\.evolution$/,
-  /^\.evolution\//,
-  /\/\.evolution$/,
-  /\/\.evolution\//,
+  /(?:^|\/)\.thunderbird(?:\/|$)/,
+  /(?:^|\/)\.evolution(?:\/|$)/,
 
   // Container/VM tools
-  /^\.vagrant$/,
-  /^\.vagrant\//,
-  /\/\.vagrant$/,
-  /\/\.vagrant\//,
-  /^\.minikube$/,
-  /^\.minikube\//,
-  /\/\.minikube$/,
-  /\/\.minikube\//,
+  /(?:^|\/)\.vagrant(?:\/|$)/,
+  /(?:^|\/)\.minikube(?:\/|$)/,
 
   // Cryptocurrency wallets
-  /^\.bitcoin$/,
-  /^\.bitcoin\//,
-  /\/\.bitcoin$/,
-  /\/\.bitcoin\//,
-  /^\.ethereum$/,
-  /^\.ethereum\//,
-  /\/\.ethereum$/,
-  /\/\.ethereum\//,
-  /^\.electrum$/,
-  /^\.electrum\//,
-  /\/\.electrum$/,
-  /\/\.electrum\//,
+  /(?:^|\/)\.bitcoin(?:\/|$)/,
+  /(?:^|\/)\.ethereum(?:\/|$)/,
+  /(?:^|\/)\.electrum(?:\/|$)/,
 ];

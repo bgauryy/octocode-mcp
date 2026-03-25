@@ -57,9 +57,7 @@ export interface ToolResult {
  */
 export interface ISanitizer {
   sanitizeContent(content: string, filePath?: string): SanitizationResult;
-  validateInputParameters(
-    params: Record<string, unknown>
-  ): ValidationResult;
+  validateInputParameters(params: Record<string, unknown>): ValidationResult;
 }
 
 /**

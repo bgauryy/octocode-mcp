@@ -10,7 +10,8 @@ interface Match {
 
 let combinedRegex: RegExp | null = null;
 let patternMap: SensitiveDataPattern[] = [];
-let lastExtraLen = 0;
+let cachedVersion = -1;
+let cachedExplicit: SensitiveDataPattern[] | undefined;
 
 function resolvePatterns(
   explicit?: SensitiveDataPattern[]
@@ -27,7 +28,7 @@ export function maskSensitiveData(
   if (!text) return text;
 
   const resolved = resolvePatterns(patterns);
-  const regex = getCombinedRegex(resolved);
+  const regex = getCombinedRegex(resolved, patterns);
   const matches: Match[] = [];
   let match;
 
@@ -43,7 +44,6 @@ export function maskSensitiveData(
       }
     }
 
-    // Prevent infinite loop on zero-length matches
     if (match[0].length === 0) {
       regex.lastIndex++;
     }
@@ -78,13 +78,18 @@ export function maskSensitiveData(
   return result;
 }
 
-function getCombinedRegex(patterns: SensitiveDataPattern[]): RegExp {
-  const extraLen = securityRegistry.extraSecretPatterns.length;
-  if (!combinedRegex || patternMap !== patterns || lastExtraLen !== extraLen) {
+function getCombinedRegex(
+  patterns: SensitiveDataPattern[],
+  explicit?: SensitiveDataPattern[]
+): RegExp {
+  const ver = securityRegistry.version;
+  if (!combinedRegex || ver !== cachedVersion || explicit !== cachedExplicit) {
     combinedRegex = createCombinedRegex(patterns);
     patternMap = patterns;
-    lastExtraLen = extraLen;
+    cachedVersion = ver;
+    cachedExplicit = explicit;
   }
+  combinedRegex.lastIndex = 0;
   return combinedRegex;
 }
 

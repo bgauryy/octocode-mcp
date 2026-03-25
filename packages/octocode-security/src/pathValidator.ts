@@ -241,6 +241,11 @@ export class PathValidator {
   getAllowedRoots(): readonly string[] {
     return [...this.allowedRoots];
   }
+
+  /** @internal Replace all allowed roots. Used by reinitializePathValidator. */
+  replaceAllowedRoots(roots: readonly string[]): void {
+    this.allowedRoots = [...roots];
+  }
 }
 
 /**
@@ -257,7 +262,6 @@ export function reinitializePathValidator(
   options?: PathValidatorOptions
 ): PathValidator {
   const newValidator = new PathValidator(options);
-  (pathValidator as unknown as { allowedRoots: string[] }).allowedRoots =
-    newValidator.getAllowedRoots() as string[];
+  pathValidator.replaceAllowedRoots(newValidator.getAllowedRoots());
   return pathValidator;
 }

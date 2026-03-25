@@ -27,7 +27,13 @@ describe('extra allowed roots via SecurityRegistry', () => {
     securityRegistry.reset();
   });
 
-  const repoPath = path.join(MOCK_APP_HOME, 'repos', 'facebook', 'react', 'main');
+  const repoPath = path.join(
+    MOCK_APP_HOME,
+    'repos',
+    'facebook',
+    'react',
+    'main'
+  );
   const filePath = path.join(repoPath, 'src', 'React.ts');
 
   // =========================================================================
@@ -64,9 +70,7 @@ describe('extra allowed roots via SecurityRegistry', () => {
         workspaceRoot: '/tmp/myproject',
       });
       const roots = validator.getAllowedRoots();
-      const count = roots.filter(
-        r => r === path.resolve(MOCK_APP_HOME)
-      ).length;
+      const count = roots.filter(r => r === path.resolve(MOCK_APP_HOME)).length;
       expect(count).toBe(1);
     });
   });

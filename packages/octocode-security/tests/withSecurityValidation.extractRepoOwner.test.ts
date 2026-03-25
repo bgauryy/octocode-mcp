@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractRepoOwnerFromParams } from '../src/withSecurityValidation.js';
+import { extractRepoOwnerFromParams } from '../src/paramExtractors.js';
 
 describe('extractRepoOwnerFromParams', () => {
   describe('Bulk Operations (queries array)', () => {

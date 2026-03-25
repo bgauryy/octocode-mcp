@@ -6,7 +6,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ContentSanitizer } from '../src/contentSanitizer.js';
 import { maskSensitiveData } from '../src/mask.js';
 import { validateCommand } from '../src/commandValidator.js';
-import { shouldIgnorePath, shouldIgnoreFile } from '../src/ignoredPathFilter.js';
+import {
+  shouldIgnorePath,
+  shouldIgnoreFile,
+} from '../src/ignoredPathFilter.js';
 import { securityRegistry, SecurityRegistry } from '../src/registry.js';
 
 describe('SecurityRegistry', () => {
@@ -20,12 +23,14 @@ describe('SecurityRegistry', () => {
 
   describe('custom secret patterns', () => {
     it('should detect custom patterns via ContentSanitizer.sanitizeContent', () => {
-      securityRegistry.addSecretPatterns([{
-        name: 'customCorpToken',
-        description: 'Custom corp token',
-        regex: /\bMYCORP_[A-Z0-9]{32}\b/g,
-        matchAccuracy: 'high',
-      }]);
+      securityRegistry.addSecretPatterns([
+        {
+          name: 'customCorpToken',
+          description: 'Custom corp token',
+          regex: /\bMYCORP_[A-Z0-9]{32}\b/g,
+          matchAccuracy: 'high',
+        },
+      ]);
 
       const secret = 'MYCORP_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345';
       const result = ContentSanitizer.sanitizeContent(`Token: ${secret}`);
@@ -36,12 +41,14 @@ describe('SecurityRegistry', () => {
     });
 
     it('should mask custom patterns via maskSensitiveData', () => {
-      securityRegistry.addSecretPatterns([{
-        name: 'customInternalKey',
-        description: 'Internal API key',
-        regex: /\bINT_KEY_[a-f0-9]{40}\b/g,
-        matchAccuracy: 'high',
-      }]);
+      securityRegistry.addSecretPatterns([
+        {
+          name: 'customInternalKey',
+          description: 'Internal API key',
+          regex: /\bINT_KEY_[a-f0-9]{40}\b/g,
+          matchAccuracy: 'high',
+        },
+      ]);
 
       const secret = 'INT_KEY_' + 'a'.repeat(40);
       const masked = maskSensitiveData(`Key: ${secret}`);
@@ -49,12 +56,14 @@ describe('SecurityRegistry', () => {
     });
 
     it('should not detect custom patterns after reset', () => {
-      securityRegistry.addSecretPatterns([{
-        name: 'ephemeral',
-        description: 'temp',
-        regex: /\bTEMP_[A-Z]{20}\b/g,
-        matchAccuracy: 'high',
-      }]);
+      securityRegistry.addSecretPatterns([
+        {
+          name: 'ephemeral',
+          description: 'temp',
+          regex: /\bTEMP_[A-Z]{20}\b/g,
+          matchAccuracy: 'high',
+        },
+      ]);
 
       const secret = 'TEMP_ABCDEFGHIJKLMNOPQRST';
       expect(ContentSanitizer.sanitizeContent(secret).hasSecrets).toBe(true);
@@ -65,12 +74,14 @@ describe('SecurityRegistry', () => {
     });
 
     it('should merge with built-in patterns, not replace them', () => {
-      securityRegistry.addSecretPatterns([{
-        name: 'myPattern',
-        description: 'custom',
-        regex: /\bCUSTOM_[A-Z]{10}\b/g,
-        matchAccuracy: 'high',
-      }]);
+      securityRegistry.addSecretPatterns([
+        {
+          name: 'myPattern',
+          description: 'custom',
+          regex: /\bCUSTOM_[A-Z]{10}\b/g,
+          matchAccuracy: 'high',
+        },
+      ]);
 
       const awsKey = 'AKIAIOSFODNN7EXAMPLE';
       const result = ContentSanitizer.sanitizeContent(`key: ${awsKey}`);
@@ -136,12 +147,16 @@ describe('SecurityRegistry', () => {
 
   describe('validation', () => {
     it('should reject empty pattern names', () => {
-      expect(() => securityRegistry.addSecretPatterns([{
-        name: '',
-        description: 'bad',
-        regex: /x/g,
-        matchAccuracy: 'high',
-      }])).toThrow();
+      expect(() =>
+        securityRegistry.addSecretPatterns([
+          {
+            name: '',
+            description: 'bad',
+            regex: /x/g,
+            matchAccuracy: 'high',
+          },
+        ])
+      ).toThrow();
     });
 
     it('should reject empty command strings', () => {
@@ -149,21 +164,27 @@ describe('SecurityRegistry', () => {
     });
 
     it('should reject patterns without regex', () => {
-      expect(() => securityRegistry.addSecretPatterns([{
-        name: 'bad',
-        description: 'bad',
-      } as any])).toThrow();
+      expect(() =>
+        securityRegistry.addSecretPatterns([
+          {
+            name: 'bad',
+            description: 'bad',
+          } as any,
+        ])
+      ).toThrow();
     });
   });
 
   describe('reset', () => {
     it('should clear all extensions at once', () => {
-      securityRegistry.addSecretPatterns([{
-        name: 'temp',
-        description: 'temp',
-        regex: /x/g,
-        matchAccuracy: 'high',
-      }]);
+      securityRegistry.addSecretPatterns([
+        {
+          name: 'temp',
+          description: 'temp',
+          regex: /x/g,
+          matchAccuracy: 'high',
+        },
+      ]);
       securityRegistry.addAllowedCommands(['custom-cmd']);
       securityRegistry.addAllowedRoots(['/tmp/myapp']);
       securityRegistry.addIgnoredPathPatterns([/^\.x$/]);

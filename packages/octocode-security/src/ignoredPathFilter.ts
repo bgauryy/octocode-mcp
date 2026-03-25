@@ -2,18 +2,43 @@ import { IGNORED_PATH_PATTERNS } from './pathPatterns.js';
 import { IGNORED_FILE_PATTERNS } from './filePatterns.js';
 import { securityRegistry } from './registry.js';
 
-function getPathPatterns(): RegExp[] {
-  const extra = securityRegistry.extraIgnoredPathPatterns;
-  return extra.length > 0
-    ? [...IGNORED_PATH_PATTERNS, ...extra]
-    : IGNORED_PATH_PATTERNS;
+let _compiledPathRegex: RegExp | null = null;
+let _compiledFileRegex: RegExp | null = null;
+let _cachedVersion = -1;
+
+function invalidateIfNeeded(): void {
+  const ver = securityRegistry.version;
+  if (ver !== _cachedVersion) {
+    _compiledPathRegex = null;
+    _compiledFileRegex = null;
+    _cachedVersion = ver;
+  }
 }
 
-function getFilePatterns(): RegExp[] {
-  const extra = securityRegistry.extraIgnoredFilePatterns;
-  return extra.length > 0
-    ? [...IGNORED_FILE_PATTERNS, ...extra]
-    : IGNORED_FILE_PATTERNS;
+function getCompiledPathRegex(): RegExp {
+  invalidateIfNeeded();
+  if (!_compiledPathRegex) {
+    const extra = securityRegistry.extraIgnoredPathPatterns;
+    const all =
+      extra.length > 0
+        ? [...IGNORED_PATH_PATTERNS, ...extra]
+        : IGNORED_PATH_PATTERNS;
+    _compiledPathRegex = new RegExp(all.map(r => r.source).join('|'));
+  }
+  return _compiledPathRegex;
+}
+
+function getCompiledFileRegex(): RegExp {
+  invalidateIfNeeded();
+  if (!_compiledFileRegex) {
+    const extra = securityRegistry.extraIgnoredFilePatterns;
+    const all =
+      extra.length > 0
+        ? [...IGNORED_FILE_PATTERNS, ...extra]
+        : IGNORED_FILE_PATTERNS;
+    _compiledFileRegex = new RegExp(all.map(r => r.source).join('|'));
+  }
+  return _compiledFileRegex;
 }
 
 /**
@@ -26,27 +51,15 @@ export function shouldIgnorePath(pathToCheck: string): boolean {
     return true;
   }
 
-  // Normalize path separators
   const normalizedPath = pathToCheck.replace(/\\/g, '/');
+  const regex = getCompiledPathRegex();
 
-  // Extract the last component for directory name checking
   const pathParts = normalizedPath.split('/');
-
-  const pathPatterns = getPathPatterns();
-
-  // Check each part of the path
   for (const part of pathParts) {
-    if (pathPatterns.some(pattern => pattern.test(part))) {
-      return true;
-    }
+    if (regex.test(part)) return true;
   }
 
-  // Check the full path
-  if (pathPatterns.some(pattern => pattern.test(normalizedPath))) {
-    return true;
-  }
-
-  return false;
+  return regex.test(normalizedPath);
 }
 
 /**
@@ -59,25 +72,11 @@ export function shouldIgnoreFile(fileName: string): boolean {
     return true;
   }
 
-  // Normalize path separators
   const normalizedPath = fileName.replace(/\\/g, '/');
-
-  // Extract just the filename
   const fileNameOnly = normalizedPath.split('/').pop() || '';
+  const regex = getCompiledFileRegex();
 
-  const filePatterns = getFilePatterns();
-
-  // Check against file patterns
-  if (filePatterns.some(pattern => pattern.test(fileNameOnly))) {
-    return true;
-  }
-
-  // Check against full path for files in specific directories (e.g., .ssh/)
-  if (filePatterns.some(pattern => pattern.test(normalizedPath))) {
-    return true;
-  }
-
-  return false;
+  return regex.test(fileNameOnly) || regex.test(normalizedPath);
 }
 
 /**

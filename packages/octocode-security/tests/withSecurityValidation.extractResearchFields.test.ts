@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractResearchFields } from '../src/withSecurityValidation.js';
+import { extractResearchFields } from '../src/paramExtractors.js';
 
 describe('extractResearchFields', () => {
   describe('Single Query', () => {

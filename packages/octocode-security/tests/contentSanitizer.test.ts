@@ -353,7 +353,7 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: ['githubTokens'],
-          warnings: ['githubTokens'],
+          warnings: ['1 secret(s) redacted'],
         });
       });
 
@@ -368,7 +368,7 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: ['githubTokens'],
-          warnings: ['githubTokens'],
+          warnings: ['1 secret(s) redacted'],
         });
       });
 
@@ -383,7 +383,7 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: ['githubTokens'],
-          warnings: ['githubTokens'],
+          warnings: ['1 secret(s) redacted'],
         });
       });
 
@@ -398,7 +398,7 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: ['githubTokens'],
-          warnings: ['githubTokens'],
+          warnings: ['1 secret(s) redacted'],
         });
       });
 
@@ -422,7 +422,7 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: ['githubTokens'],
-          warnings: ['githubTokens'],
+          warnings: ['1 secret(s) redacted'],
         });
       });
     });
@@ -439,7 +439,7 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: ['openaiApiKeyLegacy'],
-          warnings: ['openaiApiKeyLegacy'],
+          warnings: ['1 secret(s) redacted'],
         });
       });
 
@@ -454,7 +454,7 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: ['groqApiKey'],
-          warnings: ['groqApiKey'],
+          warnings: ['1 secret(s) redacted'],
         });
       });
 
@@ -468,7 +468,7 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: ['openaiOrgId'],
-          warnings: ['openaiOrgId'],
+          warnings: ['1 secret(s) redacted'],
         });
       });
     });
@@ -484,7 +484,7 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: ['awsAccessKeyId'],
-          warnings: ['awsAccessKeyId'],
+          warnings: ['1 secret(s) redacted'],
         });
       });
 
@@ -499,7 +499,7 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: ['awsSecretAccessKey'],
-          warnings: ['awsSecretAccessKey'],
+          warnings: ['1 secret(s) redacted'],
         });
       });
     });
@@ -515,7 +515,7 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: ['postgresqlConnectionString'],
-          warnings: ['postgresqlConnectionString'],
+          warnings: ['1 secret(s) redacted'],
         });
       });
 
@@ -530,7 +530,7 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: ['mongodbConnectionString'],
-          warnings: ['mongodbConnectionString'],
+          warnings: ['1 secret(s) redacted'],
         });
       });
     });
@@ -552,7 +552,7 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: ['rsaPrivateKey'],
-          warnings: ['rsaPrivateKey'],
+          warnings: ['1 secret(s) redacted'],
         });
       });
 
@@ -572,7 +572,7 @@ describe('ContentSanitizer', () => {
           hasSecrets: true,
 
           secretsDetected: ['opensshPrivateKey'],
-          warnings: ['opensshPrivateKey'],
+          warnings: ['1 secret(s) redacted'],
         });
       });
     });
@@ -605,12 +605,7 @@ describe('ContentSanitizer', () => {
             'postgresqlConnectionString',
             'githubTokens',
           ],
-          warnings: [
-            'openaiApiKeyLegacy',
-            'awsAccessKeyId',
-            'postgresqlConnectionString',
-            'githubTokens',
-          ],
+          warnings: ['4 secret(s) redacted'],
         });
       });
     });
