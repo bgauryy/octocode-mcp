@@ -133,6 +133,7 @@
   },
   "type": "module",
   "dependencies": {
-    "@coderabbitai/bitbucket": "^1.1.4"
+    "@coderabbitai/bitbucket": "^1.1.4",
+    "@octocode/security": "workspace:^"
   }
 }

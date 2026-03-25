@@ -28,7 +28,7 @@ vi.mock('child_process', () => ({
   spawn: flowRuntime.spawn,
 }));
 
-vi.mock('../../src/security/commandValidator.js', () => ({
+vi.mock('@octocode/security/commandValidator', () => ({
   validateCommand: vi.fn().mockReturnValue({ isValid: true }),
 }));
 

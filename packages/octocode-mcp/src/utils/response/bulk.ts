@@ -1,6 +1,9 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import { executeWithErrorIsolation } from '../core/promise.js';
-import { createResponseFormat } from '../../responses.js';
+import {
+  createResponseFormat,
+  sanitizeStructuredContent,
+} from '../../responses.js';
 import type {
   ProcessedBulkResult,
   FlatQueryResult,
@@ -117,7 +120,10 @@ function createBulkResponse<TQuery extends object>(
         text,
       },
     ],
-    structuredContent: responseData as unknown as Record<string, unknown>,
+    structuredContent: sanitizeStructuredContent(responseData) as Record<
+      string,
+      unknown
+    >,
     isError:
       flatQueries.length > 0 &&
       flatQueries.every(queryResult => queryResult.status === 'error'),

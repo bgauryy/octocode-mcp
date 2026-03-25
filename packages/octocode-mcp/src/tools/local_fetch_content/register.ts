@@ -6,7 +6,7 @@ import {
   LOCAL_FETCH_CONTENT_DESCRIPTION,
 } from './scheme.js';
 import { executeFetchContent } from './execution.js';
-import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
+import { withBasicSecurityValidation } from '../../utils/securityBridge.js';
 import { LocalGetFileContentOutputSchema } from '../../scheme/outputSchemas.js';
 
 /**

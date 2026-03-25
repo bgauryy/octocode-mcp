@@ -7,7 +7,7 @@ import { LOCAL_TOOL_ERROR_CODES } from '../../src/errors/localToolErrors.js';
 import { viewStructure } from '../../src/tools/local_view_structure/local_view_structure.js';
 import { safeExec } from '../../src/utils/exec/safe.js';
 import { checkCommandAvailability } from '../../src/utils/exec/commandAvailability.js';
-import * as pathValidator from '../../src/security/pathValidator.js';
+import * as pathValidator from '@octocode/security/pathValidator';
 import type { Stats } from 'fs';
 
 // Mock dependencies
@@ -22,7 +22,7 @@ vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
   getMissingCommandError: vi.fn().mockReturnValue('Command not available'),
 }));
 
-vi.mock('../../src/security/pathValidator.js', () => ({
+vi.mock('@octocode/security/pathValidator', () => ({
   pathValidator: {
     validate: vi.fn(),
   },

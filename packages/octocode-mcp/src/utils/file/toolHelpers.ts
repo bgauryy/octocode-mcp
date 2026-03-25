@@ -3,7 +3,7 @@
  */
 
 import path from 'path';
-import { pathValidator } from '../../security/pathValidator.js';
+import { pathValidator } from '@octocode/security/pathValidator';
 import { ToolErrors } from '../../errors/errorFactories.js';
 import type { BaseQuery } from '../core/types.js';
 import {

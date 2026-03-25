@@ -1129,6 +1129,19 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@octocode/security@workspace:^, @octocode/security@workspace:packages/octocode-security":
+  version: 0.0.0-use.local
+  resolution: "@octocode/security@workspace:packages/octocode-security"
+  dependencies:
+    "@types/node": "npm:^22.15.29"
+    "@vitest/coverage-v8": "npm:^4.0.16"
+    eslint: "npm:^9.18.0"
+    typescript: "npm:^5.9.3"
+    vite: "npm:^7.3.0"
+    vitest: "npm:^4.0.16"
+  languageName: unknown
+  linkType: soft
+
 "@octokit/app@npm:^16.1.2":
   version: 16.1.2
   resolution: "@octokit/app@npm:16.1.2"
@@ -7063,6 +7076,7 @@ __metadata:
     "@coderabbitai/bitbucket": "npm:^1.1.4"
     "@gitbeaker/rest": "npm:^43.8.0"
     "@modelcontextprotocol/sdk": "npm:^1.27.0"
+    "@octocode/security": "workspace:^"
     "@octokit/core": "npm:^7.0.6"
     "@octokit/openapi-types": "npm:^27.0.0"
     "@octokit/plugin-rest-endpoint-methods": "npm:^17.0.0"
@@ -7135,9 +7149,8 @@ __metadata:
     typescript-eslint: "npm:^8.32.0"
     vitest: "npm:^4.0.16"
     zod: "npm:^3.25.0"
-    zod-to-json-schema: "npm:^3.25.1"
   bin:
-    octocode-research: ./scripts/server.js
+    octocode-research: ./scripts/server-init.js
   languageName: unknown
   linkType: soft
 

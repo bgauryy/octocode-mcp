@@ -22,7 +22,7 @@ import {
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { ToolErrors } from '../../errors/errorFactories.js';
-import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
+import { resolveWorkspaceRoot } from '@octocode/security/workspaceRoot';
 import { TOOL_NAME } from './constants.js';
 import { findReferencesWithLSP } from './lspReferencesCore.js';
 import { findReferencesWithPatternMatching } from './lspReferencesPatterns.js';

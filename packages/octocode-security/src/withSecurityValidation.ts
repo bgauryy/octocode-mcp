@@ -1,0 +1,297 @@
+import { ContentSanitizer } from './contentSanitizer.js';
+import type { ISanitizer, ToolResult } from './types.js';
+import {
+  extractResearchFields,
+  extractRepoOwnerFromParams,
+} from './paramExtractors.js';
+
+/** Error code for security validation failures */
+const SECURITY_VALIDATION_FAILED_CODE = 'TOOL_SECURITY_VALIDATION_FAILED';
+
+/**
+ * Default timeout for tool execution (1 minute).
+ *
+ * Timeout interaction: This is the OUTER timeout — it applies to the entire tool
+ * invocation. Bulk tools also use a per-query timeout. For multi-query operations,
+ * the outer timeout dominates: e.g. 3 queries at 55s each would exceed 60s total,
+ * so the outer timeout fires before all complete.
+ */
+const TOOL_TIMEOUT_MS = 60_000;
+
+/**
+ * Dependency injection interface for @octocode/security.
+ * Call configureSecurity() once at application startup to inject these deps.
+ */
+export interface SecurityDepsConfig {
+  /** Custom sanitizer implementation (defaults to ContentSanitizer). */
+  sanitizer?: ISanitizer;
+  logToolCall?: (
+    toolName: string,
+    repos: string[],
+    goal?: string,
+    rGoal?: string,
+    reasoning?: string
+  ) => Promise<void>;
+  logSessionError?: (toolName: string, errorCode: string) => Promise<void>;
+  isLoggingEnabled?: () => boolean;
+  isLocalTool?: (name: string) => boolean;
+}
+
+let _deps: SecurityDepsConfig = {};
+
+function getSanitizer(): ISanitizer {
+  return _deps.sanitizer ?? ContentSanitizer;
+}
+
+/**
+ * Configure security module dependencies.
+ * Call once at application startup to inject logging and tool-name resolution.
+ */
+export function configureSecurity(deps: SecurityDepsConfig): void {
+  _deps = { ..._deps, ...deps };
+}
+
+/** Creates a simple error result for security failures */
+function createErrorResult(text: string): ToolResult {
+  return { content: [{ type: 'text', text }], isError: true };
+}
+
+/**
+ * Scan each text content item in a tool result for secrets and redact them.
+ * Non-text items (images, audio, etc.) are passed through unchanged.
+ * This prevents secrets present in file content or API responses from leaking to callers.
+ */
+function sanitizeToolResult(result: ToolResult): ToolResult {
+  if (!result.content || !Array.isArray(result.content)) {
+    return result;
+  }
+  const sanitizer = getSanitizer();
+  const sanitizedContent = result.content.map(item => {
+    if (item.type === 'text' && typeof item.text === 'string') {
+      const sanitized = sanitizer.sanitizeContent(item.text);
+      if (sanitized.hasSecrets) {
+        return { ...item, text: sanitized.content };
+      }
+    }
+    return item;
+  });
+  return { ...result, content: sanitizedContent };
+}
+
+/**
+ * Wraps a promise with a timeout that respects an optional AbortSignal.
+ * Returns an error result instead of throwing on timeout.
+ */
+function withToolTimeout(
+  toolName: string,
+  promise: Promise<ToolResult>,
+  signal?: AbortSignal
+): Promise<ToolResult> {
+  if (signal?.aborted) {
+    return Promise.resolve(
+      createErrorResult(`Tool '${toolName}' was cancelled before execution.`)
+    );
+  }
+
+  return new Promise<ToolResult>(resolve => {
+    const timer = setTimeout(() => {
+      resolve(
+        createErrorResult(
+          `Tool '${toolName}' timed out after ${TOOL_TIMEOUT_MS / 1000}s. Try reducing query complexity or scope.`
+        )
+      );
+    }, TOOL_TIMEOUT_MS);
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve(
+        createErrorResult(`Tool '${toolName}' was cancelled by the client.`)
+      );
+    };
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    promise
+      .then(result => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        resolve(result);
+      })
+      .catch(error => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        resolve(
+          createErrorResult(
+            `Tool '${toolName}' failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+          )
+        );
+      });
+  });
+}
+
+/**
+ * Security wrapper for tools that require authentication.
+ *
+ * Use this wrapper for tools that:
+ * - Need `authInfo` or `sessionId` passed to the handler
+ * - Should log queries to session telemetry via `handleBulk`
+ * - Access remote APIs (GitHub, GitLab, NPM, etc.)
+ *
+ * Provides: input sanitization, 60s timeout, auth passthrough, session logging.
+ *
+ * `TAuth` is the auth-info type from your framework (e.g. MCP's `AuthInfo`).
+ * It defaults to `unknown` so no framework dependency is required.
+ *
+ * @see withBasicSecurityValidation for local tools that don't need auth
+ */
+export function withSecurityValidation<
+  T extends Record<string, unknown>,
+  TAuth = unknown,
+>(
+  toolName: string,
+  toolHandler: (
+    sanitizedArgs: T,
+    authInfo?: TAuth,
+    sessionId?: string
+  ) => Promise<ToolResult>
+): (
+  args: unknown,
+  extra: { authInfo?: TAuth; sessionId?: string; signal?: AbortSignal }
+) => Promise<ToolResult> {
+  return async (
+    args: unknown,
+    {
+      authInfo,
+      sessionId,
+      signal,
+    }: { authInfo?: TAuth; sessionId?: string; signal?: AbortSignal } = {}
+  ): Promise<ToolResult> => {
+    try {
+      const sanitizer = getSanitizer();
+      const validation = sanitizer.validateInputParameters(
+        args as Record<string, unknown>
+      );
+      if (!validation.isValid) {
+        return createErrorResult(
+          `Security validation failed: ${validation.warnings.join('; ')}`
+        );
+      }
+      const sanitizedParams = validation.sanitizedParams as Record<
+        string,
+        unknown
+      >;
+      if (_deps.isLoggingEnabled?.()) {
+        handleBulk(toolName, sanitizedParams);
+      }
+      const rawResult = await withToolTimeout(
+        toolName,
+        toolHandler(validation.sanitizedParams as T, authInfo, sessionId),
+        signal
+      );
+      return sanitizeToolResult(rawResult);
+    } catch (error) {
+      _deps
+        .logSessionError?.(toolName, SECURITY_VALIDATION_FAILED_CODE)
+        .catch(() => {});
+
+      return createErrorResult(
+        `Security validation error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  };
+}
+
+/**
+ * Lightweight security wrapper for local filesystem and LSP tools.
+ *
+ * Use this wrapper for tools that:
+ * - Operate on local files only (no remote API access)
+ * - Don't need `authInfo` or `sessionId`
+ * - Don't need session telemetry logging
+ *
+ * Provides: input sanitization, 60s timeout.
+ * Does NOT provide: auth passthrough, session logging.
+ *
+ * @see withSecurityValidation for remote tools that need auth + logging
+ */
+export function withBasicSecurityValidation<T extends object>(
+  toolHandler: (sanitizedArgs: T) => Promise<ToolResult>,
+  toolName?: string
+): (args: unknown, extra?: { signal?: AbortSignal }) => Promise<ToolResult> {
+  return async (
+    args: unknown,
+    extra?: { signal?: AbortSignal }
+  ): Promise<ToolResult> => {
+    const signal = extra?.signal;
+    try {
+      const sanitizer = getSanitizer();
+      const validation = sanitizer.validateInputParameters(
+        args as Record<string, unknown>
+      );
+
+      if (!validation.isValid) {
+        return createErrorResult(
+          `Security validation failed: ${validation.warnings.join('; ')}`
+        );
+      }
+
+      if (
+        toolName &&
+        _deps.isLocalTool?.(toolName) &&
+        _deps.isLoggingEnabled?.() &&
+        validation.sanitizedParams &&
+        typeof validation.sanitizedParams === 'object'
+      ) {
+        handleBulk(
+          toolName,
+          validation.sanitizedParams as Record<string, unknown>
+        );
+      }
+
+      const rawResult = await withToolTimeout(
+        toolName || 'tool',
+        toolHandler(validation.sanitizedParams as T),
+        signal
+      );
+      return sanitizeToolResult(rawResult);
+    } catch (error) {
+      _deps
+        .logSessionError?.(
+          toolName || 'basic_security_validation',
+          SECURITY_VALIDATION_FAILED_CODE
+        )
+        .catch(() => {});
+
+      return createErrorResult(
+        `Security validation error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  };
+}
+
+function handleBulk(toolName: string, params: Record<string, unknown>): void {
+  const queries = params.queries;
+  const items =
+    queries && Array.isArray(queries) && queries.length > 0
+      ? (queries as Array<Record<string, unknown>>)
+      : [params];
+
+  for (const item of items) {
+    const repos = extractRepoOwnerFromParams(item);
+    if (repos.length === 0 && !_deps.isLocalTool?.(toolName)) {
+      continue;
+    }
+    const fields = extractResearchFields(item);
+    _deps
+      .logToolCall?.(
+        toolName,
+        repos,
+        fields.mainResearchGoal,
+        fields.researchGoal,
+        fields.reasoning
+      )
+      .catch(() => {});
+  }
+}
+
+export { extractResearchFields, extractRepoOwnerFromParams };

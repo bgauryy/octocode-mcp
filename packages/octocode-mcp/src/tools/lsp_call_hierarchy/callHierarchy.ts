@@ -10,7 +10,7 @@ import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
-import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
+import { resolveWorkspaceRoot } from '@octocode/security/workspaceRoot';
 import { SymbolResolver, SymbolResolutionError } from '../../lsp/resolver.js';
 import { isLanguageServerAvailable } from '../../lsp/manager.js';
 import type { CallHierarchyResult } from '../../lsp/types.js';

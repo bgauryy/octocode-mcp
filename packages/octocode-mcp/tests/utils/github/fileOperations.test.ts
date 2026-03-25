@@ -33,7 +33,7 @@ vi.mock('../../../src/github/client.js', () => ({
   resolveDefaultBranch: mockResolveDefaultBranch,
 }));
 
-vi.mock('../../../src/security/contentSanitizer.js', () => ({
+vi.mock('@octocode/security/contentSanitizer', () => ({
   ContentSanitizer: mockContentSanitizer,
 }));
 

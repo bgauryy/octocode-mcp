@@ -141,6 +141,6 @@ export type {
   PackageSearchResult,
 } from '../tools/package_search/types.js';
 
-export { withBasicSecurityValidation } from '../security/withSecurityValidation.js';
+export { withBasicSecurityValidation } from '../utils/securityBridge.js';
 
 export { registerGitHubCloneRepoTool } from '../tools/github_clone_repo/register.js';

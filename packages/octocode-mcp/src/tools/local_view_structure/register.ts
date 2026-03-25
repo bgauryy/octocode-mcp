@@ -6,7 +6,7 @@ import {
   LOCAL_VIEW_STRUCTURE_DESCRIPTION,
 } from './scheme.js';
 import { executeViewStructure } from './execution.js';
-import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
+import { withBasicSecurityValidation } from '../../utils/securityBridge.js';
 import { LocalViewStructureOutputSchema } from '../../scheme/outputSchemas.js';
 
 /**

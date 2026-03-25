@@ -84,7 +84,7 @@ vi.mock('../../src/mcp/responses.js', () => ({
   optimizeTextMatch: mockOptimizeTextMatch,
 }));
 
-vi.mock('../../src/security/contentSanitizer.js', () => ({
+vi.mock('@octocode/security/contentSanitizer', () => ({
   ContentSanitizer: mockContentSanitizer,
 }));
 

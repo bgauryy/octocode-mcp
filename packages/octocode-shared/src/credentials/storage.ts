@@ -15,12 +15,7 @@
  * - credentialUtils.ts: Shared utility functions
  */
 
-import type {
-  StoredCredentials,
-  StoreResult,
-  DeleteResult,
-  TokenSource,
-} from './types.js';
+import type { StoredCredentials, StoreResult, DeleteResult } from './types.js';
 import { createLogger } from '../logger/index.js';
 
 import {
@@ -48,6 +43,7 @@ import {
   type TokenWithRefreshResult,
 } from './tokenRefresh.js';
 import {
+  initTokenResolution,
   resolveToken,
   type ResolvedToken,
   resolveTokenWithRefresh,
@@ -57,6 +53,12 @@ import {
   type GhCliTokenGetter,
 } from './tokenResolution.js';
 import {
+  getTokenFromEnv,
+  getEnvTokenSource,
+  hasEnvToken,
+  ENV_TOKEN_VARS,
+} from './envTokens.js';
+import {
   normalizeHostname,
   isTokenExpired,
   isRefreshTokenExpired,
@@ -64,60 +66,8 @@ import {
 
 const logger = createLogger('token-storage');
 
-// ============================================================================
-// ENVIRONMENT VARIABLE SUPPORT
-// ============================================================================
-
-/**
- * Environment variable names for token lookup (in priority order)
- */
-export const ENV_TOKEN_VARS = [
-  'OCTOCODE_TOKEN', // octocode-specific (highest priority)
-  'GH_TOKEN', // gh CLI compatible
-  'GITHUB_TOKEN', // GitHub Actions native
-] as const;
-
-/**
- * Get token from environment variables
- *
- * Checks environment variables in priority order:
- * 1. OCTOCODE_TOKEN - octocode-specific token
- * 2. GH_TOKEN - GitHub CLI compatible
- * 3. GITHUB_TOKEN - GitHub Actions native
- *
- * @returns Token string or null if not found in any env var
- */
-export function getTokenFromEnv(): string | null {
-  for (const envVar of ENV_TOKEN_VARS) {
-    const token = process.env[envVar];
-    if (token && token.trim()) {
-      return token.trim();
-    }
-  }
-  return null;
-}
-
-/**
- * Get the source of an environment variable token
- *
- * @returns The env var name that contains the token, or null if none found
- */
-export function getEnvTokenSource(): TokenSource {
-  for (const envVar of ENV_TOKEN_VARS) {
-    const token = process.env[envVar];
-    if (token && token.trim()) {
-      return `env:${envVar}` as TokenSource;
-    }
-  }
-  return null;
-}
-
-/**
- * Check if token is available from environment variables
- */
-export function hasEnvToken(): boolean {
-  return getTokenFromEnv() !== null;
-}
+// Re-export env functions from envTokens.ts (backward compat)
+export { getTokenFromEnv, getEnvTokenSource, hasEnvToken, ENV_TOKEN_VARS };
 
 // ============================================================================
 // PUBLIC API - CRUD OPERATIONS
@@ -405,6 +355,9 @@ export async function getTokenWithRefresh(
 }
 
 export type { RefreshResult, TokenWithRefreshResult };
+
+// Inject storage deps into tokenResolution (breaks the cycle)
+initTokenResolution({ getToken, getTokenWithRefresh });
 
 // Token resolution
 export {
