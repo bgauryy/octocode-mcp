@@ -4,6 +4,7 @@ import { executeBulkOperation } from '../../utils/response/bulk.js';
 import { processCallHierarchy } from './callHierarchy.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { TOOL_NAME } from './constants.js';
+import { executeWithToolBoundary } from '../executionGuard.js';
 
 export { TOOL_NAME };
 
@@ -18,7 +19,13 @@ export async function executeCallHierarchy(
 
   return executeBulkOperation(
     queries || [],
-    async (query: LSPCallHierarchyQuery) => processCallHierarchy(query),
+    async (query: LSPCallHierarchyQuery) =>
+      executeWithToolBoundary({
+        toolName: TOOL_NAME,
+        query,
+        contextMessage: 'lspCallHierarchy execution failed',
+        execute: async () => processCallHierarchy(query),
+      }),
     {
       toolName: TOOL_NAME,
       responseCharOffset,

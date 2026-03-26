@@ -30,18 +30,18 @@ describe('localViewStructure details param', () => {
       const entries: DirectoryEntry[] = [];
       const stats: WalkStats = { skipped: 0 };
 
-      await walkDirectory(
-        tmpDir,
-        tmpDir,
-        0,
-        1,
+      await walkDirectory({
+        basePath: tmpDir,
+        currentPath: tmpDir,
+        depth: 0,
+        maxDepth: 1,
         entries,
-        100,
-        false,
-        false, // showModified=false
+        maxEntries: 100,
+        showHidden: false,
+        showModified: false, // showModified=false
         stats,
-        true // showDetails=true
-      );
+        showDetails: true, // showDetails=true
+      });
 
       const fileEntry = entries.find(e => e.name === 'file.txt');
       expect(fileEntry).toBeDefined();
@@ -53,18 +53,18 @@ describe('localViewStructure details param', () => {
       const entries: DirectoryEntry[] = [];
       const stats: WalkStats = { skipped: 0 };
 
-      await walkDirectory(
-        tmpDir,
-        tmpDir,
-        0,
-        1,
+      await walkDirectory({
+        basePath: tmpDir,
+        currentPath: tmpDir,
+        depth: 0,
+        maxDepth: 1,
         entries,
-        100,
-        false,
-        false, // showModified=false
+        maxEntries: 100,
+        showHidden: false,
+        showModified: false, // showModified=false
         stats,
-        true // showDetails=true
-      );
+        showDetails: true, // showDetails=true
+      });
 
       const fileEntry = entries.find(e => e.name === 'file.txt');
       expect(fileEntry).toBeDefined();
@@ -78,18 +78,18 @@ describe('localViewStructure details param', () => {
       const entries: DirectoryEntry[] = [];
       const stats: WalkStats = { skipped: 0 };
 
-      await walkDirectory(
-        tmpDir,
-        tmpDir,
-        0,
-        1,
+      await walkDirectory({
+        basePath: tmpDir,
+        currentPath: tmpDir,
+        depth: 0,
+        maxDepth: 1,
         entries,
-        100,
-        false,
-        false,
+        maxEntries: 100,
+        showHidden: false,
+        showModified: false,
         stats,
-        true
-      );
+        showDetails: true,
+      });
 
       const dirEntry = entries.find(e => e.name === 'subdir');
       expect(dirEntry).toBeDefined();
@@ -102,18 +102,18 @@ describe('localViewStructure details param', () => {
       const entries: DirectoryEntry[] = [];
       const stats: WalkStats = { skipped: 0 };
 
-      await walkDirectory(
-        tmpDir,
-        tmpDir,
-        0,
-        1,
+      await walkDirectory({
+        basePath: tmpDir,
+        currentPath: tmpDir,
+        depth: 0,
+        maxDepth: 1,
         entries,
-        100,
-        false,
-        false,
+        maxEntries: 100,
+        showHidden: false,
+        showModified: false,
         stats,
-        false // showDetails=false
-      );
+        showDetails: false, // showDetails=false
+      });
 
       const fileEntry = entries.find(e => e.name === 'file.txt');
       expect(fileEntry).toBeDefined();

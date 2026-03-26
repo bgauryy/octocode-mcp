@@ -137,6 +137,7 @@ export function writeMultiFileReport(
     fileInventory: enrichedFileInventory,
     hotFiles,
     reportAnalysis,
+    includeTests: options.includeTests,
   });
 
   writeJson('architecture.json', {

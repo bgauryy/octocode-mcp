@@ -530,6 +530,129 @@ describe('computeQualityAspectRatings', () => {
     expect(commonLayer).toBeDefined();
     expect(commonLayer!.score).toBeGreaterThanOrEqual(80);
   });
+
+  it('ignores test-file findings when includeTests=false', () => {
+    const findings: Finding[] = [
+      makeFinding({
+        id: 'prod-arch',
+        category: 'dependency-cycle',
+        severity: 'high',
+        file: 'src/service/core.ts',
+        files: ['src/service/core.ts'],
+      }),
+      ...Array.from({ length: 12 }, (_, index) =>
+        makeFinding({
+          id: `test-only-${index}`,
+          category: 'dependency-critical-path',
+          severity: 'critical',
+          file: `tests/service/core-${index}.test.ts`,
+          files: [`tests/service/core-${index}.test.ts`],
+        })
+      ),
+    ];
+
+    const baseContext = {
+      fileInventory: [
+        ...Array.from({ length: 20 }, (_, index) =>
+          makeFileEntry({ file: `src/service/core-${index}.ts` })
+        ),
+        makeFileEntry({ file: 'tests/service/core.test.ts' }),
+      ],
+    };
+    const withoutTests = computeQualityAspectRatings(findings, {
+      ...baseContext,
+      includeTests: false,
+    });
+    const withTests = computeQualityAspectRatings(findings, {
+      ...baseContext,
+      includeTests: true,
+    });
+    const withoutTestsScore = withoutTests.aspects.find(
+      aspect => aspect.aspect === 'architecture-structure'
+    )!.score;
+    const withTestsScore = withTests.aspects.find(
+      aspect => aspect.aspect === 'architecture-structure'
+    )!.score;
+
+    expect(withoutTestsScore).toBeGreaterThan(withTestsScore);
+  });
+
+  it('downweights advisory dead-code categories in maintainability scoring', () => {
+    const advisoryFindings = Array.from({ length: 20 }, (_, index) =>
+      makeFinding({
+        id: `advisory-${index}`,
+        category: 'move-to-caller',
+        severity: 'low',
+        file: `src/tools/advisory-${index}.ts`,
+        files: [`src/tools/advisory-${index}.ts`],
+      })
+    );
+    const concreteFindings = Array.from({ length: 20 }, (_, index) =>
+      makeFinding({
+        id: `concrete-${index}`,
+        category: 'dead-file',
+        severity: 'low',
+        file: `src/tools/concrete-${index}.ts`,
+        files: [`src/tools/concrete-${index}.ts`],
+      })
+    );
+
+    const advisoryScore = computeQualityAspectRatings(advisoryFindings, {
+      fileInventory: advisoryFindings.map(f => makeFileEntry({ file: f.file })),
+    }).aspects.find(a => a.aspect === 'maintainability-evolvability')!.score;
+    const concreteScore = computeQualityAspectRatings(concreteFindings, {
+      fileInventory: concreteFindings.map(f => makeFileEntry({ file: f.file })),
+    }).aspects.find(a => a.aspect === 'maintainability-evolvability')!.score;
+
+    expect(advisoryScore).toBeGreaterThan(concreteScore);
+  });
+
+  it('normalizes folder topology for scans under a shared path prefix', () => {
+    const result = computeQualityAspectRatings([], {
+      fileInventory: [
+        makeFileEntry({
+          file: 'packages/octocode-mcp/src/tools/local_find_files/findFiles.ts',
+        }),
+        makeFileEntry({
+          file: 'packages/octocode-mcp/src/tools/local_ripgrep/ripgrepExecutor.ts',
+        }),
+        makeFileEntry({
+          file: 'packages/octocode-mcp/src/tools/local_view_structure/structureWalker.ts',
+        }),
+      ],
+    });
+
+    const folderAspect = result.aspects.find(
+      aspect => aspect.aspect === 'folder-topology'
+    );
+    expect(folderAspect).toBeDefined();
+    expect(folderAspect!.score).toBeGreaterThanOrEqual(85);
+  });
+
+  it('ignores generated and minified paths in hybrid quality rating by default', () => {
+    const result = computeQualityAspectRatings(
+      [
+        makeFinding({
+          id: 'gen-1',
+          category: 'dependency-cycle',
+          severity: 'high',
+          file: 'dist/vendor.min.js',
+          files: ['dist/vendor.min.js'],
+        }),
+      ],
+      {
+        fileInventory: [
+          makeFileEntry({ file: 'dist/vendor.min.js', functions: [] }),
+          makeFileEntry({ file: 'src/service/core.ts' }),
+        ],
+      }
+    );
+
+    const architectureScore = result.aspects.find(
+      aspect => aspect.aspect === 'architecture-structure'
+    )!.score;
+    expect(architectureScore).toBeGreaterThanOrEqual(90);
+  });
 });
 
 describe('formatFileSize', () => {

@@ -34,17 +34,17 @@ describe('walkDirectory - WalkStats error tracking', () => {
     const entries: DirectoryEntry[] = [];
     const stats: WalkStats = { skipped: 0 };
 
-    await walkDirectory(
-      tmpDir,
-      tmpDir,
-      0,
-      1,
+    await walkDirectory({
+      basePath: tmpDir,
+      currentPath: tmpDir,
+      depth: 0,
+      maxDepth: 1,
       entries,
-      100,
-      false,
-      false,
-      stats
-    );
+      maxEntries: 100,
+      showHidden: false,
+      showModified: false,
+      stats,
+    });
 
     expect(stats.skipped).toBe(1);
     expect(entries.length).toBe(1);
@@ -67,17 +67,17 @@ describe('walkDirectory - WalkStats error tracking', () => {
     const entries: DirectoryEntry[] = [];
     const stats: WalkStats = { skipped: 0 };
 
-    await walkDirectory(
-      tmpDir,
-      tmpDir,
-      0,
-      1,
+    await walkDirectory({
+      basePath: tmpDir,
+      currentPath: tmpDir,
+      depth: 0,
+      maxDepth: 1,
       entries,
-      100,
-      false,
-      false,
-      stats
-    );
+      maxEntries: 100,
+      showHidden: false,
+      showModified: false,
+      stats,
+    });
 
     expect(stats.skipped).toBe(1);
     expect(entries.length).toBe(0);
@@ -97,17 +97,17 @@ describe('walkDirectory - WalkStats error tracking', () => {
     const stats: WalkStats = { skipped: 0 };
 
     // Call with depth=1, maxDepth=1 - should return immediately without reading subdir
-    await walkDirectory(
-      tmpDir,
-      path.join(tmpDir, 'subdir'),
-      1,
-      1,
+    await walkDirectory({
+      basePath: tmpDir,
+      currentPath: path.join(tmpDir, 'subdir'),
+      depth: 1,
+      maxDepth: 1,
       entries,
-      100,
-      false,
-      false,
-      stats
-    );
+      maxEntries: 100,
+      showHidden: false,
+      showModified: false,
+      stats,
+    });
 
     // When depth >= maxDepth, we return before readdir - so subdir's contents are never read
     expect(entries.length).toBe(0);
@@ -120,17 +120,17 @@ describe('walkDirectory - WalkStats error tracking', () => {
     const entries: DirectoryEntry[] = [];
     const stats: WalkStats = { skipped: 0 };
 
-    await walkDirectory(
-      tmpDir,
-      tmpDir,
-      0,
-      1,
+    await walkDirectory({
+      basePath: tmpDir,
+      currentPath: tmpDir,
+      depth: 0,
+      maxDepth: 1,
       entries,
-      100,
-      false,
-      false,
-      stats
-    );
+      maxEntries: 100,
+      showHidden: false,
+      showModified: false,
+      stats,
+    });
 
     expect(entries.length).toBe(1);
     expect(stats.skipped).toBe(0);
@@ -154,17 +154,17 @@ describe('walkDirectory - WalkStats error tracking', () => {
     const entries: DirectoryEntry[] = [];
     const stats: WalkStats = { skipped: 0 };
 
-    await walkDirectory(
-      tmpDir,
-      tmpDir,
-      0,
-      1,
+    await walkDirectory({
+      basePath: tmpDir,
+      currentPath: tmpDir,
+      depth: 0,
+      maxDepth: 1,
       entries,
-      100,
-      false,
-      false,
-      stats
-    );
+      maxEntries: 100,
+      showHidden: false,
+      showModified: false,
+      stats,
+    });
 
     expect(stats.skipped).toBe(1);
     expect(entries.length).toBe(2);

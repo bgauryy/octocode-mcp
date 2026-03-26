@@ -286,43 +286,42 @@ async function gotoDefinitionWithLSP(
     }
 
     const contextLines = query.contextLines ?? 5;
-    const enhancedLocations: CodeSnippet[] = [];
+    const enhancedLocations = await Promise.all(
+      locations.map(async loc => {
+        try {
+          const locContent = await safeReadFile(loc.uri);
+          if (!locContent) {
+            return loc;
+          }
+          const lines = locContent.split(/\r?\n/);
+          const startLine = Math.max(0, loc.range.start.line - contextLines);
+          const endLine = Math.min(
+            lines.length - 1,
+            loc.range.end.line + contextLines
+          );
 
-    for (const loc of locations) {
-      try {
-        const locContent = await safeReadFile(loc.uri);
-        if (!locContent) {
-          enhancedLocations.push(loc);
-          continue;
+          const snippetLines = lines.slice(startLine, endLine + 1);
+          const numberedContent = snippetLines
+            .map((line, i) => {
+              const lineNum = startLine + i + 1;
+              const isTarget =
+                lineNum > loc.range.start.line &&
+                lineNum <= loc.range.end.line + 1;
+              const marker = isTarget ? '>' : ' ';
+              return `${marker}${String(lineNum).padStart(4, ' ')}| ${line}`;
+            })
+            .join('\n');
+
+          return {
+            ...loc,
+            content: numberedContent,
+          };
+        } catch {
+          // Snippet enhancement failed; keep raw LSP location.
+          return loc;
         }
-        const lines = locContent.split(/\r?\n/);
-        const startLine = Math.max(0, loc.range.start.line - contextLines);
-        const endLine = Math.min(
-          lines.length - 1,
-          loc.range.end.line + contextLines
-        );
-
-        const snippetLines = lines.slice(startLine, endLine + 1);
-        const numberedContent = snippetLines
-          .map((line, i) => {
-            const lineNum = startLine + i + 1;
-            const isTarget =
-              lineNum > loc.range.start.line &&
-              lineNum <= loc.range.end.line + 1;
-            const marker = isTarget ? '>' : ' ';
-            return `${marker}${String(lineNum).padStart(4, ' ')}| ${line}`;
-          })
-          .join('\n');
-
-        enhancedLocations.push({
-          ...loc,
-          content: numberedContent,
-        });
-      } catch {
-        // Snippet enhancement failed; keep raw LSP location.
-        enhancedLocations.push(loc);
-      }
-    }
+      })
+    );
 
     const strippedLocations = enhancedLocations.map(
       ({ displayRange: _, ...rest }) => rest

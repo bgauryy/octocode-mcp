@@ -33,6 +33,23 @@ jobs:
       - name: Verify docs and workflow references
         run: yarn docs:verify
 
+      - name: Capture architecture snapshot
+        run: |
+          node scripts/architecture-snapshot.mjs \
+            --summary skills/octocode-code-engineer/.octocode/scan/check-each-tool-current/summary.json \
+            --out .octocode/scan/architecture-snapshot.json
+
+      - name: Enforce architecture/maintainability non-regression gate
+        run: |
+          node scripts/score-gate.mjs \
+            --summary skills/octocode-code-engineer/.octocode/scan/check-each-tool-current/summary.json \
+            --min-aspect architecture-structure:67 \
+            --min-aspect maintainability-evolvability:68 \
+            --max-category shotgun-surgery:21 \
+            --max-category high-coupling:15 \
+            --max-category missing-error-boundary:42 \
+            --max-category cognitive-complexity:22
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

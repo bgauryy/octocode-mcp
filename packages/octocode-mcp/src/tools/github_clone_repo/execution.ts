@@ -7,10 +7,11 @@
 
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { CloneRepoQuery } from './types.js';
-import { TOOL_NAMES } from '../toolMetadata/proxies.js';
+import { TOOL_NAMES } from '../toolMetadata/names.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { handleCatchError, createSuccessResult } from '../utils.js';
+import { executeWithToolBoundary } from '../executionGuard.js';
 import {
   createProviderExecutionContext,
   providerSupports,
@@ -53,55 +54,56 @@ export async function executeCloneRepo(
 
   return executeBulkOperation(
     queries,
-    async (query: CloneRepoQuery, _index: number) => {
-      try {
-        providerContext ??= createProviderExecutionContext(authInfo);
+    async (query: CloneRepoQuery, _index: number) =>
+      executeWithToolBoundary({
+        toolName: TOOL_NAMES.GITHUB_CLONE_REPO,
+        query,
+        contextMessage: `Clone failed for ${query.owner}/${query.repo}`,
+        execute: async () => {
+          providerContext ??= createProviderExecutionContext(authInfo);
 
-        if (!providerSupports(providerContext, 'cloneRepo')) {
-          return handleCatchError(
-            new Error(
-              'githubCloneRepo is only available with the GitHub provider.'
-            ),
+          if (!providerSupports(providerContext, 'cloneRepo')) {
+            return handleCatchError(
+              new Error(
+                'githubCloneRepo is only available with the GitHub provider.'
+              ),
+              query,
+              'Provider not supported',
+              TOOL_NAMES.GITHUB_CLONE_REPO
+            );
+          }
+
+          const result = await cloneRepo(
             query,
-            'Provider not supported',
-            TOOL_NAMES.GITHUB_CLONE_REPO
+            authInfo,
+            providerContext.token
           );
-        }
 
-        const result = await cloneRepo(query, authInfo, providerContext.token);
+          const resultData: Record<string, unknown> = {
+            localPath: result.localPath,
+            ...(result.cached ? { cached: true } : {}),
+            ...(query.branch !== result.branch
+              ? { resolvedBranch: result.branch }
+              : {}),
+          };
 
-        const resultData: Record<string, unknown> = {
-          localPath: result.localPath,
-          ...(result.cached ? { cached: true } : {}),
-          ...(query.branch !== result.branch
-            ? { resolvedBranch: result.branch }
-            : {}),
-        };
+          const baseHints = result.sparse_path
+            ? [...SPARSE_CLONE_HINTS]
+            : [...FULL_CLONE_HINTS];
 
-        const baseHints = result.sparse_path
-          ? [...SPARSE_CLONE_HINTS]
-          : [...FULL_CLONE_HINTS];
+          if (result.cached) {
+            baseHints.unshift(CACHE_HIT_HINT);
+          }
 
-        if (result.cached) {
-          baseHints.unshift(CACHE_HIT_HINT);
-        }
-
-        return createSuccessResult(
-          query,
-          resultData,
-          true, // always hasResults on success
-          TOOL_NAMES.GITHUB_CLONE_REPO,
-          { extraHints: baseHints }
-        );
-      } catch (error) {
-        return handleCatchError(
-          error,
-          query,
-          `Clone failed for ${query.owner}/${query.repo}`,
-          TOOL_NAMES.GITHUB_CLONE_REPO
-        );
-      }
-    },
+          return createSuccessResult(
+            query,
+            resultData,
+            true,
+            TOOL_NAMES.GITHUB_CLONE_REPO,
+            { extraHints: baseHints }
+          );
+        },
+      }),
     {
       toolName: TOOL_NAMES.GITHUB_CLONE_REPO,
       keysPriority: ['resolvedBranch', 'localPath', 'cached', 'error'],

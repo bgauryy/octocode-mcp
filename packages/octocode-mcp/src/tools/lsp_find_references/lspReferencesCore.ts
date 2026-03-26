@@ -199,12 +199,9 @@ export async function findReferencesWithLSP(
     const paginatedRaw = filteredLocations.slice(startIndex, endIndex);
 
     const contextLines = query.contextLines ?? 2;
-    const paginatedReferences: ReferenceLocation[] = [];
-
-    for (const raw of paginatedRaw) {
-      const enhanced = await enhanceReferenceLocation(raw, contextLines);
-      paginatedReferences.push(enhanced);
-    }
+    const paginatedReferences = await Promise.all(
+      paginatedRaw.map(raw => enhanceReferenceLocation(raw, contextLines))
+    );
 
     const uniqueFiles = new Set(filteredLocations.map(ref => ref.uri));
     const hasMultipleFiles = uniqueFiles.size > 1;

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { PILLAR_CATEGORIES, SEVERITY_ORDER } from '../types/index.js';
+import { isTestFile } from '../common/utils.js';
 
 import type { ReportAnalysisSummary } from './analysis.js';
 import type {
@@ -289,6 +290,9 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
     fileInventory,
     hotFiles,
     reportAnalysis,
+    includeTests: Boolean(
+      (report.options as { includeTests?: boolean } | undefined)?.includeTests
+    ),
   });
 
   renderHealthScores(lines, pillarHealth, activeFeatures);
@@ -425,7 +429,30 @@ export interface QualityAspectContext {
   fileInventory?: FileEntry[];
   hotFiles?: HotFile[];
   reportAnalysis?: ReportAnalysisSummary | null;
+  includeTests?: boolean;
+  includeGenerated?: boolean;
 }
+
+const SEVERITY_PRESSURE_WEIGHT: Record<Finding['severity'], number> = {
+  critical: 1.0,
+  high: 0.75,
+  medium: 0.45,
+  low: 0.2,
+  info: 0.05,
+};
+
+const CATEGORY_PRESSURE_WEIGHT: Record<string, number> = {
+  'dependency-critical-path': 0.45,
+  'broker-module': 0.55,
+  'bridge-module': 0.55,
+  'distance-from-main-sequence': 0.6,
+  'over-abstraction': 0.65,
+  'concrete-dependency': 0.65,
+  'move-to-caller': 0.35,
+  'similar-function-body': 0.55,
+  'dead-export': 0.65,
+  'semantic-dead-export': 0.6,
+};
 
 function clampScore(score: number): number {
   return Math.max(0, Math.min(100, Math.round(score)));
@@ -449,6 +476,45 @@ function confidenceFromSample(sampleSize: number): 'high' | 'medium' | 'low' {
 function average(values: number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((acc, value) => acc + value, 0) / values.length;
+}
+
+function normalizeScanPath(filePath: string): string {
+  return filePath.replace(/\\/g, '/');
+}
+
+function isGeneratedLikePath(filePath: string): boolean {
+  const normalized = normalizeScanPath(filePath).toLowerCase();
+  return (
+    /(?:^|\/)(?:dist|build|coverage|out|vendor|vendors|generated|gen|\.cache)(?:\/|$)/.test(
+      normalized
+    ) ||
+    /\.min\.(?:js|jsx|mjs|cjs|css)$/i.test(normalized) ||
+    /\.bundle\./i.test(normalized)
+  );
+}
+
+function shouldIncludeQualityPath(
+  filePath: string,
+  opts: { includeTests: boolean; includeGenerated: boolean }
+): boolean {
+  const normalized = normalizeScanPath(filePath);
+  if (!opts.includeTests && isTestFile(normalized)) return false;
+  if (!opts.includeGenerated && isGeneratedLikePath(normalized)) return false;
+  return true;
+}
+
+function findingTouchesIncludedPath(
+  finding: Finding,
+  opts: { includeTests: boolean; includeGenerated: boolean }
+): boolean {
+  const referenced = new Set<string>();
+  if (finding.file) referenced.add(finding.file);
+  for (const file of finding.files || []) referenced.add(file);
+  if (referenced.size === 0) return true;
+  for (const file of referenced) {
+    if (shouldIncludeQualityPath(file, opts)) return true;
+  }
+  return false;
 }
 
 function findingTouchesAnyFile(finding: Finding, files: Set<string>): boolean {
@@ -477,52 +543,118 @@ function fileUniverse(
   return files;
 }
 
+function weightedFindingPressure(
+  findings: Finding[],
+  totalFiles: number,
+  options: { applyCategoryWeight?: boolean } = {}
+): number {
+  if (findings.length === 0) return 0;
+  const weightedCount = findings.reduce((sum, finding) => {
+    const severityWeight = SEVERITY_PRESSURE_WEIGHT[finding.severity] ?? 0.2;
+    const categoryWeight = options.applyCategoryWeight
+      ? (CATEGORY_PRESSURE_WEIGHT[finding.category] ?? 1)
+      : 1;
+    return sum + severityWeight * categoryWeight;
+  }, 0);
+  return weightedCount / Math.max(1, totalFiles);
+}
+
+function stripSharedPathPrefix(filePaths: string[]): string[] {
+  if (filePaths.length === 0) return [];
+  const segments = filePaths.map(file =>
+    normalizeScanPath(file).split('/').filter(Boolean)
+  );
+  let prefixLen = 0;
+  while (true) {
+    const token = segments[0][prefixLen];
+    if (!token) break;
+    if (segments.every(parts => parts[prefixLen] === token)) {
+      prefixLen += 1;
+      continue;
+    }
+    break;
+  }
+
+  return segments.map(parts => {
+    const trimmed = parts.slice(prefixLen);
+    if (trimmed.length > 0) return trimmed.join('/');
+    return parts.join('/');
+  });
+}
+
 export function computeQualityAspectRatings(
   findings: Finding[],
   context: QualityAspectContext = {}
 ): QualityRatingSummary {
-  const fileInventory = context.fileInventory || [];
-  const hotFiles = context.hotFiles || [];
+  const includeTests = context.includeTests ?? false;
+  const includeGenerated = context.includeGenerated ?? false;
+  const filteringOptions = { includeTests, includeGenerated };
+  const fileInventory = (context.fileInventory || []).filter(entry =>
+    shouldIncludeQualityPath(entry.file, filteringOptions)
+  );
+  const hotFiles = (context.hotFiles || []).filter(entry =>
+    shouldIncludeQualityPath(entry.file, filteringOptions)
+  );
   const reportAnalysis = context.reportAnalysis || null;
+  const filteredFindings = findings.filter(finding =>
+    findingTouchesIncludedPath(finding, filteringOptions)
+  );
 
-  const files = fileUniverse(findings, fileInventory);
+  const files = fileUniverse(filteredFindings, fileInventory);
   const totalFiles = Math.max(1, files.size);
   const functions = fileInventory.flatMap(entry => entry.functions || []);
   const totalFunctions = Math.max(1, functions.length);
-  const byCategory = categoryBreakdown(findings);
 
   const findingsByPillar = {
-    architecture: findings.filter(
+    architecture: filteredFindings.filter(
       finding => (CATEGORY_PILLAR_MAP[finding.category] || 'unmapped') === 'architecture'
     ),
-    codeQuality: findings.filter(
+    codeQuality: filteredFindings.filter(
       finding => (CATEGORY_PILLAR_MAP[finding.category] || 'unmapped') === 'code-quality'
     ),
-    deadCode: findings.filter(
+    deadCode: filteredFindings.filter(
       finding => (CATEGORY_PILLAR_MAP[finding.category] || 'unmapped') === 'dead-code'
     ),
-    testQuality: findings.filter(
+    testQuality: filteredFindings.filter(
       finding => (CATEGORY_PILLAR_MAP[finding.category] || 'unmapped') === 'test-quality'
     ),
   };
 
-  const severeFindings = findings.filter(
+  const severeFindings = filteredFindings.filter(
     finding => finding.severity === 'critical' || finding.severity === 'high'
   );
 
   const aspects: QualityAspectRating[] = [];
 
-  const architectureSevere = findingsByPillar.architecture.filter(
+  const architectureSevereFindings = findingsByPillar.architecture.filter(
     finding => finding.severity === 'critical' || finding.severity === 'high'
-  ).length;
-  const cycleFindings =
-    (byCategory['dependency-cycle'] || 0) + (byCategory['cycle-cluster'] || 0);
+  );
+  const architectureDensity = weightedFindingPressure(
+    findingsByPillar.architecture,
+    totalFiles,
+    { applyCategoryWeight: true }
+  );
+  const architectureSevereDensity = weightedFindingPressure(
+    architectureSevereFindings,
+    totalFiles,
+    { applyCategoryWeight: true }
+  );
+  const cycleDensity = weightedFindingPressure(
+    findingsByPillar.architecture.filter(
+      finding =>
+        finding.category === 'dependency-cycle'
+        || finding.category === 'cycle-cluster'
+    ),
+    totalFiles,
+    { applyCategoryWeight: true }
+  );
   const hotspotSample = [...hotFiles]
     .sort((a, b) => b.riskScore - a.riskScore)
     .slice(0, 8);
-  const hotspotPressure = average(
-    hotspotSample.map(entry => entry.riskScore)
-  ) / 120;
+  const hotspotPressure = Math.min(
+    1,
+    average(hotspotSample.map(entry => Math.max(0, entry.riskScore))) / 100
+  );
   const signalConfidenceBoost = reportAnalysis?.strongestGraphSignal?.confidence === 'high'
     ? 3
     : reportAnalysis?.strongestGraphSignal?.confidence === 'medium'
@@ -530,10 +662,10 @@ export function computeQualityAspectRatings(
       : 0;
   const architectureScore = clampScore(
     100
-    - softPenalty(findingsByPillar.architecture.length / totalFiles, 28, 1.6)
-    - softPenalty(architectureSevere / totalFiles, 26, 2.1)
-    - softPenalty(cycleFindings / totalFiles, 20, 2.4)
-    - softPenalty(hotspotPressure, 18, 1.4)
+    - softPenalty(architectureDensity, 24, 1.35)
+    - softPenalty(architectureSevereDensity, 22, 1.9)
+    - softPenalty(cycleDensity, 16, 2.2)
+    - softPenalty(hotspotPressure, 12, 1.3)
     + signalConfidenceBoost
   );
   aspects.push({
@@ -548,13 +680,13 @@ export function computeQualityAspectRatings(
     signals: [
       {
         label: 'Architecture findings / file',
-        value: (findingsByPillar.architecture.length / totalFiles).toFixed(2),
+        value: architectureDensity.toFixed(2),
         effect: findingsByPillar.architecture.length > 0 ? 'negative' : 'neutral',
       },
       {
         label: 'Severe architecture findings',
-        value: String(architectureSevere),
-        effect: architectureSevere > 0 ? 'negative' : 'neutral',
+        value: architectureSevereDensity.toFixed(2),
+        effect: architectureSevereFindings.length > 0 ? 'negative' : 'neutral',
       },
       {
         label: 'Hotspot pressure (avg risk top files)',
@@ -565,15 +697,16 @@ export function computeQualityAspectRatings(
   });
 
   const filePaths = [...files];
-  const depthValues = filePaths.map(file =>
-    file.replace(/\\/g, '/').split('/').filter(Boolean).length
+  const topologyPaths = stripSharedPathPrefix(filePaths);
+  const depthValues = topologyPaths.map(file =>
+    normalizeScanPath(file).split('/').filter(Boolean).length
   );
   const avgDepth = average(depthValues);
   const topLevelCounts = new Map<string, number>();
   const dirSegments = new Set<string>();
   const vagueDirPattern = /^(util|utils|common|shared|misc|helper|helpers|tmp|temp)$/i;
-  for (const file of filePaths) {
-    const normalized = file.replace(/\\/g, '/');
+  for (const file of topologyPaths) {
+    const normalized = normalizeScanPath(file);
     const parts = normalized.split('/').filter(Boolean);
     const top = parts[0] || '.';
     topLevelCounts.set(top, (topLevelCounts.get(top) || 0) + 1);
@@ -683,7 +816,7 @@ export function computeQualityAspectRatings(
     sharedPathPattern.test(entry.file.replace(/\\/g, '/'))
   );
   const sharedFileSet = new Set(sharedFiles.map(entry => entry.file));
-  const sharedFindings = findings.filter(finding =>
+  const sharedFindings = filteredFindings.filter(finding =>
     findingTouchesAnyFile(finding, sharedFileSet)
   );
   const sharedSevere = sharedFindings.filter(
@@ -752,18 +885,27 @@ export function computeQualityAspectRatings(
     'fake-timer-no-restore',
     'missing-mock-restoration',
   ]);
-  const testDebtFindings = findings.filter(finding =>
+  const testDebtFindings = filteredFindings.filter(finding =>
     testDebtCategories.has(finding.category)
   );
   const avgCognitiveComplexity = average(
     functions.map(fn => fn.cognitiveComplexity || fn.complexity || 0)
   );
+  const maintainabilityDensity = weightedFindingPressure(
+    maintainabilityFindings,
+    totalFiles,
+    { applyCategoryWeight: true }
+  );
+  const severeDensity = weightedFindingPressure(severeFindings, totalFiles);
+  const testDebtDensity = weightedFindingPressure(testDebtFindings, totalFiles, {
+    applyCategoryWeight: true,
+  });
   const maintainabilityScore = clampScore(
     100
-    - softPenalty(maintainabilityFindings.length / totalFiles, 24, 1.5)
-    - softPenalty(severeFindings.length / totalFiles, 24, 2.0)
+    - softPenalty(maintainabilityDensity, 20, 1.3)
+    - softPenalty(severeDensity, 22, 1.8)
     - softPenalty(Math.max(0, (avgCognitiveComplexity - 8) / 12), 22, 1.4)
-    - softPenalty(testDebtFindings.length / totalFiles, 16, 1.7)
+    - softPenalty(testDebtDensity, 12, 1.5)
   );
   aspects.push({
     aspect: 'maintainability-evolvability',
@@ -777,7 +919,7 @@ export function computeQualityAspectRatings(
     signals: [
       {
         label: 'Maintainability findings / file',
-        value: (maintainabilityFindings.length / totalFiles).toFixed(2),
+        value: maintainabilityDensity.toFixed(2),
         effect: maintainabilityFindings.length > 0 ? 'negative' : 'neutral',
       },
       {

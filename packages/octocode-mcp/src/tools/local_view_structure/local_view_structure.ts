@@ -200,18 +200,18 @@ async function viewStructureRecursive(
 
   const walkStats: WalkStats = { skipped: 0 };
 
-  await walkDirectory(
+  await walkDirectory({
     basePath,
-    basePath,
-    0,
+    currentPath: basePath,
+    depth: 0,
     maxDepth,
     entries,
     maxEntries,
-    query.hidden,
+    showHidden: query.hidden,
     showModified,
-    walkStats,
-    query.details ?? false
-  );
+    stats: walkStats,
+    showDetails: query.details ?? false,
+  });
 
   let filteredEntries = applyEntryFilters(entries, query);
 

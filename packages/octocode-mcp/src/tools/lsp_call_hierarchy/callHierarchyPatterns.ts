@@ -27,6 +27,27 @@ import {
 } from './callHierarchyHelpers.js';
 import { TOOL_NAME } from './constants.js';
 
+interface IncomingPatternSearchOptions {
+  query: LSPCallHierarchyQuery;
+  targetFilePath: string;
+  targetItem: CallHierarchyItem;
+  depth: number;
+  callsPerPage: number;
+  page: number;
+  contextLines: number;
+}
+
+interface OutgoingPatternSearchOptions {
+  query: LSPCallHierarchyQuery;
+  filePath: string;
+  content: string;
+  targetItem: CallHierarchyItem;
+  functionLine: number;
+  depth: number;
+  callsPerPage: number;
+  page: number;
+}
+
 /**
  * Fallback: Use pattern matching when LSP is unavailable
  */
@@ -47,27 +68,26 @@ export async function callHierarchyWithPatternMatching(
   );
 
   if (query.direction === 'incoming') {
-    return await findIncomingCallsWithPatternMatching(
+    return await findIncomingCallsWithPatternMatching({
       query,
-      absolutePath,
+      targetFilePath: absolutePath,
       targetItem,
-      query.depth ?? 1,
-      query.callsPerPage ?? 15,
-      query.page ?? 1,
-      query.contextLines ?? 2
-    );
+      depth: query.depth ?? 1,
+      callsPerPage: query.callsPerPage ?? 15,
+      page: query.page ?? 1,
+      contextLines: query.contextLines ?? 2,
+    });
   } else {
-    return await findOutgoingCallsWithPatternMatching(
+    return await findOutgoingCallsWithPatternMatching({
       query,
-      absolutePath,
+      filePath: absolutePath,
       content,
       targetItem,
-      foundAtLine,
-      query.depth ?? 1,
-      query.callsPerPage ?? 15,
-      query.page ?? 1,
-      query.contextLines ?? 2
-    );
+      functionLine: foundAtLine,
+      depth: query.depth ?? 1,
+      callsPerPage: query.callsPerPage ?? 15,
+      page: query.page ?? 1,
+    });
   }
 }
 
@@ -75,14 +95,18 @@ export async function callHierarchyWithPatternMatching(
  * Find incoming calls using grep/ripgrep (fallback)
  */
 async function findIncomingCallsWithPatternMatching(
-  query: LSPCallHierarchyQuery,
-  targetFilePath: string,
-  targetItem: CallHierarchyItem,
-  depth: number,
-  callsPerPage: number,
-  page: number,
-  contextLines: number
+  options: IncomingPatternSearchOptions
 ): Promise<CallHierarchyResult> {
+  const {
+    query,
+    targetFilePath,
+    targetItem,
+    depth,
+    callsPerPage,
+    page,
+    contextLines,
+  } = options;
+
   const workspaceRoot = resolveWorkspaceRoot();
   const symbolName = query.symbolName;
 
@@ -196,16 +220,19 @@ async function findIncomingCallsWithPatternMatching(
  * Find outgoing calls using pattern matching (fallback)
  */
 async function findOutgoingCallsWithPatternMatching(
-  query: LSPCallHierarchyQuery,
-  filePath: string,
-  content: string,
-  targetItem: CallHierarchyItem,
-  functionLine: number,
-  depth: number,
-  callsPerPage: number,
-  page: number,
-  _contextLines: number
+  options: OutgoingPatternSearchOptions
 ): Promise<CallHierarchyResult> {
+  const {
+    query,
+    filePath,
+    content,
+    targetItem,
+    functionLine,
+    depth,
+    callsPerPage,
+    page,
+  } = options;
+
   const lines = content.split(/\r?\n/);
 
   const functionBody = extractFunctionBody(lines, functionLine - 1);

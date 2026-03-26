@@ -8,6 +8,19 @@ export interface WalkStats {
   skipped: number;
 }
 
+export interface WalkDirectoryOptions {
+  basePath: string;
+  currentPath: string;
+  depth: number;
+  maxDepth: number;
+  entries: DirectoryEntry[];
+  maxEntries?: number;
+  showHidden?: boolean;
+  showModified?: boolean;
+  stats: WalkStats;
+  showDetails?: boolean;
+}
+
 /**
  * Format Unix file mode bits as rwx permission string (e.g. "rw-r--r--")
  */
@@ -20,17 +33,21 @@ function formatPermissions(mode: number): string {
 }
 
 export async function walkDirectory(
-  basePath: string,
-  currentPath: string,
-  depth: number,
-  maxDepth: number,
-  entries: DirectoryEntry[],
-  maxEntries: number = 10000,
-  showHidden: boolean = false,
-  showModified: boolean = false,
-  stats: WalkStats,
-  showDetails: boolean = false
+  options: WalkDirectoryOptions
 ): Promise<void> {
+  const {
+    basePath,
+    currentPath,
+    depth,
+    maxDepth,
+    entries,
+    stats,
+    maxEntries = 10000,
+    showHidden = false,
+    showModified = false,
+    showDetails = false,
+  } = options;
+
   if (depth >= maxDepth) return;
   if (entries.length >= maxEntries) return;
 
@@ -67,18 +84,18 @@ export async function walkDirectory(
         entries.push(entry);
 
         if (type === 'directory') {
-          await walkDirectory(
+          await walkDirectory({
             basePath,
-            fullPath,
-            depth + 1,
+            currentPath: fullPath,
+            depth: depth + 1,
             maxDepth,
             entries,
             maxEntries,
             showHidden,
             showModified,
             stats,
-            showDetails
-          );
+            showDetails,
+          });
         }
       } catch {
         stats.skipped++;
