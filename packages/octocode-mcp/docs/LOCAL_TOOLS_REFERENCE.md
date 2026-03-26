@@ -106,7 +106,7 @@ These are **required** on every query for all local and LSP tools. They help tra
 
 All local and LSP tools support the same size-aware continuation contract.
 
-- Query-level pagination: use `charOffset` and `charLength` on a query. For `localGetFileContent`, these fields page file content. For search/list/LSP tools, they page the structured result payload after any native tool pagination is applied.
+- Query-level pagination: use `charOffset` and `charLength` on a query. You can also pass only `charOffset`; Octocode will use the configured default char budget (`output.pagination.defaultCharLength`). For `localGetFileContent`, these fields page file content. For search/list/LSP tools, they page the structured result payload after any native tool pagination is applied.
 - Bulk-response pagination: use top-level `responseCharOffset` and `responseCharLength` to continue oversized multi-query `results[]` payloads.
 - Response fields:
   - `pagination`: tool-native pagination metadata
@@ -301,7 +301,7 @@ pagination: { currentPage: 1, totalPages: 1, ... }
 - `details`: Include file metadata (default: true)
 - `filesPerPage`: Results per page (default: 20, max: 50)
 - `filePageNumber`: Page number (default: 1)
-- `charOffset`/`charLength`: Character-based pagination
+- `charOffset`/`charLength`: Character-based pagination (`charOffset` without `charLength` uses the default char budget)
 - `showFileLastModified`: Show modification timestamps (default: true)
 
 ---

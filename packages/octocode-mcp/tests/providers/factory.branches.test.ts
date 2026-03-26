@@ -192,6 +192,33 @@ describe('Provider Factory - Branch Coverage', () => {
   });
 
   describe('capacity eviction (lines 68-84, 184-186)', () => {
+    it('should evict one cached provider before inserting at exact capacity', () => {
+      let fakeTime = 1_000_000;
+      Date.now = () => fakeTime;
+
+      const oldestConfig: ProviderConfig = {
+        type: 'github',
+        baseUrl: 'https://capacity-oldest.github.com',
+      };
+      const oldestProvider = getProvider('github', oldestConfig);
+
+      for (let i = 1; i < 20; i++) {
+        getProvider('github', {
+          type: 'github',
+          baseUrl: `https://capacity-${i}.github.com`,
+        });
+        fakeTime += 10;
+      }
+
+      getProvider('github', {
+        type: 'github',
+        baseUrl: 'https://capacity-overflow.github.com',
+      });
+
+      const oldestProviderAfterOverflow = getProvider('github', oldestConfig);
+      expect(oldestProviderAfterOverflow).not.toBe(oldestProvider);
+    });
+
     it('should trigger eviction when cache reaches MAX_PROVIDER_INSTANCES', () => {
       let fakeTime = 1_000_000;
       Date.now = () => fakeTime;

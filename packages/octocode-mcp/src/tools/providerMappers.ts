@@ -36,27 +36,39 @@ export function buildPaginationHints(
   label: string
 ): string[] {
   const hints: string[] = [];
-  const perPage = pagination.entriesPerPage || pagination.perPage || 10;
-  const totalMatches = pagination.totalMatches || 0;
-  const startItem = (pagination.currentPage - 1) * perPage + 1;
-  const endItem = Math.min(pagination.currentPage * perPage, totalMatches);
+  const perPage = Math.max(
+    pagination.entriesPerPage || pagination.perPage || 10,
+    1
+  );
+  const totalMatches = Math.max(pagination.totalMatches || 0, 0);
+  const safeTotalPages = Math.max(pagination.totalPages || 1, 1);
+  const safeCurrentPage = Math.min(
+    Math.max(pagination.currentPage || 1, 1),
+    safeTotalPages
+  );
+  const startItem =
+    totalMatches === 0 ? 0 : (safeCurrentPage - 1) * perPage + 1;
+  const endItem =
+    totalMatches === 0 ? 0 : Math.min(safeCurrentPage * perPage, totalMatches);
 
   hints.push(
-    `Page ${pagination.currentPage}/${pagination.totalPages} (showing ${startItem}-${endItem} of ${totalMatches} ${label})`
+    totalMatches === 0
+      ? `Page ${safeCurrentPage}/${safeTotalPages} (showing 0 of 0 ${label})`
+      : `Page ${safeCurrentPage}/${safeTotalPages} (showing ${startItem}-${endItem} of ${totalMatches} ${label})`
   );
 
-  if (pagination.hasMore) {
-    hints.push(`Next: page=${pagination.currentPage + 1}`);
+  if (pagination.hasMore && safeCurrentPage < safeTotalPages) {
+    hints.push(`Next: page=${safeCurrentPage + 1}`);
   }
-  if (pagination.currentPage > 1) {
-    hints.push(`Previous: page=${pagination.currentPage - 1}`);
+  if (safeCurrentPage > 1) {
+    hints.push(`Previous: page=${safeCurrentPage - 1}`);
   }
   if (!pagination.hasMore) {
     hints.push('Final page');
   }
-  if (pagination.totalPages > 2) {
+  if (safeTotalPages > 2) {
     hints.push(
-      `Jump to: page=1 (first) or page=${pagination.totalPages} (last)`
+      `Jump to: page=1 (first) or page=${safeTotalPages} (last)`
     );
   }
 

@@ -107,7 +107,7 @@ Use this to confirm broad feature coverage during reviews:
 - **Test quality**: brittle tests, mock-heavy tests, missing cleanup/assertions
 - **Semantic** (`--semantic`): type-hierarchy and usage-graph findings
 
-For exact category names in your CLI version, run `run.js --help` and extract from `findings.json`. See [CLI reference](./cli-reference.md).
+For exact category names in your CLI version, run `node <SKILL_DIR>/scripts/run.js --help` and extract from `findings.json`. See [CLI reference](./cli-reference.md).
 
 ---
 

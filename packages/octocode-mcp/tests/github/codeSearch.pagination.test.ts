@@ -352,7 +352,7 @@ describe('Code Search - Pagination', () => {
 
       expect(
         ('data' in result ? result.data : undefined)?.pagination?.totalPages
-      ).toBe(0);
+      ).toBe(1);
       expect(
         ('data' in result ? result.data : undefined)?.pagination?.totalMatches
       ).toBe(0);

@@ -268,6 +268,77 @@ describe('GitHub Client Branch Coverage', () => {
   });
 
   describe('purgeExpiredInstances over capacity (lines 79-89)', () => {
+    it('should evict one cached auth entry before inserting at exact capacity', async () => {
+      const originalNow = Date.now;
+      let fakeTime = 1_000_000;
+      Date.now = () => fakeTime;
+
+      try {
+        const oldestAuth = {
+          token: 'capacity-token-0',
+          clientId: 'client-0',
+          scopes: [] as string[],
+        };
+
+        const oldestInstance = await getOctokit(oldestAuth);
+        fakeTime += 10;
+
+        for (let i = 1; i < 50; i++) {
+          await getOctokit({
+            token: `capacity-token-${i}`,
+            clientId: `client-${i}`,
+            scopes: [],
+          });
+          fakeTime += 10;
+        }
+
+        await getOctokit({
+          token: 'capacity-token-overflow',
+          clientId: 'client-overflow',
+          scopes: [],
+        });
+
+        const oldestInstanceAfterOverflow = await getOctokit(oldestAuth);
+        expect(oldestInstanceAfterOverflow).not.toBe(oldestInstance);
+      } finally {
+        Date.now = originalNow;
+      }
+    });
+
+    it('should evict one cached auth entry before creating a DEFAULT instance at capacity', async () => {
+      const originalNow = Date.now;
+      let fakeTime = 1_000_000;
+      Date.now = () => fakeTime;
+
+      try {
+        const oldestAuth = {
+          token: 'default-capacity-token-0',
+          clientId: 'default-client-0',
+          scopes: [] as string[],
+        };
+
+        const oldestInstance = await getOctokit(oldestAuth);
+        fakeTime += 10;
+
+        for (let i = 1; i < 50; i++) {
+          await getOctokit({
+            token: `default-capacity-token-${i}`,
+            clientId: `default-client-${i}`,
+            scopes: [],
+          });
+          fakeTime += 10;
+        }
+
+        const defaultInstance = await getOctokit();
+        expect(defaultInstance).toBeDefined();
+
+        const oldestInstanceAfterDefaultInsert = await getOctokit(oldestAuth);
+        expect(oldestInstanceAfterDefaultInsert).not.toBe(oldestInstance);
+      } finally {
+        Date.now = originalNow;
+      }
+    });
+
     it('should evict oldest non-DEFAULT entries when over MAX_INSTANCES', async () => {
       const originalNow = Date.now;
       let fakeTime = 1_000_000;

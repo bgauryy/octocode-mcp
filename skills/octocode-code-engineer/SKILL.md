@@ -55,13 +55,13 @@ Before starting, classify the task. This controls how many workflow steps to run
 
 | Script | Purpose |
 |--------|---------|
-| `<SKILL_DIR>/scripts/run.js` | **Full scan (auto-installs deps on first run)** — `--scope`, `--graph`, `--flow`, `--semantic`, `--features`; use `--help` for all flags |
+| `<SKILL_DIR>/scripts/run.js` | **Full scan (prebuilt runtime entrypoint)** — `--scope`, `--graph`, `--flow`, `--semantic`, `--features`; use `--help` for all flags |
 | `<SKILL_DIR>/scripts/ast/search.js` | Structural search on **live source** files; presets (`--list-presets`), `-p` pattern / `-k` kind / `--rule` JSON / `--preset` modes |
 | `<SKILL_DIR>/scripts/ast/tree-search.js` | Search generated `ast-trees.txt` from scan; `-k` kind (PascalCase or snake_case), `-p` regex, `--file`/`--section` filters, `-C` context, `--json` |
 
 `<SKILL_DIR>` = the directory containing this `SKILL.md` file. Resolve it from the skill's absolute path before running any script.
 
-> **Dependencies**: `run.js` auto-installs `node_modules` on first use (requires `npm` on PATH). The AST search scripts (`ast/search.js`, `ast/tree-search.js`) need deps already installed — run the full scan once first, or run `npm install` in `<SKILL_DIR>` manually.
+> **Dependencies**: this skill is shipped prebuilt; `run.js` does not install dependencies at runtime. Ensure the packaged environment already includes required dependencies.
 
 **Octocode MCP tools** — search, read, semantic proof
 

@@ -60,6 +60,10 @@ function isProviderCacheValid(entry: CachedProvider): boolean {
  * entries if still over MAX_PROVIDER_INSTANCES.
  */
 function evictProviderInstances(): void {
+  evictProviderInstancesWithLimit(MAX_PROVIDER_INSTANCES);
+}
+
+function evictProviderInstancesWithLimit(targetSize: number): void {
   // 1. Remove expired entries
   for (const [key, entry] of instanceCache.entries()) {
     if (!isProviderCacheValid(entry)) {
@@ -68,16 +72,21 @@ function evictProviderInstances(): void {
   }
 
   // 2. If still over capacity, evict least-recently-used
-  if (instanceCache.size > MAX_PROVIDER_INSTANCES) {
+  if (instanceCache.size > targetSize) {
     const sorted = [...instanceCache.entries()].sort(
       (a, b) => a[1].lastAccessedAt - b[1].lastAccessedAt
     );
-    const excess = instanceCache.size - MAX_PROVIDER_INSTANCES;
+    const excess = instanceCache.size - targetSize;
     for (let i = 0; i < excess && i < sorted.length; i++) {
       const entry = sorted[i];
       if (entry) instanceCache.delete(entry[0]);
     }
   }
+}
+
+function ensureProviderCapacityForInsertion(): void {
+  // Keep one free slot before insertion to avoid MAX+1 growth.
+  evictProviderInstancesWithLimit(Math.max(MAX_PROVIDER_INSTANCES - 1, 0));
 }
 
 /**
@@ -161,10 +170,8 @@ export function getProvider(
     instanceCache.delete(cacheKey);
   }
 
-  // Evict expired and excess entries before adding a new one
-  if (instanceCache.size >= MAX_PROVIDER_INSTANCES) {
-    evictProviderInstances();
-  }
+  // Evict expired/LRU entries before insertion to keep cache bounded.
+  ensureProviderCapacityForInsertion();
 
   const ProviderClass = providerRegistry.get(type);
   if (!ProviderClass) {

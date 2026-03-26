@@ -177,7 +177,10 @@ async function searchGitHubPullRequestsAPIInternal(
     const formattedPRs = transformedPRs.map(formatPRForResponse);
 
     const totalMatches = Math.min(searchResult.data.total_count, 1000);
-    const totalPages = Math.min(Math.ceil(totalMatches / perPage), 10);
+    const totalPages = Math.max(
+      1,
+      Math.min(Math.ceil(totalMatches / perPage), 10)
+    );
     const clampedPage = Math.min(currentPage, Math.max(1, totalPages));
     const hasMore = clampedPage < totalPages;
 
