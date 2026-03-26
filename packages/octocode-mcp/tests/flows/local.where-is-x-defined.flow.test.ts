@@ -16,6 +16,8 @@ import {
 import { expectHasResultsData, getSingleResult } from './assertions.js';
 import {
   configureLocalResearchFlowRuntime,
+  mockSafeExec,
+  mockSpawn,
   resetLocalResearchFlowRuntime,
 } from './runtime.mocks.js';
 
@@ -172,6 +174,87 @@ describe(FLOW_CATALOG.localWhereIsXDefined.id, () => {
     expect(gotoResult.data).toMatchObject({
       errorType: 'symbol_not_found',
     });
+  });
+
+  it('blocks path traversal before executing shell commands', async () => {
+    const invalidSearchResponse = await harness.callTool('localSearchCode', {
+      queries: [
+        {
+          id: 'search_outside_workspace',
+          pattern: 'computeScore',
+          path: '/etc',
+          include: ['*.ts'],
+          researchGoal: 'Attempt an invalid traversal search',
+          reasoning: 'Security flow coverage: invalid path must fail closed',
+        },
+      ],
+    });
+
+    const invalidResult = getSingleResult(
+      LocalSearchCodeOutputSchema,
+      invalidSearchResponse
+    );
+
+    expect(invalidResult.status).toBe('error');
+    expect(mockSafeExec).not.toHaveBeenCalled();
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it('runs the where-is-x-defined chain without unnecessary shell spawns', async () => {
+    const searchResponse = await harness.callTool('localSearchCode', {
+      queries: [
+        {
+          id: 'search_compute_score_efficiency',
+          pattern: 'export function computeScore',
+          path: fixtureSourcePath,
+          include: ['*.ts'],
+          researchGoal: 'Find the computeScore definition',
+          reasoning: 'Efficiency flow coverage before downstream handoff',
+        },
+      ],
+    });
+
+    const searchResult = expectHasResultsData(
+      LocalSearchCodeOutputSchema,
+      LocalSearchCodeDataSchema,
+      searchResponse
+    );
+    const definitionFile = searchResult.files?.[0];
+    const definitionMatch = definitionFile?.matches?.[0];
+
+    const gotoResponse = await harness.callTool('lspGotoDefinition', {
+      queries: [
+        {
+          id: 'goto_compute_score_efficiency',
+          uri: definitionFile!.path,
+          symbolName: 'computeScore',
+          lineHint: definitionMatch!.line,
+          researchGoal: 'Resolve definition for efficiency contract',
+          reasoning: 'Only localSearchCode should require rg command execution',
+        },
+      ],
+    });
+
+    const gotoResult = expectHasResultsData(
+      LspGotoDefinitionOutputSchema,
+      LspGotoDefinitionDataSchema,
+      gotoResponse
+    );
+
+    await harness.callTool('localGetFileContent', {
+      queries: [
+        {
+          id: 'fetch_compute_score_efficiency',
+          path: gotoResult.locations![0]!.uri,
+          matchString: 'export function computeScore',
+          researchGoal: 'Inspect resolved definition',
+          reasoning: 'Complete the flow while validating command efficiency',
+        },
+      ],
+    });
+
+    expect(mockSafeExec).toHaveBeenCalledTimes(1);
+    expect(mockSpawn).not.toHaveBeenCalled();
   });
 
   it('continues local where-is-x-defined across bulk response pagination', async () => {

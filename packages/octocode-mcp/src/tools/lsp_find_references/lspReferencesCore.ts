@@ -184,7 +184,8 @@ export async function findReferencesWithLSP(
           hasMore: false,
           resultsPerPage: referencesPerPage,
         },
-        hasMultipleFiles: new Set(filteredLocations.map(ref => ref.uri)).size > 1,
+        hasMultipleFiles:
+          new Set(filteredLocations.map(ref => ref.uri)).size > 1,
         hints: [
           ...getHints(TOOL_NAME, 'empty'),
           `Requested page ${page} is outside available range (1-${totalPages}).`,

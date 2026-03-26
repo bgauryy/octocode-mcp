@@ -177,6 +177,61 @@ describe(`${FLOW_CATALOG.localImpactAnalysis.id}.execution`, () => {
 
     expect(impactedFile.content).toContain('computeScore');
   });
+
+  it('blocks traversal paths before ripgrep execution', async () => {
+    const result = await searchContentRipgrep({
+      id: 'search_outside_workspace',
+      pattern: 'computeScore',
+      path: '/etc',
+      include: ['*.ts'],
+      smartCase: true,
+      lineNumbers: true,
+      matchContentLength: 120,
+      filesPerPage: 10,
+      filePageNumber: 1,
+      matchesPerPage: 10,
+      binaryFiles: 'without-match',
+      sort: 'path',
+      includeStats: false,
+      includeDistribution: false,
+      showFileLastModified: false,
+      researchGoal: 'Attempt invalid traversal for security coverage',
+      reasoning: 'Flow must fail closed before command execution',
+    });
+
+    expect(result.status).toBe('error');
+    expect(flowRuntime.safeExec).not.toHaveBeenCalled();
+    expect(flowRuntime.spawn).not.toHaveBeenCalled();
+  });
+
+  it('returns empty out-of-range reference pages with pagination guidance', async () => {
+    const outOfRange = await findReferences({
+      id: 'references_out_of_range',
+      uri: `${fixtureSourcePath}/score.ts`,
+      symbolName: 'computeScore',
+      lineHint: 10,
+      orderHint: 0,
+      includeDeclaration: false,
+      contextLines: 2,
+      referencesPerPage: 1,
+      page: 99,
+      researchGoal: 'Request an out-of-range page',
+      reasoning:
+        'Efficiency coverage: avoid downstream work when page is invalid',
+    });
+
+    expect(outOfRange.status).toBe('empty');
+
+    if (outOfRange.status === 'empty') {
+      expect(outOfRange.pagination?.currentPage).toBe(99);
+      expect(outOfRange.pagination?.totalPages).toBeGreaterThan(0);
+      expect(
+        outOfRange.hints?.some(hint => hint.includes('outside available range'))
+      ).toBe(true);
+    }
+
+    expect(flowRuntime.spawn).toHaveBeenCalledTimes(1);
+  });
 });
 
 function configureExecutionFlowRuntime(repoPath: string): void {

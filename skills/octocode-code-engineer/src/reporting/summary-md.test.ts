@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   categoryBreakdown,
   collectTagCloud,
+  computeFeatureScores,
   computeHealthScore,
   diverseTopRecommendations,
   diversifyFindings,
@@ -205,6 +206,18 @@ describe('computeHealthScore', () => {
     const score = computeHealthScore(findings, 3);
     expect(Number.isInteger(score)).toBe(true);
   });
+
+  it('never returns a perfect score when non-info findings exist in huge repos', () => {
+    const high = computeHealthScore([makeFinding({ severity: 'high' })], 10_000);
+    const medium = computeHealthScore(
+      [makeFinding({ severity: 'medium' })],
+      10_000
+    );
+    const low = computeHealthScore([makeFinding({ severity: 'low' })], 10_000);
+    expect(high).toBeLessThan(100);
+    expect(medium).toBeLessThan(100);
+    expect(low).toBeLessThan(100);
+  });
 });
 
 describe('collectTagCloud', () => {
@@ -254,6 +267,53 @@ describe('collectTagCloud', () => {
     ];
     const cloud = collectTagCloud(findings);
     expect(cloud).toEqual([{ tag: 'valid', count: 1 }]);
+  });
+});
+
+describe('computeFeatureScores', () => {
+  it('scores active categories and maps them to pillars', () => {
+    const rows = computeFeatureScores(
+      [
+        makeFinding({
+          id: 'sec',
+          category: 'hardcoded-secret',
+          severity: 'critical',
+          file: 'src/security.ts',
+        }),
+        makeFinding({
+          id: 'dead',
+          category: 'dead-export',
+          severity: 'low',
+          file: 'src/dead.ts',
+        }),
+      ],
+      100,
+      null
+    );
+    const security = rows.find(r => r.category === 'hardcoded-secret');
+    const dead = rows.find(r => r.category === 'dead-export');
+    expect(security).toBeDefined();
+    expect(security!.pillar).toBe('security');
+    expect(security!.score).toBeLessThan(100);
+    expect(dead).toBeDefined();
+    expect(dead!.pillar).toBe('dead-code');
+  });
+
+  it('respects active feature filters', () => {
+    const rows = computeFeatureScores(
+      [
+        makeFinding({
+          id: 'only',
+          category: 'dead-export',
+          severity: 'medium',
+          file: 'src/dead.ts',
+        }),
+      ],
+      10,
+      new Set(['dead-export'])
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].category).toBe('dead-export');
   });
 });
 
@@ -533,6 +593,20 @@ describe('generateSummaryMd', () => {
     });
     expect(md).toContain('## Health Scores');
     expect(md).toContain('**Overall**');
+  });
+
+  it('includes feature scores section with category rows', () => {
+    const md = generateSummaryMd({
+      dir: '/tmp/scan',
+      report: makeMinimalReport(),
+      outputFiles: { summary: 'summary.json' },
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('## Feature Scores');
+    expect(md).toContain('`cognitive-complexity`');
+    expect(md).toContain('`dead-export`');
   });
 
   it('includes features filter when activeFeatures is provided', () => {

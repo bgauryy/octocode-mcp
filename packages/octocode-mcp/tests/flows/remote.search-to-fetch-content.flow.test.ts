@@ -281,6 +281,146 @@ describe(FLOW_CATALOG.remoteSearchToFetchContent.id, () => {
   );
 
   it.each(providerFlows)(
+    'rejects dangerous payload keys before provider execution for %s provider',
+    async providerCase => {
+      setupActiveProvider(providerCase);
+      const result = await registerTools(mockServer.server);
+      expect(result.successCount).toBe(2);
+      expect(result.failedTools).toEqual([]);
+
+      const maliciousPayload = JSON.parse(`{
+        "queries": [
+          {
+            "id": "security_bad_payload_${providerCase.provider}",
+            "owner": "${providerCase.owner}",
+            "repo": "${providerCase.repo}",
+            "keywordsToSearch": ["computeScore"],
+            "path": "src",
+            "match": "file",
+            "researchGoal": "Attempt unsafe payload key injection",
+            "reasoning": "Security flow coverage"
+          }
+        ],
+        "__proto__": {
+          "polluted": true
+        }
+      }`) as Record<string, unknown>;
+
+      const response = await mockServer.callTool(
+        'githubSearchCode',
+        maliciousPayload
+      );
+
+      expect(response.isError).toBe(true);
+      expect(mockProvider.searchCode).not.toHaveBeenCalled();
+      const textContent = response.content.find(item => item.type === 'text');
+      expect(textContent?.text).toContain('Security validation failed');
+    }
+  );
+
+  it.each(providerFlows)(
+    'reuses handed-off branch without default-branch lookups for %s provider',
+    async providerCase => {
+      setupActiveProvider(providerCase);
+      const result = await registerTools(mockServer.server);
+      expect(result.successCount).toBe(2);
+      expect(result.failedTools).toEqual([]);
+
+      mockProvider.searchCode.mockResolvedValue({
+        data: {
+          items: [
+            {
+              path: 'src/score.ts',
+              matches: [
+                {
+                  context:
+                    'export function computeScore(input: ScoreInput): number {',
+                  positions: [[16, 28]],
+                },
+              ],
+              url: `${providerCase.urlPrefix}/${providerCase.owner}/${providerCase.repo}/-/blob/main/src/score.ts`,
+              repository: {
+                id: '42',
+                name: `${providerCase.owner}/${providerCase.repo}`,
+                url: `${providerCase.urlPrefix}/${providerCase.owner}/${providerCase.repo}`,
+              },
+              lastModifiedAt: '2026-03-13T10:00:00.000Z',
+            },
+          ],
+          totalCount: 1,
+          pagination: {
+            currentPage: 1,
+            totalPages: 1,
+            hasMore: false,
+            entriesPerPage: 10,
+            totalMatches: 1,
+          },
+          repositoryContext: {
+            owner: providerCase.owner,
+            repo: providerCase.repo,
+            branch: 'main',
+          },
+        },
+        status: 200,
+        provider: providerCase.provider,
+      });
+
+      mockProvider.getFileContent.mockResolvedValue({
+        data: {
+          path: 'src/score.ts',
+          content:
+            'export function computeScore(input: ScoreInput): number {\n  return input.value + input.bonus;\n}\n',
+          encoding: 'utf-8',
+          size: 96,
+          ref: 'main',
+          lastModified: '2026-03-13T10:00:00.000Z',
+        },
+        status: 200,
+        provider: providerCase.provider,
+      });
+
+      const searchResponse = await mockServer.callTool('githubSearchCode', {
+        queries: [
+          {
+            id: `remote_branch_handoff_${providerCase.provider}`,
+            owner: providerCase.owner,
+            repo: providerCase.repo,
+            keywordsToSearch: ['computeScore'],
+            path: 'src',
+            match: 'file',
+            researchGoal: 'Find remote file with explicit branch handoff',
+            reasoning:
+              'Efficiency flow coverage for default branch lookup avoidance',
+          },
+        ],
+      });
+
+      const searchData = expectHasResultsData(
+        GitHubSearchCodeOutputSchema,
+        GitHubSearchCodeDataSchema,
+        searchResponse
+      );
+
+      await mockServer.callTool('githubGetFileContent', {
+        queries: [
+          {
+            id: `remote_branch_fetch_${providerCase.provider}`,
+            owner: providerCase.owner,
+            repo: providerCase.repo,
+            path: searchData.files![0]!.path,
+            branch: searchData.repositoryContext?.branch,
+            researchGoal: 'Read fetched file from handed-off branch',
+            reasoning: 'Branch is already known from search response',
+          },
+        ],
+      });
+
+      expect(mockProvider.getFileContent).toHaveBeenCalledTimes(1);
+      expect(mockProvider.resolveDefaultBranch).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(providerFlows)(
     'continues remote search->fetch across query-level output pagination for %s provider',
     async providerCase => {
       setupActiveProvider(providerCase);

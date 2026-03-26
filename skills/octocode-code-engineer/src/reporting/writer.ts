@@ -8,6 +8,7 @@ import {
 } from './analysis.js';
 import {
   categoryBreakdown,
+  computeFeatureScores,
   generateSummaryMd,
   severityBreakdown,
 } from './summary-md.js';
@@ -250,6 +251,11 @@ export function writeMultiFileReport(
     strongestGraphSignal: reportAnalysis.strongestGraphSignal,
     strongestAstSignal: reportAnalysis.strongestAstSignal,
     combinedSignals: reportAnalysis.combinedSignals,
+    featureScores: computeFeatureScores(
+      allFindings,
+      report.summary.totalFiles ?? 0,
+      options.features
+    ),
     recommendedValidation: reportAnalysis.recommendedValidation,
     investigationPrompts: reportAnalysis.investigationPrompts,
     parseErrors: report.parseErrors,

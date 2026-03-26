@@ -104,17 +104,17 @@ Just tell your agent what you need. It picks the right mode automatically.
 
 ## What It Detects
 
-**76+ detection categories** across 7 pillars:
+**86+ detection categories** across 5 core pillars (+ semantic overlays):
 
 | Pillar | Highlights |
 |--------|------------|
 | **Architecture** | Cycles, coupling, chokepoints, layer violations, orphan modules |
-| **Code Quality** | Complexity, god modules, duplicates, `any` usage, empty catches |
-| **Performance** | Await-in-loop, sync I/O, uncleared timers, listener leaks |
+| **Code Quality** | Complexity, god modules/functions, duplicates, `any` usage, async/perf risks |
+| **Dead Code** | Dead exports/re-exports, unused deps, boundary violations |
 | **Security** | Secrets, eval, SQL injection, path traversal, command injection |
-| **Dead Code** | Dead exports, unused deps, boundary violations |
-| **Test Quality** | Low assertions, excessive mocks, missing cleanup |
-| **Semantic** | Over-abstraction, DIP violations, shotgun surgery |
+| **Test Quality** | Low assertions, excessive mocks, missing cleanup/restoration |
+
+Semantic detectors augment architecture/code-quality/dead-code when `--semantic` is enabled.
 
 ---
 
@@ -129,6 +129,8 @@ Octocode MCP (LSP)        →  validate against live code
 ```
 
 Findings are **hypotheses, not facts**. The agent validates each one with LSP tools before presenting it to you — confirmed, dismissed, or uncertain with evidence.
+
+`summary.md` now reports both pillar health and per-feature category scores so triage is explicit and comparable across runs.
 
 ---
 

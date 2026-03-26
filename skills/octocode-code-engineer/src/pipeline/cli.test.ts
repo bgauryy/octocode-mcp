@@ -436,6 +436,24 @@ describe('parseArgs', () => {
     }
   });
 
+  it('parses --scope with Windows absolute paths without splitting drive letters', () => {
+    const opts = parseArgs(['--scope=C:\\repo\\pkg\\src\\a.ts']);
+    expect(opts.scope).toBeInstanceOf(Array);
+    expect(opts.scope).toHaveLength(1);
+    expect(opts.scopeSymbols).toBeNull();
+    expect(opts.scope![0]).toContain('C:\\repo\\pkg\\src\\a.ts');
+  });
+
+  it('parses --scope with Windows absolute path and file:symbol syntax', () => {
+    const opts = parseArgs(['--scope=C:\\repo\\pkg\\src\\a.ts:initSession']);
+    expect(opts.scope).toBeInstanceOf(Array);
+    expect(opts.scope).toHaveLength(1);
+    expect(opts.scopeSymbols).toBeInstanceOf(Map);
+    const [filePath, symbols] = [...opts.scopeSymbols!.entries()][0];
+    expect(filePath).toContain('C:\\repo\\pkg\\src\\a.ts');
+    expect(symbols).toEqual(['initSession']);
+  });
+
   it('parses --features with pillar name architecture', () => {
     const opts = parseArgs(['--features=architecture']);
     expect(opts.features).toBeInstanceOf(Set);

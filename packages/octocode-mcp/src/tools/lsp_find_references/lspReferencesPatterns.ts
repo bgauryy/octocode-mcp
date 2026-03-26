@@ -212,7 +212,8 @@ export async function findReferencesWithPatternMatching(
         hasMore: false,
         resultsPerPage: referencesPerPage,
       },
-      hasMultipleFiles: new Set(filteredReferences.map(ref => ref.uri)).size > 1,
+      hasMultipleFiles:
+        new Set(filteredReferences.map(ref => ref.uri)).size > 1,
       hints: [
         ...getHints(TOOL_NAME, 'empty'),
         `Requested page ${page} is outside available range (1-${totalPages}).`,

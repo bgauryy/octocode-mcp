@@ -4,8 +4,8 @@ Each scan writes to `.octocode/scan/<timestamp>/`:
 
 | File | Contents | When to Read |
 |------|----------|-------------|
-| `summary.md` | Health scores, tags, severity, per-pillar counts, top recs, change risk hotspots | **Always first** |
-| `summary.json` | Machine-readable scan metadata, `agentOutput`, `analysisSummary`, `investigationPrompts`, `parseErrors[]` | Programmatic access |
+| `summary.md` | Health scores, **per-feature scores**, tags, severity, per-pillar counts, top recs, change risk hotspots | **Always first** |
+| `summary.json` | Machine-readable scan metadata, `agentOutput`, `analysisSummary`, `featureScores[]`, `investigationPrompts`, `parseErrors[]` | Programmatic access |
 | `architecture.json` | Dep graph, arch findings, `hotFiles[]`, `graphSignals[]`, chokepoints, optional advanced graph overlays | Cycles, coupling, SDP, D metric, test gaps, side-effect risk |
 | `code-quality.json` | Quality findings, severity/category breakdowns | Duplicates, complexity, perf |
 | `dead-code.json` | Dead-code findings, severity/category breakdowns | Dead code cleanup |
@@ -30,6 +30,7 @@ agentOutput { totalFindings, highPriority, mediumPriority, lowPriority,
               filesWithIssues[] { file, issueCount, issueIds } },
 analysisSummary { graphSignals[], astSignals[], strongestGraphSignal, strongestAstSignal, combinedSignals[], recommendedValidation },
 strongestGraphSignal, strongestAstSignal, combinedSignals[], recommendedValidation, investigationPrompts[],
+featureScores[] { category, pillar, findings, affectedFiles, severityBreakdown { critical, high, medium, low, info }, score, grade },
 parseErrors[] { file, message },
 outputFiles { summary, architecture, codeQuality, deadCode, fileInventory, findings, ... }
 ```
@@ -37,9 +38,16 @@ outputFiles { summary, architecture, codeQuality, deadCode, fileInventory, findi
 Use `summary.json` to drive the first decision:
 
 - Use `agentOutput.topRecommendations[]` and `filesWithIssues[]` to decide where to drill in first
+- Use `featureScores[]` to rank worst categories across the currently active feature set
 - Use `summary.md` or `architecture.json` for graph-specific detail such as `cycles`, `criticalPaths`, and hotspots
 - If top recommendations are mostly complexity, duplication, or side-effect findings, switch to AST-first investigation
 - If graph-heavy recommendations and AST-heavy recommendations appear together, plan a combined investigation before proposing refactors
+
+### Scoring model (current)
+
+- Severity weights: `critical=25`, `high=10`, `medium=3`, `low=1`, `info=0`
+- Score formula: `round(100 / (1 + (weightedFindingsPerFile / 10)))`
+- Guardrails: non-info findings cannot score perfect `100`; critical/high findings are capped (`95`/`98`)
 
 ### `findings.json`
 

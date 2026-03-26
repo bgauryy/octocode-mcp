@@ -265,7 +265,7 @@ Read scan outputs in priority order — stop when you have enough context:
 
 | File | Content | Read when |
 |------|---------|-----------|
-| `summary.md` | Health scores, pillar grades, top recommendations, investigation prompts | **Always first** — drives triage |
+| `summary.md` | Health scores, **feature-category scores**, pillar grades, top recommendations, investigation prompts | **Always first** — drives triage |
 | `findings.json` | Prioritized queue with `lspHints[]`, `flowTrace[]`, `correlatedSignals[]`, `impact`, `suggestedFix` | Drill into specific categories |
 | `architecture.json` | Cycles, `criticalPaths[]`, `hotFiles[]` (riskScore/fanIn/fanOut/inCycle/onCriticalPath), `chokepoints[]`, `sccClusters[]` | Architecture, critical paths, coupling |
 | `code-quality.json` | Quality findings + `duplicateFlows { duplicateFunctions[], redundantFlows[] }` | Duplication, complexity, performance |

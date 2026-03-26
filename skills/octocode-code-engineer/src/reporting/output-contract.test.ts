@@ -247,6 +247,8 @@ describe('output contract', () => {
     expect(summaryData).toHaveProperty('strongestGraphSignal');
     expect(summaryData).toHaveProperty('strongestAstSignal');
     expect(Array.isArray(summaryData.combinedSignals)).toBe(true);
+    expect(Array.isArray(summaryData.featureScores)).toBe(true);
+    expect(summaryData.featureScores.length).toBeGreaterThan(0);
     expect(
       summaryData.analysisSummary.recommendedValidation ||
         summaryData.recommendedValidation

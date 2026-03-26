@@ -39,22 +39,35 @@ function parseScope(
   val: string,
   root: string
 ): { paths: string[]; symbols: Map<string, string[]> } {
+  const splitScopeToken = (
+    token: string
+  ): { filePath: string; symbolName: string | null } => {
+    const colonIdx = token.lastIndexOf(':');
+    if (colonIdx <= 0 || colonIdx === token.length - 1) {
+      return { filePath: token, symbolName: null };
+    }
+    const symbolName = token.substring(colonIdx + 1);
+    if (symbolName.includes('/') || symbolName.includes('\\')) {
+      return { filePath: token, symbolName: null };
+    }
+    return {
+      filePath: token.substring(0, colonIdx),
+      symbolName,
+    };
+  };
+
   const paths: string[] = [];
   const symbols = new Map<string, string[]>();
   for (const token of val
     .split(',')
     .map(s => s.trim())
     .filter(Boolean)) {
-    const colonIdx = token.lastIndexOf(':');
-    if (colonIdx > 0 && !token.substring(0, colonIdx).includes(':')) {
-      const filePart = token.substring(0, colonIdx);
-      const symbolPart = token.substring(colonIdx + 1);
-      const absFile = path.resolve(root, filePart);
-      paths.push(absFile);
+    const { filePath, symbolName } = splitScopeToken(token);
+    const absFile = path.resolve(root, filePath);
+    paths.push(absFile);
+    if (symbolName) {
       if (!symbols.has(absFile)) symbols.set(absFile, []);
-      symbols.get(absFile)!.push(symbolPart);
-    } else {
-      paths.push(path.resolve(root, token));
+      symbols.get(absFile)!.push(symbolName);
     }
   }
   return { paths, symbols };
@@ -221,7 +234,9 @@ export function parseArgs(argv: string[]): AnalysisOptions {
     }
 
     if (arg === '--scope' || arg.startsWith('--scope=')) {
-      const val = arg.includes('=') ? arg.split('=')[1] : argv[++i];
+      const val = arg.startsWith('--scope=')
+        ? arg.slice('--scope='.length)
+        : argv[++i];
       const { paths, symbols } = parseScope(val, opts.root);
       opts.scope = paths;
       if (symbols.size > 0) opts.scopeSymbols = symbols;

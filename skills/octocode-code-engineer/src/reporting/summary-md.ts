@@ -6,6 +6,13 @@ import { PILLAR_CATEGORIES, SEVERITY_ORDER } from '../types/index.js';
 import type { ReportAnalysisSummary } from './analysis.js';
 import type { AgentOutputData, Finding, FindingStats, ScanSummaryData } from '../types/index.js';
 
+const CATEGORY_PILLAR_MAP: Record<string, string> = Object.entries(
+  PILLAR_CATEGORIES
+).reduce<Record<string, string>>((acc, [pillar, categories]) => {
+  for (const category of categories) acc[category] = pillar;
+  return acc;
+}, {});
+
 export function severityBreakdown(findings: Finding[]): Record<string, number> {
   const counts: Record<string, number> = {
     critical: 0,
@@ -45,10 +52,14 @@ function computeHealthScoreFromSeverityBreakdown(
     penalty += (weights[severity as keyof typeof weights] || 0) * count;
   }
   const weightedFindingsPerFile = penalty / totalFiles;
-  return Math.max(
+  const rawScore = Math.max(
     0,
     Math.min(100, Math.round(100 / (1 + weightedFindingsPerFile / 10)))
   );
+  if (penalty === 0) return rawScore;
+  if ((breakdown.critical ?? 0) > 0) return Math.min(rawScore, 95);
+  if ((breakdown.high ?? 0) > 0) return Math.min(rawScore, 98);
+  return Math.min(rawScore, 99);
 }
 
 export function collectTagCloud(
@@ -267,6 +278,10 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
   const pushPillarSummary = buildPillarSummaryPusher(lines, activeFeatures, outputFiles);
 
   renderHealthScores(lines, pillarHealth, activeFeatures);
+  renderFeatureScores(
+    lines,
+    computeFeatureScores(allFindings, totalFiles, activeFeatures)
+  );
 
   renderTagCloud(lines, allFindings);
 
@@ -350,6 +365,31 @@ interface PillarHealthScores {
   testHealth: number;
 }
 
+export interface FeatureScoreRow {
+  category: string;
+  pillar: string;
+  findings: number;
+  affectedFiles: number;
+  severityBreakdown: Record<string, number>;
+  score: number;
+  grade: string;
+}
+
+function estimatePillarFileCount(
+  totalFiles: number,
+  findings: Finding[]
+): number {
+  if (totalFiles <= 0) return 0;
+  const coveredFiles = new Set<string>();
+  for (const finding of findings) {
+    if (finding.file) coveredFiles.add(finding.file);
+    for (const file of finding.files ?? []) coveredFiles.add(file);
+  }
+  if (coveredFiles.size === 0) return totalFiles;
+  const floor = Math.max(1, Math.ceil(totalFiles * 0.1));
+  return Math.max(floor, Math.min(totalFiles, coveredFiles.size));
+}
+
 function computePillarHealthScores(
   totalFiles: number,
   overallFindingStats: { totalFindings: number; severityBreakdown: Record<string, number> },
@@ -368,22 +408,91 @@ function computePillarHealthScores(
 ): PillarHealthScores {
   const score = (
     stats: { severityBreakdown: Record<string, number> } | undefined,
-    fallback: Finding[]
+    fallback: Finding[],
+    pillarFiles: number
   ) => computeHealthScoreFromSeverityBreakdown(
-    stats?.severityBreakdown ?? severityBreakdown(fallback), totalFiles
+    stats?.severityBreakdown ?? severityBreakdown(fallback),
+    pillarFiles
   );
+  const archFiles = estimatePillarFileCount(totalFiles, ctx.architectureFindings);
+  const qualFiles = estimatePillarFileCount(totalFiles, ctx.codeQualityFindings);
+  const deadFiles = estimatePillarFileCount(totalFiles, ctx.deadCodeFindings);
+  const secFiles = estimatePillarFileCount(totalFiles, ctx.securityFindings);
+  const testFiles = estimatePillarFileCount(totalFiles, ctx.testQualityFindings);
   return {
     overallHealth: computeHealthScoreFromSeverityBreakdown(overallFindingStats.severityBreakdown, totalFiles),
-    archHealth: score(ctx.archStats, ctx.architectureFindings),
-    qualHealth: score(ctx.qualStats, ctx.codeQualityFindings),
-    deadHealth: score(ctx.deadStats, ctx.deadCodeFindings),
-    secHealth: score(ctx.secStats, ctx.securityFindings),
-    testHealth: score(ctx.testStats, ctx.testQualityFindings),
+    archHealth: score(ctx.archStats, ctx.architectureFindings, archFiles),
+    qualHealth: score(ctx.qualStats, ctx.codeQualityFindings, qualFiles),
+    deadHealth: score(ctx.deadStats, ctx.deadCodeFindings, deadFiles),
+    secHealth: score(ctx.secStats, ctx.securityFindings, secFiles),
+    testHealth: score(ctx.testStats, ctx.testQualityFindings, testFiles),
   };
 }
 
 function gradeScore(s: number): string {
   return s >= 80 ? 'A' : s >= 60 ? 'B' : s >= 40 ? 'C' : s >= 20 ? 'D' : 'F';
+}
+
+function resolveScoredCategories(activeFeatures: Set<string> | null): string[] {
+  const ordered = Object.values(PILLAR_CATEGORIES).flat();
+  if (!activeFeatures) return ordered;
+  return ordered.filter(category => activeFeatures.has(category));
+}
+
+export function computeFeatureScores(
+  findings: Finding[],
+  totalFiles: number,
+  activeFeatures: Set<string> | null
+): FeatureScoreRow[] {
+  const categories = resolveScoredCategories(activeFeatures);
+  const seenCategories = new Set(categories);
+  for (const finding of findings) {
+    if (!seenCategories.has(finding.category)) {
+      if (!activeFeatures || activeFeatures.has(finding.category)) {
+        categories.push(finding.category);
+        seenCategories.add(finding.category);
+      }
+    }
+  }
+
+  const findingsByCategory = new Map<string, Finding[]>();
+  for (const finding of findings) {
+    if (!findingsByCategory.has(finding.category)) {
+      findingsByCategory.set(finding.category, []);
+    }
+    findingsByCategory.get(finding.category)!.push(finding);
+  }
+
+  return categories
+    .map(category => {
+      const categoryFindings = findingsByCategory.get(category) || [];
+      const breakdown = severityBreakdown(categoryFindings);
+      const affected = new Set<string>();
+      for (const finding of categoryFindings) {
+        if (finding.file) affected.add(finding.file);
+        for (const file of finding.files ?? []) affected.add(file);
+      }
+      const denominator =
+        affected.size > 0 ? Math.max(1, affected.size) : Math.max(1, totalFiles);
+      const score = computeHealthScoreFromSeverityBreakdown(
+        breakdown,
+        denominator
+      );
+      return {
+        category,
+        pillar: CATEGORY_PILLAR_MAP[category] || 'unmapped',
+        findings: categoryFindings.length,
+        affectedFiles: affected.size,
+        severityBreakdown: breakdown,
+        score,
+        grade: gradeScore(score),
+      };
+    })
+    .sort((a, b) => {
+      if (a.score !== b.score) return a.score - b.score;
+      if (a.findings !== b.findings) return b.findings - a.findings;
+      return a.category.localeCompare(b.category);
+    });
 }
 
 function renderHealthScores(
@@ -409,6 +518,21 @@ function renderHealthScores(
   pushRow('Dead Code & Hygiene', 'dead-code', health.deadHealth);
   pushRow('Security', 'security', health.secHealth);
   pushRow('Test Quality', 'test-quality', health.testHealth);
+  lines.push('');
+}
+
+function renderFeatureScores(lines: string[], rows: FeatureScoreRow[]): void {
+  lines.push('## Feature Scores\n');
+  lines.push(
+    'Per-category scoring for all active features (or all categories when unfiltered).\n'
+  );
+  lines.push('| Category | Pillar | Findings | Affected Files | Score | Grade |');
+  lines.push('|----------|--------|----------|----------------|-------|-------|');
+  for (const row of rows) {
+    lines.push(
+      `| \`${row.category}\` | ${row.pillar} | ${row.findings} | ${row.affectedFiles} | ${row.score}/100 | ${row.grade} |`
+    );
+  }
   lines.push('');
 }
 
