@@ -9,6 +9,7 @@ import {
 import {
   categoryBreakdown,
   computeFeatureScores,
+  computeQualityAspectRatings,
   generateSummaryMd,
   severityBreakdown,
 } from './summary-md.js';
@@ -132,6 +133,11 @@ export function writeMultiFileReport(
       hotFiles,
       graphAnalytics
     );
+  const qualityRating = computeQualityAspectRatings(allFindings, {
+    fileInventory: enrichedFileInventory,
+    hotFiles,
+    reportAnalysis,
+  });
 
   writeJson('architecture.json', {
     schemaVersion: REPORT_SCHEMA_VERSION,
@@ -254,8 +260,10 @@ export function writeMultiFileReport(
     featureScores: computeFeatureScores(
       allFindings,
       report.summary.totalFiles ?? 0,
-      options.features
+      options.features,
+      { hotFiles }
     ),
+    qualityRating,
     recommendedValidation: reportAnalysis.recommendedValidation,
     investigationPrompts: reportAnalysis.investigationPrompts,
     parseErrors: report.parseErrors,
@@ -279,6 +287,7 @@ export function writeMultiFileReport(
     securityFindings,
     testQualityFindings,
     reportAnalysis,
+    fileInventory: enrichedFileInventory,
   });
   fs.writeFileSync(path.join(dir, 'summary.md'), summaryMd, 'utf8');
   outputFiles.summaryMd = 'summary.md';

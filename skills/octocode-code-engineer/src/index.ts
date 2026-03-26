@@ -109,13 +109,18 @@ export {
   categoryBreakdown,
   computeHealthScore,
   computeFeatureScores,
+  computeQualityAspectRatings,
   collectTagCloud,
   formatFileSize,
   diversifyFindings,
   diverseTopRecommendations,
   generateSummaryMd,
 } from './reporting/summary-md.js';
-export type { SummaryMdOptions } from './reporting/summary-md.js';
+export type {
+  SummaryMdOptions,
+  QualityAspectRating,
+  QualityRatingSummary,
+} from './reporting/summary-md.js';
 
 type FindingDraft = Omit<Finding, 'id'>;
 type DetectorFn = () => Iterable<FindingDraft>;

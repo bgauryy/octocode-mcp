@@ -4,7 +4,14 @@ import path from 'node:path';
 import { PILLAR_CATEGORIES, SEVERITY_ORDER } from '../types/index.js';
 
 import type { ReportAnalysisSummary } from './analysis.js';
-import type { AgentOutputData, Finding, FindingStats, ScanSummaryData } from '../types/index.js';
+import type {
+  AgentOutputData,
+  FileEntry,
+  Finding,
+  FindingStats,
+  HotFile,
+  ScanSummaryData,
+} from '../types/index.js';
 
 const CATEGORY_PILLAR_MAP: Record<string, string> = Object.entries(
   PILLAR_CATEGORIES
@@ -180,6 +187,7 @@ export interface SummaryMdOptions {
   securityFindings?: Finding[];
   testQualityFindings?: Finding[];
   reportAnalysis?: ReportAnalysisSummary;
+  fileInventory?: FileEntry[];
 }
 
 function formatCliPath(filePath: string): string {
@@ -203,6 +211,7 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
     securityFindings = [],
     testQualityFindings = [],
     reportAnalysis = null,
+    fileInventory = report.fileInventory || [],
   } = opts;
   const allFindings = report.optimizationFindings || [];
   const summary: ScanSummaryData = report.summary;
@@ -276,12 +285,18 @@ export function generateSummaryMd(opts: SummaryMdOptions): string {
   });
 
   const pushPillarSummary = buildPillarSummaryPusher(lines, activeFeatures, outputFiles);
+  const qualityRating = computeQualityAspectRatings(allFindings, {
+    fileInventory,
+    hotFiles,
+    reportAnalysis,
+  });
 
   renderHealthScores(lines, pillarHealth, activeFeatures);
   renderFeatureScores(
     lines,
-    computeFeatureScores(allFindings, totalFiles, activeFeatures)
+    computeFeatureScores(allFindings, totalFiles, activeFeatures, { hotFiles })
   );
+  renderQualityAspectRatings(lines, qualityRating);
 
   renderTagCloud(lines, allFindings);
 
@@ -370,9 +385,469 @@ export interface FeatureScoreRow {
   pillar: string;
   findings: number;
   affectedFiles: number;
+  hotspotHits: number;
+  hotspotMaxRisk: number;
+  contextPenalty: number;
   severityBreakdown: Record<string, number>;
   score: number;
   grade: string;
+}
+
+export interface FeatureScoreContext {
+  hotFiles?: import('../types/index.js').HotFile[];
+}
+
+export interface QualityAspectSignal {
+  label: string;
+  value: string;
+  effect: 'positive' | 'negative' | 'neutral';
+}
+
+export interface QualityAspectRating {
+  aspect: string;
+  label: string;
+  weight: number;
+  score: number;
+  grade: string;
+  confidence: 'high' | 'medium' | 'low';
+  rationale: string;
+  signals: QualityAspectSignal[];
+}
+
+export interface QualityRatingSummary {
+  model: string;
+  overallScore: number;
+  overallGrade: string;
+  aspects: QualityAspectRating[];
+}
+
+export interface QualityAspectContext {
+  fileInventory?: FileEntry[];
+  hotFiles?: HotFile[];
+  reportAnalysis?: ReportAnalysisSummary | null;
+}
+
+function clampScore(score: number): number {
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function softPenalty(
+  ratio: number,
+  maxPenalty: number,
+  sensitivity: number = 1.4
+): number {
+  if (ratio <= 0) return 0;
+  return Math.round(maxPenalty * (1 - Math.exp(-ratio * sensitivity)));
+}
+
+function confidenceFromSample(sampleSize: number): 'high' | 'medium' | 'low' {
+  if (sampleSize >= 25) return 'high';
+  if (sampleSize >= 8) return 'medium';
+  return 'low';
+}
+
+function average(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((acc, value) => acc + value, 0) / values.length;
+}
+
+function findingTouchesAnyFile(finding: Finding, files: Set<string>): boolean {
+  if (finding.file && files.has(finding.file)) return true;
+  return (finding.files || []).some(file => files.has(file));
+}
+
+function classifyFileNameStyle(baseName: string): string {
+  if (/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(baseName)) return 'kebab';
+  if (/^[a-z0-9]+(?:_[a-z0-9]+)+$/.test(baseName)) return 'snake';
+  if (/^[a-z]+(?:[A-Z][a-z0-9]*)+$/.test(baseName)) return 'camel';
+  if (/^[a-z0-9]+$/.test(baseName)) return 'flat';
+  return 'other';
+}
+
+function fileUniverse(
+  findings: Finding[],
+  fileInventory: FileEntry[]
+): Set<string> {
+  const files = new Set<string>();
+  for (const entry of fileInventory) files.add(entry.file);
+  for (const finding of findings) {
+    if (finding.file) files.add(finding.file);
+    for (const file of finding.files || []) files.add(file);
+  }
+  return files;
+}
+
+export function computeQualityAspectRatings(
+  findings: Finding[],
+  context: QualityAspectContext = {}
+): QualityRatingSummary {
+  const fileInventory = context.fileInventory || [];
+  const hotFiles = context.hotFiles || [];
+  const reportAnalysis = context.reportAnalysis || null;
+
+  const files = fileUniverse(findings, fileInventory);
+  const totalFiles = Math.max(1, files.size);
+  const functions = fileInventory.flatMap(entry => entry.functions || []);
+  const totalFunctions = Math.max(1, functions.length);
+  const byCategory = categoryBreakdown(findings);
+
+  const findingsByPillar = {
+    architecture: findings.filter(
+      finding => (CATEGORY_PILLAR_MAP[finding.category] || 'unmapped') === 'architecture'
+    ),
+    codeQuality: findings.filter(
+      finding => (CATEGORY_PILLAR_MAP[finding.category] || 'unmapped') === 'code-quality'
+    ),
+    deadCode: findings.filter(
+      finding => (CATEGORY_PILLAR_MAP[finding.category] || 'unmapped') === 'dead-code'
+    ),
+    testQuality: findings.filter(
+      finding => (CATEGORY_PILLAR_MAP[finding.category] || 'unmapped') === 'test-quality'
+    ),
+  };
+
+  const severeFindings = findings.filter(
+    finding => finding.severity === 'critical' || finding.severity === 'high'
+  );
+
+  const aspects: QualityAspectRating[] = [];
+
+  const architectureSevere = findingsByPillar.architecture.filter(
+    finding => finding.severity === 'critical' || finding.severity === 'high'
+  ).length;
+  const cycleFindings =
+    (byCategory['dependency-cycle'] || 0) + (byCategory['cycle-cluster'] || 0);
+  const hotspotSample = [...hotFiles]
+    .sort((a, b) => b.riskScore - a.riskScore)
+    .slice(0, 8);
+  const hotspotPressure = average(
+    hotspotSample.map(entry => entry.riskScore)
+  ) / 120;
+  const signalConfidenceBoost = reportAnalysis?.strongestGraphSignal?.confidence === 'high'
+    ? 3
+    : reportAnalysis?.strongestGraphSignal?.confidence === 'medium'
+      ? 1
+      : 0;
+  const architectureScore = clampScore(
+    100
+    - softPenalty(findingsByPillar.architecture.length / totalFiles, 28, 1.6)
+    - softPenalty(architectureSevere / totalFiles, 26, 2.1)
+    - softPenalty(cycleFindings / totalFiles, 20, 2.4)
+    - softPenalty(hotspotPressure, 18, 1.4)
+    + signalConfidenceBoost
+  );
+  aspects.push({
+    aspect: 'architecture-structure',
+    label: 'Architecture & Structure',
+    weight: 30,
+    score: architectureScore,
+    grade: gradeScore(architectureScore),
+    confidence: confidenceFromSample(findingsByPillar.architecture.length),
+    rationale:
+      'Rates structural integrity using architecture findings, severity concentration, cycle pressure, and hotspot intensity, then tempers it with AI graph-signal confidence.',
+    signals: [
+      {
+        label: 'Architecture findings / file',
+        value: (findingsByPillar.architecture.length / totalFiles).toFixed(2),
+        effect: findingsByPillar.architecture.length > 0 ? 'negative' : 'neutral',
+      },
+      {
+        label: 'Severe architecture findings',
+        value: String(architectureSevere),
+        effect: architectureSevere > 0 ? 'negative' : 'neutral',
+      },
+      {
+        label: 'Hotspot pressure (avg risk top files)',
+        value: average(hotspotSample.map(entry => entry.riskScore)).toFixed(1),
+        effect: hotspotSample.length > 0 ? 'negative' : 'neutral',
+      },
+    ],
+  });
+
+  const filePaths = [...files];
+  const depthValues = filePaths.map(file =>
+    file.replace(/\\/g, '/').split('/').filter(Boolean).length
+  );
+  const avgDepth = average(depthValues);
+  const topLevelCounts = new Map<string, number>();
+  const dirSegments = new Set<string>();
+  const vagueDirPattern = /^(util|utils|common|shared|misc|helper|helpers|tmp|temp)$/i;
+  for (const file of filePaths) {
+    const normalized = file.replace(/\\/g, '/');
+    const parts = normalized.split('/').filter(Boolean);
+    const top = parts[0] || '.';
+    topLevelCounts.set(top, (topLevelCounts.get(top) || 0) + 1);
+    for (const segment of parts.slice(0, -1)) dirSegments.add(segment);
+  }
+  const dominantRootRatio =
+    topLevelCounts.size === 0
+      ? 0
+      : Math.max(...topLevelCounts.values()) / totalFiles;
+  const vagueDirRatio =
+    dirSegments.size === 0
+      ? 0
+      : [...dirSegments].filter(segment => vagueDirPattern.test(segment)).length
+        / dirSegments.size;
+  const folderScore = clampScore(
+    100
+    - softPenalty(Math.max(0, (avgDepth - 4) / 3), 20, 1.3)
+    - softPenalty(Math.max(0, dominantRootRatio - 0.55), 18, 2.0)
+    - softPenalty(vagueDirRatio, 24, 2.2)
+  );
+  aspects.push({
+    aspect: 'folder-topology',
+    label: 'Folder Topology',
+    weight: 15,
+    score: folderScore,
+    grade: gradeScore(folderScore),
+    confidence: confidenceFromSample(filePaths.length),
+    rationale:
+      'Rates how navigable the folder model is by blending depth balance, top-level concentration, and reliance on vague utility/common directories.',
+    signals: [
+      {
+        label: 'Average path depth',
+        value: avgDepth.toFixed(1),
+        effect: avgDepth > 6 ? 'negative' : 'neutral',
+      },
+      {
+        label: 'Dominant root share',
+        value: `${Math.round(dominantRootRatio * 100)}%`,
+        effect: dominantRootRatio > 0.65 ? 'negative' : 'neutral',
+      },
+      {
+        label: 'Vague directory ratio',
+        value: `${Math.round(vagueDirRatio * 100)}%`,
+        effect: vagueDirRatio > 0.2 ? 'negative' : 'neutral',
+      },
+    ],
+  });
+
+  const genericNamePattern =
+    /^(foo|bar|baz|tmp|temp|data|value|handler|util|helper|thing|stuff|fn|func)$/i;
+  const genericFilePattern =
+    /^(utils?|helpers?|common|shared|misc|tmp|temp|new|old|types?)$/i;
+  const namedFunctions = functions
+    .map(fn => fn.name || fn.nameHint || '')
+    .filter(name => name.length > 0);
+  const anonymousCount = namedFunctions.filter(
+    name => name === '<anonymous>' || name === 'default'
+  ).length;
+  const explicitNamed = namedFunctions.filter(
+    name => name !== '<anonymous>' && name !== 'default'
+  );
+  const genericFunctionCount = explicitNamed.filter(name =>
+    genericNamePattern.test(name)
+  ).length;
+  const shortFunctionCount = explicitNamed.filter(name => name.length <= 2).length;
+  const fileBaseNames = filePaths.map(file => path.basename(file, path.extname(file)));
+  const genericFileCount = fileBaseNames.filter(name =>
+    genericFilePattern.test(name)
+  ).length;
+  const namingScore = clampScore(
+    100
+    - softPenalty(anonymousCount / totalFunctions, 30, 2.3)
+    - softPenalty(genericFunctionCount / Math.max(1, explicitNamed.length), 24, 2.0)
+    - softPenalty(genericFileCount / totalFiles, 15, 1.8)
+    - softPenalty(shortFunctionCount / Math.max(1, explicitNamed.length), 10, 1.8)
+  );
+  aspects.push({
+    aspect: 'naming-quality',
+    label: 'Naming Quality',
+    weight: 15,
+    score: namingScore,
+    grade: gradeScore(namingScore),
+    confidence: confidenceFromSample(functions.length),
+    rationale:
+      'Rates naming clarity by balancing anonymous/generic function names, short ambiguous names, and generic file basenames.',
+    signals: [
+      {
+        label: 'Anonymous function share',
+        value: `${Math.round((anonymousCount / totalFunctions) * 100)}%`,
+        effect: anonymousCount > 0 ? 'negative' : 'neutral',
+      },
+      {
+        label: 'Generic function names',
+        value: String(genericFunctionCount),
+        effect: genericFunctionCount > 0 ? 'negative' : 'neutral',
+      },
+      {
+        label: 'Generic file names',
+        value: String(genericFileCount),
+        effect: genericFileCount > 0 ? 'negative' : 'neutral',
+      },
+    ],
+  });
+
+  const sharedPathPattern = /(^|\/)(common|shared|utils?|lib|core)(\/|$)/i;
+  const sharedFiles = fileInventory.filter(entry =>
+    sharedPathPattern.test(entry.file.replace(/\\/g, '/'))
+  );
+  const sharedFileSet = new Set(sharedFiles.map(entry => entry.file));
+  const sharedFindings = findings.filter(finding =>
+    findingTouchesAnyFile(finding, sharedFileSet)
+  );
+  const sharedSevere = sharedFindings.filter(
+    finding => finding.severity === 'critical' || finding.severity === 'high'
+  );
+  const sharedImportPressure = average(
+    sharedFiles.map(entry => {
+      const internalImports =
+        entry.symbolUsageSummary?.internalImportCount
+        ?? entry.dependencyProfile.importedSymbols.filter(ref => !!ref.resolvedModule).length;
+      const declaredExports =
+        entry.symbolUsageSummary?.declaredExportCount
+        ?? entry.dependencyProfile.declaredExports.length;
+      return internalImports / (declaredExports + 1);
+    })
+  );
+  const commonScore = sharedFiles.length === 0
+    ? 88
+    : clampScore(
+      100
+      - softPenalty(sharedFindings.length / sharedFiles.length, 24, 1.6)
+      - softPenalty(sharedSevere.length / sharedFiles.length, 28, 2.2)
+      - softPenalty(sharedImportPressure, 18, 1.5)
+    );
+  aspects.push({
+    aspect: 'common-layer-health',
+    label: 'Common/Shared Layer Health',
+    weight: 15,
+    score: commonScore,
+    grade: gradeScore(commonScore),
+    confidence: confidenceFromSample(sharedFiles.length),
+    rationale:
+      sharedFiles.length === 0
+        ? 'No explicit common/shared layer was detected, so this aspect is neutral-positive by default.'
+        : 'Rates whether shared/common code stays stable and lightweight by combining finding density, severe issue concentration, and internal dependency pressure.',
+    signals: [
+      {
+        label: 'Shared files',
+        value: String(sharedFiles.length),
+        effect: sharedFiles.length === 0 ? 'neutral' : 'positive',
+      },
+      {
+        label: 'Shared-layer findings',
+        value: String(sharedFindings.length),
+        effect: sharedFindings.length > 0 ? 'negative' : 'neutral',
+      },
+      {
+        label: 'Shared import pressure',
+        value: sharedImportPressure.toFixed(2),
+        effect: sharedImportPressure > 1 ? 'negative' : 'neutral',
+      },
+    ],
+  });
+
+  const maintainabilityFindings = [
+    ...findingsByPillar.codeQuality,
+    ...findingsByPillar.deadCode,
+    ...findingsByPillar.testQuality,
+  ];
+  const testDebtCategories = new Set([
+    'test-no-assertion',
+    'low-assertion-density',
+    'excessive-mocking',
+    'missing-test-cleanup',
+    'focused-test',
+    'fake-timer-no-restore',
+    'missing-mock-restoration',
+  ]);
+  const testDebtFindings = findings.filter(finding =>
+    testDebtCategories.has(finding.category)
+  );
+  const avgCognitiveComplexity = average(
+    functions.map(fn => fn.cognitiveComplexity || fn.complexity || 0)
+  );
+  const maintainabilityScore = clampScore(
+    100
+    - softPenalty(maintainabilityFindings.length / totalFiles, 24, 1.5)
+    - softPenalty(severeFindings.length / totalFiles, 24, 2.0)
+    - softPenalty(Math.max(0, (avgCognitiveComplexity - 8) / 12), 22, 1.4)
+    - softPenalty(testDebtFindings.length / totalFiles, 16, 1.7)
+  );
+  aspects.push({
+    aspect: 'maintainability-evolvability',
+    label: 'Maintainability & Evolvability',
+    weight: 15,
+    score: maintainabilityScore,
+    grade: gradeScore(maintainabilityScore),
+    confidence: confidenceFromSample(maintainabilityFindings.length),
+    rationale:
+      'Rates how safely the codebase can evolve by blending quality/dead-code/test debt density, severe issue concentration, and cognitive complexity pressure.',
+    signals: [
+      {
+        label: 'Maintainability findings / file',
+        value: (maintainabilityFindings.length / totalFiles).toFixed(2),
+        effect: maintainabilityFindings.length > 0 ? 'negative' : 'neutral',
+      },
+      {
+        label: 'Average cognitive complexity',
+        value: avgCognitiveComplexity.toFixed(1),
+        effect: avgCognitiveComplexity > 12 ? 'negative' : 'neutral',
+      },
+      {
+        label: 'Test debt findings',
+        value: String(testDebtFindings.length),
+        effect: testDebtFindings.length > 0 ? 'negative' : 'neutral',
+      },
+    ],
+  });
+
+  const styleCounts = new Map<string, number>();
+  for (const baseName of fileBaseNames) {
+    const style = classifyFileNameStyle(baseName);
+    styleCounts.set(style, (styleCounts.get(style) || 0) + 1);
+  }
+  const dominantStyleRatio =
+    styleCounts.size === 0 ? 1 : Math.max(...styleCounts.values()) / totalFiles;
+  const tsFileCount = filePaths.filter(file => /\.(ts|tsx)$/i.test(file)).length;
+  const jsFileCount = filePaths.filter(file => /\.(js|jsx|mjs|cjs)$/i.test(file)).length;
+  const mixedExtensionRatio = (Math.min(tsFileCount, jsFileCount) / totalFiles) * 2;
+  const consistencyScore = clampScore(
+    100
+    - softPenalty(1 - dominantStyleRatio, 24, 2.0)
+    - softPenalty(mixedExtensionRatio, 12, 1.6)
+    - softPenalty(genericFileCount / totalFiles, 10, 1.6)
+  );
+  aspects.push({
+    aspect: 'codebase-consistency',
+    label: 'Codebase Consistency',
+    weight: 10,
+    score: consistencyScore,
+    grade: gradeScore(consistencyScore),
+    confidence: confidenceFromSample(filePaths.length),
+    rationale:
+      'Rates naming/structure consistency with soft penalties for mixed filename styles, mixed TS/JS surface area, and generic file naming concentration.',
+    signals: [
+      {
+        label: 'Dominant naming style',
+        value: `${Math.round(dominantStyleRatio * 100)}%`,
+        effect: dominantStyleRatio >= 0.7 ? 'positive' : 'negative',
+      },
+      {
+        label: 'TS/JS mix ratio',
+        value: `${Math.round((Math.min(tsFileCount, jsFileCount) / totalFiles) * 100)}%`,
+        effect: mixedExtensionRatio > 0.5 ? 'negative' : 'neutral',
+      },
+      {
+        label: 'Detected file naming styles',
+        value: String(styleCounts.size),
+        effect: styleCounts.size > 3 ? 'negative' : 'neutral',
+      },
+    ],
+  });
+
+  const totalWeight = aspects.reduce((sum, aspect) => sum + aspect.weight, 0) || 1;
+  const weightedScore =
+    aspects.reduce((sum, aspect) => sum + aspect.score * aspect.weight, 0)
+    / totalWeight;
+
+  return {
+    model: 'hybrid-ai-structure-v1',
+    overallScore: clampScore(weightedScore),
+    overallGrade: gradeScore(clampScore(weightedScore)),
+    aspects,
+  };
 }
 
 function estimatePillarFileCount(
@@ -442,8 +917,14 @@ function resolveScoredCategories(activeFeatures: Set<string> | null): string[] {
 export function computeFeatureScores(
   findings: Finding[],
   totalFiles: number,
-  activeFeatures: Set<string> | null
+  activeFeatures: Set<string> | null,
+  context: FeatureScoreContext = {}
 ): FeatureScoreRow[] {
+  const hotFileRisk = new Map<string, number>();
+  for (const hf of context.hotFiles || []) {
+    hotFileRisk.set(hf.file, hf.riskScore);
+  }
+
   const categories = resolveScoredCategories(activeFeatures);
   const seenCategories = new Set(categories);
   for (const finding of findings) {
@@ -474,15 +955,38 @@ export function computeFeatureScores(
       }
       const denominator =
         affected.size > 0 ? Math.max(1, affected.size) : Math.max(1, totalFiles);
-      const score = computeHealthScoreFromSeverityBreakdown(
+      const baseScore = computeHealthScoreFromSeverityBreakdown(
         breakdown,
         denominator
       );
+      let hotspotHits = 0;
+      let hotspotMaxRisk = 0;
+      for (const file of affected) {
+        const risk = hotFileRisk.get(file) || 0;
+        if (risk <= 0) continue;
+        hotspotHits += 1;
+        hotspotMaxRisk = Math.max(hotspotMaxRisk, risk);
+      }
+      const overlapRatio = affected.size > 0 ? hotspotHits / affected.size : 0;
+      const riskWeight = hotspotMaxRisk >= 90
+        ? 10
+        : hotspotMaxRisk >= 75
+          ? 7
+          : hotspotMaxRisk >= 60
+            ? 4
+            : 2;
+      const contextPenalty = hotspotHits === 0
+        ? 0
+        : Math.min(20, Math.round(overlapRatio * 10 + riskWeight));
+      const score = Math.max(0, baseScore - contextPenalty);
       return {
         category,
         pillar: CATEGORY_PILLAR_MAP[category] || 'unmapped',
         findings: categoryFindings.length,
         affectedFiles: affected.size,
+        hotspotHits,
+        hotspotMaxRisk,
+        contextPenalty,
         severityBreakdown: breakdown,
         score,
         grade: gradeScore(score),
@@ -526,11 +1030,41 @@ function renderFeatureScores(lines: string[], rows: FeatureScoreRow[]): void {
   lines.push(
     'Per-category scoring for all active features (or all categories when unfiltered).\n'
   );
-  lines.push('| Category | Pillar | Findings | Affected Files | Score | Grade |');
-  lines.push('|----------|--------|----------|----------------|-------|-------|');
+  lines.push(
+    '| Category | Pillar | Findings | Affected Files | Hotspot Hits | Context Penalty | Score | Grade |'
+  );
+  lines.push(
+    '|----------|--------|----------|----------------|--------------|-----------------|-------|-------|'
+  );
   for (const row of rows) {
     lines.push(
-      `| \`${row.category}\` | ${row.pillar} | ${row.findings} | ${row.affectedFiles} | ${row.score}/100 | ${row.grade} |`
+      `| \`${row.category}\` | ${row.pillar} | ${row.findings} | ${row.affectedFiles} | ${row.hotspotHits} | -${row.contextPenalty} | ${row.score}/100 | ${row.grade} |`
+    );
+  }
+  lines.push('');
+}
+
+function renderQualityAspectRatings(
+  lines: string[],
+  rating: QualityRatingSummary
+): void {
+  lines.push('## AI + Structure Ratings\n');
+  lines.push(
+    'Hybrid, soft-signal scoring that blends structural findings with architecture context, naming quality, folder topology, and shared-layer health.\n'
+  );
+  lines.push(
+    `**Overall Hybrid Rating**: ${rating.overallScore}/100 (${rating.overallGrade})  `
+  );
+  lines.push(`**Model**: \`${rating.model}\`\n`);
+  lines.push(
+    '| Aspect | Weight | Score | Grade | Confidence | Why it scored this way |'
+  );
+  lines.push(
+    '|--------|--------|-------|-------|------------|------------------------|'
+  );
+  for (const aspect of rating.aspects) {
+    lines.push(
+      `| ${aspect.label} | ${aspect.weight}% | ${aspect.score}/100 | ${aspect.grade} | ${aspect.confidence} | ${aspect.rationale} |`
     );
   }
   lines.push('');

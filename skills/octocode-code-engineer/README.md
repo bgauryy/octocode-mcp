@@ -130,7 +130,15 @@ Octocode MCP (LSP)        →  validate against live code
 
 Findings are **hypotheses, not facts**. The agent validates each one with LSP tools before presenting it to you — confirmed, dismissed, or uncertain with evidence.
 
-`summary.md` now reports both pillar health and per-feature category scores so triage is explicit and comparable across runs.
+`summary.md` reports:
+- Pillar health + per-feature category scores for detector-level triage
+- **AI + Structure hybrid ratings** (soft-signal model, not rigid checks) across:
+  - Architecture & Structure
+  - Folder Topology
+  - Naming Quality
+  - Common/Shared Layer Health
+  - Maintainability & Evolvability
+  - Codebase Consistency
 
 ---
 

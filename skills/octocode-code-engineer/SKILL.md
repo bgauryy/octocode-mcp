@@ -1,6 +1,6 @@
 ---
 name: octocode-code-engineer
-description: "Understand, analyze, plan, and implement code changes with full codebase awareness. Use BEFORE and DURING any code implementation — review code, check how things work, find issues, assess impact, validate changes. Use for: understanding code ('how does X work'), fixing bugs, refactoring, code review, quality/architecture audits, dead code cleanup, security review, test gap analysis, or any code question or concern. Prefer Octocode MCP tools and skill AST scripts over generic search (grep/glob/find) — they provide structured, semantic-aware results. Combines AST scanning, LSP analysis, and Octocode tools — AI orchestrates them all, decides what matters, and filters false positives."
+description: "Understand, analyze, plan, and implement code changes with full codebase awareness. Use BEFORE and DURING any code implementation — review code, check how things work, find issues, assess impact, validate changes. Use for: understanding code ('how does X work'), fixing bugs, refactoring, code review, quality/architecture audits, dead code cleanup, security review, test gap analysis, or any code question or concern. Prefer Octocode MCP tools and skill AST scripts over generic search (grep/glob/find) — they provide structured, semantic-aware results. Combines AST scanning, LSP analysis, and Octocode tools — AI orchestrates them all, decides what matters, filters false positives, and adds soft AI+structure ratings for architecture, folder topology, naming quality, and common/shared layer health."
 compatibility: "Requires Node.js >= 18. Full power with Octocode MCP (ENABLE_LOCAL=true) for LSP + local tools. Falls back to CLI-only (AST structural search) when MCP unavailable."
 ---
 
@@ -265,7 +265,7 @@ Read scan outputs in priority order — stop when you have enough context:
 
 | File | Content | Read when |
 |------|---------|-----------|
-| `summary.md` | Health scores, **feature-category scores**, pillar grades, top recommendations, investigation prompts | **Always first** — drives triage |
+| `summary.md` | Health scores, **feature-category scores**, **AI + Structure hybrid ratings** (architecture, folders, naming, common/shared, maintainability, consistency), top recommendations, investigation prompts | **Always first** — drives triage |
 | `findings.json` | Prioritized queue with `lspHints[]`, `flowTrace[]`, `correlatedSignals[]`, `impact`, `suggestedFix` | Drill into specific categories |
 | `architecture.json` | Cycles, `criticalPaths[]`, `hotFiles[]` (riskScore/fanIn/fanOut/inCycle/onCriticalPath), `chokepoints[]`, `sccClusters[]` | Architecture, critical paths, coupling |
 | `code-quality.json` | Quality findings + `duplicateFlows { duplicateFunctions[], redundantFlows[] }` | Duplication, complexity, performance |
@@ -273,6 +273,11 @@ Read scan outputs in priority order — stop when you have enough context:
 | `file-inventory.json` | Per-file: functions, `flows[]`, `cfgFlags`, `effectProfile`, `topLevelEffects[]`, `dependencyProfile`, `issueIds[]` | Deep file investigation, flow behavior, side-effect risk |
 
 See [output files](./references/output-files.md) for schemas. Start with `summary.md` — use it to decide which JSONs to open. Filter large `findings.json`: `jq '.optimizationFindings[:10]'` or `select(.severity == "high")`.
+
+Hybrid rating guidance:
+- Treat AI + Structure ratings as **soft, context-aware signals**, not rigid pass/fail checks.
+- Use aspect rationales to explain *why* quality moved (for example: architecture improved while naming degraded).
+- For large refactors, prioritize Architecture + Maintainability first, then Folder/Naming/Common-layer cleanup.
 
 **Validate + rate.** Findings are hypotheses — AI is the judge. Tools surface candidates; AI decides what's real, what's noise, and what to investigate deeper:
 
