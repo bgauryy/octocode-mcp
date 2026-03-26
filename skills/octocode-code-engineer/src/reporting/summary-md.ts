@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { PILLAR_CATEGORIES, SEVERITY_ORDER } from '../types/index.js';
 import { isTestFile } from '../common/utils.js';
+import { PILLAR_CATEGORIES, SEVERITY_ORDER } from '../types/index.js';
 
 import type { ReportAnalysisSummary } from './analysis.js';
 import type {
