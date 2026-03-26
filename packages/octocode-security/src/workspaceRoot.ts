@@ -18,6 +18,15 @@ function isExistingDirectory(candidate: string): boolean {
   }
 }
 
+/**
+ * Determine workspace root from explicit param, env var, or cwd.
+ *
+ * @example
+ * ```ts
+ * resolveWorkspaceRoot('/explicit/path'); // → '/explicit/path'
+ * resolveWorkspaceRoot();                  // → WORKSPACE_ROOT env or process.cwd()
+ * ```
+ */
 export function resolveWorkspaceRoot(explicit?: string): string {
   if (explicit) {
     return path.resolve(explicit);

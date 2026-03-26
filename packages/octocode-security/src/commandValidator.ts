@@ -210,8 +210,16 @@ interface CommandValidationResult {
 }
 
 /**
- * Validates that a command is allowed and safe to execute
- * Uses command-aware validation to allow legitimate patterns
+ * Validates that a command is allowed and safe to execute.
+ * Uses command-aware validation to allow legitimate patterns.
+ *
+ * @example
+ * ```ts
+ * validateCommand('rg', ['--json', 'pattern', './src']);
+ * // → { isValid: true }
+ * validateCommand('rm', ['-rf', '/']);
+ * // → { isValid: false, error: "Command 'rm' is not allowed. ..." }
+ * ```
  */
 export function validateCommand(
   command: string,
@@ -480,6 +488,37 @@ function validateGitArgs(args: string[]): string | null {
   return null;
 }
 
+const GIT_CLONE_FLAGS_WITH_VALUES = new Set([
+  '--depth',
+  '--branch',
+  '--filter',
+]);
+
+/**
+ * Process a single clone flag and return the number of extra args it consumes,
+ * or an error string if the flag is disallowed or its value is invalid.
+ */
+function processCloneFlag(
+  args: string[],
+  i: number
+): { skip: number; error?: string } {
+  const arg = args[i]!;
+
+  if (!GIT_CLONE_ALLOWED_FLAGS.has(arg)) {
+    return { skip: 0, error: `git clone flag '${arg}' is not allowed` };
+  }
+
+  if (GIT_CLONE_FLAGS_WITH_VALUES.has(arg)) return { skip: 1 };
+
+  if (arg === '-c' && i + 1 < args.length) {
+    const configError = validateGitConfigKeyValue(args[i + 1]!);
+    if (configError) return { skip: 1, error: configError };
+    return { skip: 1 };
+  }
+
+  return { skip: 0 };
+}
+
 /**
  * Validate arguments for `git clone`.
  * Validates flags against the allowlist, config keys against GIT_SAFE_CONFIG_KEYS,
@@ -501,7 +540,6 @@ function validateGitCloneArgs(
     }
 
     if (pastEndOfFlags || !arg.startsWith('-')) {
-      // Positional arg: first one is the clone URL
       if (!urlFound) {
         const urlError = validateGitCloneUrl(arg);
         if (urlError) return urlError;
@@ -510,23 +548,31 @@ function validateGitCloneArgs(
       continue;
     }
 
-    if (!GIT_CLONE_ALLOWED_FLAGS.has(arg)) {
-      return `git clone flag '${arg}' is not allowed`;
-    }
-
-    // Flags that consume the next argument as their value
-    if (arg === '--depth' || arg === '--branch' || arg === '--filter') {
-      i++;
-    } else if (arg === '-c') {
-      i++;
-      if (i < args.length) {
-        const keyValue = args[i]!;
-        const configError = validateGitConfigKeyValue(keyValue);
-        if (configError) return configError;
-      }
-    }
+    const { skip, error } = processCloneFlag(args, i);
+    if (error) return error;
+    i += skip;
   }
 
+  return null;
+}
+
+/**
+ * Validate flags in a git subcommand arg list against an allowlist.
+ * Non-flag positional arguments are allowed through.
+ */
+function validateGitSubcommandFlags(
+  args: string[],
+  startIndex: number,
+  allowedFlags: Set<string>,
+  label: string
+): string | null {
+  for (let i = startIndex; i < args.length; i++) {
+    const arg = args[i]!;
+    if (!arg.startsWith('-')) continue;
+    if (!allowedFlags.has(arg)) {
+      return `git ${label} flag '${arg}' is not allowed`;
+    }
+  }
   return null;
 }
 
@@ -546,16 +592,12 @@ function validateGitSparseCheckoutArgs(
   if (!GIT_SPARSE_CHECKOUT_ALLOWED_ACTIONS.has(action)) {
     return `git sparse-checkout action '${action}' is not allowed`;
   }
-  for (let i = actionIndex + 1; i < args.length; i++) {
-    const arg = args[i]!;
-    if (!arg.startsWith('-')) {
-      continue; // path patterns (positional args for set/add)
-    }
-    if (!GIT_SPARSE_CHECKOUT_ALLOWED_FLAGS.has(arg)) {
-      return `git sparse-checkout flag '${arg}' is not allowed`;
-    }
-  }
-  return null;
+  return validateGitSubcommandFlags(
+    args,
+    actionIndex + 1,
+    GIT_SPARSE_CHECKOUT_ALLOWED_FLAGS,
+    'sparse-checkout'
+  );
 }
 
 function findInvalidFindArg(args: string[]): string | null {

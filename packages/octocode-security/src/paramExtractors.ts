@@ -37,6 +37,17 @@ function extractResearchFieldsFromQuery(
   return fields;
 }
 
+/**
+ * Extract research metadata (goals, reasoning) from tool parameters.
+ *
+ * @example
+ * ```ts
+ * extractResearchFields({
+ *   queries: [{ researchGoal: 'find auth flow', reasoning: 'tracing login' }]
+ * });
+ * // → { researchGoal: 'find auth flow', reasoning: 'tracing login' }
+ * ```
+ */
 export function extractResearchFields(
   params: Record<string, unknown>
 ): ResearchFields {
@@ -88,6 +99,15 @@ function extractRepoOwnerFromQuery(query: Record<string, unknown>): string[] {
   return [];
 }
 
+/**
+ * Extract repository identifiers (owner/repo) from tool parameters.
+ *
+ * @example
+ * ```ts
+ * extractRepoOwnerFromParams({ owner: 'facebook', repo: 'react' });
+ * // → ['facebook/react']
+ * ```
+ */
 export function extractRepoOwnerFromParams(
   params: Record<string, unknown>
 ): string[] {

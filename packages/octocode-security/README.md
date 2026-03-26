@@ -34,7 +34,7 @@ This creates attack surface that traditional web security doesn't cover:
 | [maskSensitiveData](#masksensitivedata) | Partially mask secrets for logs (keeps partial visibility) | `@octocode/security/mask` |
 | [validateCommand](#validatecommand) | Whitelist-based command validation with per-command arg rules | `@octocode/security/commandValidator` |
 | [validateExecutionContext](#validateexecutioncontext) | Validate working directory before spawning processes | `@octocode/security/executionContextValidator` |
-| [withSecurityValidation](#withsecurityvalidation) | Wrap any tool handler with sanitization + timeout + telemetry | `@octocode/security/withSecurityValidation` |
+| [withSecurityValidation](#withsecurityvalidation) | Wrap any tool handler with input sanitization + timeout + telemetry | `@octocode/security/withSecurityValidation` |
 | [SecurityRegistry](#securityregistry) | Extend all security rules at runtime (patterns, commands, paths) | `@octocode/security/registry` |
 | [Ignored Path Filters](#ignored-path-filters) | Filter out `.env`, `.git`, `.ssh`, `.aws`, and similar paths | `@octocode/security/ignoredPathFilter` |
 | [Regex Patterns](#regex-patterns) | 200+ secret detection patterns across 13 categories | `@octocode/security/regexes` |
@@ -45,6 +45,144 @@ This creates attack surface that traditional web security doesn't cover:
 | [Types](#types) | All TypeScript interfaces | `@octocode/security/types` |
 
 Everything is also available from the main `@octocode/security` entry point.
+
+---
+
+## API at a Glance
+
+A quick "why and how" for every API. See the full reference sections below for details.
+
+### Protect files — `PathValidator`
+
+**Why:** Models construct file paths. Without validation, they can read `/etc/passwd` or escape via symlinks.
+**When:** Before any `readFile`, `writeFile`, `stat`, or directory listing.
+
+```typescript
+const v = new PathValidator({ workspaceRoot: '/app' });
+v.validate('../../etc/passwd');     // → { isValid: false, error: "..." }
+v.validate('./src/index.ts');       // → { isValid: true, sanitizedPath: '/app/src/index.ts' }
+await v.exists('./src/index.ts');   // → true (validated + exists)
+```
+
+### Strip secrets — `ContentSanitizer`
+
+**Why:** File contents and API responses may contain tokens, keys, or passwords. If they reach model output, they're compromised.
+**When:** Before returning any text to a model, before logging, before storing output.
+
+```typescript
+ContentSanitizer.sanitizeContent('key: ghp_abc123xyz');
+// → { content: 'key: [REDACTED-GITHUB-PAT]', hasSecrets: true }
+
+ContentSanitizer.validateInputParameters({ token: 'sk-proj-abc123' });
+// → { sanitizedParams: { token: '[REDACTED-...]' }, isValid: true, hasSecrets: true }
+```
+
+### Mask for logs — `maskSensitiveData`
+
+**Why:** Sometimes you need partial visibility of a secret for debugging, without fully exposing it.
+**When:** Writing to debug logs, error reports, or developer-facing output.
+
+```typescript
+maskSensitiveData('token: sk-proj-abc123');
+// → 'token: *k*p*o*-*b*1*3'
+```
+
+### Gate commands — `validateCommand`
+
+**Why:** Models can inject shell metacharacters (`; rm -rf /`) through tool arguments.
+**When:** Before every `exec`/`spawn` call.
+
+```typescript
+validateCommand('rg', ['pattern', './src']);  // → { isValid: true }
+validateCommand('rm', ['-rf', '/']);          // → { isValid: false, error: "..." }
+```
+
+### Wrap handlers — `withSecurityValidation`
+
+**Why:** Every tool handler needs input sanitization, timeouts, and error containment. Boilerplate per-tool is error-prone.
+**When:** Wrapping any tool handler that serves model requests.
+
+```typescript
+const searchCode = withSecurityValidation<{ query: string }>(
+  'search_code',
+  async (args, authInfo) => {
+    // args already sanitized — secrets replaced with [REDACTED-*]
+    return { content: [{ type: 'text', text: await search(args.query) }] };
+  }
+);
+```
+
+### Extend rules — `SecurityRegistry`
+
+**Why:** Built-in patterns won't cover company-specific tokens or custom CLI tools. Extend without forking.
+**When:** At app startup, before any tool calls.
+
+```typescript
+securityRegistry.addSecretPatterns([{ name: 'corp-token', regex: /CORP_[A-Z0-9]{32}/g, ... }]);
+securityRegistry.addAllowedCommands(['jq']);
+securityRegistry.freeze();  // lock after configuration
+```
+
+### Check working directory — `validateExecutionContext`
+
+**Why:** Subprocesses should only run inside the workspace, not in `/etc` or arbitrary paths.
+**When:** Before `spawn`/`exec` with a custom `cwd`.
+
+```typescript
+validateExecutionContext('/app/packages/core');  // → { isValid: true }
+validateExecutionContext('/etc');                 // → { isValid: false }
+```
+
+### Filter sensitive paths — `shouldIgnore`
+
+**Why:** Even inside the workspace, `.env`, `.git/config`, `.ssh/id_rsa` should never be served.
+**When:** Before returning file listings or reading file content.
+
+```typescript
+shouldIgnore('/app/.env');          // → true
+shouldIgnore('/app/src/index.ts');  // → false
+```
+
+### Redact paths in errors — `redactPath`
+
+**Why:** Error messages shouldn't leak your filesystem layout (`/home/alice/project/...`).
+**When:** In any user-facing error or log message containing file paths.
+
+```typescript
+redactPath('/home/alice/project/src/index.ts', '/home/alice/project');
+// → 'src/index.ts'
+```
+
+### Resolve workspace — `resolveWorkspaceRoot`
+
+**Why:** Multiple sources can define the workspace root (explicit param, env var, `cwd`). You need one answer.
+**When:** At initialization, before constructing `PathValidator` or `validateExecutionContext`.
+
+```typescript
+resolveWorkspaceRoot();              // → WORKSPACE_ROOT env var or cwd
+resolveWorkspaceRoot('/explicit');   // → '/explicit'
+```
+
+### Extract metadata — `extractResearchFields` / `extractRepoOwnerFromParams`
+
+**Why:** Tool parameters from AI agents often contain research context and repo identifiers buried in nested or batched formats.
+**When:** For telemetry logging inside tool wrappers (used internally by `withSecurityValidation`).
+
+```typescript
+extractRepoOwnerFromParams({ owner: 'facebook', repo: 'react' });
+// → ['facebook/react']
+```
+
+### Use raw patterns — `allRegexPatterns`
+
+**Why:** You may need the raw regex patterns for custom scanning pipelines outside of `ContentSanitizer`.
+**When:** Building your own secret scanner, pre-commit hook, or CI check.
+
+```typescript
+for (const pattern of allRegexPatterns) {
+  if (pattern.regex.test(content)) console.warn(`Found ${pattern.name}`);
+}
+```
 
 ---
 
@@ -82,6 +220,10 @@ validateExecutionContext('/app/packages/core');
 ```
 
 ---
+
+## Full API Reference
+
+The sections below provide complete documentation for each module.
 
 ## PathValidator
 
@@ -296,9 +438,11 @@ Extend the allowed command list via the [SecurityRegistry](#securityregistry).
 
 ## withSecurityValidation
 
-**Problem:** Every tool handler needs the same boilerplate — sanitize input, enforce timeouts, redact secrets from output, log telemetry. Writing this per-tool is error-prone.
+**Problem:** Every tool handler needs the same boilerplate — sanitize input, enforce timeouts, log telemetry. Writing this per-tool is error-prone.
 
 **Solution:** Higher-order functions that wrap any async handler. Two variants: one for remote/authenticated tools, one for local tools.
+
+> **Note:** These wrappers handle **input** sanitization and timeouts. **Output** sanitization (stripping secrets from handler return values) should be applied separately at the transport layer — for example, via a proxy around the tool registration API. See the [Defense-in-Depth](#defense-in-depth-layers) section for the full picture.
 
 ### For remote/authenticated tools
 
@@ -315,7 +459,7 @@ const searchCode = withSecurityValidation<{ query: string; repo: string }>(
   }
 );
 
-// Input sanitized, 60s timeout applied, output scanned for secrets
+// Input sanitized, 60s timeout applied
 const result = await searchCode(
   { query: 'password', repo: 'myorg/myrepo' },
   { authInfo: myAuth, sessionId: 'session-123' }
@@ -325,16 +469,17 @@ const result = await searchCode(
 ```typescript
 function withSecurityValidation<T, TAuth = unknown>(
   toolName: string,
-  handler: (sanitizedArgs: T, authInfo?: TAuth, sessionId?: string) => Promise<ToolResult>
+  handler: (sanitizedArgs: T, authInfo?: TAuth, sessionId?: string) => Promise<ToolResult>,
+  options?: { timeoutMs?: number }
 ): (args: unknown, extra: { authInfo?: TAuth; sessionId?: string; signal?: AbortSignal }) => Promise<ToolResult>
 ```
 
 What it does:
 1. Sanitizes all input parameters (secrets replaced, prototype pollution blocked)
 2. Passes sanitized args + auth to your handler
-3. Applies a 60-second timeout (returns error result, doesn't throw)
-4. Scans handler output for secrets and redacts them
-5. Logs telemetry if configured via `configureSecurity`
+3. Applies a configurable timeout (default 60s; returns error result, doesn't throw)
+4. Logs telemetry if configured via `configureSecurity`
+5. Catches handler errors and returns a safe error result
 
 ### For local tools (no auth)
 
@@ -355,7 +500,8 @@ const result = await readFile({ path: './src/index.ts' });
 ```typescript
 function withBasicSecurityValidation<T>(
   handler: (sanitizedArgs: T) => Promise<ToolResult>,
-  toolName?: string
+  toolName?: string,
+  options?: { timeoutMs?: number }
 ): (args: unknown, extra?: { signal?: AbortSignal }) => Promise<ToolResult>
 ```
 
@@ -426,6 +572,39 @@ securityRegistry.reset();
 
 The singleton uses `globalThis` to survive module duplication (vitest transforms, dual ESM/CJS loading, bundler code-splitting).
 
+### Freezing the Registry
+
+After initial configuration, lock the registry to prevent runtime tampering:
+
+```typescript
+securityRegistry.addAllowedCommands(['jq', 'yq']);
+securityRegistry.freeze();
+
+// All subsequent add* calls throw:
+securityRegistry.addAllowedCommands(['curl']);
+// → Error: SecurityRegistry is frozen — call reset() to unfreeze before mutating
+
+securityRegistry.frozen; // true
+
+// reset() unfreezes and clears everything:
+securityRegistry.reset();
+securityRegistry.frozen; // false
+```
+
+### ReDoS Protection
+
+All regex patterns registered via `addSecretPatterns`, `addIgnoredPathPatterns`, and `addIgnoredFilePatterns` are tested against a timing threshold before acceptance. Patterns that exhibit catastrophic backtracking are rejected:
+
+```typescript
+securityRegistry.addSecretPatterns([{
+  name: 'dangerous',
+  description: 'Catastrophic backtracking',
+  regex: /(a+)+$/g,  // classic ReDoS pattern
+  matchAccuracy: 'high',
+}]);
+// → Error: Pattern 'dangerous' failed ReDoS safety check — regex may cause catastrophic backtracking
+```
+
 ### Full Interface
 
 ```typescript
@@ -435,11 +614,14 @@ interface ISecurityRegistry {
   readonly extraAllowedRoots: readonly string[];
   readonly extraIgnoredPathPatterns: readonly RegExp[];
   readonly extraIgnoredFilePatterns: readonly RegExp[];
+  readonly version: number;
+  readonly frozen: boolean;
   addSecretPatterns(patterns: SensitiveDataPattern[]): void;
   addAllowedCommands(commands: string[]): void;
   addAllowedRoots(roots: string[]): void;
   addIgnoredPathPatterns(patterns: RegExp[]): void;
   addIgnoredFilePatterns(patterns: RegExp[]): void;
+  freeze(): void;
   reset(): void;
 }
 ```
@@ -720,11 +902,14 @@ interface ISecurityRegistry {
   readonly extraAllowedRoots: readonly string[];
   readonly extraIgnoredPathPatterns: readonly RegExp[];
   readonly extraIgnoredFilePatterns: readonly RegExp[];
+  readonly version: number;
+  readonly frozen: boolean;
   addSecretPatterns(patterns: SensitiveDataPattern[]): void;
   addAllowedCommands(commands: string[]): void;
   addAllowedRoots(roots: string[]): void;
   addIgnoredPathPatterns(patterns: RegExp[]): void;
   addIgnoredFilePatterns(patterns: RegExp[]): void;
+  freeze(): void;
   reset(): void;
 }
 ```
@@ -805,6 +990,79 @@ import { SecurityRegistry }           from '@octocode/security/registry';
 import { extractResearchFields }      from '@octocode/security/paramExtractors';
 import type { ToolResult }            from '@octocode/security/types';
 ```
+
+---
+
+## Content Size Limits
+
+`ContentSanitizer.sanitizeContent()` enforces a 10 MB input limit. Inputs larger than 10,000,000 characters are replaced with a redaction marker — no regex is run. This prevents DoS via large payloads:
+
+```typescript
+ContentSanitizer.sanitizeContent('x'.repeat(10_000_001));
+// → { content: '[CONTENT-REDACTED-SIZE-LIMIT]', hasSecrets: true, ... }
+```
+
+`validateInputParameters` separately enforces per-field limits: strings are truncated at 10,000 chars, arrays at 100 items, nesting at 20 levels.
+
+---
+
+## Performance
+
+All security APIs are designed for hot-path usage with minimal allocation overhead:
+
+| Operation | Typical latency | Notes |
+|-----------|----------------|-------|
+| `PathValidator.validate()` | <0.5ms | Single `realpathSync` + prefix match |
+| `ContentSanitizer.sanitizeContent()` (small) | <5ms | 200+ patterns, single pass |
+| `ContentSanitizer.sanitizeContent()` (>500KB) | ~50ms | Chunked with 1KB overlap |
+| `validateCommand()` | <0.1ms | Set lookups, no regex |
+| `maskSensitiveData()` | <5ms | Combined regex, single pass |
+| `shouldIgnore()` | <0.1ms | Compiled regex, cached |
+
+**Caching strategy:**
+
+- **Pattern arrays** (`ContentSanitizer`, `maskSensitiveData`) are cached and invalidated only when `SecurityRegistry` version changes.
+- **Compiled regexes** (`ignoredPathFilter`) are rebuilt only on registry mutation.
+- **Frozen getter snapshots** (`SecurityRegistry`) return the same reference between mutations — no array spread on every read.
+
+---
+
+## Security Threat Model
+
+This package is designed for a specific threat model: **untrusted structured input executed with real privileges** — where an AI model generates tool calls that run against real filesystems, shells, and APIs.
+
+### Threats Addressed
+
+| Threat | Module | Mitigation |
+|--------|--------|------------|
+| **Path traversal** (`../../etc/passwd`, symlinks) | `PathValidator` | Resolve symlinks → check real path against allowlist |
+| **Symlink escape** (link inside workspace points outside) | `PathValidator` | `realpathSync` before every validation |
+| **Command injection** (`; rm -rf /`, `` `cmd` ``, `$(cmd)`) | `validateCommand` | Command allowlist + per-command arg rules + shell metachar blocking |
+| **Secret exfiltration** (model returns API keys) | `ContentSanitizer` | 200+ regex patterns scan input and output |
+| **Prompt injection via secrets** (credentials in error logs) | `maskSensitiveData`, `redactPath` | Partial masking + path redaction |
+| **Prototype pollution** (`__proto__`, `constructor`) | `ContentSanitizer` | Blocked in recursive validation |
+| **DoS via large input** | `ContentSanitizer` | 10 MB limit, chunked processing, per-field truncation |
+| **ReDoS via custom patterns** | `SecurityRegistry` | Timing-based safety check on all registered regex |
+| **Runtime config tampering** | `SecurityRegistry.freeze()` | Lock after startup configuration |
+| **Sensitive file exposure** (`.env`, `.ssh/id_rsa`) | `ignoredPathFilter` | Pattern-based blocklist for files and directories |
+| **Unsafe git operations** (`push`, `--force`, `file://`) | `validateCommand` | Subcommand allowlist, flag allowlist, URL protocol blocklist |
+| **Tool timeout abuse** | `withSecurityValidation` | Configurable timeout with AbortSignal support |
+
+### Defense-in-Depth Layers
+
+```
+Input → validateInputParameters → sanitizeContent → [handler] → Output Sanitization → Output
+  │         │                        │                              │
+  │    Block prototype              Strip secrets              sanitizeCallToolResult
+  │    pollution, enforce           from handler args          (transport-layer proxy)
+  │    size limits                                             ContentSanitizer +
+  │                                                            maskSensitiveData +
+  ├── validateCommand (if shell)                               sanitizeStructuredContent
+  ├── PathValidator.validate (if filesystem)
+  └── validateExecutionContext (if cwd)
+```
+
+Input security (`withSecurityValidation` / `withBasicSecurityValidation`) runs inside each handler wrapper. Output security runs once at the transport layer — e.g., a proxy around `registerTool` — so every tool's response is sanitized uniformly without per-tool boilerplate.
 
 ---
 

@@ -53,6 +53,14 @@ const HOME_DIR = normalizePath(os.homedir());
  * @param absolutePath - The full path to redact
  * @param workspaceRoot - Optional workspace root (resolved from config/CWD if omitted)
  * @returns Redacted path string safe for error messages
+ *
+ * @example
+ * ```ts
+ * redactPath('/home/alice/project/src/index.ts', '/home/alice/project');
+ * // → 'src/index.ts'
+ * redactPath('/opt/system/config.yaml');
+ * // → 'config.yaml'
+ * ```
  */
 export function redactPath(
   absolutePath: string,

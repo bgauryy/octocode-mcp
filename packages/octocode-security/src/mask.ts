@@ -21,6 +21,15 @@ function resolvePatterns(
   return extra.length > 0 ? [...base, ...extra] : base;
 }
 
+/**
+ * Partially mask secrets for logs — alternating characters replaced with `*`.
+ *
+ * @example
+ * ```ts
+ * maskSensitiveData('export GITHUB_TOKEN=ghp_abc123xyz');
+ * // → 'export GITHUB_TOKEN=*h*_*b*1*3*y*'
+ * ```
+ */
 export function maskSensitiveData(
   text: string,
   patterns?: SensitiveDataPattern[]

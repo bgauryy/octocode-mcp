@@ -81,7 +81,14 @@ export class PathValidator {
   }
 
   /**
-   * Adds an allowed root directory
+   * Adds an allowed root directory.
+   *
+   * @example
+   * ```ts
+   * validator.addAllowedRoot('/tmp/builds');
+   * validator.validate('/tmp/builds/output.js');
+   * // → { isValid: true, sanitizedPath: '/tmp/builds/output.js' }
+   * ```
    */
   addAllowedRoot(root: string): void {
     const expandedRoot = this.expandTilde(root);
@@ -99,6 +106,14 @@ export class PathValidator {
    * This behavior cannot be disabled as it's a core security requirement.
    *
    * @param inputPath - The path to validate
+   * @example
+   * ```ts
+   * const v = new PathValidator({ workspaceRoot: '/app' });
+   * v.validate('/app/src/index.ts');
+   * // → { isValid: true, sanitizedPath: '/app/src/index.ts' }
+   * v.validate('../../etc/passwd');
+   * // → { isValid: false, error: "Path '../../etc/passwd' is outside allowed directories" }
+   * ```
    */
   validate(inputPath: string): PathValidationResult {
     if (!inputPath || inputPath.trim() === '') {
@@ -197,7 +212,13 @@ export class PathValidator {
   }
 
   /**
-   * Checks if a path exists and is accessible
+   * Checks if a path exists and is accessible.
+   *
+   * @example
+   * ```ts
+   * await validator.exists('/app/src/index.ts'); // true
+   * await validator.exists('/etc/shadow');         // false (outside root)
+   * ```
    */
   async exists(inputPath: string): Promise<boolean> {
     const validation = this.validate(inputPath);
@@ -214,7 +235,14 @@ export class PathValidator {
   }
 
   /**
-   * Gets the type of a path (file, directory, symlink)
+   * Gets the type of a path (file, directory, symlink).
+   *
+   * @example
+   * ```ts
+   * await validator.getType('/app/src');          // 'directory'
+   * await validator.getType('/app/src/index.ts'); // 'file'
+   * await validator.getType('/etc/passwd');        // null (outside root)
+   * ```
    */
   async getType(
     inputPath: string

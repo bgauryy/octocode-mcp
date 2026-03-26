@@ -42,9 +42,15 @@ function getCompiledFileRegex(): RegExp {
 }
 
 /**
- * Checks if a path should be ignored
+ * Checks if a path should be ignored.
  * @param pathToCheck - The path to check (relative or absolute)
  * @returns true if the path should be ignored
+ *
+ * @example
+ * ```ts
+ * shouldIgnorePath('.aws/credentials'); // true
+ * shouldIgnorePath('src/index.ts');     // false
+ * ```
  */
 export function shouldIgnorePath(pathToCheck: string): boolean {
   if (!pathToCheck || pathToCheck.trim() === '') {
@@ -63,9 +69,15 @@ export function shouldIgnorePath(pathToCheck: string): boolean {
 }
 
 /**
- * Checks if a file should be ignored
+ * Checks if a file should be ignored.
  * @param fileName - The file name or full path to check
  * @returns true if the file should be ignored
+ *
+ * @example
+ * ```ts
+ * shouldIgnoreFile('.env.local');   // true
+ * shouldIgnoreFile('package.json'); // false
+ * ```
  */
 export function shouldIgnoreFile(fileName: string): boolean {
   if (!fileName || fileName.trim() === '') {
@@ -80,9 +92,16 @@ export function shouldIgnoreFile(fileName: string): boolean {
 }
 
 /**
- * Combined check for both path and file filtering
+ * Combined check for both path and file filtering.
  * @param fullPath - The full path to check
  * @returns true if the path or file should be ignored
+ *
+ * @example
+ * ```ts
+ * shouldIgnore('/app/.git/config'); // true
+ * shouldIgnore('/app/.env');        // true
+ * shouldIgnore('/app/src/index.ts');// false
+ * ```
  */
 export function shouldIgnore(fullPath: string): boolean {
   return shouldIgnorePath(fullPath) || shouldIgnoreFile(fullPath);

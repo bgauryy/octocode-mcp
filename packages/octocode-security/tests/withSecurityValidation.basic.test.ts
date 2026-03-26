@@ -695,101 +695,40 @@ describe('withSecurityValidation - Additional Coverage', () => {
   // S1 — Output sanitization: secrets in tool output must be masked
   // =========================================================================
 
-  describe('output sanitization', () => {
-    it('should sanitize secrets found in text output content', async () => {
+  describe('output passthrough (sanitization delegated to unified layer)', () => {
+    it('should return raw handler output without modifying content', async () => {
       const SECRET = 'ghp_abc123xyz456789012345678901234567890';
-      const mockHandler = vi.fn().mockResolvedValue({
+      const handlerResult = {
         content: [{ type: 'text', text: `token: ${SECRET}` }],
-      });
+      };
+      const mockHandler = vi.fn().mockResolvedValue(handlerResult);
 
-      const mockValidation = {
+      vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
         isValid: true,
         sanitizedParams: {},
         warnings: [],
         hasSecrets: false,
-      };
-
-      // Let sanitizeContent detect and replace the secret
-      vi.mocked(ContentSanitizer.sanitizeContent).mockImplementation(
-        (content: string) => ({
-          content: content.includes('ghp_')
-            ? content.replace(/ghp_[a-zA-Z0-9]+/, '[REDACTED-GITHUB-PAT]')
-            : content,
-          hasSecrets: content.includes('ghp_'),
-          secretsDetected: content.includes('ghp_') ? ['GitHub-PAT'] : [],
-          warnings: [],
-        })
-      );
-      vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue(
-        mockValidation
-      );
-
-      const wrappedHandler = withSecurityValidation('test_tool', mockHandler);
-      const result = await wrappedHandler({}, {});
-
-      expect(result.isError).toBeUndefined();
-      const text = result.content[0]?.text ?? '';
-      expect(text).not.toContain(SECRET);
-      expect(text).toContain('[REDACTED-');
-    });
-
-    it('should leave output unchanged when no secrets are present', async () => {
-      const SAFE_TEXT = 'results: 42 files found';
-      const mockHandler = vi.fn().mockResolvedValue({
-        content: [{ type: 'text', text: SAFE_TEXT }],
       });
 
-      const mockValidation = {
-        isValid: true,
-        sanitizedParams: {},
-        warnings: [],
-        hasSecrets: false,
-      };
-
-      vi.mocked(ContentSanitizer.sanitizeContent).mockImplementation(
-        (content: string) => ({
-          content,
-          hasSecrets: false,
-          secretsDetected: [],
-          warnings: [],
-        })
-      );
-      vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue(
-        mockValidation
-      );
-
       const wrappedHandler = withSecurityValidation('test_tool', mockHandler);
       const result = await wrappedHandler({}, {});
 
-      expect(result.content[0]?.text).toBe(SAFE_TEXT);
+      expect(result.content[0]?.text).toBe(`token: ${SECRET}`);
     });
 
-    it('should sanitize secrets in withBasicSecurityValidation output', async () => {
+    it('should return raw output from withBasicSecurityValidation', async () => {
       const SECRET = 'sk-proj-abc123xyz456789012345678901234567890';
-      const mockHandler = vi.fn().mockResolvedValue({
+      const handlerResult = {
         content: [{ type: 'text', text: `key=${SECRET}` }],
-      });
+      };
+      const mockHandler = vi.fn().mockResolvedValue(handlerResult);
 
-      const mockValidation = {
+      vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
         isValid: true,
         sanitizedParams: {},
         warnings: [],
         hasSecrets: false,
-      };
-
-      vi.mocked(ContentSanitizer.sanitizeContent).mockImplementation(
-        (content: string) => ({
-          content: content.includes('sk-proj-')
-            ? content.replace(/sk-proj-[a-zA-Z0-9]+/, '[REDACTED-OPENAI]')
-            : content,
-          hasSecrets: content.includes('sk-proj-'),
-          secretsDetected: [],
-          warnings: [],
-        })
-      );
-      vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue(
-        mockValidation
-      );
+      });
 
       const wrappedHandler = withBasicSecurityValidation(
         mockHandler,
@@ -797,12 +736,10 @@ describe('withSecurityValidation - Additional Coverage', () => {
       );
       const result = await wrappedHandler({});
 
-      const text = result.content[0]?.text ?? '';
-      expect(text).not.toContain(SECRET);
-      expect(text).toContain('[REDACTED-');
+      expect(result.content[0]?.text).toBe(`key=${SECRET}`);
     });
 
-    it('should not scan non-text content items (images, audio)', async () => {
+    it('should preserve non-text content items without scanning', async () => {
       const mockHandler = vi.fn().mockResolvedValue({
         content: [
           { type: 'image', data: 'base64data', mimeType: 'image/png' },
@@ -810,34 +747,21 @@ describe('withSecurityValidation - Additional Coverage', () => {
         ],
       });
 
-      const mockValidation = {
+      vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue({
         isValid: true,
         sanitizedParams: {},
         warnings: [],
         hasSecrets: false,
-      };
-
-      vi.mocked(ContentSanitizer.sanitizeContent).mockImplementation(
-        (content: string) => ({
-          content,
-          hasSecrets: false,
-          secretsDetected: [],
-          warnings: [],
-        })
-      );
-      vi.mocked(ContentSanitizer.validateInputParameters).mockReturnValue(
-        mockValidation
-      );
+      });
 
       const wrappedHandler = withSecurityValidation('test_tool', mockHandler);
       const result = await wrappedHandler({}, {});
 
-      // image item should be preserved as-is
       expect(result.content[0]).toMatchObject({ type: 'image' });
-      // sanitizeContent should only be called for text items
-      expect(vi.mocked(ContentSanitizer.sanitizeContent)).toHaveBeenCalledTimes(
-        1
-      );
+      expect(result.content[1]).toMatchObject({
+        type: 'text',
+        text: 'safe text',
+      });
     });
   });
 });

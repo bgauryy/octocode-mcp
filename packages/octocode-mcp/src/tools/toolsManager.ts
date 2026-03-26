@@ -9,6 +9,7 @@ import { ToolInvocationCallback } from '../types.js';
 import { isToolInMetadata } from './toolMetadata/proxies.js';
 import { logSessionError } from '../session.js';
 import { TOOL_METADATA_ERRORS } from '../errors/domainErrors.js';
+import { withOutputSanitization } from '../utils/secureServer.js';
 
 /**
  * Register all tools from ALL_TOOLS (single source of truth in toolConfig.ts).
@@ -40,6 +41,9 @@ export async function registerTools(
     );
   }
 
+  // Unified output sanitization — wraps every tool callback automatically
+  const secureServer = withOutputSanitization(server);
+
   let successCount = 0;
   const failedTools: string[] = [];
 
@@ -70,7 +74,7 @@ export async function registerTools(
 
     // Step 3: Register the tool
     try {
-      const result = await tool.fn(server, callback);
+      const result = await tool.fn(secureServer, callback);
       if (result !== null) {
         successCount++;
       }

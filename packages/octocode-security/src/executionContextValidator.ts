@@ -19,6 +19,14 @@ import { securityRegistry } from './registry.js';
  * @param cwd - The current working directory where the command will execute
  * @param workspaceRoot - Optional workspace root override
  * @param additionalRoots - Extra root directories to allow
+ *
+ * @example
+ * ```ts
+ * validateExecutionContext('/app/packages/core');
+ * // → { isValid: true, sanitizedPath: '/app/packages/core' }
+ * validateExecutionContext('/etc');
+ * // → { isValid: false, error: 'Can only execute commands within ...' }
+ * ```
  */
 export function validateExecutionContext(
   cwd: string | undefined,

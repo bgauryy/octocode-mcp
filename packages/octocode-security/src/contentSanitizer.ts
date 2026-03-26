@@ -3,12 +3,23 @@ import type { SensitiveDataPattern } from './regexes/types.js';
 import type { SanitizationResult, ValidationResult } from './types.js';
 import { securityRegistry } from './registry.js';
 
+let _cachedPatterns: SensitiveDataPattern[] | null = null;
+let _cachedVersion = -1;
+
 function getAllPatterns(
   explicit?: SensitiveDataPattern[]
 ): SensitiveDataPattern[] {
-  const base = explicit ?? allRegexPatterns;
+  if (explicit) {
+    const extra = securityRegistry.extraSecretPatterns;
+    return extra.length > 0 ? [...explicit, ...extra] : explicit;
+  }
+  const ver = securityRegistry.version;
+  if (_cachedPatterns && ver === _cachedVersion) return _cachedPatterns;
   const extra = securityRegistry.extraSecretPatterns;
-  return extra.length > 0 ? [...base, ...extra] : base;
+  _cachedPatterns =
+    extra.length > 0 ? [...allRegexPatterns, ...extra] : allRegexPatterns;
+  _cachedVersion = ver;
+  return _cachedPatterns;
 }
 
 export class ContentSanitizer {
@@ -142,6 +153,17 @@ export class ContentSanitizer {
     };
   }
 
+  private static readonly MAX_CONTENT_SIZE = 10_000_000;
+
+  /**
+   * Scan a string for secrets and replace them with `[REDACTED-*]` tokens.
+   *
+   * @example
+   * ```ts
+   * ContentSanitizer.sanitizeContent('key: ghp_abc123xyz');
+   * // → { content: 'key: [REDACTED-GITHUBTOKENS]', hasSecrets: true, ... }
+   * ```
+   */
   public static sanitizeContent(
     content: string,
     filePath?: string,
@@ -153,6 +175,17 @@ export class ContentSanitizer {
         hasSecrets: false,
         secretsDetected: [],
         warnings: [],
+      };
+    }
+
+    if (content.length > this.MAX_CONTENT_SIZE) {
+      return {
+        content: '[CONTENT-REDACTED-SIZE-LIMIT]',
+        hasSecrets: true,
+        secretsDetected: ['content-size-exceeded'],
+        warnings: [
+          `Content exceeds ${this.MAX_CONTENT_SIZE} character limit — redacted for safety`,
+        ],
       };
     }
 
@@ -299,10 +332,97 @@ export class ContentSanitizer {
     };
   }
 
+  /**
+   * Recursively sanitize an object — strip secrets, block prototype pollution, enforce limits.
+   *
+   * @example
+   * ```ts
+   * const result = ContentSanitizer.validateInputParameters({
+   *   query: 'search term',
+   *   token: 'sk-proj-abc123xyz',
+   * });
+   * result.sanitizedParams; // { query: 'search term', token: '[REDACTED-...]' }
+   * ```
+   */
   public static validateInputParameters(
     params: Record<string, unknown>
   ): ValidationResult {
     return this.validateRecursive(params, 0, new WeakSet<object>());
+  }
+
+  private static readonly DANGEROUS_KEYS = new Set([
+    '__proto__',
+    'constructor',
+    'prototype',
+  ]);
+
+  /** Classify a key — returns an error message if invalid/dangerous, null if safe. */
+  private static validateKey(key: string): string | null {
+    if (typeof key !== 'string' || key.trim() === '') {
+      return `Invalid parameter key: ${key}`;
+    }
+    if (this.DANGEROUS_KEYS.has(key)) {
+      return `Dangerous parameter key blocked: ${key}`;
+    }
+    return null;
+  }
+
+  /**
+   * Type-dispatch a single entry through the appropriate sanitizer.
+   * Returns { sanitized, hasSecrets, hasValidationErrors, skip } where
+   * skip=true means the entry should be excluded from the output.
+   */
+  private static sanitizeValue(
+    key: string,
+    value: unknown,
+    depth: number,
+    visited: WeakSet<object>,
+    warnings: Set<string>
+  ): {
+    sanitized: unknown;
+    hasSecrets: boolean;
+    hasValidationErrors: boolean;
+    skip: boolean;
+  } {
+    if (typeof value === 'string') {
+      const r = this.sanitizeStringValue(key, value, warnings);
+      return {
+        sanitized: r.sanitized,
+        hasSecrets: r.hasSecrets,
+        hasValidationErrors: false,
+        skip: false,
+      };
+    }
+    if (Array.isArray(value)) {
+      const r = this.sanitizeArrayValue(key, value, depth, visited, warnings);
+      return {
+        sanitized: r.sanitized,
+        hasSecrets: r.hasSecrets,
+        hasValidationErrors: r.hasValidationErrors,
+        skip: false,
+      };
+    }
+    if (value !== null && typeof value === 'object') {
+      const r = this.sanitizeNestedObject(
+        key,
+        value as Record<string, unknown>,
+        depth,
+        visited,
+        warnings
+      );
+      return {
+        sanitized: r.sanitized,
+        hasSecrets: r.hasSecrets,
+        hasValidationErrors: !r.isValid,
+        skip: !r.isValid,
+      };
+    }
+    return {
+      sanitized: value,
+      hasSecrets: false,
+      hasValidationErrors: false,
+      skip: false,
+    };
   }
 
   private static validateRecursive(
@@ -344,57 +464,23 @@ export class ContentSanitizer {
     let hasValidationErrors = false;
 
     for (const [key, value] of Object.entries(params)) {
-      if (typeof key !== 'string' || key.trim() === '') {
+      const keyError = this.validateKey(key);
+      if (keyError) {
         hasValidationErrors = true;
-        warnings.add(`Invalid parameter key: ${key}`);
+        warnings.add(keyError);
         continue;
       }
 
-      const dangerousKeys = ['__proto__', 'constructor', 'prototype'];
-      if (dangerousKeys.includes(key)) {
-        hasValidationErrors = true;
-        warnings.add(`Dangerous parameter key blocked: ${key}`);
-        continue;
-      }
-
-      if (typeof value === 'string') {
-        const strResult = this.sanitizeStringValue(key, value, warnings);
-        sanitizedParams[key] = strResult.sanitized;
-        if (strResult.hasSecrets) hasSecrets = true;
-      } else if (Array.isArray(value)) {
-        const arrResult = this.sanitizeArrayValue(
-          key,
-          value,
-          depth,
-          visited,
-          warnings
-        );
-        sanitizedParams[key] = arrResult.sanitized;
-        if (arrResult.hasSecrets) hasSecrets = true;
-        if (arrResult.hasValidationErrors) hasValidationErrors = true;
-      } else if (value !== null && typeof value === 'object') {
-        const objResult = this.sanitizeNestedObject(
-          key,
-          value as Record<string, unknown>,
-          depth,
-          visited,
-          warnings
-        );
-        if (!objResult.isValid) {
-          hasValidationErrors = true;
-          continue;
-        }
-        sanitizedParams[key] = objResult.sanitized;
-        if (objResult.hasSecrets) hasSecrets = true;
-      } else {
-        sanitizedParams[key] = value;
-      }
+      const result = this.sanitizeValue(key, value, depth, visited, warnings);
+      if (result.hasSecrets) hasSecrets = true;
+      if (result.hasValidationErrors) hasValidationErrors = true;
+      if (!result.skip) sanitizedParams[key] = result.sanitized;
     }
 
     return {
       sanitizedParams,
       isValid: !hasValidationErrors,
-      hasSecrets: hasSecrets,
+      hasSecrets,
       warnings: Array.from(warnings),
     };
   }

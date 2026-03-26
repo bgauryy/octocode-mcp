@@ -11,7 +11,7 @@
  *   7. Exploit edge cases in sanitization
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ContentSanitizer } from '@octocode/security/contentSanitizer';
 import { maskSensitiveData } from '@octocode/security/mask';
 import { validateCommand } from '@octocode/security/commandValidator';
@@ -35,6 +35,11 @@ import {
   createRoleBasedResult,
 } from '../../src/responses.js';
 import { executeBulkOperation } from '../../src/utils/response/bulk.js';
+import { sanitizeCallToolResult } from '../../src/utils/secureServer.js';
+
+vi.mock('octocode-shared', () => ({
+  getConfigSync: () => ({ output: { format: 'yaml' } }),
+}));
 
 // ============================================================================
 // REALISTIC SECRETS (used across all attack vectors)
@@ -729,19 +734,20 @@ describe('ATTACK-08: Security Wrapper Bypass', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it('should sanitize output from tool handlers', async () => {
+  it('should sanitize output from tool handlers (via unified proxy layer)', async () => {
     const handler = vi.fn().mockResolvedValue({
       content: [{ type: 'text', text: `Found: ${SECRETS.AWS_KEY}` }],
     });
 
     const wrapped = withBasicSecurityValidation(handler);
-    const result = await wrapped({ query: 'test' });
+    const rawResult = await wrapped({ query: 'test' });
+    const result = sanitizeCallToolResult(rawResult);
 
     const text = result.content.find(c => c.type === 'text')?.text || '';
     assertSecretAbsent(text, 'AWS_KEY', SECRETS.AWS_KEY);
   });
 
-  it('should handle handler errors without leaking secrets', async () => {
+  it('should handle handler errors without leaking secrets (via unified proxy layer)', async () => {
     const handler = vi
       .fn()
       .mockRejectedValue(
@@ -749,25 +755,28 @@ describe('ATTACK-08: Security Wrapper Bypass', () => {
       );
 
     const wrapped = withSecurityValidation('testTool', handler);
-    const result = await wrapped({ query: 'test' }, {});
+    const rawResult = await wrapped({ query: 'test' }, {});
+    const result = sanitizeCallToolResult(rawResult);
 
     const text = result.content.find(c => c.type === 'text')?.text || '';
     assertSecretAbsent(text, 'GITHUB_TOKEN', SECRETS.GITHUB_TOKEN);
   });
 
-  it('should enforce timeout (60s) to prevent hanging attacks', async () => {
+  it('should enforce timeout to prevent hanging attacks', async () => {
     const handler = vi
       .fn()
       .mockImplementation(
-        () => new Promise(resolve => setTimeout(resolve, 120000))
+        () => new Promise(resolve => setTimeout(resolve, 5000))
       );
 
-    const wrapped = withBasicSecurityValidation(handler, 'slowTool');
+    const wrapped = withBasicSecurityValidation(handler, 'slowTool', {
+      timeoutMs: 100,
+    });
     const result = await wrapped({ query: 'test' });
     expect(result.isError).toBe(true);
     const text = result.content.find(c => c.type === 'text')?.text || '';
     expect(text).toContain('timed out');
-  }, 70000);
+  });
 });
 
 // ============================================================================

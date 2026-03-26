@@ -52,6 +52,15 @@ function getTimeoutMs(override?: number): number {
 /**
  * Configure security module dependencies.
  * Call once at application startup to inject logging and tool-name resolution.
+ *
+ * @example
+ * ```ts
+ * configureSecurity({
+ *   logToolCall: async (name, repos) => console.log(`[${name}] ${repos}`),
+ *   isLoggingEnabled: () => true,
+ *   isLocalTool: (name) => name.startsWith('local'),
+ * });
+ * ```
  */
 export function configureSecurity(deps: SecurityDepsConfig): void {
   _deps = { ..._deps, ...deps };
@@ -60,28 +69,6 @@ export function configureSecurity(deps: SecurityDepsConfig): void {
 /** Creates a simple error result for security failures */
 function createErrorResult(text: string): ToolResult {
   return { content: [{ type: 'text', text }], isError: true };
-}
-
-/**
- * Scan each text content item in a tool result for secrets and redact them.
- * Non-text items (images, audio, etc.) are passed through unchanged.
- * This prevents secrets present in file content or API responses from leaking to callers.
- */
-function sanitizeToolResult(result: ToolResult): ToolResult {
-  if (!result.content || !Array.isArray(result.content)) {
-    return result;
-  }
-  const sanitizer = getSanitizer();
-  const sanitizedContent = result.content.map(item => {
-    if (item.type === 'text' && typeof item.text === 'string') {
-      const sanitized = sanitizer.sanitizeContent(item.text);
-      if (sanitized.hasSecrets) {
-        return { ...item, text: sanitized.content };
-      }
-    }
-    return item;
-  });
-  return { ...result, content: sanitizedContent };
 }
 
 /**
@@ -152,6 +139,17 @@ function withToolTimeout(
  * It defaults to `unknown` so no framework dependency is required.
  *
  * @see withBasicSecurityValidation for local tools that don't need auth
+ *
+ * @example
+ * ```ts
+ * const searchCode = withSecurityValidation<{ query: string }>(
+ *   'github_search_code',
+ *   async (args, authInfo) => {
+ *     const results = await api.search(args.query);
+ *     return { content: [{ type: 'text', text: JSON.stringify(results) }] };
+ *   }
+ * );
+ * ```
  */
 export function withSecurityValidation<
   T extends Record<string, unknown>,
@@ -200,7 +198,7 @@ export function withSecurityValidation<
         signal,
         toolTimeoutMs
       );
-      return sanitizeToolResult(rawResult);
+      return rawResult;
     } catch (error) {
       _deps
         .logSessionError?.(toolName, SECURITY_VALIDATION_FAILED_CODE)
@@ -225,6 +223,17 @@ export function withSecurityValidation<
  * Does NOT provide: auth passthrough, session logging.
  *
  * @see withSecurityValidation for remote tools that need auth + logging
+ *
+ * @example
+ * ```ts
+ * const readFile = withBasicSecurityValidation<{ path: string }>(
+ *   async (args) => {
+ *     const content = await fs.promises.readFile(args.path, 'utf-8');
+ *     return { content: [{ type: 'text', text: content }] };
+ *   },
+ *   'local_read_file'
+ * );
+ * ```
  */
 export function withBasicSecurityValidation<T extends object>(
   toolHandler: (sanitizedArgs: T) => Promise<ToolResult>,
@@ -268,7 +277,7 @@ export function withBasicSecurityValidation<T extends object>(
         signal,
         toolTimeoutMs
       );
-      return sanitizeToolResult(rawResult);
+      return rawResult;
     } catch (error) {
       _deps
         .logSessionError?.(
