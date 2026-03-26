@@ -74,7 +74,7 @@ import {
   detectTestNoAssertion,
 } from './detectors/test-quality.js';
 import { diversifyFindings } from './reporting/summary-md.js';
-import { SEVERITY_ORDER } from './types/index.js';
+import { PILLAR_CATEGORIES, SEVERITY_ORDER } from './types/index.js';
 
 import type {
   AnalysisOptions,
@@ -108,16 +108,58 @@ export {
   severityBreakdown,
   categoryBreakdown,
   computeHealthScore,
+  computeFeatureScores,
+  computeQualityAspectRatings,
   collectTagCloud,
   formatFileSize,
   diversifyFindings,
   diverseTopRecommendations,
   generateSummaryMd,
 } from './reporting/summary-md.js';
-export type { SummaryMdOptions } from './reporting/summary-md.js';
+export type {
+  SummaryMdOptions,
+  QualityAspectRating,
+  QualityRatingSummary,
+} from './reporting/summary-md.js';
 
 type FindingDraft = Omit<Finding, 'id'>;
 type DetectorFn = () => Iterable<FindingDraft>;
+
+interface EnabledPillars {
+  architecture: boolean;
+  codeQuality: boolean;
+  deadCode: boolean;
+  security: boolean;
+  testQuality: boolean;
+}
+
+function hasEnabledCategory(
+  features: Set<string>,
+  categories: string[]
+): boolean {
+  return categories.some(category => features.has(category));
+}
+
+export function resolveEnabledPillars(
+  features: Set<string> | null
+): EnabledPillars {
+  if (!features) {
+    return {
+      architecture: true,
+      codeQuality: true,
+      deadCode: true,
+      security: true,
+      testQuality: true,
+    };
+  }
+  return {
+    architecture: hasEnabledCategory(features, PILLAR_CATEGORIES['architecture']),
+    codeQuality: hasEnabledCategory(features, PILLAR_CATEGORIES['code-quality']),
+    deadCode: hasEnabledCategory(features, PILLAR_CATEGORIES['dead-code']),
+    security: hasEnabledCategory(features, PILLAR_CATEGORIES['security']),
+    testQuality: hasEnabledCategory(features, PILLAR_CATEGORIES['test-quality']),
+  };
+}
 
 function collectArchitectureFindings(
   dependencySummary: DependencySummary,
@@ -257,16 +299,29 @@ export function buildIssueCatalog(
 
   const { production: consumedFromModule, test: testConsumedFromModule } =
     buildConsumedFromModule(dependencyState);
+  const enabledPillars = resolveEnabledPillars(options.features);
 
   const detectors: DetectorFn[] = [
-    ...collectArchitectureFindings(
-      dependencySummary, dependencyState, fileSummaries, options,
-      fileCriticalityByPath, consumedFromModule, testConsumedFromModule,
-      pkgJsonDeps, pkgJsonDevDeps
-    ),
-    ...collectCodeQualityFindings(duplicates, controlDuplicates, fileSummaries, options, flowMap),
-    ...collectSecurityFindings(fileSummaries),
-    ...collectTestQualityFindings(fileSummaries, options),
+    ...(enabledPillars.architecture || enabledPillars.deadCode
+      ? collectArchitectureFindings(
+        dependencySummary, dependencyState, fileSummaries, options,
+        fileCriticalityByPath, consumedFromModule, testConsumedFromModule,
+        pkgJsonDeps, pkgJsonDevDeps
+      )
+      : []),
+    ...(enabledPillars.codeQuality
+      ? collectCodeQualityFindings(
+        duplicates,
+        controlDuplicates,
+        fileSummaries,
+        options,
+        flowMap
+      )
+      : []),
+    ...(enabledPillars.security ? collectSecurityFindings(fileSummaries) : []),
+    ...(enabledPillars.testQuality
+      ? collectTestQualityFindings(fileSummaries, options)
+      : []),
   ];
 
   for (const detect of detectors) {

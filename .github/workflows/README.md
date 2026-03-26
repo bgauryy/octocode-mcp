@@ -14,7 +14,7 @@ This directory contains the active CI/CD workflows for the Octocode monorepo.
 The pull request workflow now checks the repo quality contract explicitly:
 
 1. `health`
-   Runs `yarn health:check` and `yarn docs:verify` to ensure every first-class workspace exposes the required scripts and the docs/workflow references are consistent.
+   Runs `yarn health:check`, `yarn docs:verify`, captures a scan architecture snapshot (`scripts/architecture-snapshot.mjs`), and enforces architecture/maintainability non-regression gates (`scripts/score-gate.mjs`).
 2. `lint`
    Runs `yarn lint`.
 3. `typecheck`
@@ -29,6 +29,8 @@ Useful local commands before opening a PR:
 ```bash
 yarn health:check
 yarn docs:verify
+node scripts/architecture-snapshot.mjs --summary skills/octocode-code-engineer/.octocode/scan/check-each-tool-current/summary.json --out .octocode/scan/architecture-snapshot.json
+node scripts/score-gate.mjs --summary skills/octocode-code-engineer/.octocode/scan/check-each-tool-current/summary.json --min-aspect architecture-structure:67 --min-aspect maintainability-evolvability:68 --max-category shotgun-surgery:21 --max-category high-coupling:15 --max-category missing-error-boundary:42 --max-category cognitive-complexity:22
 yarn lint
 yarn typecheck
 yarn build

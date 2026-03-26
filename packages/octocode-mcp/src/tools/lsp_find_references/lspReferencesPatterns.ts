@@ -201,6 +201,27 @@ export async function findReferencesWithPatternMatching(
   const page = query.page ?? 1;
   const totalReferences = filteredReferences.length;
   const totalPages = Math.ceil(totalReferences / referencesPerPage);
+
+  if (totalReferences > 0 && page > totalPages) {
+    return {
+      status: 'empty',
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalResults: totalReferences,
+        hasMore: false,
+        resultsPerPage: referencesPerPage,
+      },
+      hasMultipleFiles:
+        new Set(filteredReferences.map(ref => ref.uri)).size > 1,
+      hints: [
+        ...getHints(TOOL_NAME, 'empty'),
+        `Requested page ${page} is outside available range (1-${totalPages}).`,
+        `Use page=${totalPages} for the last available page.`,
+      ],
+    };
+  }
+
   const startIndex = (page - 1) * referencesPerPage;
   const endIndex = Math.min(startIndex + referencesPerPage, totalReferences);
   const paginatedRaw = filteredReferences.slice(startIndex, endIndex);
@@ -224,10 +245,9 @@ export async function findReferencesWithPatternMatching(
   }
 
   const contextLines = query.contextLines ?? 2;
-  const paginatedReferences: ReferenceLocation[] = [];
-  for (const raw of paginatedRaw) {
-    paginatedReferences.push(await enhancePatternReference(raw, contextLines));
-  }
+  const paginatedReferences = await Promise.all(
+    paginatedRaw.map(raw => enhancePatternReference(raw, contextLines))
+  );
 
   const uniqueFiles = new Set(filteredReferences.map(ref => ref.uri));
   const hasMultipleFiles = uniqueFiles.size > 1;
@@ -273,7 +293,6 @@ export async function findReferencesWithPatternMatching(
  * @internal Exported for testing
  */
 export async function findWorkspaceRoot(filePath: string): Promise<string> {
-  let currentDir = path.dirname(filePath);
   const markers = [
     'package.json',
     'tsconfig.json',
@@ -282,28 +301,39 @@ export async function findWorkspaceRoot(filePath: string): Promise<string> {
     'go.mod',
     'pyproject.toml',
   ];
+  const initialDir = path.dirname(filePath);
+  return (
+    (await findWorkspaceRootWithMarkers(initialDir, markers, 0)) ?? initialDir
+  );
+}
 
-  for (let i = 0; i < 10; i++) {
-    const checks = markers.map(async marker => {
-      try {
-        await access(path.join(currentDir, marker));
-        return true;
-      } catch {
-        return false;
-      }
-    });
+async function findWorkspaceRootWithMarkers(
+  currentDir: string,
+  markers: readonly string[],
+  depth: number
+): Promise<string | null> {
+  if (depth >= 10) return null;
 
-    const results = await Promise.all(checks);
-    if (results.some(found => found)) {
-      return currentDir;
+  const checks = markers.map(async marker => {
+    try {
+      await access(path.join(currentDir, marker));
+      return true;
+    } catch {
+      return false;
     }
+  });
 
-    const parentDir = path.dirname(currentDir);
-    if (parentDir === currentDir) break;
-    currentDir = parentDir;
+  const results = await Promise.all(checks);
+  if (results.some(found => found)) {
+    return currentDir;
   }
 
-  return path.dirname(filePath);
+  const parentDir = path.dirname(currentDir);
+  if (parentDir === currentDir) {
+    return null;
+  }
+
+  return findWorkspaceRootWithMarkers(parentDir, markers, depth + 1);
 }
 
 /**

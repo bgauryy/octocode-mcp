@@ -121,4 +121,77 @@ describe('collectSecurityData', () => {
     expect(fileEntry.suspiciousStrings).toBeDefined();
     expect(fileEntry.suspiciousStrings!.length).toBe(0);
   });
+
+  it('does not mark generic auth/session logs as sensitive without secret values', () => {
+    const code = `
+      console.log("auth flow started");
+      console.info("session refreshed successfully");
+      console.warn("user auth status changed");
+    `;
+    const sourceFile = parse(code);
+    const fileEntry = emptyFileEntry();
+    collectSecurityData(sourceFile, 'test.ts', fileEntry);
+    expect(fileEntry.consoleLogs).toBeDefined();
+    expect(fileEntry.consoleLogs).toHaveLength(3);
+    expect(fileEntry.consoleLogs!.every(log => log.hasSensitiveArg === false)).toBe(
+      true
+    );
+  });
+
+  it('marks token-bearing log calls as sensitive', () => {
+    const code = `
+      const token = "abc123";
+      console.log("token", token);
+    `;
+    const sourceFile = parse(code);
+    const fileEntry = emptyFileEntry();
+    collectSecurityData(sourceFile, 'test.ts', fileEntry);
+    expect(fileEntry.consoleLogs).toBeDefined();
+    expect(fileEntry.consoleLogs).toHaveLength(1);
+    expect(fileEntry.consoleLogs![0].hasSensitiveArg).toBe(true);
+  });
+
+  it('does not mark CLI usage/help templates as sensitive token logs', () => {
+    const code = `
+      console.error(\`Unknown \${flagName}: "\${token}". Use pillar names\`);
+      console.log(\`
+        Usage:
+          node scripts/index.js [options]
+        Options:
+          --root <path>
+      \`);
+    `;
+    const sourceFile = parse(code);
+    const fileEntry = emptyFileEntry();
+    collectSecurityData(sourceFile, 'test.ts', fileEntry);
+    expect(fileEntry.consoleLogs).toBeDefined();
+    expect(fileEntry.consoleLogs).toHaveLength(2);
+    expect(fileEntry.consoleLogs![0].hasSensitiveArg).toBe(false);
+    expect(fileEntry.consoleLogs![1].hasSensitiveArg).toBe(false);
+  });
+
+  it('does not flag high-entropy literals without secret-like identifier context', () => {
+    const code = `
+      const traceId = "a9F3kLmN2pQr8sTuVwX4yZaB6cDe7fGh";
+    `;
+    const sourceFile = parse(code);
+    const fileEntry = emptyFileEntry();
+    collectSecurityData(sourceFile, 'test.ts', fileEntry);
+    expect(fileEntry.suspiciousStrings).toBeDefined();
+    expect(fileEntry.suspiciousStrings!.length).toBe(0);
+  });
+
+  it('flags high-entropy literals when assigned to secret-like identifiers', () => {
+    const code = `
+      const apiToken = "a9F3kLmN2pQr8sTuVwX4yZaB6cDe7fGh";
+    `;
+    const sourceFile = parse(code);
+    const fileEntry = emptyFileEntry();
+    collectSecurityData(sourceFile, 'test.ts', fileEntry);
+    expect(fileEntry.suspiciousStrings).toBeDefined();
+    const secretEntry = fileEntry.suspiciousStrings!.find(
+      s => s.kind === 'hardcoded-secret'
+    );
+    expect(secretEntry).toBeDefined();
+  });
 });

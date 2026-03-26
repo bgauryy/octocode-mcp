@@ -205,6 +205,10 @@ export async function callHierarchyWithLSP(
         ],
       });
     }
+  } catch {
+    // Preserve existing fallback contract: caller falls back to pattern matching
+    // when LSP path fails for any reason.
+    return null;
   } finally {
     await client.stop();
   }
@@ -223,34 +227,42 @@ export async function gatherIncomingCallsRecursive(
 ): Promise<IncomingCall[]> {
   if (remainingDepth <= 0 || !client) return [];
 
-  const directCalls = await client.getIncomingCalls(item);
-  const enhancedCalls =
-    contextLines > 0
-      ? await enhanceIncomingCalls(directCalls, contextLines)
-      : directCalls;
+  try {
+    const directCalls = await client.getIncomingCalls(item);
+    const enhancedCalls =
+      contextLines > 0
+        ? await enhanceIncomingCalls(directCalls, contextLines)
+        : directCalls;
 
-  if (remainingDepth === 1) {
-    return enhancedCalls;
-  }
+    if (remainingDepth === 1) {
+      return enhancedCalls;
+    }
 
-  const allCalls: IncomingCall[] = [...enhancedCalls];
+    const allCalls: IncomingCall[] = [...enhancedCalls];
+    const nestedCallGroups = await Promise.all(
+      enhancedCalls.map(async call => {
+        const key = createCallItemKey(call.from);
+        if (visited.has(key)) return []; // Skip cycles
+        visited.add(key);
 
-  for (const call of enhancedCalls) {
-    const key = createCallItemKey(call.from);
-    if (visited.has(key)) continue; // Skip cycles
-    visited.add(key);
-
-    const nestedCalls = await gatherIncomingCallsRecursive(
-      client,
-      call.from,
-      remainingDepth - 1,
-      visited,
-      contextLines
+        return gatherIncomingCallsRecursive(
+          client,
+          call.from,
+          remainingDepth - 1,
+          visited,
+          contextLines
+        );
+      })
     );
-    allCalls.push(...nestedCalls);
-  }
 
-  return allCalls;
+    for (const nestedCalls of nestedCallGroups) {
+      allCalls.push(...nestedCalls);
+    }
+
+    return allCalls;
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -266,34 +278,42 @@ export async function gatherOutgoingCallsRecursive(
 ): Promise<OutgoingCall[]> {
   if (remainingDepth <= 0 || !client) return [];
 
-  const directCalls = await client.getOutgoingCalls(item);
-  const enhancedCalls =
-    contextLines > 0
-      ? await enhanceOutgoingCalls(directCalls, contextLines)
-      : directCalls;
+  try {
+    const directCalls = await client.getOutgoingCalls(item);
+    const enhancedCalls =
+      contextLines > 0
+        ? await enhanceOutgoingCalls(directCalls, contextLines)
+        : directCalls;
 
-  if (remainingDepth === 1) {
-    return enhancedCalls;
-  }
+    if (remainingDepth === 1) {
+      return enhancedCalls;
+    }
 
-  const allCalls: OutgoingCall[] = [...enhancedCalls];
+    const allCalls: OutgoingCall[] = [...enhancedCalls];
+    const nestedCallGroups = await Promise.all(
+      enhancedCalls.map(async call => {
+        const key = createCallItemKey(call.to);
+        if (visited.has(key)) return []; // Skip cycles
+        visited.add(key);
 
-  for (const call of enhancedCalls) {
-    const key = createCallItemKey(call.to);
-    if (visited.has(key)) continue; // Skip cycles
-    visited.add(key);
-
-    const nestedCalls = await gatherOutgoingCallsRecursive(
-      client,
-      call.to,
-      remainingDepth - 1,
-      visited,
-      contextLines
+        return gatherOutgoingCallsRecursive(
+          client,
+          call.to,
+          remainingDepth - 1,
+          visited,
+          contextLines
+        );
+      })
     );
-    allCalls.push(...nestedCalls);
-  }
 
-  return allCalls;
+    for (const nestedCalls of nestedCallGroups) {
+      allCalls.push(...nestedCalls);
+    }
+
+    return allCalls;
+  } catch {
+    return [];
+  }
 }
 
 /**

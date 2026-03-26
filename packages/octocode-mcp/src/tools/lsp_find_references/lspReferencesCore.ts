@@ -173,17 +173,35 @@ export async function findReferencesWithLSP(
     const page = query.page ?? 1;
     const totalReferences = filteredLocations.length;
     const totalPages = Math.ceil(totalReferences / referencesPerPage);
+
+    if (totalReferences > 0 && page > totalPages) {
+      return {
+        status: 'empty',
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalResults: totalReferences,
+          hasMore: false,
+          resultsPerPage: referencesPerPage,
+        },
+        hasMultipleFiles:
+          new Set(filteredLocations.map(ref => ref.uri)).size > 1,
+        hints: [
+          ...getHints(TOOL_NAME, 'empty'),
+          `Requested page ${page} is outside available range (1-${totalPages}).`,
+          `Use page=${totalPages} for the last available page.`,
+        ],
+      };
+    }
+
     const startIndex = (page - 1) * referencesPerPage;
     const endIndex = Math.min(startIndex + referencesPerPage, totalReferences);
     const paginatedRaw = filteredLocations.slice(startIndex, endIndex);
 
     const contextLines = query.contextLines ?? 2;
-    const paginatedReferences: ReferenceLocation[] = [];
-
-    for (const raw of paginatedRaw) {
-      const enhanced = await enhanceReferenceLocation(raw, contextLines);
-      paginatedReferences.push(enhanced);
-    }
+    const paginatedReferences = await Promise.all(
+      paginatedRaw.map(raw => enhanceReferenceLocation(raw, contextLines))
+    );
 
     const uniqueFiles = new Set(filteredLocations.map(ref => ref.uri));
     const hasMultipleFiles = uniqueFiles.size > 1;

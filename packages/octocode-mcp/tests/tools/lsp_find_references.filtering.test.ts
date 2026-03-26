@@ -541,6 +541,53 @@ describe('LSP Find References - Filtering and Lazy Enhancement', () => {
     expect(readCount).toBe(2);
   });
 
+  it('should return empty status with pagination when page exceeds total pages', async () => {
+    mockClient.findReferences.mockResolvedValue([
+      {
+        uri: '/workspace/src/a.ts',
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 5 },
+        },
+        content: 'const x = 1;',
+      },
+      {
+        uri: '/workspace/src/b.ts',
+        range: {
+          start: { line: 1, character: 0 },
+          end: { line: 1, character: 5 },
+        },
+        content: 'const x = 2;',
+      },
+    ]);
+
+    const result = await findReferencesWithLSP(
+      '/workspace/src/a.ts',
+      '/workspace',
+      { line: 0, character: 0 },
+      makeQuery({
+        uri: '/workspace/src/a.ts',
+        symbolName: 'x',
+        lineHint: 1,
+        referencesPerPage: 1,
+        page: 5,
+      })
+    );
+
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe('empty');
+    expect(result!.pagination).toEqual({
+      currentPage: 5,
+      totalPages: 2,
+      totalResults: 2,
+      hasMore: false,
+      resultsPerPage: 1,
+    });
+    expect(
+      result!.hints!.some(h => h.includes('outside available range'))
+    ).toBe(true);
+  });
+
   it('should skip enhancement when contextLines is 0', async () => {
     mockClient.findReferences.mockResolvedValue([
       {

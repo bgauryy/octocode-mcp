@@ -247,6 +247,12 @@ describe('output contract', () => {
     expect(summaryData).toHaveProperty('strongestGraphSignal');
     expect(summaryData).toHaveProperty('strongestAstSignal');
     expect(Array.isArray(summaryData.combinedSignals)).toBe(true);
+    expect(Array.isArray(summaryData.featureScores)).toBe(true);
+    expect(summaryData.featureScores.length).toBeGreaterThan(0);
+    expect(summaryData.qualityRating).toBeDefined();
+    expect(summaryData.qualityRating.model).toBe('hybrid-ai-structure-v1');
+    expect(Array.isArray(summaryData.qualityRating.aspects)).toBe(true);
+    expect(summaryData.qualityRating.aspects.length).toBe(6);
     expect(
       summaryData.analysisSummary.recommendedValidation ||
         summaryData.recommendedValidation

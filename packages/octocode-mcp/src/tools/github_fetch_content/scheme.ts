@@ -78,26 +78,53 @@ export const FileContentQuerySchema = FileContentBaseSchema.superRefine(
   (data, ctx) => {
     // Directory type rejects all file-specific parameters
     if (data.type === 'directory') {
-      const fileOnlyParams = [
-        'fullContent',
-        'startLine',
-        'endLine',
-        'matchString',
-        'charOffset',
-        'charLength',
-      ] as const;
-      for (const param of fileOnlyParams) {
-        if (
-          data[param] !== undefined &&
-          data[param] !== false &&
-          data[param] !== 5
-        ) {
-          ctx.addIssue({
-            code: 'custom',
-            message: `Parameter "${param}" is not supported when type is "directory". Directory mode saves all files to disk.`,
-            path: [param],
-          });
-        }
+      if (data.fullContent === true) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'Parameter "fullContent" is not supported when type is "directory". Directory mode saves all files to disk.',
+          path: ['fullContent'],
+        });
+      }
+      if (data.startLine !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'Parameter "startLine" is not supported when type is "directory". Directory mode saves all files to disk.',
+          path: ['startLine'],
+        });
+      }
+      if (data.endLine !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'Parameter "endLine" is not supported when type is "directory". Directory mode saves all files to disk.',
+          path: ['endLine'],
+        });
+      }
+      if (data.matchString !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'Parameter "matchString" is not supported when type is "directory". Directory mode saves all files to disk.',
+          path: ['matchString'],
+        });
+      }
+      if (data.charOffset !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'Parameter "charOffset" is not supported when type is "directory". Directory mode saves all files to disk.',
+          path: ['charOffset'],
+        });
+      }
+      if (data.charLength !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'Parameter "charLength" is not supported when type is "directory". Directory mode saves all files to disk.',
+          path: ['charLength'],
+        });
       }
       return; // Skip file-specific validations
     }

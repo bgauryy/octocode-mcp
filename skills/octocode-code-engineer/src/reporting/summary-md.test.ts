@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   categoryBreakdown,
   collectTagCloud,
+  computeFeatureScores,
   computeHealthScore,
+  computeQualityAspectRatings,
   diverseTopRecommendations,
   diversifyFindings,
   formatFileSize,
@@ -20,7 +22,7 @@ import {
 } from './writer.js';
 
 import type { FullReport } from './writer.js';
-import type { Finding } from '../types/index.js';
+import type { FileEntry, Finding } from '../types/index.js';
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
   return {
@@ -205,6 +207,18 @@ describe('computeHealthScore', () => {
     const score = computeHealthScore(findings, 3);
     expect(Number.isInteger(score)).toBe(true);
   });
+
+  it('never returns a perfect score when non-info findings exist in huge repos', () => {
+    const high = computeHealthScore([makeFinding({ severity: 'high' })], 10_000);
+    const medium = computeHealthScore(
+      [makeFinding({ severity: 'medium' })],
+      10_000
+    );
+    const low = computeHealthScore([makeFinding({ severity: 'low' })], 10_000);
+    expect(high).toBeLessThan(100);
+    expect(medium).toBeLessThan(100);
+    expect(low).toBeLessThan(100);
+  });
 });
 
 describe('collectTagCloud', () => {
@@ -254,6 +268,390 @@ describe('collectTagCloud', () => {
     ];
     const cloud = collectTagCloud(findings);
     expect(cloud).toEqual([{ tag: 'valid', count: 1 }]);
+  });
+});
+
+describe('computeFeatureScores', () => {
+  it('scores active categories and maps them to pillars', () => {
+    const rows = computeFeatureScores(
+      [
+        makeFinding({
+          id: 'sec',
+          category: 'hardcoded-secret',
+          severity: 'critical',
+          file: 'src/security.ts',
+        }),
+        makeFinding({
+          id: 'dead',
+          category: 'dead-export',
+          severity: 'low',
+          file: 'src/dead.ts',
+        }),
+      ],
+      100,
+      null
+    );
+    const security = rows.find(r => r.category === 'hardcoded-secret');
+    const dead = rows.find(r => r.category === 'dead-export');
+    expect(security).toBeDefined();
+    expect(security!.pillar).toBe('security');
+    expect(security!.score).toBeLessThan(100);
+    expect(dead).toBeDefined();
+    expect(dead!.pillar).toBe('dead-code');
+  });
+
+  it('respects active feature filters', () => {
+    const rows = computeFeatureScores(
+      [
+        makeFinding({
+          id: 'only',
+          category: 'dead-export',
+          severity: 'medium',
+          file: 'src/dead.ts',
+        }),
+      ],
+      10,
+      new Set(['dead-export'])
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].category).toBe('dead-export');
+  });
+
+  it('applies hotspot context penalty for findings in high-risk files', () => {
+    const baseRows = computeFeatureScores(
+      [
+        makeFinding({
+          id: 'sec-hot',
+          category: 'hardcoded-secret',
+          severity: 'high',
+          file: 'src/hot.ts',
+        }),
+      ],
+      100,
+      null
+    );
+    const contextRows = computeFeatureScores(
+      [
+        makeFinding({
+          id: 'sec-hot',
+          category: 'hardcoded-secret',
+          severity: 'high',
+          file: 'src/hot.ts',
+        }),
+      ],
+      100,
+      null,
+      {
+        hotFiles: [
+          {
+            file: 'src/hot.ts',
+            riskScore: 90,
+            fanIn: 10,
+            fanOut: 8,
+            complexityScore: 30,
+            exportCount: 5,
+            inCycle: true,
+            onCriticalPath: true,
+          },
+        ],
+      }
+    );
+    expect(contextRows[0].score).toBeLessThan(baseRows[0].score);
+    expect(contextRows[0].contextPenalty).toBeGreaterThan(0);
+    expect(contextRows[0].hotspotHits).toBe(1);
+  });
+
+  it('does not penalize categories without hotspot overlap', () => {
+    const rows = computeFeatureScores(
+      [
+        makeFinding({
+          id: 'sec-cold',
+          category: 'hardcoded-secret',
+          severity: 'high',
+          file: 'src/cold.ts',
+        }),
+      ],
+      100,
+      null,
+      {
+        hotFiles: [
+          {
+            file: 'src/hot.ts',
+            riskScore: 95,
+            fanIn: 11,
+            fanOut: 9,
+            complexityScore: 28,
+            exportCount: 6,
+            inCycle: true,
+            onCriticalPath: false,
+          },
+        ],
+      }
+    );
+    expect(rows[0].contextPenalty).toBe(0);
+    expect(rows[0].hotspotHits).toBe(0);
+  });
+});
+
+describe('computeQualityAspectRatings', () => {
+  function makeFileEntry(overrides: Partial<FileEntry> = {}): FileEntry {
+    return {
+      package: 'pkg',
+      file: 'src/service/user-service.ts',
+      parseEngine: 'typescript',
+      nodeCount: 10,
+      kindCounts: {},
+      functions: [
+        {
+          kind: 'function',
+          name: 'loadUserProfile',
+          nameHint: 'loadUserProfile',
+          file: 'src/service/user-service.ts',
+          lineStart: 1,
+          lineEnd: 10,
+          columnStart: 1,
+          columnEnd: 1,
+          statementCount: 8,
+          complexity: 5,
+          maxBranchDepth: 2,
+          maxLoopDepth: 1,
+          returns: 1,
+          awaits: 1,
+          calls: 3,
+          loops: 0,
+          lengthLines: 10,
+          cognitiveComplexity: 6,
+        },
+      ],
+      flows: [],
+      dependencyProfile: {
+        internalDependencies: [],
+        externalDependencies: [],
+        unresolvedDependencies: [],
+        declaredExports: [],
+        importedSymbols: [],
+        reExports: [],
+      },
+      ...overrides,
+    };
+  }
+
+  it('returns weighted hybrid ratings with expected aspects', () => {
+    const result = computeQualityAspectRatings(
+      [
+        makeFinding({
+          id: 'a1',
+          category: 'dependency-cycle',
+          severity: 'high',
+          file: 'src/service/user-service.ts',
+        }),
+        makeFinding({
+          id: 'a2',
+          category: 'dead-export',
+          severity: 'medium',
+          file: 'src/common/shared-utils.ts',
+        }),
+      ],
+      {
+        fileInventory: [
+          makeFileEntry(),
+          makeFileEntry({
+            file: 'src/common/shared-utils.ts',
+            functions: [],
+            symbolUsageSummary: {
+              declaredExportCount: 12,
+              importedSymbolCount: 2,
+              internalImportCount: 1,
+              externalImportCount: 0,
+              reExportCount: 0,
+              dominantInternalDependency: null,
+            },
+          }),
+        ],
+        hotFiles: [
+          {
+            file: 'src/service/user-service.ts',
+            riskScore: 88,
+            fanIn: 7,
+            fanOut: 4,
+            complexityScore: 20,
+            exportCount: 2,
+            inCycle: true,
+            onCriticalPath: true,
+          },
+        ],
+        reportAnalysis: {
+          graphSignals: [],
+          astSignals: [],
+          combinedSignals: [],
+          strongestGraphSignal: {
+            kind: 'dependency-hotspot',
+            lens: 'graph',
+            title: 'Hotspot',
+            summary: 'Hotspot found',
+            confidence: 'high',
+            score: 90,
+            files: ['src/service/user-service.ts'],
+            categories: ['dependency-cycle'],
+            evidence: {},
+          },
+          strongestAstSignal: null,
+          combinedInterpretation: null,
+          recommendedValidation: null,
+          investigationPrompts: [],
+        },
+      }
+    );
+    expect(result.model).toBe('hybrid-ai-structure-v1');
+    expect(result.overallScore).toBeGreaterThanOrEqual(0);
+    expect(result.overallScore).toBeLessThanOrEqual(100);
+    expect(result.aspects.map(a => a.aspect)).toEqual([
+      'architecture-structure',
+      'folder-topology',
+      'naming-quality',
+      'common-layer-health',
+      'maintainability-evolvability',
+      'codebase-consistency',
+    ]);
+  });
+
+  it('keeps common-layer score neutral-positive when no shared/common folders exist', () => {
+    const result = computeQualityAspectRatings(
+      [makeFinding({ id: 'n1', category: 'cognitive-complexity' })],
+      {
+        fileInventory: [
+          makeFileEntry({ file: 'src/domain/user/profile-service.ts' }),
+        ],
+      }
+    );
+    const commonLayer = result.aspects.find(
+      aspect => aspect.aspect === 'common-layer-health'
+    );
+    expect(commonLayer).toBeDefined();
+    expect(commonLayer!.score).toBeGreaterThanOrEqual(80);
+  });
+
+  it('ignores test-file findings when includeTests=false', () => {
+    const findings: Finding[] = [
+      makeFinding({
+        id: 'prod-arch',
+        category: 'dependency-cycle',
+        severity: 'high',
+        file: 'src/service/core.ts',
+        files: ['src/service/core.ts'],
+      }),
+      ...Array.from({ length: 12 }, (_, index) =>
+        makeFinding({
+          id: `test-only-${index}`,
+          category: 'dependency-critical-path',
+          severity: 'critical',
+          file: `tests/service/core-${index}.test.ts`,
+          files: [`tests/service/core-${index}.test.ts`],
+        })
+      ),
+    ];
+
+    const baseContext = {
+      fileInventory: [
+        ...Array.from({ length: 20 }, (_, index) =>
+          makeFileEntry({ file: `src/service/core-${index}.ts` })
+        ),
+        makeFileEntry({ file: 'tests/service/core.test.ts' }),
+      ],
+    };
+    const withoutTests = computeQualityAspectRatings(findings, {
+      ...baseContext,
+      includeTests: false,
+    });
+    const withTests = computeQualityAspectRatings(findings, {
+      ...baseContext,
+      includeTests: true,
+    });
+    const withoutTestsScore = withoutTests.aspects.find(
+      aspect => aspect.aspect === 'architecture-structure'
+    )!.score;
+    const withTestsScore = withTests.aspects.find(
+      aspect => aspect.aspect === 'architecture-structure'
+    )!.score;
+
+    expect(withoutTestsScore).toBeGreaterThan(withTestsScore);
+  });
+
+  it('downweights advisory dead-code categories in maintainability scoring', () => {
+    const advisoryFindings = Array.from({ length: 20 }, (_, index) =>
+      makeFinding({
+        id: `advisory-${index}`,
+        category: 'move-to-caller',
+        severity: 'low',
+        file: `src/tools/advisory-${index}.ts`,
+        files: [`src/tools/advisory-${index}.ts`],
+      })
+    );
+    const concreteFindings = Array.from({ length: 20 }, (_, index) =>
+      makeFinding({
+        id: `concrete-${index}`,
+        category: 'dead-file',
+        severity: 'low',
+        file: `src/tools/concrete-${index}.ts`,
+        files: [`src/tools/concrete-${index}.ts`],
+      })
+    );
+
+    const advisoryScore = computeQualityAspectRatings(advisoryFindings, {
+      fileInventory: advisoryFindings.map(f => makeFileEntry({ file: f.file })),
+    }).aspects.find(a => a.aspect === 'maintainability-evolvability')!.score;
+    const concreteScore = computeQualityAspectRatings(concreteFindings, {
+      fileInventory: concreteFindings.map(f => makeFileEntry({ file: f.file })),
+    }).aspects.find(a => a.aspect === 'maintainability-evolvability')!.score;
+
+    expect(advisoryScore).toBeGreaterThan(concreteScore);
+  });
+
+  it('normalizes folder topology for scans under a shared path prefix', () => {
+    const result = computeQualityAspectRatings([], {
+      fileInventory: [
+        makeFileEntry({
+          file: 'packages/octocode-mcp/src/tools/local_find_files/findFiles.ts',
+        }),
+        makeFileEntry({
+          file: 'packages/octocode-mcp/src/tools/local_ripgrep/ripgrepExecutor.ts',
+        }),
+        makeFileEntry({
+          file: 'packages/octocode-mcp/src/tools/local_view_structure/structureWalker.ts',
+        }),
+      ],
+    });
+
+    const folderAspect = result.aspects.find(
+      aspect => aspect.aspect === 'folder-topology'
+    );
+    expect(folderAspect).toBeDefined();
+    expect(folderAspect!.score).toBeGreaterThanOrEqual(85);
+  });
+
+  it('ignores generated and minified paths in hybrid quality rating by default', () => {
+    const result = computeQualityAspectRatings(
+      [
+        makeFinding({
+          id: 'gen-1',
+          category: 'dependency-cycle',
+          severity: 'high',
+          file: 'dist/vendor.min.js',
+          files: ['dist/vendor.min.js'],
+        }),
+      ],
+      {
+        fileInventory: [
+          makeFileEntry({ file: 'dist/vendor.min.js', functions: [] }),
+          makeFileEntry({ file: 'src/service/core.ts' }),
+        ],
+      }
+    );
+
+    const architectureScore = result.aspects.find(
+      aspect => aspect.aspect === 'architecture-structure'
+    )!.score;
+    expect(architectureScore).toBeGreaterThanOrEqual(90);
   });
 });
 
@@ -533,6 +931,21 @@ describe('generateSummaryMd', () => {
     });
     expect(md).toContain('## Health Scores');
     expect(md).toContain('**Overall**');
+  });
+
+  it('includes feature scores section with category rows', () => {
+    const md = generateSummaryMd({
+      dir: '/tmp/scan',
+      report: makeMinimalReport(),
+      outputFiles: { summary: 'summary.json' },
+      architectureFindings: [],
+      codeQualityFindings: [],
+      deadCodeFindings: [],
+    });
+    expect(md).toContain('## Feature Scores');
+    expect(md).toContain('## AI + Structure Ratings');
+    expect(md).toContain('`cognitive-complexity`');
+    expect(md).toContain('`dead-export`');
   });
 
   it('includes features filter when activeFeatures is provided', () => {

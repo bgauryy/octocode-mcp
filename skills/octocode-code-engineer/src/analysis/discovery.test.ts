@@ -190,6 +190,63 @@ describe('discovery', () => {
         [...basenames].sort((a, b) => a.localeCompare(b))
       );
     });
+
+    it('skips minified js artifacts', () => {
+      fs.writeFileSync(path.join(tmpDir, 'app.js'), '', 'utf8');
+      fs.writeFileSync(path.join(tmpDir, 'app.min.js'), '', 'utf8');
+
+      const opts: AnalysisOptions = { ...DEFAULT_OPTS, root: tmpDir };
+      const files = collectFiles(tmpDir, opts);
+
+      expect(files.some(f => f.endsWith('app.js'))).toBe(true);
+      expect(files.some(f => f.endsWith('app.min.js'))).toBe(false);
+    });
+
+    it('skips scripts files when mirrored src file exists', () => {
+      fs.mkdirSync(path.join(tmpDir, 'src'), { recursive: true });
+      fs.mkdirSync(path.join(tmpDir, 'scripts'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'src', 'index.ts'), '', 'utf8');
+      fs.writeFileSync(path.join(tmpDir, 'scripts', 'index.js'), '', 'utf8');
+
+      const opts: AnalysisOptions = { ...DEFAULT_OPTS, root: tmpDir };
+      const files = collectFiles(tmpDir, opts);
+
+      expect(files.some(f => f.endsWith(path.join('src', 'index.ts')))).toBe(
+        true
+      );
+      expect(
+        files.some(f => f.endsWith(path.join('scripts', 'index.js')))
+      ).toBe(false);
+    });
+
+    it('keeps scripts files when no src mirror exists', () => {
+      fs.mkdirSync(path.join(tmpDir, 'scripts'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'scripts', 'bootstrap.js'), '', 'utf8');
+
+      const opts: AnalysisOptions = { ...DEFAULT_OPTS, root: tmpDir };
+      const files = collectFiles(tmpDir, opts);
+
+      expect(
+        files.some(f => f.endsWith(path.join('scripts', 'bootstrap.js')))
+      ).toBe(true);
+    });
+
+    it('keeps scoped scripts file even when mirrored src file exists', () => {
+      fs.mkdirSync(path.join(tmpDir, 'src'), { recursive: true });
+      fs.mkdirSync(path.join(tmpDir, 'scripts'), { recursive: true });
+      const scriptPath = path.join(tmpDir, 'scripts', 'index.js');
+      fs.writeFileSync(path.join(tmpDir, 'src', 'index.ts'), '', 'utf8');
+      fs.writeFileSync(scriptPath, '', 'utf8');
+
+      const opts: AnalysisOptions = {
+        ...DEFAULT_OPTS,
+        root: tmpDir,
+        scope: [scriptPath],
+      };
+      const files = collectFiles(tmpDir, opts);
+
+      expect(files.some(f => f === scriptPath)).toBe(true);
+    });
   });
 
   describe('safeRead', () => {

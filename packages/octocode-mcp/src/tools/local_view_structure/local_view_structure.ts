@@ -61,7 +61,12 @@ export async function viewStructure(
     }
 
     const builder = new LsCommandBuilder();
-    const { command, args } = builder.fromQuery(query).build();
+    const { command, args } = builder
+      .fromQuery({
+        ...query,
+        path: pathValidation.sanitizedPath!,
+      })
+      .build();
 
     const result = await safeExec(command, args);
 
@@ -85,7 +90,7 @@ export async function viewStructure(
     }
 
     const entries = query.details
-      ? parseLsLongFormat(result.stdout, true)
+      ? parseLsLongFormat(result.stdout, effectiveShowModified)
       : await parseLsSimple(
           result.stdout,
           pathValidation.sanitizedPath!,
@@ -195,18 +200,18 @@ async function viewStructureRecursive(
 
   const walkStats: WalkStats = { skipped: 0 };
 
-  await walkDirectory(
+  await walkDirectory({
     basePath,
-    basePath,
-    0,
+    currentPath: basePath,
+    depth: 0,
     maxDepth,
     entries,
     maxEntries,
-    query.hidden,
+    showHidden: query.hidden,
     showModified,
-    walkStats,
-    query.details ?? false
-  );
+    stats: walkStats,
+    showDetails: query.details ?? false,
+  });
 
   let filteredEntries = applyEntryFilters(entries, query);
 

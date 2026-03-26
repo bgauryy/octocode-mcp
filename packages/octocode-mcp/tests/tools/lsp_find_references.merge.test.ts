@@ -153,6 +153,42 @@ describe('mergeReferenceResults - branch coverage', () => {
     ).toBe(true);
   });
 
+  it('should preserve references on same line with different columns', () => {
+    const lspResult: any = {
+      status: 'hasResults',
+      locations: [
+        {
+          uri: 'a.ts',
+          range: {
+            start: { line: 5, character: 1 },
+            end: { line: 5, character: 6 },
+          },
+          content: 'first',
+          isDefinition: false,
+        },
+      ],
+      hints: [],
+    };
+    const patternResult: any = {
+      status: 'hasResults',
+      locations: [
+        {
+          uri: 'a.ts',
+          range: {
+            start: { line: 5, character: 12 },
+            end: { line: 5, character: 17 },
+          },
+          content: 'second',
+          isDefinition: false,
+        },
+      ],
+    };
+
+    const result = mergeReferenceResults(lspResult, patternResult, baseQuery);
+    expect(result.status).toBe('hasResults');
+    expect(result.locations).toHaveLength(2);
+  });
+
   it('should paginate merged results and add pagination hint', () => {
     const lspLocs = Array.from({ length: 15 }, (_, i) =>
       makeLocation('a.ts', i)

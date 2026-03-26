@@ -74,31 +74,15 @@ export async function enhanceIncomingCalls(
   calls: IncomingCall[],
   contextLines: number
 ): Promise<IncomingCall[]> {
-  const enhanced: IncomingCall[] = [];
-
-  for (const call of calls) {
-    try {
-      const fileContent = await safeReadFile(call.from.uri);
-      if (!fileContent) {
-        enhanced.push(call);
-        continue;
-      }
-      const enhancedFrom = await enhanceCallHierarchyItem(
-        call.from,
-        fileContent,
-        contextLines
-      );
-      enhanced.push({
-        ...call,
-        from: enhancedFrom,
-      });
-    } catch {
-      // Incoming call enhancement failed; keep unmodified item.
-      enhanced.push(call);
-    }
-  }
-
-  return enhanced;
+  return enhanceCalls(
+    calls,
+    contextLines,
+    call => call.from,
+    (call, enhancedItem) => ({
+      ...call,
+      from: enhancedItem,
+    })
+  );
 }
 
 /**
@@ -108,31 +92,43 @@ export async function enhanceOutgoingCalls(
   calls: OutgoingCall[],
   contextLines: number
 ): Promise<OutgoingCall[]> {
-  const enhanced: OutgoingCall[] = [];
+  return enhanceCalls(
+    calls,
+    contextLines,
+    call => call.to,
+    (call, enhancedItem) => ({
+      ...call,
+      to: enhancedItem,
+    })
+  );
+}
 
-  for (const call of calls) {
-    try {
-      const fileContent = await safeReadFile(call.to.uri);
-      if (!fileContent) {
-        enhanced.push(call);
-        continue;
+async function enhanceCalls<T>(
+  calls: T[],
+  contextLines: number,
+  getItem: (call: T) => CallHierarchyItem,
+  applyEnhancedItem: (call: T, enhancedItem: CallHierarchyItem) => T
+): Promise<T[]> {
+  return Promise.all(
+    calls.map(async call => {
+      try {
+        const item = getItem(call);
+        const fileContent = await safeReadFile(item.uri);
+        if (!fileContent) {
+          return call;
+        }
+        const enhancedItem = await enhanceCallHierarchyItem(
+          item,
+          fileContent,
+          contextLines
+        );
+        return applyEnhancedItem(call, enhancedItem);
+      } catch {
+        // Call enhancement failed; keep unmodified item.
+        return call;
       }
-      const enhancedTo = await enhanceCallHierarchyItem(
-        call.to,
-        fileContent,
-        contextLines
-      );
-      enhanced.push({
-        ...call,
-        to: enhancedTo,
-      });
-    } catch {
-      // Outgoing call enhancement failed; keep unmodified item.
-      enhanced.push(call);
-    }
-  }
-
-  return enhanced;
+    })
+  );
 }
 
 /**

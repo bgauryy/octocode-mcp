@@ -560,5 +560,25 @@ describe('ToolsManager - Metadata Availability', () => {
         TOOL_METADATA_ERRORS.INVALID_API_RESPONSE.code
       );
     });
+
+    it('should not abort registration when metadata logging rejects', async () => {
+      mockIsToolAvailableSync.mockImplementation((toolName: string) => {
+        return toolName !== 'githubSearchCode';
+      });
+      mockLogSessionError.mockRejectedValue(
+        new Error('session logging unavailable')
+      );
+
+      await expect(registerTools(mockServer)).resolves.toEqual({
+        successCount: 4,
+        failedTools: [],
+      });
+
+      expect(ALL_TOOLS[0]?.fn).not.toHaveBeenCalled();
+      expect(ALL_TOOLS[1]?.fn).toHaveBeenCalled();
+      expect(ALL_TOOLS[2]?.fn).toHaveBeenCalled();
+      expect(ALL_TOOLS[3]?.fn).toHaveBeenCalled();
+      expect(ALL_TOOLS[4]?.fn).toHaveBeenCalled();
+    });
   });
 });

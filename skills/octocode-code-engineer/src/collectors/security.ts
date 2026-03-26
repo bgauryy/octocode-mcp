@@ -4,12 +4,11 @@ import { getLineAndCharacter } from '../common/utils.js';
 
 import type { CodeLocation, ConsoleLogEntry, FileEntry, SuspiciousString } from '../types/index.js';
 
-const SENSITIVE_LOG_PATTERNS = [
+const HIGH_CONFIDENCE_SENSITIVE_LOG_PATTERNS = [
   /password/i,
   /passwd/i,
   /\bsecret\b/i,
   /\btoken\b/i,
-  /\bauth\b/i,
   /credential/i,
   /credit.?card/i,
   /\bssn\b/i,
@@ -17,8 +16,22 @@ const SENSITIVE_LOG_PATTERNS = [
   /api[_-]?key/i,
   /private[_-]?key/i,
   /access[_-]?key/i,
+];
+
+const LOW_CONFIDENCE_SENSITIVE_LOG_PATTERNS = [
+  /\bauth\b/i,
   /\bsession\b/i,
 ];
+
+const NON_SECRET_AUTH_SESSION_CONTEXT =
+  /\b(auth|session)\b.{0,40}\b(flow|status|state|start(?:ed)?|success(?:ful|fully)?|fail(?:ed|ure)?|refresh(?:ed)?|renew(?:ed)?|expire(?:d)?|invalid|chang(?:e|ed)|required|created|destroyed)\b/i;
+const AUTH_SESSION_VALUE_HINT =
+  /\b(id|sid|jwt|bearer|cookie|header|authorization|credential|secret|token|key)\b|[:=]|\{|\}/i;
+const NON_SECRET_USAGE_HINT =
+  /\busage:\b|\boptions:\b|--[a-z0-9-]+|\bunknown\b.{0,20}\btoken\b|\bpillar names?\b|\bcategory names?\b/i;
+
+const SECRET_CONTEXT_NAME_PATTERN =
+  /(password|passwd|secret|token|api[_-]?key|private[_-]?key|access[_-]?key|credential|auth|session|jwt|bearer|ssn)/i;
 
 const CONSOLE_LOG_METHODS = new Set([
   'log', 'debug', 'trace', 'info', 'warn', 'error', 'dir', 'table',
@@ -93,6 +106,44 @@ function computeShannonEntropy(s: string): number {
   return entropy;
 }
 
+function hasSecretLikeIdentifierContext(
+  node: ts.Node,
+  sourceFile: ts.SourceFile
+): boolean {
+  const parent = node.parent;
+  if (ts.isVariableDeclaration(parent)) {
+    if (ts.isIdentifier(parent.name)) {
+      return SECRET_CONTEXT_NAME_PATTERN.test(parent.name.text);
+    }
+    return false;
+  }
+  if (ts.isPropertyAssignment(parent)) {
+    if (ts.isIdentifier(parent.name)) {
+      return SECRET_CONTEXT_NAME_PATTERN.test(parent.name.text);
+    }
+    if (ts.isStringLiteral(parent.name) || ts.isNumericLiteral(parent.name)) {
+      return SECRET_CONTEXT_NAME_PATTERN.test(parent.name.text);
+    }
+  }
+  if (ts.isBinaryExpression(parent) && ts.isPropertyAccessExpression(parent.left)) {
+    return SECRET_CONTEXT_NAME_PATTERN.test(parent.left.name.getText(sourceFile));
+  }
+  return false;
+}
+
+function hasSensitiveLogArgument(argText: string): boolean {
+  if (NON_SECRET_USAGE_HINT.test(argText)) return false;
+  if (HIGH_CONFIDENCE_SENSITIVE_LOG_PATTERNS.some(p => p.test(argText))) {
+    return true;
+  }
+  const hasLowConfidenceTerm = LOW_CONFIDENCE_SENSITIVE_LOG_PATTERNS.some(p =>
+    p.test(argText)
+  );
+  if (!hasLowConfidenceTerm) return false;
+  if (NON_SECRET_AUTH_SESSION_CONTEXT.test(argText)) return false;
+  return AUTH_SESSION_VALUE_HINT.test(argText);
+}
+
 export function collectSecurityData(
   sourceFile: ts.SourceFile,
   fileRelative: string,
@@ -127,7 +178,7 @@ export function collectSecurityData(
         if (obj === 'console' && CONSOLE_LOG_METHODS.has(method)) {
           const loc = getLineAndCharacter(sourceFile, node);
           const argText = node.arguments.map(a => a.getText(sourceFile)).join(' ');
-          const hasSensitiveArg = SENSITIVE_LOG_PATTERNS.some(p => p.test(argText));
+          const hasSensitiveArg = hasSensitiveLogArgument(argText);
           consoleLogs.push({
             method,
             lineStart: loc.lineStart,
@@ -229,6 +280,7 @@ export function collectSecurityData(
       if (!isInsideMetadataProperty(node) && !isInsideRegexLiteral(node)) {
         const value = node.text;
         if (!isPlaceholderOrUuid(value)) {
+          let matchedSecretPattern = false;
           for (const pattern of SECRET_PATTERNS) {
             if (pattern.test(value)) {
               const loc = getLineAndCharacter(sourceFile, node);
@@ -239,10 +291,16 @@ export function collectSecurityData(
                 snippet: value.slice(0, 40),
                 context: 'literal',
               });
+              matchedSecretPattern = true;
               break;
             }
           }
-          if (value.length >= 20 && computeShannonEntropy(value) > 4.5) {
+          if (
+            !matchedSecretPattern &&
+            value.length >= 20 &&
+            computeShannonEntropy(value) > 4.5 &&
+            hasSecretLikeIdentifierContext(node, sourceFile)
+          ) {
             const loc = getLineAndCharacter(sourceFile, node);
             suspiciousStrings.push({
               lineStart: loc.lineStart,

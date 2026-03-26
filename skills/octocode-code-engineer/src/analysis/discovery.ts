@@ -6,6 +6,42 @@ import { ALLOWED_EXTS } from '../types/index.js';
 
 import type { AnalysisOptions, FileEntry, PackageInfo } from '../types/index.js';
 
+const SOURCE_MIRROR_EXTS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
+
+function isExplicitlyScoped(
+  filePath: string,
+  scope: AnalysisOptions['scope']
+): boolean {
+  if (!scope || scope.length === 0) return false;
+  const normalizedFile = path.normalize(filePath);
+  return scope.some(scopeEntry => {
+    const normalizedScope = path.normalize(scopeEntry);
+    return (
+      normalizedFile === normalizedScope ||
+      normalizedFile.startsWith(normalizedScope + path.sep)
+    );
+  });
+}
+
+function isMinifiedArtifact(fileName: string): boolean {
+  return /\.min\.(?:js|mjs|cjs)$/i.test(fileName);
+}
+
+function hasSrcMirror(filePath: string, rootDir: string): boolean {
+  const rel = path.relative(rootDir, filePath);
+  if (!rel || rel.startsWith('..')) return false;
+  const parts = rel.split(path.sep);
+  if (parts[0] !== 'scripts' || parts.length < 2) return false;
+
+  const ext = path.extname(filePath);
+  const relWithoutExt = parts.slice(1).join(path.sep).slice(0, -ext.length);
+  for (const candidateExt of SOURCE_MIRROR_EXTS) {
+    const candidate = path.join(rootDir, 'src', `${relWithoutExt}${candidateExt}`);
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return true;
+  }
+  return false;
+}
+
 export function collectFiles(rootDir: string, opts: AnalysisOptions): string[] {
   const files: string[] = [];
   const walk = (dir: string): void => {
@@ -24,6 +60,13 @@ export function collectFiles(rootDir: string, opts: AnalysisOptions): string[] {
 
       if (!entry.isFile()) continue;
       if (entry.name.endsWith('.d.ts')) continue;
+
+      if (
+        !isExplicitlyScoped(next, opts.scope) &&
+        (isMinifiedArtifact(entry.name) || hasSrcMirror(next, rootDir))
+      ) {
+        continue;
+      }
 
       const ext = path.extname(entry.name);
       if (!ALLOWED_EXTS.has(ext)) continue;
