@@ -27,10 +27,10 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 ### Hints Validation Checklist
-- [ ] Response includes helpful hints for content analysis
-- [ ] Hints suggest next logical steps (e.g., line range expansion, match refinement)
-- [ ] Pagination hints when content is truncated (charOffset/charLength)
-- [ ] Match range hints when using matchString
+* [ ] Response includes helpful hints for content analysis
+* [ ] Hints suggest next logical steps (e.g., line range expansion, match refinement)
+* [ ] Pagination hints when content is truncated (charOffset/charLength)
+* [ ] Match range hints when using matchString
 
 ---
 
@@ -54,15 +54,15 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Lines 1 through 20 returned
-- [ ] `totalLines` metadata present
-- [ ] Content matches actual file
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with content and metadata
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps (expand range, match string)
+* [ ] Lines 1 through 20 returned
+* [ ] `totalLines` metadata present
+* [ ] Content matches actual file
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with content and metadata
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps (expand range, match string)
 
 ---
 
@@ -84,15 +84,15 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Match found at correct location
-- [ ] 10 lines of context before and after
-- [ ] `matchRanges` metadata shows where matches were found
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with content and matchRanges
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Match found at correct location
+* [ ] 10 lines of context before and after
+* [ ] `matchRanges` metadata shows where matches were found
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with content and matchRanges
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -113,15 +113,15 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Entire file content returned
-- [ ] `isPartial: false`
-- [ ] `totalLines` matches actual line count
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with content
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Entire file content returned
+* [ ] `isPartial: false`
+* [ ] `totalLines` matches actual line count
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with content
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -143,15 +143,15 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] First 500 characters of file returned
-- [ ] Pagination info present ("page 1 of N, next: charOffset=500")
-- [ ] `isPartial: true` if file is larger than 500 chars
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with content
-  - [ ] Pagination hints for next charOffset
-  - [ ] Hints suggest actionable next steps
+* [ ] First 500 characters of file returned
+* [ ] Pagination info present ("page 1 of N, next: charOffset=500")
+* [ ] `isPartial: true` if file is larger than 500 chars
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with content
+  * [ ] Pagination hints for next charOffset
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -174,15 +174,15 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Both `isToolError` and `toToolError` matched
-- [ ] Multiple `matchRanges` entries
-- [ ] Context lines around each match
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with matchRanges
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Both `isToolError` and `toToolError` matched
+* [ ] Multiple `matchRanges` entries
+* [ ] Context lines around each match
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with matchRanges
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -205,14 +205,14 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Only matches `Server` (capital S)
-- [ ] Does NOT match `server` (lowercase)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with content
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only matches `Server` (capital S)
+* [ ] Does NOT match `server` (lowercase)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with content
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -234,15 +234,15 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Characters 500-999 returned
-- [ ] Content does not overlap with TC-4 (charOffset=0)
-- [ ] Pagination indicates current page and next offset
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with content
-  - [ ] Pagination hints for next/previous charOffset
-  - [ ] Hints suggest actionable next steps
+* [ ] Characters 500-999 returned
+* [ ] Content does not overlap with TC-4 (charOffset=0)
+* [ ] Pagination indicates current page and next offset
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with content
+  * [ ] Pagination hints for next/previous charOffset
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -264,14 +264,14 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] No error thrown
-- [ ] Empty or no match results
-- [ ] Clear indication that no matches found
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`empty`)
-  - [ ] `emptyStatusHints` present with match refinement suggestions
-  - [ ] Hints suggest actionable next steps (try different string, use line range)
+* [ ] No error thrown
+* [ ] Empty or no match results
+* [ ] Clear indication that no matches found
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`empty`)
+  * [ ] `emptyStatusHints` present with match refinement suggestions
+  * [ ] Hints suggest actionable next steps (try different string, use line range)
 
 ---
 
@@ -287,21 +287,21 @@ Reads file content from local filesystem with multiple extraction modes: line ra
     "matchStringContextLines": 50,
     "mainResearchGoal": "Test large context lines",
     "researchGoal": "Verify large matchStringContextLines values work",
-    "reasoning": "Large context aids comprehensive analysis"
+    "reasoning": "Large context aids analysis"
   }]
 }
 ```
 
 **Expected:**
-- [ ] Up to 50 lines context before and after
-- [ ] Does not exceed file boundaries
-- [ ] Content is coherent
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with content
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Up to 50 lines context before and after
+* [ ] Does not exceed file boundaries
+* [ ] Content is coherent
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with content
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -321,14 +321,14 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Error message returned (not a crash)
-- [ ] Descriptive error about missing file
-- [ ] No stack trace or internal details leaked
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`error`)
-  - [ ] `errorStatusHints` present with path verification suggestions
-  - [ ] Hints suggest actionable next steps
+* [ ] Error message returned (not a crash)
+* [ ] Descriptive error about missing file
+* [ ] No stack trace or internal details leaked
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`error`)
+  * [ ] `errorStatusHints` present with path verification suggestions
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -350,14 +350,14 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Validation error message
-- [ ] Clear indication that startLine must be <= endLine
-- [ ] No partial content returned
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`error`)
-  - [ ] `errorStatusHints` present with range correction suggestions
-  - [ ] Hints suggest actionable next steps
+* [ ] Validation error message
+* [ ] Clear indication that startLine must be <= endLine
+* [ ] No partial content returned
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`error`)
+  * [ ] `errorStatusHints` present with range correction suggestions
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -379,14 +379,14 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Validation error about mutually exclusive parameters
-- [ ] Clear indication which params conflict
-- [ ] No content returned
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`error`)
-  - [ ] `errorStatusHints` present with param correction suggestions
-  - [ ] Hints suggest actionable next steps
+* [ ] Validation error about mutually exclusive parameters
+* [ ] Clear indication which params conflict
+* [ ] No content returned
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`error`)
+  * [ ] `errorStatusHints` present with param correction suggestions
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -408,15 +408,15 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Either minified content or appropriate error
-- [ ] No crash on non-text content
-- [ ] Graceful handling
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Either minified content or appropriate error
+* [ ] No crash on non-text content
+* [ ] Graceful handling
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -438,15 +438,15 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Exactly 1 line returned (line 10)
-- [ ] Content matches actual file line 10
-- [ ] Minimal output
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with content
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Exactly 1 line returned (line 10)
+* [ ] Content matches actual file line 10
+* [ ] Minimal output
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with content
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -468,15 +468,15 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Only 1 line of context before and after each match
-- [ ] Minimal but useful context
-- [ ] Much less output than default (5 lines)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with content
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only 1 line of context before and after each match
+* [ ] Minimal but useful context
+* [ ] Much less output than default (5 lines)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with content
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -498,14 +498,14 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] No crash or timeout
-- [ ] Empty results expected (no match for very long string)
-- [ ] Handles gracefully
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] No crash or timeout
+* [ ] Empty results expected (no match for very long string)
+* [ ] Handles gracefully
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -527,16 +527,16 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Returns remaining content (less than 500 chars)
-- [ ] Or empty if offset beyond file size
-- [ ] No error thrown
-- [ ] `isPartial` reflects actual state
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with content
-  - [ ] Pagination hints reflect boundary
-  - [ ] Hints suggest actionable next steps
+* [ ] Returns remaining content (less than 500 chars)
+* [ ] Or empty if offset beyond file size
+* [ ] No error thrown
+* [ ] `isPartial` reflects actual state
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with content
+  * [ ] Pagination hints reflect boundary
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -558,15 +558,15 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Full file content returned (file smaller than 10000 chars)
-- [ ] No error thrown
-- [ ] `isPartial: false` or equivalent
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with content
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Full file content returned (file smaller than 10000 chars)
+* [ ] No error thrown
+* [ ] `isPartial: false` or equivalent
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with content
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -586,14 +586,14 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Error message about path being a directory, not a file
-- [ ] No crash
-- [ ] Clear, actionable error message
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`error`)
-  - [ ] `errorStatusHints` present with path type suggestions
-  - [ ] Hints suggest actionable next steps (use localViewStructure for dirs)
+* [ ] Error message about path being a directory, not a file
+* [ ] No crash
+* [ ] Clear, actionable error message
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`error`)
+  * [ ] `errorStatusHints` present with path type suggestions
+  * [ ] Hints suggest actionable next steps (use localViewStructure for dirs)
 
 ---
 
@@ -609,21 +609,21 @@ Reads file content from local filesystem with multiple extraction modes: line ra
     "matchStringContextLines": 2,
     "mainResearchGoal": "Test multiple matches in match string",
     "researchGoal": "Verify matchString finds and reports multiple occurrences",
-    "reasoning": "Multi-match enables comprehensive pattern analysis"
+    "reasoning": "Multi-match enables pattern analysis"
   }]
 }
 ```
 
 **Expected:**
-- [ ] Multiple `matchRanges` entries (one per occurrence)
-- [ ] Each match has its own context window
-- [ ] All occurrences found in file
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with matchRanges
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Multiple `matchRanges` entries (one per occurrence)
+* [ ] Each match has its own context window
+* [ ] All occurrences found in file
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with matchRanges
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -645,16 +645,16 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Up to 50 lines of context before and after
-- [ ] Does not exceed file boundaries
-- [ ] No error at maximum value
-- [ ] Large but manageable output
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with content
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Up to 50 lines of context before and after
+* [ ] Does not exceed file boundaries
+* [ ] No error at maximum value
+* [ ] Large but manageable output
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with content
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -673,15 +673,15 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] First and third queries succeed
-- [ ] Second query returns error (file not found)
-- [ ] Each result isolated per query
-- [ ] No cascade failure
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array has per-query `status` (hasResults, error, hasResults)
-  - [ ] Status-specific hints for each result type
-  - [ ] Hints suggest actionable next steps per query
+* [ ] First and third queries succeed
+* [ ] Second query returns error (file not found)
+* [ ] Each result isolated per query
+* [ ] No cascade failure
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array has per-query `status` (hasResults, error, hasResults)
+  * [ ] Status-specific hints for each result type
+  * [ ] Hints suggest actionable next steps per query
 
 ---
 
@@ -703,15 +703,15 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Exactly 1 line returned (first line of file)
-- [ ] Content is the file's first line
-- [ ] Minimal output
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with content
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Exactly 1 line returned (first line of file)
+* [ ] Content is the file's first line
+* [ ] Minimal output
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with content
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -733,15 +733,15 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Returns all lines from startLine to end of file
-- [ ] No error thrown
-- [ ] `totalLines` shows actual file length
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with content
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Returns all lines from startLine to end of file
+* [ ] No error thrown
+* [ ] `totalLines` shows actual file length
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with content
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -778,23 +778,23 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 ```
 
 **Expected:**
-- [ ] Page 1 returns chars 0-299
-- [ ] Page 2 returns chars 300-599 (different content, no overlap)
-- [ ] Pagination hints indicate next charOffset
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Pagination hints for next/previous charOffset
-  - [ ] Hints suggest actionable next steps
+* [ ] Page 1 returns chars 0-299
+* [ ] Page 2 returns chars 300-599 (different content, no overlap)
+* [ ] Pagination hints indicate next charOffset
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Pagination hints for next/previous charOffset
+  * [ ] Hints suggest actionable next steps
 
 ---
 
 ## Validation Checklist
 
 ### Core Requirements
-- [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning`
-- [ ] **Pagination tests** verify `charOffset`, `charLength` parameters
-- [ ] **Hints validation** checks for helpful guidance in all responses
+* [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning`
+* [ ] **Pagination tests** verify `charOffset`, `charLength` parameters
+* [ ] **Hints validation** checks for helpful guidance in all responses
 
 ### Test Cases Status
 

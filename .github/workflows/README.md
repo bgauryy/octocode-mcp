@@ -45,16 +45,16 @@ yarn verify
 
 `releases.yml` builds standalone `octocode-mcp` binaries for:
 
-- Linux x64 (glibc)
-- Linux ARM64 (glibc)
-- Linux x64 (musl)
-- macOS ARM64
-- macOS x64
-- Windows x64
+* Linux x64 (glibc)
+* Linux ARM64 (glibc)
+* Linux x64 (musl)
+* macOS ARM64
+* macOS x64
+* Windows x64
 
 It also uploads the JS build artifact and SHA256 checksums to the release.
 
 ## Maintenance Notes
 
-- Keep this file aligned with the actual workflow files in this directory.
-- `yarn docs:verify` fails if this README references a workflow that does not exist.
+* Keep this file aligned with the actual workflow files in this directory.
+* `yarn docs:verify` fails if this README references a workflow that does not exist.

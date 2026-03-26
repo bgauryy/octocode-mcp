@@ -3,7 +3,7 @@
 
   <h1>Octocode Code Engineer</h1>
 
-  <p><strong>AI agent skill — code with full codebase awareness</strong></p>
+  <p><strong>AI agent skill  -  code with full codebase awareness</strong></p>
   <p>Architecture · Quality · Smart Coding · Security · Refactoring · Reviews · Testing</p>
 
   [![Skill](https://img.shields.io/badge/skill-agentskills.io-purple)](https://agentskills.io/what-are-skills)
@@ -15,17 +15,17 @@
 
 ## The Problem
 
-AI coding agents are fast — but without codebase awareness, they produce **patches**. Feature by feature, fix by fix, the repo accumulates junk: duplicated logic, dead exports, dependency cycles, god modules, untested critical paths, copy-paste patterns where a shared abstraction should exist. The agent doesn't know what's already there, so it reinvents it. It doesn't see the dependency graph, so it deepens coupling. It doesn't check blast radius, so it breaks things silently.
+AI coding agents are fast  -  but without codebase awareness, they produce **patches**. Feature by feature, fix by fix, the repo accumulates junk: duplicated logic, dead exports, dependency cycles, god modules, untested critical paths, copy-paste patterns where a shared abstraction should exist. The agent doesn't know what's already there, so it reinvents it. It doesn't see the dependency graph, so it deepens coupling. It doesn't check blast radius, so it breaks things silently.
 
-As the codebase grows, the problem compounds: agents lose the ability to reason about it effectively. Context windows fill up, navigation gets noisy, and the agent starts making worse decisions — more patches, more duplication, more breakage. **The code the agent wrote yesterday makes the agent worse at coding today.** Maintainability degrades in a feedback loop that's hard to reverse manually.
+As the codebase grows, the problem compounds: agents lose the ability to reason about it effectively. Context windows fill up, navigation gets noisy, and the agent starts making worse decisions  -  more patches, more duplication, more breakage. **The code the agent wrote yesterday makes the agent worse at coding today.** Maintainability degrades in a feedback loop that's hard to reverse manually.
 
 ## What Is This
 
-An AI agent skill that solves this by making your coding agent **understand the codebase while it works** — not after the damage is done. Before writing a line of code, the agent maps the structure, checks for existing patterns, measures blast radius, and verifies architecture safety. After coding, it re-scans to prove nothing got worse.
+An AI agent skill that solves this by making your coding agent **understand the codebase while it works**  -  not after the damage is done. Before writing a line of code, the agent maps the structure, checks for existing patterns, measures blast radius, and verifies architecture safety. After coding, it re-scans to prove nothing got worse.
 
 It answers the questions your linter can't: *what's the blast radius? where should this code live? who calls this? is this safe to change? does this already exist?*
 
-Just ask your AI agent — it uses this skill automatically for any engineering task.
+Just ask your AI agent  -  it uses this skill automatically for any engineering task.
 
 ---
 
@@ -63,12 +63,12 @@ This skill needs **Octocode MCP** with `ENABLE_LOCAL` to work at full power. Add
 ```
 
 **`ENABLE_LOCAL: true`** unlocks:
-- **Local search** — find code patterns across your codebase
-- **File content** — read files with targeted matching
-- **Directory structure** — explore project layout
-- **LSP tools** — go-to-definition, find-references, call-hierarchy for semantic validation
+* **Local search**  -  find code patterns across your codebase
+* **File content**  -  read files with targeted matching
+* **Directory structure**  -  explore project layout
+* **LSP tools**  -  go-to-definition, find-references, call-hierarchy for semantic validation
 
-> Without `ENABLE_LOCAL`, the skill falls back to CLI-only mode (AST structural search only — no semantic validation).
+> Without `ENABLE_LOCAL`, the skill falls back to CLI-only mode (AST structural search only  -  no semantic validation).
 
 ---
 
@@ -128,7 +128,7 @@ AST Engine (presets)       →  zero false-positive patterns
 Octocode MCP (LSP)        →  validate against live code
 ```
 
-Findings are **hypotheses, not facts**. The agent validates each one with LSP tools before presenting it to you — confirmed, dismissed, or uncertain with evidence.
+Findings are **hypotheses, not facts**. The agent validates each one with LSP tools before presenting it to you  -  confirmed, dismissed, or uncertain with evidence.
 
 ---
 
@@ -144,13 +144,13 @@ Findings are **hypotheses, not facts**. The agent validates each one with LSP to
 
 ## What It's Not For
 
-- Syntax errors → use `tsc`
-- Style enforcement → use ESLint / Prettier
-- Runtime debugging → use tests / debugger
-- Deep taint analysis / SCA → use Semgrep or dedicated tools
+* Syntax errors → use `tsc`
+* Style enforcement → use ESLint / Prettier
+* Runtime debugging → use tests / debugger
+* Deep taint analysis / SCA → use Semgrep or dedicated tools
 
 ---
 
 ## License
 
-MIT License © 2026 Octocode — see [LICENSE](https://github.com/bgauryy/octocode-mcp/blob/main/LICENSE).
+MIT License © 2026 Octocode  -  see [LICENSE](https://github.com/bgauryy/octocode-mcp/blob/main/LICENSE).

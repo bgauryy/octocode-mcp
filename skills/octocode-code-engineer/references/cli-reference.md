@@ -4,7 +4,7 @@
 node <SKILL_DIR>/scripts/run.js [flags]
 ```
 
-Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — subsequent runs skip unchanged files (~4x faster).
+Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached  -  subsequent runs skip unchanged files (~4x faster).
 
 ---
 
@@ -57,7 +57,7 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 
 ## Flag Details
 
-`--scope` focuses on specific paths (comma-separated, relative to root). Use `file:symbol` syntax to drill into a specific function or exported variable — only findings whose line range overlaps with that symbol are returned. The full dependency graph is still built so architecture findings involving scoped files are reported. Combinable with `--features`/`--exclude`.
+`--scope` focuses on specific paths (comma-separated, relative to root). Use `file:symbol` syntax to drill into a specific function or exported variable  -  only findings whose line range overlaps with that symbol are returned. The full dependency graph is still built so architecture findings involving scoped files are reported. Combinable with `--features`/`--exclude`.
 
 **Symbol scope fallback**: if the scanner cannot resolve a `file:symbol` target (e.g., the symbol name doesn't match an exported function or the file uses patterns that prevent resolution), it falls back to file-level scope and emits a warning: `"symbol scope could not resolve: <path>. Falling back to file-level scope."` If you see this warning, check the exact exported function name and try again, or use file-level scope directly.
 
@@ -67,7 +67,7 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 
 `--out` changes the output destination. If the path ends with `.json`, writes a single monolithic file (legacy mode). Otherwise, writes to the given directory instead of the default timestamped directory.
 
-`--parser` selects the parse engine: `auto` (default — uses tree-sitter with TS fallback), `typescript` (TS compiler only), or `tree-sitter` (tree-sitter only).
+`--parser` selects the parse engine: `auto` (default  -  uses tree-sitter with TS fallback), `typescript` (TS compiler only), or `tree-sitter` (tree-sitter only).
 
 ---
 
@@ -77,15 +77,15 @@ Use this section to quickly verify feature coverage.
 
 ### Pillar features (`--features=...`)
 
-- `architecture`
-- `code-quality`
-- `dead-code`
-- `security`
-- `test-quality`
+* `architecture`
+* `code-quality`
+* `dead-code`
+* `security`
+* `test-quality`
 
 ### Semantic-only categories
 
-Require `--semantic` to appear in results. The set of semantic categories evolves across versions — run `--help` or `--semantic --help` to see the current list for your installed version.
+Require `--semantic` to appear in results. The set of semantic categories evolves across versions  -  run `--help` or `--semantic --help` to see the current list for your installed version.
 
 ### How to list all available categories in your current version
 
@@ -120,16 +120,16 @@ cat .octocode/scan/<latest>/findings.json | jq '.optimizationFindings[].category
 | `--graph-advanced` | off | Enable SCC clusters, chokepoints, package graph hotspots, and advanced architecture findings |
 | `--flow` | off | Enable lightweight flow enrichment such as `cfgFlags`, `flowTrace`, and richer evidence metadata |
 | `--emit-tree` | **on** | Force include AST tree blocks in output |
-| `--no-tree` | — | Suppress AST tree output (`ast-trees.txt`) |
+| `--no-tree` |  -  | Suppress AST tree output (`ast-trees.txt`) |
 | `--parser <engine>` | `auto` | Parse engine: `auto`, `typescript`, `tree-sitter` |
 | `--semantic` | off | Enable semantic analysis (TypeChecker + LanguageService) |
 | `--no-diversify` | off | Disable category-aware diversification when truncating. By default `--findings-limit` interleaves categories so the capped list is diverse. Use this for pure severity ordering. |
 | `--no-cache` | off | Disable incremental cache; re-parse all files |
-| `--clear-cache` | — | Delete the analysis cache and exit (no scan) |
+| `--clear-cache` |  -  | Delete the analysis cache and exit (no scan) |
 | `--all` | off | Enable all features: `--include-tests --semantic` |
-| `--help`, `-h` | — | Show help message |
+| `--help`, `-h` |  -  | Show help message |
 
-### Thresholds — Architecture
+### Thresholds  -  Architecture
 
 | Flag | Default | Controls |
 |------|---------|----------|
@@ -141,7 +141,7 @@ cat .octocode/scan/<latest>/findings.json | jq '.optimizationFindings[].category
 | `--sdp-min-delta N` | 0.15 | Min instability delta for SDP violations |
 | `--sdp-max-source-instability N` | 0.6 | Max source instability to report SDP violations |
 
-### Thresholds — Code Quality
+### Thresholds  -  Code Quality
 
 | Flag | Default | Controls |
 |------|---------|----------|
@@ -161,21 +161,21 @@ cat .octocode/scan/<latest>/findings.json | jq '.optimizationFindings[].category
 | `--similarity-threshold N` | 0.85 | Jaccard similarity threshold for near-clone detection |
 | `--max-recs-per-category N` | 2 | Max findings per category in top recommendations |
 
-### Thresholds — Semantic (require `--semantic`)
+### Thresholds  -  Semantic (require `--semantic`)
 
 | Flag | Default | Controls |
 |------|---------|----------|
 | `--override-chain-threshold N` | 3 | Max method override depth before flagging |
 | `--shotgun-threshold N` | 8 | Unique-file threshold for `shotgun-surgery` |
 
-### Thresholds — Security
+### Thresholds  -  Security
 
 | Flag | Default | Controls |
 |------|---------|----------|
 | `--secret-entropy-threshold N` | 4.5 | Shannon entropy threshold for high-entropy string detection |
 | `--secret-min-length N` | 20 | Min string length for entropy-based secret detection |
 
-### Thresholds — Test Quality
+### Thresholds  -  Test Quality
 
 | Flag | Default | Controls |
 |------|---------|----------|
@@ -192,12 +192,12 @@ cat .octocode/scan/<latest>/findings.json | jq '.optimizationFindings[].category
 
 ## Scope Sanity Checks
 
-Low or zero findings can mean the codebase is clean — or the scope missed analyzable files. Before trusting a clean result:
+Low or zero findings can mean the codebase is clean  -  or the scope missed analyzable files. Before trusting a clean result:
 
 1. **Confirm the scope has source files**: `--scope=docs/` or a path with only `.md` files will produce 0 findings. Use `localViewStructure` or `ls` to verify the scope contains `.ts`/`.js`/`.tsx` files.
-2. **Test-quality needs test files**: `--features=test-quality` without `--include-tests` will produce 0 findings — test files are excluded by default.
+2. **Test-quality needs test files**: `--features=test-quality` without `--include-tests` will produce 0 findings  -  test files are excluded by default.
 3. **Suspiciously low count? Broaden one level**: try removing `--scope` or removing `--features` temporarily to compare against a baseline full run. If the full run has findings and the scoped run doesn't, the scope was too narrow.
-4. **Scoped scans affect downstream tools**: `ast-trees.txt` from a scoped scan only contains AST trees for scoped files. If you later run `tree-search.js -i .octocode/scan`, it picks the latest scan — which may be the narrow one. Either point to a full-scan timestamp explicitly or re-run a full scan.
+4. **Scoped scans affect downstream tools**: `ast-trees.txt` from a scoped scan only contains AST trees for scoped files. If you later run `tree-search.js -i .octocode/scan`, it picks the latest scan  -  which may be the narrow one. Either point to a full-scan timestamp explicitly or re-run a full scan.
 
 ```bash
 # Baseline (broad)

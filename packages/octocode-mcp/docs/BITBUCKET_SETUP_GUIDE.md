@@ -1,6 +1,6 @@
 # Bitbucket Setup Guide
 
-> Complete guide for using Octocode MCP with Bitbucket Cloud — authentication, available tools, parameter mapping, and troubleshooting.
+> Complete guide for using Octocode MCP with Bitbucket Cloud  -  authentication, available tools, parameter mapping, and troubleshooting.
 
 ---
 
@@ -13,7 +13,7 @@ export BITBUCKET_TOKEN="your-app-password-or-oauth-token"
 # 2. (Optional) Set your Bitbucket username for Basic auth
 export BITBUCKET_USERNAME="your-username"
 
-# 3. Start Octocode MCP — Bitbucket mode activates automatically
+# 3. Start Octocode MCP  -  Bitbucket mode activates automatically
 npx octocode-mcp
 ```
 
@@ -32,14 +32,14 @@ Bitbucket supports two authentication modes, selected automatically based on whe
 | **Basic Auth** | `BITBUCKET_USERNAME` is set | `Basic base64(username:token)` |
 | **Bearer Auth** | `BITBUCKET_USERNAME` is not set | `Bearer token` |
 
-### Option 1: App Password + Username (Basic Auth — Recommended)
+### Option 1: App Password + Username (Basic Auth  -  Recommended)
 
 1. Go to **Personal Settings → App passwords** in Bitbucket:
-   - [https://bitbucket.org/account/settings/app-passwords/](https://bitbucket.org/account/settings/app-passwords/)
+   * [https://bitbucket.org/account/settings/app-passwords/](https://bitbucket.org/account/settings/app-passwords/)
 2. Create an app password with these permissions:
-   - **Repositories**: Read
-   - **Pull requests**: Read
-   - **Account**: Read (optional, for user info)
+   * **Repositories**: Read
+   * **Pull requests**: Read
+   * **Account**: Read (optional, for user info)
 3. Set both the token and your Bitbucket username:
 
 **A. Shell Environment:**
@@ -162,11 +162,11 @@ Bitbucket uses different PR state names:
 
 ## Known Limitations
 
-1. **`githubCloneRepo`** — Clone/directory fetch is not available for Bitbucket.
-2. **`githubGetFileContent` directory mode** — `type: "directory"` is GitHub only.
-3. **Per-request provider switching** — Provider is set globally via environment variables, not per tool call.
-4. **Bitbucket Server/Data Center** — Only Bitbucket Cloud (api.bitbucket.org) is supported.
-5. **OAuth flow** — Only app passwords and manual OAuth tokens are supported (no interactive OAuth).
+1. **`githubCloneRepo`**  -  Clone/directory fetch is not available for Bitbucket.
+2. **`githubGetFileContent` directory mode**  -  `type: "directory"` is GitHub only.
+3. **Per-request provider switching**  -  Provider is set globally via environment variables, not per tool call.
+4. **Bitbucket Server/Data Center**  -  Only Bitbucket Cloud (api.bitbucket.org) is supported.
+5. **OAuth flow**  -  Only app passwords and manual OAuth tokens are supported (no interactive OAuth).
 
 ### Rate Limits
 
@@ -180,10 +180,10 @@ When rate-limited, Bitbucket returns `429 Too Many Requests`. Octocode surfaces 
 
 Some advanced query parameters from the unified interface are not yet mapped to Bitbucket:
 
-- **Code search**: `extension`, `filename`, `match` (file vs path mode) — Bitbucket uses full-text search queries
-- **Repo search**: `stars`, `size`, `created`, `updated` range filters
-- **PR search**: `commenter`, `involves`, `mentions`, `review-requested`, `draft`, `withCommits`
-- **File content**: Server-side `matchString` — client-side matching is used instead
+* **Code search**: `extension`, `filename`, `match` (file vs path mode)  -  Bitbucket uses full-text search queries
+* **Repo search**: `stars`, `size`, `created`, `updated` range filters
+* **PR search**: `commenter`, `involves`, `mentions`, `review-requested`, `draft`, `withCommits`
+* **File content**: Server-side `matchString`  -  client-side matching is used instead
 
 ---
 
@@ -191,9 +191,9 @@ Some advanced query parameters from the unified interface are not yet mapped to 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BITBUCKET_TOKEN` | — | Bitbucket app password or OAuth token (primary) |
-| `BB_TOKEN` | — | Bitbucket token (fallback) |
-| `BITBUCKET_USERNAME` | — | Bitbucket username (enables Basic auth) |
+| `BITBUCKET_TOKEN` |  -  | Bitbucket app password or OAuth token (primary) |
+| `BB_TOKEN` |  -  | Bitbucket token (fallback) |
+| `BITBUCKET_USERNAME` |  -  | Bitbucket username (enables Basic auth) |
 | `BITBUCKET_HOST` | `https://api.bitbucket.org/2.0` | Bitbucket Cloud API endpoint |
 
 For complete configuration options, see the [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md).
@@ -215,31 +215,31 @@ echo $BITBUCKET_TOKEN   # Should print your token
 
 ### 401 Unauthorized
 
-- Verify your app password is valid.
-- If using Basic auth, ensure `BITBUCKET_USERNAME` matches your Bitbucket username.
-- Check that the app password hasn't been revoked.
+* Verify your app password is valid.
+* If using Basic auth, ensure `BITBUCKET_USERNAME` matches your Bitbucket username.
+* Check that the app password hasn't been revoked.
 
 ### 403 Forbidden
 
-- Your token may lack the required permissions. Create a new app password with `Repositories: Read` and `Pull requests: Read`.
-- Check workspace/repository access — private repos require proper permissions.
+* Your token may lack the required permissions. Create a new app password with `Repositories: Read` and `Pull requests: Read`.
+* Check workspace/repository access  -  private repos require proper permissions.
 
 ### 404 Not Found
 
-- Verify `owner/repo` maps correctly to the Bitbucket workspace/repo_slug.
-- Check repository visibility — private repositories require proper token permissions.
-- Ensure the workspace name is correct (case-sensitive).
+* Verify `owner/repo` maps correctly to the Bitbucket workspace/repo_slug.
+* Check repository visibility  -  private repositories require proper token permissions.
+* Ensure the workspace name is correct (case-sensitive).
 
 ### 429 Too Many Requests
 
-- You've hit the rate limit. Wait before retrying.
-- Reduce query concurrency.
+* You've hit the rate limit. Wait before retrying.
+* Reduce query concurrency.
 
 ### Empty Code Search Results
 
-- Bitbucket code search requires workspace scope. Always provide `owner` (workspace).
-- Try simpler or broader keywords.
-- Ensure the repository has been indexed by Bitbucket's search engine.
+* Bitbucket code search requires workspace scope. Always provide `owner` (workspace).
+* Try simpler or broader keywords.
+* Ensure the repository has been indexed by Bitbucket's search engine.
 
 ### GitLab Token Overriding Bitbucket
 
@@ -254,10 +254,10 @@ unset GL_TOKEN
 
 ## See Also
 
-- [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) — Overview of all provider authentication
-- [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) — Full tool documentation
-- [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) — All configuration options
-- [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) — General troubleshooting guide
+* [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)  -  Overview of all provider authentication
+* [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md)  -  Full tool documentation
+* [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md)  -  All configuration options
+* [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md)  -  General troubleshooting guide
 
 ---
 Created by Octocode MCP https://octocode.ai

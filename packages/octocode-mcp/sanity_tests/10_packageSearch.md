@@ -15,18 +15,18 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 4. **Hints Validation** - **GOLDEN**: Check response hints for user guidance and next steps
 
 ### Response Validation Pattern
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields (packages)
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields (packages)
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
 
 ---
 
 ## Test Cases
 
-### TC-1: npm — Popular Package (express)
+### TC-1: npm  -  Popular Package (express)
 
 **Goal:** Verify npm search for well-known package.
 
@@ -36,19 +36,19 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 {
   "mainResearchGoal": "Find express package",
   "researchGoal": "npm search for express",
-  "reasoning": "express is a top-5 npm package — must be findable",
+  "reasoning": "express is a top-5 npm package  -  must be findable",
   "name": "express",
   "ecosystem": "npm"
 }
 ```
 
 **Expected:**
-- [ ] Returns express with repo URL, version, description (when using public registry)
-- [ ] May return empty when npm config points to private registry (environment-dependent)
+* [ ] Returns express with repo URL, version, description (when using public registry)
+* [ ] May return empty when npm config points to private registry (environment-dependent)
 
 ---
 
-### TC-2: npm — Popular Package (zod) with Metadata
+### TC-2: npm  -  Popular Package (zod) with Metadata
 
 **Goal:** Verify npm metadata fetch.
 
@@ -68,12 +68,12 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] Returns zod with version, description, lastPublished (when using public registry)
-- [ ] May return empty when npm config points to private registry (environment-dependent)
+* [ ] Returns zod with version, description, lastPublished (when using public registry)
+* [ ] May return empty when npm config points to private registry (environment-dependent)
 
 ---
 
-### TC-3: npm — Scoped Package (mcp)
+### TC-3: npm  -  Scoped Package (mcp)
 
 **Goal:** Verify npm search works for scoped/private packages.
 
@@ -91,13 +91,13 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] Returns results (5 @wix scoped packages expected)
-- [ ] No timeout (previously timed out at 30s)
-- [ ] Package names, descriptions present
+* [ ] Returns results (5 @wix scoped packages expected)
+* [ ] No timeout (previously timed out at 30s)
+* [ ] Package names, descriptions present
 
 ---
 
-### TC-4: Python — requests
+### TC-4: Python  -  requests
 
 **Goal:** Verify PyPI search for well-known package.
 
@@ -106,7 +106,7 @@ Searches npm and PyPI package registries. Returns package metadata including nam
   "queries": [{
     "mainResearchGoal": "Find requests package",
     "researchGoal": "PyPI search for requests",
-    "reasoning": "Python search works perfectly — verify",
+    "reasoning": "Python search works perfectly  -  verify",
     "name": "requests",
     "ecosystem": "python"
   }]
@@ -114,13 +114,13 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] Found `psf/requests` with repo URL
-- [ ] Rich metadata (version, description)
-- [ ] Repository URL links to GitHub
+* [ ] Found `psf/requests` with repo URL
+* [ ] Rich metadata (version, description)
+* [ ] Repository URL links to GitHub
 
 ---
 
-### TC-5: Python — flask with Metadata
+### TC-5: Python  -  flask with Metadata
 
 **Goal:** Verify PyPI metadata fetch works.
 
@@ -138,13 +138,13 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] Found with version, description, lastPublished
-- [ ] Repository URL present
-- [ ] `pythonFetchMetadata` provides extra fields
+* [ ] Found with version, description, lastPublished
+* [ ] Repository URL present
+* [ ] `pythonFetchMetadata` provides extra fields
 
 ---
 
-### TC-6: npm — Search Limit
+### TC-6: npm  -  Search Limit
 
 **Goal:** Verify `searchLimit` controls number of results.
 
@@ -160,20 +160,20 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] At most 3 results (if any — may be empty due to npm bug)
-- [ ] Or empty result (known bug for public packages)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with package metadata
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest actionable next steps relevant to the query
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest alternative search or githubSearchRepositories
+* [ ] At most 3 results (if any  -  may be empty due to npm bug)
+* [ ] Or empty result (known bug for public packages)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with package metadata
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest actionable next steps relevant to the query
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest alternative search or githubSearchRepositories
 
 ---
 
-### TC-7: Python — Unknown Package
+### TC-7: Python  -  Unknown Package
 
 **Goal:** Verify graceful handling of non-existent package.
 
@@ -188,20 +188,20 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] No error thrown
-- [ ] Empty or "not found" result
-- [ ] Clear indication package doesn't exist
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints present (empty/error hints)
-  - [ ] Hints suggest package name verification, alternative search
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest package name verification, alternative search strategies
+* [ ] No error thrown
+* [ ] Empty or "not found" result
+* [ ] Clear indication package doesn't exist
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints present (empty/error hints)
+  * [ ] Hints suggest package name verification, alternative search
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest package name verification, alternative search strategies
 
 ---
 
-### TC-8: npm — Specific Scoped Package
+### TC-8: npm  -  Specific Scoped Package
 
 **Goal:** Verify npm finds a known scoped package directly.
 
@@ -210,7 +210,7 @@ Searches npm and PyPI package registries. Returns package metadata including nam
   "queries": [{
     "mainResearchGoal": "Find specific scoped npm package",
     "researchGoal": "Direct scoped package lookup",
-    "reasoning": "Scoped packages work — verify direct lookup",
+    "reasoning": "Scoped packages work  -  verify direct lookup",
     "name": "@modelcontextprotocol/sdk",
     "ecosystem": "npm",
     "searchLimit": 1
@@ -219,16 +219,16 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] Returns the specific SDK package
-- [ ] Version, description, repo URL present
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with package metadata
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest actionable next steps relevant to the query
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
+* [ ] Returns the specific SDK package
+* [ ] Version, description, repo URL present
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with package metadata
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest actionable next steps relevant to the query
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
 
 ---
 
@@ -250,17 +250,17 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] Up to 10 packages returned (or empty due to npm bug)
-- [ ] No timeout or error at maximum value
-- [ ] All entries valid
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with package metadata
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest actionable next steps relevant to the query
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
+* [ ] Up to 10 packages returned (or empty due to npm bug)
+* [ ] No timeout or error at maximum value
+* [ ] All entries valid
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with package metadata
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest actionable next steps relevant to the query
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
 
 ---
 
@@ -282,17 +282,17 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] Exactly 1 package returned
-- [ ] The most relevant match for "flask"
-- [ ] Rich metadata present
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with package metadata
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest actionable next steps relevant to the query
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
+* [ ] Exactly 1 package returned
+* [ ] The most relevant match for "flask"
+* [ ] Rich metadata present
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with package metadata
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest actionable next steps relevant to the query
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
 
 ---
 
@@ -313,16 +313,16 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] Validation error about name being empty
-- [ ] Clear error message
-- [ ] No search executed
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints present (validation error hints)
-  - [ ] Hints suggest providing valid package name
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest name is required, min 1 char
+* [ ] Validation error about name being empty
+* [ ] Clear error message
+* [ ] No search executed
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints present (validation error hints)
+  * [ ] Hints suggest providing valid package name
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest name is required, min 1 char
 
 ---
 
@@ -344,21 +344,21 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] Search completes without error
-- [ ] Relevant results for "ts-node" returned (or empty due to npm bug)
-- [ ] Special characters handled correctly
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with package metadata
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest actionable next steps relevant to the query
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
+* [ ] Search completes without error
+* [ ] Relevant results for "ts-node" returned (or empty due to npm bug)
+* [ ] Special characters handled correctly
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with package metadata
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest actionable next steps relevant to the query
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
 
 ---
 
-### TC-13: Python — Search Limit Behavior
+### TC-13: Python  -  Search Limit Behavior
 
 **Goal:** Verify Python `searchLimit` behavior (PyPI always returns 1).
 
@@ -376,21 +376,21 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] Returns 1 result (PyPI limitation)
-- [ ] `searchLimit: 5` does not cause error
-- [ ] Result is the correct "django" package
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with package metadata
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest actionable next steps relevant to the query
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
+* [ ] Returns 1 result (PyPI limitation)
+* [ ] `searchLimit: 5` does not cause error
+* [ ] Result is the correct "django" package
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with package metadata
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest actionable next steps relevant to the query
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
 
 ---
 
-### TC-14: npm — npmFetchMetadata with Scoped Package
+### TC-14: npm  -  npmFetchMetadata with Scoped Package
 
 **Goal:** Verify `npmFetchMetadata: true` works with scoped packages.
 
@@ -409,17 +409,17 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] Package found with full metadata
-- [ ] Version, description, lastPublished present
-- [ ] Repository URL present
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with package metadata
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest actionable next steps relevant to the query
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
+* [ ] Package found with full metadata
+* [ ] Version, description, lastPublished present
+* [ ] Repository URL present
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with package metadata
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest actionable next steps relevant to the query
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
 
 ---
 
@@ -438,27 +438,27 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] First query returns npm results
-- [ ] Second query returns Python result
-- [ ] Third query returns empty/not-found
-- [ ] Each result isolated per query
-- [ ] Mixed ecosystem queries work
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with package metadata per query
-  - [ ] Status-specific hints present for each result
-  - [ ] Hints suggest actionable next steps per status
-- [ ] **Hints Validation:**
-  - [ ] Success hints for first two; empty/error hints for third
+* [ ] First query returns npm results
+* [ ] Second query returns Python result
+* [ ] Third query returns empty/not-found
+* [ ] Each result isolated per query
+* [ ] Mixed ecosystem queries work
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with package metadata per query
+  * [ ] Status-specific hints present for each result
+  * [ ] Hints suggest actionable next steps per status
+* [ ] **Hints Validation:**
+  * [ ] Success hints for first two; empty/error hints for third
 
 ---
 
-### TC-16: Pagination — searchLimit Returns Different Counts
+### TC-16: Pagination  -  searchLimit Returns Different Counts
 
-**Goal:** Dedicated pagination test — verify `searchLimit` controls result count; searchLimit 1 vs 5 returns different counts when multiple matches exist.
+**Goal:** Dedicated pagination test  -  verify `searchLimit` controls result count; searchLimit 1 vs 5 returns different counts when multiple matches exist.
 
-**Step 1 — searchLimit 1:**
+**Step 1  -  searchLimit 1:**
 ```json
 {
   "queries": [{
@@ -472,7 +472,7 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 }
 ```
 
-**Step 2 — searchLimit 5:**
+**Step 2  -  searchLimit 5:**
 ```json
 {
   "queries": [{
@@ -487,17 +487,17 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 ```
 
 **Expected:**
-- [ ] Step 1 returns at most 1 package
-- [ ] Step 2 returns up to 5 packages (when available)
-- [ ] Step 2 count >= Step 1 count when multiple matches exist
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with package metadata
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest actionable next steps
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
+* [ ] Step 1 returns at most 1 package
+* [ ] Step 2 returns up to 5 packages (when available)
+* [ ] Step 2 count >= Step 1 count when multiple matches exist
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with package metadata
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest actionable next steps
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest githubViewRepoStructure, package exploration, or further analysis
 
 ---
 
@@ -527,6 +527,6 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 | 10 | Search Limit Minimum (Boundary) | |
 | 11 | Empty Name (Validation) | |
 | 12 | Name with Special Characters | |
-| 13 | Python — Search Limit Behavior | |
-| 14 | npm — npmFetchMetadata with Scoped Package | |
+| 13 | Python  -  Search Limit Behavior | |
+| 14 | npm  -  npmFetchMetadata with Scoped Package | |
 | 15 | Bulk Queries (Mixed Ecosystems) | |

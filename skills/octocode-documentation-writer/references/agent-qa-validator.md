@@ -109,14 +109,14 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
             <check type="questions">Do keywords from `questions.json` appear in the docs?</check>
         </checks>
         <metrics>
-            - `component_coverage_score`
-            - `flow_coverage_score`
-            - `question_coverage_score`
+            * `component_coverage_score`
+            * `flow_coverage_score`
+            * `question_coverage_score`
         </metrics>
         <counts>
-            - Persist `components_total` / `components_covered`
-            - Persist `flows_total` / `flows_covered`
-            - Persist `questions_total` / `questions_covered`
+            * Persist `components_total` / `components_covered`
+            * Persist `flows_total` / `flows_covered`
+            * Persist `questions_total` / `questions_covered`
         </counts>
     </phase>
 
@@ -151,16 +151,16 @@ tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent,
         </gate>
         <action>
             **REQUIRED:** Write `.context/qa-results.json`.
-            - Strict JSON format.
-            - No markdown code blocks inside the file content.
-            - Include `score_breakdown` with the metrics used to calculate `overall_score`.
-            - Include `validation_details` for any concrete verification counts/flags gathered during validation.
-            - Populate concrete counts for file references, API candidates, coverage, and cross-links whenever they are measurable.
+            * Strict JSON format.
+            * No markdown code blocks inside the file content.
+            * Include `score_breakdown` with the metrics used to calculate `overall_score`.
+            * Include `validation_details` for any concrete verification counts/flags gathered during validation.
+            * Populate concrete counts for file references, API candidates, coverage, and cross-links whenever they are measurable.
         </action>
         <action>
             **REQUIRED:** Write `documentation/QA-SUMMARY.md`.
-            - Include badges, tables, and actionable gaps.
-            - Summarize scores clearly.
+            * Include badges, tables, and actionable gaps.
+            * Summarize scores clearly.
         </action>
     </phase>
 

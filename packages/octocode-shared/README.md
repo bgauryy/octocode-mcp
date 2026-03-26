@@ -178,9 +178,9 @@ For detailed API documentation, see [docs/API_REFERENCE.md](https://github.com/b
 
 ## Architecture
 
-- [Credentials Architecture](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) - Secure token storage design
-- [Session Persistence](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/SESSION_PERSISTENCE.md) - Session management design
-- [Configuration](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) - Configuration reference (env vars and `.octocoderc`)
+* [Credentials Architecture](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) - Secure token storage design
+* [Session Persistence](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/SESSION_PERSISTENCE.md) - Session management design
+* [Configuration](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) - Configuration reference (env vars and `.octocoderc`)
 
 ## Development
 

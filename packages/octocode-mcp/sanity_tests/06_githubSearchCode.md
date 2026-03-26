@@ -14,10 +14,10 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 3. **Hints Validation** - **GOLDEN**: Check response hints for user guidance and next steps
 
 ### Hints Validation Checklist
-- [ ] Response includes helpful hints for code analysis
-- [ ] Hints suggest next logical steps (e.g., file reading, repo exploration)
-- [ ] Pagination hints when results are truncated
-- [ ] Repository context and search refinement suggestions
+* [ ] Response includes helpful hints for code analysis
+* [ ] Hints suggest next logical steps (e.g., file reading, repo exploration)
+* [ ] Pagination hints when results are truncated
+* [ ] Repository context and search refinement suggestions
 
 ---
 
@@ -42,15 +42,15 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Files with "utils" in their path returned
-- [ ] No `text_matches` in results (by design for path mode)
-- [ ] `repositoryContext` includes owner/repo/branch
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Files with "utils" in their path returned
+* [ ] No `text_matches` in results (by design for path mode)
+* [ ] `repositoryContext` includes owner/repo/branch
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -74,15 +74,15 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] `text_matches` present with code snippets
-- [ ] Snippets show actual code around matches
-- [ ] `repositoryContext` populated
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with `text_matches` structure (fragment, object_url)
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest file reading and repo exploration
+* [ ] `text_matches` present with code snippets
+* [ ] Snippets show actual code around matches
+* [ ] `repositoryContext` populated
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with `text_matches` structure (fragment, object_url)
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest file reading and repo exploration
 
 ---
 
@@ -106,14 +106,14 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Only `.ts` files in results
-- [ ] No `.js`, `.json`, `.md` files
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with `text_matches` structure (fragment, object_url)
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest file reading and repo exploration
+* [ ] Only `.ts` files in results
+* [ ] No `.js`, `.json`, `.md` files
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with `text_matches` structure (fragment, object_url)
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest file reading and repo exploration
 
 ---
 
@@ -137,14 +137,14 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Only files named "execution" (e.g., `execution.ts`)
-- [ ] Results from different tool directories
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with `text_matches` structure (fragment, object_url)
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest file reading and repo exploration
+* [ ] Only files named "execution" (e.g., `execution.ts`)
+* [ ] Results from different tool directories
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with `text_matches` structure (fragment, object_url)
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest file reading and repo exploration
 
 ---
 
@@ -168,14 +168,14 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Results contain both keywords
-- [ ] Smaller result set than single keyword
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with `text_matches` structure (fragment, object_url)
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest file reading and repo exploration
+* [ ] Results contain both keywords
+* [ ] Smaller result set than single keyword
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with `text_matches` structure (fragment, object_url)
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest file reading and repo exploration
 
 ---
 
@@ -197,14 +197,14 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Only files under `packages/octocode-mcp/src/tools/`
-- [ ] No files from other directories
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Only files under `packages/octocode-mcp/src/tools/`
+* [ ] No files from other directories
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -225,14 +225,14 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Exactly 3 results returned
-- [ ] Pagination total may show more available
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Exactly 3 results returned
+* [ ] Pagination total may show more available
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -253,15 +253,15 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] `pagination.totalMatches` > 0
-- [ ] Count reflects actual number of matching files
-- [ ] Not 0 (previously known bug, now fixed)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] `pagination.totalMatches` > 0
+* [ ] Count reflects actual number of matching files
+* [ ] Not 0 (previously known bug, now fixed)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -281,14 +281,14 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Results from multiple repositories
-- [ ] `repositoryContext` varies across results
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Results from multiple repositories
+* [ ] `repositoryContext` varies across results
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -310,15 +310,15 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Different results than page 1
-- [ ] No overlap with first page results
-- [ ] Pagination metadata shows current page
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Different results than page 1
+* [ ] No overlap with first page results
+* [ ] Pagination metadata shows current page
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -339,15 +339,15 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Error message returned (not a crash)
-- [ ] Clear indication repo not found
-- [ ] No stack trace or internal details leaked
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Error message returned (not a crash)
+* [ ] Clear indication repo not found
+* [ ] No stack trace or internal details leaked
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -368,15 +368,15 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] No error thrown
-- [ ] Empty results with `totalMatches: 0`
-- [ ] Clear indication no code found
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] No error thrown
+* [ ] Empty results with `totalMatches: 0`
+* [ ] Clear indication no code found
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -399,14 +399,14 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Only `index.ts` files in results
-- [ ] Highly targeted results
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Only `index.ts` files in results
+* [ ] Highly targeted results
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -427,15 +427,15 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Search succeeds with all 5 keywords combined
-- [ ] Results contain all (or most) keywords
-- [ ] No validation error
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] `data` object present with `text_matches` structure (fragment, object_url)
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest file reading and repo exploration
+* [ ] Search succeeds with all 5 keywords combined
+* [ ] Results contain all (or most) keywords
+* [ ] No validation error
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] `data` object present with `text_matches` structure (fragment, object_url)
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest file reading and repo exploration
 
 ---
 
@@ -456,15 +456,15 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Up to 100 results returned
-- [ ] No timeout or error
-- [ ] Pagination shows total count
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Up to 100 results returned
+* [ ] No timeout or error
+* [ ] Pagination shows total count
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -486,15 +486,15 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Returns results from page 10 or empty if fewer pages exist
-- [ ] No error thrown
-- [ ] Pagination metadata accurate
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Returns results from page 10 or empty if fewer pages exist
+* [ ] No error thrown
+* [ ] Pagination metadata accurate
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -517,15 +517,15 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Only `.ts` files under `src/security/`
-- [ ] Both filters applied simultaneously
-- [ ] Highly targeted results
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Only `.ts` files under `src/security/`
+* [ ] Both filters applied simultaneously
+* [ ] Highly targeted results
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -545,15 +545,15 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Validation error about minimum 1 keyword required
-- [ ] Clear error message
-- [ ] No search executed
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Validation error about minimum 1 keyword required
+* [ ] Clear error message
+* [ ] No search executed
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -573,15 +573,15 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Validation error about maximum 5 keywords
-- [ ] Clear error message
-- [ ] No search executed
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Validation error about maximum 5 keywords
+* [ ] Clear error message
+* [ ] No search executed
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -600,16 +600,16 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] First and third queries succeed
-- [ ] Second query returns error (repo not found)
-- [ ] Each result isolated per query
-- [ ] No cascade failure
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] First and third queries succeed
+* [ ] Second query returns error (repo not found)
+* [ ] Each result isolated per query
+* [ ] No cascade failure
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -634,19 +634,19 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Max 5 results returned
-- [ ] Page 1 results
-- [ ] Pagination metadata in response
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
-- [ ] **Hints Validation:**
-  - [ ] Pagination navigation hints ("Next page: page: 2")
-  - [ ] Total results insights
-  - [ ] Search refinement suggestions if too many results
+* [ ] Max 5 results returned
+* [ ] Page 1 results
+* [ ] Pagination metadata in response
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
+* [ ] **Hints Validation:**
+  * [ ] Pagination navigation hints ("Next page: page: 2")
+  * [ ] Total results insights
+  * [ ] Search refinement suggestions if too many results
 
 **Follow-up Test - Page 2:**
 ```json
@@ -666,18 +666,18 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 ```
 
 **Expected:**
-- [ ] Different results than page 1
-- [ ] No overlap with page 1 results
-- [ ] Correct page indicators
+* [ ] Different results than page 1
+* [ ] No overlap with page 1 results
+* [ ] Correct page indicators
 
 ---
 
 ## Validation Checklist
 
 ### Core Requirements
-- [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning` ✅ (Already implemented)
-- [ ] **Pagination tests** verify `limit`, `page` parameters for result management
-- [ ] **Hints validation** checks for helpful guidance in all responses
+* [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning` ✅ (Already implemented)
+* [ ] **Pagination tests** verify `limit`, `page` parameters for result management
+* [ ] **Hints validation** checks for helpful guidance in all responses
 
 ### Test Cases Status
 

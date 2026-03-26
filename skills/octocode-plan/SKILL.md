@@ -46,7 +46,7 @@ Look for Octocode MCP tools (e.g., `localSearchCode`, `lspGotoDefinition`, `gith
 > ```
 > Then restart your editor."
 
-Proceed with whatever tools are available — do not block on setup.
+Proceed with whatever tools are available - do not block on setup.
 
 ### Tools
 
@@ -107,15 +107,15 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 ### Planning Mindset
 
 **Plan when**:
-- Task requires multiple steps or files
-- Implementation approach is non-trivial
-- User explicitly requests a plan
-- Risk of breaking existing functionality
+* Task requires multiple steps or files
+* Implementation approach is non-trivial
+* User explicitly requests a plan
+* Risk of breaking existing functionality
 
 **Skip planning when**:
-- Single-file, obvious fix
-- User provides exact implementation
-- Trivial changes (typo, comment, formatting)
+* Single-file, obvious fix
+* User provides exact implementation
+* Trivial changes (typo, comment, formatting)
 
 ---
 
@@ -127,8 +127,8 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 **Research Flow**:
 1. **Identify Research Needs**: What questions need answers?
 2. **Delegate to Skills**:
-   - Local codebase questions → `octocode-researcher`
-   - External GitHub questions → `octocode-research`
+   * Local codebase questions → `octocode-researcher`
+   * External GitHub questions → `octocode-research`
 3. **Synthesize Results**: Combine findings into plan
 
 **When to Use Each Skill**:
@@ -145,13 +145,13 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 ### Context Awareness
 
 **Repository Awareness**:
-- Identify Type: Client? Server? Library? Monorepo?
-- Check Activity: Prefer active repos; stale repos = last resort
-- Critical Paths: Find entry points and main flows before diving deep
+* Identify Type: Client? Server? Library? Monorepo?
+* Check Activity: Prefer active repos; stale repos = last resort
+* Critical Paths: Find entry points and main flows before diving deep
 
 **Cross-Repository Awareness**:
-- Dependencies create edges - trace imports, package names, URLs, API calls
-- Local code may reference external libraries - use both skills
+* Dependencies create edges - trace imports, package names, URLs, API calls
+* Local code may reference external libraries - use both skills
 
 ---
 
@@ -165,10 +165,10 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 **Actions**:
 1. **Mode**: Interactive (default) or Auto?
 2. **Classify Goal**:
-   - `RESEARCH_ONLY` - No code changes (delegate to research skills)
-   - `ANALYSIS` - Understand existing code (delegate to `octocode-researcher`)
-   - `CREATION` - New files/features
-   - `FEATURE` / `BUG` / `REFACTOR` - Modify existing
+   * `RESEARCH_ONLY` - No code changes (delegate to research skills)
+   * `ANALYSIS` - Understand existing code (delegate to `octocode-researcher`)
+   * `CREATION` - New files/features
+   * `FEATURE` / `BUG` / `REFACTOR` - Modify existing
 3. **Assess Complexity**: Quick | Medium | Thorough
 4. **Gather Context**: Existing code, patterns, dependencies
 5. **Define Constraints**: Tech stack, style, testing requirements
@@ -186,26 +186,26 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 1. **Identify Questions**: What needs to be answered?
 2. **Categorize**: Local vs External research needs
 3. **Delegate**:
-   - Local questions → Call `octocode-researcher` skill (local track)
-   - External questions → Call `octocode-researcher` skill (external track)
+   * Local questions → Call `octocode-researcher` skill (local track)
+   * External questions → Call `octocode-researcher` skill (external track)
 4. **Synthesize**: Combine findings from both skills
 
 **Quality Bar**:
-- **Hypothesis-driven**: Each research request supports a specific question
-- **Validation Pattern**: Discover → Verify → Cross-check → Confirm
-- **Rule of Two**: Key findings need second source unless primary is definitive
-- **Freshness**: Prefer recently updated repos/docs
+* **Hypothesis-driven**: Each research request supports a specific question
+* **Validation Pattern**: Discover → Verify → Cross-check → Confirm
+* **Rule of Two**: Key findings need second source unless primary is definitive
+* **Freshness**: Prefer recently updated repos/docs
 
 **Tasks**: Use the host's task tracker if available. **IF** no tracker exists → **THEN** maintain a concise checklist in the response.
 
 **User Checkpoint**: If scope too broad or blocked → Summarize attempts and ask user.
 
 **Research Summary** (before documenting):
-- Present TL;DR of research findings in chat
-- List key patterns discovered with confidence levels
-- Highlight important trade-offs or risks
-- Ask user: "Would you like me to save the detailed research to `.octocode/plan/{session-name}/research.md`?"
-- Only write research.md after explicit user approval
+* Present TL;DR of research findings in chat
+* List key patterns discovered with confidence levels
+* Highlight important trade-offs or risks
+* Ask user: "Would you like me to save the detailed research to `.octocode/plan/{session-name}/research.md`?"
+* Only write research.md after explicit user approval
 
 ### Phase 2: Plan
 
@@ -215,21 +215,21 @@ Check `.octocode/context/context.md` for user context. Share with research skill
 **Actions**:
 1. **Synthesize**: Combine findings with confidence levels
 2. **Format**: **MUST** choose output type:
-   - Report (research only)
-   - Analysis (understanding)
-   - Implementation Plan (code changes)
-   - Architecture Doc (design decisions)
+   * Report (research only)
+   * Analysis (understanding)
+   * Implementation Plan (code changes)
+   * Architecture Doc (design decisions)
 3. **Draft**: Write `plan.md` with:
-   - Summary of approach
-   - Step-by-step tasks
-   - File paths and changes
-   - Dependencies/prerequisites
-   - Risk areas
+   * Summary of approach
+   * Step-by-step tasks
+   * File paths and changes
+   * Dependencies/prerequisites
+   * Risk areas
 4. **Validate**: Check logic, completeness, feasibility
 5. **Approval** (Triple Lock):
-   - **MUST** wait for explicit user approval before Phase 3
-   - **FORBIDDEN**: Proceeding to Implement without approval
-   - **REQUIRED**: Verify user approved plan before any code edits
+   * **MUST** wait for explicit user approval before Phase 3
+   * **FORBIDDEN**: Proceeding to Implement without approval
+   * **REQUIRED**: Verify user approved plan before any code edits
 
 **Research-to-Plan Traceability** (CRITICAL):
 > Every implementation step **must** reference a specific finding from `research.md` or a local file path discovered in Phase 1. No step should exist without evidence backing it.
@@ -257,12 +257,12 @@ Example:
 ...
 
 ## Risk Areas
-- [Potential issues and mitigations]
+* [Potential issues and mitigations]
 
 ## Validation
-- [ ] Build passes
-- [ ] Tests pass
-- [ ] [Custom checks]
+* [ ] Build passes
+* [ ] Tests pass
+* [ ] [Custom checks]
 ```
 
 ### Phase 3: Implement
@@ -277,36 +277,36 @@ Example:
 4. **LOOP**: Success → Next step; Fail → Fix
 
 **Guidelines**:
-- **MUST** execute plan steps sequentially—**FORBIDDEN**: skipping or reordering
-- **Explicit Paths**: Use full file paths, no ambiguity
-- **Quality**:
-  - Add TypeScript types
-  - Handle errors appropriately
-  - Add JSDoc for public APIs
-  - Follow existing code style
-- **Minimal Changes**: Only modify what's necessary
-- **No Secrets**: Never commit credentials
+* **MUST** execute plan steps sequentially - **FORBIDDEN**: skipping or reordering
+* **Explicit Paths**: Use full file paths, no ambiguity
+* **Quality**:
+  * Add TypeScript types
+  * Handle errors appropriately
+  * Add JSDoc for public APIs
+  * Follow existing code style
+* **Minimal Changes**: Only modify what's necessary
+* **No Secrets**: Never commit credentials
 
 **When Stuck During Implementation**:
-- Need to understand local code → Delegate to `octocode-researcher` (local track)
-- Need external reference → Delegate to `octocode-researcher` (external track)
+* Need to understand local code → Delegate to `octocode-researcher` (local track)
+* Need external reference → Delegate to `octocode-researcher` (external track)
 
 ### Phase 4: Verify
 
 **Goal**: Ensure working state.
 
 **For Code Changes**:
-- [ ] `npm run build` / `yarn build` - passes
-- [ ] `npm run lint` / `lint:fix` - clean
-- [ ] `npm test` - passes
-- [ ] No TypeScript errors
+* [ ] `npm run build` / `yarn build` - passes
+* [ ] `npm run lint` / `lint:fix` - clean
+* [ ] `npm test` - passes
+* [ ] No TypeScript errors
 
 **Loop**: Fail → Fix → Re-verify until all green.
 
 **For Research/Planning**:
-- [ ] All questions answered
-- [ ] Confidence levels documented
-- [ ] References complete
+* [ ] All questions answered
+* [ ] Confidence levels documented
+* [ ] References complete
 
 ---
 
@@ -328,10 +328,10 @@ Example:
 > **Note**: Only applicable if parallel agents are supported by the host environment. Sequential execution is the required fallback.
 
 **When to Spawn Subagents**:
-- 2+ unrelated repos to research (spawn separate research skill calls)
-- Distinct subsystems (frontend + backend)
-- Separate hypotheses with no dependencies
-- Independent implementation tasks in the plan
+* 2+ unrelated repos to research (spawn separate research skill calls)
+* Distinct subsystems (frontend + backend)
+* Separate hypotheses with no dependencies
+* Independent implementation tasks in the plan
 
 **How to Parallelize**:
 1. Use the host's task tracker to identify parallelizable work
@@ -341,11 +341,11 @@ Example:
 5. **IF** the host cannot run true parallel work → **THEN** execute the same scopes sequentially in dependency order
 
 **Smart Parallelization Tips**:
-- **Research Phase**: Spawn agents for independent domains (local vs external, frontend vs backend)
-- **Planning Phase**: Keep sequential - requires synthesis of all research
-- **Implementation Phase**: Spawn agents for independent modules with clear file ownership
-- Use the host's task tracker to record progress across all parallel agents
-- Define clear boundaries: each agent owns specific directories/domains
+* **Research Phase**: Spawn agents for independent domains (local vs external, frontend vs backend)
+* **Planning Phase**: Keep sequential - requires synthesis of all research
+* **Implementation Phase**: Spawn agents for independent modules with clear file ownership
+* Use the host's task tracker to record progress across all parallel agents
+* Define clear boundaries: each agent owns specific directories/domains
 
 **Conflict Resolution Priority** (when local and external findings disagree):
 > 1. **Local Style / `context.md`** - Project-specific conventions always win
@@ -355,23 +355,23 @@ Example:
 > If conflict persists after applying hierarchy → Ask user for decision.
 
 **Example - Research Parallelization**:
-- Goal: "Research auth flow across api-service and auth-lib"
-- Agent 1: `octocode-researcher` (local track) for local `api-service` auth middleware
-- Agent 2: `octocode-researcher` (external track) for external `auth-lib` token validation
-- Merge: Combine into unified auth understanding and plan
-- Conflict: If external docs suggest JWT but local uses sessions → Local wins
+* Goal: "Research auth flow across api-service and auth-lib"
+* Agent 1: `octocode-researcher` (local track) for local `api-service` auth middleware
+* Agent 2: `octocode-researcher` (external track) for external `auth-lib` token validation
+* Merge: Combine into unified auth understanding and plan
+* Conflict: If external docs suggest JWT but local uses sessions → Local wins
 
 **Example - Implementation Parallelization**:
-- Goal: "Implement feature X across frontend and backend"
-- Agent 1: Implement backend API changes (`src/api/`)
-- Agent 2: Implement frontend components (`src/components/`)
-- Agent 3: Write tests for both (`tests/`)
-- Merge: Integrate and validate end-to-end
+* Goal: "Implement feature X across frontend and backend"
+* Agent 1: Implement backend API changes (`src/api/`)
+* Agent 2: Implement frontend components (`src/components/`)
+* Agent 3: Write tests for both (`tests/`)
+* Merge: Integrate and validate end-to-end
 
 **FORBIDDEN**:
-- Parallelizing planning (requires unified synthesis)
-- Spawning agents for simple single-repo research
-- Parallelizing when tasks share types or mutable state
+* Parallelizing planning (requires unified synthesis)
+* Spawning agents for simple single-repo research
+* Parallelizing when tasks share types or mutable state
 
 ---
 
@@ -380,16 +380,16 @@ Example:
 ### Step 1: Chat Summary (MANDATORY)
 
 Before creating any documentation files:
-- Provide clear TL;DR of findings (research) or plan (implementation)
-- Summarize key decisions, patterns, and trade-offs
-- Highlight risks or areas needing attention
+* Provide clear TL;DR of findings (research) or plan (implementation)
+* Summarize key decisions, patterns, and trade-offs
+* Highlight risks or areas needing attention
 
 ### Step 2: Ask Before Creating Docs (MANDATORY)
 
 Ask user before writing each file:
-- After research: "Would you like me to save the detailed research findings?"
-- After planning: "Would you like me to save the implementation plan?"
-- **FORBIDDEN**: Writing `research.md`, `plan.md`, or `output.md` without explicit user approval
+* After research: "Would you like me to save the detailed research findings?"
+* After planning: "Would you like me to save the implementation plan?"
+* **FORBIDDEN**: Writing `research.md`, `plan.md`, or `output.md` without explicit user approval
 
 ### Output Files
 
@@ -403,29 +403,29 @@ Ask user before writing each file:
 
 ### Output Requirements
 
-- **TL;DR**: Always include summary
-- **Steps**: Explicit, actionable tasks
-- **References**: Links to code/docs researched (full GitHub links e.g. `https://github.com/{OWNER}/{REPO}/blob/{BRANCH}/{PATH}`)
+* **TL;DR**: Always include summary
+* **Steps**: Explicit, actionable tasks
+* **References**: Links to code/docs researched (full GitHub links e.g. `https://github.com/{OWNER}/{REPO}/blob/{BRANCH}/{PATH}`)
 
 ### Execution Mode
 
-- **Interactive** (default): Approval gates at UNDERSTAND → PLAN → IMPLEMENT
-- **Auto**: User opt-in only, minimal gates
+* **Interactive** (default): Approval gates at UNDERSTAND → PLAN → IMPLEMENT
+* **Auto**: User opt-in only, minimal gates
 
 ---
 
 ## 9. Key Principles
 
-- **Planning Focus**: This skill synthesizes and plans, delegates research to specialized skills
-- **Quality > Quantity**: Prefer verified patterns over many options
-- **Evidence-Based**: Every decision backed by research (from `octocode-researcher` or `octocode-research`)
-- **Cross-Reference**: Validate findings with second source
-- **Efficiency**: Delegate research efficiently, batch where possible
-- **Escalation**: Ask user when stuck or facing critical decisions
-- **No Duplication**: Use references, don't copy large code blocks
-- **Follow the Plan**: Execute approved steps, don't improvise
-- **No Time Estimates**: Never provide timing/duration estimates (e.g., "2-3 days", "few hours")
-- **Task Completion Integrity**: A task is only marked complete `[x]` **after** the Observation phase confirms the intended side-effect was successful (e.g., file written, test passed, build succeeded). Never mark tasks complete based solely on initiating an action.
+* **Planning Focus**: This skill synthesizes and plans, delegates research to specialized skills
+* **Quality > Quantity**: Prefer verified patterns over many options
+* **Evidence-Based**: Every decision backed by research (from `octocode-researcher` or `octocode-research`)
+* **Cross-Reference**: Validate findings with second source
+* **Efficiency**: Delegate research efficiently, batch where possible
+* **Escalation**: Ask user when stuck or facing critical decisions
+* **No Duplication**: Use references, don't copy large code blocks
+* **Follow the Plan**: Execute approved steps, don't improvise
+* **No Time Estimates**: Never provide timing/duration estimates (e.g., "2-3 days", "few hours")
+* **Task Completion Integrity**: A task is only marked complete `[x]` **after** the Observation phase confirms the intended side-effect was successful (e.g., file written, test passed, build succeeded). Never mark tasks complete based solely on initiating an action.
 
 ---
 

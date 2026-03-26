@@ -5,7 +5,7 @@
 
 ## Tool Overview
 
-Finds all references to a symbol using Language Server Protocol. Supports include/exclude glob patterns, declaration inclusion toggle, pagination, and context lines. Near-perfect tool — best filtering UX in the suite.
+Finds all references to a symbol using Language Server Protocol. Supports include/exclude glob patterns, declaration inclusion toggle, pagination, and context lines. Near-perfect tool  -  best filtering UX in the suite.
 
 ## Enhanced Testing Requirements
 
@@ -31,12 +31,12 @@ Finds all references to a symbol using Language Server Protocol. Supports includ
 ```
 
 ### Response Validation Pattern
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
 
 ---
 
@@ -52,7 +52,7 @@ All test cases require a prior `localSearchCode` call to obtain `lineHint`. **NE
 
 **Goal:** Verify `includeDeclaration: true` includes the definition in results.
 
-**Step 1 — Search:**
+**Step 1  -  Search:**
 ```json
 localSearchCode: {
   "queries": [{
@@ -67,7 +67,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Find references:**
+**Step 2  -  Find references:**
 ```json
 {
   "queries": [{
@@ -84,18 +84,18 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Definition included in results
-- [ ] `isDefinition: true` flag on the declaration entry
-- [ ] All usages across codebase found
-- [ ] `symbolKind` metadata present (e.g., "class")
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] Definition included in results
+* [ ] `isDefinition: true` flag on the declaration entry
+* [ ] All usages across codebase found
+* [ ] `symbolKind` metadata present (e.g., "class")
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
 
 ---
 
@@ -119,15 +119,15 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Definition excluded from results
-- [ ] Count is 1 less than TC-1 (e.g., 31 vs 32)
-- [ ] No entry with `isDefinition: true`
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] Definition excluded from results
+* [ ] Count is 1 less than TC-1 (e.g., 31 vs 32)
+* [ ] No entry with `isDefinition: true`
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
 
 ---
 
@@ -152,15 +152,15 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Only references from `**/errors/**` paths
-- [ ] Filter transparency message: "Filtered: N of M total references match patterns"
-- [ ] Fewer results than unfiltered
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] Only references from `**/errors/**` paths
+* [ ] Filter transparency message: "Filtered: N of M total references match patterns"
+* [ ] Fewer results than unfiltered
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
 
 ---
 
@@ -185,17 +185,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] No references from `**/tests/**` paths
-- [ ] Filter message: "Filtered: N of M total references match patterns"
-- [ ] Fewer results than unfiltered (e.g., 20 of 32)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] No references from `**/tests/**` paths
+* [ ] Filter message: "Filtered: N of M total references match patterns"
+* [ ] Fewer results than unfiltered (e.g., 20 of 32)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -221,15 +221,15 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Max 5 references returned
-- [ ] Pagination metadata shows total pages
-- [ ] Can navigate to page 2
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest pagination for more results
+* [ ] Max 5 references returned
+* [ ] Pagination metadata shows total pages
+* [ ] Can navigate to page 2
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest pagination for more results
 
 ---
 
@@ -254,15 +254,15 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] 3 lines context before and after each reference
-- [ ] More context than `contextLines: 2`
-- [ ] Code surrounding each usage visible
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] 3 lines context before and after each reference
+* [ ] More context than `contextLines: 2`
+* [ ] Code surrounding each usage visible
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
 
 ---
 
@@ -287,15 +287,15 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] References from multiple files
-- [ ] `hasMultipleFiles: true` indicator
-- [ ] Different file paths in results
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] References from multiple files
+* [ ] `hasMultipleFiles: true` indicator
+* [ ] Different file paths in results
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
 
 ---
 
@@ -303,7 +303,7 @@ localSearchCode: {
 
 **Goal:** Verify finding references to a function symbol.
 
-**Step 1 — Search:**
+**Step 1  -  Search:**
 ```json
 localSearchCode: {
   "queries": [{
@@ -318,7 +318,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Find references:**
+**Step 2  -  Find references:**
 ```json
 {
   "queries": [{
@@ -335,14 +335,14 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Definition and all call sites found
-- [ ] Call sites show function invocation context
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] Definition and all call sites found
+* [ ] Call sites show function invocation context
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
 
 ---
 
@@ -350,7 +350,7 @@ localSearchCode: {
 
 **Goal:** Verify finding references to a type or interface.
 
-**Step 1 — Search:**
+**Step 1  -  Search:**
 ```json
 localSearchCode: {
   "queries": [{
@@ -365,7 +365,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Find references:**
+**Step 2  -  Find references:**
 ```json
 {
   "queries": [{
@@ -382,14 +382,14 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Type annotations, imports, and usages all found
-- [ ] `symbolKind` shows "interface" or "type"
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] Type annotations, imports, and usages all found
+* [ ] `symbolKind` shows "interface" or "type"
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
 
 ---
 
@@ -413,16 +413,16 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] "Symbol not found" or equivalent error
-- [ ] No crash or timeout
-- [ ] Clear error message
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present (error hints)
-  - [ ] Hints suggest recovery (symbol verification, alternative search)
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest symbol verification, alternative search strategies
+* [ ] "Symbol not found" or equivalent error
+* [ ] No crash or timeout
+* [ ] Clear error message
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present (error hints)
+  * [ ] Hints suggest recovery (symbol verification, alternative search)
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest symbol verification, alternative search strategies
 
 ---
 
@@ -448,16 +448,16 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Empty results or clear "no more pages" indication
-- [ ] No error thrown
-- [ ] Pagination metadata reflects actual total
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest actionable next steps
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest pagination adjustment or alternative analysis
+* [ ] Empty results or clear "no more pages" indication
+* [ ] No error thrown
+* [ ] Pagination metadata reflects actual total
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest actionable next steps
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest pagination adjustment or alternative analysis
 
 ---
 
@@ -482,16 +482,16 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Second occurrence of symbol used (orderHint 1 = second, 0-indexed)
-- [ ] Different results than `orderHint: 0`
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Second occurrence of symbol used (orderHint 1 = second, 0-indexed)
+* [ ] Different results than `orderHint: 0`
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -512,9 +512,9 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Only references from `src/` that are NOT in `security/`
-- [ ] Both filters applied simultaneously
-- [ ] Filter message shows both patterns
+* [ ] Only references from `src/` that are NOT in `security/`
+* [ ] Both filters applied simultaneously
+* [ ] Filter message shows both patterns
 
 ---
 
@@ -540,17 +540,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Up to 50 references per page
-- [ ] No timeout or error at maximum value
-- [ ] All references valid
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Up to 50 references per page
+* [ ] No timeout or error at maximum value
+* [ ] All references valid
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -576,17 +576,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Exactly 1 reference returned
-- [ ] Pagination shows many more pages
-- [ ] Can navigate one-by-one
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest pagination for more results
+* [ ] Exactly 1 reference returned
+* [ ] Pagination shows many more pages
+* [ ] Can navigate one-by-one
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest pagination for more results
 
 ---
 
@@ -611,17 +611,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] No surrounding context lines
-- [ ] Only the reference line shown per result
-- [ ] Smallest possible output
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] No surrounding context lines
+* [ ] Only the reference line shown per result
+* [ ] Smallest possible output
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -646,17 +646,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] 10 lines context before and after each reference
-- [ ] Large but valid output
-- [ ] No error at maximum value
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] 10 lines context before and after each reference
+* [ ] Large but valid output
+* [ ] No error at maximum value
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -681,16 +681,16 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] All references returned (empty pattern = no filter)
-- [ ] Or validation error about empty array
-- [ ] Behavior is clear
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest actionable next steps
-- [ ] **Hints Validation:**
-  - [ ] Hints present for either success or error case
+* [ ] All references returned (empty pattern = no filter)
+* [ ] Or validation error about empty array
+* [ ] Behavior is clear
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest actionable next steps
+* [ ] **Hints Validation:**
+  * [ ] Hints present for either success or error case
 
 ---
 
@@ -715,17 +715,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Only references from `tools/` OR `utils/` paths
-- [ ] Filter message shows both patterns
-- [ ] Fewer results than unfiltered
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Only references from `tools/` OR `utils/` paths
+* [ ] Filter message shows both patterns
+* [ ] Fewer results than unfiltered
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -749,16 +749,16 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Error message returned (not a crash)
-- [ ] Clear indication file not found
-- [ ] No stack trace leaked
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present (error hints)
-  - [ ] Hints suggest recovery (file path verification)
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest file path verification, fallback approaches
+* [ ] Error message returned (not a crash)
+* [ ] Clear indication file not found
+* [ ] No stack trace leaked
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present (error hints)
+  * [ ] Hints suggest recovery (file path verification)
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest file path verification, fallback approaches
 
 ---
 
@@ -766,7 +766,7 @@ localSearchCode: {
 
 **Goal:** Verify finding references to a constant/variable (not function or type).
 
-**Step 1 — Search:**
+**Step 1  -  Search:**
 ```json
 localSearchCode: {
   "queries": [{
@@ -781,7 +781,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Find references:**
+**Step 2  -  Find references:**
 ```json
 {
   "queries": [{
@@ -798,17 +798,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Declaration and all usage sites found
-- [ ] Usage contexts visible (assignment, reads)
-- [ ] Works for constants (not just functions/types)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest call hierarchy, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps for variable analysis
+* [ ] Declaration and all usage sites found
+* [ ] Usage contexts visible (assignment, reads)
+* [ ] Works for constants (not just functions/types)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest call hierarchy, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps for variable analysis
 
 ---
 
@@ -827,27 +827,27 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] First query succeeds with references
-- [ ] Second query returns file not found error
-- [ ] Third query returns symbol not found error
-- [ ] Each result isolated per query
-- [ ] No cascade failure
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array for successful query
-  - [ ] Status-specific hints present for each result
-  - [ ] Hints suggest call hierarchy, file reading, or recovery per status
-- [ ] **Hints Validation:**
-  - [ ] Success hints for first query; error recovery hints for second and third
+* [ ] First query succeeds with references
+* [ ] Second query returns file not found error
+* [ ] Third query returns symbol not found error
+* [ ] Each result isolated per query
+* [ ] No cascade failure
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array for successful query
+  * [ ] Status-specific hints present for each result
+  * [ ] Hints suggest call hierarchy, file reading, or recovery per status
+* [ ] **Hints Validation:**
+  * [ ] Success hints for first query; error recovery hints for second and third
 
 ---
 
-### TC-23: Pagination — Page 2 Differs from Page 1
+### TC-23: Pagination  -  Page 2 Differs from Page 1
 
-**Goal:** Dedicated pagination test — verify `referencesPerPage` + `page` returns different results for page 2.
+**Goal:** Dedicated pagination test  -  verify `referencesPerPage` + `page` returns different results for page 2.
 
-**Step 1 — Get page 1:**
+**Step 1  -  Get page 1:**
 ```json
 {
   "queries": [{
@@ -865,7 +865,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Get page 2:**
+**Step 2  -  Get page 2:**
 ```json
 {
   "queries": [{
@@ -884,28 +884,28 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Page 1 returns first 5 references
-- [ ] Page 2 returns next 5 references (different from page 1)
-- [ ] No overlap between page 1 and page 2 results
-- [ ] Pagination metadata shows total pages > 1
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `references` array with location details
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest pagination for more results
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest navigating to other pages or further analysis
+* [ ] Page 1 returns first 5 references
+* [ ] Page 2 returns next 5 references (different from page 1)
+* [ ] No overlap between page 1 and page 2 results
+* [ ] Pagination metadata shows total pages > 1
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `references` array with location details
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest pagination for more results
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest navigating to other pages or further analysis
 
 ---
 
 ## Validation Checklist
 
 ### Core Requirements
-- [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning`
-- [ ] **Pagination tests** verify `referencesPerPage` + `page`; page 2 differs from page 1
-- [ ] **Response validation** — every Expected section includes explicit response checking
-- [ ] **Hints validation** — every test case checks for hints in responses (hints are GOLDEN)
+* [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning`
+* [ ] **Pagination tests** verify `referencesPerPage` + `page`; page 2 differs from page 1
+* [ ] **Response validation**  -  every Expected section includes explicit response checking
+* [ ] **Hints validation**  -  every test case checks for hints in responses (hints are GOLDEN)
 
 ### Test Cases Status
 
@@ -933,4 +933,4 @@ localSearchCode: {
 | 20 | Non-existent file (error) | ✅ | - | ✅ | ✅ | ✅ |
 | 21 | Variable/constant references | ✅ | - | ✅ | ✅ | ✅ |
 | 22 | Bulk queries (error isolation) | ✅ | - | ✅ | ✅ | ✅ |
-| 23 | Pagination — page 2 differs from page 1 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 23 | Pagination  -  page 2 differs from page 1 | ✅ | ✅ | ✅ | ✅ | ✅ |

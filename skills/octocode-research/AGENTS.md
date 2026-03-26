@@ -210,10 +210,10 @@ When adding/modifying endpoints:
 
 ### Code Style
 
-- **TypeScript strict mode** enabled
-- **Zod** for runtime validation
-- **Express async handlers** - wrap with try/catch or error middleware
-- **Consistent logging** - use `agentLog`, `successLog`, `errorLog` from colors.ts
+* **TypeScript strict mode** enabled
+* **Zod** for runtime validation
+* **Express async handlers** - wrap with try/catch or error middleware
+* **Consistent logging** - use `agentLog`, `successLog`, `errorLog` from colors.ts
 
 ### Testing
 

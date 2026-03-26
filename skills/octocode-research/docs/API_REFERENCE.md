@@ -135,8 +135,8 @@ All tools are called via **POST `/tools/call/:toolName`** with a JSON body.
 ```
 
 ### Limits
-- Max 3 queries per request
-- All queries require: `mainResearchGoal`, `researchGoal`, `reasoning`
+* Max 3 queries per request
+* All queries require: `mainResearchGoal`, `researchGoal`, `reasoning`
 
 ---
 

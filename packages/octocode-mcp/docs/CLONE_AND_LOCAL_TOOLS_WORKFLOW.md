@@ -15,7 +15,7 @@ Octocode MCP has two worlds of tools:
 | **GitHub** | `githubSearchCode`, `githubGetFileContent`, `githubViewRepoStructure` | Fast, no disk usage, works on any repo | No LSP, no semantic analysis, API rate limits |
 | **Local + LSP** | `localSearchCode`, `localViewStructure`, `localFindFiles`, `localGetFileContent`, `lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy` | Semantic navigation, call tracing, full ripgrep power | Only works on files on disk |
 
-**Two tools bridge these worlds** — they download content to `~/.octocode/repos/` so local and LSP tools can analyze it:
+**Two tools bridge these worlds**  -  they download content to `~/.octocode/repos/` so local and LSP tools can analyze it:
 
 | Bridge Tool | When to Use | How it Works |
 |-------------|-------------|--------------|
@@ -59,9 +59,9 @@ Both share the **same cache** (`~/.octocode/repos/{owner}/{repo}/{branch}/`) wit
 | **Explore monorepo subtree** | Slow (many API calls) | ✅ For small dirs | ✅ Sparse clone for large dirs |
 
 **Rule of thumb:**
-- Need a **single directory**? → `githubGetFileContent` with `type: "directory"` (no git required)
-- Need **semantic analysis** (definitions, references, call hierarchy)? → `githubCloneRepo` first
-- Need a **large subtree or full project context**? → `githubCloneRepo` with `sparse_path`
+* Need a **single directory**? → `githubGetFileContent` with `type: "directory"` (no git required)
+* Need **semantic analysis** (definitions, references, call hierarchy)? → `githubCloneRepo` first
+* Need a **large subtree or full project context**? → `githubCloneRepo` with `sparse_path`
 
 ---
 
@@ -208,7 +208,7 @@ Step 4: Find files by metadata
 | **Sparse clones** | Separate cache: `{branch}__sp_{hash}/` |
 | **Coexistence** | Full clone and sparse clones of the same repo can coexist |
 | **Cache hit** | Returns instantly (no network call) |
-| **Clone vs directory** | Clone-cache is never overwritten by directory fetch — if a git clone exists, directory fetch reuses it as-is |
+| **Clone vs directory** | Clone-cache is never overwritten by directory fetch  -  if a git clone exists, directory fetch reuses it as-is |
 | **Expired** | Automatically evicted by periodic GC (every 10 min) and on next request |
 | **Force refresh** | Set `forceRefresh: true` in the query to bypass cache and re-clone/re-fetch |
 | **Periodic GC** | Expired clones are cleaned up every 10 minutes (runs on server startup and periodically) |
@@ -249,6 +249,6 @@ No extra configuration is needed beyond enabling both `ENABLE_LOCAL=true` and `E
 
 ## Related Documentation
 
-- [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) — Full `githubCloneRepo` parameter reference
-- [Local & LSP Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) — Full local + LSP tools documentation
-- [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) — `ENABLE_LOCAL`, `ENABLE_CLONE`, and other settings
+* [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md)  -  Full `githubCloneRepo` parameter reference
+* [Local & LSP Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md)  -  Full local + LSP tools documentation
+* [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md)  -  `ENABLE_LOCAL`, `ENABLE_CLONE`, and other settings

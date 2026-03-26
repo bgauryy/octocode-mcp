@@ -31,19 +31,19 @@
 
 ## Table of Contents
 
-- [See It In Action](#see-it-in-action)
-- [Installation](#installation)
-- [More Examples](#more-examples)
-- [Overview](#overview)
-- [Tools](#tools)
-- [Commands](#commands)
-  - [/research - Expert Code & Product Research](#research---expert-code--product-research)
-  - [/plan - Research, Plan & Implement Complex Tasks](#plan---research-plan--implement-complex-tasks)
-  - [/review_pull_request - Comprehensive PR Review](#review_pull_request---comprehensive-pr-review)
-  - [/review_security - Security Audit](#review_security---security-audit)
-- [Documentation](#documentation)
-- [Community](#community)
-- [License](#license)
+* [See It In Action](#see-it-in-action)
+* [Installation](#installation)
+* [More Examples](#more-examples)
+* [Overview](#overview)
+* [Tools](#tools)
+* [Commands](#commands)
+  * [/research - Expert Code & Product Research](#research---expert-code--product-research)
+  * [/plan - Research, Plan & Implement Complex Tasks](#plan---research-plan--implement-complex-tasks)
+  * [/review_pull_request - PR Review](#review_pull_request---comprehensive-pr-review)
+  * [/review_security - Security Audit](#review_security---security-audit)
+* [Documentation](#documentation)
+* [Community](#community)
+* [License](#license)
 
 ---
 
@@ -86,16 +86,16 @@ https://github.com/user-attachments/assets/2aaee9f1-3592-438a-a633-255b5cbbb8e1
 
 ### Research and Build Fullstack Agentic Application with /research command in Under 10 Minutes
 
-**Why use the `/research` command?** Instead of manually searching through repositories and piecing together information, let the AI conduct comprehensive research for you:
+**Why use the `/research` command?** Instead of manually searching through repositories and piecing together information, let the AI conduct research for you:
 
-- **🎯 Intelligent Tool Orchestration**: Automatically selects and combines the right Octocode tools (repository search, code search, file content, PR analysis, repo structure) based on your research needs
-- **🧠 Smart Decision Making**: Makes strategic choices throughout the research flow—when to search broadly vs. specifically, which repositories to explore, and how to validate findings
-- **👥 Multi-Purpose Research**: Perfect for feature discovery (product managers), code understanding (developers), bug investigation, flow analysis, planning from scratch, dependency tracking, security audits, and more
-- **🔬 Specialized Workflows**: Handles Technical Research (code flows), Product Research (docs+code validation), Pattern Analysis (cross-repo comparison), Bug Investigation, Architecture Mapping, API Research, Security/Auth flows, and more
-- **🔍 Transparent Reasoning**: Shows you exactly which tools it's using, what it's searching for, and why at each step
-- **🎨 Adaptive Strategy**: Works across public repos, private organizations, and specific repositories with configurable depth (overview, deep dive, or cross-repo comparison)
-- **📊 Cross-Validated Results**: Leverages multiple Octocode tools to verify information from different sources and perspectives
-- **🚀 Actionable Insights**: Delivers implementation-ready plans with code examples, not just raw information
+* **🎯 Intelligent Tool Orchestration**: Automatically selects and combines the right Octocode tools (repository search, code search, file content, PR analysis, repo structure) based on your research needs
+* **🧠 Smart Decision Making**: Makes strategic choices throughout the research flow - when to search broadly vs. specifically, which repositories to explore, and how to validate findings
+* **👥 Multi-Purpose Research**: Perfect for feature discovery (product managers), code understanding (developers), bug investigation, flow analysis, planning from scratch, dependency tracking, security audits, and more
+* **🔬 Specialized Workflows**: Handles Technical Research (code flows), Product Research (docs+code validation), Pattern Analysis (cross-repo comparison), Bug Investigation, Architecture Mapping, API Research, Security/Auth flows, and more
+* **🔍 Transparent Reasoning**: Shows you exactly which tools it's using, what it's searching for, and why at each step
+* **🎨 Adaptive Strategy**: Works across public repos, private organizations, and specific repositories with configurable depth (overview, deep dive, or cross-repo comparison)
+* **📊 Cross-Validated Results**: Leverages multiple Octocode tools to verify information from different sources and perspectives
+* **🚀 Actionable Insights**: Delivers implementation-ready plans with code examples, not just raw information
 
 **Prompt:**
 
@@ -109,7 +109,7 @@ https://github.com/user-attachments/assets/82ed97ae-57a9-46ae-9acd-828a509e711b
 
 ### Discover APIs, Frameworks, and Dive Into Internal Implementation Details
 
-Octocode excels at both **broad discovery** and **deep code analysis**. Whether you're exploring new APIs, finding frameworks, or understanding how popular libraries work under the hood, Octocode provides comprehensive answers in seconds.
+Octocode excels at both **broad discovery** and **deep code analysis**. Whether you're exploring new APIs, finding frameworks, or understanding how popular libraries work under the hood, Octocode provides answers in seconds.
 
 **First Prompt - Broad Discovery:**
 
@@ -127,7 +127,7 @@ Octocode excels at both **broad discovery** and **deep code analysis**. Whether 
 
 > How React implemented useState under the hood?
 
-**What happens:** Octocode dives into React's source code, traces the implementation flow, analyzes the relevant files (ReactHooks.js, ReactFiberHooks.js), and explains the internal mechanics including fiber architecture, hook state management, and dispatcher patterns—all with code references and detailed explanations.
+**What happens:** Octocode dives into React's source code, traces the implementation flow, analyzes the relevant files (ReactHooks.js, ReactFiberHooks.js), and explains the internal mechanics including fiber architecture, hook state management, and dispatcher patterns - all with code references and detailed explanations.
 
 **The Power:** Move seamlessly from **discovering what exists** to **understanding how it works** in a single conversation. No manual repository hunting or code spelunking required.
 
@@ -146,9 +146,9 @@ npx octocode-cli
 ```
 
 This will automatically:
-- Detect your installed IDEs (Cursor, Claude, Windsurf, etc.)
-- Verify your environment (Node.js, GitHub CLI)
-- Configure the MCP server correctly for each tool
+* Detect your installed IDEs (Cursor, Claude, Windsurf, etc.)
+* Verify your environment (Node.js, GitHub CLI)
+* Configure the MCP server correctly for each tool
 
 ---
 
@@ -166,10 +166,10 @@ See [Troubleshooting Guide](https://github.com/bgauryy/octocode-mcp/blob/main/do
 
 #### Prerequisites
 
-- **Node.js** >= 20.0.0
-- **GitHub Authentication** (choose one):
-  - **GitHub CLI (recommended)**: Install from [cli.github.com](https://cli.github.com/) and run `gh auth login`
-  - **Personal Access Token**: Create at [github.com/settings/tokens](https://github.com/settings/tokens) with scopes: `repo`, `read:user`, `read:org`
+* **Node.js** >= 20.0.0
+* **GitHub Authentication** (choose one):
+  * **GitHub CLI (recommended)**: Install from [cli.github.com](https://cli.github.com/) and run `gh auth login`
+  * **Personal Access Token**: Create at [github.com/settings/tokens](https://github.com/settings/tokens) with scopes: `repo`, `read:user`, `read:org`
 
 ### Getting started
 
@@ -513,9 +513,9 @@ After installation, verify Octocode MCP is working:
 
 1. **Restart your MCP client** completely
 2. **Check connection status**:
-   - **Cursor**: Look for green dot in Settings → Tools & Integrations → MCP Tools
-   - **Claude Desktop**: Check for "octocode" in available tools
-   - **VS Code**: Verify in GitHub Copilot settings
+   * **Cursor**: Look for green dot in Settings → Tools & Integrations → MCP Tools
+   * **Claude Desktop**: Check for "octocode" in available tools
+   * **VS Code**: Verify in GitHub Copilot settings
 3. **Test with a simple query**:
    ```
    Search GitHub for React hooks implementations
@@ -563,14 +563,14 @@ Add the `GITHUB_API_URL` environment variable to your MCP configuration:
 **[Interactive Demo](https://octocode-sonnet4-gpt5-comparisson.vercel.app/)**
 
 Side-by-side comparison showing:
-- **Generic AI**: Basic implementation with common patterns
-- **Octocode-Enhanced AI**: Production-grade implementation with advanced techniques from real projects
+* **Generic AI**: Basic implementation with common patterns
+* **Octocode-Enhanced AI**: Production-grade implementation with advanced techniques from real projects
 
 **Key Differences**:
-- Performance optimizations from high-performance projects
-- Proper resource management patterns
-- Industry-standard error handling
-- Real-world edge case handling
+* Performance optimizations from high-performance projects
+* Proper resource management patterns
+* Industry-standard error handling
+* Real-world edge case handling
 
 #### Deep Technical Research
 
@@ -580,7 +580,7 @@ Demonstrates progressive research workflow:
 1. Repository discovery (React source)
 2. Structure exploration (hooks implementation)
 3. Code analysis (internal mechanisms)
-4. Comprehensive explanation with code references
+4. explanation with code references
 
 ---
 
@@ -593,12 +593,12 @@ Octocode MCP provides intelligent prompt commands that enhance your research wor
 Powerful research prompt leveraging Octocode's full capabilities for deep code discovery, documentation analysis, pattern identification, and bug investigation. Orchestrates parallel bulk queries with staged analysis to uncover insights fast.
 
 **When to use**:
-- **Understanding repository workflows**: Discover how repositories work, trace specific flows through codebases, and understand technical implementations
-- **Cross-repository flow analysis**: Understand complex flows that span multiple repositories, trace data flows across microservices
-- **Deep technical investigations**: Trace code flows, understand complex implementations, analyze architecture decisions
-- **Bug investigation**: Find root causes by analyzing code, commit history, and related PRs
-- **Pattern discovery**: Compare implementations across multiple repos to find best practices
-- **Documentation validation**: Verify docs match actual code behavior
+* **Understanding repository workflows**: Discover how repositories work, trace specific flows through codebases, and understand technical implementations
+* **Cross-repository flow analysis**: Understand complex flows that span multiple repositories, trace data flows across microservices
+* **Deep technical investigations**: Trace code flows, understand complex implementations, analyze architecture decisions
+* **Bug investigation**: Find root causes by analyzing code, commit history, and related PRs
+* **Pattern discovery**: Compare implementations across multiple repos to find best practices
+* **Documentation validation**: Verify docs match actual code behavior
 
 **Usage Examples**:
 ```
@@ -611,13 +611,13 @@ Powerful research prompt leveraging Octocode's full capabilities for deep code d
 
 ### `/plan` - Research, Plan & Implement Complex Tasks
 
-Your AI architect for tackling complex development work. Breaks down ambitious tasks into actionable steps, researches existing patterns and implementations, then guides you through execution—all powered by Octocode's deep codebase intelligence.
+Your AI architect for tackling complex development work. Breaks down ambitious tasks into actionable steps, researches existing patterns and implementations, then guides you through execution - all powered by Octocode's deep codebase intelligence.
 
 **When to use**:
-- **Building new features**: Research patterns, plan architecture, then implement
-- **Complex refactoring**: Understand current state, plan migration path, execute safely
-- **Learning new technologies**: Research best practices, create learning plan, build incrementally
-- **System design**: Explore existing implementations, design your approach, validate decisions
+* **Building new features**: Research patterns, plan architecture, then implement
+* **Complex refactoring**: Understand current state, plan migration path, execute safely
+* **Learning new technologies**: Research best practices, create learning plan, build incrementally
+* **System design**: Explore existing implementations, design your approach, validate decisions
 
 **Usage Examples**:
 ```
@@ -628,18 +628,18 @@ Your AI architect for tackling complex development work. Breaks down ambitious t
 
 ---
 
-### `/review_pull_request` - Comprehensive PR Review
+### `/review_pull_request` - PR Review
 
 **Args:** `prUrl` (required) - GitHub Pull Request URL (e.g., https://github.com/owner/repo/pull/123)
 
 Expert-level PR review with a Defects-First mindset. Dives deep into code changes, spots bugs before they ship, flags complexity risks, and delivers actionable feedback that elevates code quality.
 
 **What it analyzes**:
-- **Defects & Bugs**: Logic errors, edge cases, race conditions, null handling
-- **Security Issues**: Injection vulnerabilities, auth bypasses, data exposure
-- **Performance**: N+1 queries, memory leaks, inefficient algorithms
-- **Code Quality**: Complexity, maintainability, test coverage gaps
-- **Best Practices**: Design patterns, error handling, documentation
+* **Defects & Bugs**: Logic errors, edge cases, race conditions, null handling
+* **Security Issues**: Injection vulnerabilities, auth bypasses, data exposure
+* **Performance**: N+1 queries, memory leaks, inefficient algorithms
+* **Code Quality**: Complexity, maintainability, test coverage gaps
+* **Best Practices**: Design patterns, error handling, documentation
 
 **Usage**:
 ```
@@ -652,14 +652,14 @@ Expert-level PR review with a Defects-First mindset. Dives deep into code change
 
 **Args:** `repoUrl` (required) - GitHub repository URL (e.g., https://github.com/owner/repo)
 
-Comprehensive security analysis of a repository. Identifies vulnerabilities, reviews authentication/authorization patterns, checks for secrets exposure, and provides remediation guidance.
+security analysis of a repository. Identifies vulnerabilities, reviews authentication/authorization patterns, checks for secrets exposure, and provides remediation guidance.
 
 **What it analyzes**:
-- **Authentication & Authorization**: Auth flows, session management, access controls
-- **Input Validation**: Injection points, sanitization, boundary checks
-- **Secrets Management**: Hardcoded credentials, API keys, configuration security
-- **Dependencies**: Known vulnerabilities, outdated packages, supply chain risks
-- **Data Protection**: Encryption, PII handling, data flow security
+* **Authentication & Authorization**: Auth flows, session management, access controls
+* **Input Validation**: Injection points, sanitization, boundary checks
+* **Secrets Management**: Hardcoded credentials, API keys, configuration security
+* **Dependencies**: Known vulnerabilities, outdated packages, supply chain risks
+* **Data Protection**: Encryption, PII handling, data flow security
 
 **Usage**:
 ```
@@ -675,13 +675,13 @@ Comprehensive security analysis of a repository. Identifies vulnerabilities, rev
 3. **Use `/review_pull_request`** before merging PRs for thorough code review
 4. **Use `/review_security`** for security audits of repositories
 
-> **💡 Pro Tip**: Combine `/research` and `/plan` for maximum effectiveness—research existing patterns first, then plan your implementation with confidence.
+> **💡 Pro Tip**: Combine `/research` and `/plan` for maximum effectiveness - research existing patterns first, then plan your implementation with confidence.
 
 ---
 
 ## Documentation
 
-### Comprehensive Guides
+### Guides
 
 | Resource | Description | Link |
 |----------|-------------|------|
@@ -698,20 +698,20 @@ Comprehensive security analysis of a repository. Identifies vulnerabilities, rev
 
 ### Get Support
 
-- **GitHub Discussions**: [Ask questions, share ideas](https://github.com/bgauryy/octocode-mcp/discussions)
-- **GitHub Issues**: [Report bugs, request features](https://github.com/bgauryy/octocode-mcp/issues)
-- **Documentation**: [Complete guides and references](https://octocode.ai)
-- **YouTube**: [Video tutorials and examples](https://www.youtube.com/@Octocode-ai)
+* **GitHub Discussions**: [Ask questions, share ideas](https://github.com/bgauryy/octocode-mcp/discussions)
+* **GitHub Issues**: [Report bugs, request features](https://github.com/bgauryy/octocode-mcp/issues)
+* **Documentation**: [Complete guides and references](https://octocode.ai)
+* **YouTube**: [Video tutorials and examples](https://www.youtube.com/@Octocode-ai)
 
 ### Show Your Support
 
 If Octocode helps your AI development workflow:
 
-- **Star the repository** on [GitHub](https://github.com/bgauryy/octocode-mcp)
-- **Share on social media** with #OctocodeMCP
-- **Write about your experience** on your blog
-- **Create tutorials** and share with the community
-- **Contribute** improvements and bug fixes
+* **Star the repository** on [GitHub](https://github.com/bgauryy/octocode-mcp)
+* **Share on social media** with #OctocodeMCP
+* **Write about your experience** on your blog
+* **Create tutorials** and share with the community
+* **Contribute** improvements and bug fixes
 
 ---
 

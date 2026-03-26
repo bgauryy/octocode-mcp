@@ -29,10 +29,10 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 ### Hints Validation Checklist
-- [ ] Response includes helpful hints for file analysis
-- [ ] Hints suggest next logical steps (e.g., file reading, content search)
-- [ ] Pagination hints when results are truncated
-- [ ] File metadata insights in hints (size, modification patterns)
+* [ ] Response includes helpful hints for file analysis
+* [ ] Hints suggest next logical steps (e.g., file reading, content search)
+* [ ] Pagination hints when results are truncated
+* [ ] File metadata insights in hints (size, modification patterns)
 
 ---
 
@@ -55,18 +55,18 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Returns all `.test.ts` files
-- [ ] File count > 0 (expected ~200+)
-- [ ] Pagination metadata present
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
-- [ ] **Hints Validation:**
-  - [ ] Response includes helpful hints about file analysis
-  - [ ] Hints suggest content search or file reading next steps
-  - [ ] File count and pattern insights in hints
+* [ ] Returns all `.test.ts` files
+* [ ] File count > 0 (expected ~200+)
+* [ ] Pagination metadata present
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
+* [ ] **Hints Validation:**
+  * [ ] Response includes helpful hints about file analysis
+  * [ ] Hints suggest content search or file reading next steps
+  * [ ] File count and pattern insights in hints
 
 ---
 
@@ -88,13 +88,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Only files within 3 levels of the root
-- [ ] Fewer results than unlimited depth
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only files within 3 levels of the root
+* [ ] Fewer results than unlimited depth
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -117,13 +117,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Most recently modified files first
-- [ ] Modification timestamps in output
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Most recently modified files first
+* [ ] Modification timestamps in output
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -146,18 +146,18 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Max 5 files returned
-- [ ] Pagination shows total count and pages
-- [ ] Page 2 (`filePageNumber: 2`) returns different files
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Pagination hints present
-  - [ ] Hints suggest actionable next steps
-- [ ] **Hints Validation:**
-  - [ ] Pagination navigation hints ("Next page: filePageNumber: 2")
-  - [ ] Total files summary in hints
-  - [ ] Suggestions for filtering if too many results
+* [ ] Max 5 files returned
+* [ ] Pagination shows total count and pages
+* [ ] Page 2 (`filePageNumber: 2`) returns different files
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Pagination hints present
+  * [ ] Hints suggest actionable next steps
+* [ ] **Hints Validation:**
+  * [ ] Pagination navigation hints ("Next page: filePageNumber: 2")
+  * [ ] Total files summary in hints
+  * [ ] Suggestions for filtering if too many results
 
 ---
 
@@ -178,13 +178,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Matches `README.md`, `readme.md`, `Readme.md`, etc.
-- [ ] At least 2 README files found
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Matches `README.md`, `readme.md`, `Readme.md`, etc.
+* [ ] At least 2 README files found
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -207,13 +207,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Only regular files, no directories or symlinks
-- [ ] All entries are `.json` files
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only regular files, no directories or symlinks
+* [ ] All entries are `.json` files
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -235,14 +235,14 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Matches both `.test.ts` and `.spec.ts` files
-- [ ] No error (previously blocked by security layer)
-- [ ] File count > 0 (expected ~200+)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Matches both `.test.ts` and `.spec.ts` files
+* [ ] No error (previously blocked by security layer)
+* [ ] File count > 0 (expected ~200+)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -265,13 +265,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] All returned files are > 5KB
-- [ ] File details show sizes above threshold
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] All returned files are > 5KB
+* [ ] File details show sizes above threshold
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -294,12 +294,12 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] All returned files are < 15KB
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] All returned files are < 15KB
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -322,13 +322,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] All files between 5KB and 15KB
-- [ ] Expected ~90 files
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] All files between 5KB and 15KB
+* [ ] Expected ~90 files
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -349,13 +349,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Both `package.json` and `tsconfig.json` files found
-- [ ] Results from multiple directories
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Both `package.json` and `tsconfig.json` files found
+* [ ] Results from multiple directories
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -378,13 +378,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Alphabetical ordering of file paths
-- [ ] Consistent ordering across runs
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Alphabetical ordering of file paths
+* [ ] Consistent ordering across runs
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -407,13 +407,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Largest files first
-- [ ] Size metadata visible per file
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Largest files first
+* [ ] Size metadata visible per file
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -436,13 +436,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Each file includes modification date, size, permissions
-- [ ] `showFileLastModified` metadata present
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Each file includes modification date, size, permissions
+* [ ] `showFileLastModified` metadata present
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -465,14 +465,14 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] No files from levels 1-3
-- [ ] Only deeply nested files returned
-- [ ] Fewer results than without minDepth
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] No files from levels 1-3
+* [ ] Only deeply nested files returned
+* [ ] Fewer results than without minDepth
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -495,13 +495,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Only files with "security" in their path
-- [ ] Matches files like `src/security/pathValidator.ts`
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only files with "security" in their path
+* [ ] Matches files like `src/security/pathValidator.ts`
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -524,14 +524,14 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Only empty (0 byte) files returned
-- [ ] Or no results if no empty files exist
-- [ ] No error thrown
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only empty (0 byte) files returned
+* [ ] Or no results if no empty files exist
+* [ ] No error thrown
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -555,14 +555,14 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Only files modified in the last 7 days
-- [ ] Modification timestamps confirm filter
-- [ ] Recent files appear in results
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only files modified in the last 7 days
+* [ ] Modification timestamps confirm filter
+* [ ] Recent files appear in results
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -586,13 +586,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Only files NOT modified in the last 30 days
-- [ ] Older files in results
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only files NOT modified in the last 30 days
+* [ ] Older files in results
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -615,14 +615,14 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Only files with execute permission
-- [ ] May include shell scripts or binaries
-- [ ] Or empty if no executable files
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only files with execute permission
+* [ ] May include shell scripts or binaries
+* [ ] Or empty if no executable files
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -646,13 +646,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] No files from `node_modules/`, `dist/`, or `coverage/`
-- [ ] Only source/test TypeScript files
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] No files from `node_modules/`, `dist/`, or `coverage/`
+* [ ] Only source/test TypeScript files
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -675,13 +675,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] At most 20 files returned total
-- [ ] Pagination reflects the limit
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] At most 20 files returned total
+* [ ] Pagination reflects the limit
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -702,14 +702,14 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Error message returned (not a crash)
-- [ ] Descriptive error: "No such file or directory" or similar
-- [ ] No stack trace or internal details leaked
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`error`)
-  - [ ] `errorStatusHints` present with path verification suggestions
-  - [ ] Hints suggest actionable next steps
+* [ ] Error message returned (not a crash)
+* [ ] Descriptive error: "No such file or directory" or similar
+* [ ] No stack trace or internal details leaked
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`error`)
+  * [ ] `errorStatusHints` present with path verification suggestions
+  * [ ] Hints suggest actionable next steps
 
 **Note:** Use path within workspace. Paths outside workspace (e.g. `/nonexistent/...`) get "Path outside allowed directories" instead.
 
@@ -732,14 +732,14 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Error message about invalid regex syntax
-- [ ] No crash or timeout
-- [ ] Actionable error message
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`error`)
-  - [ ] `errorStatusHints` present with regex fix suggestions
-  - [ ] Hints suggest actionable next steps
+* [ ] Error message about invalid regex syntax
+* [ ] No crash or timeout
+* [ ] Actionable error message
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`error`)
+  * [ ] `errorStatusHints` present with regex fix suggestions
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -763,13 +763,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Only files accessed in the last day
-- [ ] Results reflect recent file access
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only files accessed in the last day
+* [ ] Results reflect recent file access
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -792,13 +792,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Only files with 644 permissions returned
-- [ ] Permission metadata confirms filter
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only files with 644 permissions returned
+* [ ] Permission metadata confirms filter
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -822,13 +822,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] All returned files are readable
-- [ ] No permission-denied entries
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] All returned files are readable
+* [ ] No permission-denied entries
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -852,12 +852,12 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] All returned files have write permission
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] All returned files have write permission
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -881,14 +881,14 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Output truncated to ~2000 characters
-- [ ] Pagination hint for next charOffset
-- [ ] Useful for large result sets
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Pagination hints for next charOffset
-  - [ ] Hints suggest actionable next steps
+* [ ] Output truncated to ~2000 characters
+* [ ] Pagination hint for next charOffset
+* [ ] Useful for large result sets
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Pagination hints for next charOffset
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -912,14 +912,14 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Characters 2000-3999 returned
-- [ ] Content does not overlap with TC-29
-- [ ] Pagination indicates current position
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Pagination hints present
-  - [ ] Hints suggest actionable next steps
+* [ ] Characters 2000-3999 returned
+* [ ] Content does not overlap with TC-29
+* [ ] Pagination indicates current position
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Pagination hints present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -942,13 +942,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Modification timestamps visible per file
-- [ ] Differs from showFileLastModified: false
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Modification timestamps visible per file
+* [ ] Differs from showFileLastModified: false
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -971,13 +971,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Files ordered alphabetically by full path
-- [ ] Consistent ordering
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Files ordered alphabetically by full path
+* [ ] Consistent ordering
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1000,14 +1000,14 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Different files than page 1
-- [ ] No overlap with first page
-- [ ] Pagination metadata shows current page
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Pagination hints for next/previous page
-  - [ ] Hints suggest actionable next steps
+* [ ] Different files than page 1
+* [ ] No overlap with first page
+* [ ] Pagination metadata shows current page
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Pagination hints for next/previous page
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1029,13 +1029,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Only directories returned, no files
-- [ ] Entries like "tools/", "utils/", "security/"
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only directories returned, no files
+* [ ] Entries like "tools/", "utils/", "security/"
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1057,13 +1057,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Only symlinks returned (or empty if none exist)
-- [ ] No regular files or directories
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only symlinks returned (or empty if none exist)
+* [ ] No regular files or directories
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1086,14 +1086,14 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Validation error or empty results
-- [ ] No crash
-- [ ] Clear indication of invalid range
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Error hints with range correction suggestions
-  - [ ] Hints suggest actionable next steps
+* [ ] Validation error or empty results
+* [ ] No crash
+* [ ] Clear indication of invalid range
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Error hints with range correction suggestions
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1116,13 +1116,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Up to 50 files returned
-- [ ] No timeout or error
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Up to 50 files returned
+* [ ] No timeout or error
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1144,13 +1144,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Returns all files up to 10000
-- [ ] No performance issue
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Returns all files up to 10000
+* [ ] No performance issue
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1173,13 +1173,13 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Empty results or clear "no more pages" indication
-- [ ] No error thrown
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Pagination hints indicate boundary
-  - [ ] Hints suggest actionable next steps
+* [ ] Empty results or clear "no more pages" indication
+* [ ] No error thrown
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Pagination hints indicate boundary
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1201,14 +1201,14 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] No error thrown
-- [ ] Empty results
-- [ ] Clear indication no files found
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`empty`)
-  - [ ] `emptyStatusHints` present with pattern refinement suggestions
-  - [ ] Hints suggest actionable next steps
+* [ ] No error thrown
+* [ ] Empty results
+* [ ] Clear indication no files found
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`empty`)
+  * [ ] `emptyStatusHints` present with pattern refinement suggestions
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1233,12 +1233,12 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Only files with both read and write permissions
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only files with both read and write permissions
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1260,14 +1260,14 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Matches `.test.ts` files using POSIX basic regex
-- [ ] No error thrown
-- [ ] File count > 0
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Matches `.test.ts` files using POSIX basic regex
+* [ ] No error thrown
+* [ ] File count > 0
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1289,14 +1289,14 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Matches both `.test.ts` and `.spec.ts` files using egrep syntax
-- [ ] No error thrown
-- [ ] Results similar to TC-7 (posix-extended) since egrep is an alias
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Matches both `.test.ts` and `.spec.ts` files using egrep syntax
+* [ ] No error thrown
+* [ ] Results similar to TC-7 (posix-extended) since egrep is an alias
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1315,18 +1315,18 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] First query succeeds
-- [ ] Second and third return errors
-- [ ] Each result isolated per query
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array has per-query `status` (hasResults, error, error)
-  - [ ] Status-specific hints for each result type
-  - [ ] Hints suggest actionable next steps per query
+* [ ] First query succeeds
+* [ ] Second and third return errors
+* [ ] Each result isolated per query
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array has per-query `status` (hasResults, error, error)
+  * [ ] Status-specific hints for each result type
+  * [ ] Hints suggest actionable next steps per query
 
 ---
 
-### TC-45: Comprehensive Pagination Test
+### TC-45: Pagination Test
 
 **Goal:** Verify all pagination parameters work together correctly.
 
@@ -1339,7 +1339,7 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
     "filePageNumber": 1,
     "limit": 20,
     "sortBy": "modified",
-    "mainResearchGoal": "Test comprehensive pagination functionality",
+    "mainResearchGoal": "Test pagination functionality",
     "researchGoal": "Verify interaction of pagination, limits, and sorting",
     "reasoning": "Need to test pagination controls work correctly with sorting and limits"
   }]
@@ -1347,15 +1347,15 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Max 5 files per page
-- [ ] Page 1 results (filePageNumber: 1)
-- [ ] Total limit of 20 files maximum
-- [ ] Files sorted by modification time
-- [ ] Pagination metadata shows correct totals
-- [ ] **Hints Validation:**
-  - [ ] Pagination navigation hints
-  - [ ] File analysis suggestions
-  - [ ] Sorting and filtering tips
+* [ ] Max 5 files per page
+* [ ] Page 1 results (filePageNumber: 1)
+* [ ] Total limit of 20 files maximum
+* [ ] Files sorted by modification time
+* [ ] Pagination metadata shows correct totals
+* [ ] **Hints Validation:**
+  * [ ] Pagination navigation hints
+  * [ ] File analysis suggestions
+  * [ ] Sorting and filtering tips
 
 **Follow-up Test - Page 2:**
 ```json
@@ -1375,18 +1375,18 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 ```
 
 **Expected:**
-- [ ] Different files than page 1
-- [ ] Consistent sorting across pages
-- [ ] No overlap with page 1 results
+* [ ] Different files than page 1
+* [ ] Consistent sorting across pages
+* [ ] No overlap with page 1 results
 
 ---
 
 ## Validation Checklist
 
 ### Core Requirements
-- [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning`
-- [ ] **Pagination tests** verify `filesPerPage`, `filePageNumber`, `limit` parameters
-- [ ] **Hints validation** checks for helpful guidance in all responses
+* [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning`
+* [ ] **Pagination tests** verify `filesPerPage`, `filePageNumber`, `limit` parameters
+* [ ] **Hints validation** checks for helpful guidance in all responses
 
 ### Test Cases Status
 
@@ -1404,7 +1404,7 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 | 10 | Size range combined | - | - | - | |
 | 11 | Multi-name search | - | - | - | |
 | 12 | Sort by name | - | - | - | |
-| 45 | Comprehensive pagination | ✅ | ✅ | ✅ | |
+| 45 | pagination | ✅ | ✅ | ✅ | |
 | 13 | Sort by size | |
 | 14 | Details output | |
 | 15 | Min depth | |

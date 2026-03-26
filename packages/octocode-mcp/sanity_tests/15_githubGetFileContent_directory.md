@@ -60,18 +60,18 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 ```
 
 **Expected:**
-- [ ] `localPath` returned as absolute path under `~/.octocode/repos/`
-- [ ] `fileCount > 0`
-- [ ] `files` array has entries with `path`, `size`, `type: "file"`
-- [ ] `totalSize` matches sum of file sizes
-- [ ] Files exist on disk at `localPath`
-- [ ] Helpful hints for using local tools
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] `localPath` returned as absolute path under `~/.octocode/repos/`
+* [ ] `fileCount > 0`
+* [ ] `files` array has entries with `path`, `size`, `type: "file"`
+* [ ] `totalSize` matches sum of file sizes
+* [ ] Files exist on disk at `localPath`
+* [ ] Helpful hints for using local tools
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -95,15 +95,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 ```
 
 **Expected:**
-- [ ] `branch: "main"` in result
-- [ ] Content matches `main` branch on GitHub
-- [ ] `localPath` usable by local tools
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] `branch: "main"` in result
+* [ ] Content matches `main` branch on GitHub
+* [ ] `localPath` usable by local tools
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -126,15 +126,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 ```
 
 **Expected:**
-- [ ] Returns config directory files (e.g. `defaults.ts`, `types.ts`)
-- [ ] `directoryPath` matches queried path
-- [ ] Files readable via `localGetFileContent`
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] Returns config directory files (e.g. `defaults.ts`, `types.ts`)
+* [ ] `directoryPath` matches queried path
+* [ ] Files readable via `localGetFileContent`
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -157,21 +157,21 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 ```
 
 **Expected:**
-- [ ] `cached: true` on second call
-- [ ] Same `localPath` as first fetch
-- [ ] `expiresAt` valid ISO-8601, ~24h ahead
-- [ ] `.octocode-clone-meta.json` exists with `source: "directoryFetch"`
-- [ ] Second call much faster
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] `cached: true` on second call
+* [ ] Same `localPath` as first fetch
+* [ ] `expiresAt` valid ISO-8601, ~24h ahead
+* [ ] `.octocode-clone-meta.json` exists with `source: "directoryFetch"`
+* [ ] Second call much faster
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
-### TC-5: File Filtering — Binary Files Excluded
+### TC-5: File Filtering  -  Binary Files Excluded
 
 **Goal:** Verify binary files are filtered out.
 
@@ -190,16 +190,16 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 ```
 
 **Expected:**
-- [ ] `.png`, `.jpg`, `.gif` files NOT in `files` list
-- [ ] `.lock` files excluded
-- [ ] `.min.js` and `.min.css` files excluded
-- [ ] Normal text files (`.ts`, `.js`, `.json`, `.md`) included
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] `.png`, `.jpg`, `.gif` files NOT in `files` list
+* [ ] `.lock` files excluded
+* [ ] `.min.js` and `.min.css` files excluded
+* [ ] Normal text files (`.ts`, `.js`, `.json`, `.md`) included
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -229,14 +229,14 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 ```
 
 **Expected:**
-- [ ] `fileCount` ≤ 50
-- [ ] `totalSize` ≤ 5MB
-- [ ] No individual file >300KB in results
-- [ ] Partial results returned (not an error)
+* [ ] `fileCount` ≤ 50
+* [ ] `totalSize` ≤ 5MB
+* [ ] No individual file >300KB in results
+* [ ] Partial results returned (not an error)
 
 ---
 
-### TC-7: Schema Validation — Rejected Parameters
+### TC-7: Schema Validation  -  Rejected Parameters
 
 **Goal:** Verify file-mode parameters are rejected in directory mode.
 
@@ -251,18 +251,18 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 | `type="directory", fullContent=false` | No error (false is default) |
 
 **Expected:**
-- [ ] All file-mode parameters rejected with clear messages
-- [ ] `fullContent=false` allowed (default value)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] All file-mode parameters rejected with clear messages
+* [ ] `fullContent=false` allowed (default value)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
-### TC-8: Failure — Invalid Targets
+### TC-8: Failure  -  Invalid Targets
 
 **Goal:** Verify graceful errors for invalid paths and repos.
 
@@ -288,13 +288,13 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 ```
 
 **Expected:**
-- [ ] Clear error message distinguishing file vs directory
-- [ ] Non-existent paths return 404
-- [ ] Errors isolated per query in bulk calls
+* [ ] Clear error message distinguishing file vs directory
+* [ ] Non-existent paths return 404
+* [ ] Errors isolated per query in bulk calls
 
 ---
 
-### TC-9: Failure — Missing Prerequisites
+### TC-9: Failure  -  Missing Prerequisites
 
 **Goal:** Verify errors when clone features are disabled.
 
@@ -305,14 +305,14 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 | No `GITHUB_TOKEN` | Authentication error |
 
 **Expected:**
-- [ ] Clear, actionable error messages
-- [ ] File mode (`type="file"`) still works when clone is disabled
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] Clear, actionable error messages
+* [ ] File mode (`type="file"`) still works when clone is disabled
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -330,14 +330,14 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 | Very deep path (`packages/next/src/server/app-render`) | Fetches deeply nested directory |
 
 **Expected:**
-- [ ] All valid edge cases handled without errors
-- [ ] Empty results returned as valid (not errors)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] All valid edge cases handled without errors
+* [ ] Empty results returned as valid (not errors)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -366,13 +366,13 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 4. `localFindFiles(path=localPath, name="*.ts", type="f")` → returns TypeScript files
 
 **Expected:**
-- [ ] All four local tools work on the fetched path
-- [ ] Files on disk match the `files` array in response
-- [ ] File content readable and valid
+* [ ] All four local tools work on the fetched path
+* [ ] Files on disk match the `files` array in response
+* [ ] File content readable and valid
 
 ---
 
-### TC-12: Cross-Tool — Directory Fetch vs Clone
+### TC-12: Cross-Tool  -  Directory Fetch vs Clone
 
 **Goal:** Verify directory fetch and clone have separate caches.
 
@@ -381,16 +381,16 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 2. `githubCloneRepo(owner="bgauryy", repo="octocode-mcp")`
 
 **Expected:**
-- [ ] Clone ignores directoryFetch cache (performs fresh clone)
-- [ ] Different cache directories
-- [ ] Both `localPath` values usable by local tools
-- [ ] File mode (`type="file"`) still returns inline content (no disk write)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] Clone ignores directoryFetch cache (performs fresh clone)
+* [ ] Different cache directories
+* [ ] Both `localPath` values usable by local tools
+* [ ] File mode (`type="file"`) still returns inline content (no disk write)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -432,15 +432,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 ```
 
 **Expected:**
-- [ ] Directory queries return `localPath` + file list
-- [ ] File query returns inline content (no disk write)
-- [ ] Mixed file + directory queries work in same call
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] Directory queries return `localPath` + file list
+* [ ] File query returns inline content (no disk write)
+* [ ] Mixed file + directory queries work in same call
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -463,16 +463,16 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 ```
 
 **Expected:**
-- [ ] Root-level files returned (README.md, package.json, etc.)
-- [ ] `fileCount > 0`
-- [ ] No subdirectory files (only immediate files)
-- [ ] No error with empty path
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] Root-level files returned (README.md, package.json, etc.)
+* [ ] `fileCount > 0`
+* [ ] No subdirectory files (only immediate files)
+* [ ] No error with empty path
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -495,15 +495,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 ```
 
 **Expected:**
-- [ ] Same results as `path: "docs"` without trailing slash
-- [ ] No error
-- [ ] `localPath` valid and usable
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] Same results as `path: "docs"` without trailing slash
+* [ ] No error
+* [ ] `localPath` valid and usable
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -526,16 +526,16 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 ```
 
 **Expected:**
-- [ ] `fileCount: 0` and `files: []` (if all files filtered)
-- [ ] Or whatever files pass the filter
-- [ ] No error thrown for empty result
-- [ ] Valid response structure
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] `fileCount: 0` and `files: []` (if all files filtered)
+* [ ] Or whatever files pass the filter
+* [ ] No error thrown for empty result
+* [ ] Valid response structure
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -558,15 +558,15 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 ```
 
 **Expected:**
-- [ ] Dotfiles like `.gitignore`, `.eslintrc` included in files list
-- [ ] Dotfiles are text files and pass binary filter
-- [ ] Content readable via `localGetFileContent`
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] Dotfiles like `.gitignore`, `.eslintrc` included in files list
+* [ ] Dotfiles are text files and pass binary filter
+* [ ] Content readable via `localGetFileContent`
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -589,16 +589,16 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 ```
 
 **Expected:**
-- [ ] Contents of deeply nested directory returned
-- [ ] Files like `index.ts`, `ai-providers.ts` visible
-- [ ] No path resolution errors
-- [ ] `localPath` valid and usable
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] Contents of deeply nested directory returned
+* [ ] Files like `index.ts`, `ai-providers.ts` visible
+* [ ] No path resolution errors
+* [ ] `localPath` valid and usable
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -621,16 +621,16 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 ```
 
 **Expected:**
-- [ ] Default branch auto-detected
-- [ ] Branch name included in response
-- [ ] `localPath` valid and contains lib/ files
-- [ ] No error about missing branch
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest local tool usage on downloaded files
+* [ ] Default branch auto-detected
+* [ ] Branch name included in response
+* [ ] `localPath` valid and contains lib/ files
+* [ ] No error about missing branch
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] `data` includes `localPath`, `fileCount`, `totalSize` fields
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest local tool usage on downloaded files
 
 ---
 
@@ -650,22 +650,22 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 | # | Test Case | Queries | Pagination | Hints | Core Requirements | Status |
 |---|-----------|---------|------------|-------|-------------------|--------|
-| 1 | Fetch source directory | ✓ | — | ✓ | ✓ | ✅ |
-| 2 | Fetch with explicit branch | ✓ | — | ✓ | ✓ | ✅ |
-| 3 | Fetch nested directory | ✓ | — | ✓ | ✓ | ✅ |
-| 4 | Cache behavior | ✓ | — | ✓ | ✓ | ✅ |
-| 5 | Binary file filtering | ✓ | — | ✓ | ✓ | ✅ |
-| 6 | File limits | ✓ | — | ✓ | ✓ | ✅ |
-| 7 | Schema validation — rejected params | ✓ | — | ✓ | ✓ | ✅ |
-| 8 | Failure — invalid targets | ✓ | — | ✓ | ✓ | ✅ |
-| 9 | Failure — missing prerequisites | ✓ | — | ✓ | ✓ | ✅ |
-| 10 | Edge cases | ✓ | — | ✓ | ✓ | ✅ |
-| 11 | Local tools integration | ✓ | — | ✓ | ✓ | ✅ |
-| 12 | Cross-tool — fetch vs clone | ✓ | — | ✓ | ✓ | ✅ |
-| 13 | Bulk queries | ✓ | — | ✓ | ✓ | ✅ |
-| 14 | Root directory fetch | ✓ | — | ✓ | ✓ | ✅ |
-| 15 | Trailing slash in path | ✓ | — | ✓ | ✓ | ✅ |
-| 16 | Directory with only filtered files | ✓ | — | ✓ | ✓ | ✅ |
-| 17 | Dotfiles in directory | ✓ | — | ✓ | ✓ | ✅ |
-| 18 | Very deep path | ✓ | — | ✓ | ✓ | ✅ |
-| 19 | Default branch auto-detection | ✓ | — | ✓ | ✓ | ✅ |
+| 1 | Fetch source directory | ✓ |  -  | ✓ | ✓ | ✅ |
+| 2 | Fetch with explicit branch | ✓ |  -  | ✓ | ✓ | ✅ |
+| 3 | Fetch nested directory | ✓ |  -  | ✓ | ✓ | ✅ |
+| 4 | Cache behavior | ✓ |  -  | ✓ | ✓ | ✅ |
+| 5 | Binary file filtering | ✓ |  -  | ✓ | ✓ | ✅ |
+| 6 | File limits | ✓ |  -  | ✓ | ✓ | ✅ |
+| 7 | Schema validation  -  rejected params | ✓ |  -  | ✓ | ✓ | ✅ |
+| 8 | Failure  -  invalid targets | ✓ |  -  | ✓ | ✓ | ✅ |
+| 9 | Failure  -  missing prerequisites | ✓ |  -  | ✓ | ✓ | ✅ |
+| 10 | Edge cases | ✓ |  -  | ✓ | ✓ | ✅ |
+| 11 | Local tools integration | ✓ |  -  | ✓ | ✓ | ✅ |
+| 12 | Cross-tool  -  fetch vs clone | ✓ |  -  | ✓ | ✓ | ✅ |
+| 13 | Bulk queries | ✓ |  -  | ✓ | ✓ | ✅ |
+| 14 | Root directory fetch | ✓ |  -  | ✓ | ✓ | ✅ |
+| 15 | Trailing slash in path | ✓ |  -  | ✓ | ✓ | ✅ |
+| 16 | Directory with only filtered files | ✓ |  -  | ✓ | ✓ | ✅ |
+| 17 | Dotfiles in directory | ✓ |  -  | ✓ | ✓ | ✅ |
+| 18 | Very deep path | ✓ |  -  | ✓ | ✓ | ✅ |
+| 19 | Default branch auto-detection | ✓ |  -  | ✓ | ✓ | ✅ |

@@ -12,7 +12,7 @@ Each flow tests that output from one tool feeds correctly into the next.
 
 ## Test Cases
 
-### Flow 1: Local Funnel — Structure → Search → Define → References
+### Flow 1: Local Funnel  -  Structure → Search → Define → References
 
 **Goal:** Verify the complete local research funnel on the current workspace.
 
@@ -25,16 +25,16 @@ Each flow tests that output from one tool feeds correctly into the next.
 4. `lspFindReferences` with `mainResearchGoal`, `researchGoal`, `reasoning`; `uri="<file from step 3>"`, `symbolName="registerTools"`, `lineHint=<from step 3>` → find all usages
 
 **Expected:**
-- [ ] Structure shows source files
-- [ ] Search returns files with matches + lineHint
-- [ ] Definition resolves to correct file/line
-- [ ] References found across multiple files (source + tests)
-- [ ] `isDefinition: true` on exactly one reference
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] Structure shows source files
+* [ ] Search returns files with matches + lineHint
+* [ ] Definition resolves to correct file/line
+* [ ] References found across multiple files (source + tests)
+* [ ] `isDefinition: true` on exactly one reference
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
@@ -51,15 +51,15 @@ Each flow tests that output from one tool feeds correctly into the next.
 4. `lspCallHierarchy(uri="<caller_file>", symbolName="<caller_fn>", lineHint=<caller_line>, direction="outgoing")` → what does the caller call?
 
 **Expected:**
-- [ ] Incoming calls show callers with `fromRanges` (line+character)
-- [ ] Outgoing calls show callees from the caller
-- [ ] Cross-file references resolved correctly
-- [ ] Function context (`item.content`) shows `>` markers on key lines
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] Incoming calls show callers with `fromRanges` (line+character)
+* [ ] Outgoing calls show callees from the caller
+* [ ] Cross-file references resolved correctly
+* [ ] Function context (`item.content`) shows `>` markers on key lines
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
@@ -76,15 +76,15 @@ Each flow tests that output from one tool feeds correctly into the next.
 4. `githubGetFileContent` with `mainResearchGoal`, `researchGoal`, `reasoning`; `owner="expressjs"`, `repo="express"`, `path="lib/router/index.js"`, `matchString="function"` → read implementation
 
 **Expected:**
-- [ ] Package search returns repo URL
-- [ ] Repo structure shows `lib/`, `test/`, `package.json`
-- [ ] Code search returns files with middleware references
-- [ ] File content returns matched section with context
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] Package search returns repo URL
+* [ ] Repo structure shows `lib/`, `test/`, `package.json`
+* [ ] Code search returns files with middleware references
+* [ ] File content returns matched section with context
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
@@ -103,16 +103,16 @@ Each flow tests that output from one tool feeds correctly into the next.
 6. `lspCallHierarchy` with `mainResearchGoal`, `researchGoal`, `reasoning`; `uri=<file>`, `symbolName=<fn>`, `lineHint=<N>`, `direction="incoming"` → trace calls
 
 **Expected:**
-- [ ] Clone returns valid `localPath`
-- [ ] All local tools work on cloned path
-- [ ] LSP resolves definitions from cloned TypeScript code
-- [ ] References span multiple cloned files
-- [ ] Call hierarchy traces function relationships
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] Clone returns valid `localPath`
+* [ ] All local tools work on cloned path
+* [ ] LSP resolves definitions from cloned TypeScript code
+* [ ] References span multiple cloned files
+* [ ] Call hierarchy traces function relationships
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
@@ -128,16 +128,16 @@ Each flow tests that output from one tool feeds correctly into the next.
 3. `localGetFileContent` with `mainResearchGoal`, `researchGoal`, `reasoning`; `path=<file_from_step_2>`, `matchString="export"`, `matchStringContextLines=10` → read code
 
 **Expected:**
-- [ ] Sparse clone only contains `packages/react` files
-- [ ] `localPath` includes `__sp_` hash suffix
-- [ ] Search finds matches within the sparse subtree
-- [ ] File content readable with proper indentation
-- [ ] Files outside sparse path NOT present on disk
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] Sparse clone only contains `packages/react` files
+* [ ] `localPath` includes `__sp_` hash suffix
+* [ ] Search finds matches within the sparse subtree
+* [ ] File content readable with proper indentation
+* [ ] Files outside sparse path NOT present on disk
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
@@ -154,20 +154,20 @@ Each flow tests that output from one tool feeds correctly into the next.
 4. `localGetFileContent` with `mainResearchGoal`, `researchGoal`, `reasoning`; `path=<localPath>/<file>`, `fullContent=true` → read specific file
 
 **Expected:**
-- [ ] Directory fetch returns `localPath`, `fileCount > 0`, `files` list
-- [ ] `localViewStructure` shows fetched files
-- [ ] Search finds matches in fetched content
-- [ ] File content matches GitHub version
-- [ ] Files on disk match the `files` array in response
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] Directory fetch returns `localPath`, `fileCount > 0`, `files` list
+* [ ] `localViewStructure` shows fetched files
+* [ ] Search finds matches in fetched content
+* [ ] File content matches GitHub version
+* [ ] Files on disk match the `files` array in response
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
-### Flow 7: PR Archaeology — Find Why Code Changed
+### Flow 7: PR Archaeology  -  Find Why Code Changed
 
 **Goal:** Verify code archaeology workflow for understanding change history.
 
@@ -180,20 +180,20 @@ Each flow tests that output from one tool feeds correctly into the next.
 4. `githubGetFileContent` with `mainResearchGoal`, `researchGoal`, `reasoning`; `owner="bgauryy"`, `repo="octocode-mcp"`, `path="<file from step 1>"`, `matchString="withSecurityValidation"` → read current state
 
 **Expected:**
-- [ ] Local search identifies the code location
-- [ ] PR search returns merged PRs related to the code
-- [ ] PR metadata includes title, description, comments explaining WHY
-- [ ] File content shows current implementation
-- [ ] Comments provide historical context
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] Local search identifies the code location
+* [ ] PR search returns merged PRs related to the code
+* [ ] PR metadata includes title, description, comments explaining WHY
+* [ ] File content shows current implementation
+* [ ] Comments provide historical context
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
-### Flow 8: Cross-Provider — Clone vs Directory Fetch
+### Flow 8: Cross-Provider  -  Clone vs Directory Fetch
 
 **Goal:** Verify clone and directory fetch have independent caches and both work.
 
@@ -206,16 +206,16 @@ Each flow tests that output from one tool feeds correctly into the next.
 4. `localViewStructure` with `mainResearchGoal`, `researchGoal`, `reasoning`; `path=<localPathB>` → browse cloned repo
 
 **Expected:**
-- [ ] Different `localPath` values (separate cache directories)
-- [ ] Clone ignores directory fetch cache (fresh clone)
-- [ ] Both paths usable by local tools
-- [ ] Directory fetch has only `docs/` files
-- [ ] Clone has full repository content
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] Different `localPath` values (separate cache directories)
+* [ ] Clone ignores directory fetch cache (fresh clone)
+* [ ] Both paths usable by local tools
+* [ ] Directory fetch has only `docs/` files
+* [ ] Clone has full repository content
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
@@ -230,15 +230,15 @@ Each flow tests that output from one tool feeds correctly into the next.
 2. `githubSearchCode` with `mainResearchGoal`, `researchGoal`, `reasoning`; `owner="bgauryy"`, `repo="octocode-mcp"`, `keywordsToSearch=["withSecurityValidation"]` → get GitHub results
 
 **Expected:**
-- [ ] Both tools find the same core files
-- [ ] Local search returns more detailed results (line numbers, context)
-- [ ] GitHub search returns repo-wide results (may include branches)
-- [ ] Neither tool misses files the other finds
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] Both tools find the same core files
+* [ ] Local search returns more detailed results (line numbers, context)
+* [ ] GitHub search returns repo-wide results (may include branches)
+* [ ] Neither tool misses files the other finds
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
@@ -254,19 +254,19 @@ Each flow tests that output from one tool feeds correctly into the next.
 3. `lspGotoDefinition` with `mainResearchGoal`, `researchGoal`, `reasoning`; `uri=<file>`, `symbolName=<exported_fn>`, `lineHint=<match_line>` → resolve definition
 
 **Expected:**
-- [ ] `localFindFiles` returns `.ts` files sorted by size (largest first)
-- [ ] No `dist/`, `node_modules/` in results (default excludes)
-- [ ] `localGetFileContent` finds exports with context
-- [ ] `lspGotoDefinition` resolves from match line to definition
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] `localFindFiles` returns `.ts` files sorted by size (largest first)
+* [ ] No `dist/`, `node_modules/` in results (default excludes)
+* [ ] `localGetFileContent` finds exports with context
+* [ ] `lspGotoDefinition` resolves from match line to definition
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
-### Flow 11: Bulk Operations — Parallel Multi-Tool
+### Flow 11: Bulk Operations  -  Parallel Multi-Tool
 
 **Goal:** Verify bulk queries across different tools work independently.
 
@@ -277,15 +277,15 @@ Each flow tests that output from one tool feeds correctly into the next.
 2. `githubSearchCode` with 3 parallel queries, each including `mainResearchGoal`, `researchGoal`, `reasoning`; keywords: `["react", "vue", "angular"]`
 
 **Expected:**
-- [ ] All 5 local queries return independent results (no cross-contamination)
-- [ ] All 3 GitHub queries return independent results
-- [ ] Errors in one query don't affect others
-- [ ] Each result has its own pagination metadata
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] All 5 local queries return independent results (no cross-contamination)
+* [ ] All 3 GitHub queries return independent results
+* [ ] Errors in one query don't affect others
+* [ ] Each result has its own pagination metadata
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
@@ -302,19 +302,19 @@ Each flow tests that output from one tool feeds correctly into the next.
 4. `githubGetFileContent` with `mainResearchGoal`, `researchGoal`, `reasoning`; `owner="expressjs"`, `repo="express"`, `path="lib/express.js"`, `matchString="createApplication"`, `matchStringContextLines=10` → read implementation
 
 **Expected:**
-- [ ] Repo search finds expressjs/express with high star count
-- [ ] Structure shows `lib/` contents at depth 2
-- [ ] Code search finds `createApplication` in source files
-- [ ] File content returns implementation with context
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] Repo search finds expressjs/express with high star count
+* [ ] Structure shows `lib/` contents at depth 2
+* [ ] Code search finds `createApplication` in source files
+* [ ] File content returns implementation with context
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
-### Flow 13: LSP Chain — Type → References → Callers
+### Flow 13: LSP Chain  -  Type → References → Callers
 
 **Goal:** Verify LSP tools chain correctly for type analysis.
 
@@ -326,15 +326,15 @@ Each flow tests that output from one tool feeds correctly into the next.
 3. Pick a function from the references → `lspCallHierarchy` with `mainResearchGoal`, `researchGoal`, `reasoning`; `uri=<fn_file>`, `symbolName=<fn using SanitizationResult>`, `lineHint=<fn_line>`, `direction="incoming"` → who calls it?
 
 **Expected:**
-- [ ] Search finds TypeScript interfaces
-- [ ] `lspFindReferences` returns type usages across files (imports, function params, variables)
-- [ ] `lspCallHierarchy` traces callers of functions that use the type
-- [ ] Type references include `isDefinition: true` for the declaration
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] Search finds TypeScript interfaces
+* [ ] `lspFindReferences` returns type usages across files (imports, function params, variables)
+* [ ] `lspCallHierarchy` traces callers of functions that use the type
+* [ ] Type references include `isDefinition: true` for the declaration
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
@@ -350,15 +350,15 @@ Each flow tests that output from one tool feeds correctly into the next.
 3. `githubGetFileContent(owner="expressjs", repo="express", path="lib", type="directory")` → dir fetch, get `localPathC`
 
 **Expected:**
-- [ ] Three different `localPath` values
-- [ ] Full clone: `~/.octocode/repos/expressjs/express/{branch}/`
-- [ ] Sparse clone: path includes `__sp_` hash suffix
-- [ ] Directory fetch: separate cache from both clones
-- [ ] All three paths work with `localViewStructure`
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
+* [ ] Three different `localPath` values
+* [ ] Full clone: `~/.octocode/repos/expressjs/express/{branch}/`
+* [ ] Sparse clone: path includes `__sp_` hash suffix
+* [ ] Directory fetch: separate cache from both clones
+* [ ] All three paths work with `localViewStructure`
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
 
 ---
 
@@ -372,14 +372,14 @@ Each flow tests that output from one tool feeds correctly into the next.
 3. `localSearchCode(pattern="export", path="<WORKSPACE_ROOT>/packages/octocode-mcp/src")` → should succeed normally
 
 **Expected:**
-- [ ] Empty search returns helpful hints (not crash)
-- [ ] LSP error returns `symbol_not_found` with search radius hint
-- [ ] Subsequent tool calls work normally (no state corruption)
-- [ ] Each tool operates independently
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Error step returns `errorStatusHints` with recovery suggestions
+* [ ] Empty search returns helpful hints (not crash)
+* [ ] LSP error returns `symbol_not_found` with search radius hint
+* [ ] Subsequent tool calls work normally (no state corruption)
+* [ ] Each tool operates independently
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Error step returns `errorStatusHints` with recovery suggestions
 
 ---
 
@@ -394,15 +394,15 @@ Each flow tests that output from one tool feeds correctly into the next.
 2. `githubViewRepoStructure` with `mainResearchGoal`, `researchGoal`, `reasoning`; `owner="bgauryy"`, `repo="octocode-mcp"`, `branch="main"`, `path=""`, `depth=1` → GitHub structure
 
 **Expected:**
-- [ ] Both show the same top-level files and directories
-- [ ] Local may include uncommitted files not on GitHub
-- [ ] GitHub shows committed state of `main` branch
-- [ ] Both list `packages/`, `docs/`, `skills/`, etc.
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] Both show the same top-level files and directories
+* [ ] Local may include uncommitted files not on GitHub
+* [ ] GitHub shows committed state of `main` branch
+* [ ] Both list `packages/`, `docs/`, `skills/`, etc.
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
@@ -421,16 +421,16 @@ Each flow tests that output from one tool feeds correctly into the next.
 6. **Archaeology**: `githubSearchPullRequests` with `mainResearchGoal`, `researchGoal`, `reasoning`; `query="ContentSanitizer"`, `merged=true` → find introducing PR
 
 **Expected:**
-- [ ] Each stage narrows scope (Funnel Method works)
-- [ ] `lineHint` flows correctly from search → LSP tools
-- [ ] Cross-file references resolved
-- [ ] PR search provides historical context
-- [ ] Complete picture: what, where, who uses it, who calls it, why it was written
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] Each stage narrows scope (Funnel Method works)
+* [ ] `lineHint` flows correctly from search → LSP tools
+* [ ] Cross-file references resolved
+* [ ] PR search provides historical context
+* [ ] Complete picture: what, where, who uses it, who calls it, why it was written
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
@@ -445,15 +445,15 @@ Each flow tests that output from one tool feeds correctly into the next.
 2. `localSearchCode` with 3 queries, each including `mainResearchGoal`, `researchGoal`, `reasoning`; search "export" in each cloned path
 
 **Expected:**
-- [ ] All 3 repos cloned with independent `localPath` values
-- [ ] Search in each cloned repo returns independent results
-- [ ] No cross-contamination between repos
-- [ ] Bulk results properly isolated per query index
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] All 3 repos cloned with independent `localPath` values
+* [ ] Search in each cloned repo returns independent results
+* [ ] No cross-contamination between repos
+* [ ] Bulk results properly isolated per query index
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
@@ -469,15 +469,15 @@ Each flow tests that output from one tool feeds correctly into the next.
 3. Run `lspFindReferences` with `mainResearchGoal`, `researchGoal`, `reasoning`; use `uri`, `symbolName`, `lineHint` from step 2 definition
 
 **Expected:**
-- [ ] Hints from search suggest LSP tools (e.g., `lspGotoDefinition` for symbol resolution)
-- [ ] Hints from definition suggest references (e.g., `lspFindReferences` for usage analysis)
-- [ ] Hints from references suggest file reading or further analysis (e.g., `localGetFileContent` for implementation details)
-- [ ] Each step's hints are actionable and inform the next logical tool call
-- [ ] **Response Validation (per step):**
-  - [ ] Each tool response includes `instructions` and `results` array
-  - [ ] Each response includes status-specific hints
-  - [ ] Hints from step N inform parameters for step N+1
-  - [ ] Final step hints provide analysis/summary guidance
+* [ ] Hints from search suggest LSP tools (e.g., `lspGotoDefinition` for symbol resolution)
+* [ ] Hints from definition suggest references (e.g., `lspFindReferences` for usage analysis)
+* [ ] Hints from references suggest file reading or further analysis (e.g., `localGetFileContent` for implementation details)
+* [ ] Each step's hints are actionable and inform the next logical tool call
+* [ ] **Response Validation (per step):**
+  * [ ] Each tool response includes `instructions` and `results` array
+  * [ ] Each response includes status-specific hints
+  * [ ] Hints from step N inform parameters for step N+1
+  * [ ] Final step hints provide analysis/summary guidance
 
 ---
 
@@ -522,13 +522,13 @@ All tools support bulk queries (1-5 queries per call for local/LSP tools, 1-3 fo
 | 36 | localSearchCode | 6 queries (over limit) | 6 queries | Validation error: max 5 |
 | 37 | lspCallHierarchy | 4 queries (over limit) | 4 queries | Validation error: max 3 |
 | 38 | Mixed valid/invalid | 3 queries, 1 invalid | Some valid, some errors | Partial success with errors |
-| 39 | Empty queries array | `queries=[]` | — | Validation error: min 1 |
+| 39 | Empty queries array | `queries=[]` |  -  | Validation error: min 1 |
 
 ---
 
 ## Rate Limiting Tests
 
-> **Note:** Rate limit tests require deliberate API exhaustion and are **manual observation only** — they cannot be automated safely in a sanity test run.
+> **Note:** Rate limit tests require deliberate API exhaustion and are **manual observation only**  -  they cannot be automated safely in a sanity test run.
 
 | # | Description | Action | Expected Result |
 |---|-------------|--------|-----------------|
@@ -555,19 +555,19 @@ All tools support bulk queries (1-5 queries per call for local/LSP tools, 1-3 fo
 
 | # | Flow | Queries | Hints Chain | Status |
 |---|------|---------|-------------|--------|
-| 1 | Local Funnel — Structure → Search → Define → References | ✓ | ✓ | |
+| 1 | Local Funnel  -  Structure → Search → Define → References | ✓ | ✓ | |
 | 2 | Call Hierarchy Trace | ✓ | ✓ | |
 | 3 | Package Discovery → Repo Exploration → Code Search → Read | ✓ | ✓ | |
 | 4 | Clone → Local Analysis → LSP | ✓ | ✓ | |
 | 5 | Sparse Clone → Targeted Search | ✓ | ✓ | |
 | 6 | Directory Fetch → Local Tools | ✓ | ✓ | |
-| 7 | PR Archaeology — Find Why Code Changed | ✓ | ✓ | |
-| 8 | Cross-Provider — Clone vs Directory Fetch | ✓ | ✓ | |
+| 7 | PR Archaeology  -  Find Why Code Changed | ✓ | ✓ | |
+| 8 | Cross-Provider  -  Clone vs Directory Fetch | ✓ | ✓ | |
 | 9 | Multi-Tool Search Comparison | ✓ | ✓ | |
 | 10 | Find Files → Read → Define | ✓ | ✓ | |
-| 11 | Bulk Operations — Parallel Multi-Tool | ✓ | ✓ | |
+| 11 | Bulk Operations  -  Parallel Multi-Tool | ✓ | ✓ | |
 | 12 | Repository Discovery → Deep Dive | ✓ | ✓ | |
-| 13 | LSP Chain — Type → References → Callers | ✓ | ✓ | |
+| 13 | LSP Chain  -  Type → References → Callers | ✓ | ✓ | |
 | 14 | Clone Cache Independence | ✓ | ✓ | |
 | 15 | Error Isolation in Cross-Tool Chains | ✓ | ✓ | |
 | 16 | Mixed Local + GitHub on Same Codebase | ✓ | ✓ | |

@@ -14,9 +14,9 @@ When multiple provider tokens are set, Octocode selects the active provider in t
 GitLab (highest) → Bitbucket → GitHub (default)
 ```
 
-- If `GITLAB_TOKEN` is set → **GitLab** is active (regardless of other tokens).
-- If `BITBUCKET_TOKEN` is set (and no GitLab token) → **Bitbucket** is active.
-- Otherwise → **GitHub** is the default.
+* If `GITLAB_TOKEN` is set → **GitLab** is active (regardless of other tokens).
+* If `BITBUCKET_TOKEN` is set (and no GitLab token) → **Bitbucket** is active.
+* Otherwise → **GitHub** is the default.
 
 To switch providers, change which token environment variables are set and restart the MCP server.
 
@@ -60,7 +60,7 @@ Each provider has a dedicated setup guide with authentication methods, configura
 | 1 | `BITBUCKET_TOKEN` | App password or OAuth token |
 | 2 | `BB_TOKEN` | CI/CD fallback |
 
-> **Important:** Auth tokens are **environment-variable only** — never store tokens in `.octocoderc` or commit them to version control.
+> **Important:** Auth tokens are **environment-variable only**  -  never store tokens in `.octocoderc` or commit them to version control.
 
 ---
 
@@ -126,7 +126,7 @@ Each provider has a dedicated setup guide with authentication methods, configura
 | "GitLab token not found" | Set `GITLAB_TOKEN` or `GL_TOKEN` in MCP `"env"` block |
 | "Bitbucket token not found" | Set `BITBUCKET_TOKEN` or `BB_TOKEN` in MCP `"env"` block |
 | Token expired | Re-run `npx octocode-cli` or regenerate your token |
-| Wrong provider active | Check which tokens are set — GitLab takes priority over Bitbucket over GitHub |
+| Wrong provider active | Check which tokens are set  -  GitLab takes priority over Bitbucket over GitHub |
 | Bitbucket ignored when GitLab set | Remove `GITLAB_TOKEN` and `GL_TOKEN` to activate Bitbucket |
 
 For provider-specific troubleshooting, see the individual setup guides linked above.
@@ -135,8 +135,8 @@ For provider-specific troubleshooting, see the individual setup guides linked ab
 
 ## See Also
 
-- [GitHub Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_SETUP_GUIDE.md) — GitHub auth, Enterprise, clone tools
-- [GitLab Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITLAB_SETUP_GUIDE.md) — GitLab auth, self-hosted, tier limits
-- [Bitbucket Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/BITBUCKET_SETUP_GUIDE.md) — Bitbucket auth, app passwords, OAuth
-- [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) — All env vars and `.octocoderc` options
-- [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) — Node.js, npm, and MCP connection issues
+* [GitHub Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_SETUP_GUIDE.md)  -  GitHub auth, Enterprise, clone tools
+* [GitLab Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITLAB_SETUP_GUIDE.md)  -  GitLab auth, self-hosted, tier limits
+* [Bitbucket Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/BITBUCKET_SETUP_GUIDE.md)  -  Bitbucket auth, app passwords, OAuth
+* [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md)  -  All env vars and `.octocoderc` options
+* [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md)  -  Node.js, npm, and MCP connection issues

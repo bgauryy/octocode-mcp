@@ -35,7 +35,7 @@
 
 ---
 
-## Flow Tracing Recipes (Remote Repo — github* tools only)
+## Flow Tracing Recipes (Remote Repo  -  github* tools only)
 
 ### Recipe 5: "Who calls this function?" (remote)
 ```

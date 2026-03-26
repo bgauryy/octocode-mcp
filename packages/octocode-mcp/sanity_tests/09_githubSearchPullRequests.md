@@ -14,10 +14,10 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 3. **Hints Validation** - **GOLDEN**: Check response hints for user guidance and next steps
 
 ### Hints Validation Checklist
-- [ ] Response includes helpful hints for PR analysis
-- [ ] Hints suggest file reading, code search, or PR diff exploration
-- [ ] Pagination hints when results are truncated
-- [ ] Status-specific hints present
+* [ ] Response includes helpful hints for PR analysis
+* [ ] Hints suggest file reading, code search, or PR diff exploration
+* [ ] Pagination hints when results are truncated
+* [ ] Status-specific hints present
 
 ---
 
@@ -42,15 +42,15 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] PR metadata includes title, author, state, merged status
-- [ ] File changes listed with additions/deletions
-- [ ] No full diff content (only summary)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] PR metadata includes title, author, state, merged status
+* [ ] File changes listed with additions/deletions
+* [ ] No full diff content (only summary)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -73,14 +73,14 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] All PRs are closed AND merged
-- [ ] No open or unmerged PRs in results
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] All PRs are closed AND merged
+* [ ] No open or unmerged PRs in results
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -104,15 +104,15 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] Comments included in response
-- [ ] Comment authors and timestamps present
-- [ ] Output may be large (known issue)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Comments included in response
+* [ ] Comment authors and timestamps present
+* [ ] Output may be large (known issue)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -136,15 +136,15 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] Commit history included
-- [ ] Commit SHA, message, author, date present
-- [ ] Output may be large (known issue)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Commit history included
+* [ ] Commit SHA, message, author, date present
+* [ ] Output may be large (known issue)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -165,14 +165,14 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] Single PR returned matching the number
-- [ ] All other filters ignored (prNumber overrides)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Single PR returned matching the number
+* [ ] All other filters ignored (prNumber overrides)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -194,15 +194,15 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] Only `package.json` diff returned
-- [ ] Additions and deletions visible
-- [ ] Much smaller output than fullContent
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Only `package.json` diff returned
+* [ ] Additions and deletions visible
+* [ ] Much smaller output than fullContent
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -224,14 +224,14 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] All PRs have state "open"
-- [ ] No closed PRs in results
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] All PRs have state "open"
+* [ ] No closed PRs in results
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -256,14 +256,14 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] Response succeeds (no timeout)
-- [ ] Output may be very large (78KB+) — **Design:** no output size limits
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Response succeeds (no timeout)
+* [ ] Output may be very large (78KB+)  -  **Design:** no output size limits
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -286,14 +286,14 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] Response succeeds (may be slow)
-- [ ] Output very large (139KB+ for 45-file PR) — **Design:** no output size limits
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Response succeeds (may be slow)
+* [ ] Output very large (139KB+ for 45-file PR)  -  **Design:** no output size limits
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -317,14 +317,14 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] All PRs authored by `bgauryy`
-- [ ] No PRs from other authors
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] All PRs authored by `bgauryy`
+* [ ] No PRs from other authors
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -347,14 +347,14 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] All PRs have the "bug" label
-- [ ] Label info visible in PR metadata
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] All PRs have the "bug" label
+* [ ] Label info visible in PR metadata
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -378,14 +378,14 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] All PRs created after Jan 1, 2025
-- [ ] Creation dates confirm filter
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] All PRs created after Jan 1, 2025
+* [ ] Creation dates confirm filter
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -408,14 +408,14 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] Most recently updated PRs appear first
-- [ ] Timestamps in descending order
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Most recently updated PRs appear first
+* [ ] Timestamps in descending order
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -438,14 +438,14 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] All returned PRs are drafts
-- [ ] Draft indicator in metadata
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] All returned PRs are drafts
+* [ ] Draft indicator in metadata
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -469,14 +469,14 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] All PRs target the `main` branch
-- [ ] Base branch info visible in metadata
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] All PRs target the `main` branch
+* [ ] Base branch info visible in metadata
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -498,14 +498,14 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] PRs containing "security" in title or body
-- [ ] Relevant results returned
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] PRs containing "security" in title or body
+* [ ] Relevant results returned
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -529,9 +529,9 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] Different PRs than page 1
-- [ ] No overlap with first page results
-- [ ] Pagination metadata shows current page
+* [ ] Different PRs than page 1
+* [ ] No overlap with first page results
+* [ ] Pagination metadata shows current page
 
 ---
 
@@ -555,14 +555,14 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] Only PRs with "fix" in the title
-- [ ] More precise than unscoped search
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Only PRs with "fix" in the title
+* [ ] More precise than unscoped search
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -587,14 +587,14 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] Oldest PRs appear first
-- [ ] Creation dates in ascending order
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Oldest PRs appear first
+* [ ] Creation dates in ascending order
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -615,15 +615,15 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] Error message returned (not a crash)
-- [ ] Clear indication PR not found
-- [ ] No stack trace or internal details leaked
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Error message returned (not a crash)
+* [ ] Clear indication PR not found
+* [ ] No stack trace or internal details leaked
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -645,15 +645,15 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] No error thrown
-- [ ] Empty results with clear indication
-- [ ] Pagination shows `totalMatches: 0`
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] No error thrown
+* [ ] Empty results with clear indication
+* [ ] Pagination shows `totalMatches: 0`
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -676,15 +676,15 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] Output truncated to ~5000 characters
-- [ ] Pagination hint for next charOffset
-- [ ] Much smaller output than uncapped
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Output truncated to ~5000 characters
+* [ ] Pagination hint for next charOffset
+* [ ] Much smaller output than uncapped
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -710,19 +710,19 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ```
 
 **Expected:**
-- [ ] Max 3 PRs returned from page 2
-- [ ] Different PRs than page 1
-- [ ] Pagination metadata shows current page and total
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Max 3 PRs returned from page 2
+* [ ] Different PRs than page 1
+* [ ] Pagination metadata shows current page and total
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
-## Additional Tests — Untested Parameters
+## Additional Tests  -  Untested Parameters
 
 > These cover parameters not exercised in TC-1 through TC-23: commenter, involves, mentions, reviewed-by, head, closed, interactions, match fields, and no-* filters.
 
@@ -804,9 +804,9 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 ## Validation Checklist
 
 ### Core Requirements
-- [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning` (bulk in `{ "queries": [{ ... }] }`)
-- [ ] **Pagination tests** verify `limit`, `page` parameters for result management
-- [ ] **Hints validation** checks for helpful guidance in all responses
+* [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning` (bulk in `{ "queries": [{ ... }] }`)
+* [ ] **Pagination tests** verify `limit`, `page` parameters for result management
+* [ ] **Hints validation** checks for helpful guidance in all responses
 
 | # | Test Case | Queries | Pagination | Hints | Status |
 |---|-----------|---------|------------|-------|--------|

@@ -1,6 +1,6 @@
 # Configuration Reference
 
-> Complete guide to configuring Octocode MCP — where to set options, what each option does, and how they interact.
+> Complete guide to configuring Octocode MCP  -  where to set options, what each option does, and how they interact.
 
 ## Two Ways to Configure
 
@@ -10,7 +10,7 @@ Octocode reads configuration from **two sources**. You can use either or both:
 
 Your MCP client (Cursor, VS Code, Claude Desktop, etc.) has a settings file where you declare MCP servers. Environment variables go in the `"env"` block of your server config.
 
-The JSON structure is the same across all clients — only the file location differs:
+The JSON structure is the same across all clients  -  only the file location differs:
 
 | Client | Config file |
 |--------|------------|
@@ -34,7 +34,7 @@ The JSON structure is the same across all clients — only the file location dif
 }
 ```
 
-Environment variables are ideal for per-project or per-session settings — especially auth tokens and feature flags.
+Environment variables are ideal for per-project or per-session settings  -  especially auth tokens and feature flags.
 
 ### 2. The `.octocoderc` Config File (persistent defaults)
 
@@ -131,7 +131,7 @@ New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.octocode"
 }
 ```
 
-**Validation:** The file is validated on load. Invalid values don't prevent startup — defaults are used instead. URLs must start with `http://` or `https://`. Numbers are clamped to valid range. Unknown keys are ignored with a warning. Parse errors skip the entire file with a warning.
+**Validation:** The file is validated on load. Invalid values don't prevent startup  -  defaults are used instead. URLs must start with `http://` or `https://`. Numbers are clamped to valid range. Unknown keys are ignored with a warning. Parse errors skip the entire file with a warning.
 
 ### Resolution Order
 
@@ -148,7 +148,7 @@ This means you can set sensible defaults in `.octocoderc` and override specific 
 
 ## Authentication
 
-Auth tokens are **environment-variable only** — never store tokens in `.octocoderc`.
+Auth tokens are **environment-variable only**  -  never store tokens in `.octocoderc`.
 
 Octocode supports three providers. The active provider is selected based on which tokens are set:
 
@@ -178,12 +178,12 @@ export OCTOCODE_HOME=/data/octocode
 
 When set, these paths move under the new root:
 
-- `.octocoderc` -> `${OCTOCODE_HOME}/.octocoderc`
-- credentials -> `${OCTOCODE_HOME}/credentials.json`
-- session -> `${OCTOCODE_HOME}/session.json`
-- clone cache -> `${OCTOCODE_HOME}/repos/`
-- logs -> `${OCTOCODE_HOME}/logs/`
-- LSP user config -> `${OCTOCODE_HOME}/lsp-servers.json`
+* `.octocoderc` -> `${OCTOCODE_HOME}/.octocoderc`
+* credentials -> `${OCTOCODE_HOME}/credentials.json`
+* session -> `${OCTOCODE_HOME}/session.json`
+* clone cache -> `${OCTOCODE_HOME}/repos/`
+* logs -> `${OCTOCODE_HOME}/logs/`
+* LSP user config -> `${OCTOCODE_HOME}/lsp-servers.json`
 
 ---
 
@@ -196,7 +196,7 @@ When set, these paths move under the new root:
 | 2 | `GITLAB_HOST` | `gitlab.host` | string | `https://gitlab.com` | GitLab instance URL. Use env var for reliability. |
 | 3 | `BITBUCKET_HOST` | `bitbucket.host` | string | `https://api.bitbucket.org/2.0` | Bitbucket Cloud API endpoint. |
 | | **Local Tools** | | | | |
-| 4 | `ENABLE_LOCAL` | `local.enabled` | boolean | `false` | Enable local filesystem + LSP tools. **Off by default — you must opt in.** |
+| 4 | `ENABLE_LOCAL` | `local.enabled` | boolean | `false` | Enable local filesystem + LSP tools. **Off by default  -  you must opt in.** |
 | 5 | `ENABLE_CLONE` | `local.enableClone` | boolean | `false` | Enable repo cloning (`githubCloneRepo`) and directory fetch. **Requires `ENABLE_LOCAL=true`.** |
 | 6 | `WORKSPACE_ROOT` | `local.workspaceRoot` | string | `process.cwd()` | Root directory for local tool operations. |
 | 7 | `ALLOWED_PATHS` | `local.allowedPaths` | list | `[]` (all) | Restrict local tools to these directory paths. Empty = unrestricted. |
@@ -216,21 +216,21 @@ When set, these paths move under the new root:
 | 16 | `OCTOCODE_OUTPUT_FORMAT` | `output.format` | string | `yaml` | Response serialization format. `yaml` (default, token-efficient) or `json` (raw JSON). |
 | 17 | `OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH` | `output.pagination.defaultCharLength` | number | `8000` | Default output page budget for automatic pagination. Used by all tools unless a request overrides it with `charLength` or `responseCharLength`. |
 | | **Authentication** (env only) | | | | |
-| 18 | `OCTOCODE_TOKEN` | — | string | — | GitHub token (priority 1). |
-| 19 | `GH_TOKEN` | — | string | — | GitHub CLI token (priority 2). |
-| 20 | `GITHUB_TOKEN` | — | string | — | GitHub Actions token (priority 3). |
-| 21 | `GITLAB_TOKEN` | — | string | — | GitLab personal access token (priority 1). Setting this activates GitLab mode. |
-| 22 | `GL_TOKEN` | — | string | — | GitLab token fallback (priority 2). Setting this activates GitLab mode. |
-| 23 | `BITBUCKET_TOKEN` | — | string | — | Bitbucket app password or OAuth token (priority 1). Setting this activates Bitbucket mode (when no GitLab token is set). |
-| 23 | `BB_TOKEN` | — | string | — | Bitbucket token fallback (priority 2). |
-| 24 | `BITBUCKET_USERNAME` | — | string | — | Bitbucket username. Set for Basic auth (app passwords); omit for Bearer auth (OAuth). |
+| 18 | `OCTOCODE_TOKEN` |  -  | string |  -  | GitHub token (priority 1). |
+| 19 | `GH_TOKEN` |  -  | string |  -  | GitHub CLI token (priority 2). |
+| 20 | `GITHUB_TOKEN` |  -  | string |  -  | GitHub Actions token (priority 3). |
+| 21 | `GITLAB_TOKEN` |  -  | string |  -  | GitLab personal access token (priority 1). Setting this activates GitLab mode. |
+| 22 | `GL_TOKEN` |  -  | string |  -  | GitLab token fallback (priority 2). Setting this activates GitLab mode. |
+| 23 | `BITBUCKET_TOKEN` |  -  | string |  -  | Bitbucket app password or OAuth token (priority 1). Setting this activates Bitbucket mode (when no GitLab token is set). |
+| 23 | `BB_TOKEN` |  -  | string |  -  | Bitbucket token fallback (priority 2). |
+| 24 | `BITBUCKET_USERNAME` |  -  | string |  -  | Bitbucket username. Set for Basic auth (app passwords); omit for Bearer auth (OAuth). |
 | | **Advanced** (env only) | | | | |
-| 25 | `OCTOCODE_BULK_QUERY_TIMEOUT_MS` | — | number | `60000` | Timeout for bulk/multi-query tool calls (ms). |
-| 26 | `OCTOCODE_COMMAND_CHECK_TIMEOUT_MS` | — | number | `5000` | Timeout for checking system command availability (ms). |
-| 27 | `OCTOCODE_CACHE_TTL_MS` | — | number | `86400000` | Cache TTL for cloned repos (ms). Default is 24 hours. Must be a positive integer. |
-| 28 | `OCTOCODE_HOME` | — | string | `~/.octocode` | Override Octocode home directory for all local state (config, credentials, repos, logs, session). |
-| 29 | `OCTOCODE_MAX_CACHE_SIZE` | — | number | `2147483648` | Maximum clone cache disk usage in bytes (default 2 GB). Evicts oldest clones when exceeded. |
-| 30 | `OCTOCODE_MAX_CLONES` | — | number | `50` | Maximum number of cached clones. Evicts oldest clones when exceeded. |
+| 25 | `OCTOCODE_BULK_QUERY_TIMEOUT_MS` |  -  | number | `60000` | Timeout for bulk/multi-query tool calls (ms). |
+| 26 | `OCTOCODE_COMMAND_CHECK_TIMEOUT_MS` |  -  | number | `5000` | Timeout for checking system command availability (ms). |
+| 27 | `OCTOCODE_CACHE_TTL_MS` |  -  | number | `86400000` | Cache TTL for cloned repos (ms). Default is 24 hours. Must be a positive integer. |
+| 28 | `OCTOCODE_HOME` |  -  | string | `~/.octocode` | Override Octocode home directory for all local state (config, credentials, repos, logs, session). |
+| 29 | `OCTOCODE_MAX_CACHE_SIZE` |  -  | number | `2147483648` | Maximum clone cache disk usage in bytes (default 2 GB). Evicts oldest clones when exceeded. |
+| 30 | `OCTOCODE_MAX_CLONES` |  -  | number | `50` | Maximum number of cached clones. Evicts oldest clones when exceeded. |
 
 **Type parsing (all values are case-insensitive, whitespace is trimmed):**
 
@@ -239,16 +239,16 @@ When set, these paths move under the new root:
 | **boolean** | `true`, `1` = on; `false`, `0` = off | Ignored (default used) |
 | **logging** | `false`, `0` = off; everything else = on | Treated as on |
 | **number** | Integer string, clamped to valid range | Ignored (default used) |
-| **list** | Comma-separated (e.g., `"a,b,c"`) | — |
-| **string** | Any value | — |
+| **list** | Comma-separated (e.g., `"a,b,c"`) |  -  |
+| **string** | Any value |  -  |
 
 ### Notes
 
-- **Tool filtering:** `TOOLS_TO_RUN` is a strict whitelist that overrides both `ENABLE_TOOLS` and `DISABLE_TOOLS`. When `TOOLS_TO_RUN` is not set, start with all tools, remove `DISABLE_TOOLS`, then add `ENABLE_TOOLS`.
-- **Clone:** Requires both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
-- **LSP:** Requires `ENABLE_LOCAL=true`. When `OCTOCODE_LSP_CONFIG` is unset, Octocode checks `<workspace>/.octocode/lsp-servers.json` then `${OCTOCODE_HOME:-~/.octocode}/lsp-servers.json`.
-- **WORKSPACE_ROOT and LSP:** LSP tools read `WORKSPACE_ROOT` from the environment only (not `.octocoderc`). Set it as an env variable in your MCP client if you use LSP tools.
-- **Auth tokens:** Never store in `.octocoderc`. GitHub fallback chain: env vars > `~/.octocode/credentials.json` > `gh auth token`.
+* **Tool filtering:** `TOOLS_TO_RUN` is a strict whitelist that overrides both `ENABLE_TOOLS` and `DISABLE_TOOLS`. When `TOOLS_TO_RUN` is not set, start with all tools, remove `DISABLE_TOOLS`, then add `ENABLE_TOOLS`.
+* **Clone:** Requires both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
+* **LSP:** Requires `ENABLE_LOCAL=true`. When `OCTOCODE_LSP_CONFIG` is unset, Octocode checks `<workspace>/.octocode/lsp-servers.json` then `${OCTOCODE_HOME:-~/.octocode}/lsp-servers.json`.
+* **WORKSPACE_ROOT and LSP:** LSP tools read `WORKSPACE_ROOT` from the environment only (not `.octocoderc`). Set it as an env variable in your MCP client if you use LSP tools.
+* **Auth tokens:** Never store in `.octocoderc`. GitHub fallback chain: env vars > `~/.octocode/credentials.json` > `gh auth token`.
 
 ---
 
@@ -293,7 +293,7 @@ All values are strings in the `"env"` block:
 
 ### In `.octocoderc` Config File (`~/.octocode/.octocoderc`)
 
-Values use native JSON types (booleans, numbers, arrays — not strings). See the [complete schema above](#2-the-octocoderc-config-file-persistent-defaults) for all fields and defaults.
+Values use native JSON types (booleans, numbers, arrays  -  not strings). See the [complete schema above](#2-the-octocoderc-config-file-persistent-defaults) for all fields and defaults.
 
 ### Key Differences Between the Two Formats
 
@@ -474,10 +474,10 @@ The env values override `.octocoderc` where they overlap; `.octocoderc` fills in
 | Token not found | See your provider's setup guide: [GitHub](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_SETUP_GUIDE.md), [GitLab](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITLAB_SETUP_GUIDE.md), [Bitbucket](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/BITBUCKET_SETUP_GUIDE.md) |
 | Local tools not showing | Set `ENABLE_LOCAL=true` in MCP `"env"` |
 | Clone/directory tools disabled | Set both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true` |
-| Wrong provider active | Check which tokens are set — GitLab > Bitbucket > GitHub |
+| Wrong provider active | Check which tokens are set  -  GitLab > Bitbucket > GitHub |
 | Timeout errors | Increase `REQUEST_TIMEOUT` (max `300000`) |
 | Tool not available | Check if `TOOLS_TO_RUN` or `DISABLE_TOOLS` is filtering it out |
-| Config file ignored | Env variables always override `.octocoderc` — check your MCP `"env"` block |
+| Config file ignored | Env variables always override `.octocoderc`  -  check your MCP `"env"` block |
 | Config changes not applied | Restart the MCP server (config is read at startup) |
 
 ### Verify Your Setup
@@ -497,10 +497,10 @@ cat ~/.octocode/.octocoderc | python3 -c "import sys,json; json.load(sys.stdin)"
 
 ## See Also
 
-- [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) — Provider authentication overview
-- [GitHub Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_SETUP_GUIDE.md) — GitHub auth, Enterprise, clone tools
-- [GitLab Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITLAB_SETUP_GUIDE.md) — GitLab auth, self-hosted, tier limits
-- [Bitbucket Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/BITBUCKET_SETUP_GUIDE.md) — Bitbucket auth, app passwords, OAuth
-- [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) — Remote code research tools
-- [Local & LSP Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) — Local tools (requires `ENABLE_LOCAL=true`)
-- [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) — Node.js, npm, and connection issues
+* [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)  -  Provider authentication overview
+* [GitHub Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_SETUP_GUIDE.md)  -  GitHub auth, Enterprise, clone tools
+* [GitLab Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITLAB_SETUP_GUIDE.md)  -  GitLab auth, self-hosted, tier limits
+* [Bitbucket Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/BITBUCKET_SETUP_GUIDE.md)  -  Bitbucket auth, app passwords, OAuth
+* [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md)  -  Remote code research tools
+* [Local & LSP Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md)  -  Local tools (requires `ENABLE_LOCAL=true`)
+* [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md)  -  Node.js, npm, and connection issues

@@ -37,7 +37,7 @@ Each phase MUST complete before the next. Skipping phases is FORBIDDEN (except f
 
 ### MCP Direct Mode
 
-If `octocode-mcp` is available as an MCP server, use MCP tools directly for Phase 4 (research execution) instead of HTTP calls. **Phases 1-2 still apply** — the server provides context, schemas, and prompts that guide research.
+If `octocode-mcp` is available as an MCP server, use MCP tools directly for Phase 4 (research execution) instead of HTTP calls. **Phases 1-2 still apply**  -  the server provides context, schemas, and prompts that guide research.
 
 ### Phase Transitions
 
@@ -59,13 +59,13 @@ For checkpoint/resume state transitions, see [`references/SESSION_MANAGEMENT.md`
 <mcp_discovery>
 Before starting, check if `octocode-mcp` is available as an MCP server (look for `localSearchCode`, `lspGotoDefinition`, `githubSearchCode`, `packageSearch`).
 
-- **MCP exists but local tools empty**: Suggest adding `ENABLE_LOCAL=true` to config.
-- **MCP not installed**: Suggest:
+* **MCP exists but local tools empty**: Suggest adding `ENABLE_LOCAL=true` to config.
+* **MCP not installed**: Suggest:
   ```json
   { "mcpServers": { "octocode": { "command": "npx", "args": ["-y", "octocode-mcp"], "env": {"ENABLE_LOCAL": "true"} } } }
   ```
 
-Proceed with whatever tools are available — do not block on setup.
+Proceed with whatever tools are available  -  do not block on setup.
 </mcp_discovery>
 
 ---
@@ -97,7 +97,7 @@ HTTP server at `http://localhost:1987` by default.
 | GET | `/tools/list` | List all tools (concise) |
 | GET | `/tools/info` | List all tools with full details |
 | GET | `/tools/info/:toolName` | Get specific tool schema |
-| GET | `/tools/metadata` | Raw MCP metadata (instructions, tool/prompt counts, base schema flag) — advanced |
+| GET | `/tools/metadata` | Raw MCP metadata (instructions, tool/prompt counts, base schema flag)  -  advanced |
 | GET | `/tools/schemas` | All tool schemas |
 | GET | `/tools/system` | System prompt only |
 | POST | `/tools/call/:toolName` | Execute a tool (JSON body: `{ queries: [...] }`) |
@@ -117,7 +117,7 @@ cd <SKILL_BASE_DIRECTORY> && npm start
 
 | Output | Meaning | Action |
 |--------|---------|--------|
-| `ok` (stays alive) | Server started — init owns lifecycle | **PROCEED** to Phase 2 |
+| `ok` (stays alive) | Server started  -  init owns lifecycle | **PROCEED** to Phase 2 |
 | `ok` (exits) | Server already running | **PROCEED** to Phase 2 |
 | `ERROR: ...` | Server failed | **STOP.** Report to user |
 
@@ -129,10 +129,10 @@ cd <SKILL_BASE_DIRECTORY> && npm start
 
 | Problem | Solution |
 |---------|----------|
-| `Missing script: start` | Wrong directory — check skill base path |
+| `Missing script: start` | Wrong directory  -  check skill base path |
 | Health check fails | Wait, retry: `curl http://localhost:1987/health` |
 | Port in use (orphan) | `lsof -sTCP:LISTEN -ti :1987` then `kill <PID>` |
-| Init process still running | Normal — do NOT kill it |
+| Init process still running | Normal  -  do NOT kill it |
 
 On failure, retry a few times with delays. If exhausted, **STOP** and report.
 </server_init_gate>
@@ -172,19 +172,19 @@ Logs at `~/.octocode/logs/` (errors.log, tools.log).
 ### Schema Understanding
 
 The `initContext` response contains system prompt, tool schemas, and quick reference. Before ANY tool call:
-1. Read the description — what does this tool do?
-2. Check required fields — what MUST be provided?
-3. Check types & constraints — enums, min/max, patterns
-4. Check defaults — what if optional fields omitted?
+1. Read the description  -  what does this tool do?
+2. Check required fields  -  what MUST be provided?
+3. Check types & constraints  -  enums, min/max, patterns
+4. Check defaults  -  what if optional fields omitted?
 
 **NEVER** invent values for required parameters. If unknown, use another tool to find it first.
 </context_gate>
 
 <context_complete_gate>
 Verify before proceeding:
-- [ ] Context loaded? Tool schemas understood?
-- [ ] Told user which prompt?
-- [ ] Verbalized confirmation?
+* [ ] Context loaded? Tool schemas understood?
+* [ ] Told user which prompt?
+* [ ] Verbalized confirmation?
 
 **ALL checked → Phase 2.5. ANY unchecked → complete first.**
 </context_complete_gate>
@@ -248,8 +248,8 @@ Multiple independent domains (different repos, services, runtimes) → **MUST sp
 
 <research_gate>
 **Verify entry conditions:**
-- From PLAN: Plan presented, tasks created, user approved?
-- From FAST-PATH: Told user "simple lookup", context loaded?
+* From PLAN: Plan presented, tasks created, user approved?
+* From FAST-PATH: Told user "simple lookup", context loaded?
 
 If any unmet → go back to appropriate phase.
 </research_gate>
@@ -258,9 +258,9 @@ If any unmet → go back to appropriate phase.
 
 For EVERY research action:
 1. **Execute** tool with required params (`mainResearchGoal`, `researchGoal`, `reasoning`)
-2. **Read response** — check `hints` FIRST
-3. **Verbalize hints** — tell user what they suggest
-4. **Follow hints** — they guide the next action
+2. **Read response**  -  check `hints` FIRST
+3. **Verbalize hints**  -  tell user what they suggest
+4. **Follow hints**  -  they guide the next action
 5. **Iterate** until goal achieved
 
 | Hint Type | Action |
@@ -354,10 +354,10 @@ Verify before sending: TL;DR? Details? References formatted? Next step question?
 <global_constraints>
 ### Core Principles
 
-1. **Understand before acting** — read tool schemas from context before calling
-2. **Follow hints** — tool responses guide next actions
-3. **Be data-driven** — follow schemas, never guess parameter values
-4. **If value unknown** — find it first with another tool
+1. **Understand before acting**  -  read tool schemas from context before calling
+2. **Follow hints**  -  tool responses guide next actions
+3. **Be data-driven**  -  follow schemas, never guess parameter values
+4. **If value unknown**  -  find it first with another tool
 
 ### Required Research Params (EVERY tool call)
 
@@ -374,6 +374,6 @@ Tool calls without all three parameters are FORBIDDEN.
 
 ## Additional Resources
 
-- **`references/GUARDRAILS.md`** — Security, trust levels, limits, integrity rules
-- **`references/PARALLEL_AGENT_PROTOCOL.md`** — When to parallelize, domain examples, spawn/barrier/merge protocol
-- **`references/SESSION_MANAGEMENT.md`** — Checkpoint protocol, session directory, resume logic
+* **`references/GUARDRAILS.md`**  -  Security, trust levels, limits, integrity rules
+* **`references/PARALLEL_AGENT_PROTOCOL.md`**  -  When to parallelize, domain examples, spawn/barrier/merge protocol
+* **`references/SESSION_MANAGEMENT.md`**  -  Checkpoint protocol, session directory, resume logic

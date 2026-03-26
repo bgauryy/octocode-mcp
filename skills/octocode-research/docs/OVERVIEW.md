@@ -7,15 +7,15 @@
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Core Components](#core-components)
-- [API Reference](#api-reference)
-- [Tool Registry](#tool-registry)
-- [Resilience Patterns](#resilience-patterns)
-- [Request Flow](#request-flow)
-- [Response Formats](#response-formats)
-- [File Structure](#file-structure)
+* [Overview](#overview)
+* [Architecture](#architecture)
+* [Core Components](#core-components)
+* [API Reference](#api-reference)
+* [Tool Registry](#tool-registry)
+* [Resilience Patterns](#resilience-patterns)
+* [Request Flow](#request-flow)
+* [Response Formats](#response-formats)
+* [File Structure](#file-structure)
 
 ---
 
@@ -75,16 +75,16 @@ The **octocode-research** skill is an Express.js HTTP server that wraps `octocod
 ### 1. Server (`src/server.ts`)
 
 The Express HTTP server that:
-- Initializes MCP content cache at startup via `initializeMcpContent()`
-- Initializes providers for GitHub token resolution via `initializeProviders()`
-- Mounts `/tools` and `/prompts` route handlers
-- Exposes `/health` endpoint for monitoring with circuit breaker states
-- Handles graceful shutdown with `SIGTERM`/`SIGINT` handlers
+* Initializes MCP content cache at startup via `initializeMcpContent()`
+* Initializes providers for GitHub token resolution via `initializeProviders()`
+* Mounts `/tools` and `/prompts` route handlers
+* Exposes `/health` endpoint for monitoring with circuit breaker states
+* Handles graceful shutdown with `SIGTERM`/`SIGINT` handlers
 
 **Key functions:**
-- `createServer()` - Creates and configures the Express app
-- `startServer()` - Starts the HTTP server on port 1987
-- `gracefulShutdown()` - Cleans up contexts and circuits on shutdown
+* `createServer()` - Creates and configures the Express app
+* `startServer()` - Starts the HTTP server on port 1987
+* `gracefulShutdown()` - Cleans up contexts and circuits on shutdown
 
 ### 2. MCP Cache (`src/mcpCache.ts`)
 
@@ -175,8 +175,8 @@ Re-exports layer that maps `octocode-mcp` functions to skill-friendly names:
 ```
 
 **Constraints:**
-- `queries` must be an array with 1-3 items
-- Each query must include research context parameters
+* `queries` must be an array with 1-3 items
+* Each query must include research context parameters
 
 ---
 
@@ -261,10 +261,10 @@ const DEFAULT_CONFIG: CircuitBreakerConfig = {
 | GitHub | 2 | 1 | 60s |
 
 **Key functions:**
-- `withCircuitBreaker(name, operation, fallback?)` - Execute with protection
-- `getCircuitState(name)` - Monitor circuit health
-- `configureCircuit(name, config)` - Customize thresholds
-- `getAllCircuitStates()` - Health dashboard (used in `/health`)
+* `withCircuitBreaker(name, operation, fallback?)` - Execute with protection
+* `getCircuitState(name)` - Monitor circuit health
+* `configureCircuit(name, config)` - Customize thresholds
+* `getAllCircuitStates()` - Health dashboard (used in `/health`)
 
 ### 2. Retry with Exponential Backoff (`src/utils/retry.ts`)
 

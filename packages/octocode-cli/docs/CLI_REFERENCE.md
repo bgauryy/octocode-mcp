@@ -79,8 +79,8 @@ octocode skills remove --skill <name> [--targets <list>]
 ```
 
 If you run `octocode skills install` without `--targets` / `--mode`, the CLI asks:
-- which platforms to install to
-- how to install: hybrid (copy Claude + symlink others), full copies, or full symlinks
+* which platforms to install to
+* how to install: hybrid (copy Claude + symlink others), full copies, or full symlinks
 
 | Option | Short | Meaning | Default |
 |--------|-------|---------|---------|
@@ -102,11 +102,11 @@ octocode skills remove --skill octocode-researcher --targets claude-code,cursor
 ```
 
 Install destinations (macOS/Linux):
-- `claude-code` -> `~/.claude/skills/` (or custom `skillsDestDir`)
-- `claude-desktop` -> `~/.claude-desktop/skills/`
-- `cursor` -> `~/.cursor/skills/`
-- `codex` -> `~/.codex/skills/`
-- `opencode` -> `~/.opencode/skills/`
+* `claude-code` -> `~/.claude/skills/` (or custom `skillsDestDir`)
+* `claude-desktop` -> `~/.claude-desktop/skills/`
+* `cursor` -> `~/.cursor/skills/`
+* `codex` -> `~/.codex/skills/`
+* `opencode` -> `~/.opencode/skills/`
 
 `skillsDestDir` in `~/.octocode/config.json` customizes only the `claude-code` destination.
 
@@ -208,8 +208,8 @@ octocode token [--type <auto|octocode|gh>] [--hostname <host>] [--source] [--jso
 octocode cache [status|clean] [--repos] [--skills] [--logs] [--all] [--tools|--local|--lsp|--api]
 ```
 
-- `status` shows disk usage
-- `clean` requires at least one target flag
+* `status` shows disk usage
+* `clean` requires at least one target flag
 
 | Option | Short | Meaning |
 |--------|-------|---------|

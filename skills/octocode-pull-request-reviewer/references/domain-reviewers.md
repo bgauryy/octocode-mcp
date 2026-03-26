@@ -16,9 +16,9 @@
 
 ## Global Exclusions (NEVER Suggest)
 
-- Compiler/TypeScript/Linter errors (tooling catches these)
-- Unchanged code (no '+' prefix)
-- Test implementation details (unless broken)
-- Generated/vendor files
-- Speculative "what if" scenarios
-- Issues already raised in existing PR comments
+* Compiler/TypeScript/Linter errors (tooling catches these)
+* Unchanged code (no '+' prefix)
+* Test implementation details (unless broken)
+* Generated/vendor files
+* Speculative "what if" scenarios
+* Issues already raised in existing PR comments

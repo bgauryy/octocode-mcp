@@ -19,7 +19,7 @@ This document serves as the **Manifest of Octocode for Research Driven Developme
 "Vibe-research" is the **intuitive flow state** enabled by Octocode's research engine. It transforms the often tedious process of gathering context into a seamless, conversational rhythm. Instead of context-switching, you stay in the "vibe" while Octocode handles the forensics.
 
 ### What is "Smart Research"?
-"Smart Research" is the automated, evidence-based forensics capability of the Octocode engine. It bridges the gap between intuition ("vibe") and reality (code) by intelligently deciding which tools to use—traversing call graphs, searching external repos, or validating assumptions—without manual micromanagement.
+"Smart Research" is the automated, evidence-based forensics capability of the Octocode engine. It bridges the gap between intuition ("vibe") and reality (code) by intelligently deciding which tools to use - traversing call graphs, searching external repos, or validating assumptions - without manual micromanagement.
 
 *   **The Vibe**: "I feel like this function is related to the auth service..."
 *   **The Research**: Octocode instantly validates that feeling using actual evidence using research tools
@@ -195,7 +195,7 @@ If the Verifier is the same model as the Generator (e.g., both are GPT-4o or Cla
 **Octocode is the Research Engine** that powers this methodology. It bridges the gap between what you know (local codebase) and what you need to know (external knowledge).
 
 ### Context Pillars
-A robust context is built on four pillars:
+A context is built on four pillars:
 
 #### 1. Static Context (The "Knowns")
 Immutable or slowly changing sources of truth. **(Powered by `local research tools`)**
@@ -273,7 +273,7 @@ LLMs use "Attention," which assigns mathematical weights to different parts of y
 Reasoning requires "thinking space." By prompting an AI to "reason step-by-step" or "identify unknowns first," you are effectively giving the model permission to use its computational power for logic rather than just fluency. This is the "Generator" phase in your GAN-inspired flow.
 
 **C. Preventing "Context Pollution"**
-Every word in a prompt carries baggage. A "good prompt" in the Octocode philosophy is one that provides **Minimal Context**. This prevents "ghosting"—where irrelevant information from a previous attempt haunts the current implementation, leading to hallucinations.
+Every word in a prompt carries baggage. A "good prompt" in the Octocode philosophy is one that provides **Minimal Context**. This prevents "ghosting" - where irrelevant information from a previous attempt haunts the current implementation, leading to hallucinations.
 
 #### 3. The Synergy of Context and Reasoning
 The RDD equation you defined, $$Quality = \frac{Relevant\ Context}{Context\ Noise} \times Validation$$, explains why prompting is a science:
@@ -298,7 +298,7 @@ Research shows that Transformer models excel at remembering the **beginning and 
 *   **The RDD Solution**: By keeping context minimal and surgically relevant, we ensure important information stays within the model's "high attention" zones. Pagination and chunking strategies in Octocode tools are designed with this phenomenon in mind.
 
 #### 3. Tokenization & Flattening: Why Structure Gets Lost
-Before an LLM can process anything, it splits input into **tokens**—a linear sequence of pieces.
+Before an LLM can process anything, it splits input into **tokens** - a linear sequence of pieces.
 
 ```
 JSON:       {"a": {"b": 1}}
@@ -316,7 +316,7 @@ house                       [house, kitchen, fridge, bedroom, bed]
      └─ bed
 ```
 
-*   **Why AST/JSON Often Fails**: Tokenization only sees sequential pieces—it has **no concept of hierarchy** or parent/child relationships. A deeply nested JSON structure becomes a flat token list where structural meaning is implicit at best.
+*   **Why AST/JSON Often Fails**: Tokenization only sees sequential pieces - it has **no concept of hierarchy** or parent/child relationships. A deeply nested JSON structure becomes a flat token list where structural meaning is implicit at best.
 *   **The RDD Approach**: Instead of dumping raw AST/JSON, Octocode uses **semantic extraction** (LSP call hierarchies, definitions) to provide context that explicitly encodes relationships the tokenizer would otherwise lose.
 
 #### 4. Signals & Delimiters: Guiding Attention
@@ -327,7 +327,7 @@ Well-placed **delimiters and structural signals** help the model's attention mec
 #### 5. Pagination & Chunking for Semantic Coherence
 Large outputs are paginated not just for token limits, but for **semantic clarity**:
 *   **Chunking Strategy**: Break content at natural semantic boundaries (functions, classes, sections) rather than arbitrary byte limits.
-*   **Progressive Disclosure**: Provide summaries first, details on demand—matching how attention works best.
+*   **Progressive Disclosure**: Provide summaries first, details on demand - matching how attention works best.
 
 #### 6. The Check-and-Balance Mechanism
 **The Reality Check**: A crucial component of this equation is the "check-and-balance" mechanism. This step validates that the gathered context (the map) faithfully represents the physical reality of the environment (the territory).
@@ -336,7 +336,7 @@ Large outputs are paginated not just for token limits, but for **semantic clarit
 
 ### Why Clean Fresh Context Window Matters? (The Science)
 
-**The concept of clean window context is critical for robust implementation.**
+**The concept of clean window context is critical for implementation.**
 
 $$ ACTION_1 \rightarrow OUTPUT \rightarrow ACTION_2 \rightarrow ... $$
 

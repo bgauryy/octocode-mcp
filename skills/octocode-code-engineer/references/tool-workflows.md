@@ -1,12 +1,12 @@
-# Tool Workflows — Research Methodology & Patterns
+# Tool Workflows  -  Research Methodology & Patterns
 
-Step-focused workflows for code analysis. Each step describes **what to achieve** — use the [SKILL.md tools table](../SKILL.md#tools) and [CLI reference](./cli-reference.md) for exact tool params and flags.
+Step-focused workflows for code analysis. Each step describes **what to achieve**  -  use the [SKILL.md tools table](../SKILL.md#tools) and [CLI reference](./cli-reference.md) for exact tool params and flags.
 
 ---
 
 ## The Research Funnel
 
-Every investigation uses both directions — **bottom-up** (structure → meaning) and **top-down** (intent → proof). AST, LSP, and Octocode produce raw signals at each stage; **AI is the glue** that interprets results, decides what's important, filters false positives, and chooses what to investigate next. No tool output is meaningful without AI judgment connecting it to context.
+Every investigation uses both directions  -  **bottom-up** (structure → meaning) and **top-down** (intent → proof). AST, LSP, and Octocode produce raw signals at each stage; **AI is the glue** that interprets results, decides what's important, filters false positives, and chooses what to investigate next. No tool output is meaningful without AI judgment connecting it to context.
 
 The bottom-up funnel narrows progressively:
 
@@ -21,9 +21,9 @@ STRUCTURE → SEARCH → FETCH
 | 2. Search | Know what and where (90-99%) | Text search for patterns, AST search for structure, LSP for semantic references |
 | 3. Fetch | Read the evidence (100%) | Read file content at targeted locations, jump to definitions |
 
-**Top-down (reverse funnel)** — when AI reasoning or scan findings provide exact coordinates (e.g. `lspHints`, architectural hypotheses), skip straight to semantic proof or content reading. The top-down path: AI forms hypothesis → Octocode locates targets → LSP validates semantic relationships → AST confirms structural pattern. This catches design-level issues (coupling, boundary erosion, missing coverage) that bottom-up structural detection alone would miss.
+**Top-down (reverse funnel)**  -  when AI reasoning or scan findings provide exact coordinates (e.g. `lspHints`, architectural hypotheses), skip straight to semantic proof or content reading. The top-down path: AI forms hypothesis → Octocode locates targets → LSP validates semantic relationships → AST confirms structural pattern. This catches design-level issues (coupling, boundary erosion, missing coverage) that bottom-up structural detection alone would miss.
 
-**Key rule**: always search before reading. Never read a file without knowing where to look first. Use both directions — bottom-up to surface candidates, top-down to validate architectural intent.
+**Key rule**: always search before reading. Never read a file without knowing where to look first. Use both directions  -  bottom-up to surface candidates, top-down to validate architectural intent.
 
 ---
 
@@ -65,274 +65,274 @@ See [SKILL.md tools table](../SKILL.md#tools) for tool params and [AST reference
 
 ## Workflows
 
-### 1 — Full Scan → Triage → Validate
+### 1  -  Full Scan → Triage → Validate
 
 Start here for any new codebase or broad audit.
 
 1. **Run full scan** with graph + flow flags → generates hypotheses
 2. **Read summary.md** → health scores, pillar grades, top recommendations
 3. **Triage top findings** from findings.json → check severity, lspHints, correlated signals
-4. **Quick structural triage** — AST tree-search for function declarations to spot large/complex shapes
-5. **Explore project layout** — directory structure + largest files for hotspot candidates
-6. **Validate top findings** — use lspHints from findings to confirm or dismiss via reference counts and call hierarchy
+4. **Quick structural triage**  -  AST tree-search for function declarations to spot large/complex shapes
+5. **Explore project layout**  -  directory structure + largest files for hotspot candidates
+6. **Validate top findings**  -  use lspHints from findings to confirm or dismiss via reference counts and call hierarchy
 
 See [output files](./output-files.md) for scan artifact schemas and read order. See [validation playbooks](./validation-playbooks.md) for per-category validation tactics.
 
-### 2 — Symbol Deep Dive
+### 2  -  Symbol Deep Dive
 
 Trace a function: definition → callers → callees.
 
-1. **Check AST shape** — tree-search for the function to see its span, nesting depth, and structure
-2. **Locate the symbol** — text search to get file + lineHint
-3. **Read the function body** — targeted file content around the function
-4. **Jump to definition** — follow the symbol to its canonical definition
-5. **Find callers** — incoming call hierarchy → who depends on this?
-6. **Find callees** — outgoing call hierarchy → what does this depend on?
+1. **Check AST shape**  -  tree-search for the function to see its span, nesting depth, and structure
+2. **Locate the symbol**  -  text search to get file + lineHint
+3. **Read the function body**  -  targeted file content around the function
+4. **Jump to definition**  -  follow the symbol to its canonical definition
+5. **Find callers**  -  incoming call hierarchy → who depends on this?
+6. **Find callees**  -  outgoing call hierarchy → what does this depend on?
 
-### 3 — Impact Analysis (Pre-Refactor)
+### 3  -  Impact Analysis (Pre-Refactor)
 
 Assess blast radius before changing a symbol.
 
-1. **Map structural imports** — AST search for import patterns involving the symbol
-2. **Locate the symbol** — text search to get file + lineHint
-3. **Count all consumers** — find references, excluding declaration
-4. **Count test consumers** — find references filtered to test directories only
-5. **Count production consumers** — find references excluding test directories
-6. **Assess safety** — few production refs + high test coverage = safe to change. Many production refs = plan carefully, consider incremental migration.
+1. **Map structural imports**  -  AST search for import patterns involving the symbol
+2. **Locate the symbol**  -  text search to get file + lineHint
+3. **Count all consumers**  -  find references, excluding declaration
+4. **Count test consumers**  -  find references filtered to test directories only
+5. **Count production consumers**  -  find references excluding test directories
+6. **Assess safety**  -  few production refs + high test coverage = safe to change. Many production refs = plan carefully, consider incremental migration.
 
-### 4 — Dead Export Validation
+### 4  -  Dead Export Validation
 
 Fastest path from finding to verdict.
 
-1. **Check for consumers** — find references excluding declaration. 0 refs = likely dead, >0 = alive.
-2. **Cross-check structurally** — AST search for import statements of the export name
-3. **Check for dynamic usage** — text search for the export name to catch computed/dynamic references
-4. **Verdict** — 0 consumers across all checks = confirmed dead. Any usage found = dismiss.
+1. **Check for consumers**  -  find references excluding declaration. 0 refs = likely dead, >0 = alive.
+2. **Cross-check structurally**  -  AST search for import statements of the export name
+3. **Check for dynamic usage**  -  text search for the export name to catch computed/dynamic references
+4. **Verdict**  -  0 consumers across all checks = confirmed dead. Any usage found = dismiss.
 
-### 5 — Code Smell Sweep (AST Presets)
+### 5  -  Code Smell Sweep (AST Presets)
 
-Structural code smell detection — zero false positives.
+Structural code smell detection  -  zero false positives.
 
-1. **Run AST presets in parallel** — batch presets: empty-catch, any-type, console-log, switch-no-default, nested-ternary, non-null-assertion
+1. **Run AST presets in parallel**  -  batch presets: empty-catch, any-type, console-log, switch-no-default, nested-ternary, non-null-assertion
 2. **Add custom pattern checks** if needed (e.g. eval usage, specific anti-patterns)
 3. **Read context** around flagged locations to understand severity
-4. **Assess impact** — check callers of flagged functions to gauge blast radius
+4. **Assess impact**  -  check callers of flagged functions to gauge blast radius
 
 See [AST reference](./ast-reference.md) for all presets and pattern syntax.
 
-### 6 — Dependency Cycle Tracing
+### 6  -  Dependency Cycle Tracing
 
 Validate cycles from `architecture.json`.
 
-1. **Scan for cycles** — run scan with dependency-cycle feature + graph
+1. **Scan for cycles**  -  run scan with dependency-cycle feature + graph
 2. **Read cycle paths** from architecture.json
-3. **Find back-edge imports** — AST search for import patterns in the cycle directory
-4. **Identify importing files** — text search for imports from the cycle modules
-5. **Read the import blocks** — targeted content reading at import statements
-6. **Trace through the chain** — jump to definitions and follow call hierarchy until the cycle closes
+3. **Find back-edge imports**  -  AST search for import patterns in the cycle directory
+4. **Identify importing files**  -  text search for imports from the cycle modules
+5. **Read the import blocks**  -  targeted content reading at import statements
+6. **Trace through the chain**  -  jump to definitions and follow call hierarchy until the cycle closes
 
-### 7 — Security Sink Validation
+### 7  -  Security Sink Validation
 
 Trace data flow from source to sink.
 
-1. **Find sink patterns** — AST search for eval, innerHTML assignment, exec, command injection patterns
-2. **Find secret patterns** — AST rule search for strings matching password/secret/token patterns
-3. **Find guards** — text search for validation, sanitization, or normalization functions
-4. **Read sink context** — targeted content reading around the sink function
-5. **Locate the sink** — jump to definition for cross-file resolution
-6. **Trace data sources** — incoming call hierarchy to trace who feeds data to the sink
-7. **Check all call sites** — find references for the sink function to assess exposure breadth
+1. **Find sink patterns**  -  AST search for eval, innerHTML assignment, exec, command injection patterns
+2. **Find secret patterns**  -  AST rule search for strings matching password/secret/token patterns
+3. **Find guards**  -  text search for validation, sanitization, or normalization functions
+4. **Read sink context**  -  targeted content reading around the sink function
+5. **Locate the sink**  -  jump to definition for cross-file resolution
+6. **Trace data sources**  -  incoming call hierarchy to trace who feeds data to the sink
+7. **Check all call sites**  -  find references for the sink function to assess exposure breadth
 
 See [validation playbooks](./validation-playbooks.md) for taint-tracing and false-positive dismissal.
 
-### 8 — Scoped Deep-Dive (File or Function)
+### 8  -  Scoped Deep-Dive (File or Function)
 
 Drill into a specific flagged file or function.
 
-1. **Re-scan scoped** — scan with scope narrowed to the target file, with flow + semantic flags
-2. **Function-level scope** — if drilling into a specific function, use `file:symbol` scope syntax
-3. **Check AST shape** — tree-search for the file to see function spans and nesting
-4. **Read public surface** — targeted content at export declarations
-5. **Read imports** — content at the top of the file for dependency context
-6. **Read target section** — content around the specific area of interest
-7. **Count consumers per export** — find references for each exported symbol
-8. **Map function dependencies** — outgoing call hierarchy per function
+1. **Re-scan scoped**  -  scan with scope narrowed to the target file, with flow + semantic flags
+2. **Function-level scope**  -  if drilling into a specific function, use `file:symbol` scope syntax
+3. **Check AST shape**  -  tree-search for the file to see function spans and nesting
+4. **Read public surface**  -  targeted content at export declarations
+5. **Read imports**  -  content at the top of the file for dependency context
+6. **Read target section**  -  content around the specific area of interest
+7. **Count consumers per export**  -  find references for each exported symbol
+8. **Map function dependencies**  -  outgoing call hierarchy per function
 
-### 9 — Coupling Hotspot Analysis
+### 9  -  Coupling Hotspot Analysis
 
 Quantify coupling for architecture findings.
 
-1. **Scan for coupling signals** — run scan with coupling + god-module features + advanced graph
+1. **Scan for coupling signals**  -  run scan with coupling + god-module features + advanced graph
 2. **Read top hotFiles** from architecture.json
-3. **Map import density** — AST search for import patterns in the hotspot directory
-4. **Count consumer files** — text search for imports from the hotspot
-5. **Assess module size** — structure view of the hotspot directory + find largest files
-6. **Quantify per-export coupling** — find references for each export, call hierarchy for each function
+3. **Map import density**  -  AST search for import patterns in the hotspot directory
+4. **Count consumer files**  -  text search for imports from the hotspot
+5. **Assess module size**  -  structure view of the hotspot directory + find largest files
+6. **Quantify per-export coupling**  -  find references for each export, call hierarchy for each function
 
 **Decision**: high fan-in + large files = decomposition candidate. Low fan-in = less urgent.
 
-### 10 — Fix Verification Loop
+### 10  -  Fix Verification Loop
 
 Confirm fixes reduced finding count. Run after every fix batch.
 
-1. **Re-scan changed files** — scoped scan with relevant feature flags
-2. **AST smell check** — run presets against changed directories to verify smells are gone
-3. **Spot-check fixes** — read fixed code to confirm the change looks right
-4. **Verify references** — find references to confirm moved/renamed symbols still resolve
-5. **Verify callers** — incoming call hierarchy to confirm callers are still connected
-6. **Run project toolchain** — lint (with auto-fix), tests, build → all must pass
+1. **Re-scan changed files**  -  scoped scan with relevant feature flags
+2. **AST smell check**  -  run presets against changed directories to verify smells are gone
+3. **Spot-check fixes**  -  read fixed code to confirm the change looks right
+4. **Verify references**  -  find references to confirm moved/renamed symbols still resolve
+5. **Verify callers**  -  incoming call hierarchy to confirm callers are still connected
+6. **Run project toolchain**  -  lint (with auto-fix), tests, build → all must pass
 
 ---
 
-## Extended Workflows — Architecture, Planning, Exploration
+## Extended Workflows  -  Architecture, Planning, Exploration
 
-### 11 — Pre-Implementation Check ("Where should new code live?")
+### 11  -  Pre-Implementation Check ("Where should new code live?")
 
 Before writing new code, understand the existing landscape to pick the right location.
 
-1. **Explore project layout** — directory structure at depth 2
-2. **Map dependency graph** — scan with graph + advanced flags → identify hotspots
-3. **Avoid hotspots** — read top hotFiles from architecture.json, don't add to them
-4. **Find analogous patterns** — text search for similar features to see how the codebase does it
-5. **Check existing API shape** — AST search for export patterns in candidate directories
-6. **Check candidate module coupling** — find references for candidate module's exports
-7. **Read the public surface** — targeted content at exports of the target module
+1. **Explore project layout**  -  directory structure at depth 2
+2. **Map dependency graph**  -  scan with graph + advanced flags → identify hotspots
+3. **Avoid hotspots**  -  read top hotFiles from architecture.json, don't add to them
+4. **Find analogous patterns**  -  text search for similar features to see how the codebase does it
+5. **Check existing API shape**  -  AST search for export patterns in candidate directories
+6. **Check candidate module coupling**  -  find references for candidate module's exports
+7. **Read the public surface**  -  targeted content at exports of the target module
 
 **Decision**: low fan-in module with related exports = good home. High fan-in hotspot = add to a new module instead.
 
-### 12 — Refactoring Plan (Safe Restructure)
+### 12  -  Refactoring Plan (Safe Restructure)
 
 Plan a multi-file refactor with full blast radius awareness.
 
-1. **Map all files containing the symbol** — text search with file-list mode
-2. **Count all consumers** — find references excluding declaration
-3. **Split test vs production consumers** — find references with include/exclude patterns for test dirs
-4. **Map callers and dependencies** — incoming and outgoing call hierarchy
-5. **Check import graph** — AST search for import patterns in the target area
-6. **Check coupling/cycle risk** — scoped scan with architecture + graph features
-7. **Assess test quality around target** — scoped scan with test-quality feature
+1. **Map all files containing the symbol**  -  text search with file-list mode
+2. **Count all consumers**  -  find references excluding declaration
+3. **Split test vs production consumers**  -  find references with include/exclude patterns for test dirs
+4. **Map callers and dependencies**  -  incoming and outgoing call hierarchy
+5. **Check import graph**  -  AST search for import patterns in the target area
+6. **Check coupling/cycle risk**  -  scoped scan with architecture + graph features
+7. **Assess test quality around target**  -  scoped scan with test-quality feature
 
 **Output**: file list + consumer count + test coverage + coupling risk = refactoring confidence level.
 
-### 13 — Codebase Exploration (New Repo Orientation)
+### 13  -  Codebase Exploration (New Repo Orientation)
 
 Quickly understand an unfamiliar codebase.
 
-1. **Layout** — top-level directory structure → source root shape with file sizes
-2. **Scale and hotspots** — find largest files, recently modified files, barrel/index files
-3. **API surface** — text search for exports (file-list mode), AST search for class declarations and default exports
-4. **Architecture shape** — full scan with graph + flow → read summary.md for health scores
-5. **Conventions** — AST search for import patterns, text search for test patterns, find test file locations
+1. **Layout**  -  top-level directory structure → source root shape with file sizes
+2. **Scale and hotspots**  -  find largest files, recently modified files, barrel/index files
+3. **API surface**  -  text search for exports (file-list mode), AST search for class declarations and default exports
+4. **Architecture shape**  -  full scan with graph + flow → read summary.md for health scores
+5. **Conventions**  -  AST search for import patterns, text search for test patterns, find test file locations
 
-### 14 — Test Strategy Analysis
+### 14  -  Test Strategy Analysis
 
 Map test coverage gaps and test quality issues.
 
-1. **Test landscape** — find all test files, explore test directory structure, count test density
-2. **Coverage gaps** — text search for exported functions, then find references filtered to test dirs. 0 test refs = coverage gap.
-3. **Test quality** — scan with test-quality feature + include-tests. AST search for empty catches, mock density, assertion density in test source
-4. **Critical untested code** — scan for architecture to find critical paths, check test coverage per hotFile
+1. **Test landscape**  -  find all test files, explore test directory structure, count test density
+2. **Coverage gaps**  -  text search for exported functions, then find references filtered to test dirs. 0 test refs = coverage gap.
+3. **Test quality**  -  scan with test-quality feature + include-tests. AST search for empty catches, mock density, assertion density in test source
+4. **Critical untested code**  -  scan for architecture to find critical paths, check test coverage per hotFile
 
 **Output**: untested exports list + test quality findings + critical untested hotspots = test priority plan.
 
-### 15 — Code Review Support (Change Impact Analysis)
+### 15  -  Code Review Support (Change Impact Analysis)
 
 Assess the architectural impact of changed files.
 
-1. **Read the changes** — targeted content reading around changed functions
-2. **Blast radius per symbol** — text search for changed symbols → find references → split test vs production → incoming call hierarchy for direct callers
-3. **Architecture effect** — scoped scan of changed files with architecture + graph → AST search for new import patterns
-4. **Quality check** — scoped scan of changed files with code-quality + security features → AST preset sweep on changed dirs for new smells
-5. **Test coverage** — find references for changed symbols filtered to test directories → are all changes tested?
+1. **Read the changes**  -  targeted content reading around changed functions
+2. **Blast radius per symbol**  -  text search for changed symbols → find references → split test vs production → incoming call hierarchy for direct callers
+3. **Architecture effect**  -  scoped scan of changed files with architecture + graph → AST search for new import patterns
+4. **Quality check**  -  scoped scan of changed files with code-quality + security features → AST preset sweep on changed dirs for new smells
+5. **Test coverage**  -  find references for changed symbols filtered to test directories → are all changes tested?
 
 **Output**: consumer impact count + architecture delta + new quality issues + test coverage = review verdict.
 
-### 16 — Code Quality Review (Module or File)
+### 16  -  Code Quality Review (Module or File)
 
 Focused quality review of a specific target.
 
-1. **Scoped scan** — scan target with code-quality + dead-code features, flow + semantic flags → read summary + top findings
-2. **AST smell sweep** — batch presets: empty-catch, any-type, type-assertion, non-null-assertion, console-log, nested-ternary, switch-no-default
-3. **Complexity check** — AST tree-search for function spans + nesting, scoped scan for cognitive-complexity + god-module + god-function
-4. **Dead code check** — find references per export (0 refs = dead), AST cross-check on import patterns
-5. **Maintainability assessment** — read public surface size, map outgoing call hierarchy (dependency count), map incoming call hierarchy (fan-in per export)
+1. **Scoped scan**  -  scan target with code-quality + dead-code features, flow + semantic flags → read summary + top findings
+2. **AST smell sweep**  -  batch presets: empty-catch, any-type, type-assertion, non-null-assertion, console-log, nested-ternary, switch-no-default
+3. **Complexity check**  -  AST tree-search for function spans + nesting, scoped scan for cognitive-complexity + god-module + god-function
+4. **Dead code check**  -  find references per export (0 refs = dead), AST cross-check on import patterns
+5. **Maintainability assessment**  -  read public surface size, map outgoing call hierarchy (dependency count), map incoming call hierarchy (fan-in per export)
 
 **Output**: smell count + complexity scores + dead exports + fan-in/fan-out + maintainability = quality verdict with evidence.
 
-### 17 — Full Architecture Analysis
+### 17  -  Full Architecture Analysis
 
 Complete architecture health assessment.
 
-1. **Full architecture scan** — graph + graph-advanced + flow + architecture features
-2. **Read architecture outputs** — summary.md health score, cycles, hotFiles (ranked), SCC clusters, chokepoints, critical paths, Mermaid graph
-3. **Validate top hotspots** — text search for hotspot files → find references for fan-in, call hierarchy for fan-out and direct callers
-4. **Module boundary analysis** — AST search for cross-module imports, text search for barrel re-exports, scan for boundary/layer violations
-5. **Cycle deep-dive** (per cycle) — AST search for imports in cycle dirs, jump to definitions to hop through, read import blocks to confirm back-edges
-6. **Critical path analysis** — read criticalPaths from architecture.json, check incoming call hierarchy for each hub
+1. **Full architecture scan**  -  graph + graph-advanced + flow + architecture features
+2. **Read architecture outputs**  -  summary.md health score, cycles, hotFiles (ranked), SCC clusters, chokepoints, critical paths, Mermaid graph
+3. **Validate top hotspots**  -  text search for hotspot files → find references for fan-in, call hierarchy for fan-out and direct callers
+4. **Module boundary analysis**  -  AST search for cross-module imports, text search for barrel re-exports, scan for boundary/layer violations
+5. **Cycle deep-dive** (per cycle)  -  AST search for imports in cycle dirs, jump to definitions to hop through, read import blocks to confirm back-edges
+6. **Critical path analysis**  -  read criticalPaths from architecture.json, check incoming call hierarchy for each hub
 
 **Output**: cycle list + SCC clusters + chokepoints + hotfiles (ranked) + boundary violations + critical paths + fan-in/fan-out = full architecture health report.
 
-### 18 — Smart Coding (Impact-Aware Changes)
+### 18  -  Smart Coding (Impact-Aware Changes)
 
 Before and after making code changes, check blast radius and verify safety.
 
 **=== BEFORE CODING ===**
 
-1. **Define behavior contract** — current behavior, desired behavior, invariants, non-goals, user-facing contract
-2. **Understand the target area** — explore module layout, read current code, jump to definitions
-3. **Check blast radius** — text search for target symbol → find references (total, production-only, test-only) → incoming call hierarchy for direct callers
-4. **Check architecture safety** — scoped scan with architecture + graph → read cycles to check if the change would create new ones
-5. **Follow existing patterns** — AST search for similar patterns nearby, text search for analogous implementations
+1. **Define behavior contract**  -  current behavior, desired behavior, invariants, non-goals, user-facing contract
+2. **Understand the target area**  -  explore module layout, read current code, jump to definitions
+3. **Check blast radius**  -  text search for target symbol → find references (total, production-only, test-only) → incoming call hierarchy for direct callers
+4. **Check architecture safety**  -  scoped scan with architecture + graph → read cycles to check if the change would create new ones
+5. **Follow existing patterns**  -  AST search for similar patterns nearby, text search for analogous implementations
 
 **=== MAKE THE CHANGE ===**
 
-6. **Implement** — apply edits
+6. **Implement**  -  apply edits
 
 **=== AFTER CODING ===**
 
-7. **Verify behavior** — run project tests
-8. **Verify no new issues** — scoped scan of changed files with code-quality + architecture features, AST preset sweep for any-type + empty-catch
-9. **Verify references intact** — find references for moved/renamed symbols, incoming call hierarchy for callers
-10. **Verify user-facing contracts** — run CLI/API/integration checks when relevant, update docs when behavior changed
-11. **Run project toolchain** — lint (with auto-fix), build
+7. **Verify behavior**  -  run project tests
+8. **Verify no new issues**  -  scoped scan of changed files with code-quality + architecture features, AST preset sweep for any-type + empty-catch
+9. **Verify references intact**  -  find references for moved/renamed symbols, incoming call hierarchy for callers
+10. **Verify user-facing contracts**  -  run CLI/API/integration checks when relevant, update docs when behavior changed
+11. **Run project toolchain**  -  lint (with auto-fix), build
 
 **Decision gates**:
-- Step 3: >20 production consumers = high-risk, consider feature flag or incremental migration
-- Step 4: change touches cycle member or hotfile = extra caution, verify with re-scan after
-- Step 8: new findings = fix before committing
-- Step 10: docs or contract drift = fix before committing
-- Step 11: any failure = investigate before proceeding
+* Step 3: >20 production consumers = high-risk, consider feature flag or incremental migration
+* Step 4: change touches cycle member or hotfile = extra caution, verify with re-scan after
+* Step 8: new findings = fix before committing
+* Step 10: docs or contract drift = fix before committing
+* Step 11: any failure = investigate before proceeding
 
-### 19 — CLI Change Safety
+### 19  -  CLI Change Safety
 
 Use when changing commands, flags, help text, output, or exit behavior.
 
-1. **Find CLI entry points** — text search for CLI frameworks (process.argv, commander, yargs, etc.) + find files named cli/bin/command
-2. **Read commands and options** — targeted content reading around command definitions, options, defaults
-3. **Find affected tests and docs** — text search for flag/command names across tests, scripts, and docs
-4. **Verify behavior** — run entry with --help, happy-path input, bad input; check stdout/stderr/exit codes
+1. **Find CLI entry points**  -  text search for CLI frameworks (process.argv, commander, yargs, etc.) + find files named cli/bin/command
+2. **Read commands and options**  -  targeted content reading around command definitions, options, defaults
+3. **Find affected tests and docs**  -  text search for flag/command names across tests, scripts, and docs
+4. **Verify behavior**  -  run entry with --help, happy-path input, bad input; check stdout/stderr/exit codes
 5. **Run CLI and e2e tests** if the project has them
 
 **Checklist**: names, aliases, defaults, positional args, stdout/stderr, exit codes, env/config inputs, machine-readable output, backward compatibility.
 
-### 20 — API Contract Safety
+### 20  -  API Contract Safety
 
 Use when changing handlers, endpoints, schemas, DTOs, or serialized responses.
 
-1. **Find the public surface** — text search for router/handler/endpoint/resolver patterns + schema/contract files
-2. **Read request/response code** — targeted content around route definitions
-3. **Trace affected internals** — text search for response/DTO types → find references for shared types → outgoing call hierarchy for handler→service flow
-4. **Verify the contract** — run integration, contract, and/or project test scripts
+1. **Find the public surface**  -  text search for router/handler/endpoint/resolver patterns + schema/contract files
+2. **Read request/response code**  -  targeted content around route definitions
+3. **Trace affected internals**  -  text search for response/DTO types → find references for shared types → outgoing call hierarchy for handler→service flow
+4. **Verify the contract**  -  run integration, contract, and/or project test scripts
 
 **Checklist**: request schema, response shape, status codes, error bodies, auth, pagination, idempotency, versioning, deprecation, migration notes.
 
-### 21 — Docs and Rollout Sync
+### 21  -  Docs and Rollout Sync
 
 Use when public behavior changed or a risky change needs an operational plan.
 
-1. **Find docs and examples** — find README, markdown, OpenAPI, env.example files + text search for changed names in docs
-2. **Update completion criteria** — docs/help/examples/migration notes updated; feature flag/rollout/telemetry/rollback decided when needed
-3. **Verify docs tooling** — run docs build/check scripts if the project has them
+1. **Find docs and examples**  -  find README, markdown, OpenAPI, env.example files + text search for changed names in docs
+2. **Update completion criteria**  -  docs/help/examples/migration notes updated; feature flag/rollout/telemetry/rollback decided when needed
+3. **Verify docs tooling**  -  run docs build/check scripts if the project has them
 
 **Output**: updated docs list + compatibility note + rollout/rollback plan, or explicit statement that no public docs or rollout work was needed.
 

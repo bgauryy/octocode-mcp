@@ -1,6 +1,6 @@
 # GitLab Setup Guide
 
-> Complete guide for using Octocode MCP with GitLab — authentication, self-hosted instances, available tools, tier limitations, and troubleshooting.
+> Complete guide for using Octocode MCP with GitLab  -  authentication, self-hosted instances, available tools, tier limitations, and troubleshooting.
 
 ---
 
@@ -13,7 +13,7 @@ export GITLAB_TOKEN="glpat-xxxxxxxxxxxxxxxxxxxx"
 # 2. (Optional) For self-hosted GitLab
 export GITLAB_HOST="https://gitlab.your-company.com"
 
-# 3. Start Octocode MCP — GitLab mode activates automatically
+# 3. Start Octocode MCP  -  GitLab mode activates automatically
 npx octocode-mcp
 ```
 
@@ -26,8 +26,8 @@ When `GITLAB_TOKEN` (or `GL_TOKEN`) is detected, Octocode switches to **GitLab m
 ### Token Creation
 
 1. Go to **Settings → Access Tokens** in your GitLab instance:
-   - gitlab.com: [https://gitlab.com/-/user_settings/personal_access_tokens](https://gitlab.com/-/user_settings/personal_access_tokens)
-   - Self-hosted: `https://<your-host>/-/user_settings/personal_access_tokens`
+   * gitlab.com: [https://gitlab.com/-/user_settings/personal_access_tokens](https://gitlab.com/-/user_settings/personal_access_tokens)
+   * Self-hosted: `https://<your-host>/-/user_settings/personal_access_tokens`
 2. Create a token with **`api`** scope (required for full functionality).
 3. Recommended: set an expiration date and descriptive name (e.g., `octocode-mcp`).
 
@@ -63,7 +63,7 @@ export GITLAB_TOKEN="glpat-xxxxxxxxxxxxxxxxxxxx"
 | 1 (highest) | `GITLAB_TOKEN` | Primary GitLab token |
 | 2 (fallback) | `GL_TOKEN` | Alternative (e.g., GitLab CI compatibility) |
 
-Setting either token activates **GitLab mode** — Octocode will use GitLab APIs instead of GitHub.
+Setting either token activates **GitLab mode**  -  Octocode will use GitLab APIs instead of GitHub.
 
 ### Self-Hosted GitLab
 
@@ -154,10 +154,10 @@ If code search returns empty results on a Free tier, try scoping to a specific p
 
 ## Known Limitations
 
-1. **`githubCloneRepo`** — Clone/directory fetch is not available for GitLab.
-2. **`githubGetFileContent` directory mode** — `type: "directory"` is GitHub only.
-3. **Per-request provider switching** — Provider is set globally via environment variables, not per tool call.
-4. **OAuth flow** — Only personal access tokens are supported (no interactive OAuth).
+1. **`githubCloneRepo`**  -  Clone/directory fetch is not available for GitLab.
+2. **`githubGetFileContent` directory mode**  -  `type: "directory"` is GitHub only.
+3. **Per-request provider switching**  -  Provider is set globally via environment variables, not per tool call.
+4. **OAuth flow**  -  Only personal access tokens are supported (no interactive OAuth).
 
 ### Rate Limits
 
@@ -173,10 +173,10 @@ When rate-limited, GitLab returns `429 Too Many Requests` with a `Retry-After` h
 
 Some advanced query parameters from the unified interface are not yet mapped to GitLab:
 
-- **Code search**: `match` (file vs path mode)
-- **Repo search**: `stars`, `size`, `created`, `updated` filters
-- **MR search**: `commenter`, `involves`, `mentions`, `reviewRequested`, `draft`, `withCommits`
-- **File content**: `charOffset`, `charLength`, `fullContent`, `matchStringContextLines`
+* **Code search**: `match` (file vs path mode)
+* **Repo search**: `stars`, `size`, `created`, `updated` filters
+* **MR search**: `commenter`, `involves`, `mentions`, `reviewRequested`, `draft`, `withCommits`
+* **File content**: `charOffset`, `charLength`, `fullContent`, `matchStringContextLines`
 
 ---
 
@@ -184,8 +184,8 @@ Some advanced query parameters from the unified interface are not yet mapped to 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GITLAB_TOKEN` | — | GitLab personal access token (primary) |
-| `GL_TOKEN` | — | GitLab token (fallback) |
+| `GITLAB_TOKEN` |  -  | GitLab personal access token (primary) |
+| `GL_TOKEN` |  -  | GitLab token (fallback) |
 | `GITLAB_HOST` | `https://gitlab.com` | GitLab instance URL |
 
 For complete configuration options, see the [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md).
@@ -207,46 +207,46 @@ echo $GITLAB_TOKEN   # Should print your token
 
 ### 401 Unauthorized
 
-- Verify your token is valid: `curl -H "PRIVATE-TOKEN: $GITLAB_TOKEN" https://gitlab.com/api/v4/user`
-- Check the token hasn't expired.
-- Ensure the `api` scope is granted.
+* Verify your token is valid: `curl -H "PRIVATE-TOKEN: $GITLAB_TOKEN" https://gitlab.com/api/v4/user`
+* Check the token hasn't expired.
+* Ensure the `api` scope is granted.
 
 ### 403 Forbidden
 
-- Your token may lack the required scope. Create a new token with `api` scope.
-- For self-hosted: check if your account has access to the project/group.
+* Your token may lack the required scope. Create a new token with `api` scope.
+* For self-hosted: check if your account has access to the project/group.
 
 ### 404 Not Found
 
-- Verify `owner/repo` maps correctly to the GitLab namespace/project.
-- Check project visibility — private projects require proper token scope.
-- For subgroups, use the full path: `owner="parent-group/sub-group"`, `repo="project"`.
+* Verify `owner/repo` maps correctly to the GitLab namespace/project.
+* Check project visibility  -  private projects require proper token scope.
+* For subgroups, use the full path: `owner="parent-group/sub-group"`, `repo="project"`.
 
 ### 429 Too Many Requests
 
-- You've hit the rate limit. Wait for the `Retry-After` period.
-- For self-hosted instances, contact your GitLab admin about rate limit settings.
+* You've hit the rate limit. Wait for the `Retry-After` period.
+* For self-hosted instances, contact your GitLab admin about rate limit settings.
 
 ### Empty Search Results
 
-- **Free tier**: Global/group code search may not be available. Scope to a specific project.
-- **Advanced search**: Requires Elasticsearch, typically Premium+.
-- Try simpler keywords — GitLab search is less flexible than GitHub's.
+* **Free tier**: Global/group code search may not be available. Scope to a specific project.
+* **Advanced search**: Requires Elasticsearch, typically Premium+.
+* Try simpler keywords  -  GitLab search is less flexible than GitHub's.
 
 ### Self-Hosted Connection Issues
 
-- Verify `GITLAB_HOST` includes the protocol: `https://gitlab.example.com` (not just `gitlab.example.com`).
-- Check if your GitLab instance requires VPN or has IP allowlists.
-- Test connectivity: `curl -I $GITLAB_HOST/api/v4/version`
+* Verify `GITLAB_HOST` includes the protocol: `https://gitlab.example.com` (not just `gitlab.example.com`).
+* Check if your GitLab instance requires VPN or has IP allowlists.
+* Test connectivity: `curl -I $GITLAB_HOST/api/v4/version`
 
 ---
 
 ## See Also
 
-- [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) — Overview of all provider authentication
-- [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) — Full tool documentation
-- [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) — All configuration options
-- [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) — General troubleshooting guide
+* [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)  -  Overview of all provider authentication
+* [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md)  -  Full tool documentation
+* [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md)  -  All configuration options
+* [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md)  -  General troubleshooting guide
 
 ---
 Created by Octocode MCP https://octocode.ai

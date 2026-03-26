@@ -331,9 +331,9 @@ Prevents cascading failures with three states:
 | **Half-Open** | After reset timeout, allows probe request to test recovery |
 
 **Default Configuration:**
-- `failureThreshold`: 3 failures before opening
-- `successThreshold`: 2 successes to close from half-open
-- `resetTimeoutMs`: 30000ms (30 seconds)
+* `failureThreshold`: 3 failures before opening
+* `successThreshold`: 2 successes to close from half-open
+* `resetTimeoutMs`: 30000ms (30 seconds)
 
 **Per-Service Overrides:**
 ```typescript
@@ -353,18 +353,18 @@ configureCircuit('github', {
 ```
 
 **Key Functions:**
-- `withCircuitBreaker(name, operation, fallback?)` - Execute with protection
-- `getCircuitState(name)` - Monitor circuit health
-- `configureCircuit(name, config)` - Customize thresholds
-- `resetCircuit(name)` - Manual reset
-- `getAllCircuitStates()` - Health dashboard (used in /health endpoint)
+* `withCircuitBreaker(name, operation, fallback?)` - Execute with protection
+* `getCircuitState(name)` - Monitor circuit health
+* `configureCircuit(name, config)` - Customize thresholds
+* `resetCircuit(name)` - Manual reset
+* `getAllCircuitStates()` - Health dashboard (used in /health endpoint)
 
 ### 4. Rate Limit Handling
 
 GitHub API rate limits are tracked from response headers:
-- Warns when approaching limits
-- Provides reset time hints
-- Suggests alternative tools when limited
+* Warns when approaching limits
+* Provides reset time hints
+* Suggests alternative tools when limited
 
 ### 5. Readiness Check (`src/middleware/readiness.ts`)
 
@@ -431,8 +431,8 @@ const IDLE_CHECK_INTERVAL_MS = 300000;  // Check every 5 minutes
 | `gracefulShutdown(signal)` | Handles SIGTERM, SIGINT, IDLE_TIMEOUT |
 
 **Request Handling:**
-- Every incoming request resets `lastRequestTime` via middleware
-- This includes `/health` checks - prevents false idle detection
+* Every incoming request resets `lastRequestTime` via middleware
+* This includes `/health` checks - prevents false idle detection
 
 **Health Endpoint Response:**
 ```json

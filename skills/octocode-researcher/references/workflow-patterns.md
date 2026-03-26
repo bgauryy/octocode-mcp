@@ -526,11 +526,11 @@ MERGE: Compare and document
 
 **Example Flow:**
 ```json
-// LOCAL — find usage
+// LOCAL  -  find usage
 { "pattern": "import.*from 'next-auth'", "path": "src", "filesOnly": true }
 // → then lspGotoDefinition on the import, lspFindReferences for all usages
 
-// EXTERNAL — find source
+// EXTERNAL  -  find source
 { "query": "next-auth", "registry": "npm" }
 // → then githubViewRepoStructure + githubSearchCode + githubGetFileContent
 
@@ -563,21 +563,21 @@ MERGE: Compare and document
 
 Before completing local research:
 
-- [ ] **Goal defined?** (Atomic question)
-- [ ] **Code evidence found?** (Line numbers/paths)
-- [ ] **The Gate passed?** (Read full content)
-- [ ] **Cross-referenced?** (Imports/Usage)
-- [ ] **Gaps documented?**
-- [ ] **User checkpoint offered?** (Continue/Save)
+* [ ] **Goal defined?** (Atomic question)
+* [ ] **Code evidence found?** (Line numbers/paths)
+* [ ] **The Gate passed?** (Read full content)
+* [ ] **Cross-referenced?** (Imports/Usage)
+* [ ] **Gaps documented?**
+* [ ] **User checkpoint offered?** (Continue/Save)
 
 ## External Research Checklist
 
 Before completing external research:
 
-- [ ] **Repo/package found via search?** (Not guessed)
-- [ ] **Structure explored first?** (`githubViewRepoStructure`)
-- [ ] **References include full GitHub URLs?** (With line numbers)
-- [ ] **Source verified?** (Read actual code, not just metadata)
-- [ ] **Gaps documented?**
-- [ ] **User checkpoint offered?** (Continue/Save)
+* [ ] **Repo/package found via search?** (Not guessed)
+* [ ] **Structure explored first?** (`githubViewRepoStructure`)
+* [ ] **References include full GitHub URLs?** (With line numbers)
+* [ ] **Source verified?** (Read actual code, not just metadata)
+* [ ] **Gaps documented?**
+* [ ] **User checkpoint offered?** (Continue/Save)
 

@@ -1,9 +1,9 @@
 ---
 name: octocode-researcher
-description: Primary research skill — use when the user asks to research, search, explore, find, trace, investigate, or understand code. Triggers include "find X", "where is Y defined?", "explore this dir", "trace definitions", "find usages", "how does X work?", "who calls Z?", "search for X", "research this library", "find PRs", "what package does X?", "understand this flow", "investigate this bug", "what changed?", or any code exploration/discovery need — local or external. Uses Octocode MCP tools directly (preferred). Falls back to gh CLI or Linux tools when MCP is unavailable.
+description: Primary research skill  -  use when the user asks to research, search, explore, find, trace, investigate, or understand code. Triggers include "find X", "where is Y defined?", "explore this dir", "trace definitions", "find usages", "how does X work?", "who calls Z?", "search for X", "research this library", "find PRs", "what package does X?", "understand this flow", "investigate this bug", "what changed?", or any code exploration/discovery need  -  local or external. Uses Octocode MCP tools directly (preferred). Falls back to gh CLI or Linux tools when MCP is unavailable.
 ---
 
-# Researcher Agent — Code Exploration & Discovery
+# Researcher Agent  -  Code Exploration & Discovery
 
 `DISCOVER` → `PLAN` → `EXECUTE` → `VERIFY` → `OUTPUT`
 
@@ -46,7 +46,7 @@ Look for Octocode MCP tools (e.g., `localSearchCode`, `lspGotoDefinition`, `gith
 > ```
 > Then restart your editor."
 
-Proceed with whatever tools are available — do not block on setup.
+Proceed with whatever tools are available  -  do not block on setup.
 </mcp_discovery>
 
 ---
@@ -61,17 +61,17 @@ Proceed with whatever tools are available — do not block on setup.
 | `localViewStructure` | Explore directories with sorting/depth/filtering |
 | `localSearchCode` | Fast content search with pagination & hints |
 | `localFindFiles` | Find files by metadata (name/time/size) |
-| `localGetFileContent` | Read file content with targeting & context — use **LAST** |
+| `localGetFileContent` | Read file content with targeting & context  -  use **LAST** |
 
 ### LSP (semantic code intelligence)
 
-**ALL require `lineHint` from `localSearchCode`** — see Triple Lock in §5.
+**ALL require `lineHint` from `localSearchCode`**  -  see Triple Lock in §5.
 
 | Tool | Purpose |
 |------|---------|
 | `lspGotoDefinition` | Jump to symbol definition |
-| `lspFindReferences` | Find ALL usages — calls, assignments, type refs |
-| `lspCallHierarchy` | Trace CALL relationships only — incoming/outgoing |
+| `lspFindReferences` | Find ALL usages  -  calls, assignments, type refs |
+| `lspCallHierarchy` | Trace CALL relationships only  -  incoming/outgoing |
 
 ### External (GitHub, packages, repos)
 
@@ -80,7 +80,7 @@ Proceed with whatever tools are available — do not block on setup.
 | `githubSearchCode` | Search code across GitHub repositories |
 | `githubSearchRepositories` | Find repositories by topic, language, stars |
 | `githubViewRepoStructure` | Explore external repo directory layout |
-| `githubGetFileContent` | Read files from external repos — use **LAST** |
+| `githubGetFileContent` | Read files from external repos  -  use **LAST** |
 | `githubSearchPullRequests` | Search PRs by query, state, labels |
 | `packageSearch` | Search npm/PyPI packages by name or keyword |
 | `githubCloneRepo` | Shallow-clone repo for local+LSP analysis (`ENABLE_CLONE=true`) |
@@ -105,7 +105,7 @@ Use `Task` to spawn parallel agents for independent research domains.
 </tools>
 
 <location>
-**`.octocode/`** — Project root for research artifacts. Create if missing; ask user to add to `.gitignore`.
+**`.octocode/`**  -  Project root for research artifacts. Create if missing; ask user to add to `.gitignore`.
 
 | Path | Purpose |
 |------|---------|
@@ -138,12 +138,12 @@ Use `Task` to spawn parallel agents for independent research domains.
 </mindset>
 
 <octocode_results>
-- Results include `mainResearchGoal`, `researchGoal`, `reasoning` — use to track context
-- `hints` arrays guide next steps — **REQUIRED: follow hints**
-- `localSearchCode` returns `lineHint` (1-indexed) — **REQUIRED for ALL LSP tools**
-- `lspFindReferences` = ALL usages (calls, type refs, assignments)
-- `lspCallHierarchy` = CALL relationships only (functions)
-- Empty results = wrong query → try semantic variants
+* Results include `mainResearchGoal`, `researchGoal`, `reasoning`  -  use to track context
+* `hints` arrays guide next steps  -  **REQUIRED: follow hints**
+* `localSearchCode` returns `lineHint` (1-indexed)  -  **REQUIRED for ALL LSP tools**
+* `lspFindReferences` = ALL usages (calls, type refs, assignments)
+* `lspCallHierarchy` = CALL relationships only (functions)
+* Empty results = wrong query → try semantic variants
 </octocode_results>
 
 ---
@@ -153,7 +153,7 @@ Use `Task` to spawn parallel agents for independent research domains.
 <research_flows>
 **Golden Rule**: Text narrows → Symbols identify → Graphs explain.
 
-### The LSP Flow (CRITICAL — Triple Lock)
+### The LSP Flow (CRITICAL  -  Triple Lock)
 
 1. **MUST** call `localSearchCode` first to obtain `lineHint`
 2. **FORBIDDEN**: Any LSP tool without `lineHint` from search results
@@ -224,18 +224,18 @@ Always clone shallow. Use `sparse_path` for monorepos. Cache: 24h at `~/.octocod
 
 <structural_code_vision>
 **Think Like a Parser**:
-- **See the Tree**: Root (Entry) → Nodes (Funcs/Classes) → Edges (Imports/Calls)
-- **Probe First**: `localSearchCode` → lineHint → LSP
-- **Trace Dependencies**: `import {X} from 'Y'` → `lspGotoDefinition`
-- **Find Impact**: `lspFindReferences` → ALL usages
-- **Call Flow**: `lspCallHierarchy` → incoming/outgoing
-- **Read LAST**: `localGetFileContent` after LSP analysis
+* **See the Tree**: Root (Entry) → Nodes (Funcs/Classes) → Edges (Imports/Calls)
+* **Probe First**: `localSearchCode` → lineHint → LSP
+* **Trace Dependencies**: `import {X} from 'Y'` → `lspGotoDefinition`
+* **Find Impact**: `lspFindReferences` → ALL usages
+* **Call Flow**: `lspCallHierarchy` → incoming/outgoing
+* **Read LAST**: `localGetFileContent` after LSP analysis
 </structural_code_vision>
 
 <context_awareness>
-- Identify codebase type: Client? Server? Library? Monorepo?
-- Find entry points and main flows first
-- Monorepo: Check `packages/` or `apps/`, each has own entry point
+* Identify codebase type: Client? Server? Library? Monorepo?
+* Find entry points and main flows first
+* Monorepo: Check `packages/` or `apps/`, each has own entry point
 </context_awareness>
 
 ---
@@ -243,12 +243,12 @@ Always clone shallow. Use `sparse_path` for monorepos. Cache: 24h at `~/.octocod
 ## 6. Execution Flow
 
 <key_principles>
-- **Align**: Each tool call supports a hypothesis
-- **Validate**: Discover → Verify → Cross-check → Confirm. Real code only (not dead code/tests/deprecated)
-- **Refine**: Empty/weak results → change tool/query (semantic variants, filters)
-- **Efficiency**: Batch queries (up to 5 local). Discovery before content. Avoid loops
-- **Tasks**: Use task tools to manage research — see `<task_driven_research>` below
-- **No Time Estimates**: Never provide timing/duration estimates
+* **Align**: Each tool call supports a hypothesis
+* **Validate**: Discover → Verify → Cross-check → Confirm. Real code only (not dead code/tests/deprecated)
+* **Refine**: Empty/weak results → change tool/query (semantic variants, filters)
+* **Efficiency**: Batch queries (up to 5 local). Discovery before content. Avoid loops
+* **Tasks**: Use task tools to manage research  -  see `<task_driven_research>` below
+* **No Time Estimates**: Never provide timing/duration estimates
 </key_principles>
 
 <task_driven_research>
@@ -264,16 +264,16 @@ Use task tools to **plan, track, and complete** research. Tasks prevent scope cr
 | Discovery | Create tasks from hypotheses | `"Find auth entry point"` → pending |
 | Planning | Break broad tasks into subtasks | `"Trace auth flow"` → 3 subtasks |
 | Execution | Mark `in_progress` → work → `completed` with evidence | One active at a time |
-| Pivots | Add new tasks for unexpected findings | `"Found Redis cache — investigate"` |
+| Pivots | Add new tasks for unexpected findings | `"Found Redis cache  -  investigate"` |
 | Completion | All completed or cancelled with reason | Cancelled = dead end documented |
 
 **Rules**:
-- Create tasks BEFORE starting research
-- Update in real-time, not batched at end
-- One `in_progress` at a time
-- Never mark complete without evidence (file:line proof)
-- Unexpected findings → new tasks, not mental notes
-- Cancelled ≠ failed — dead ends are valid; cancel with reason
+* Create tasks BEFORE starting research
+* Update in real-time, not batched at end
+* One `in_progress` at a time
+* Never mark complete without evidence (file:line proof)
+* Unexpected findings → new tasks, not mental notes
+* Cancelled ≠ failed  -  dead ends are valid; cancel with reason
 </task_driven_research>
 
 <execution_lifecycle>
@@ -282,14 +282,14 @@ Use task tools to **plan, track, and complete** research. Tasks prevent scope cr
 2. Hypothesize what needs to be proved/disproved
 3. Determine entry point (Structure? Pattern? Metadata?)
 4. If scope unclear → STOP & ASK USER
-5. Create initial task list — each hypothesis = one task
+5. Create initial task list  -  each hypothesis = one task
 
 ### Phase 2: Interactive Planning
 **PAUSE** before executing. Present to user:
-- **What I found**: Size, hot paths, recent changes
-- **Scope**: Minimal / Standard / Comprehensive
-- **Depth**: Overview / Key files / Deep dive
-- **Focus**: Entry points / Specific feature / Recent changes
+* **What I found**: Size, hot paths, recent changes
+* **Scope**: Minimal / Standard / Comprehensive
+* **Depth**: Overview / Key files / Deep dive
+* **Focus**: Entry points / Specific feature / Recent changes
 
 ### Phase 3: Execution Loop
 1. **THOUGHT**: Which task is next? Mark `in_progress`
@@ -300,8 +300,8 @@ Use task tools to **plan, track, and complete** research. Tasks prevent scope cr
 6. **CHECK**: All tasks resolved? Yes → Output. No → Loop
 
 ### Phase 4: Output
-- Generate answer with evidence
-- Ask user about next steps (see §10)
+* Generate answer with evidence
+* Ask user about next steps (see §10)
 </execution_lifecycle>
 
 ---
@@ -362,16 +362,16 @@ Use task tools to **plan, track, and complete** research. Tasks prevent scope cr
 **When to spawn**: 2+ independent hypotheses, distinct subsystems, separate packages, unrelated domains.
 
 **How**:
-1. Create tasks per domain — identify which are independent
-2. Spawn subagents via `Task` — one per domain
+1. Create tasks per domain  -  identify which are independent
+2. Spawn subagents via `Task`  -  one per domain
 3. Each agent researches independently with own task tracking
-4. Merge findings — update parent tasks with results
+4. Merge findings  -  update parent tasks with results
 
 **Rules**:
-- Local agents: full LSP flow (`localSearchCode` → LSP → `localGetFileContent`)
-- External agents: full GitHub flow (`packageSearch` → `githubViewRepoStructure` → `githubSearchCode` → `githubGetFileContent`)
-- Clear boundaries: each agent owns specific directories/domains
-- Use task tools to track per agent
+* Local agents: full LSP flow (`localSearchCode` → LSP → `localGetFileContent`)
+* External agents: full GitHub flow (`packageSearch` → `githubViewRepoStructure` → `githubSearchCode` → `githubGetFileContent`)
+* Clear boundaries: each agent owns specific directories/domains
+* Use task tools to track per agent
 
 **FORBIDDEN**: Parallelizing dependent hypotheses, single-directory scope, sequential trace flows.
 </multi_agent>
@@ -382,9 +382,9 @@ Use task tools to **plan, track, and complete** research. Tasks prevent scope cr
 
 <output_flow>
 ### Step 1: Chat Answer (MANDATORY)
-- Clear TL;DR with research results
-- Evidence and file references (full paths)
-- Important code chunks only (up to 10 lines)
+* Clear TL;DR with research results
+* Evidence and file references (full paths)
+* Important code chunks only (up to 10 lines)
 
 ### Step 2: Next Step (MANDATORY)
 Ask user for next step. Research doc → generate per `<output_structure>`. Continue → summarize to `research_summary.md` and resume from Phase 3.
@@ -412,11 +412,11 @@ Ask user for next step. Research doc → generate per `<output_structure>`. Cont
 ## 11. Safety
 
 <safety>
-- **Paths**: Within workspace (relative or absolute)
-- **Sensitive**: `.git`, `.env*`, credentials filtered automatically
-- **UTF-8**: `charOffset`/`charLength` are BYTE offsets (ripgrep)
-- **Minification**: On by default; `minified=false` for configs/markdown
-- **Pagination**: `charLength` 1000–4000; `charOffset` to step
+* **Paths**: Within workspace (relative or absolute)
+* **Sensitive**: `.git`, `.env*`, credentials filtered automatically
+* **UTF-8**: `charOffset`/`charLength` are BYTE offsets (ripgrep)
+* **Minification**: On by default; `minified=false` for configs/markdown
+* **Pagination**: `charLength` 1000–4000; `charOffset` to step
 </safety>
 
 ---
@@ -440,15 +440,15 @@ Ask user for next step. Research doc → generate per `<output_structure>`. Cont
 
 Before outputting:
 
-- [ ] Used `localSearchCode` before any LSP tool (for `lineHint`)
-- [ ] Read content LAST (`localGetFileContent` / `githubGetFileContent`)
-- [ ] Used `matchString` or `charLength` for reading (no full dumps)
-- [ ] Found repos via search, not guessed (`packageSearch` / `githubSearchRepositories`)
-- [ ] Explored structure before reading (`githubViewRepoStructure`)
-- [ ] GitHub references include full URLs with line numbers
-- [ ] Answer addresses user's goal directly
-- [ ] Followed hints and Transition Matrix for tool chaining
-- [ ] Included `mainResearchGoal`, `researchGoal`, `reasoning` consistently
+* [ ] Used `localSearchCode` before any LSP tool (for `lineHint`)
+* [ ] Read content LAST (`localGetFileContent` / `githubGetFileContent`)
+* [ ] Used `matchString` or `charLength` for reading (no full dumps)
+* [ ] Found repos via search, not guessed (`packageSearch` / `githubSearchRepositories`)
+* [ ] Explored structure before reading (`githubViewRepoStructure`)
+* [ ] GitHub references include full URLs with line numbers
+* [ ] Answer addresses user's goal directly
+* [ ] Followed hints and Transition Matrix for tool chaining
+* [ ] Included `mainResearchGoal`, `researchGoal`, `reasoning` consistently
 
 > **Tier 2/3 checklist**: [references/fallbacks.md](references/fallbacks.md)
 
@@ -456,6 +456,6 @@ Before outputting:
 
 ## References
 
-- **Tool Parameters**: [references/tool-reference.md](references/tool-reference.md)
-- **Workflow Recipes**: [references/workflow-patterns.md](references/workflow-patterns.md)
-- **Fallback Tiers**: [references/fallbacks.md](references/fallbacks.md)
+* **Tool Parameters**: [references/tool-reference.md](references/tool-reference.md)
+* **Workflow Recipes**: [references/workflow-patterns.md](references/workflow-patterns.md)
+* **Fallback Tiers**: [references/fallbacks.md](references/fallbacks.md)

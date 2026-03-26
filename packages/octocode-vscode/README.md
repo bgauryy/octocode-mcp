@@ -14,19 +14,19 @@ Octocode is the leading AI-powered GitHub code intelligence platform. This exten
 
 ## Agenda
 
-- [Requirements](#requirements)
-- [Authentication & Installation](#-authentication--installation)
-- [Prompts Menu](#prompts-menu)
-- [Tools Available](#tools-available)
-- [Supported IDEs & AI Assistants](#supported-ides--ai-assistants)
-- [Troubleshooting & More Info](#troubleshooting--more-info)
+* [Requirements](#requirements)
+* [Authentication & Installation](#-authentication--installation)
+* [Prompts Menu](#prompts-menu)
+* [Tools Available](#tools-available)
+* [Supported IDEs & AI Assistants](#supported-ides--ai-assistants)
+* [Troubleshooting & More Info](#troubleshooting--more-info)
 
 ---
 
 ## Requirements
 
-- **Node.js**: v20 or higher
-- **GitHub Account**: Authorized user
+* **Node.js**: v20 or higher
+* **GitHub Account**: Authorized user
 
 ---
 
@@ -75,8 +75,8 @@ To set this up:
 **✅ Best for**: Windows users or custom token control.
 
 1. Generate a **GitHub Token** (only `repo` read permission is required):
-   - [Classic Token](https://github.com/settings/tokens/new)
-   - [Fine-grained Token](https://github.com/settings/personal-access-tokens/new)
+   * [Classic Token](https://github.com/settings/tokens/new)
+   * [Fine-grained Token](https://github.com/settings/personal-access-tokens/new)
 2. Add the token to your MCP configuration manually:
 
 **Configuration (Windows/Manual):**
@@ -158,8 +158,8 @@ This extension works with all major AI-powered editors and assistants:
 <details>
 <summary>*Platform-specific paths</summary>
 
-- **Trae**: macOS: `~/Library/Application Support/Trae/mcp.json` · Windows: `%APPDATA%/Trae/mcp.json` · Linux: `~/.config/Trae/mcp.json`
-- **VS Code**: Falls back to Claude Desktop config · macOS: `~/Library/Application Support/Claude/claude_desktop_config.json` · Windows: `%APPDATA%/Claude/claude_desktop_config.json` · Linux: `~/.config/Claude/claude_desktop_config.json`
+* **Trae**: macOS: `~/Library/Application Support/Trae/mcp.json` · Windows: `%APPDATA%/Trae/mcp.json` · Linux: `~/.config/Trae/mcp.json`
+* **VS Code**: Falls back to Claude Desktop config · macOS: `~/Library/Application Support/Claude/claude_desktop_config.json` · Windows: `%APPDATA%/Claude/claude_desktop_config.json` · Linux: `~/.config/Claude/claude_desktop_config.json`
 
 </details>
 

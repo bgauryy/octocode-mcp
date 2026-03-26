@@ -10,13 +10,13 @@ Expert code reviewer that performs holistic architectural analysis using Octocod
 </what>
 
 <when_to_use>
-- Reviewing pull requests (by number, URL, or branch)
-- Reviewing local changes (staged, unstaged, or working tree)
-- Analyzing code changes for bugs, security, performance
-- Checking architectural impact of code changes
-- Verifying flow impact on existing callers
-- Security scanning of new code
-- Code quality assessment of changed files
+* Reviewing pull requests (by number, URL, or branch)
+* Reviewing local changes (staged, unstaged, or working tree)
+* Analyzing code changes for bugs, security, performance
+* Checking architectural impact of code changes
+* Verifying flow impact on existing callers
+* Security scanning of new code
+* Code quality assessment of changed files
 </when_to_use>
 
 ---
@@ -26,9 +26,9 @@ Expert code reviewer that performs holistic architectural analysis using Octocod
 <global_rules priority="maximum">
 
 ### Tool Enforcement (applies to ALL phases)
-- **MUST** use Octocode MCP tools for all code search, reading, and analysis
-- **FORBIDDEN:** Using shell commands (`grep`, `cat`, `find`, `curl`, `gh`) when Octocode MCP tools are available
-- **FORBIDDEN:** Guessing code content without fetching via Octocode MCP
+* **MUST** use Octocode MCP tools for all code search, reading, and analysis
+* **FORBIDDEN:** Using shell commands (`grep`, `cat`, `find`, `curl`, `gh`) when Octocode MCP tools are available
+* **FORBIDDEN:** Guessing code content without fetching via Octocode MCP
 
 ### Precedence Table
 When rules conflict, follow this precedence (highest wins):
@@ -56,7 +56,7 @@ When rules conflict, follow this precedence (highest wins):
 
 ---
 
-## Review Target Detection (REQUIRED — Run First)
+## Review Target Detection (REQUIRED  -  Run First)
 
 <target_detection priority="maximum">
 **Before anything else, determine what to review.**
@@ -74,10 +74,10 @@ When rules conflict, follow this precedence (highest wins):
 | No PR specified, user asks to "review code" | **Local Changes** | Local Mode |
 
 ### Target Rules
-- **IF** user provides a PR number or URL → **THEN** use **PR Mode** (existing flow)
-- **IF** user provides a specific local file path without PR context → **THEN** use **Local Mode (File Scope)** and review only that file plus immediate dependencies
-- **IF** user mentions "my changes", "local", "staged", "unstaged", "working tree", or "diff" without a PR reference → **THEN** use **Local Mode**
-- **IF** ambiguous → **THEN** ask user: "Would you like me to review a specific PR or your local changes?"
+* **IF** user provides a PR number or URL → **THEN** use **PR Mode** (existing flow)
+* **IF** user provides a specific local file path without PR context → **THEN** use **Local Mode (File Scope)** and review only that file plus immediate dependencies
+* **IF** user mentions "my changes", "local", "staged", "unstaged", "working tree", or "diff" without a PR reference → **THEN** use **Local Mode**
+* **IF** ambiguous → **THEN** ask user: "Would you like me to review a specific PR or your local changes?"
 
 ### Local Mode Prerequisites
 
@@ -93,8 +93,8 @@ ENABLE_LOCAL=true
 Or in the Octocode config file (`local.enabled: true`).
 
 **Verification:** Call any `local*` tool (e.g., `localViewStructure` on the workspace root). 
-- **IF** it responds → local tools are available, proceed with Local Mode
-- **IF** it fails with "Local tools are disabled" → **THEN** STOP and inform user:
+* **IF** it responds → local tools are available, proceed with Local Mode
+* **IF** it fails with "Local tools are disabled" → **THEN** STOP and inform user:
   ```
   Local tools are not enabled. To review local changes, enable them:
   
@@ -107,12 +107,12 @@ Or in the Octocode config file (`local.enabled: true`).
 </local_mode_config>
 
 ### Local File Check (REQUIRED for file-scoped requests)
-- **IF** target is a file path → verify file exists with `localFindFiles` or `localViewStructure`
-- **IF** file does not exist → STOP and ask user for the correct path
-- **IF** file exists → scope analysis to:
-  - The requested file
-  - Its direct imports/exports and immediate callers/consumers
-- In Local Mode (File Scope), do NOT expand to full-repo review unless user asks
+* **IF** target is a file path → verify file exists with `localFindFiles` or `localViewStructure`
+* **IF** file does not exist → STOP and ask user for the correct path
+* **IF** file exists → scope analysis to:
+  * The requested file
+  * Its direct imports/exports and immediate callers/consumers
+* In Local Mode (File Scope), do NOT expand to full-repo review unless user asks
 
 </target_detection>
 
@@ -142,7 +142,7 @@ Look for Octocode MCP tools (e.g., `localSearchCode`, `lspGotoDefinition`, `gith
 > ```
 > Then restart your editor."
 
-Proceed with whatever tools are available — do not block on setup.
+Proceed with whatever tools are available  -  do not block on setup.
 </mcp_discovery>
 
 ---
@@ -150,14 +150,14 @@ Proceed with whatever tools are available — do not block on setup.
 ## Pre-Flight: Octocode MCP Dependency Check
 
 Keep this section lean in the base skill and use the full protocol in:
-- [Dependency Check Reference](references/dependency-check.md)
+* [Dependency Check Reference](references/dependency-check.md)
 
 <dependency_gate_summary>
-- **MUST run before Phase 1**: verify tool availability for the detected mode.
-- **PR Mode minimum gate**: `githubSearchPullRequests` responds + PR is accessible.
-- **Local Mode minimum gate**: `ENABLE_LOCAL=true`, local tools respond, git repo is valid.
-- **Local File Check gate**: requested file path exists before any analysis.
-- **On failure**: STOP, explain missing prerequisites, and ask for correction.
+* **MUST run before Phase 1**: verify tool availability for the detected mode.
+* **PR Mode minimum gate**: `githubSearchPullRequests` responds + PR is accessible.
+* **Local Mode minimum gate**: `ENABLE_LOCAL=true`, local tools respond, git repo is valid.
+* **Local File Check gate**: requested file path exists before any analysis.
+* **On failure**: STOP, explain missing prerequisites, and ask for correction.
 </dependency_gate_summary>
 
 ---
@@ -172,12 +172,12 @@ Keep this section lean in the base skill and use the full protocol in:
 ```
 git diff → localSearchCode(pattern) → get lineHint → LSP tools → localGetFileContent (LAST)
 ```
-- `localSearchCode` is ALWAYS the first step — it finds symbols and provides `lineHint` (1-indexed line number) required by ALL LSP tools.
-- `lspCallHierarchy(incoming)` traces who calls a changed function. `lspFindReferences` finds all usages of a changed type/variable.
-- `localGetFileContent` reads implementation — use ONLY as the final step after discovery.
-- NEVER guess `lineHint` — ALWAYS get it from `localSearchCode` first.
+* `localSearchCode` is ALWAYS the first step  -  it finds symbols and provides `lineHint` (1-indexed line number) required by ALL LSP tools.
+* `lspCallHierarchy(incoming)` traces who calls a changed function. `lspFindReferences` finds all usages of a changed type/variable.
+* `localGetFileContent` reads implementation  -  use ONLY as the final step after discovery.
+* NEVER guess `lineHint`  -  ALWAYS get it from `localSearchCode` first.
 
-**Shell Commands** (Local Mode only — git operations):
+**Shell Commands** (Local Mode only  -  git operations):
 
 | Command | Purpose |
 |---------|---------|
@@ -227,12 +227,12 @@ git diff → localSearchCode(pattern) → get lineHint → LSP tools → localGe
 
 | Changed Code | Recipe | Key Tool |
 |-------------|--------|----------|
-| Function signature changed | Recipe 1 — incoming callers | `lspCallHierarchy(incoming)` |
-| New function added | Recipe 2 — outgoing deps | `lspCallHierarchy(outgoing)` |
-| Type/Interface changed | Recipe 3 — all usages | `lspFindReferences` |
-| Data transformation changed | Recipe 4 — trace chain | Chain `lspCallHierarchy` hops |
-| Function signature changed (remote) | Recipe 5 — remote callers | `githubSearchCode` + `githubGetFileContent` |
-| Export changed | Recipe 6 — import chain | `githubSearchCode` for consumers |
+| Function signature changed | Recipe 1  -  incoming callers | `lspCallHierarchy(incoming)` |
+| New function added | Recipe 2  -  outgoing deps | `lspCallHierarchy(outgoing)` |
+| Type/Interface changed | Recipe 3  -  all usages | `lspFindReferences` |
+| Data transformation changed | Recipe 4  -  trace chain | Chain `lspCallHierarchy` hops |
+| Function signature changed (remote) | Recipe 5  -  remote callers | `githubSearchCode` + `githubGetFileContent` |
+| Export changed | Recipe 6  -  import chain | `githubSearchCode` for consumers |
 
 </flow_analysis_protocol>
 
@@ -241,12 +241,12 @@ git diff → localSearchCode(pattern) → get lineHint → LSP tools → localGe
 ## Review Guidelines
 
 Keep the base rule here and use detailed guidance from:
-- [Review Guidelines Reference](references/review-guidelines.md)
+* [Review Guidelines Reference](references/review-guidelines.md)
 
 <review_guidelines_base>
-- Focus on CHANGED code first.
-- Prioritize HIGH/MED confidence, actionable findings.
-- Use structural tracing (imports/callers/consumers) before concluding impact.
+* Focus on CHANGED code first.
+* Prioritize HIGH/MED confidence, actionable findings.
+* Use structural tracing (imports/callers/consumers) before concluding impact.
 </review_guidelines_base>
 
 ---
@@ -302,14 +302,14 @@ GUIDELINES → CONTEXT → USER CHECKPOINT → ANALYSIS → FINALIZE → REPORT
 </flow_overview>
 
 <key_principles>
-- **Align**: Every tool call MUST support a hypothesis
-- **Validate**: Real code only (not dead/test/deprecated). Check `updated` dates.
-- **Links (PR Mode)**: MUST use full GitHub links for code references (https://github.com/{{OWNER}}/{{REPO}}/blob/{{BRANCH}}/{{PATH}}).
-- **Links (Local Mode)**: Use `file:line` format for local code references.
-- **Refine**: Weak reasoning? Change tool/query.
-- **Efficiency**: Batch Octocode MCP queries (1-3 per call). Metadata before content.
-- **Tasks**: MUST use the runtime's task/todo tracking tool to track progress for Full mode reviews.
-- **FORBIDDEN**: Providing timing/duration estimates.
+* **Align**: Every tool call MUST support a hypothesis
+* **Validate**: Real code only (not dead/test/deprecated). Check `updated` dates.
+* **Links (PR Mode)**: MUST use full GitHub links for code references (https://github.com/{{OWNER}}/{{REPO}}/blob/{{BRANCH}}/{{PATH}}).
+* **Links (Local Mode)**: Use `file:line` format for local code references.
+* **Refine**: Weak reasoning? Change tool/query.
+* **Efficiency**: Batch Octocode MCP queries (1-3 per call). Metadata before content.
+* **Tasks**: MUST use the runtime's task/todo tracking tool to track progress for Full mode reviews.
+* **FORBIDDEN**: Providing timing/duration estimates.
 </key_principles>
 
 ---
@@ -317,19 +317,19 @@ GUIDELINES → CONTEXT → USER CHECKPOINT → ANALYSIS → FINALIZE → REPORT
 ## Execution Lifecycle
 
 Use detailed lifecycle instructions from:
-- [Execution Lifecycle Reference](references/execution-lifecycle.md)
+* [Execution Lifecycle Reference](references/execution-lifecycle.md)
 
 <execution_lifecycle_base>
 ### Base vs Optional (REQUIRED)
-- **Base (in this SKILL):**
-  - Target detection
-  - Tooling model and selection rules
-  - Flow analysis protocol
-  - Phase 4 Analysis gate (core reasoning/execution)
-- **Optional/Extended (in references):**
-  - Full dependency gate details
-  - Detailed phase playbooks (1, 2, 3, 5, 6)
-  - Expanded verification checklist
+* **Base (in this SKILL):**
+  * Target detection
+  * Tooling model and selection rules
+  * Flow analysis protocol
+  * Phase 4 Analysis gate (core reasoning/execution)
+* **Optional/Extended (in references):**
+  * Full dependency gate details
+  * Detailed phase playbooks (1, 2, 3, 5, 6)
+  * Expanded verification checklist
 </execution_lifecycle_base>
 
 ### Phase 4: Analysis
@@ -338,39 +338,39 @@ Use detailed lifecycle instructions from:
 **REQUIRED: Respect user direction from Phase 3 AND guidelines from Phase 1.**
 
 ### Pre-Conditions
-- [ ] Phase 3 (User Checkpoint) completed
-- [ ] User direction received (focus areas or "full review")
-- [ ] Guidelines context available (or confirmed empty)
+* [ ] Phase 3 (User Checkpoint) completed
+* [ ] User direction received (focus areas or "full review")
+* [ ] Guidelines context available (or confirmed empty)
 
-### Actions (REQUIRED — both PR Mode and Local Mode)
+### Actions (REQUIRED  -  both PR Mode and Local Mode)
 
 > **Tool selection by mode** (see Tool Selection Rules in Tools section):
 > - **PR Mode** (workspace IS PR repo): `local*` + `lsp*` primary, `github*` for PR metadata/diff
 > - **PR Mode** (workspace is NOT PR repo): `github*` only
-> - **Local Mode**: `local*` + `lsp*` + shell `git` (requires `ENABLE_LOCAL=true` — see Target Detection)
+> - **Local Mode**: `local*` + `lsp*` + shell `git` (requires `ENABLE_LOCAL=true`  -  see Target Detection)
 > - **File Scope**: Same as Local Mode, but limit all analysis to the target file + its immediate dependency graph (1 hop)
 
 1. **List 3-5 search queries** aligned with user focus, then execute each:
    ```
-   Query 1: [tool] — [search pattern] — [goal]
-   Query 2: [tool] — [search pattern] — [goal]
+   Query 1: [tool]  -  [search pattern]  -  [goal]
+   Query 2: [tool]  -  [search pattern]  -  [goal]
    ...
    ```
 2. **Guidelines Compliance Check** (REQUIRED if guidelines were loaded in Phase 1):
-   - For each changed file, check against loaded guidelines/conventions
-   - MUST flag any violations of project-specific rules with reference to the specific guideline
+   * For each changed file, check against loaded guidelines/conventions
+   * MUST flag any violations of project-specific rules with reference to the specific guideline
 3. **Flow Impact Analysis** (REQUIRED for function/method changes):
-   - Apply the matching recipe from the Flow Analysis Protocol based on change type (see Flow Analysis Protocol section and [references/flow-analysis-protocol.md](references/flow-analysis-protocol.md))
-   - MUST identify if return values, types, or side effects changed
-   - MUST check if existing integrations will break
-   - MUST document the blast radius: how many callers/consumers are affected
+   * Apply the matching recipe from the Flow Analysis Protocol based on change type (see Flow Analysis Protocol section and [references/flow-analysis-protocol.md](references/flow-analysis-protocol.md))
+   * MUST identify if return values, types, or side effects changed
+   * MUST check if existing integrations will break
+   * MUST document the blast radius: how many callers/consumers are affected
 4. **Validate schemas/APIs/dependencies** using `matchString` targeting (PR Mode: `githubGetFileContent`; Local Mode: `localGetFileContent` + `localSearchCode`)
 5. **Assess impact per domain** (prioritize user-specified areas from Phase 3):
-   - **Architectural**: System structure, pattern alignment
-   - **Integration**: Affected systems, integration patterns
-   - **Risk**: Race conditions, performance, security
-   - **Business**: User experience, metrics, operational costs
-   - **Cascade Effect**: Could this lead to other problems?
+   * **Architectural**: System structure, pattern alignment
+   * **Integration**: Affected systems, integration patterns
+   * **Risk**: Race conditions, performance, security
+   * **Business**: User experience, metrics, operational costs
+   * **Cascade Effect**: Could this lead to other problems?
 6. **Identify edge cases** in changed logic
 7. **Security scan**: injection, XSS, data exposure, regulatory compliance
 8. **Scan for TODO/FIXME comments** in new code ('+' lines only)
@@ -378,30 +378,30 @@ Use detailed lifecycle instructions from:
 10. **Preflight suggestion** (Local Mode only): If changes are substantial, suggest running the project's test/lint suite before finalizing the review
 
 ### Gate Check
-- [ ] All search queries executed
-- [ ] Guidelines compliance checked (if guidelines loaded)
-- [ ] Flow impact analyzed for all modified functions (using LSP in Local Mode)
-- [ ] All user-specified focus areas covered
-- [ ] Findings list compiled with confidence levels
+* [ ] All search queries executed
+* [ ] Guidelines compliance checked (if guidelines loaded)
+* [ ] Flow impact analyzed for all modified functions (using LSP in Local Mode)
+* [ ] All user-specified focus areas covered
+* [ ] Findings list compiled with confidence levels
 
 ### FORBIDDEN
-- Analyzing areas user explicitly excluded in Phase 3
-- Skipping flow impact analysis for function/method changes
-- Ignoring guidelines loaded in Phase 1
-- **Local Mode**: Using `github*` tools for code reading (MUST use `local*` + `lsp*`)
-- **Local Mode**: Guessing `lineHint` without calling `localSearchCode` first
-- **File Scope**: Expanding analysis beyond the target file + immediate dependencies without user request
-- **File Scope**: Spawning parallel agents (single-pass review only)
+* Analyzing areas user explicitly excluded in Phase 3
+* Skipping flow impact analysis for function/method changes
+* Ignoring guidelines loaded in Phase 1
+* **Local Mode**: Using `github*` tools for code reading (MUST use `local*` + `lsp*`)
+* **Local Mode**: Guessing `lineHint` without calling `localSearchCode` first
+* **File Scope**: Expanding analysis beyond the target file + immediate dependencies without user request
+* **File Scope**: Spawning parallel agents (single-pass review only)
 
 ### ALLOWED
-- **PR Mode**: All Octocode MCP tools (github*, local*, lsp*)
-- **Local Mode**: Octocode MCP `local*` + `lsp*` tools + shell `git` commands
-- **Both**: Spawning parallel agents via `Task` for large change sets (see Multi-Agent section)
+* **PR Mode**: All Octocode MCP tools (github*, local*, lsp*)
+* **Local Mode**: Octocode MCP `local*` + `lsp*` tools + shell `git` commands
+* **Both**: Spawning parallel agents via `Task` for large change sets (see Multi-Agent section)
 
 ### On Failure
-- **IF** search returns no results → **THEN** broaden query, try synonym, or change tool
-- **IF** flow tracing hits dead end → **THEN** document limitation, proceed with available evidence
-- **IF** LSP tool fails (Local Mode) → **THEN** fall back to `localSearchCode` pattern matching
+* **IF** search returns no results → **THEN** broaden query, try synonym, or change tool
+* **IF** flow tracing hits dead end → **THEN** document limitation, proceed with available evidence
+* **IF** LSP tool fails (Local Mode) → **THEN** fall back to `localSearchCode` pattern matching
 </analysis_gate>
 
 ---
@@ -409,11 +409,11 @@ Use detailed lifecycle instructions from:
 ### Phase 5 + Phase 6 (Optional Detail)
 
 Keep Finalize/Report details in the lifecycle reference to keep the base skill focused:
-- [Execution Lifecycle Reference](references/execution-lifecycle.md)
+* [Execution Lifecycle Reference](references/execution-lifecycle.md)
 
 Base expectation in this SKILL:
-- After Phase 4, finalize only high-impact evidence-backed findings
-- Present concise recommendation and ask before writing any review document
+* After Phase 4, finalize only high-impact evidence-backed findings
+* Present concise recommendation and ask before writing any review document
 
 ---
 
@@ -428,10 +428,10 @@ Base expectation in this SKILL:
 **Applies to BOTH PR Mode and Local Mode.** In Local Mode, agents use `local*` + `lsp*` tools exclusively (no `github*` for code reading).
 
 **Agents** (spawn in Phase 4, ALL in a SINGLE message):
-- **Agent A**: Flow Impact — traces callers/consumers of modified symbols (uses `lspCallHierarchy` + `lspFindReferences` in Local Mode)
-- **Agent B**: Security & Error Handling — scans for vulnerabilities and swallowed exceptions
-- **Agent C**: Architecture & Code Quality — patterns, coupling, performance
-- **Agent D**: Guidelines & Duplicates — compliance + DRY (only if guidelines loaded)
+* **Agent A**: Flow Impact  -  traces callers/consumers of modified symbols (uses `lspCallHierarchy` + `lspFindReferences` in Local Mode)
+* **Agent B**: Security & Error Handling  -  scans for vulnerabilities and swallowed exceptions
+* **Agent C**: Architecture & Code Quality  -  patterns, coupling, performance
+* **Agent D**: Guidelines & Duplicates  -  compliance + DRY (only if guidelines loaded)
 
 **Scaling**: 2 agents (6-15 files) → 3 agents (16-30 files) → 4 agents (30+ files). See reference for full matrix.
 
@@ -456,24 +456,24 @@ Base expectation in this SKILL:
 
 ## References
 
-- **Flow Analysis**: [references/flow-analysis-protocol.md](references/flow-analysis-protocol.md) — Tracing recipes (6 recipes for local + remote)
-- **Domain Reviewers**: [references/domain-reviewers.md](references/domain-reviewers.md) — Domain detection, priority matrix, exclusions
-- **Dependency Check**: [references/dependency-check.md](references/dependency-check.md) — Full pre-flight gates and failure handling
-- **Review Guidelines**: [references/review-guidelines.md](references/review-guidelines.md) — Confidence model and changed-code mindset
-- **Execution Lifecycle**: [references/execution-lifecycle.md](references/execution-lifecycle.md) — Detailed Phase 1,2,3,5,6 playbooks
-- **Verification Checklist**: [references/verification-checklist.md](references/verification-checklist.md) — Full delivery checklist
-- **Parallel Agents**: [references/parallel-agent-protocol.md](references/parallel-agent-protocol.md) — Agent definitions, prompts, scaling, merge protocol
-- **Output Template**: [references/output-template.md](references/output-template.md) — Report format and markdown template
+* **Flow Analysis**: [references/flow-analysis-protocol.md](references/flow-analysis-protocol.md)  -  Tracing recipes (6 recipes for local + remote)
+* **Domain Reviewers**: [references/domain-reviewers.md](references/domain-reviewers.md)  -  Domain detection, priority matrix, exclusions
+* **Dependency Check**: [references/dependency-check.md](references/dependency-check.md)  -  Full pre-flight gates and failure handling
+* **Review Guidelines**: [references/review-guidelines.md](references/review-guidelines.md)  -  Confidence model and changed-code mindset
+* **Execution Lifecycle**: [references/execution-lifecycle.md](references/execution-lifecycle.md)  -  Detailed Phase 1,2,3,5,6 playbooks
+* **Verification Checklist**: [references/verification-checklist.md](references/verification-checklist.md)  -  Full delivery checklist
+* **Parallel Agents**: [references/parallel-agent-protocol.md](references/parallel-agent-protocol.md)  -  Agent definitions, prompts, scaling, merge protocol
+* **Output Template**: [references/output-template.md](references/output-template.md)  -  Report format and markdown template
 
 ---
 
 ## Verification Checklist
 
 Use the full checklist from:
-- [Verification Checklist Reference](references/verification-checklist.md)
+* [Verification Checklist Reference](references/verification-checklist.md)
 
 <verification_base>
-- [ ] Target/mode resolved (including file-scoped local checks when requested)
-- [ ] Phase 4 analysis complete with evidence and confidence labels
-- [ ] Findings are actionable, deduplicated, and scoped correctly
+* [ ] Target/mode resolved (including file-scoped local checks when requested)
+* [ ] Phase 4 analysis complete with evidence and confidence labels
+* [ ] Findings are actionable, deduplicated, and scoped correctly
 </verification_base>

@@ -12,9 +12,9 @@ By downloading, installing, accessing, or using the Octocode software stack (inc
 The Octocode software is licensed under the **MIT License**.
 
 This is a permissive open-source license that allows you to:
-- Use the software for any purpose (personal or commercial).
-- Modify and distribute the software.
-- Use the software in proprietary projects.
+* Use the software for any purpose (personal or commercial).
+* Modify and distribute the software.
+* Use the software in proprietary projects.
 
 The only requirement is that you include the original copyright notice and license in any copy of the software/source.
 
@@ -26,9 +26,9 @@ The source code is open and available for use under the terms of the MIT License
 ## 3. Commercial Support (Optional)
 
 While the software is free to use, we offer commercial support packages for enterprises that require:
-- SLA-backed support
-- Priority feature requests
-- Dedicated integration assistance
+* SLA-backed support
+* Priority feature requests
+* Dedicated integration assistance
 
 **Contact:** bgauryy@octocodeai.com
 
@@ -41,9 +41,9 @@ You may opt-out of telemetry at any time by setting the environment variable `LO
 ## 5. Prohibited Conduct
 
 You agree not to:
-- Use the software for any illegal purpose.
-- Remove or alter the copyright notices or license terms in the software.
-- Attempt to flood or disrupt our telemetry services.
+* Use the software for any illegal purpose.
+* Remove or alter the copyright notices or license terms in the software.
+* Attempt to flood or disrupt our telemetry services.
 
 ## 6. Disclaimer of Warranties
 

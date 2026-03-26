@@ -20,12 +20,12 @@ Octocode CLI configures [octocode-mcp](https://www.npmjs.com/package/octocode-mc
 
 ## Features
 
-- **MCP installation** — configure `octocode-mcp` for Cursor, Claude Desktop, Windsurf, Zed, Claude Code, Trae, Antigravity, Opencode, and VS Code extensions (Cline, Roo-Cline, Continue).
-- **MCP marketplace** — browse and install 70+ community MCP servers from the terminal.
-- **Skills manager** — install 9 bundled `octocode-*` skills across clients (Claude Code, Claude Desktop, Cursor, Codex, Opencode). Supports single-skill, multi-target, copy, and symlink modes.
-- **Config sync** — keep MCP configurations consistent across all IDEs.
-- **Authentication** — GitHub OAuth device flow with AES-256-GCM encrypted token storage; supports Octocode OAuth, `gh` CLI, and env-var tokens.
-- **Cache management** — inspect and clean cloned-repo cache, skills marketplace cache, and logs.
+* **MCP installation**  -  configure `octocode-mcp` for Cursor, Claude Desktop, Windsurf, Zed, Claude Code, Trae, Antigravity, Opencode, and VS Code extensions (Cline, Roo-Cline, Continue).
+* **MCP marketplace**  -  browse and install 70+ community MCP servers from the terminal.
+* **Skills manager**  -  install 9 bundled `octocode-*` skills across clients (Claude Code, Claude Desktop, Cursor, Codex, Opencode). Supports single-skill, multi-target, copy, and symlink modes.
+* **Config sync**  -  keep MCP configurations consistent across all IDEs.
+* **Authentication**  -  GitHub OAuth device flow with AES-256-GCM encrypted token storage; supports Octocode OAuth, `gh` CLI, and env-var tokens.
+* **Cache management**  -  inspect and clean cloned-repo cache, skills marketplace cache, and logs.
 
 ---
 
@@ -85,7 +85,7 @@ Supported skills `--targets`: `claude-code`, `claude-desktop`, `cursor`, `codex`
 
 | Skill | When to use |
 |-------|-------------|
-| `octocode-researcher` | Code exploration — find, trace, definitions |
+| `octocode-researcher` | Code exploration  -  find, trace, definitions |
 | `octocode-research` | Deep research via HTTP research server |
 | `octocode-plan` | Plan → implement → verify |
 | `octocode-rfc-generator` | RFCs and design docs |
@@ -125,8 +125,8 @@ rm -rf ~/.octocode && octocode-cli login # reset credentials
 octocode-cli status                      # verify auth
 ```
 
-- **Token expired** — run `octocode-cli login`.
-- **Browser not opening** — copy the authorization URL from the terminal.
+* **Token expired**  -  run `octocode-cli login`.
+* **Browser not opening**  -  copy the authorization URL from the terminal.
 
 ---
 

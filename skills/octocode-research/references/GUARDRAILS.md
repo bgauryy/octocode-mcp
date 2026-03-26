@@ -35,6 +35,6 @@
 
 ## Integrity
 
-- Cite exact file + line
-- Distinguish facts vs interpretation: "Code does X" != "I think this means Y"
-- Never invent code not in results
+* Cite exact file + line
+* Distinguish facts vs interpretation: "Code does X" != "I think this means Y"
+* Never invent code not in results

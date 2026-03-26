@@ -220,9 +220,9 @@ invalidateCredentialsCache();
 ```
 
 The cache is automatically invalidated when:
-- `storeCredentials()` is called
-- `deleteCredentials()` is called
-- `updateToken()` is called
+* `storeCredentials()` is called
+* `deleteCredentials()` is called
+* `updateToken()` is called
 
 ---
 
@@ -317,8 +317,8 @@ const store = readCredentialsStore();
 
 ## Related Documentation
 
-- [SESSION_PERSISTENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/SESSION_PERSISTENCE.md) - Session storage architecture
-- [API_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/API_REFERENCE.md) - Complete API documentation
+* [SESSION_PERSISTENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/SESSION_PERSISTENCE.md) - Session storage architecture
+* [API_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/API_REFERENCE.md) - Complete API documentation
 
 ---
 

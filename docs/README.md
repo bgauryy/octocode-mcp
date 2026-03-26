@@ -25,6 +25,6 @@
 
 ## Documentation Rules
 
-- Keep one package docs index per package and link to it from shared indexes.
-- Keep task instructions in one canonical doc instead of repeating them in multiple references.
-- Use absolute GitHub URLs in documentation files.
+* Keep one package docs index per package and link to it from shared indexes.
+* Keep task instructions in one canonical doc instead of repeating them in multiple references.
+* Use absolute GitHub URLs in documentation files.

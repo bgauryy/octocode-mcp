@@ -44,14 +44,14 @@ DO NOT duplicate work outside your boundaries.
 {MAIN_RESEARCH_GOAL}
 
 ## Your Specific Scope
-- **Domain**: {DOMAIN_NAME}
-- **Repository**: {owner}/{repo} (if GitHub) OR {path_prefix} (if local)
-- **Boundaries**: ONLY research within this scope
+* **Domain**: {DOMAIN_NAME}
+* **Repository**: {owner}/{repo} (if GitHub) OR {path_prefix} (if local)
+* **Boundaries**: ONLY research within this scope
 
 ## Constraints
-- Maximum tool calls: 10
-- Timeout: 5 minutes
-- You MUST write findings to output file
+* Maximum tool calls: 10
+* Timeout: 5 minutes
+* You MUST write findings to output file
 
 ## Output File
 Write to: `.octocode/research/{SESSION_ID}/domain-{DOMAIN_NAME}.md`
@@ -70,11 +70,11 @@ Write to: `.octocode/research/{SESSION_ID}/domain-{DOMAIN_NAME}.md`
 
 ## Findings
 ### Finding 1: {title}
-- Evidence: {file:line}
-- Code snippet (≤10 lines)
+* Evidence: {file:line}
+* Code snippet (≤10 lines)
 
 ## Gaps
-- [What couldn't be determined]
+* [What couldn't be determined]
 
 ## Answer
 [Direct answer to mainResearchGoal from this domain]
@@ -112,9 +112,9 @@ Agent C: Timeout (partial results)
 <merge_gate>
 **HALT. Before merging, verify ALL conditions:**
 
-- [ ] All agents completed OR timed out (5 min max)?
-- [ ] All expected domain-*.md files exist (or noted as missing)?
-- [ ] No agent still running in background?
+* [ ] All agents completed OR timed out (5 min max)?
+* [ ] All expected domain-*.md files exist (or noted as missing)?
+* [ ] No agent still running in background?
 
 **IF ANY condition not met → WAIT or collect partial results.**
 **IF ALL conditions met → PROCEED with merge steps.**
@@ -135,9 +135,9 @@ Agent C: Timeout (partial results)
 | Missing coverage | Gap between domains | Note in output |
 
 **Step 3**: Synthesize unified answer
-- Combine findings from all domains
-- Note which domain each finding came from
-- Highlight cross-domain connections
+* Combine findings from all domains
+* Note which domain each finding came from
+* Highlight cross-domain connections
 
 **Step 4**: Present merged result
 > "Merged findings from {N} agents. Domain A found X, Domain B found Y. Together, this shows..."
@@ -145,10 +145,10 @@ Agent C: Timeout (partial results)
 <merge_complete_gate>
 **HALT. Before proceeding to Phase 5 (OUTPUT), verify:**
 
-- [ ] All domain findings incorporated?
-- [ ] Conflicts resolved (or user acknowledged)?
-- [ ] Deduplication complete?
-- [ ] Cross-domain connections noted?
+* [ ] All domain findings incorporated?
+* [ ] Conflicts resolved (or user acknowledged)?
+* [ ] Deduplication complete?
+* [ ] Cross-domain connections noted?
 
 **IF ANY condition not met → Complete missing items.**
 **IF ALL conditions met → PROCEED to Phase 5 (OUTPUT) in main SKILL.md.**
@@ -171,16 +171,16 @@ Agent C: Timeout (partial results)
 ## Merged Findings
 
 ### From Domain: auth (complete)
-- Auth uses JWT tokens
-- Implementation at auth/jwt.ts:42
+* Auth uses JWT tokens
+* Implementation at auth/jwt.ts:42
 
 ### From Domain: payments (partial - timeout)
-- Found payment gateway integration
-- [Incomplete: couldn't trace full flow]
+* Found payment gateway integration
+* [Incomplete: couldn't trace full flow]
 
 ### Gaps
-- Payments domain research incomplete due to timeout
-- Consider: "Continue researching payments domain?"
+* Payments domain research incomplete due to timeout
+* Consider: "Continue researching payments domain?"
 ```
 
 ### Example: Conflict Resolution

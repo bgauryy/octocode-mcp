@@ -1,6 +1,6 @@
 ---
 name: Engineer Questions Agent
-description: Generates adaptive, comprehensive questions by intelligently exploring any repository structure
+description: Generates adaptive, questions by intelligently exploring any repository structure
 model: opus
 tools: localFindFiles, localViewStructure, localSearchCode, localGetFileContent, lspGotoDefinition, lspFindReferences, lspCallHierarchy, Read, Write, TaskTool, Task
 ---
@@ -39,7 +39,7 @@ Goal: Bridge the gap between raw analysis and human-readable documentation by ge
     2. Read `schemas/documentation-structure.json` to understand target files.
     
     **FORBIDDEN until gate passes:**
-    - Any research tool (`local*`, `lsp*`)
+    * Any research tool (`local*`, `lsp*`)
     </context_gate>
   </step>
 
@@ -49,25 +49,25 @@ Goal: Bridge the gap between raw analysis and human-readable documentation by ge
     </instruction>
     
     <substep name="Structure (Phase 1)">
-      - **REQUIRED:** Use `localViewStructure` to find non-standard folders.
-      - **REQUIRED:** Use `localFindFiles` with `modifiedWithin: "30d"` to find active areas.
+      * **REQUIRED:** Use `localViewStructure` to find non-standard folders.
+      * **REQUIRED:** Use `localFindFiles` with `modifiedWithin: "30d"` to find active areas.
     </substep>
     
     <substep name="Patterns (Phase 2)">
-      - **REQUIRED:** Use `localSearchCode` to find complexity indicators.
-      - **Keywords:** "TODO", "FIXME", "HACK", "complex", "critical", "legacy", "workaround".
-      - **Security:** "auth", "secret", "token", "password", "encrypt".
+      * **REQUIRED:** Use `localSearchCode` to find complexity indicators.
+      * **Keywords:** "TODO", "FIXME", "HACK", "complex", "critical", "legacy", "workaround".
+      * **Security:** "auth", "secret", "token", "password", "encrypt".
     </substep>
     
     <substep name="Semantics (Phase 3)">
       <lsp_gate>
       **STOP.** Do you have line hints from Phase 2?
-      - If NO → Go back to `localSearchCode`.
-      - If YES → Proceed to LSP tools.
+      * If NO → Go back to `localSearchCode`.
+      * If YES → Proceed to LSP tools.
       </lsp_gate>
       
-      - **REQUIRED:** Use `lspCallHierarchy` to trace 1-2 critical flows found in `analysis.json`.
-      - **REQUIRED:** Use `lspFindReferences` to see how patterns are used.
+      * **REQUIRED:** Use `lspCallHierarchy` to trace 1-2 critical flows found in `analysis.json`.
+      * **REQUIRED:** Use `lspFindReferences` to see how patterns are used.
     </substep>
   </step>
 
@@ -79,31 +79,31 @@ Goal: Bridge the gap between raw analysis and human-readable documentation by ge
     </instruction>
     
     <rules>
-      - **Map to Target**: Every question **MUST** have a `documentation_target` matching a filename in the schema.
-      - **Prioritize**: Mark security/data-loss risks as "critical".
-      - **Strategy**: You **MUST** provide a `research_strategy` for the Research agent.
+      * **Map to Target**: Every question **MUST** have a `documentation_target` matching a filename in the schema.
+      * **Prioritize**: Mark security/data-loss risks as "critical".
+      * **Strategy**: You **MUST** provide a `research_strategy` for the Research agent.
     </rules>
     
     <guidance_by_target>
       <target file="01-project-overview.md">
-        - What is the specific business problem this solves?
-        - Who is the exact target persona?
+        * What is the specific business problem this solves?
+        * Who is the exact target persona?
       </target>
       <target file="02-technical-stack.md">
-        - Why were these specific versions chosen?
-        - What are the "load bearing" dependencies?
+        * Why were these specific versions chosen?
+        * What are the "load bearing" dependencies?
       </target>
       <target file="04-api-reference.md">
-        - What are the exact auth scopes required per endpoint?
-        - How are errors structured (JSON schema)?
+        * What are the exact auth scopes required per endpoint?
+        * How are errors structured (JSON schema)?
       </target>
       <target file="06-deployment.md">
-        - How are secrets injected at runtime?
-        - What is the exact rollback procedure?
+        * How are secrets injected at runtime?
+        * What is the exact rollback procedure?
       </target>
       <target file="08-design-decisions.md">
-        - Why is this specific module so complex? (Cite file)
-        - What is the biggest technical debt currently?
+        * Why is this specific module so complex? (Cite file)
+        * What is the biggest technical debt currently?
       </target>
     </guidance_by_target>
   </step>
@@ -162,7 +162,7 @@ if (previous_phase_complete && (START_PHASE != "engineer-questions-complete")):
   })
 
   DISPLAY: "🤔 Engineer Questions Agent [Running...]"
-  DISPLAY: "   Generating comprehensive documentation questions..."
+  DISPLAY: "   Generating documentation questions..."
   DISPLAY: ""
 
   // Read agent specification
@@ -170,7 +170,7 @@ if (previous_phase_complete && (START_PHASE != "engineer-questions-complete")):
 
   RESULT = Task({
     subagent_type: "general-purpose",
-    description: "Generate comprehensive documentation questions",
+    description: "Generate documentation questions",
     prompt: `
 ${AGENT_SPEC}
 

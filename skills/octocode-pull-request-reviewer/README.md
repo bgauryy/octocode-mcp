@@ -15,7 +15,7 @@
 
 ## What It Does
 
-This skill turns your AI agent into an expert code reviewer that handles both **remote Pull Requests** and **local changes** (staged/unstaged). It uses Octocode MCP tools for deep code forensics — tracing call hierarchies, finding all symbol usages, and mapping blast radius of changes.
+This skill turns your AI agent into an expert code reviewer that handles both **remote Pull Requests** and **local changes** (staged/unstaged). It uses Octocode MCP tools for deep code forensics  -  tracing call hierarchies, finding all symbol usages, and mapping blast radius of changes.
 
 | Mode | Input | Tools Used |
 |------|-------|------------|
@@ -36,10 +36,10 @@ npx add-skill https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-
 
 ### For PR Mode (Remote Pull Requests)
 
-- **Octocode MCP server** running with GitHub/GitLab authentication
-- See [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
+* **Octocode MCP server** running with GitHub/GitLab authentication
+* See [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)
 
-### For Local Mode (Local Changes) — `ENABLE_LOCAL=true`
+### For Local Mode (Local Changes)  -  `ENABLE_LOCAL=true`
 
 Local Mode requires Octocode MCP **local tools** and **LSP tools** to be enabled. These are disabled by default.
 
@@ -68,7 +68,7 @@ export ENABLE_LOCAL=true
 
 **Verify it's working:**
 
-Ask your agent: *"Can you check if local tools are available?"* — the skill will call `localViewStructure` on your workspace root. If it responds, you're good.
+Ask your agent: *"Can you check if local tools are available?"*  -  the skill will call `localViewStructure` on your workspace root. If it responds, you're good.
 
 ---
 
@@ -102,7 +102,7 @@ The agent will:
 
 ## How Local Tools Check Your Repo
 
-When reviewing local changes, the skill uses a **funnel approach** — progressively narrowing from broad discovery to precise semantic analysis:
+When reviewing local changes, the skill uses a **funnel approach**  -  progressively narrowing from broad discovery to precise semantic analysis:
 
 ```
 DISCOVER          SEARCH           LSP SEMANTIC        READ
@@ -143,7 +143,7 @@ localSearchCode(pattern="TODO|FIXME", path="/workspace/src/changed-file.ts")
 
 ### Step 4: Semantic Analysis (LSP Tools)
 
-LSP tools provide **language-aware** analysis — they understand types, scopes, and call relationships.
+LSP tools provide **language-aware** analysis  -  they understand types, scopes, and call relationships.
 
 ```
 lspCallHierarchy(
@@ -166,7 +166,7 @@ lspGotoDefinition(
 → Jump to where this imported symbol is defined
 ```
 
-### Step 5: Read Implementation (Local Tools — LAST)
+### Step 5: Read Implementation (Local Tools  -  LAST)
 
 ```
 localGetFileContent(
@@ -213,14 +213,14 @@ The agent **stops at Phase 3** to ask you what to focus on before diving deep.
 ## Output
 
 Findings are delivered as a prioritized list with:
-- Exact `file:line` location
-- Confidence level (HIGH/MED)
-- Problem description
-- Actionable code fix (diff format)
+* Exact `file:line` location
+* Confidence level (HIGH/MED)
+* Problem description
+* Actionable code fix (diff format)
 
 Optionally saved to:
-- **PR Mode:** `.octocode/reviewPR/{session}/PR_{number}.md`
-- **Local Mode:** `.octocode/reviewLocal/{session}/REVIEW_{branch}_{timestamp}.md`
+* **PR Mode:** `.octocode/reviewPR/{session}/PR_{number}.md`
+* **Local Mode:** `.octocode/reviewLocal/{session}/REVIEW_{branch}_{timestamp}.md`
 
 ---
 

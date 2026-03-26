@@ -1,19 +1,19 @@
 # Server Flows - Octocode Research Server
 
-> Comprehensive documentation of startup, restart, health, and shutdown flows.
+> documentation of startup, restart, health, and shutdown flows.
 > **v2.1.0**: Now powered by PM2 process manager.
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Architecture Diagram](#architecture-diagram)
-- [1. Startup Flow](#1-startup-flow)
-- [2. Request Flow](#2-request-flow)
-- [3. Health Check Flow](#3-health-check-flow)
-- [4. PM2 Restart Strategies](#4-pm2-restart-strategies)
-- [5. Graceful Shutdown Flow](#5-graceful-shutdown-flow)
-- [Component Reference](#component-reference)
-- [PM2 Commands Reference](#pm2-commands-reference)
+* [Overview](#overview)
+* [Architecture Diagram](#architecture-diagram)
+* [1. Startup Flow](#1-startup-flow)
+* [2. Request Flow](#2-request-flow)
+* [3. Health Check Flow](#3-health-check-flow)
+* [4. PM2 Restart Strategies](#4-pm2-restart-strategies)
+* [5. Graceful Shutdown Flow](#5-graceful-shutdown-flow)
+* [Component Reference](#component-reference)
+* [PM2 Commands Reference](#pm2-commands-reference)
 
 ---
 
@@ -30,14 +30,14 @@
 
 ### Key Design Patterns
 
-- **Warm Start**: Server accepts requests immediately, MCP initializes in background
-- **PM2 Process Management**: Automatic restarts, monitoring, and log management
-- **Cron Restart**: Server restarts hourly for memory hygiene (via PM2)
-- **Memory Guard**: Auto-restart if memory exceeds 500MB (via PM2)
-- **Circuit Breaker**: Protects external calls with failure thresholds
-- **Fire-and-Forget**: Background telemetry doesn't block responses
-- **Readiness Gate**: `/tools` and `/prompts` routes blocked until MCP ready
-- **Ready Signal**: PM2 waits for `process.send('ready')` before considering app online
+* **Warm Start**: Server accepts requests immediately, MCP initializes in background
+* **PM2 Process Management**: Automatic restarts, monitoring, and log management
+* **Cron Restart**: Server restarts hourly for memory hygiene (via PM2)
+* **Memory Guard**: Auto-restart if memory exceeds 500MB (via PM2)
+* **Circuit Breaker**: Protects external calls with failure thresholds
+* **Fire-and-Forget**: Background telemetry doesn't block responses
+* **Readiness Gate**: `/tools` and `/prompts` routes blocked until MCP ready
+* **Ready Signal**: PM2 waits for `process.send('ready')` before considering app online
 
 ---
 
@@ -624,8 +624,8 @@ npm run pm2:start          # Start with PM2
 
 ### New Features
 
-- **Ready Signal**: `process.send('ready')` for accurate startup tracking
-- **Memory Guard**: `max_memory_restart: '500M'`
-- **Exponential Backoff**: `exp_backoff_restart_delay: 100`
-- **PM2 Logs**: Disabled (app handles logging in `~/.octocode/logs/`)
-- **PM2 Monitoring**: `pm2 monit` dashboard
+* **Ready Signal**: `process.send('ready')` for accurate startup tracking
+* **Memory Guard**: `max_memory_restart: '500M'`
+* **Exponential Backoff**: `exp_backoff_restart_delay: 100`
+* **PM2 Logs**: Disabled (app handles logging in `~/.octocode/logs/`)
+* **PM2 Monitoring**: `pm2 monit` dashboard

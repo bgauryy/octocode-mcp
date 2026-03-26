@@ -25,7 +25,7 @@ Specialized AI agent skills that extend OctoCode's capabilities.
 ### 1. OctoCode Researcher
 **Location:** `octocode-researcher/`
 
-**The default research skill.** Direct code exploration via Octocode MCP tools — local codebase (LSP semantic navigation, search, structure) and external (GitHub, npm/PyPI, PRs). Lightweight, no server needed. Use for most research tasks.
+**The default research skill.** Direct code exploration via Octocode MCP tools - local codebase (LSP semantic navigation, search, structure) and external (GitHub, npm/PyPI, PRs). Lightweight, no server needed. Use for most research tasks.
 
 | When | Example |
 |------|---------|
@@ -132,13 +132,10 @@ Code engineering platform for any task requiring deep file-level comprehension. 
 
 Holistic code review via Octocode MCP: bugs, security, architecture, flow impact. Supports both **remote PRs** and **local changes** (staged/unstaged). 7 domains, LSP-powered flow tracing, evidence-backed, user checkpoint before deep dive.
 
-> **Local Mode** requires `ENABLE_LOCAL=true` — see [README](https://github.com/bgauryy/octocode-mcp/blob/main/skills/octocode-pull-request-reviewer/README.md)
+> **Local Mode** requires `ENABLE_LOCAL=true` - see [README](https://github.com/bgauryy/octocode-mcp/blob/main/skills/octocode-pull-request-reviewer/README.md)
 
 | When | Example |
 |------|---------|
 | PR review | "Review PR #456", "Check this PR" |
 | Local changes | "Review my changes", "Review staged changes" |
 | Security/impact | "Is this safe to merge?" |
-
----
-

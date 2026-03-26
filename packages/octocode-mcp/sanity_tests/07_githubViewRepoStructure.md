@@ -14,10 +14,10 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 3. **Hints Validation** - **GOLDEN**: Check response hints for user guidance and next steps
 
 ### Hints Validation Checklist
-- [ ] Response includes helpful hints for structure exploration
-- [ ] Hints suggest file reading, code search, or deeper directory exploration
-- [ ] Pagination hints when results are truncated
-- [ ] Status-specific hints present
+* [ ] Response includes helpful hints for structure exploration
+* [ ] Hints suggest file reading, code search, or deeper directory exploration
+* [ ] Pagination hints when results are truncated
+* [ ] Status-specific hints present
 
 ---
 
@@ -41,15 +41,15 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Top-level files and directories shown
-- [ ] `packages/`, `docs/`, `skills/` visible
-- [ ] `totalFiles` and `totalFolders` counts present
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Top-level files and directories shown
+* [ ] `packages/`, `docs/`, `skills/` visible
+* [ ] `totalFiles` and `totalFolders` counts present
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -71,15 +71,15 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Each subdirectory's immediate children visible
-- [ ] Files shown per subfolder
-- [ ] Structured output organized by directory
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Each subdirectory's immediate children visible
+* [ ] Files shown per subfolder
+* [ ] Structured output organized by directory
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -102,14 +102,14 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Up to 30 entries returned
-- [ ] All entries valid files/directories
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Up to 30 entries returned
+* [ ] All entries valid files/directories
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -132,15 +132,15 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Max 5 entries returned
-- [ ] `summary.truncated` may be true if more exist
-- [ ] Pagination metadata present
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Max 5 entries returned
+* [ ] `summary.truncated` may be true if more exist
+* [ ] Pagination metadata present
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -164,15 +164,15 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Different entries than page 1
-- [ ] No overlap with TC-4 results
-- [ ] Page metadata shows current page
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Different entries than page 1
+* [ ] No overlap with TC-4 results
+* [ ] Page metadata shows current page
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -194,14 +194,14 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Structure from `main` branch
-- [ ] Branch info in response metadata
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Structure from `main` branch
+* [ ] Branch info in response metadata
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -223,14 +223,14 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Only contents of `src/tools/` shown
-- [ ] Tool subdirectories visible (e.g., `github_search_code/`, `lsp_call_hierarchy/`)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Only contents of `src/tools/` shown
+* [ ] Tool subdirectories visible (e.g., `github_search_code/`, `lsp_call_hierarchy/`)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -252,15 +252,15 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Error message returned (not a crash)
-- [ ] Clear indication repo not found
-- [ ] No stack trace leaked
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Error message returned (not a crash)
+* [ ] Clear indication repo not found
+* [ ] No stack trace leaked
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -282,15 +282,15 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Error message about branch not found
-- [ ] No crash
-- [ ] Actionable error message
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Error message about branch not found
+* [ ] No crash
+* [ ] Actionable error message
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -312,15 +312,15 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Error or empty results
-- [ ] No crash
-- [ ] Clear indication path doesn't exist
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Error or empty results
+* [ ] No crash
+* [ ] Clear indication path doesn't exist
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -343,15 +343,15 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Up to 200 entries returned
-- [ ] No timeout or error
-- [ ] All entries valid
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Up to 200 entries returned
+* [ ] No timeout or error
+* [ ] All entries valid
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -375,15 +375,15 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Empty results or clear "no more pages" indication
-- [ ] No error thrown
-- [ ] Pagination metadata reflects actual total
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Empty results or clear "no more pages" indication
+* [ ] No error thrown
+* [ ] Pagination metadata reflects actual total
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -406,15 +406,15 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Exactly 1 entry returned
-- [ ] Pagination shows many more pages available
-- [ ] Can navigate entry-by-entry
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Exactly 1 entry returned
+* [ ] Pagination shows many more pages available
+* [ ] Can navigate entry-by-entry
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -436,15 +436,15 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Same results as `path: "packages"` without trailing slash
-- [ ] No error
-- [ ] Content of packages/ directory shown
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Same results as `path: "packages"` without trailing slash
+* [ ] No error
+* [ ] Content of packages/ directory shown
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -466,15 +466,15 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Contents of the deeply nested directory shown
-- [ ] Files like `execution.ts`, `scheme.ts`, `types.ts` visible
-- [ ] No path resolution errors
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Contents of the deeply nested directory shown
+* [ ] Files like `execution.ts`, `scheme.ts`, `types.ts` visible
+* [ ] No path resolution errors
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -486,7 +486,7 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 {
   "mainResearchGoal": "Test performance",
   "researchGoal": "Large directory with depth 2",
-  "reasoning": "Depth 2 on large dirs can be slow — verify no timeout",
+  "reasoning": "Depth 2 on large dirs can be slow  -  verify no timeout",
   "owner": "bgauryy",
   "repo": "octocode-mcp",
   "branch": "main",
@@ -497,15 +497,15 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Response succeeds within reasonable time
-- [ ] No timeout error
-- [ ] Nested file listing is correct and organized
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Response succeeds within reasonable time
+* [ ] No timeout error
+* [ ] Nested file listing is correct and organized
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -524,16 +524,16 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] First query succeeds with structure
-- [ ] Second and third queries return errors
-- [ ] Each result isolated per query
-- [ ] No cascade failure
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] First query succeeds with structure
+* [ ] Second and third queries return errors
+* [ ] Each result isolated per query
+* [ ] No cascade failure
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -559,24 +559,24 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 ```
 
 **Expected:**
-- [ ] Max 5 entries returned from page 2
-- [ ] Different entries than page 1
-- [ ] Pagination metadata shows current page and total
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Max 5 entries returned from page 2
+* [ ] Different entries than page 1
+* [ ] Pagination metadata shows current page and total
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
 ## Validation Checklist
 
 ### Core Requirements
-- [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning` (bulk in `{ "queries": [{ ... }] }`)
-- [ ] **Pagination tests** verify `entriesPerPage`, `entryPageNumber` parameters for result management
-- [ ] **Hints validation** checks for helpful guidance in all responses
+* [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning` (bulk in `{ "queries": [{ ... }] }`)
+* [ ] **Pagination tests** verify `entriesPerPage`, `entryPageNumber` parameters for result management
+* [ ] **Hints validation** checks for helpful guidance in all responses
 
 | # | Test Case | Queries | Pagination | Hints | Status |
 |---|-----------|---------|------------|-------|--------|

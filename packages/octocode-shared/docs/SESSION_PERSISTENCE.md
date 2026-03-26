@@ -98,9 +98,9 @@ interface SessionStats {
 ### Problem
 
 Writing to disk on every stat increment would:
-- Create excessive I/O operations
-- Cause performance degradation
-- Wear out SSDs unnecessarily
+* Create excessive I/O operations
+* Cause performance degradation
+* Wear out SSDs unnecessarily
 
 ### Solution: Write Batching
 
@@ -208,9 +208,9 @@ function writeSessionToDisk(session: PersistedSession): void {
 ```
 
 **Why This Works**:
-- `rename()` is atomic on POSIX systems
-- Either the old file exists, or the new one does
-- No partial writes visible
+* `rename()` is atomic on POSIX systems
+* Either the old file exists, or the new one does
+* No partial writes visible
 
 ---
 
@@ -326,8 +326,8 @@ resetSessionStats();
 
 ### Memory Usage
 
-- Session cache: ~500 bytes per session
-- No memory growth over time (single session per process)
+* Session cache: ~500 bytes per session
+* No memory growth over time (single session per process)
 
 ---
 
@@ -413,8 +413,8 @@ beforeEach(() => {
 
 ## Related Documentation
 
-- [CREDENTIALS_ARCHITECTURE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) - Credential storage system
-- [API_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/API_REFERENCE.md) - Complete API documentation
+* [CREDENTIALS_ARCHITECTURE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) - Credential storage system
+* [API_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/API_REFERENCE.md) - Complete API documentation
 
 ---
 

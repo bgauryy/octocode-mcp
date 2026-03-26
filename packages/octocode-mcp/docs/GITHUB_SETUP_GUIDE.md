@@ -1,6 +1,6 @@
 # GitHub Setup Guide
 
-> Complete guide for using Octocode MCP with GitHub — authentication, GitHub Enterprise, available tools, and troubleshooting.
+> Complete guide for using Octocode MCP with GitHub  -  authentication, GitHub Enterprise, available tools, and troubleshooting.
 
 ---
 
@@ -14,7 +14,7 @@ npx octocode-cli
 # Option B: Set a token manually
 export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
 
-# Start Octocode MCP — GitHub is the default provider
+# Start Octocode MCP  -  GitHub is the default provider
 npx octocode-mcp
 ```
 
@@ -28,7 +28,7 @@ Choose **one** of the following methods (listed from easiest to most manual):
 
 ### Option 1: Octocode CLI (Recommended)
 
-The easiest way — handles secure OAuth login for you:
+The easiest way  -  handles secure OAuth login for you:
 
 ```bash
 npx octocode-cli
@@ -45,7 +45,7 @@ If you already use the [GitHub CLI](https://cli.github.com/), Octocode automatic
 gh auth login
 ```
 
-That's it — no additional setup needed.
+That's it  -  no additional setup needed.
 
 ### Option 3: Manual Token (Environment Variable)
 
@@ -139,8 +139,8 @@ All tools are available when GitHub is the active provider:
 
 These features are exclusive to GitHub and not available with GitLab or Bitbucket:
 
-- **`githubCloneRepo`** — Clone repositories (or subdirectories via sparse checkout) for local + LSP analysis. Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
-- **`githubGetFileContent` directory mode** — Fetch an entire directory to disk (`type: "directory"`). Same requirements as clone.
+* **`githubCloneRepo`**  -  Clone repositories (or subdirectories via sparse checkout) for local + LSP analysis. Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
+* **`githubGetFileContent` directory mode**  -  Fetch an entire directory to disk (`type: "directory"`). Same requirements as clone.
 
 ---
 
@@ -148,7 +148,7 @@ These features are exclusive to GitHub and not available with GitLab or Bitbucke
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GITHUB_TOKEN` | — | GitHub personal access token (or use `OCTOCODE_TOKEN` / `GH_TOKEN`) |
+| `GITHUB_TOKEN` |  -  | GitHub personal access token (or use `OCTOCODE_TOKEN` / `GH_TOKEN`) |
 | `GITHUB_API_URL` | `https://api.github.com` | GitHub API endpoint (change for GitHub Enterprise) |
 | `ENABLE_LOCAL` | `false` | Enable local filesystem + LSP tools |
 | `ENABLE_CLONE` | `false` | Enable `githubCloneRepo` and directory fetch (requires `ENABLE_LOCAL=true`) |
@@ -161,37 +161,37 @@ For complete configuration options, see the [Configuration Reference](https://gi
 
 ### "No GitHub token found"
 
-- Run `npx octocode-cli` and select **"Check GitHub Auth Status"**.
-- Ensure you have run `gh auth login` if using the GitHub CLI.
-- Check if your environment variable is set: `echo $GITHUB_TOKEN`.
+* Run `npx octocode-cli` and select **"Check GitHub Auth Status"**.
+* Ensure you have run `gh auth login` if using the GitHub CLI.
+* Check if your environment variable is set: `echo $GITHUB_TOKEN`.
 
 ### 401 Unauthorized
 
-- Verify your token is valid and hasn't expired.
-- Check that the token has `repo` scope.
-- For GitHub Enterprise: verify the API URL is correct.
+* Verify your token is valid and hasn't expired.
+* Check that the token has `repo` scope.
+* For GitHub Enterprise: verify the API URL is correct.
 
 ### Token Expired
 
-- Run `npx octocode-cli` and select **"Login to GitHub"** again to refresh it.
-- Or run `gh auth refresh` if using the GitHub CLI.
+* Run `npx octocode-cli` and select **"Login to GitHub"** again to refresh it.
+* Or run `gh auth refresh` if using the GitHub CLI.
 
 ### Switching Accounts
 
-- Run `npx octocode-cli` and login with the new account. Octocode picks up the change immediately (no restart needed).
+* Run `npx octocode-cli` and login with the new account. Octocode picks up the change immediately (no restart needed).
 
 ### Clone/Directory Tools Disabled
 
-- Set both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true` in your MCP client `"env"` block.
+* Set both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true` in your MCP client `"env"` block.
 
 ---
 
 ## See Also
 
-- [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md) — Overview of all provider authentication
-- [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) — Full tool documentation
-- [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md) — All configuration options
-- [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) — General troubleshooting guide
+* [Authentication Setup](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/AUTHENTICATION_SETUP.md)  -  Overview of all provider authentication
+* [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md)  -  Full tool documentation
+* [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md)  -  All configuration options
+* [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md)  -  General troubleshooting guide
 
 ---
 Created by Octocode MCP https://octocode.ai

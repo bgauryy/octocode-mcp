@@ -12,10 +12,10 @@ This file **overrides** the root [`AGENTS.md`](https://github.com/bgauryy/octoco
 
 Octocode MCP is an MCP server providing AI agents with code exploration tools:
 
-- **GitHub, GitLab & Bitbucket**: Search code, repositories, PRs/MRs, view structure, fetch content
-- **Local Research**: Search code with ripgrep, browse directories, find files, read content
-- **LSP Intelligence**: Semantic code navigation with goto definition, find references, call hierarchy
-- **Package Discovery**: Search NPM/PyPI for packages and repository URLs
+* **GitHub, GitLab & Bitbucket**: Search code, repositories, PRs/MRs, view structure, fetch content
+* **Local Research**: Search code with ripgrep, browse directories, find files, read content
+* **LSP Intelligence**: Semantic code navigation with goto definition, find references, call hierarchy
+* **Package Discovery**: Search NPM/PyPI for packages and repository URLs
 
 **Key Docs**: See [Key Documentation](#-key-documentation) below for the canonical package doc index.
 
@@ -363,10 +363,10 @@ tests/
 
 LSP (Language Server Protocol) tools provide **semantic** code intelligence:
 
-- **No IDE required** - Works standalone via spawned language servers
-- **TypeScript/JavaScript bundled** - Works out-of-box
-- **30+ languages supported** - Python, Go, Rust, Java, C/C++, etc. (requires server installation)
-- **Cross-platform** - macOS, Linux, Windows
+* **No IDE required** - Works standalone via spawned language servers
+* **TypeScript/JavaScript bundled** - Works out-of-box
+* **30+ languages supported** - Python, Go, Rust, Java, C/C++, etc. (requires server installation)
+* **Cross-platform** - macOS, Linux, Windows
 
 See the Local Tools reference document in `./docs/` for full documentation.
 
@@ -415,12 +415,12 @@ Schema (Zod) → Security Wrapper → Bulk Handler → Implementation → Saniti
 
 ### Key Design Decisions
 
-- **Modular Tools**: Each tool is a self-contained directory with scheme, types, execution, and registration
-- **Bulk Queries**: All tools accept 1-5 queries per request
-- **Research Context**: Every query requires `mainResearchGoal`, `researchGoal`, `reasoning`
-- **Security First**: All I/O sanitized, secrets redacted, paths validated
-- **Graceful Fallback**: `ripgrep → grep`, errors isolated per query
-- **Token Efficiency**: Content minification, YAML output, response prioritization
+* **Modular Tools**: Each tool is a self-contained directory with scheme, types, execution, and registration
+* **Bulk Queries**: All tools accept 1-5 queries per request
+* **Research Context**: Every query requires `mainResearchGoal`, `researchGoal`, `reasoning`
+* **Security First**: All I/O sanitized, secrets redacted, paths validated
+* **Graceful Fallback**: `ripgrep → grep`, errors isolated per query
+* **Token Efficiency**: Content minification, YAML output, response prioritization
 
 ---
 
@@ -438,8 +438,8 @@ Schema (Zod) → Security Wrapper → Bulk Handler → Implementation → Saniti
 
 ### Protected Files
 
-- **Never Modify**: `dist/`, `coverage/`, `node_modules/`
-- **Ask Before Modifying**: `package.json`, `tsconfig.json`, `vitest.config.ts`, `tsdown.config.ts`
+* **Never Modify**: `dist/`, `coverage/`, `node_modules/`
+* **Ask Before Modifying**: `package.json`, `tsconfig.json`, `vitest.config.ts`, `tsdown.config.ts`
 
 ---
 
@@ -447,8 +447,8 @@ Schema (Zod) → Security Wrapper → Bulk Handler → Implementation → Saniti
 
 ### Requirements
 
-- **Coverage**: 90% required (Statements, Branches, Functions, Lines)
-- **Framework**: Vitest with v8 coverage
+* **Coverage**: 90% required (Statements, Branches, Functions, Lines)
+* **Framework**: Vitest with v8 coverage
 
 ### Test Categories
 

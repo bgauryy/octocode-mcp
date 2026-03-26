@@ -11,15 +11,15 @@ Octocode ("we", "us", or "our") is an open-source project committed to protectin
 We collect **de-identified telemetry data** to maintain the stability and performance of our tools. This data is pseudonymous: it allows us to see trends without identifying you personally.
 
 ### What We Collect
-- **Command Usage**: Which commands (e.g., `octocode/research`, `octocode/plan`) are executed.
-- **Tool Usage**: Which specific tools (e.g., `githubSearchCode`) are utilized.
-- **Performance Metrics**: Execution time, success/failure rates, and error codes.
-- **Session IDs**: Randomly generated UUIDs used to group related events within a single session.
+* **Command Usage**: Which commands (e.g., `octocode/research`, `octocode/plan`) are executed.
+* **Tool Usage**: Which specific tools (e.g., `githubSearchCode`) are utilized.
+* **Performance Metrics**: Execution time, success/failure rates, and error codes.
+* **Session IDs**: Randomly generated UUIDs used to group related events within a single session.
 
 ### What We DO NOT Collect
-- **Source Code**: Your code stays on your machine. We never upload or "peek" at your local files.
-- **Secrets & Env Vars**: We do not collect API keys, passwords, or environment variables.
-- **PII**: We do not collect names, emails
+* **Source Code**: Your code stays on your machine. We never upload or "peek" at your local files.
+* **Secrets & Env Vars**: We do not collect API keys, passwords, or environment variables.
+* **PII**: We do not collect names, emails
 
 ## 3. Legal Basis (GDPR/CCPA)
 
@@ -45,9 +45,9 @@ If you believe your data has been collected, stored, or processed in a way that 
 ## 6. Your Rights
 
 Under global privacy laws, you have the right to:
-- **Access/Export**: Request a copy of the telemetry data associated with your session ID.
-- **Deletion**: Request that your session data be purged from our logs.
-- **Opt-Out**: Disable all future collection at any time.
+* **Access/Export**: Request a copy of the telemetry data associated with your session ID.
+* **Deletion**: Request that your session data be purged from our logs.
+* **Opt-Out**: Disable all future collection at any time.
 
 ## 7. How to Opt-Out
 

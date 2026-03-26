@@ -19,27 +19,27 @@
 **Why**: Identical detection logic. `dead-file` iterates `dependencySummary.roots.slice(0, 20)` (capped!), checks zero inbound + zero outbound. `orphan-module` iterates ALL `dependencyState.files`, checks same condition. `dead-file` = weaker subset.
 
 **How**:
-- Remove `detectDeadFiles` from `architecture.ts`
-- Remove call from `buildIssueCatalog` in `index.ts`
-- Remove `'dead-file'` from `PILLAR_CATEGORIES['dead-code']`
-- Add `tags: ['previously-dead-file']` to orphan-module findings where file is a root
-- Update tests, SKILL.md, README.md
+* Remove `detectDeadFiles` from `architecture.ts`
+* Remove call from `buildIssueCatalog` in `index.ts`
+* Remove `'dead-file'` from `PILLAR_CATEGORIES['dead-code']`
+* Add `tags: ['previously-dead-file']` to orphan-module findings where file is a root
+* Update tests, SKILL.md, README.md
 
-**Risk**: None — orphan-module already catches everything dead-file would catch.
+**Risk**: None  -  orphan-module already catches everything dead-file would catch.
 
 ### 1B. Merge `semantic-dead-export` into `dead-export`
 
 **Why**: Same concept, semantic version has fewer false positives (23 fewer on our codebase). When `--semantic` is active, both fire on the same file:symbol pairs, creating noise.
 
 **How**:
-- When `--semantic` is ON: use TypeChecker `findReferences` in `detectDeadExports` instead of import-string matching. Add `lspHints` to findings. Emit as `dead-export` (not `semantic-dead-export`).
-- When `--semantic` is OFF: use current AST import-string matching (unchanged).
-- Remove `detectSemanticDeadExports` from `semantic-detectors.ts`
-- Remove `'semantic-dead-export'` from `PILLAR_CATEGORIES['architecture']` and `SEMANTIC_CATEGORIES`
-- Add `semanticProfiles` parameter to `detectDeadExports`
-- Update tests
+* When `--semantic` is ON: use TypeChecker `findReferences` in `detectDeadExports` instead of import-string matching. Add `lspHints` to findings. Emit as `dead-export` (not `semantic-dead-export`).
+* When `--semantic` is OFF: use current AST import-string matching (unchanged).
+* Remove `detectSemanticDeadExports` from `semantic-detectors.ts`
+* Remove `'semantic-dead-export'` from `PILLAR_CATEGORIES['architecture']` and `SEMANTIC_CATEGORIES`
+* Add `semanticProfiles` parameter to `detectDeadExports`
+* Update tests
 
-**Risk**: Low — semantic mode produces strictly fewer findings (higher precision). Consumers filtering by `category: 'dead-export'` continue to work.
+**Risk**: Low  -  semantic mode produces strictly fewer findings (higher precision). Consumers filtering by `category: 'dead-export'` continue to work.
 
 **Result**: 46 - 2 = **44 categories**
 
@@ -63,22 +63,22 @@ ts.isAsExpression(node.expression) && inner === 'unknown' → double-assertion
 ts.isNonNullExpression(node)                        → non-null-assertion
 ```
 
-**Effort**: Small — add to `ts-analyzer.ts` or `architecture.ts` AST walk, collect per-file, emit findings.
+**Effort**: Small  -  add to `ts-analyzer.ts` or `architecture.ts` AST walk, collect per-file, emit findings.
 
 ### 2B. `shotgun-surgery` (Semantic, needs --semantic)
 
 **Pillar**: architecture
 **Signal**: Exported symbol referenced from ≥N unique files (default: 8). Changing it forces edits across many modules.
-**Agent value**: Critical for safe refactoring — agent knows "touching this symbol requires updating N files".
+**Agent value**: Critical for safe refactoring  -  agent knows "touching this symbol requires updating N files".
 **PoC result**: `spawnWithTimeout` → 5 files, `buildChildProcessEnv` → 5 files (real codebase).
 
 **Detection logic**:
-- Already have `referenceCountByExport` in `SemanticProfile`
-- Need to extend to store **unique file count** (not just total ref count)
-- Add `ExportRefInfo.uniqueFiles: number`
-- Threshold: default 8 (configurable via `--shotgun-threshold N`)
+* Already have `referenceCountByExport` in `SemanticProfile`
+* Need to extend to store **unique file count** (not just total ref count)
+* Add `ExportRefInfo.uniqueFiles: number`
+* Threshold: default 8 (configurable via `--shotgun-threshold N`)
 
-**Effort**: Small — extend `ExportRefInfo`, modify `analyzeSemanticProfile` to track unique files, add detector.
+**Effort**: Small  -  extend `ExportRefInfo`, modify `analyzeSemanticProfile` to track unique files, add detector.
 
 ### 2C. `promise-misuse` (AST-only for async-without-await, Semantic for unhandled)
 
@@ -91,23 +91,23 @@ ts.isNonNullExpression(node)                        → non-null-assertion
 **PoC result**: Correctly detected `async-without-await` on test file.
 
 **Detection logic**:
-- Sub-pattern 1 (AST): Walk function nodes with `AsyncKeyword`, check body for `AwaitExpression`.
-- Sub-pattern 2 (Semantic): Walk `ExpressionStatement > CallExpression`, use TypeChecker to check if return type is `Promise<T>`, check if not `await`ed or `.then()`/`.catch()`ed.
+* Sub-pattern 1 (AST): Walk function nodes with `AsyncKeyword`, check body for `AwaitExpression`.
+* Sub-pattern 2 (Semantic): Walk `ExpressionStatement > CallExpression`, use TypeChecker to check if return type is `Promise<T>`, check if not `await`ed or `.then()`/`.catch()`ed.
 
-**Effort**: Medium — AST part is small, semantic part needs TypeChecker return type resolution.
+**Effort**: Medium  -  AST part is small, semantic part needs TypeChecker return type resolution.
 
 ### 2D. `move-to-caller` (Semantic, needs --semantic)
 
 **Pillar**: architecture
 **Signal**: Exported function/class used by exactly 1 file externally. The export exists only to serve one consumer → inline it.
-**Agent value**: Direct refactoring instruction — "move this code into its only consumer".
+**Agent value**: Direct refactoring instruction  -  "move this code into its only consumer".
 
 **Detection logic**:
-- Already have `referenceCountByExport` with file tracking
-- Filter: exports where unique referencing files == 1 (excluding test files)
-- Exclude: entrypoints, re-exports, default exports
+* Already have `referenceCountByExport` with file tracking
+* Filter: exports where unique referencing files == 1 (excluding test files)
+* Exclude: entrypoints, re-exports, default exports
 
-**Effort**: Trivial — data already exists, just add detector function.
+**Effort**: Trivial  -  data already exists, just add detector function.
 
 ### 2E. `leaky-abstraction` (Semantic, needs --semantic)
 
@@ -117,12 +117,12 @@ ts.isNonNullExpression(node)                        → non-null-assertion
 **PoC result**: `getConfig() returns InternalConfig from internal.ts [LEAKY]` correctly detected.
 
 **Detection logic**:
-- For each exported function, get signature via `checker.getSignatureFromDeclaration`
-- Get return type and param types
-- Check if the type's declaration is in a different file AND that file is not a shared/types module
-- Flag when public function exposes types from internal modules
+* For each exported function, get signature via `checker.getSignatureFromDeclaration`
+* Get return type and param types
+* Check if the type's declaration is in a different file AND that file is not a shared/types module
+* Flag when public function exposes types from internal modules
 
-**Effort**: Medium — needs TypeChecker type provenance resolution per exported function.
+**Effort**: Medium  -  needs TypeChecker type provenance resolution per exported function.
 
 ### 2F. `narrowable-type` (Semantic, needs --semantic)
 
@@ -132,12 +132,12 @@ ts.isNonNullExpression(node)                        → non-null-assertion
 **PoC result**: `process(data: string | number | boolean)` → all callers pass `"hello"`, `"world"` (string literals). Narrowable to `string`.
 
 **Detection logic**:
-- For each exported function with union/any/unknown params
-- Use `findReferences` to find all call sites
-- At each call site, use `checker.getTypeAtLocation(callExpr.arguments[i])`
-- If all arg types are assignable to a narrower type → flag
+* For each exported function with union/any/unknown params
+* Use `findReferences` to find all call sites
+* At each call site, use `checker.getTypeAtLocation(callExpr.arguments[i])`
+* If all arg types are assignable to a narrower type → flag
 
-**Effort**: High — need call-site argument type collection, union narrowing logic.
+**Effort**: High  -  need call-site argument type collection, union narrowing logic.
 
 ### 2G. `missing-error-boundary` (AST-only, NO --semantic needed)
 
@@ -147,12 +147,12 @@ ts.isNonNullExpression(node)                        → non-null-assertion
 **PoC result**: `riskyChain: 2 awaits, NO try-catch [UNPROTECTED]` correctly detected.
 
 **Detection logic** (pure AST):
-- Walk async function bodies
-- Count `AwaitExpression` nodes (skip nested functions)
-- Check for `TryStatement` in the same scope
-- Flag if await count > 0 and no try-catch
+* Walk async function bodies
+* Count `AwaitExpression` nodes (skip nested functions)
+* Check for `TryStatement` in the same scope
+* Flag if await count > 0 and no try-catch
 
-**Effort**: Small — pure AST walk, similar pattern to empty-catch detection.
+**Effort**: Small  -  pure AST walk, similar pattern to empty-catch detection.
 
 ---
 
@@ -172,7 +172,7 @@ When `--semantic` is on and both engines run, emit only the semantic-precision f
 
 | Phase | Categories | Net Change |
 |-------|-----------|------------|
-| Current | 46 | — |
+| Current | 46 |  -  |
 | Phase 1 (merges) | 44 | -2 |
 | Phase 2 (new features) | 51 | +7 |
 | **Final** | **51** | **+5 net** |

@@ -19,18 +19,18 @@ You operate in **PARALLEL** with other writers, possessing **EXCLUSIVE OWNERSHIP
 </core_philosophy>
 
 <inputs>
-- `REPOSITORY_PATH`: Root of the codebase.
-- `.context/analysis.json`: High-level project analysis.
-- `.context/questions.json`: List of engineering questions to answer.
-- `.context/research.json`: **Answers and code evidence** for the questions.
-- `.context/work-assignments.json`: Your specific mission (assigned files & questions).
-- `schemas/documentation-structure.json`: **Single Source of Truth** for file structure.
-- `AGENT_ID`: Your unique identifier (used to find your assignment).
+* `REPOSITORY_PATH`: Root of the codebase.
+* `.context/analysis.json`: High-level project analysis.
+* `.context/questions.json`: List of engineering questions to answer.
+* `.context/research.json`: **Answers and code evidence** for the questions.
+* `.context/work-assignments.json`: Your specific mission (assigned files & questions).
+* `schemas/documentation-structure.json`: **Single Source of Truth** for file structure.
+* `AGENT_ID`: Your unique identifier (used to find your assignment).
 </inputs>
 
 <outputs>
-- **Documentation Files**: Comprehensive Markdown files (e.g., `01-project-overview.md`, `flows/auth-flow.md`).
-- **Ownership Boundaries**: Writes only files explicitly assigned to this writer in `.context/work-assignments.json`.
+* **Documentation Files**: Markdown files (e.g., `01-project-overview.md`, `flows/auth-flow.md`).
+* **Ownership Boundaries**: Writes only files explicitly assigned to this writer in `.context/work-assignments.json`.
 </outputs>
 </agent_definition>
 
@@ -61,8 +61,8 @@ You operate in **PARALLEL** with other writers, possessing **EXCLUSIVE OWNERSHIP
         </strategy>
 
         **REQUIRED:**
-        - Confirm API endpoints mentioned in research match current code.
-        - Verify flow traces against codebase.
+        * Confirm API endpoints mentioned in research match current code.
+        * Verify flow traces against codebase.
 
         **FORBIDDEN:** Proceeding to write with unverified assumptions.
         </synthesis_gate>
@@ -78,8 +78,8 @@ You operate in **PARALLEL** with other writers, possessing **EXCLUSIVE OWNERSHIP
         4.  **Verify:** Ensure all assigned questions for this file are answered.
 
         **FORBIDDEN:**
-        - Using placeholders (e.g., "TODO", "Coming soon").
-        - Writing files **NOT** in `myFiles`.
+        * Using placeholders (e.g., "TODO", "Coming soon").
+        * Writing files **NOT** in `myFiles`.
         </generation_gate>
     </phase>
 </workflow>
@@ -93,8 +93,8 @@ You operate in **PARALLEL** with other writers, possessing **EXCLUSIVE OWNERSHIP
 </rules_critical>
 
 <research_tips>
-- **Trust the Research**: The Research Agent has already done the heavy lifting. Use their findings.
-- **LSP-Check**: **IF** detail verification needed → **THEN** use `lspGotoDefinition`.
+* **Trust the Research**: The Research Agent has already done the heavy lifting. Use their findings.
+* **LSP-Check**: **IF** detail verification needed → **THEN** use `lspGotoDefinition`.
 </research_tips>
 </guidelines>
 

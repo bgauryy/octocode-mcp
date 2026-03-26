@@ -12,10 +12,10 @@ This file **overrides** the root [`AGENTS.md`](https://github.com/bgauryy/octoco
 
 Octocode Shared provides common utilities used by multiple Octocode packages:
 
-- **Credential Management**: Secure token storage with AES-256-GCM encryption
-- **Session Persistence**: Session state with deferred writes and usage statistics
-- **Platform Detection**: Cross-platform path and environment utilities
-- **Encrypted File Storage**: Pure JavaScript AES-256-GCM storage in `~/.octocode/`
+* **Credential Management**: Secure token storage with AES-256-GCM encryption
+* **Session Persistence**: Session state with deferred writes and usage statistics
+* **Platform Detection**: Cross-platform path and environment utilities
+* **Encrypted File Storage**: Pure JavaScript AES-256-GCM storage in `~/.octocode/`
 
 **Key Consumers**: `octocode-cli`, `octocode-mcp`
 
@@ -192,13 +192,13 @@ import { ... } from 'octocode-shared/session';
 
 ### Security Features
 
-- **AES-256-GCM**: Authenticated encryption with associated data
-- **Random IV**: Unique initialization vector per encryption
-- **File-Based Key Storage**: Encryption key stored securely in `~/.octocode/.key`
-- **Secure Fallback**: File-based key when file storage unavailable
-- **Token Resolution**: Automatic env → storage → gh CLI fallback chain
-- **Auto-Refresh**: Octocode tokens refreshed automatically when expired (via `@octokit/oauth-methods`)
-- **In-Memory Cache**: 5-minute TTL with automatic invalidation on credential updates
+* **AES-256-GCM**: Authenticated encryption with associated data
+* **Random IV**: Unique initialization vector per encryption
+* **File-Based Key Storage**: Encryption key stored securely in `~/.octocode/.key`
+* **Secure Fallback**: File-based key when file storage unavailable
+* **Token Resolution**: Automatic env → storage → gh CLI fallback chain
+* **Auto-Refresh**: Octocode tokens refreshed automatically when expired (via `@octokit/oauth-methods`)
+* **In-Memory Cache**: 5-minute TTL with automatic invalidation on credential updates
 
 ---
 
@@ -230,11 +230,11 @@ import { ... } from 'octocode-shared/session';
 
 ### Session Features
 
-- **Deferred Writes**: Batches writes for performance
-- **In-Memory Caching**: Fast reads from memory
-- **Exit Handlers**: Automatic flush on process exit
-- **Statistics Tracking**: Tool calls, prompts, errors, rate limits
-- **Atomic Counters**: Thread-safe stat increments
+* **Deferred Writes**: Batches writes for performance
+* **In-Memory Caching**: Fast reads from memory
+* **Exit Handlers**: Automatic flush on process exit
+* **Statistics Tracking**: Tool calls, prompts, errors, rate limits
+* **Atomic Counters**: Thread-safe stat increments
 
 ---
 
@@ -363,15 +363,15 @@ startFlushTimer()
 
 ### Protected Files
 
-- **Never Modify**: `dist/`, `coverage/`, `node_modules/`
-- **Ask Before Modifying**: `package.json`, `tsconfig.json`, `vitest.config.ts`
+* **Never Modify**: `dist/`, `coverage/`, `node_modules/`
+* **Ask Before Modifying**: `package.json`, `tsconfig.json`, `vitest.config.ts`
 
 ### Security Considerations
 
-- **Key Isolation**: Encryption keys are stored locally in `~/.octocode/.key` with restrictive permissions
-- **No Plaintext Storage**: Tokens are always encrypted at rest
-- **Env Variable Priority**: Environment tokens take precedence
-- **Deferred Writes**: Session data is flushed safely on exit
+* **Key Isolation**: Encryption keys are stored locally in `~/.octocode/.key` with restrictive permissions
+* **No Plaintext Storage**: Tokens are always encrypted at rest
+* **Env Variable Priority**: Environment tokens take precedence
+* **Deferred Writes**: Session data is flushed safely on exit
 
 ---
 
@@ -379,8 +379,8 @@ startFlushTimer()
 
 ### Requirements
 
-- **Coverage**: 90% required (Statements, Branches, Functions, Lines)
-- **Framework**: Vitest with v8 coverage
+* **Coverage**: 90% required (Statements, Branches, Functions, Lines)
+* **Framework**: Vitest with v8 coverage
 
 ### Test Categories
 

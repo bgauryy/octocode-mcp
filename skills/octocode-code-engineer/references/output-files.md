@@ -36,10 +36,10 @@ outputFiles { summary, architecture, codeQuality, deadCode, fileInventory, findi
 
 Use `summary.json` to drive the first decision:
 
-- Use `agentOutput.topRecommendations[]` and `filesWithIssues[]` to decide where to drill in first
-- Use `summary.md` or `architecture.json` for graph-specific detail such as `cycles`, `criticalPaths`, and hotspots
-- If top recommendations are mostly complexity, duplication, or side-effect findings, switch to AST-first investigation
-- If graph-heavy recommendations and AST-heavy recommendations appear together, plan a combined investigation before proposing refactors
+* Use `agentOutput.topRecommendations[]` and `filesWithIssues[]` to decide where to drill in first
+* Use `summary.md` or `architecture.json` for graph-specific detail such as `cycles`, `criticalPaths`, and hotspots
+* If top recommendations are mostly complexity, duplication, or side-effect findings, switch to AST-first investigation
+* If graph-heavy recommendations and AST-heavy recommendations appear together, plan a combined investigation before proposing refactors
 
 ### `findings.json`
 
@@ -56,10 +56,10 @@ Filter: `jq '.optimizationFindings[] | select(.tags | contains(["coupling"]))' f
 
 Use `findings.json` to correlate categories:
 
-- `feature-envy` + `low-cohesion` = likely boundary error
-- `layer-violation` + `feature-envy` = likely dependency leak
-- `import-side-effect-risk` + hotspot tags = likely startup risk
-- `dependency-critical-path` + complexity tags = likely change chokepoint
+* `feature-envy` + `low-cohesion` = likely boundary error
+* `layer-violation` + `feature-envy` = likely dependency leak
+* `import-side-effect-risk` + hotspot tags = likely startup risk
+* `dependency-critical-path` + complexity tags = likely change chokepoint
 
 ### `architecture.json`
 
@@ -76,20 +76,20 @@ sccClusters[] (with `--graph-advanced`), packageGraphSummary (with `--graph-adva
 
 Use `architecture.json` as the graph lens:
 
-- `criticalModules[]` = hub nodes already surfaced by the dependency summary
-- `cycles[]` = immediate structural loops
-- `criticalPaths[]` = long change propagation chains
-- `hotFiles[]` = current approximation of graph chokepoints
-- `graphSignals[]` = already-interpreted graph narratives for triage
-- `chokepoints[]` = broker and articulation-style structural pressure points
-- `categoryBreakdown` = whether the repo’s architecture risk is mostly cycles, layering, cohesion, or side effects
+* `criticalModules[]` = hub nodes already surfaced by the dependency summary
+* `cycles[]` = immediate structural loops
+* `criticalPaths[]` = long change propagation chains
+* `hotFiles[]` = current approximation of graph chokepoints
+* `graphSignals[]` = already-interpreted graph narratives for triage
+* `chokepoints[]` = broker and articulation-style structural pressure points
+* `categoryBreakdown` = whether the repo’s architecture risk is mostly cycles, layering, cohesion, or side effects
 
 Good investigation prompts:
 
-- "Do critical hub modules also appear in hotFiles or critical paths?"
-- "Which files are both hot and on a critical path?"
-- "Which layer violations cluster around the same folder?"
-- "Do side-effectful modules also have high fan-in?"
+* "Do critical hub modules also appear in hotFiles or critical paths?"
+* "Which files are both hot and on a critical path?"
+* "Which layer violations cluster around the same folder?"
+* "Do side-effectful modules also have high fan-in?"
 
 ### `code-quality.json`
 
@@ -140,14 +140,14 @@ fileInventory[] { package, file, parseEngine, nodeCount, kindCounts,
 
 Use `file-inventory.json` as the AST lens:
 
-- `functions[]` = shape and complexity of orchestration
-- `flows[]` = repeated control structures
-- `dependencyProfile` = exported/imported symbol detail for cohesion and feature-envy follow-up
-- `topLevelEffects[]` = hidden initialization / import-time work
-- `effectProfile` = summarized import-time risk
-- `symbolUsageSummary` = compact symbol/import/export shape for boundary follow-up
-- `boundaryRoleHints[]` = lightweight role inference for the file
-- `cfgFlags` = lightweight flow clues for validation, cleanup, exit behavior, and async boundaries (with `--flow`)
+* `functions[]` = shape and complexity of orchestration
+* `flows[]` = repeated control structures
+* `dependencyProfile` = exported/imported symbol detail for cohesion and feature-envy follow-up
+* `topLevelEffects[]` = hidden initialization / import-time work
+* `effectProfile` = summarized import-time risk
+* `symbolUsageSummary` = compact symbol/import/export shape for boundary follow-up
+* `boundaryRoleHints[]` = lightweight role inference for the file
+* `cfgFlags` = lightweight flow clues for validation, cleanup, exit behavior, and async boundaries (with `--flow`)
 
 If `architecture.json` names a hotspot, use `file-inventory.json` to explain why that hotspot is structurally hard to change.
 
@@ -155,7 +155,7 @@ If `architecture.json` names a hotspot, use `file-inventory.json` to explain why
 
 ## Reading `ast-trees.txt`
 
-Flattened AST snapshot: `## <package> — <filepath>` section headers, then indented `Kind[startLine:endLine]` nodes (2 spaces = 1 depth level, `...` = truncated children). On by default (`--emit-tree`). Suppress with `--no-tree`. Tree depth: `--tree-depth N` (default: 4).
+Flattened AST snapshot: `## <package>  -  <filepath>` section headers, then indented `Kind[startLine:endLine]` nodes (2 spaces = 1 depth level, `...` = truncated children). On by default (`--emit-tree`). Suppress with `--no-tree`. Tree depth: `--tree-depth N` (default: 4).
 
 Query with `tree-search.js` (`-k`, `-p`, `--file`, `-C`). For format details and tool reference, see [ast-reference.md](./ast-reference.md).
 

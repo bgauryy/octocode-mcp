@@ -5,16 +5,16 @@
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Architecture Diagram](#architecture-diagram)
-- [Main Components](#main-components)
-- [Core Flows](#core-flows)
-  - [Server Startup Flow](#1-server-startup-flow)
-  - [Tool Execution Flow](#2-tool-execution-flow)
-  - [Discovery Flow](#3-discovery-flow)
-- [PM2 Process Management](#pm2-process-management)
-- [Component Connections](#component-connections)
-- [Quick Reference](#quick-reference)
+* [Overview](#overview)
+* [Architecture Diagram](#architecture-diagram)
+* [Main Components](#main-components)
+* [Core Flows](#core-flows)
+  * [Server Startup Flow](#1-server-startup-flow)
+  * [Tool Execution Flow](#2-tool-execution-flow)
+  * [Discovery Flow](#3-discovery-flow)
+* [PM2 Process Management](#pm2-process-management)
+* [Component Connections](#component-connections)
+* [Quick Reference](#quick-reference)
 
 ---
 
@@ -22,10 +22,10 @@
 
 The **octocode-research** skill is a lightweight HTTP API server that wraps `octocode-mcp` tools for code research. It provides:
 
-- **HTTP Interface**: REST API on `localhost:1987` by default (configurable via `OCTOCODE_RESEARCH_HOST` / `OCTOCODE_RESEARCH_PORT`)
-- **HTTP Clients**: curl, fetch, or any HTTP client
-- **Unified Tool API**: All tools via `POST /tools/call/:toolName`
-- **Resilience**: Circuit breaker + retry patterns for reliability
+* **HTTP Interface**: REST API on `localhost:1987` by default (configurable via `OCTOCODE_RESEARCH_HOST` / `OCTOCODE_RESEARCH_PORT`)
+* **HTTP Clients**: curl, fetch, or any HTTP client
+* **Unified Tool API**: All tools via `POST /tools/call/:toolName`
+* **Resilience**: Circuit breaker + retry patterns for reliability
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -123,24 +123,24 @@ The **octocode-research** skill is a lightweight HTTP API server that wraps `oct
 ### 1. **Server (\`src/server.ts\`)**
 
 The Express HTTP server that:
-- Initializes MCP content cache at startup
-- Mounts \`/tools\` and \`/prompts\` route handlers
-- Handles graceful shutdown
-- Exposes \`/health\` endpoint for monitoring
+* Initializes MCP content cache at startup
+* Mounts \`/tools\` and \`/prompts\` route handlers
+* Handles graceful shutdown
+* Exposes \`/health\` endpoint for monitoring
 
 ### 2. **MCP Cache (\`src/mcpCache.ts\`)**
 
 Singleton cache that:
-- Loads tool metadata ONCE at startup
-- Provides fast access to tool schemas
-- Avoids repeated initialization costs
+* Loads tool metadata ONCE at startup
+* Provides fast access to tool schemas
+* Avoids repeated initialization costs
 
 ### 3. **Index (\`src/index.ts\`)**
 
 Re-exports layer that:
-- Maps \`octocode-mcp\` functions to skill-friendly names
-- Provides type exports for TypeScript consumers
-- Centralizes all tool imports
+* Maps \`octocode-mcp\` functions to skill-friendly names
+* Provides type exports for TypeScript consumers
+* Centralizes all tool imports
 
 ### 4. **Routes (\`src/routes/\`)**
 
@@ -547,8 +547,8 @@ CLOSED (normal) ──[3 failures]──► OPEN (reject all)
 ```
 
 **Per-service configuration:**
-- **LSP**: 3 failures, 1 success, 10s timeout
-- **GitHub**: 2 failures, 1 success, 60s timeout
+* **LSP**: 3 failures, 1 success, 10s timeout
+* **GitHub**: 2 failures, 1 success, 60s timeout
 
 ---
 

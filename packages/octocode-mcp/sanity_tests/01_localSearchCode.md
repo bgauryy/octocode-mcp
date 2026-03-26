@@ -29,10 +29,10 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 ### Hints Validation Checklist
-- [ ] Response includes `hasResultsStatusHints` or `emptyStatusHints`
-- [ ] Hints suggest next logical steps (e.g., LSP tools, file reading)
-- [ ] Pagination hints when results are truncated
-- [ ] Search refinement suggestions for empty results
+* [ ] Response includes `hasResultsStatusHints` or `emptyStatusHints`
+* [ ] Hints suggest next logical steps (e.g., LSP tools, file reading)
+* [ ] Pagination hints when results are truncated
+* [ ] Search refinement suggestions for empty results
 
 ---
 
@@ -56,18 +56,18 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Returns file-level summary with `matchCount` per file
-- [ ] No match content / code snippets in results
-- [ ] `totalMatches` and `totalFiles` populated in pagination
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints array present (`hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps (LSP tools, file reading, search refinement)
-- [ ] **Hints Validation:**
-  - [ ] Response includes `hasResultsStatusHints` with guidance
-  - [ ] Hints suggest next steps (e.g., "Use mode: 'paginated' for match content")
-  - [ ] File count and match statistics in hints
+* [ ] Returns file-level summary with `matchCount` per file
+* [ ] No match content / code snippets in results
+* [ ] `totalMatches` and `totalFiles` populated in pagination
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints array present (`hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps (LSP tools, file reading, search refinement)
+* [ ] **Hints Validation:**
+  * [ ] Response includes `hasResultsStatusHints` with guidance
+  * [ ] Hints suggest next steps (e.g., "Use mode: 'paginated' for match content")
+  * [ ] File count and match statistics in hints
 
 ---
 
@@ -90,18 +90,18 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Matches include byte and character offsets
-- [ ] Pagination metadata present (`page`, `totalPages`)
-- [ ] Max 5 matches per page
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps (LSP lineHint, file reading)
-- [ ] **Hints Validation:**
-  - [ ] Pagination hints when more results available
-  - [ ] LSP tool suggestions with lineHint references
-  - [ ] File reading suggestions for match context
+* [ ] Matches include byte and character offsets
+* [ ] Pagination metadata present (`page`, `totalPages`)
+* [ ] Max 5 matches per page
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps (LSP lineHint, file reading)
+* [ ] **Hints Validation:**
+  * [ ] Pagination hints when more results available
+  * [ ] LSP tool suggestions with lineHint references
+  * [ ] File reading suggestions for match context
 
 ---
 
@@ -124,14 +124,14 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Matches include context lines before/after
-- [ ] Richer output than paginated mode
-- [ ] Pagination still works
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Matches include context lines before/after
+* [ ] Richer output than paginated mode
+* [ ] Pagination still works
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -153,13 +153,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Only file paths returned (no match content)
-- [ ] No code snippets or line numbers
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps (e.g., file reading, content search)
+* [ ] Only file paths returned (no match content)
+* [ ] No code snippets or line numbers
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps (e.g., file reading, content search)
 
 ---
 
@@ -182,13 +182,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Only `.ts` files in results
-- [ ] May include helpful tip ("use type= instead")
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only `.ts` files in results
+* [ ] May include helpful tip ("use type= instead")
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -212,15 +212,15 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] No `.test.ts` files in results
-- [ ] Other file types still included
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] No `.test.ts` files in results
+* [ ] Other file types still included
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
-**Note:** `fixedString: true` required — `(` is regex special; without it ripgrep fails with "unclosed group".
+**Note:** `fixedString: true` required  -  `(` is regex special; without it ripgrep fails with "unclosed group".
 
 ---
 
@@ -244,13 +244,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Match content extended up to 400 chars (vs default 200)
-- [ ] Longer snippets visible
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Match content extended up to 400 chars (vs default 200)
+* [ ] Longer snippets visible
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -273,13 +273,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Max 3 files in results
-- [ ] Pagination indicates more pages available
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Pagination hints when more results available
-  - [ ] Hints suggest actionable next steps
+* [ ] Max 3 files in results
+* [ ] Pagination indicates more pages available
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Pagination hints when more results available
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -303,13 +303,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Matches `error`, `Error`, `ERROR`, etc.
-- [ ] May include priority/precedence warning
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Matches `error`, `Error`, `ERROR`, etc.
+* [ ] May include priority/precedence warning
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -333,13 +333,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] No more than 2 matches from any single file
-- [ ] Other files still included
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] No more than 2 matches from any single file
+* [ ] Other files still included
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -362,12 +362,12 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] At most 5 files in results
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] At most 5 files in results
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -391,13 +391,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Most recently modified files appear first
-- [ ] File order differs from default (path) sort
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Most recently modified files appear first
+* [ ] File order differs from default (path) sort
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -421,12 +421,12 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Line and column numbers present per match
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present (LSP lineHint suggestions)
-  - [ ] Hints suggest actionable next steps
+* [ ] Line and column numbers present per match
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present (LSP lineHint suggestions)
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -450,13 +450,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] `<` and `>` treated as literal characters, not regex
-- [ ] Matches exact string `Array<string>`
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] `<` and `>` treated as literal characters, not regex
+* [ ] Matches exact string `Array<string>`
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -480,12 +480,12 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Matches that span line boundaries found
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Matches that span line boundaries found
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -509,12 +509,12 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Matches `error` but NOT `errorCode`, `isError`, etc.
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Matches `error` but NOT `errorCode`, `isError`, etc.
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -539,14 +539,14 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Warning about mutually exclusive params
-- [ ] `count` dropped; `filesOnly` behavior takes precedence
-- [ ] filesOnly output (file paths only, no match counts)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Warning about mutually exclusive params
+* [ ] `count` dropped; `filesOnly` behavior takes precedence
+* [ ] filesOnly output (file paths only, no match counts)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -570,13 +570,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Returned lines do NOT contain "import"
-- [ ] Results are the complement of a normal search
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Returned lines do NOT contain "import"
+* [ ] Results are the complement of a normal search
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -601,14 +601,14 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] 2 lines shown before each match
-- [ ] 10 lines shown after each match
-- [ ] Asymmetric context visible
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] 2 lines shown before each match
+* [ ] 10 lines shown after each match
+* [ ] Asymmetric context visible
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -632,14 +632,14 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Different files than page 1
-- [ ] No overlap with page 1 results
-- [ ] Pagination metadata shows current page
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Pagination hints for next/previous page
-  - [ ] Hints suggest actionable next steps
+* [ ] Different files than page 1
+* [ ] No overlap with page 1 results
+* [ ] Pagination metadata shows current page
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Pagination hints for next/previous page
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -663,13 +663,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] No files from `tests/` or `node_modules/` directories
-- [ ] Only source files in results
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] No files from `tests/` or `node_modules/` directories
+* [ ] Only source files in results
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -693,13 +693,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Dotfiles (e.g., `.gitignore`, `.eslintrc`) included if they match
-- [ ] More results than with `hidden: false` (default)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Dotfiles (e.g., `.gitignore`, `.eslintrc`) included if they match
+* [ ] More results than with `hidden: false` (default)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -723,14 +723,14 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Only TypeScript files in results
-- [ ] No `.js`, `.json`, `.md` files
-- [ ] Equivalent to `include: ["*.ts"]` but more idiomatic
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only TypeScript files in results
+* [ ] No `.js`, `.json`, `.md` files
+* [ ] Equivalent to `include: ["*.ts"]` but more idiomatic
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -754,13 +754,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Each file shows a numeric match count
-- [ ] Counts reflect actual occurrences (not just 1 per file)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Each file shows a numeric match count
+* [ ] Counts reflect actual occurrences (not just 1 per file)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -785,13 +785,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Files sorted Z-A by path (reverse alphabetical)
-- [ ] Opposite order from default `sort: "path"`
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Files sorted Z-A by path (reverse alphabetical)
+* [ ] Opposite order from default `sort: "path"`
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -815,13 +815,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Modification timestamps visible per file
-- [ ] Not shown when `showFileLastModified: false` (default)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Modification timestamps visible per file
+* [ ] Not shown when `showFileLastModified: false` (default)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -845,14 +845,14 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Only matches `Error` (capital E)
-- [ ] Does NOT match `error`, `ERROR`
-- [ ] Overrides `smartCase` default
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only matches `Error` (capital E)
+* [ ] Does NOT match `error`, `ERROR`
+* [ ] Overrides `smartCase` default
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -876,13 +876,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Binary files excluded from results (default behavior)
-- [ ] Only text files with matches shown
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Binary files excluded from results (default behavior)
+* [ ] Only text files with matches shown
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -903,14 +903,14 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Error message returned (not a crash)
-- [ ] Descriptive error about invalid/missing path
-- [ ] No stack trace or internal details leaked
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`error`)
-  - [ ] `errorStatusHints` present with path verification suggestions
-  - [ ] Hints suggest actionable recovery steps
+* [ ] Error message returned (not a crash)
+* [ ] Descriptive error about invalid/missing path
+* [ ] No stack trace or internal details leaked
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`error`)
+  * [ ] `errorStatusHints` present with path verification suggestions
+  * [ ] Hints suggest actionable recovery steps
 
 ---
 
@@ -932,14 +932,14 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Error message about invalid regex syntax
-- [ ] No crash or timeout
-- [ ] Actionable error message
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`error`)
-  - [ ] `errorStatusHints` present with regex correction suggestions
-  - [ ] Hints suggest actionable recovery steps
+* [ ] Error message about invalid regex syntax
+* [ ] No crash or timeout
+* [ ] Actionable error message
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`error`)
+  * [ ] `errorStatusHints` present with regex correction suggestions
+  * [ ] Hints suggest actionable recovery steps
 
 ---
 
@@ -961,14 +961,14 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] No error thrown
-- [ ] Empty results with `totalFiles: 0` or equivalent
-- [ ] Clear indication no matches found
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`empty`)
-  - [ ] `emptyStatusHints` present with search refinement suggestions
-  - [ ] Hints suggest broadening search, removing filters, trying parent dirs
+* [ ] No error thrown
+* [ ] Empty results with `totalFiles: 0` or equivalent
+* [ ] Clear indication no matches found
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`empty`)
+  * [ ] `emptyStatusHints` present with search refinement suggestions
+  * [ ] Hints suggest broadening search, removing filters, trying parent dirs
 
 ---
 
@@ -992,13 +992,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Files returned do NOT contain "describe("
-- [ ] Useful for finding non-test files
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Files returned do NOT contain "describe("
+* [ ] Useful for finding non-test files
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1022,13 +1022,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Lookahead/lookbehind patterns work
-- [ ] Matches only "function X" when preceded by "export "
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps (LSP, file reading)
+* [ ] Lookahead/lookbehind patterns work
+* [ ] Matches only "function X" when preceded by "export "
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps (LSP, file reading)
 
 ---
 
@@ -1052,13 +1052,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Files normally excluded by .gitignore (e.g., dist/, coverage/) appear in results
-- [ ] More results than default
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Files normally excluded by .gitignore (e.g., dist/, coverage/) appear in results
+* [ ] More results than default
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1082,13 +1082,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Symlinked files/directories included in search
-- [ ] No error on symlink traversal
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Symlinked files/directories included in search
+* [ ] No error on symlink traversal
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1112,13 +1112,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] 5 lines before AND 5 lines after each match
-- [ ] Symmetric context visible
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] 5 lines before AND 5 lines after each match
+* [ ] Symmetric context visible
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1142,13 +1142,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Column position present per match
-- [ ] Indicates character offset within line
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present (LSP lineHint)
-  - [ ] Hints suggest actionable next steps
+* [ ] Column position present per match
+* [ ] Indicates character offset within line
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present (LSP lineHint)
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1173,13 +1173,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Dot (.) matches newline characters
-- [ ] Patterns span across line boundaries
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Dot (.) matches newline characters
+* [ ] Patterns span across line boundaries
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1203,13 +1203,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] No distribution/stats metadata in output
-- [ ] Differs from default (includeStats: true)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] No distribution/stats metadata in output
+* [ ] Differs from default (includeStats: true)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1233,13 +1233,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] No distribution breakdown in output
-- [ ] Differs from default (includeDistribution: true)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] No distribution breakdown in output
+* [ ] Differs from default (includeDistribution: true)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1263,19 +1263,19 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Only lines that ARE exactly "import" (nothing else)
-- [ ] Not lines containing "import"
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Only lines that ARE exactly "import" (nothing else)
+* [ ] Not lines containing "import"
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
 ### TC-42: Smart Case (Default Behavior)
 
-**Goal:** Verify `smartCase: true` (default) — lowercase = insensitive, uppercase = sensitive.
+**Goal:** Verify `smartCase: true` (default)  -  lowercase = insensitive, uppercase = sensitive.
 
 ```json
 {
@@ -1293,13 +1293,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Matches "error", "Error", "ERROR" (all-lowercase pattern = case-insensitive)
-- [ ] With "Error" as pattern, only exact case matched
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Matches "error", "Error", "ERROR" (all-lowercase pattern = case-insensitive)
+* [ ] With "Error" as pattern, only exact case matched
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1323,14 +1323,14 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Empty results or clear "no more pages" indication
-- [ ] No error thrown
-- [ ] Pagination metadata reflects actual total
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Pagination hints indicate boundary
-  - [ ] Hints suggest actionable next steps
+* [ ] Empty results or clear "no more pages" indication
+* [ ] No error thrown
+* [ ] Pagination metadata reflects actual total
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Pagination hints indicate boundary
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1352,14 +1352,14 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] No crash or timeout
-- [ ] Empty results expected (no match)
-- [ ] Handles gracefully
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] No crash or timeout
+* [ ] Empty results expected (no match)
+* [ ] Handles gracefully
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1383,14 +1383,14 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Each file shows a line count (number of matching lines)
-- [ ] No match content or code snippets
-- [ ] Distinct from `countMatches` (counts lines, not individual matches)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Each file shows a line count (number of matching lines)
+* [ ] No match content or code snippets
+* [ ] Distinct from `countMatches` (counts lines, not individual matches)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1414,14 +1414,14 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Most recently accessed files appear first
-- [ ] File order differs from default (path) sort
-- [ ] Order may differ from `sort: "modified"`
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Most recently accessed files appear first
+* [ ] File order differs from default (path) sort
+* [ ] Order may differ from `sort: "modified"`
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1445,20 +1445,20 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Most recently created files appear first
-- [ ] File order differs from default (path) sort
-- [ ] Order may differ from `sort: "modified"` and `sort: "accessed"`
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Most recently created files appear first
+* [ ] File order differs from default (path) sort
+* [ ] Order may differ from `sort: "modified"` and `sort: "accessed"`
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
 ### TC-48: Bulk Queries (Mixed Valid + Invalid)
 
-**Goal:** Verify error isolation in bulk queries — one failure doesn't affect others.
+**Goal:** Verify error isolation in bulk queries  -  one failure doesn't affect others.
 
 ```json
 {
@@ -1492,15 +1492,15 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] First query succeeds
-- [ ] Second and third return errors
-- [ ] Each result isolated per query
-- [ ] No cascade failure
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array has per-query `status` (hasResults, error, error)
-  - [ ] Status-specific hints for each result type
-  - [ ] Hints suggest actionable next steps per query
+* [ ] First query succeeds
+* [ ] Second and third return errors
+* [ ] Each result isolated per query
+* [ ] No cascade failure
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array has per-query `status` (hasResults, error, error)
+  * [ ] Status-specific hints for each result type
+  * [ ] Hints suggest actionable next steps per query
 
 ---
 
@@ -1524,13 +1524,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Search completes with specified encoding
-- [ ] No encoding errors
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Search completes with specified encoding
+* [ ] No encoding errors
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1554,13 +1554,13 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] \w only matches ASCII word chars (not Unicode letters)
-- [ ] May differ from default (Unicode-aware)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] \w only matches ASCII word chars (not Unicode letters)
+* [ ] May differ from default (Unicode-aware)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
@@ -1584,22 +1584,22 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 ```
 
 **Expected:**
-- [ ] Both matching and non-matching lines in output
-- [ ] Effectively shows full file with highlights
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status`
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
+* [ ] Both matching and non-matching lines in output
+* [ ] Effectively shows full file with highlights
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status`
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
 
 ---
 
 ## Validation Checklist
 
 ### Core Requirements
-- [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning`
-- [ ] **Pagination tests** verify `matchesPerPage`, `filesPerPage`, `filePageNumber`
-- [ ] **Hints validation** checks for helpful guidance in all responses
+* [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning`
+* [ ] **Pagination tests** verify `matchesPerPage`, `filesPerPage`, `filePageNumber`
+* [ ] **Hints validation** checks for helpful guidance in all responses
 
 ### Test Cases Status
 

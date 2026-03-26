@@ -30,10 +30,10 @@ Navigates to the definition of a symbol using Language Server Protocol. Requires
 ```
 
 ### Hints Validation Checklist
-- [ ] Response includes helpful hints for symbol analysis
-- [ ] Hints suggest next logical steps (e.g., find references, call hierarchy)
-- [ ] Context navigation suggestions
-- [ ] Symbol relationship insights in hints
+* [ ] Response includes helpful hints for symbol analysis
+* [ ] Hints suggest next logical steps (e.g., find references, call hierarchy)
+* [ ] Context navigation suggestions
+* [ ] Symbol relationship insights in hints
 
 ---
 
@@ -49,7 +49,7 @@ All test cases require a prior `localSearchCode` call to obtain `lineHint`. **NE
 
 **Goal:** Verify basic symbol definition navigation with default context.
 
-**Step 1 — Search first:**
+**Step 1  -  Search first:**
 ```json
 localSearchCode: {
   "queries": [{
@@ -64,7 +64,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Goto definition:**
+**Step 2  -  Goto definition:**
 ```json
 {
   "queries": [{
@@ -80,14 +80,14 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Navigates to class definition
-- [ ] 5 lines of context before and after
-- [ ] `resolvedPosition` shows exact character position
-- [ ] Definition range clearly marked
-- [ ] **Hints Validation:**
-  - [ ] Response includes helpful hints for symbol analysis
-  - [ ] Hints suggest next steps (find references, call hierarchy)
-  - [ ] Context navigation suggestions
+* [ ] Navigates to class definition
+* [ ] 5 lines of context before and after
+* [ ] `resolvedPosition` shows exact character position
+* [ ] Definition range clearly marked
+* [ ] **Hints Validation:**
+  * [ ] Response includes helpful hints for symbol analysis
+  * [ ] Hints suggest next steps (find references, call hierarchy)
+  * [ ] Context navigation suggestions
 
 ---
 
@@ -110,18 +110,18 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Only the definition range returned (no surrounding context)
-- [ ] `displayRange` shows exact definition lines
-- [ ] Much smaller output than with context
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
-  - [ ] Hints suggest actionable next steps relevant to the query
-- [ ] **Hints Validation:**
-  - [ ] Response includes helpful hints for symbol analysis
-  - [ ] Hints suggest next steps (find references, call hierarchy)
+* [ ] Only the definition range returned (no surrounding context)
+* [ ] `displayRange` shows exact definition lines
+* [ ] Much smaller output than with context
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present (e.g., `hasResultsStatusHints`)
+  * [ ] Hints suggest actionable next steps relevant to the query
+* [ ] **Hints Validation:**
+  * [ ] Response includes helpful hints for symbol analysis
+  * [ ] Hints suggest next steps (find references, call hierarchy)
 
 ---
 
@@ -144,18 +144,18 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] 10 lines before and after definition
-- [ ] Full class body visible (for short classes)
-- [ ] Numbered lines in output
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps relevant to the query
-- [ ] **Hints Validation:**
-  - [ ] Response includes helpful hints for symbol analysis
-  - [ ] Hints suggest next steps (find references, call hierarchy)
+* [ ] 10 lines before and after definition
+* [ ] Full class body visible (for short classes)
+* [ ] Numbered lines in output
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps relevant to the query
+* [ ] **Hints Validation:**
+  * [ ] Response includes helpful hints for symbol analysis
+  * [ ] Hints suggest next steps (find references, call hierarchy)
 
 ---
 
@@ -163,7 +163,7 @@ localSearchCode: {
 
 **Goal:** Verify navigation to a function definition.
 
-**Step 1 — Search:**
+**Step 1  -  Search:**
 ```json
 localSearchCode: {
   "queries": [{
@@ -178,7 +178,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Goto definition:**
+**Step 2  -  Goto definition:**
 ```json
 {
   "queries": [{
@@ -194,15 +194,15 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Navigates to function definition
-- [ ] Function signature visible
-- [ ] `searchRadius` info present
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Navigates to function definition
+* [ ] Function signature visible
+* [ ] `searchRadius` info present
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -210,9 +210,9 @@ localSearchCode: {
 
 **Goal:** Verify re-export following, `orderHint` semantics, and cross-file definition resolution from imports.
 
-**Important:** Use `orderHint: 0` (default) for import/re-export lines — they typically have one symbol occurrence. `orderHint: 1` asks for the 2nd occurrence and correctly returns "Symbol not found" when only one exists.
+**Important:** Use `orderHint: 0` (default) for import/re-export lines  -  they typically have one symbol occurrence. `orderHint: 1` asks for the 2nd occurrence and correctly returns "Symbol not found" when only one exists.
 
-**Step 1 — Search for import:**
+**Step 1  -  Search for import:**
 ```json
 localSearchCode: {
   "pattern": "import.*ToolError",
@@ -222,7 +222,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Goto definition (use orderHint: 0 for single-occurrence lines):**
+**Step 2  -  Goto definition (use orderHint: 0 for single-occurrence lines):**
 ```json
 {
   "uri": "<file_with_import>",
@@ -233,10 +233,10 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Navigates to source definition (not the re-export) via import chaining
-- [ ] `orderHint: 0` selects the single occurrence on the import line
-- [ ] Resolves to a **different file** than the import file (cross-file navigation)
-- [ ] Source definition fully visible with context
+* [ ] Navigates to source definition (not the re-export) via import chaining
+* [ ] `orderHint: 0` selects the single occurrence on the import line
+* [ ] Resolves to a **different file** than the import file (cross-file navigation)
+* [ ] Source definition fully visible with context
 
 ---
 
@@ -244,7 +244,7 @@ localSearchCode: {
 
 **Goal:** Verify navigation to a TypeScript type or interface.
 
-**Step 1 — Search:**
+**Step 1  -  Search:**
 ```json
 localSearchCode: {
   "queries": [{
@@ -259,7 +259,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Goto definition:**
+**Step 2  -  Goto definition:**
 ```json
 {
   "queries": [{
@@ -275,15 +275,15 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Navigates to interface/type definition
-- [ ] Full interface body visible with context
-- [ ] `symbolKind` or similar metadata present
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Navigates to interface/type definition
+* [ ] Full interface body visible with context
+* [ ] `symbolKind` or similar metadata present
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -306,17 +306,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Still resolves if within `searchRadius`
-- [ ] `searchRadius` shown in response
-- [ ] May fail if too far from actual definition
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps relevant to the query
-- [ ] **Hints Validation:**
-  - [ ] Response includes helpful hints (symbol verification, lineHint validation)
+* [ ] Still resolves if within `searchRadius`
+* [ ] `searchRadius` shown in response
+* [ ] May fail if too far from actual definition
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps relevant to the query
+* [ ] **Hints Validation:**
+  * [ ] Response includes helpful hints (symbol verification, lineHint validation)
 
 ---
 
@@ -339,14 +339,14 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] "Symbol not found" or equivalent error
-- [ ] No crash or timeout
-- [ ] `searchRadius` info may show search area
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints present (error hints)
-  - [ ] Hints suggest recovery (symbol verification, alternative search)
+* [ ] "Symbol not found" or equivalent error
+* [ ] No crash or timeout
+* [ ] `searchRadius` info may show search area
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints present (error hints)
+  * [ ] Hints suggest recovery (symbol verification, alternative search)
 
 ---
 
@@ -369,14 +369,14 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Error message returned (not a crash)
-- [ ] Clear indication file not found
-- [ ] No stack trace leaked
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints present (error hints)
-  - [ ] Hints suggest recovery (file path verification)
+* [ ] Error message returned (not a crash)
+* [ ] Clear indication file not found
+* [ ] No stack trace leaked
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints present (error hints)
+  * [ ] Hints suggest recovery (file path verification)
 
 ---
 
@@ -399,15 +399,15 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Up to 20 lines context before and after
-- [ ] No error at maximum value
-- [ ] Large but manageable output
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Up to 20 lines context before and after
+* [ ] No error at maximum value
+* [ ] Large but manageable output
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -430,16 +430,16 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Validation error (lineHint min is 1)
-- [ ] Clear error message
-- [ ] No crash
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints present for validation errors
-  - [ ] Hints suggest lineHint validation (use 1-indexed line numbers)
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest lineHint must be >= 1
+* [ ] Validation error (lineHint min is 1)
+* [ ] Clear error message
+* [ ] No crash
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints present for validation errors
+  * [ ] Hints suggest lineHint validation (use 1-indexed line numbers)
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest lineHint must be >= 1
 
 ---
 
@@ -462,17 +462,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] No error when context would go before line 1
-- [ ] Context starts at line 1 (no negative lines)
-- [ ] Available context returned without padding
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
-- [ ] **Hints Validation:**
-  - [ ] Response includes helpful hints for symbol analysis
+* [ ] No error when context would go before line 1
+* [ ] Context starts at line 1 (no negative lines)
+* [ ] Available context returned without padding
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
+* [ ] **Hints Validation:**
+  * [ ] Response includes helpful hints for symbol analysis
 
 ---
 
@@ -495,16 +495,16 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] No crash or timeout
-- [ ] "Symbol not found" expected (no such long symbol)
-- [ ] Handles gracefully without validation error
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps
-- [ ] **Hints Validation:**
-  - [ ] Response includes helpful hints (symbol verification)
+* [ ] No crash or timeout
+* [ ] "Symbol not found" expected (no such long symbol)
+* [ ] Handles gracefully without validation error
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps
+* [ ] **Hints Validation:**
+  * [ ] Response includes helpful hints (symbol verification)
 
 ---
 
@@ -527,16 +527,16 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] "Symbol not found" or graceful error
-- [ ] No crash or timeout
-- [ ] Search radius may not cover actual definition location
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable recovery steps
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest lineHint validation, alternative search
+* [ ] "Symbol not found" or graceful error
+* [ ] No crash or timeout
+* [ ] Search radius may not cover actual definition location
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable recovery steps
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest lineHint validation, alternative search
 
 ---
 
@@ -544,7 +544,7 @@ localSearchCode: {
 
 **Goal:** Verify navigation to a `const` or `let` variable definition.
 
-**Step 1 — Search:**
+**Step 1  -  Search:**
 ```json
 localSearchCode: {
   "queries": [{
@@ -559,7 +559,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Goto definition:**
+**Step 2  -  Goto definition:**
 ```json
 {
   "queries": [{
@@ -575,17 +575,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Navigates to the const/variable declaration
-- [ ] Variable value visible in context
-- [ ] Works for both `const` and `let` declarations
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints array present
-  - [ ] Hints suggest actionable next steps (find references)
-- [ ] **Hints Validation:**
-  - [ ] Response includes helpful hints for symbol analysis
+* [ ] Navigates to the const/variable declaration
+* [ ] Variable value visible in context
+* [ ] Works for both `const` and `let` declarations
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints array present
+  * [ ] Hints suggest actionable next steps (find references)
+* [ ] **Hints Validation:**
+  * [ ] Response includes helpful hints for symbol analysis
 
 ---
 
@@ -604,29 +604,29 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] First query succeeds with definition
-- [ ] Second query returns file not found error
-- [ ] Third query returns symbol not found error
-- [ ] Each result isolated per query
-- [ ] No cascade failure
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields
-  - [ ] Status-specific hints present for each result (success + error hints)
-  - [ ] Hints suggest actionable next steps per status
-- [ ] **Hints Validation:**
-  - [ ] Success hints for first query; error recovery hints for second and third
+* [ ] First query succeeds with definition
+* [ ] Second query returns file not found error
+* [ ] Third query returns symbol not found error
+* [ ] Each result isolated per query
+* [ ] No cascade failure
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields
+  * [ ] Status-specific hints present for each result (success + error hints)
+  * [ ] Hints suggest actionable next steps per status
+* [ ] **Hints Validation:**
+  * [ ] Success hints for first query; error recovery hints for second and third
 
 ---
 
 ## Validation Checklist
 
 ### Core Requirements
-- [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning`
-- [ ] **Context lines tests** verify `contextLines` parameter controls response size
-- [ ] **Hints validation** checks for helpful guidance in all responses
-- [ ] **Response validation** — every Expected section includes explicit response checking
+* [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning`
+* [ ] **Context lines tests** verify `contextLines` parameter controls response size
+* [ ] **Hints validation** checks for helpful guidance in all responses
+* [ ] **Response validation**  -  every Expected section includes explicit response checking
 
 ### Test Cases Status
 

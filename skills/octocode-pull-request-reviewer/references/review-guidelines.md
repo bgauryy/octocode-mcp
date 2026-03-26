@@ -13,9 +13,9 @@
 
 <review_mindset>
 **Core Principle: Focus on CHANGED Code Only**
-- **Added code**: Lines with '+' prefix
-- **Modified code**: New implementation ('+') while considering removed context
-- **Deleted code**: Only comment if removal creates new risks
+* **Added code**: Lines with '+' prefix
+* **Modified code**: New implementation ('+') while considering removed context
+* **Deleted code**: Only comment if removal creates new risks
 
 **MUST include when**: HIGH/MED confidence + NEW code ('+' prefix) + real problem + actionable fix
 **FORBIDDEN to suggest when**: LOW confidence, unchanged code, style-only, caught by linters/compilers, already commented by others

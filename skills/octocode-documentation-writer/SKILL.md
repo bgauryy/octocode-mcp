@@ -1,6 +1,6 @@
 ---
 name: octocode-documentation-writer
-description: This skill should be used when the user asks to "generate documentation", "document this project", "create docs", "write documentation", "update documentation", "document all APIs", "generate onboarding docs", "create developer docs", or needs comprehensive codebase documentation. Orchestrates parallel AI agents to analyze code and produce documentation files.
+description: This skill should be used when the user asks to "generate documentation", "document this project", "create docs", "write documentation", "update documentation", "document all APIs", "generate onboarding docs", "create developer docs", or needs codebase documentation. Orchestrates parallel AI agents to analyze code and produce documentation files.
 ---
 
 # Repository Documentation Generator
@@ -9,15 +9,15 @@ description: This skill should be used when the user asks to "generate documenta
 
 
 <what>
-This command orchestrates specialized AI agents in 6 phases to analyze your code repository and generate comprehensive documentation:
+This command orchestrates specialized AI agents in 6 phases to analyze your code repository and generate repo documentation:
 </what>
 
 ## Runtime Compatibility
 
-- Model labels such as `Opus`, `Sonnet`, and `Haiku` are role hints, not hard requirements. Map them to the strongest available host models for the job.
-- `Task` means the host runtime's parallel subagent mechanism. **IF** the host cannot run true parallel subagents → **THEN** execute the same work sequentially and preserve exclusive file ownership.
-- Pseudocode blocks in this document are behavioral templates. Adapt helper names, file APIs, and retry helpers to the active runtime instead of treating them as literal APIs.
-- Session artifacts live under `.octocode/documentation/{session-name}/`. Short names like `analysis.json` below refer to files inside that session directory unless stated otherwise.
+* Model labels such as `Opus`, `Sonnet`, and `Haiku` are role hints, not hard requirements. Map them to the strongest available host models for the job.
+* `Task` means the host runtime's parallel subagent mechanism. **IF** the host cannot run true parallel subagents → **THEN** execute the same work sequentially and preserve exclusive file ownership.
+* Pseudocode blocks in this document are behavioral templates. Adapt helper names, file APIs, and retry helpers to the active runtime instead of treating them as literal APIs.
+* Session artifacts live under `.octocode/documentation/{session-name}/`. Short names like `analysis.json` below refer to files inside that session directory unless stated otherwise.
 
 <steps>
   <phase_1>
@@ -32,7 +32,7 @@ This command orchestrates specialized AI agents in 6 phases to analyze your code
   <phase_2>
   **Engineer Questions** (Phase 2)
   Agent Role: High-capability reasoning model
-  What: Generates comprehensive questions based on the analysis
+  What: Generates questions based on the analysis
   Input: `analysis.json`
   Output: `questions.json`
   </phase_2>
@@ -58,7 +58,7 @@ This command orchestrates specialized AI agents in 6 phases to analyze your code
   **Documentation Writers** (Phase 5)
   Agent Role: Fast writing model
   Parallel: 1-8 parallel agents (dynamic based on workload)
-  What: Synthesize research and write comprehensive documentation with exclusive file ownership
+  What: Synthesize research and write documentation with exclusive file ownership
   Input: `analysis.json` + `questions.json` + `research.json` + `work-assignments.json`
   Output: `documentation/*.md` (16 core docs, 5 required, plus writer-owned supplementary files; `QA-SUMMARY.md` is generated in Phase 6)
   </phase_5>
@@ -100,7 +100,7 @@ Look for Octocode MCP tools (e.g., `localSearchCode`, `lspGotoDefinition`, `gith
 > ```
 > Then restart your editor."
 
-Proceed with whatever tools are available — do not block on setup.
+Proceed with whatever tools are available - do not block on setup.
 </mcp_discovery>
 
 **Documentation Flow:** analysis.json → questions.json → **research.json** → work-assignments.json → documentation (conflict-free!)
@@ -122,16 +122,16 @@ Proceed with whatever tools are available — do not block on setup.
 
 ### 3. REQUIRED FALLBACK
 **IF** the runtime cannot perform true parallel fan-out:
-- Run the same worker scopes sequentially
-- Preserve exclusive file ownership
-- Keep the same phase boundaries and aggregation steps
-- Tell the user that execution is in sequential fallback mode
+* Run the same worker scopes sequentially
+* Preserve exclusive file ownership
+* Keep the same phase boundaries and aggregation steps
+* Tell the user that execution is in sequential fallback mode
 
 ### 4. REQUIRED CONFIRMATION
 Before launching any parallel phase (1, 3, 5), you **MUST** verify:
-- [ ] The host can run the chosen fan-out pattern
-- [ ] No dependencies exist between these parallel agents
-- [ ] Each agent has exclusive scope (no file conflicts)
+* [ ] The host can run the chosen fan-out pattern
+* [ ] No dependencies exist between these parallel agents
+* [ ] Each agent has exclusive scope (no file conflicts)
 
 <correct_pattern title="✅ CORRECT: Single response launches all agents concurrently">
 ```
@@ -313,48 +313,48 @@ flowchart TB
 
 ### Required Checks
 1. **Verify Path Existence**
-   - **IF** `repository_path` missing → **THEN** ERROR & EXIT
+   * **IF** `repository_path` missing → **THEN** ERROR & EXIT
 2. **Verify Directory Status**
-   - **IF** not a directory → **THEN** ERROR & EXIT
+   * **IF** not a directory → **THEN** ERROR & EXIT
 3. **Source Code Check**
-   - **IF** < 3 source files → **THEN** WARN & Ask User (Exit if no)
+   * **IF** < 3 source files → **THEN** WARN & Ask User (Exit if no)
 4. **Build Directory Check**
-   - **IF** contains `node_modules` or `dist` → **THEN** ERROR & EXIT
+   * **IF** contains `node_modules` or `dist` → **THEN** ERROR & EXIT
 5. **Size Estimation**
-   - **IF** > 200k LOC → **THEN** WARN & Ask User (Exit if no)
+   * **IF** > 200k LOC → **THEN** WARN & Ask User (Exit if no)
 
 **FORBIDDEN until gate passes:**
-- Any agent spawning
-- Workspace initialization
+* Any agent spawning
+* Workspace initialization
 </pre_flight_gate>
 
 <instruction>
 Before starting, validate the repository path and check for edge cases.
 
 1. **Verify Path Existence**
-   - Ensure `repository_path` exists.
-   - If not, raise an ERROR: "Repository path does not exist: " + path and EXIT.
+   * Ensure `repository_path` exists.
+   * If not, raise an ERROR: "Repository path does not exist: " + path and EXIT.
 
 2. **Verify Directory Status**
-   - Confirm `repository_path` is a directory.
-   - If not, raise an ERROR: "Path is not a directory: " + path and EXIT.
+   * Confirm `repository_path` is a directory.
+   * If not, raise an ERROR: "Path is not a directory: " + path and EXIT.
 
 3. **Source Code Check**
-   - Count files ending in `.ts`, `.js`, `.py`, `.go`, or `.rs`.
-   - Exclude directories: `node_modules`, `.git`, `dist`, `build`.
-   - If fewer than 3 source files are found:
-     - WARN: "Very few source files detected ({count}). This may not be a code repository."
-     - Continue automatically in low-confidence mode unless the caller explicitly requested strict validation.
+   * Count files ending in `.ts`, `.js`, `.py`, `.go`, or `.rs`.
+   * Exclude directories: `node_modules`, `.git`, `dist`, `build`.
+   * If fewer than 3 source files are found:
+     * WARN: "Very few source files detected ({count}). This may not be a code repository."
+     * Continue automatically in low-confidence mode unless the caller explicitly requested strict validation.
 
 4. **Build Directory Check**
-   - Ensure the path does not contain `node_modules`, `dist`, or `build`.
-   - If it does, raise an ERROR: "Repository path appears to be a build directory. Please specify the project root." and EXIT.
+   * Ensure the path does not contain `node_modules`, `dist`, or `build`.
+   * If it does, raise an ERROR: "Repository path appears to be a build directory. Please specify the project root." and EXIT.
 
 5. **Size Estimation**
-   - Estimate the repository size.
-   - If larger than 200,000 LOC:
-     - WARN: "Large repository detected (~{size} LOC)."
-     - Continue automatically, but prefer conservative exploration and batching.
+   * Estimate the repository size.
+   * If larger than 200,000 LOC:
+     * WARN: "Large repository detected (~{size} LOC)."
+     * Continue automatically, but prefer conservative exploration and batching.
 </instruction>
 
 ## Initialize Workspace
@@ -364,15 +364,15 @@ Before starting, validate the repository path and check for edge cases.
 
 ### Required Actions
 1. **Define Directories** (`CONTEXT_DIR`, `DOC_DIR`)
-   - **REQUIRED:** Derive a stable `SESSION_NAME` first (caller-provided if available; otherwise use a short repository-based name)
+   * **REQUIRED:** Derive a stable `SESSION_NAME` first (caller-provided if available; otherwise use a short repository-based name)
 2. **Handle Existing State**
-   - **IF** `state.json` exists in a non-terminal phase → **THEN** Resume automatically
-   - **IF** caller explicitly requests a fresh run → **THEN** Reset state
+   * **IF** `state.json` exists in a non-terminal phase → **THEN** Resume automatically
+   * **IF** caller explicitly requests a fresh run → **THEN** Reset state
 3. **Create Directories**
 4. **Initialize New State** (if not resuming)
 
 **FORBIDDEN:**
-- Starting Phase 1 before state is initialized.
+* Starting Phase 1 before state is initialized.
 </init_gate>
 
 <instruction>
@@ -380,27 +380,27 @@ Before starting, validate the repository path and check for edge cases.
 Before starting the pipeline, set up the working environment and handle any existing state.
 
 1. **Define Directories**
-   - Session Directory (`CONTEXT_DIR`): `${REPOSITORY_PATH}/.octocode/documentation/${SESSION_NAME}`
-   - Documentation Directory (`DOC_DIR`): `${REPOSITORY_PATH}/documentation`
+   * Session Directory (`CONTEXT_DIR`): `${REPOSITORY_PATH}/.octocode/documentation/${SESSION_NAME}`
+   * Documentation Directory (`DOC_DIR`): `${REPOSITORY_PATH}/documentation`
 
 2. **Handle Existing State**
-   - Check if `${CONTEXT_DIR}/state.json` exists.
-   - If it exists and the phase is NOT "complete" or "failed":
-     - **Default Behavior**: Resume from the saved checkpoint.
-     - Set `RESUME_MODE = true`
-     - Set `START_PHASE` from the saved state.
-     - **Only if** the caller explicitly requests restart/fresh generation:
-       - **WARN**: "Restarting from beginning. Previous progress will be overwritten."
-       - Set `RESUME_MODE = false`
-       - Set `START_PHASE = "initialized"`
-   - If `state.json` does not exist or previous run finished/failed, start fresh (`RESUME_MODE = false`).
+   * Check if `${CONTEXT_DIR}/state.json` exists.
+   * If it exists and the phase is NOT "complete" or "failed":
+     * **Default Behavior**: Resume from the saved checkpoint.
+     * Set `RESUME_MODE = true`
+     * Set `START_PHASE` from the saved state.
+     * **Only if** the caller explicitly requests restart/fresh generation:
+       * **WARN**: "Restarting from beginning. Previous progress will be overwritten."
+       * Set `RESUME_MODE = false`
+       * Set `START_PHASE = "initialized"`
+   * If `state.json` does not exist or previous run finished/failed, start fresh (`RESUME_MODE = false`).
 
 3. **Create Directories**
-   - Ensure `CONTEXT_DIR` exists (create if missing).
-   - Ensure `DOC_DIR` exists (create if missing).
+   * Ensure `CONTEXT_DIR` exists (create if missing).
+   * Ensure `DOC_DIR` exists (create if missing).
 
 4. **Initialize New State** (If NOT Resuming)
-   - Create a new `state.json` using the schema defined in `schemas/state-schema.json`.
+   * Create a new `state.json` using the schema defined in `schemas/state-schema.json`.
 </instruction>
 
 ## Progress Tracker
@@ -860,7 +860,7 @@ function should_skip_task(phase_name, task_id):
 | 1 | **Host-Aware Parallel Execution** | Phases 1, 3, 5 use true parallel fan-out when supported, with sequential fallback when not |
 | 2 | **Honest Concurrency** | Parallel execution is preferred, but the skill never pretends sequential work is concurrent |
 | 3 | **Evidence-Based** | Research agent proves answers with code traces before writing |
-| 4 | **Engineer-Driven Questions** | Phase 2 generates comprehensive questions |
+| 4 | **Engineer-Driven Questions** | Phase 2 generates questions |
 | 5 | **Conflict-Free Writing** | Orchestrator assigns exclusive file ownership per writer |
 | 6 | **LSP-Powered** | Intelligent verification with semantic analysis |
 | 7 | **State Recovery** | Resume from any phase if interrupted |

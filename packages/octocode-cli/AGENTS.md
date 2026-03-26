@@ -2,7 +2,7 @@
 
 > **Location**: `packages/octocode-cli/AGENTS.md`
 
-AI agent guidance for the `octocode-cli` package — CLI installer and management hub for Octocode MCP servers and AI skills.
+AI agent guidance for the `octocode-cli` package  -  CLI installer and management hub for Octocode MCP servers and AI skills.
 
 This file **overrides** the root [`AGENTS.md`](https://github.com/bgauryy/octocode-mcp/blob/main/AGENTS.md) for work within this package.
 
@@ -10,12 +10,12 @@ This file **overrides** the root [`AGENTS.md`](https://github.com/bgauryy/octoco
 
 ## Overview
 
-- **MCP installation** — one-step setup for `octocode-mcp` across multiple IDEs.
-- **GitHub authentication** — OAuth device flow with AES-256-GCM encrypted token storage.
-- **Configuration sync** — keep MCP configs consistent across editors.
-- **Skills manager** — install and update 9 bundled `octocode-*` skills across AI clients (Claude Code, Claude Desktop, Cursor, Codex, Opencode).
-- **MCP marketplace** — browse and install 70+ community MCP servers.
-- **Cache management** — inspect and clean cloned repos, marketplace cache, and logs.
+* **MCP installation**  -  one-step setup for `octocode-mcp` across multiple IDEs.
+* **GitHub authentication**  -  OAuth device flow with AES-256-GCM encrypted token storage.
+* **Configuration sync**  -  keep MCP configs consistent across editors.
+* **Skills manager**  -  install and update 9 bundled `octocode-*` skills across AI clients (Claude Code, Claude Desktop, Cursor, Codex, Opencode).
+* **MCP marketplace**  -  browse and install 70+ community MCP servers.
+* **Cache management**  -  inspect and clean cloned repos, marketplace cache, and logs.
 
 **Key docs**: [`README.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/README.md) | [`docs/`](https://github.com/bgauryy/octocode-mcp/tree/main/packages/octocode-cli/docs/)
 
@@ -199,14 +199,14 @@ tests/
 main() → runCLI() → [command handler] OR runInteractiveMode()
 ```
 
-1. **CLI check** (`cli/index.ts`) — parse args, execute command if provided.
-2. **Interactive mode** (`ui/menu.ts`) — launch interactive menu if no command.
+1. **CLI check** (`cli/index.ts`)  -  parse args, execute command if provided.
+2. **Interactive mode** (`ui/menu.ts`)  -  launch interactive menu if no command.
 
 Key decisions:
-- Inquirer prompts loaded dynamically for faster startup.
-- AES-256-GCM encryption with platform file storage.
-- Centralized MCP registry of 70+ validated servers.
-- Markdown-based skill definitions installable across supported AI clients.
+* Inquirer prompts loaded dynamically for faster startup.
+* AES-256-GCM encryption with platform file storage.
+* Centralized MCP registry of 70+ validated servers.
+* Markdown-based skill definitions installable across supported AI clients.
 
 ---
 
@@ -227,11 +227,11 @@ Security: tokens encrypted in `~/.octocode/`, OAuth device flow, never log token
 
 ## Testing
 
-- **Coverage**: 90% required (statements, branches, functions, lines).
-- **Framework**: Vitest with v8 coverage.
-- Mock external services (GitHub API, fs, keytar).
-- Test cross-platform path resolution.
-- Use mock prompts for interactive UI tests.
+* **Coverage**: 90% required (statements, branches, functions, lines).
+* **Framework**: Vitest with v8 coverage.
+* Mock external services (GitHub API, fs, keytar).
+* Test cross-platform path resolution.
+* Use mock prompts for interactive UI tests.
 
 ---
 

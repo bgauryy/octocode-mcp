@@ -14,10 +14,10 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 3. **Hints Validation** - **GOLDEN**: Check response hints for user guidance and next steps
 
 ### Hints Validation Checklist
-- [ ] Response includes helpful hints for repo discovery
-- [ ] Hints suggest repo exploration, code search, or PR analysis next steps
-- [ ] Pagination hints when results are truncated
-- [ ] Status-specific hints present (hasResults, empty, error)
+* [ ] Response includes helpful hints for repo discovery
+* [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Pagination hints when results are truncated
+* [ ] Status-specific hints present (hasResults, empty, error)
 
 ---
 
@@ -37,14 +37,14 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Returns repos tagged with `mcp` or `model-context-protocol`
-- [ ] Well-known repos like `fastmcp` appear
-- [ ] Repo metadata includes stars, forks, topics
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Returns repos tagged with `mcp` or `model-context-protocol`
+* [ ] Well-known repos like `fastmcp` appear
+* [ ] Repo metadata includes stars, forks, topics
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -63,13 +63,13 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] All returned repos have 100+ stars
-- [ ] Star counts visible in metadata
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] All returned repos have 100+ stars
+* [ ] Star counts visible in metadata
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -89,13 +89,13 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Highest-starred repos appear first
-- [ ] Descending star count order
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Highest-starred repos appear first
+* [ ] Descending star count order
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -113,13 +113,13 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Repos with "mcp server" in name/description/README
-- [ ] Relevant results returned
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Repos with "mcp server" in name/description/README
+* [ ] Relevant results returned
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -139,13 +139,13 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Only repos with "mcp" in name or description
-- [ ] More precise than unscoped search
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Only repos with "mcp" in name or description
+* [ ] More precise than unscoped search
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -165,13 +165,13 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] All repos created after Jan 1, 2025
-- [ ] `createdAt` dates in metadata confirm filter
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] All repos created after Jan 1, 2025
+* [ ] `createdAt` dates in metadata confirm filter
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -189,13 +189,13 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Only repos owned by `bgauryy`
-- [ ] `owner` field matches in all results
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Only repos owned by `bgauryy`
+* [ ] `owner` field matches in all results
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -215,13 +215,13 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Most recently updated repos first
-- [ ] `updatedAt` or `pushedAt` timestamps descending
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Most recently updated repos first
+* [ ] `updatedAt` or `pushedAt` timestamps descending
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -240,13 +240,13 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Exactly 3 repos returned
-- [ ] Total count in pagination may be higher
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Exactly 3 repos returned
+* [ ] Total count in pagination may be higher
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -265,14 +265,14 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] `pagination.totalMatches` > 0
-- [ ] Count reflects actual number of matching repos
-- [ ] Not 0 (previously known bug, now fixed)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] `pagination.totalMatches` > 0
+* [ ] Count reflects actual number of matching repos
+* [ ] Not 0 (previously known bug, now fixed)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -292,13 +292,13 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] All repos under the size threshold
-- [ ] Size metadata visible
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] All repos under the size threshold
+* [ ] Size metadata visible
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -318,13 +318,13 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] All repos updated after Jan 1, 2025
-- [ ] `updatedAt` dates confirm filter
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] All repos updated after Jan 1, 2025
+* [ ] `updatedAt` dates confirm filter
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -344,14 +344,14 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Different repos than page 1
-- [ ] No overlap with first page results
-- [ ] Pagination metadata shows current page
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Different repos than page 1
+* [ ] No overlap with first page results
+* [ ] Pagination metadata shows current page
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -370,14 +370,14 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] No error thrown
-- [ ] Empty results or `totalMatches: 0`
-- [ ] Clear indication no repos found
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] No error thrown
+* [ ] Empty results or `totalMatches: 0`
+* [ ] Clear indication no repos found
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -397,13 +397,13 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Results match both keyword and topic criteria
-- [ ] More precise than either filter alone
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Results match both keyword and topic criteria
+* [ ] More precise than either filter alone
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -423,14 +423,14 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Highest-forked repos appear first
-- [ ] Fork count visible in metadata
-- [ ] Descending fork order
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Highest-forked repos appear first
+* [ ] Fork count visible in metadata
+* [ ] Descending fork order
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -450,14 +450,14 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Results sorted by relevance (not stars, forks, or date)
-- [ ] Most relevant repos first
-- [ ] Same behavior as omitting `sort` parameter
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Results sorted by relevance (not stars, forks, or date)
+* [ ] Most relevant repos first
+* [ ] Same behavior as omitting `sort` parameter
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -476,14 +476,14 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Up to 100 repos returned
-- [ ] No timeout or error
-- [ ] All entries valid
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Up to 100 repos returned
+* [ ] No timeout or error
+* [ ] All entries valid
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -503,14 +503,14 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Returns results from page 10 or empty if fewer pages exist
-- [ ] No error thrown
-- [ ] Pagination metadata accurate
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Returns results from page 10 or empty if fewer pages exist
+* [ ] No error thrown
+* [ ] Pagination metadata accurate
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -530,14 +530,14 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] All repos have between 100 and 1000 stars
-- [ ] Star counts in metadata confirm range
-- [ ] More precise than single-bound filter
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] All repos have between 100 and 1000 stars
+* [ ] Star counts in metadata confirm range
+* [ ] More precise than single-bound filter
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -557,14 +557,14 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Repos found based on README content
-- [ ] May differ from name/description search results
-- [ ] README content contains the keywords
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Repos found based on README content
+* [ ] May differ from name/description search results
+* [ ] README content contains the keywords
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -583,14 +583,14 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Search completes without error
-- [ ] Results relevant to the keywords
-- [ ] Special characters properly escaped or handled
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Search completes without error
+* [ ] Results relevant to the keywords
+* [ ] Special characters properly escaped or handled
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -609,14 +609,14 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Validation error about missing keywords/topics
-- [ ] Clear error message
-- [ ] No empty search executed
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Validation error about missing keywords/topics
+* [ ] Clear error message
+* [ ] No empty search executed
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -635,15 +635,15 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] First and third queries succeed with results
-- [ ] Second query returns error or empty results
-- [ ] Each result isolated per query
-- [ ] No cascade failure
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] First and third queries succeed with results
+* [ ] Second query returns error or empty results
+* [ ] Each result isolated per query
+* [ ] No cascade failure
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
@@ -665,23 +665,23 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 ```
 
 **Expected:**
-- [ ] Max 5 results returned from page 2
-- [ ] Different repos than page 1
-- [ ] Pagination metadata shows current page and total
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array with per-query status
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest repo exploration, code search, or PR analysis next steps
+* [ ] Max 5 results returned from page 2
+* [ ] Different repos than page 1
+* [ ] Pagination metadata shows current page and total
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array with per-query status
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest repo exploration, code search, or PR analysis next steps
 
 ---
 
 ## Validation Checklist
 
 ### Core Requirements
-- [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning` (bulk in `{ "queries": [{ ... }] }`)
-- [ ] **Pagination tests** verify `limit`, `page` parameters for result management
-- [ ] **Hints validation** checks for helpful guidance in all responses
+* [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning` (bulk in `{ "queries": [{ ... }] }`)
+* [ ] **Pagination tests** verify `limit`, `page` parameters for result management
+* [ ] **Hints validation** checks for helpful guidance in all responses
 
 | # | Test Case | Queries | Pagination | Hints | Status |
 |---|-----------|---------|------------|-------|--------|

@@ -430,8 +430,8 @@ Invalidate credential cache.
 function invalidateCredentialsCache(hostname?: string): void
 ```
 
-- Pass hostname to invalidate specific entry
-- Call without args to clear entire cache
+* Pass hostname to invalidate specific entry
+* Call without args to clear entire cache
 
 ---
 
@@ -1016,8 +1016,8 @@ import {
 
 ## Related Documentation
 
-- [CREDENTIALS_ARCHITECTURE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) - Deep dive into credential storage
-- [SESSION_PERSISTENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/SESSION_PERSISTENCE.md) - Session storage architecture
+* [CREDENTIALS_ARCHITECTURE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/CREDENTIALS_ARCHITECTURE.md) - Deep dive into credential storage
+* [SESSION_PERSISTENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-shared/docs/SESSION_PERSISTENCE.md) - Session storage architecture
 
 ---
 

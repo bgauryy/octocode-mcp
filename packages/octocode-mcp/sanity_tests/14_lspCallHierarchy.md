@@ -31,12 +31,12 @@ Traces call hierarchies using Language Server Protocol. Supports incoming (who c
 ```
 
 ### Response Validation Pattern
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with tool-specific fields (call hierarchy)
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest find references, file reading, or further analysis
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with tool-specific fields (call hierarchy)
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest find references, file reading, or further analysis
 
 ---
 
@@ -54,7 +54,7 @@ All test cases require a prior `localSearchCode` call to obtain `lineHint`. **NE
 
 **Goal:** Verify `direction: "incoming"` finds all callers.
 
-**Step 1 — Search:**
+**Step 1  -  Search:**
 ```json
 localSearchCode: {
   "queries": [{
@@ -69,7 +69,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Call hierarchy:**
+**Step 2  -  Call hierarchy:**
 ```json
 {
   "queries": [{
@@ -87,18 +87,18 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] All callers of `fetchWithRetries` found
-- [ ] `fromRanges` shows exact call-site locations within each caller
-- [ ] Caller function body visible with context
-- [ ] Correct number of callers (3+ expected)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest find references, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest find references, file reading, or further analysis
+* [ ] All callers of `fetchWithRetries` found
+* [ ] `fromRanges` shows exact call-site locations within each caller
+* [ ] Caller function body visible with context
+* [ ] Correct number of callers (3+ expected)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest find references, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest find references, file reading, or further analysis
 
 ---
 
@@ -123,17 +123,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] All functions called by `fetchWithRetries` listed
-- [ ] Or empty if it's a leaf function (no callees)
-- [ ] Call sites within the function body shown
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest find references, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] All functions called by `fetchWithRetries` listed
+* [ ] Or empty if it's a leaf function (no callees)
+* [ ] Call sites within the function body shown
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest find references, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -141,7 +141,7 @@ localSearchCode: {
 
 **Goal:** Verify outgoing calls on a function with no callees returns empty.
 
-**Step 1 — Search for a simple/leaf function:**
+**Step 1  -  Search for a simple/leaf function:**
 ```json
 localSearchCode: {
   "queries": [{
@@ -156,7 +156,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Outgoing hierarchy:**
+**Step 2  -  Outgoing hierarchy:**
 ```json
 {
   "queries": [{
@@ -174,17 +174,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Empty callees list (correct for leaf function)
-- [ ] No error thrown
-- [ ] Function definition still shown
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present (empty callees)
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest find references or alternative analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps (e.g., find references for usage)
+* [ ] Empty callees list (correct for leaf function)
+* [ ] No error thrown
+* [ ] Function definition still shown
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present (empty callees)
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest find references or alternative analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps (e.g., find references for usage)
 
 ---
 
@@ -209,21 +209,21 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Only direct callers (no transitive callers)
-- [ ] Manageable output size
-- [ ] Pagination available if many callers
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest find references, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Only direct callers (no transitive callers)
+* [ ] Manageable output size
+* [ ] Pagination available if many callers
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest find references, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
-### TC-5: Depth 2 (Two-Level Chain) — Known Large Output
+### TC-5: Depth 2 (Two-Level Chain)  -  Known Large Output
 
 **Goal:** Verify `depth: 2` traces two levels. **Warning: large output.**
 
@@ -238,24 +238,24 @@ localSearchCode: {
     "contextLines": 2,
     "mainResearchGoal": "Trace two-level call hierarchy",
     "researchGoal": "Verify depth:2 shows callers-of-callers",
-    "reasoning": "Depth 2 expands full tree — large output expected"
+    "reasoning": "Depth 2 expands full tree  -  large output expected"
   }]
 }
 ```
 
 **Expected:**
-- [ ] Two levels of callers (callers + callers-of-callers)
-- [ ] Output ~101KB for well-connected functions — **Design:** depth=2 expands full tree
-- [ ] Response still succeeds (no timeout)
-- [ ] Chain structure visible in results
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest find references, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps (pagination, charOffset for large output)
+* [ ] Two levels of callers (callers + callers-of-callers)
+* [ ] Output ~101KB for well-connected functions  -  **Design:** depth=2 expands full tree
+* [ ] Response still succeeds (no timeout)
+* [ ] Chain structure visible in results
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest find references, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps (pagination, charOffset for large output)
 
 ---
 
@@ -281,17 +281,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] At most 10 calls per page
-- [ ] Pagination metadata present
-- [ ] Can navigate to page 2
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest find references, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest pagination for more results
+* [ ] At most 10 calls per page
+* [ ] Pagination metadata present
+* [ ] Can navigate to page 2
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest find references, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest pagination for more results
 
 ---
 
@@ -317,16 +317,16 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] 3 lines context before and after each caller
-- [ ] Caller function body + call site visible
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest find references, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] 3 lines context before and after each caller
+* [ ] Caller function body + call site visible
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest find references, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -347,9 +347,9 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] No surrounding context
-- [ ] Only the call hierarchy structure
-- [ ] Smallest possible output
+* [ ] No surrounding context
+* [ ] Only the call hierarchy structure
+* [ ] Smallest possible output
 
 ---
 
@@ -357,7 +357,7 @@ localSearchCode: {
 
 **Goal:** Verify depth=1 chaining is more efficient than depth=2.
 
-**Step 1 — Depth 1 incoming:**
+**Step 1  -  Depth 1 incoming:**
 ```json
 {
   "queries": [{
@@ -374,7 +374,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — For each caller, repeat depth 1:**
+**Step 2  -  For each caller, repeat depth 1:**
 ```json
 {
   "queries": [{
@@ -392,17 +392,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Two separate calls produce same information as depth=2
-- [ ] Total output smaller (only relevant branches explored)
-- [ ] More control over which branches to follow
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest find references, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Two separate calls produce same information as depth=2
+* [ ] Total output smaller (only relevant branches explored)
+* [ ] More control over which branches to follow
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest find references, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -410,7 +410,7 @@ localSearchCode: {
 
 **Goal:** Verify behavior when used on non-function symbols.
 
-**Step 1 — Search for a type:**
+**Step 1  -  Search for a type:**
 ```json
 localSearchCode: {
   "queries": [{
@@ -425,7 +425,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Call hierarchy (wrong usage):**
+**Step 2  -  Call hierarchy (wrong usage):**
 ```json
 {
   "queries": [{
@@ -443,16 +443,16 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] May return empty/error (types don't have callers)
-- [ ] Should use `lspFindReferences` instead for types
-- [ ] No crash or timeout
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest using lspFindReferences for types
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest lspFindReferences for type/interface analysis
+* [ ] May return empty/error (types don't have callers)
+* [ ] Should use `lspFindReferences` instead for types
+* [ ] No crash or timeout
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest using lspFindReferences for types
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest lspFindReferences for type/interface analysis
 
 ---
 
@@ -477,22 +477,22 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] "Symbol not found" or equivalent error
-- [ ] No crash or timeout
-- [ ] Clear error message
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints present (error hints)
-  - [ ] Hints suggest recovery (symbol verification, use lspFindReferences)
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest symbol verification, alternative tools (lspFindReferences)
+* [ ] "Symbol not found" or equivalent error
+* [ ] No crash or timeout
+* [ ] Clear error message
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints present (error hints)
+  * [ ] Hints suggest recovery (symbol verification, use lspFindReferences)
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest symbol verification, alternative tools (lspFindReferences)
 
 ---
 
-### TC-12: Page Navigation (callsPerPage + page — Page 2 Differs)
+### TC-12: Page Navigation (callsPerPage + page  -  Page 2 Differs)
 
-**Goal:** Verify `callsPerPage` + `page` — page 2 returns different callers than page 1.
+**Goal:** Verify `callsPerPage` + `page`  -  page 2 returns different callers than page 1.
 
 ```json
 {
@@ -513,17 +513,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Different callers than page 1
-- [ ] No overlap with first page
-- [ ] Pagination metadata present
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest pagination for more results
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest navigating to other pages or further analysis
+* [ ] Different callers than page 1
+* [ ] No overlap with first page
+* [ ] Pagination metadata present
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest pagination for more results
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest navigating to other pages or further analysis
 
 ---
 
@@ -549,17 +549,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Three levels of callers traced
-- [ ] Output may be very large
-- [ ] No timeout (may be slow)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest find references, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps (charOffset for large output)
+* [ ] Three levels of callers traced
+* [ ] Output may be very large
+* [ ] No timeout (may be slow)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest find references, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps (charOffset for large output)
 
 ---
 
@@ -586,17 +586,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Output truncated to ~5000 characters
-- [ ] Pagination hint for next charOffset
-- [ ] Mitigates the large output issue (TC-5)
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present (charOffset pagination hint)
-  - [ ] Hints suggest next charOffset for more content
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest charOffset for next chunk
+* [ ] Output truncated to ~5000 characters
+* [ ] Pagination hint for next charOffset
+* [ ] Mitigates the large output issue (TC-5)
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present (charOffset pagination hint)
+  * [ ] Hints suggest next charOffset for more content
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest charOffset for next chunk
 
 ---
 
@@ -604,7 +604,7 @@ localSearchCode: {
 
 **Goal:** Verify incoming calls on an unused/entry-point function returns empty.
 
-**Step 1 — Search for a rarely-used function:**
+**Step 1  -  Search for a rarely-used function:**
 ```json
 localSearchCode: {
   "pattern": "function main",
@@ -614,7 +614,7 @@ localSearchCode: {
 }
 ```
 
-**Step 2 — Incoming hierarchy:**
+**Step 2  -  Incoming hierarchy:**
 ```json
 {
   "uri": "<file_from_step1>",
@@ -627,9 +627,9 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Empty callers list (entry point function)
-- [ ] No error thrown
-- [ ] Function definition still shown
+* [ ] Empty callers list (entry point function)
+* [ ] No error thrown
+* [ ] Function definition still shown
 
 ---
 
@@ -655,16 +655,16 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Second occurrence of symbol used (orderHint 1 = second, 0-indexed)
-- [ ] Different results than orderHint: 0
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest find references, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Second occurrence of symbol used (orderHint 1 = second, 0-indexed)
+* [ ] Different results than orderHint: 0
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest find references, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -690,17 +690,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Up to 30 calls per page
-- [ ] No error at maximum value
-- [ ] All entries valid
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest find references, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Up to 30 calls per page
+* [ ] No error at maximum value
+* [ ] All entries valid
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest find references, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -726,17 +726,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Exactly 1 call per page
-- [ ] Pagination shows many more pages
-- [ ] Can navigate page by page
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest pagination for more results
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest pagination for more callers
+* [ ] Exactly 1 call per page
+* [ ] Pagination shows many more pages
+* [ ] Can navigate page by page
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest pagination for more results
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest pagination for more callers
 
 ---
 
@@ -762,16 +762,16 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] 10 lines context before and after each caller
-- [ ] Large but valid output
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest find references, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] 10 lines context before and after each caller
+* [ ] Large but valid output
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest find references, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -798,17 +798,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Compact output truncated to ~2000 chars
-- [ ] No surrounding context
-- [ ] Pagination hint for next charOffset
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present (charOffset pagination)
-  - [ ] Hints suggest next charOffset for more content
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest charOffset for next chunk
+* [ ] Compact output truncated to ~2000 chars
+* [ ] No surrounding context
+* [ ] Pagination hint for next charOffset
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present (charOffset pagination)
+  * [ ] Hints suggest next charOffset for more content
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest charOffset for next chunk
 
 ---
 
@@ -835,16 +835,16 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Empty results or clear "no more pages" indication
-- [ ] No error thrown
-- [ ] Pagination metadata reflects actual total
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest pagination adjustment
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest pagination or alternative analysis
+* [ ] Empty results or clear "no more pages" indication
+* [ ] No error thrown
+* [ ] Pagination metadata reflects actual total
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest pagination adjustment
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest pagination or alternative analysis
 
 ---
 
@@ -869,22 +869,22 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Error message returned (not a crash)
-- [ ] Clear indication file not found
-- [ ] No stack trace leaked
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] Status-specific hints present (error hints)
-  - [ ] Hints suggest recovery (file path verification)
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest file path verification, fallback approaches
+* [ ] Error message returned (not a crash)
+* [ ] Clear indication file not found
+* [ ] No stack trace leaked
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] Status-specific hints present (error hints)
+  * [ ] Hints suggest recovery (file path verification)
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest file path verification, fallback approaches
 
 ---
 
 ### TC-23: Bulk Queries (Error Isolation)
 
-**Goal:** Verify error isolation in bulk queries — one failure doesn't affect others.
+**Goal:** Verify error isolation in bulk queries  -  one failure doesn't affect others.
 
 ```json
 {
@@ -897,17 +897,17 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] First query succeeds with call hierarchy
-- [ ] Second and third return errors
-- [ ] Each result isolated per query
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present for successful query
-  - [ ] Status-specific hints present for each result
-  - [ ] Hints suggest find references, file reading, or recovery per status
-- [ ] **Hints Validation:**
-  - [ ] Success hints for first query; error recovery hints for second and third
+* [ ] First query succeeds with call hierarchy
+* [ ] Second and third return errors
+* [ ] Each result isolated per query
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present for successful query
+  * [ ] Status-specific hints present for each result
+  * [ ] Hints suggest find references, file reading, or recovery per status
+* [ ] **Hints Validation:**
+  * [ ] Success hints for first query; error recovery hints for second and third
 
 ---
 
@@ -933,16 +933,16 @@ localSearchCode: {
 ```
 
 **Expected:**
-- [ ] Two levels of callees (what function calls + what those functions call)
-- [ ] Chain structure visible
-- [ ] **Response Validation:**
-  - [ ] `instructions` field describes bulk response summary
-  - [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
-  - [ ] `data` object present with call hierarchy
-  - [ ] Status-specific hints present
-  - [ ] Hints suggest find references, file reading, or further analysis
-- [ ] **Hints Validation:**
-  - [ ] Hints suggest actionable next steps relevant to the query
+* [ ] Two levels of callees (what function calls + what those functions call)
+* [ ] Chain structure visible
+* [ ] **Response Validation:**
+  * [ ] `instructions` field describes bulk response summary
+  * [ ] `results` array contains per-query `status` (`hasResults` | `empty` | `error`)
+  * [ ] `data` object present with call hierarchy
+  * [ ] Status-specific hints present
+  * [ ] Hints suggest find references, file reading, or further analysis
+* [ ] **Hints Validation:**
+  * [ ] Hints suggest actionable next steps relevant to the query
 
 ---
 
@@ -951,10 +951,10 @@ localSearchCode: {
 ## Validation Checklist
 
 ### Core Requirements
-- [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning`
-- [ ] **Pagination tests** verify `callsPerPage` + `page`; page 2 differs from page 1
-- [ ] **Response validation** — every Expected section includes explicit response checking
-- [ ] **Hints validation** — every test case checks for hints in responses (hints are GOLDEN)
+* [ ] **All test cases use queries structure** with `mainResearchGoal`, `researchGoal`, `reasoning`
+* [ ] **Pagination tests** verify `callsPerPage` + `page`; page 2 differs from page 1
+* [ ] **Response validation**  -  every Expected section includes explicit response checking
+* [ ] **Hints validation**  -  every test case checks for hints in responses (hints are GOLDEN)
 
 ### Test Cases Status
 

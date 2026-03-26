@@ -16,7 +16,7 @@ Professional, constructive. Focus on code, not author. Explain reasoning. Distin
 
 ---
 
-## Report Template — PR Mode
+## Report Template  -  PR Mode
 
 ```markdown
 # PR Review: [Title]
@@ -26,9 +26,9 @@ Professional, constructive. Focus on code, not author. Explain reasoning. Distin
 |--------|-------|
 | **PR Goal** | [One-sentence description] |
 | **Files Changed** | [Count] |
-| **Risk Level** | [HIGH / MEDIUM / LOW] — [reasoning] |
+| **Risk Level** | [HIGH / MEDIUM / LOW]  -  [reasoning] |
 | **Review Mode** | [Quick / Full] |
-| **Review Effort** | [1-5] — [1=trivial, 5=complex] |
+| **Review Effort** | [1-5]  -  [1=trivial, 5=complex] |
 | **Recommendation** | [APPROVE / REQUEST_CHANGES / COMMENT] |
 
 **Affected Areas**: [Key components/modules with file names]
@@ -46,10 +46,10 @@ Professional, constructive. Focus on code, not author. Explain reasoning. Distin
 | Maintainability | X/5 |
 
 ## PR Health
-- [ ] Has clear description
-- [ ] References ticket/issue (if applicable)
-- [ ] Appropriate size (or justified if large)
-- [ ] Has relevant tests (if applicable)
+* [ ] Has clear description
+* [ ] References ticket/issue (if applicable)
+* [ ] Appropriate size (or justified if large)
+* [ ] Has relevant tests (if applicable)
 
 ## Guidelines Compliance (if guidelines loaded)
 | Source | Rule | Status |
@@ -65,7 +65,7 @@ Professional, constructive. Focus on code, not author. Explain reasoning. Distin
 [1-2 sentences: what's wrong, why it matters, flow impact if any]
 
 ```diff
-- [current]
+* [current]
 + [fixed]
 ```
 
@@ -94,7 +94,7 @@ Created by Octocode MCP https://octocode.ai
 
 ---
 
-## Report Template — Local Mode
+## Report Template  -  Local Mode
 
 ```markdown
 # Local Changes Review: [{branch}]
@@ -106,7 +106,7 @@ Created by Octocode MCP https://octocode.ai
 | **Scope** | [staged / unstaged / both] |
 | **Files Changed** | [Count] |
 | **Lines Changed** | [Count] |
-| **Risk Level** | [HIGH / MEDIUM / LOW] — [reasoning] |
+| **Risk Level** | [HIGH / MEDIUM / LOW]  -  [reasoning] |
 | **Review Mode** | [Quick / Full] |
 | **Recommendation** | [LOOKS_GOOD / NEEDS_CHANGES / COMMENT] |
 
@@ -123,9 +123,9 @@ Created by Octocode MCP https://octocode.ai
 | Maintainability | X/5 |
 
 ## Changes Health
-- [ ] Changes are logically cohesive (single concern)
-- [ ] Appropriate size (or should be split into multiple commits)
-- [ ] Has relevant tests (if applicable)
+* [ ] Changes are logically cohesive (single concern)
+* [ ] Appropriate size (or should be split into multiple commits)
+* [ ] Has relevant tests (if applicable)
 
 ## Guidelines Compliance (if guidelines loaded)
 | Source | Rule | Status |
@@ -141,7 +141,7 @@ Created by Octocode MCP https://octocode.ai
 [1-2 sentences: what's wrong, why it matters, flow impact if any]
 
 ```diff
-- [current]
+* [current]
 + [fixed]
 ```
 
@@ -167,7 +167,7 @@ Created by Octocode MCP https://octocode.ai
 ---
 
 ## Suggested Next Steps
-- [ ] [Run tests / Fix issues / Split into commits / Ready to commit]
+* [ ] [Run tests / Fix issues / Split into commits / Ready to commit]
 
 ---
 Created by Octocode MCP https://octocode.ai

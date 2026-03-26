@@ -1,8 +1,8 @@
 # AST Reference
 
 Single AST guide for both tools:
-- `scripts/ast/tree-search.js` — fast triage on `ast-trees.txt` from a scan
-- `scripts/ast/search.js` — structural proof on live source files
+* `scripts/ast/tree-search.js`  -  fast triage on `ast-trees.txt` from a scan
+* `scripts/ast/search.js`  -  structural proof on live source files
 
 Use this as the only AST reference for agents.
 
@@ -22,12 +22,12 @@ Golden rule: **triage with tree-search, prove with search**.
 
 ## `ast-trees.txt` format
 
-Each scan writes `ast-trees.txt` — a flattened AST snapshot of every analyzed file. The file is markdown-ish with a fixed structure:
+Each scan writes `ast-trees.txt`  -  a flattened AST snapshot of every analyzed file. The file is markdown-ish with a fixed structure:
 
 ```
-# AST Trees — <timestamp>
+# AST Trees  -  <timestamp>
 
-## <package> — <filepath>
+## <package>  -  <filepath>
 SourceFile[1:200]
   ImportDeclaration[1]
     ImportClause[1]
@@ -46,42 +46,42 @@ SourceFile[1:200]
 ```
 
 **Format rules:**
-- `## <package> — <filepath>` — section header per file
-- `Kind[line]` — single-line node at that source line
-- `Kind[startLine:endLine]` — multi-line node spanning those source lines
-- **Indentation** (2 spaces per level) = AST depth
-- `...` suffix = children truncated by `--tree-depth` (default: 4)
-- Suppress with `--no-tree`. Control depth with `--tree-depth N`.
+* `## <package>  -  <filepath>`  -  section header per file
+* `Kind[line]`  -  single-line node at that source line
+* `Kind[startLine:endLine]`  -  multi-line node spanning those source lines
+* **Indentation** (2 spaces per level) = AST depth
+* `...` suffix = children truncated by `--tree-depth` (default: 4)
+* Suppress with `--no-tree`. Control depth with `--tree-depth N`.
 
-**Reading directly:** you can read sections with standard tools (`grep`, `head`) or use `localGetFileContent(matchString="## <package> — <filepath>")` to jump to a file's AST. But prefer `tree-search.js` for structured queries.
+**Reading directly:** you can read sections with standard tools (`grep`, `head`) or use `localGetFileContent(matchString="## <package>  -  <filepath>")` to jump to a file's AST. But prefer `tree-search.js` for structured queries.
 
 ---
 
 ## `tree-search.js` (scan artifact triage)
 
-Queries `ast-trees.txt` programmatically — faster and more reliable than reading the raw file.
+Queries `ast-trees.txt` programmatically  -  faster and more reliable than reading the raw file.
 
 ```bash
 node <SKILL_DIR>/scripts/ast/tree-search.js -i .octocode/scan -k function_declaration --limit 25
 ```
 
 Useful options:
-- `-i, --input` scan root or timestamp directory
-- `-k` node kind filter (supports `snake_case` and `PascalCase`)
-- `-p` regex pattern to match against any AST tree line
-- `--file` narrow to file (regex on filepath)
-- `--section` narrow to section header (regex)
-- `-C` context lines around each match
-- `--limit` max matches (default: 50, `0` = all)
-- `--json` structured JSON output
+* `-i, --input` scan root or timestamp directory
+* `-k` node kind filter (supports `snake_case` and `PascalCase`)
+* `-p` regex pattern to match against any AST tree line
+* `--file` narrow to file (regex on filepath)
+* `--section` narrow to section header (regex)
+* `-C` context lines around each match
+* `--limit` max matches (default: 50, `0` = all)
+* `--json` structured JSON output
 
 Use cases:
-- identify large functions and nested regions before deep reading
-- find candidate files for a category-specific validation pass
+* identify large functions and nested regions before deep reading
+* find candidate files for a category-specific validation pass
 
 Do not use as final proof of live behavior.
 
-**Scan selection**: when `-i` points to `.octocode/scan` (the root), `tree-search` picks the **most recently modified** scan directory. If the latest scan was a narrow `--scope` run, the artifact will only contain AST trees for those scoped files — not the full codebase. To target a specific full scan, pass the exact timestamp directory: `-i .octocode/scan/<timestamp>`.
+**Scan selection**: when `-i` points to `.octocode/scan` (the root), `tree-search` picks the **most recently modified** scan directory. If the latest scan was a narrow `--scope` run, the artifact will only contain AST trees for those scoped files  -  not the full codebase. To target a specific full scan, pass the exact timestamp directory: `-i .octocode/scan/<timestamp>`.
 
 ---
 
@@ -94,10 +94,10 @@ node <SKILL_DIR>/scripts/ast/search.js [options]
 ```
 
 Modes:
-- **Pattern** `-p` for AST shape matching with metavariables (`$X`, `$$$X`)
-- **Kind** `-k` for syntax-node class matching
-- **Rule** `--rule` for advanced JSON rules
-- **Preset** `--preset` for built-in smell checks
+* **Pattern** `-p` for AST shape matching with metavariables (`$X`, `$$$X`)
+* **Kind** `-k` for syntax-node class matching
+* **Rule** `--rule` for advanced JSON rules
+* **Preset** `--preset` for built-in smell checks
 
 Examples:
 

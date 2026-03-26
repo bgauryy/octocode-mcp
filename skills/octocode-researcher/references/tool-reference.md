@@ -33,10 +33,10 @@ Explore local directory structure with filtering and sorting.
 ```
 
 **Tips:**
-- Start `depth: 1` at root, drill with `depth: 2` on specific dirs
-- Use `details: true` to see file sizes
-- Check `packages/` or `apps/` for monorepos
-- Use `sortBy: "time"` to find recently modified
+* Start `depth: 1` at root, drill with `depth: 2` on specific dirs
+* Use `details: true` to see file sizes
+* Check `packages/` or `apps/` for monorepos
+* Use `sortBy: "time"` to find recently modified
 
 **Example Queries:**
 ```json
@@ -85,11 +85,11 @@ Fast pattern search with discovery mode and pagination.
 ```
 
 **Tips:**
-- **Start with `filesOnly: true`** for discovery (fast, token-efficient)
-- Use `noIgnore: true` to search inside `node_modules`
-- Use `type` for common file extensions
-- Returns `location.charOffset/charLength` as BYTE offsets (ripgrep)
-- Use `fixedString: true` for special characters in pattern
+* **Start with `filesOnly: true`** for discovery (fast, token-efficient)
+* Use `noIgnore: true` to search inside `node_modules`
+* Use `type` for common file extensions
+* Returns `location.charOffset/charLength` as BYTE offsets (ripgrep)
+* Use `fixedString: true` for special characters in pattern
 
 **Discovery vs Content Search:**
 ```json
@@ -148,10 +148,10 @@ Read local file content with targeted extraction.
 ```
 
 **Tips:**
-- **Prefer `matchString` over `fullContent`** for token efficiency
-- `charOffset`/`charLength` are BYTES, not characters
-- Use `charLength: 2000-4000` for pagination windows
-- Large files require `charLength` or `matchString`
+* **Prefer `matchString` over `fullContent`** for token efficiency
+* `charOffset`/`charLength` are BYTES, not characters
+* Use `charLength: 2000-4000` for pagination windows
+* Large files require `charLength` or `matchString`
 
 **Strategy Selection:**
 | Scenario | Strategy | Example |
@@ -212,11 +212,11 @@ Find files by metadata (name, time, size, permissions).
 ```
 
 **Tips:**
-- Results sorted by modified time (most recent first)
-- Use `modifiedWithin: "7d"` to find recent changes
-- Combine with `localGetFileContent` or `localSearchCode` for content
-- Time suffixes: `d` (days), `h` (hours), `m` (minutes)
-- Size suffixes: `K` (kilobytes), `M` (megabytes), `G` (gigabytes)
+* Results sorted by modified time (most recent first)
+* Use `modifiedWithin: "7d"` to find recent changes
+* Combine with `localGetFileContent` or `localSearchCode` for content
+* Time suffixes: `d` (days), `h` (hours), `m` (minutes)
+* Size suffixes: `K` (kilobytes), `M` (megabytes), `G` (gigabytes)
 
 **Example Queries:**
 ```json
@@ -255,9 +255,9 @@ Parallelize independent searches (max 5 queries per call):
 ```
 
 **Benefits:**
-- Single network round-trip
-- Parallel execution
-- Combined results with hints
+* Single network round-trip
+* Parallel execution
+* Combined results with hints
 
 ---
 
@@ -269,7 +269,7 @@ Search code across GitHub repositories.
 
 ```typescript
 {
-  query: string;          // Search query (required) — GitHub code search syntax
+  query: string;          // Search query (required)  -  GitHub code search syntax
   owner?: string;         // Filter by repo owner
   repo?: string;          // Filter by repo name (requires owner)
   language?: string;      // Filter by language
@@ -282,10 +282,10 @@ Search code across GitHub repositories.
 ```
 
 **Tips:**
-- Narrow to `owner`/`repo` ASAP for faster, more relevant results
-- Use `path` to scope searches (e.g., `path:src/auth`)
-- Use `extension` to filter by file type
-- Combine with `githubGetFileContent` to read matched files
+* Narrow to `owner`/`repo` ASAP for faster, more relevant results
+* Use `path` to scope searches (e.g., `path:src/auth`)
+* Use `extension` to filter by file type
+* Combine with `githubGetFileContent` to read matched files
 
 ---
 
@@ -305,9 +305,9 @@ Find repositories by topic, language, stars.
 ```
 
 **Tips:**
-- Use for discovering repos when you don't know the exact name
-- Sort by `stars` for popular/battle-tested repos
-- Sort by `updated` for actively maintained repos
+* Use for discovering repos when you don't know the exact name
+* Sort by `stars` for popular/battle-tested repos
+* Sort by `updated` for actively maintained repos
 
 ---
 
@@ -326,9 +326,9 @@ Explore external repo directory layout.
 ```
 
 **Tips:**
-- Use BEFORE `githubGetFileContent` to understand layout
-- Start `depth: 1` at root, drill with `depth: 2` on specific dirs
-- Identify `src/`, `lib/`, `packages/` for entry points
+* Use BEFORE `githubGetFileContent` to understand layout
+* Start `depth: 1` at root, drill with `depth: 2` on specific dirs
+* Identify `src/`, `lib/`, `packages/` for entry points
 
 ---
 
@@ -348,9 +348,9 @@ Read files from external GitHub repos.
 ```
 
 **Tips:**
-- Use `matchString` for large files (avoid reading entire file)
-- Use LAST in the external flow — after search/structure exploration
-- Generate full GitHub URLs for references: `https://github.com/{owner}/{repo}/blob/{branch}/{path}`
+* Use `matchString` for large files (avoid reading entire file)
+* Use LAST in the external flow  -  after search/structure exploration
+* Generate full GitHub URLs for references: `https://github.com/{owner}/{repo}/blob/{branch}/{path}`
 
 ---
 
@@ -372,9 +372,9 @@ Search PRs by query, state, labels.
 ```
 
 **Tips:**
-- Use `state: "merged"` for understanding change history
-- Combine with `githubGetFileContent` to read files from specific commits
-- Narrow to `owner`/`repo` for relevant results
+* Use `state: "merged"` for understanding change history
+* Combine with `githubGetFileContent` to read files from specific commits
+* Narrow to `owner`/`repo` for relevant results
 
 ---
 
@@ -391,9 +391,9 @@ Search npm/PyPI packages by name or keyword.
 ```
 
 **Tips:**
-- Use to find repo URL for a package, then follow with `githubViewRepoStructure`
-- Returns package metadata: name, description, version, repo URL, downloads
-- Use FIRST when investigating an external dependency
+* Use to find repo URL for a package, then follow with `githubViewRepoStructure`
+* Returns package metadata: name, description, version, repo URL, downloads
+* Use FIRST when investigating an external dependency
 
 ---
 

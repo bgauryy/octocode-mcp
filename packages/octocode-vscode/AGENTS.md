@@ -12,10 +12,10 @@ This file **overrides** the root [`AGENTS.md`](https://github.com/bgauryy/octoco
 
 Octocode VS Code Extension is the management hub for Octocode MCP:
 
-- **GitHub Authentication**: OAuth device flow for secure GitHub login
-- **MCP Installation**: Auto-configure MCP server in supported editors
-- **Multi-Client Support**: Works with Cursor, Windsurf, Antigravity, Trae, Cline, Roo Code
-- **Token Sync**: Automatically syncs GitHub tokens across all MCP configurations
+* **GitHub Authentication**: OAuth device flow for secure GitHub login
+* **MCP Installation**: Auto-configure MCP server in supported editors
+* **Multi-Client Support**: Works with Cursor, Windsurf, Antigravity, Trae, Cline, Roo Code
+* **Token Sync**: Automatically syncs GitHub tokens across all MCP configurations
 
 **Key Docs**: See the Documentation table below.
 
@@ -174,14 +174,14 @@ Fallback to Claude Desktop config for VS Code
 
 ### Protected Files
 
-- **Never Modify**: `out/`, `node_modules/`
-- **Ask Before Modifying**: `package.json`, `tsconfig.json`
+* **Never Modify**: `out/`, `node_modules/`
+* **Ask Before Modifying**: `package.json`, `tsconfig.json`
 
 ### Security Considerations
 
-- **Token Handling**: Tokens are stored via VS Code's secure authentication API
-- **No Credential Logging**: Never log tokens or sensitive data to output channel
-- **Config Validation**: Always validate JSON before writing to config files
+* **Token Handling**: Tokens are stored via VS Code's secure authentication API
+* **No Credential Logging**: Never log tokens or sensitive data to output channel
+* **Config Validation**: Always validate JSON before writing to config files
 
 ---
 
@@ -207,11 +207,11 @@ tests/
 
 ### Manual Testing Checklist
 
-- [ ] Extension activates on startup
-- [ ] GitHub OAuth flow completes successfully
-- [ ] Token syncs to all detected MCP configs
-- [ ] MCP server starts and responds
-- [ ] Works in Cursor, Windsurf, and VS Code
+* [ ] Extension activates on startup
+* [ ] GitHub OAuth flow completes successfully
+* [ ] Token syncs to all detected MCP configs
+* [ ] MCP server starts and responds
+* [ ] Works in Cursor, Windsurf, and VS Code
 
 ---
 
@@ -233,8 +233,8 @@ esbuild src/extension.ts \
 
 ### Key Dependencies
 
-- **vscode**: VS Code Extension API (external)
-- **No runtime deps**: All functionality uses Node.js built-ins
+* **vscode**: VS Code Extension API (external)
+* **No runtime deps**: All functionality uses Node.js built-ins
 
 ### Publishing
 

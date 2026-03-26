@@ -1,6 +1,6 @@
 # Skills Guide
 
-Skills are markdown instruction sets that teach AI coding clients how to perform specific tasks — code exploration, PR review, architecture audits, documentation, and more.
+Skills are markdown instruction sets that teach AI coding clients how to perform specific tasks  -  code exploration, PR review, architecture audits, documentation, and more.
 
 ---
 
@@ -8,7 +8,7 @@ Skills are markdown instruction sets that teach AI coding clients how to perform
 
 | Skill | When to use |
 |-------|-------------|
-| `octocode-researcher` | Everyday code exploration — find, trace, definitions |
+| `octocode-researcher` | Everyday code exploration  -  find, trace, definitions |
 | `octocode-research` | Deep research via HTTP research server (sessions, checkpoints) |
 | `octocode-plan` | Plan → implement → verify |
 | `octocode-rfc-generator` | RFCs, design docs, options comparison |
@@ -49,7 +49,7 @@ npx octocode-cli skills remove --skill octocode-researcher --targets claude-code
 | `codex` | `~/.codex/skills/` | `%USERPROFILE%\.codex\skills\` |
 | `opencode` | `~/.opencode/skills/` | `%USERPROFILE%\.opencode\skills\` |
 
-**Project-scoped install** — set `"skillsDestDir"` in `~/.octocode/config.json` before running `skills install`:
+**Project-scoped install**  -  set `"skillsDestDir"` in `~/.octocode/config.json` before running `skills install`:
 
 ```json
 { "skillsDestDir": "/your/project/.claude/skills" }
@@ -68,7 +68,7 @@ Access via the interactive menu: `npx octocode-cli` → Manage System Skills →
 | Source | Description |
 |--------|-------------|
 | Octocode Official | Research, planning, review, code quality, docs, roast |
-| Build With Claude | Largest collection — 170+ commands |
+| Build With Claude | Largest collection  -  170+ commands |
 | Claude Code Plugins + Skills | Organized categories with tutorials |
 | Claude Skills Marketplace | Git automation, testing, code review |
 | Daymade Claude Skills | Production-ready development |
@@ -145,12 +145,12 @@ Keep SKILL.md under 500 lines. Use `references/` for extended content.
 ## Troubleshooting
 
 **Skills not loading:**
-1. `ls ~/.claude/skills/` (or target path) — verify the skill folder exists.
+1. `ls ~/.claude/skills/` (or target path)  -  verify the skill folder exists.
 2. Check `SKILL.md` has valid frontmatter (`name` and `description` fields).
 
 **Skill not triggering:** mention the skill name explicitly, or check that the `description` field matches your use case.
 
-**Marketplace fetch errors:** GitHub API rate limits may apply — retry later or install from the bundled skills instead.
+**Marketplace fetch errors:** GitHub API rate limits may apply  -  retry later or install from the bundled skills instead.
 
 ---
 
