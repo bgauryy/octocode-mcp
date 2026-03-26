@@ -201,6 +201,26 @@ export async function findReferencesWithPatternMatching(
   const page = query.page ?? 1;
   const totalReferences = filteredReferences.length;
   const totalPages = Math.ceil(totalReferences / referencesPerPage);
+
+  if (totalReferences > 0 && page > totalPages) {
+    return {
+      status: 'empty',
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalResults: totalReferences,
+        hasMore: false,
+        resultsPerPage: referencesPerPage,
+      },
+      hasMultipleFiles: new Set(filteredReferences.map(ref => ref.uri)).size > 1,
+      hints: [
+        ...getHints(TOOL_NAME, 'empty'),
+        `Requested page ${page} is outside available range (1-${totalPages}).`,
+        `Use page=${totalPages} for the last available page.`,
+      ],
+    };
+  }
+
   const startIndex = (page - 1) * referencesPerPage;
   const endIndex = Math.min(startIndex + referencesPerPage, totalReferences);
   const paginatedRaw = filteredReferences.slice(startIndex, endIndex);

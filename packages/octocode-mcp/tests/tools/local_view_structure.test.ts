@@ -146,6 +146,23 @@ describe('localViewStructure', () => {
       expect(result.entries!.length).toBeGreaterThan(0);
     });
 
+    it('should use sanitized path for non-recursive ls execution', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '',
+        stderr: '',
+      });
+
+      await viewStructure({
+        path: 'file:///unsafe/path',
+      });
+
+      const args = mockSafeExec.mock.calls[0]?.[1] ?? [];
+      expect(args).toContain('/test/path');
+      expect(args).not.toContain('file:///unsafe/path');
+    });
+
     it('should handle empty directories', async () => {
       mockSafeExec.mockResolvedValue({
         success: true,
@@ -743,6 +760,26 @@ describe('localViewStructure', () => {
       expect(result.status).toBe('hasResults');
       expect(result.entries).toBeDefined();
       expect(result.entries!.length).toBeGreaterThan(0);
+      expect(result.entries![0].modified).toBeUndefined();
+    });
+
+    it('should NOT include modified in detailed mode when showFileLastModified is false', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '-rw-r--r-- 1 user staff 123 Jan 1 12:34 file.txt',
+        stderr: '',
+      });
+
+      const result = await viewStructure({
+        path: '/test/path',
+        details: true,
+        showFileLastModified: false,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.entries).toBeDefined();
+      expect(result.entries!.length).toBe(1);
       expect(result.entries![0].modified).toBeUndefined();
     });
   });

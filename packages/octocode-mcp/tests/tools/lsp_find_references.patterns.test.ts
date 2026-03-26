@@ -247,6 +247,59 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
       expect(result.locations!.length).toBe(2);
     });
 
+    it('should return empty with pagination when page exceeds total pages', async () => {
+      const rgOutput = [
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/workspace/src/file.ts' },
+            line_number: 5,
+            lines: { text: 'const testFunc = 1;\n' },
+          },
+        }),
+        JSON.stringify({
+          type: 'match',
+          data: {
+            path: { text: '/workspace/src/file.ts' },
+            line_number: 9,
+            lines: { text: 'console.log(testFunc);\n' },
+          },
+        }),
+      ].join('\n');
+
+      setupSpawnSuccess(rgOutput);
+
+      const result = await findReferencesWithPatternMatching(
+        '/workspace/src/file.ts',
+        '/workspace',
+        {
+          id: 'pattern_query_out_of_range',
+          uri: '/workspace/src/file.ts',
+          symbolName: 'testFunc',
+          lineHint: 5,
+          includeDeclaration: true,
+          referencesPerPage: 1,
+          page: 10,
+          contextLines: 0,
+          orderHint: 0,
+          researchGoal: 'test',
+          reasoning: 'test',
+        }
+      );
+
+      expect(result.status).toBe('empty');
+      expect(result.pagination).toEqual({
+        currentPage: 10,
+        totalPages: 2,
+        totalResults: 2,
+        hasMore: false,
+        resultsPerPage: 1,
+      });
+      expect(
+        result.hints!.some(h => h.includes('outside available range'))
+      ).toBe(true);
+    });
+
     it('should preserve hasMultipleFiles when pagination reduces the page to one file', async () => {
       const rgOutput = [
         JSON.stringify({

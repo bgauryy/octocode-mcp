@@ -791,6 +791,25 @@ describe('GitHub Fetch Content Tool', () => {
       expect(result.success).toBe(false);
     });
 
+    it('should reject startLine=5 when type is "directory"', () => {
+      const result = FileContentBulkQuerySchema.safeParse({
+        queries: [
+          {
+            mainResearchGoal: 'test',
+            researchGoal: 'test',
+            reasoning: 'test',
+            owner: 'owner',
+            repo: 'repo',
+            path: 'src',
+            type: 'directory',
+            startLine: 5,
+            endLine: 5,
+          },
+        ],
+      });
+      expect(result.success).toBe(false);
+    });
+
     it('should reject matchString when type is "directory"', () => {
       const result = FileContentBulkQuerySchema.safeParse({
         queries: [

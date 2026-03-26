@@ -155,12 +155,16 @@ export function mergeReferenceResults(
 
   const seen = new Set(
     lspResult.locations.map(
-      (loc: ReferenceLocation) => `${loc.uri}:${loc.range.start.line}`
+      (loc: ReferenceLocation) =>
+        `${loc.uri}:${loc.range.start.line}:${loc.range.start.character}`
     )
   );
 
   const additionalRefs = patternResult.locations.filter(
-    (loc: ReferenceLocation) => !seen.has(`${loc.uri}:${loc.range.start.line}`)
+    (loc: ReferenceLocation) =>
+      !seen.has(
+        `${loc.uri}:${loc.range.start.line}:${loc.range.start.character}`
+      )
   );
 
   if (additionalRefs.length === 0) {
