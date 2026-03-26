@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { parseArgs } from './cli.js';
+import { parseArgs, printHelp } from './cli.js';
 import { DEFAULT_OPTS } from '../types/index.js';
 
 describe('parseArgs', () => {
@@ -489,5 +489,109 @@ describe('parseArgs', () => {
   it('auto-enables includeTests when features include any test-quality category', () => {
     const opts = parseArgs(['--features=missing-mock-restoration']);
     expect(opts.includeTests).toBe(true);
+  });
+
+  it('errors on unknown flags instead of silently ignoring', () => {
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((() => {}) as never);
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    parseArgs(['--grph']);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      'Unknown flag: --grph. Run with --help for usage.'
+    );
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+    consoleSpy.mockRestore();
+  });
+
+  it('errors on unexpected positional arguments', () => {
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((() => {}) as never);
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    parseArgs(['unexpected']);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      'Unexpected argument: unexpected. Run with --help for usage.'
+    );
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+    consoleSpy.mockRestore();
+  });
+
+  it('errors when --scope is provided without a value', () => {
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((() => {}) as never);
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    parseArgs(['--scope']);
+    expect(consoleSpy).toHaveBeenCalledWith('Missing value for --scope');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+    consoleSpy.mockRestore();
+  });
+
+  it('shows help when -h is provided where a value is expected', () => {
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((() => {}) as never);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    parseArgs(['--scope', '-h']);
+    expect(logSpy).toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    exitSpy.mockRestore();
+    logSpy.mockRestore();
+  });
+
+  it('shows help when --help is provided where a value is expected', () => {
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((() => {}) as never);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    parseArgs(['--scope', '--help']);
+    expect(logSpy).toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    exitSpy.mockRestore();
+    logSpy.mockRestore();
+  });
+
+  it('errors when option-like token is used as non-numeric value', () => {
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((() => {}) as never);
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    parseArgs(['--scope', '-x']);
+    expect(consoleSpy).toHaveBeenCalledWith('Missing value for --scope');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+    consoleSpy.mockRestore();
+  });
+
+  it('parses Windows-style --scope=file:symbol', () => {
+    const opts = parseArgs(['--scope=C:/repo/src/session.ts:initSession']);
+    expect(opts.scope).toBeInstanceOf(Array);
+    expect(opts.scopeSymbols).toBeInstanceOf(Map);
+    expect(opts.scopeSymbols!.size).toBe(1);
+    const symbols = [...opts.scopeSymbols!.values()][0];
+    expect(symbols).toContain('initSession');
+  });
+
+  it('does not parse bare Windows drive paths as file:symbol', () => {
+    const opts = parseArgs(['--scope=C:/repo/src/session.ts']);
+    expect(opts.scope).toBeInstanceOf(Array);
+    expect(opts.scope![0]).toMatch(/C:\/repo\/src\/session\.ts$/);
+    expect(opts.scopeSymbols).toBeNull();
+  });
+});
+
+describe('printHelp', () => {
+  it('prints the runtime entrypoint and semantic category count', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    printHelp();
+    expect(logSpy).toHaveBeenCalled();
+    const output = logSpy.mock.calls[0]?.[0] as string;
+    expect(output).toContain('node scripts/run.js [options]');
+    expect(output).toContain('Adds 12 categories');
+    logSpy.mockRestore();
   });
 });

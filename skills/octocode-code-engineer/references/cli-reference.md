@@ -59,6 +59,12 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 
 `--scope` focuses on specific paths (comma-separated, relative to root). Use `file:symbol` syntax to drill into a specific function or exported variable — only findings whose line range overlaps with that symbol are returned. The full dependency graph is still built so architecture findings involving scoped files are reported. Combinable with `--features`/`--exclude`.
 
+CLI parsing behavior:
+- `-h` and `--help` are supported globally, including when passed where a value is expected (for example: `--scope -h`).
+- Unknown flags fail fast (no silent ignore): `Unknown flag: <flag>. Run with --help for usage.`
+- Missing required values fail fast: `Missing value for <flag>`.
+- For non-numeric value flags (for example `--scope`, `--features`, `--exclude`, `--out`), option-like tokens are rejected as missing values.
+
 **Symbol scope fallback**: if the scanner cannot resolve a `file:symbol` target (e.g., the symbol name doesn't match an exported function or the file uses patterns that prevent resolution), it falls back to file-level scope and emits a warning: `"symbol scope could not resolve: <path>. Falling back to file-level scope."` If you see this warning, check the exact exported function name and try again, or use file-level scope directly.
 
 `--features` and `--exclude` are mutually exclusive. Both accept pillar names (`architecture`, `code-quality`, `dead-code`, `security`, `test-quality`) and individual category names, comma-separated.

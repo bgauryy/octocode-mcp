@@ -43,6 +43,8 @@ Multi-target install (e.g. all supported targets):
 npx octocode-cli skills install --skill octocode-code-engineer --targets claude-code,claude-desktop,cursor,codex,opencode
 ```
 
+> Runtime note: this skill is shipped prebuilt. `scripts/run.js` does not run `npm install` or mutate dependencies at runtime.
+
 ### 2. Octocode MCP with Local Tools (required)
 
 This skill needs **Octocode MCP** with `ENABLE_LOCAL` to work at full power. Add this to your MCP configuration:

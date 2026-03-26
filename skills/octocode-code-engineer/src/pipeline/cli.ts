@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import { ALL_CATEGORIES, DEFAULT_OPTS, PILLAR_CATEGORIES } from '../types/index.js';
 
-import type { AnalysisOptions, Thresholds } from '../types/index.js';
+import type { AnalysisOptions } from '../types/index.js';
 
 function parseNumeric(raw: string | undefined, fallback: number): number {
   const n = parseInt(raw ?? '', 10);
@@ -12,6 +12,31 @@ function parseNumeric(raw: string | undefined, fallback: number): number {
 function parseDecimal(raw: string | undefined, fallback: number): number {
   const n = parseFloat(raw ?? '');
   return Number.isNaN(n) ? fallback : n;
+}
+
+function requireFlagValue(
+  argv: string[],
+  i: number,
+  flagName: string,
+  mode: 'generic' | 'numeric' = 'generic'
+): string {
+  const value = argv[i + 1];
+  if (value === '-h' || value === '--help') {
+    printHelp();
+    process.exit(0);
+    return '';
+  }
+  if (
+    value == null ||
+    (mode === 'generic'
+      ? value.startsWith('-')
+      : value.startsWith('--'))
+  ) {
+    console.error(`Missing value for ${flagName}`);
+    process.exit(1);
+    return '';
+  }
+  return value;
 }
 
 function resolveCategories(val: string, flagName: string): Set<string> {
@@ -45,10 +70,18 @@ function parseScope(
     .split(',')
     .map(s => s.trim())
     .filter(Boolean)) {
-    const colonIdx = token.lastIndexOf(':');
-    if (colonIdx > 0 && !token.substring(0, colonIdx).includes(':')) {
-      const filePart = token.substring(0, colonIdx);
-      const symbolPart = token.substring(colonIdx + 1);
+    const scopeSeparator = token.lastIndexOf(':');
+    const maybeFile = scopeSeparator > 0 ? token.slice(0, scopeSeparator) : '';
+    const maybeSymbol = scopeSeparator > 0 ? token.slice(scopeSeparator + 1) : '';
+    const looksLikeScopedSymbol =
+      scopeSeparator > 0 &&
+      maybeSymbol.length > 0 &&
+      !maybeSymbol.includes('/') &&
+      !maybeSymbol.includes('\\');
+
+    if (looksLikeScopedSymbol) {
+      const filePart = maybeFile;
+      const symbolPart = maybeSymbol;
       const absFile = path.resolve(root, filePart);
       paths.push(absFile);
       if (!symbols.has(absFile)) symbols.set(absFile, []);
@@ -61,6 +94,38 @@ function parseScope(
 }
 
 type FlagHandler = (opts: AnalysisOptions, argv: string[], i: number) => number;
+type NumericOptionKey =
+  | 'findingsLimit'
+  | 'deepLinkTopN'
+  | 'treeDepth'
+  | 'maxRecsPerCategory';
+type IntThresholdKey =
+  | 'minFunctionStatements'
+  | 'minFlowStatements'
+  | 'criticalComplexityThreshold'
+  | 'couplingThreshold'
+  | 'fanInThreshold'
+  | 'fanOutThreshold'
+  | 'godModuleStatements'
+  | 'godModuleExports'
+  | 'godFunctionStatements'
+  | 'godFunctionMiThreshold'
+  | 'cognitiveComplexityThreshold'
+  | 'barrelSymbolThreshold'
+  | 'parameterThreshold'
+  | 'halsteadEffortThreshold'
+  | 'maintainabilityIndexThreshold'
+  | 'anyThreshold'
+  | 'flowDupThreshold'
+  | 'overrideChainThreshold'
+  | 'shotgunThreshold'
+  | 'secretMinLength'
+  | 'mockThreshold';
+type FloatThresholdKey =
+  | 'secretEntropyThreshold'
+  | 'similarityThreshold'
+  | 'sdpMinDelta'
+  | 'sdpMaxSourceInstability';
 
 const BOOL_FLAGS: Record<
   string,
@@ -105,14 +170,14 @@ const BOOL_FLAGS: Record<
   },
 };
 
-const CORE_INT_FLAGS: Record<string, keyof AnalysisOptions> = {
+const CORE_INT_FLAGS: Record<string, NumericOptionKey> = {
   '--findings-limit': 'findingsLimit',
   '--deep-link-topn': 'deepLinkTopN',
   '--tree-depth': 'treeDepth',
   '--max-recs-per-category': 'maxRecsPerCategory',
 };
 
-const THRESHOLD_INT_FLAGS: Record<string, keyof Thresholds> = {
+const THRESHOLD_INT_FLAGS: Record<string, IntThresholdKey> = {
   '--min-function-statements': 'minFunctionStatements',
   '--min-flow-statements': 'minFlowStatements',
   '--critical-complexity-threshold': 'criticalComplexityThreshold',
@@ -136,7 +201,7 @@ const THRESHOLD_INT_FLAGS: Record<string, keyof Thresholds> = {
   '--mock-threshold': 'mockThreshold',
 };
 
-const THRESHOLD_FLOAT_FLAGS: Record<string, keyof Thresholds> = {
+const THRESHOLD_FLOAT_FLAGS: Record<string, FloatThresholdKey> = {
   '--secret-entropy-threshold': 'secretEntropyThreshold',
   '--similarity-threshold': 'similarityThreshold',
   '--sdp-min-delta': 'sdpMinDelta',
@@ -145,7 +210,7 @@ const THRESHOLD_FLOAT_FLAGS: Record<string, keyof Thresholds> = {
 
 const SPECIAL_FLAGS: Record<string, FlagHandler> = {
   '--parser': (opts, argv, i) => {
-    const next = argv[i + 1];
+    const next = requireFlagValue(argv, i, '--parser');
     if (!['auto', 'typescript', 'tree-sitter'].includes(next)) {
       console.error(
         `Unsupported parser: ${next}. Use auto|typescript|tree-sitter`
@@ -156,15 +221,17 @@ const SPECIAL_FLAGS: Record<string, FlagHandler> = {
     return i + 1;
   },
   '--root': (opts, argv, i) => {
-    opts.root = path.resolve(argv[i + 1]);
+    opts.root = path.resolve(requireFlagValue(argv, i, '--root'));
     return i + 1;
   },
   '--out': (opts, argv, i) => {
-    opts.out = argv[i + 1];
+    opts.out = requireFlagValue(argv, i, '--out');
     return i + 1;
   },
   '--layer-order': (opts, argv, i) => {
-    opts.thresholds.layerOrder = argv[i + 1].split(',').map(s => s.trim());
+    opts.thresholds.layerOrder = requireFlagValue(argv, i, '--layer-order')
+      .split(',')
+      .map(s => s.trim());
     return i + 1;
   },
   '--help': () => {
@@ -191,22 +258,31 @@ export function parseArgs(argv: string[]): AnalysisOptions {
 
     if (CORE_INT_FLAGS[arg]) {
       const key = CORE_INT_FLAGS[arg];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (opts as any)[key] = parseNumeric(argv[++i], (DEFAULT_OPTS as any)[key]);
+      const value = requireFlagValue(argv, i, arg, 'numeric');
+      opts[key] = parseNumeric(value, DEFAULT_OPTS[key]);
+      i++;
       continue;
     }
 
     if (THRESHOLD_INT_FLAGS[arg]) {
       const key = THRESHOLD_INT_FLAGS[arg];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (opts.thresholds as any)[key] = parseNumeric(argv[++i], (DEFAULT_OPTS.thresholds as any)[key]);
+      const value = requireFlagValue(argv, i, arg, 'numeric');
+      opts.thresholds[key] = parseNumeric(
+        value,
+        DEFAULT_OPTS.thresholds[key]
+      );
+      i++;
       continue;
     }
 
     if (THRESHOLD_FLOAT_FLAGS[arg]) {
       const key = THRESHOLD_FLOAT_FLAGS[arg];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (opts.thresholds as any)[key] = parseDecimal(argv[++i], (DEFAULT_OPTS.thresholds as any)[key]);
+      const value = requireFlagValue(argv, i, arg, 'numeric');
+      opts.thresholds[key] = parseDecimal(
+        value,
+        DEFAULT_OPTS.thresholds[key]
+      );
+      i++;
       continue;
     }
 
@@ -221,7 +297,10 @@ export function parseArgs(argv: string[]): AnalysisOptions {
     }
 
     if (arg === '--scope' || arg.startsWith('--scope=')) {
-      const val = arg.includes('=') ? arg.split('=')[1] : argv[++i];
+      const val = arg.includes('=')
+        ? arg.split('=')[1]
+        : requireFlagValue(argv, i, '--scope');
+      if (!arg.includes('=')) i++;
       const { paths, symbols } = parseScope(val, opts.root);
       opts.scope = paths;
       if (symbols.size > 0) opts.scopeSymbols = symbols;
@@ -231,7 +310,8 @@ export function parseArgs(argv: string[]): AnalysisOptions {
     if (arg === '--features' || arg.startsWith('--features=')) {
       const val = arg.startsWith('--features=')
         ? arg.slice('--features='.length)
-        : argv[++i];
+        : requireFlagValue(argv, i, '--features');
+      if (!arg.startsWith('--features=')) i++;
       opts.features = resolveCategories(val, 'feature');
       continue;
     }
@@ -239,10 +319,19 @@ export function parseArgs(argv: string[]): AnalysisOptions {
     if (arg === '--exclude' || arg.startsWith('--exclude=')) {
       const val = arg.startsWith('--exclude=')
         ? arg.slice('--exclude='.length)
-        : argv[++i];
+        : requireFlagValue(argv, i, '--exclude');
+      if (!arg.startsWith('--exclude=')) i++;
       excludeSet = resolveCategories(val, 'exclude');
       continue;
     }
+
+    if (arg.startsWith('-')) {
+      console.error(`Unknown flag: ${arg}. Run with --help for usage.`);
+      process.exit(1);
+    }
+
+    console.error(`Unexpected argument: ${arg}. Run with --help for usage.`);
+    process.exit(1);
   }
 
   opts.packageRoot = path.join(opts.root, 'packages');
@@ -272,7 +361,7 @@ export function parseArgs(argv: string[]): AnalysisOptions {
 export function printHelp(): void {
   console.log(`
 Usage:
-  node scripts/index.js [options]
+  node scripts/run.js [options]
 
 Options:
   --root <path>                 Analyze a different repo root (default: cwd)
@@ -330,7 +419,7 @@ Options:
                                 Examples: --exclude=architecture
                                           --exclude=dead-export,unsafe-any
   --semantic                    Enable semantic analysis phase (TypeChecker + LanguageService).
-                                Adds 14 categories: over-abstraction, concrete-dependency,
+                                Adds 12 categories: over-abstraction, concrete-dependency,
                                 circular-type-dependency, unused-parameter,
                                 deep-override-chain, interface-compliance, unused-import,
                                 orphan-implementation, shotgun-surgery, move-to-caller,
