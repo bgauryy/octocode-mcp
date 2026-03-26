@@ -3,8 +3,8 @@
  * Validates commands and execution context before spawning processes
  */
 
-import { validateCommand } from '../../security/commandValidator.js';
-import { validateExecutionContext } from '../../security/executionContextValidator.js';
+import { validateCommand } from '@octocode/security/commandValidator';
+import { validateExecutionContext } from '@octocode/security/executionContextValidator';
 import { spawnWithTimeout, validateArgs } from './spawn.js';
 import type { ExecResult, ExecOptions } from '../core/types.js';
 

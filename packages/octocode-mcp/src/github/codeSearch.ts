@@ -6,7 +6,7 @@ import type {
   OptimizedCodeSearchResult,
 } from './githubAPI';
 import type { GitHubCodeSearchQuery } from '../tools/github_search_code/types.js';
-import { ContentSanitizer } from '../security/contentSanitizer';
+import { ContentSanitizer } from '@octocode/security/contentSanitizer';
 import { minifyContent } from '../utils/minifier/minifier.js';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';

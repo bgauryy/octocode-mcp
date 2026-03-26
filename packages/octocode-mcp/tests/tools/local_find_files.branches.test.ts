@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { findFiles } from '../../src/tools/local_find_files/findFiles.js';
 import { safeExec } from '../../src/utils/exec/safe.js';
-import * as pathValidator from '../../src/security/pathValidator.js';
+import * as pathValidator from '@octocode/security/pathValidator';
 
 vi.mock('../../src/utils/exec/safe.js', () => ({
   safeExec: vi.fn(),
@@ -19,7 +19,7 @@ vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
   getMissingCommandError: vi.fn().mockReturnValue('Command not available'),
 }));
 
-vi.mock('../../src/security/pathValidator.js', () => ({
+vi.mock('@octocode/security/pathValidator', () => ({
   pathValidator: {
     validate: vi.fn(),
   },

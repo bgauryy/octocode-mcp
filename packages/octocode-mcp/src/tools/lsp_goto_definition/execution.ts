@@ -22,7 +22,7 @@ import {
 } from '../../utils/file/toolHelpers.js';
 import { getHints } from '../../hints/index.js';
 import { TOOL_NAMES } from '../toolMetadata/proxies.js';
-import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
+import { resolveWorkspaceRoot } from '@octocode/security/workspaceRoot';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { applyOutputSizeLimit } from '../../utils/pagination/outputSizeLimit.js';
 import { serializeForPagination } from '../../utils/pagination/core.js';

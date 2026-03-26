@@ -15,7 +15,7 @@ import {
   GITHUB_CLONE_REPO_DESCRIPTION,
 } from './scheme.js';
 import { executeCloneRepo } from './execution.js';
-import { withSecurityValidation } from '../../security/withSecurityValidation.js';
+import { withSecurityValidation } from '../../utils/securityBridge.js';
 import { GitHubCloneRepoOutputSchema } from '../../scheme/outputSchemas.js';
 import { invokeCallbackSafely } from '../utils.js';
 

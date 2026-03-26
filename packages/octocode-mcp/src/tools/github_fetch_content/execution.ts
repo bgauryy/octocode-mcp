@@ -168,7 +168,7 @@ async function handleFileFetch(
     providerContext.provider.getFileContent(mapFileContentToolQuery(query))
   );
 
-  if (!providerResult.ok) {
+  if (providerResult.ok === false) {
     return providerResult.result;
   }
 

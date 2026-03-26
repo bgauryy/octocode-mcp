@@ -5,7 +5,7 @@ import {
   LSP_FIND_REFERENCES_DESCRIPTION,
 } from './scheme.js';
 import { executeFindReferences } from './execution.js';
-import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
+import { withBasicSecurityValidation } from '../../utils/securityBridge.js';
 import { LspFindReferencesOutputSchema } from '../../scheme/outputSchemas.js';
 import { TOOL_NAME } from './constants.js';
 

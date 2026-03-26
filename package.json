@@ -7,20 +7,10 @@
   "repository": "bgauryy/octocode-mcp.git",
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
-  "devDependencies": {
-    "@eslint/js": "^9.18.0",
-    "eslint": "^9.18.0",
-    "eslint-config-prettier": "^10.1.5",
-    "eslint-plugin-prettier": "^5.5.4",
-    "prettier": "^3.5.3",
-    "syncpack": "^14.0.0-alpha.19",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.52.0"
-  },
+  "type": "module",
   "engines": {
     "node": ">=20.0.0"
   },
-  "private": true,
   "scripts": {
     "build": "node ./scripts/workspace-health.mjs run build",
     "docs:verify": "node ./scripts/docs-verify.mjs",
@@ -37,7 +27,17 @@
     "typecheck": "node ./scripts/workspace-health.mjs run typecheck",
     "verify": "node ./scripts/workspace-health.mjs verify"
   },
-  "type": "module",
+  "devDependencies": {
+    "@eslint/js": "^9.27.0",
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-plugin-prettier": "^5.5.4",
+    "prettier": "^3.5.3",
+    "syncpack": "^14.0.0-alpha.19",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.52.0"
+  },
+  "private": true,
   "workspaces": [
     "skills/*",
     "packages/*"

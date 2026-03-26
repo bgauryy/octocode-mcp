@@ -3,27 +3,27 @@
   "version": "1.0.5",
   "description": "Management extension for Octocode MCP Server. Enables AI assistants to search, analyze, and understand codebases across GitHub. Supports Cursor, Windsurf, Antigravity, Cline, Roo Code, Trae, and more.",
   "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "github",
-    "code-search",
-    "code-analysis",
-    "repository-explorer",
+    "agentic",
     "ai",
     "ai-assistant",
+    "antigravity",
     "claude",
+    "cline",
+    "code-analysis",
+    "code-research",
+    "code-search",
     "copilot",
     "cursor",
-    "windsurf",
-    "antigravity",
-    "cline",
-    "roo-code",
-    "trae",
     "gemini",
+    "github",
+    "mcp",
+    "model-context-protocol",
     "octocode",
     "pull-request",
-    "code-research",
-    "agentic"
+    "repository-explorer",
+    "roo-code",
+    "trae",
+    "windsurf"
   ],
   "homepage": "https://octocode.ai",
   "repository": {
@@ -33,6 +33,10 @@
   },
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
+  "main": "./out/extension.js",
+  "engines": {
+    "vscode": "^1.107.0"
+  },
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -105,23 +109,9 @@
       }
     }
   },
-  "devDependencies": {
-    "@types/node": "^22.15.29",
-    "@types/vscode": "^1.107.0",
-    "@vitest/coverage-v8": "^4.0.16",
-    "@vscode/vsce": "^3.7.1",
-    "esbuild": "^0.27.2",
-    "eslint": "^9.18.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.16"
-  },
-  "displayName": "Octocode MCP",
-  "engines": {
-    "vscode": "^1.107.0"
-  },
-  "icon": "images/icon.png",
-  "main": "./out/extension.js",
   "publisher": "bgauryy",
+  "displayName": "Octocode MCP",
+  "icon": "images/icon.png",
   "scripts": {
     "build": "yarn esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --minify",
     "compile": "npm run build",
@@ -135,5 +125,15 @@
     "verify": "yarn lint && yarn typecheck && yarn test && yarn build",
     "vscode:prepublish": "npm run build",
     "watch": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "@types/vscode": "^1.107.0",
+    "@vitest/coverage-v8": "^4.0.16",
+    "@vscode/vsce": "^3.7.1",
+    "esbuild": "^0.27.2",
+    "eslint": "^9.18.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
   }
 }

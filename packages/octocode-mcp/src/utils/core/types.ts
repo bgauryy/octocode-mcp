@@ -35,14 +35,7 @@ export interface ExecOptions {
   toolName?: string;
 }
 
-/**
- * Path validation result for security checks
- */
-export interface PathValidationResult {
-  isValid: boolean;
-  error?: string;
-  sanitizedPath?: string;
-}
+export type { PathValidationResult } from '@octocode/security/types';
 
 /**
  * Base query schema fields (inherited from octocode-mcp)

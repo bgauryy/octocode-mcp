@@ -1147,7 +1147,7 @@ describe('Code Search Resilience - Promise.allSettled', () => {
 
   it('should return other matches when one match throws in the same item', async () => {
     const { ContentSanitizer } =
-      await import('../../src/security/contentSanitizer.js');
+      await import('@octocode/security/contentSanitizer');
     let callCount = 0;
     const sanitizeSpy = vi
       .spyOn(ContentSanitizer, 'sanitizeContent')
