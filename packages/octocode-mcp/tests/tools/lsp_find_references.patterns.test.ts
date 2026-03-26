@@ -39,7 +39,7 @@ vi.mock('../../src/lsp/validation.js', () => ({
   safeReadFile: vi.fn(),
 }));
 
-vi.mock('../../src/security/commandValidator.js', () => ({
+vi.mock('@octocode/security/commandValidator', () => ({
   validateCommand: vi.fn().mockReturnValue({ isValid: true }),
 }));
 
@@ -49,7 +49,7 @@ vi.mock('../../src/hints/index.js', () => ({
 
 import { access } from 'fs/promises';
 import { safeReadFile } from '../../src/lsp/validation.js';
-import { validateCommand } from '../../src/security/commandValidator.js';
+import { validateCommand } from '@octocode/security/commandValidator';
 
 import {
   buildGrepFilterArgsArray,

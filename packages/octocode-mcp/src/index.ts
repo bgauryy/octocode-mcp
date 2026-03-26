@@ -12,6 +12,7 @@ import {
   arePromptsEnabled,
   isCloneEnabled,
   getActiveProvider,
+  isLoggingEnabled,
 } from './serverConfig.js';
 import {
   initializeProviders,
@@ -22,6 +23,7 @@ import {
   initializeSession,
   logSessionInit,
   logSessionError,
+  logToolCall,
 } from './session.js';
 import { loadToolContent } from './tools/toolMetadata/state.js';
 import type { CompleteMetadata } from './types/metadata.js';
@@ -29,6 +31,9 @@ import { version, name } from '../package.json';
 import { STARTUP_ERRORS } from './errors/domainErrors.js';
 import { startCacheGC, stopCacheGC } from './tools/github_clone_repo/cache.js';
 import { getOctocodeDir } from 'octocode-shared';
+import { configureSecurity } from './utils/securityBridge.js';
+import { securityRegistry } from '@octocode/security';
+import { isLocalTool } from './tools/toolNames.js';
 
 interface ShutdownState {
   inProgress: boolean;
@@ -213,6 +218,13 @@ async function startServer() {
   try {
     // Phase 1: Initialize configuration & providers
     await initialize();
+    configureSecurity({
+      logToolCall,
+      logSessionError,
+      isLoggingEnabled,
+      isLocalTool,
+    });
+    securityRegistry.addAllowedRoots([getOctocodeDir()]);
     await initializeProviders();
     const content = await loadToolContent();
     const session = initializeSession();

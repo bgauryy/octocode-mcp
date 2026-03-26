@@ -207,7 +207,7 @@ vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
   checkCommandAvailability: execMocks.checkCommandAvailability,
   getMissingCommandError: execMocks.getMissingCommandError,
 }));
-vi.mock('../../src/security/pathValidator.js', () => pathValidatorMocks);
+vi.mock('@octocode/security/pathValidator', () => pathValidatorMocks);
 
 // =============================================================================
 // STEP 3: Import modules under test AFTER mocks are set up

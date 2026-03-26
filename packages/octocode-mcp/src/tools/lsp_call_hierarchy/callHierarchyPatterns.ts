@@ -3,7 +3,7 @@
  */
 
 import { getHints } from '../../hints/index.js';
-import { resolveWorkspaceRoot } from '../../security/workspaceRoot.js';
+import { resolveWorkspaceRoot } from '@octocode/security/workspaceRoot';
 import { SymbolResolver } from '../../lsp/resolver.js';
 import { RipgrepMatchOnlySchema } from '../../utils/parsers/schemas.js';
 import { safeExec } from '../../utils/exec/safe.js';

@@ -1,38 +1,40 @@
 {
   "name": "octocode-local-code-quality",
   "version": "1.0.0",
-  "private": true,
-  "type": "module",
   "description": "AST-based code quality analysis with duplicate detection, complexity metrics, and dependency graph intelligence. TypeScript in src/ compiles to scripts/ (yarn build or npm run build).",
-  "author": "Guy Bary <bgauryy@octocodeai.com>",
-  "homepage": "https://octocode.ai",
-  "repository": "bgauryy/octocode-mcp.git",
-  "license": "MIT",
   "keywords": [
     "agent-skill",
     "ast-analysis",
     "code-quality",
-    "tree-sitter",
     "dependency-graph",
-    "octocode"
+    "octocode",
+    "tree-sitter"
   ],
+  "author": "Guy Bary <bgauryy@octocodeai.com>",
+  "homepage": "https://octocode.ai",
+  "repository": "bgauryy/octocode-mcp.git",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node minify-scripts.mjs",
-    "build:watch": "tsc -p tsconfig.json --watch",
-    "prepare": "npm run build",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "eslint src",
-    "lint:fix": "eslint src --fix",
     "analyze": "node scripts/run.js",
-    "analyze:json": "node scripts/run.js --json --out .octocode/scan/scan.json",
     "analyze:full": "node scripts/run.js --include-tests --findings-limit 500 --deep-link-topn 30 --out .octocode/scan/scan.json",
     "analyze:graph": "node scripts/run.js --graph --out .octocode/scan/scan.json",
+    "analyze:json": "node scripts/run.js --json --out .octocode/scan/scan.json",
+    "build": "tsc -p tsconfig.json && node minify-scripts.mjs",
+    "build:watch": "tsc -p tsconfig.json --watch",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "prepare": "npm run build",
     "search": "node scripts/ast/search.js",
     "search:json": "node scripts/ast/search.js --json",
     "search:presets": "node scripts/ast/search.js --list-presets",
     "search:trees": "node scripts/ast/tree-search.js",
-    "search:trees:json": "node scripts/ast/tree-search.js --json"
+    "search:trees:json": "node scripts/ast/tree-search.js --json",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@ast-grep/napi": "^0.42.0",
@@ -42,14 +44,12 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",
-    "@types/node": "^20.0.0",
+    "@types/node": "^22.15.29",
     "eslint": "^9.27.0",
     "eslint-plugin-import": "^2.32.0",
     "terser": "^5.46.1",
-    "typescript-eslint": "^8.32.0",
+    "typescript-eslint": "^8.52.0",
     "vitest": "^4.1.0"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+  "private": true
 }

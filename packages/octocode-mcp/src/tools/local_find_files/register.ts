@@ -3,7 +3,7 @@ import { toMCPSchema } from '../../types/toolTypes.js';
 import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { BulkFindFilesSchema, LOCAL_FIND_FILES_DESCRIPTION } from './scheme.js';
 import { executeFindFiles } from './execution.js';
-import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
+import { withBasicSecurityValidation } from '../../utils/securityBridge.js';
 import { LocalFindFilesOutputSchema } from '../../scheme/outputSchemas.js';
 
 /**

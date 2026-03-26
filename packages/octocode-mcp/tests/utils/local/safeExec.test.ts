@@ -451,7 +451,7 @@ describe('safeExec', () => {
     it('should handle command validation failure without error message', async () => {
       // Mock command validator to return invalid without error message
       const commandValidatorModule =
-        await import('../../../src/security/commandValidator.js');
+        await import('@octocode/security/commandValidator');
       const validateCommandSpy = vi.spyOn(
         commandValidatorModule,
         'validateCommand'
@@ -487,7 +487,7 @@ describe('safeExec', () => {
     it('should handle context validation failure without error message', async () => {
       // Mock execution context validator to return invalid without error message
       const contextValidatorModule =
-        await import('../../../src/security/executionContextValidator.js');
+        await import('@octocode/security/executionContextValidator');
       const validateContextSpy = vi.spyOn(
         contextValidatorModule,
         'validateExecutionContext'

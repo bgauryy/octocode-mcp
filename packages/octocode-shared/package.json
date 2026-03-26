@@ -3,12 +3,12 @@
   "version": "1.0.2",
   "description": "Shared utilities for Octocode packages - credential management and platform detection",
   "keywords": [
-    "octocode",
-    "shared",
+    "config",
     "credentials",
-    "token-storage",
+    "octocode",
     "platform",
-    "config"
+    "shared",
+    "token-storage"
   ],
   "author": "Guy Bary <bgauryy@octocodeai.com>",
   "homepage": "https://octocode.ai",
@@ -19,22 +19,9 @@
   },
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
-  "dependencies": {
-    "@octokit/oauth-methods": "^6.0.2",
-    "@octokit/request": "^10.0.7",
-    "zod": "^3.25.0"
-  },
-  "devDependencies": {
-    "@types/node": "^22.15.29",
-    "@vitest/coverage-v8": "^4.0.16",
-    "eslint": "^9.18.0",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.0",
-    "vitest": "^4.0.16"
-  },
-  "engines": {
-    "node": ">=20.0.0"
-  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -78,10 +65,12 @@
     "README.md",
     "LICENSE"
   ],
-  "main": "dist/index.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
-    "build": "yarn lint && vite build && tsc --emitDeclarationOnly",
-    "build:dev": "vite build && tsc --emitDeclarationOnly",
+    "build": "yarn lint && node build.mjs && tsc --emitDeclarationOnly",
+    "build:dev": "node build.mjs && tsc --emitDeclarationOnly",
     "clean": "rm -rf dist/",
     "lint": "eslint src tests",
     "lint:fix": "eslint src tests --fix",
@@ -92,6 +81,17 @@
     "typecheck": "tsc --noEmit",
     "verify": "yarn shared:package"
   },
-  "type": "module",
-  "types": "dist/index.d.ts"
+  "dependencies": {
+    "@octokit/oauth-methods": "^6.0.2",
+    "@octokit/request": "^10.0.7",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "@vitest/coverage-v8": "^4.0.16",
+    "esbuild": "^0.27.2",
+    "eslint": "^9.18.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
+  }
 }
