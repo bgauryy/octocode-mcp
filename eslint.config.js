@@ -12,6 +12,7 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/coverage/**',
       '**/*.js',
+      '**/*.mjs',
       '**/*.d.ts',
       '**/examples/**',
       // Skills have their own eslint configs
@@ -103,14 +104,15 @@ export default tseslint.config(
     },
   },
 
-  // octocode-local-cli specific rules
+  // octocode-security specific rules
   {
     files: [
-      'packages/octocode-local-cli/src/**/*.ts',
-      'packages/octocode-local-cli/tests/**/*.ts',
+      'packages/octocode-security/src/**/*.ts',
+      'packages/octocode-security/tests/**/*.ts',
     ],
     rules: {
-      'no-console': 'off',
+      '@typescript-eslint/no-explicit-any': 'error',
+      'no-console': 'error',
     },
   },
 

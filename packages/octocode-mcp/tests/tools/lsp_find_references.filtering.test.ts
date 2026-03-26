@@ -273,7 +273,7 @@ vi.mock('fs/promises', () => ({
   access: vi.fn(),
 }));
 
-vi.mock('../../src/security/pathValidator.js', () => ({
+vi.mock('@octocode/security/pathValidator', () => ({
   pathValidator: {
     validate: vi.fn().mockReturnValue({ isValid: true }),
   },

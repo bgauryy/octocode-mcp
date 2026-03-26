@@ -3,7 +3,7 @@ import { toMCPSchema } from '../../types/toolTypes.js';
 import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { BulkRipgrepQuerySchema, LOCAL_RIPGREP_DESCRIPTION } from './scheme.js';
 import { executeRipgrepSearch } from './execution.js';
-import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
+import { withBasicSecurityValidation } from '../../utils/securityBridge.js';
 import { LocalSearchCodeOutputSchema } from '../../scheme/outputSchemas.js';
 
 /**

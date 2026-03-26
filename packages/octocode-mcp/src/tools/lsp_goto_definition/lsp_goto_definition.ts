@@ -12,7 +12,7 @@ import {
   LSP_GOTO_DEFINITION_DESCRIPTION,
 } from './scheme.js';
 import { executeGotoDefinition, TOOL_NAME } from './execution.js';
-import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
+import { withBasicSecurityValidation } from '../../utils/securityBridge.js';
 import { LspGotoDefinitionOutputSchema } from '../../scheme/outputSchemas.js';
 
 /**

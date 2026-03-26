@@ -5,7 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('../../../src/security/pathValidator.js', () => ({
+vi.mock('@octocode/security/pathValidator', () => ({
   pathValidator: {
     validate: vi.fn(),
   },
@@ -15,7 +15,7 @@ vi.mock('../../../src/hints/index.js', () => ({
   getHints: vi.fn(() => []),
 }));
 
-import { pathValidator } from '../../../src/security/pathValidator.js';
+import { pathValidator } from '@octocode/security/pathValidator';
 import { validateToolPath } from '../../../src/utils/file/toolHelpers.js';
 
 describe('getPathErrorHints - branch coverage', () => {

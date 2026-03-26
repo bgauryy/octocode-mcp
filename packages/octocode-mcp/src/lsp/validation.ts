@@ -7,7 +7,7 @@
 import { realpathSync, statSync } from 'fs';
 import { readFile } from 'fs/promises';
 import * as path from 'path';
-import { pathValidator } from '../security/pathValidator.js';
+import { pathValidator } from '@octocode/security/pathValidator';
 
 /**
  * Result of LSP server path validation

@@ -31,7 +31,7 @@ import type {
   OutgoingCall,
 } from './types.js';
 import { LSPDocumentManager } from './lspDocumentManager.js';
-import { PathValidator } from '../security/pathValidator.js';
+import { PathValidator } from '@octocode/security/pathValidator';
 
 /** Default timeout for LSP requests (30 seconds) */
 const LSP_REQUEST_TIMEOUT_MS = 30_000;

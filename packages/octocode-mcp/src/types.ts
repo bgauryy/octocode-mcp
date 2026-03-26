@@ -138,30 +138,11 @@ export interface BulkToolResponse {
   responsePagination?: PaginationInfo;
 }
 
-/** Pattern definition for detecting sensitive data */
-export interface SensitiveDataPattern {
-  name: string;
-  description: string;
-  regex: RegExp;
-  fileContext?: RegExp;
-  matchAccuracy?: 'high' | 'medium';
-}
-
-/** Result of content sanitization */
-export interface SanitizationResult {
-  content: string;
-  hasSecrets: boolean;
-  secretsDetected: string[];
-  warnings: string[];
-}
-
-/** Result of parameter validation */
-export interface ValidationResult {
-  sanitizedParams: Record<string, unknown>;
-  isValid: boolean;
-  hasSecrets: boolean;
-  warnings: string[];
-}
+export type {
+  SensitiveDataPattern,
+  SanitizationResult,
+  ValidationResult,
+} from '@octocode/security/types';
 
 /**
  * Token source types for tracking where the GitHub token came from.

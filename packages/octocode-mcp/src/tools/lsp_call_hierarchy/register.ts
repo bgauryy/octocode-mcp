@@ -5,7 +5,7 @@ import {
   LSP_CALL_HIERARCHY_DESCRIPTION,
 } from './scheme.js';
 import { executeCallHierarchy } from './execution.js';
-import { withBasicSecurityValidation } from '../../security/withSecurityValidation.js';
+import { withBasicSecurityValidation } from '../../utils/securityBridge.js';
 import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { LspCallHierarchyOutputSchema } from '../../scheme/outputSchemas.js';
 

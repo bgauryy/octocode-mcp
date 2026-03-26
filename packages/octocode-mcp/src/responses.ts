@@ -1,6 +1,6 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types';
-import { maskSensitiveData } from './security/mask.js';
-import { ContentSanitizer } from './security/contentSanitizer.js';
+import { maskSensitiveData } from '@octocode/security/mask';
+import { ContentSanitizer } from '@octocode/security/contentSanitizer';
 import { jsonToYamlString } from './utils/minifier/jsonToYamlString.js';
 import { getConfigSync } from 'octocode-shared';
 import type { BulkToolResponse, StructuredToolResponse } from './types.js';
@@ -337,10 +337,13 @@ function cleanAndStructure(data: unknown): Record<string, unknown> | undefined {
     cleaned !== null &&
     !Array.isArray(cleaned)
   ) {
-    return cleaned as Record<string, unknown>;
+    return sanitizeStructuredContent(
+      cleaned as Record<string, unknown>
+    ) as Record<string, unknown>;
   }
   // Wrap non-object data
-  return { data: cleaned };
+  const wrapped = { data: cleaned };
+  return sanitizeStructuredContent(wrapped) as Record<string, unknown>;
 }
 
 /**
@@ -350,6 +353,33 @@ function sanitizeText(text: string): string {
   if (text == null || typeof text !== 'string') return '';
   const sanitizationResult = ContentSanitizer.sanitizeContent(text);
   return maskSensitiveData(sanitizationResult.content);
+}
+
+/**
+ * Deep-walk an object and sanitize all string values.
+ * Applied to structuredContent so secrets never leak via the machine-readable channel.
+ */
+export function sanitizeStructuredContent(obj: unknown): unknown {
+  if (obj === null || obj === undefined) return obj;
+
+  if (typeof obj === 'string') {
+    const sanitized = ContentSanitizer.sanitizeContent(obj);
+    return maskSensitiveData(sanitized.content);
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeStructuredContent(item));
+  }
+
+  if (typeof obj === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+      result[key] = sanitizeStructuredContent(value);
+    }
+    return result;
+  }
+
+  return obj;
 }
 
 export function createResponseFormat(

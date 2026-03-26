@@ -1,23 +1,22 @@
 {
   "name": "octocode-research",
   "version": "2.2.0",
-  "type": "module",
   "description": "Code research server using octocode tools - HTTP API on port 1987",
+  "keywords": [
+    "agent-skill",
+    "code-research",
+    "http-server",
+    "mcp",
+    "octocode"
+  ],
   "author": "Guy Bary <bgauryy@octocodeai.com>",
   "homepage": "https://octocode.ai",
   "repository": "bgauryy/octocode-mcp.git",
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
-  "keywords": [
-    "agent-skill",
-    "code-research",
-    "http-server",
-    "octocode",
-    "mcp"
-  ],
+  "type": "module",
   "main": "scripts/server.js",
   "types": "scripts/server.d.ts",
-  "bin": "./scripts/server-init.js",
   "exports": {
     ".": {
       "types": "./scripts/server.d.ts",
@@ -28,21 +27,25 @@
       "import": "./scripts/server.js"
     }
   },
+  "bin": "./scripts/server-init.js",
   "files": [
     "scripts",
     "src",
     "SKILL.md",
     "tsconfig.json"
   ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "build": "tsdown",
-    "start": "node scripts/server-init.js",
+    "copy:claude": "rm -rf ~/.claude/skills/octocode-research && mkdir -p ~/.claude/skills && cp -r . ~/.claude/skills/octocode-research",
     "dev": "tsx watch src/server.ts",
-    "test": "vitest run",
-    "test:watch": "vitest",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
-    "copy:claude": "rm -rf ~/.claude/skills/octocode-research && mkdir -p ~/.claude/skills && cp -r . ~/.claude/skills/octocode-research"
+    "start": "node scripts/server-init.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "express": "^4.21.2",
@@ -63,10 +66,7 @@
     "tsdown": "^0.18.3",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.32.0",
+    "typescript-eslint": "^8.52.0",
     "vitest": "^4.0.16"
-  },
-  "engines": {
-    "node": ">=20.0.0"
   }
 }

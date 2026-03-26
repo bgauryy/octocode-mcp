@@ -30,7 +30,7 @@ vi.mock('../../src/utils/response/bulk.js', () => ({
 }));
 
 // Mock withSecurityValidation to pass through handler
-vi.mock('../../src/security/withSecurityValidation.js', () => ({
+vi.mock('@octocode/security/withSecurityValidation', () => ({
   withSecurityValidation: vi.fn((_toolName, handler) => handler),
   withBasicSecurityValidation: vi.fn(handler => handler),
 }));

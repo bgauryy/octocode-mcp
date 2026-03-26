@@ -67,7 +67,7 @@ export async function searchMultipleGitHubPullRequests(
           )
         );
 
-        if (!providerResult.ok) {
+        if (providerResult.ok === false) {
           return providerResult.result;
         }
 

@@ -43,6 +43,10 @@ vi.mock('../../index.js', () => {
 vi.mock('../../utils/logger.js', () => ({
   initializeLogger: vi.fn(),
   getLogsPath: vi.fn().mockReturnValue('/tmp/logs'),
+  logToolCall: vi.fn(),
+  logError: vi.fn(),
+  logWarn: vi.fn(),
+  sanitizeQueryParams: vi.fn().mockReturnValue({}),
 }));
 
 vi.mock('../../utils/circuitBreaker.js', () => ({

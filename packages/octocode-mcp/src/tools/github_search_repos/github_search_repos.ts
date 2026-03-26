@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { toMCPSchema } from '../../types/toolTypes.js';
-import { withSecurityValidation } from '../../security/withSecurityValidation.js';
+import { withSecurityValidation } from '../../utils/securityBridge.js';
 import type { ToolInvocationCallback } from '../../types.js';
 import type { GitHubReposSearchQuery } from './types.js';
 import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/proxies.js';
