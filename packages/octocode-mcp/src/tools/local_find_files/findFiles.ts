@@ -11,6 +11,7 @@ import {
   createPaginationInfo,
 } from '../../utils/pagination/core.js';
 import type { PaginationMetadata } from '../../utils/pagination/types.js';
+import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
 import {
   validateToolPath,
   createErrorResult,
@@ -22,6 +23,7 @@ import type {
   FoundFile,
 } from '../../utils/core/types.js';
 import fs from 'fs';
+import { getConfigSync } from 'octocode-shared';
 import { ToolErrors } from '../../errors/errorFactories.js';
 import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 
@@ -241,14 +243,19 @@ function applyCharPagination(
   charOffset?: number,
   charLength?: number
 ): { finalFiles: FoundFile[]; paginationMetadata: PaginationMetadata | null } {
-  if (!charLength) {
+  const hasExplicitCharPagination =
+    charLength !== undefined || charOffset !== undefined;
+  if (!hasExplicitCharPagination) {
     return { finalFiles: paginatedFiles, paginationMetadata: null };
   }
 
+  const targetLength = Math.max(
+    1,
+    charLength ?? resolveDefaultCharLengthForPagination()
+  );
   const fullJson = serializeForPagination(paginatedFiles, false);
   const totalChars = fullJson.length;
-  const startOffset = charOffset ?? 0;
-  const targetLength = charLength;
+  const startOffset = Math.max(charOffset ?? 0, 0);
   const endLimit = startOffset + targetLength;
 
   if (startOffset >= totalChars) {
@@ -305,6 +312,30 @@ function applyCharPagination(
       totalPages: Math.ceil(totalChars / targetLength),
     },
   };
+}
+
+function resolveDefaultCharLengthForPagination(): number {
+  try {
+    const config = getConfigSync() as {
+      output?: {
+        pagination?: {
+          defaultCharLength?: number;
+        };
+      };
+    };
+    const configured = config.output?.pagination?.defaultCharLength;
+    if (
+      typeof configured === 'number' &&
+      Number.isFinite(configured) &&
+      configured > 0
+    ) {
+      return Math.floor(configured);
+    }
+  } catch {
+    // Fall back to static defaults when shared config is unavailable.
+  }
+
+  return RESOURCE_LIMITS.DEFAULT_CHAR_LENGTH;
 }
 
 async function getFileDetails(

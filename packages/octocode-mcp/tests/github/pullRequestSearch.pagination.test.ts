@@ -454,7 +454,7 @@ describe('Pull Request Search - Pagination', () => {
         page: 1,
       });
 
-      expect(result.pagination?.totalPages).toBe(0);
+      expect(result.pagination?.totalPages).toBe(1);
       expect(result.pagination?.totalMatches).toBe(0);
       expect(result.pagination?.hasMore).toBe(false);
     });

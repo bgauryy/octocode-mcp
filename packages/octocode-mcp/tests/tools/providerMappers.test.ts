@@ -183,6 +183,22 @@ describe('providerMappers', () => {
     ).toContain('Next: page=3');
   });
 
+  it('should normalize empty pagination hints to valid ranges', () => {
+    const hints = buildPaginationHints(
+      {
+        currentPage: 1,
+        totalPages: 0,
+        hasMore: false,
+        totalMatches: 0,
+        perPage: 10,
+      },
+      'matches'
+    );
+
+    expect(hints[0]).toBe('Page 1/1 (showing 0 of 0 matches)');
+    expect(hints[0]).not.toContain('1-0');
+  });
+
   it('should include branch fallback details for repo structure results', () => {
     const result = mapRepoStructureProviderResult(
       {

@@ -1213,6 +1213,29 @@ describe('localFindFiles', () => {
       }
     });
 
+    it('should paginate when only charOffset is provided', async () => {
+      const files = Array.from(
+        { length: 200 },
+        (_, i) => `/test/file${i}.txt`
+      ).join('\0');
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: files + '\0',
+        stderr: '',
+      });
+
+      const result = await findFiles({
+        path: '/test/path',
+        charOffset: 1000,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.charPagination?.charOffset).toBe(1000);
+      const paginatedFiles = expectDefinedFiles(result);
+      expect(paginatedFiles[0]?.path).not.toBe('/test/file0.txt');
+    });
+
     it('should handle charOffset = 0', async () => {
       const files = '/test/file1.txt\0/test/file2.txt\0';
       mockSafeExec.mockResolvedValue({

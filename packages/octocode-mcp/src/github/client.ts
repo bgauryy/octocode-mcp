@@ -69,6 +69,10 @@ let purgeTimer: ReturnType<typeof setInterval> | null = null;
  * Also enforces MAX_INSTANCES by removing the oldest entries when over capacity.
  */
 function purgeExpiredInstances(): void {
+  purgeExpiredInstancesWithLimit(MAX_INSTANCES);
+}
+
+function purgeExpiredInstancesWithLimit(targetSize: number): void {
   // 1. Remove expired entries
   for (const [key, cached] of instances.entries()) {
     if (isExpired(cached)) {
@@ -77,17 +81,22 @@ function purgeExpiredInstances(): void {
   }
 
   // 2. If still over capacity, evict oldest non-DEFAULT entries
-  if (instances.size > MAX_INSTANCES) {
+  if (instances.size > targetSize) {
     const sorted = [...instances.entries()]
       .filter(([key]) => key !== 'DEFAULT')
       .sort((a, b) => a[1].createdAt - b[1].createdAt);
 
-    const excess = instances.size - MAX_INSTANCES;
+    const excess = instances.size - targetSize;
     for (let i = 0; i < excess && i < sorted.length; i++) {
       const entry = sorted[i];
       if (entry) instances.delete(entry[0]);
     }
   }
+}
+
+function ensureCapacityForInsertion(): void {
+  // Keep one free slot before insertion to avoid MAX+1 growth.
+  purgeExpiredInstancesWithLimit(Math.max(MAX_INSTANCES - 1, 0));
 }
 
 /**
@@ -175,10 +184,8 @@ export async function getOctokit(
       return cached.client;
     }
 
-    // Purge expired entries before adding a new one to stay within limits
-    if (instances.size >= MAX_INSTANCES) {
-      purgeExpiredInstances();
-    }
+    // Purge/evict before insertion to keep cache at or below MAX_INSTANCES.
+    ensureCapacityForInsertion();
 
     const newInstance = createOctokitInstance(authInfo.token);
     instances.set(key, { client: newInstance, createdAt: Date.now() });
@@ -200,6 +207,7 @@ export async function getOctokit(
   pendingDefaultPromise = (async () => {
     try {
       const token = await getGitHubToken();
+      ensureCapacityForInsertion();
       const instance = createOctokitInstance(token ?? undefined);
       instances.set('DEFAULT', { client: instance, createdAt: Date.now() });
       return instance;
