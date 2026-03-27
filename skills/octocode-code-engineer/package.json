@@ -23,7 +23,7 @@
     "analyze:full": "node scripts/run.js --include-tests --findings-limit 500 --deep-link-topn 30 --out .octocode/scan/scan.json",
     "analyze:graph": "node scripts/run.js --graph --out .octocode/scan/scan.json",
     "analyze:json": "node scripts/run.js --json --out .octocode/scan/scan.json",
-    "build": "tsc -p tsconfig.json && node minify-scripts.mjs",
+    "build": "node build.mjs",
     "build:watch": "tsc -p tsconfig.json --watch",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
@@ -39,15 +39,15 @@
   "dependencies": {
     "@ast-grep/napi": "^0.42.0",
     "tree-sitter": "^0.25.0",
-    "tree-sitter-typescript": "^0.23.2",
-    "typescript": "^5.9.3"
+    "tree-sitter-typescript": "^0.23.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",
     "@types/node": "^22.15.29",
+    "esbuild": "^0.27.2",
     "eslint": "^9.27.0",
     "eslint-plugin-import": "^2.32.0",
-    "terser": "^5.46.1",
+    "typescript": "^5.9.3",
     "typescript-eslint": "^8.52.0",
     "vitest": "^4.1.0"
   },

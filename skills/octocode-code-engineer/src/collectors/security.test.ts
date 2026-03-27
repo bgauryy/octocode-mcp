@@ -156,7 +156,7 @@ describe('collectSecurityData', () => {
       console.error(\`Unknown \${flagName}: "\${token}". Use pillar names\`);
       console.log(\`
         Usage:
-          node scripts/index.js [options]
+          node scripts/run.js [options]
         Options:
           --root <path>
       \`);

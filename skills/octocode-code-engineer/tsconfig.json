@@ -1,5 +1,5 @@
 {
-  // Compiles src/**/*.ts → scripts/ (same paths). Then minify-scripts.mjs minifies *.js there.
+  // Type-checking + build:watch (dev). Production build uses esbuild via build.mjs.
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",

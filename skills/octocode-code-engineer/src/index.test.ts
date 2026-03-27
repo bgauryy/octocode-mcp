@@ -2094,7 +2094,7 @@ describe('end-to-end output validation', () => {
   it('produces valid summary.md with all sections', async () => {
     const { execSync } = await import('node:child_process');
     const dir = '/tmp/cq-test-' + Date.now();
-    const scriptPath = path.join(process.cwd(), 'scripts', 'index.js');
+    const scriptPath = path.join(process.cwd(), 'scripts', 'run.js');
     const monorepoRoot = path.join(process.cwd(), '..', '..');
     try {
       execSync(
