@@ -2,25 +2,7 @@
 
 How to validate findings before presenting them. Every scanner finding is a hypothesis — never present it as fact without validation.
 
-For tool params, see [SKILL.md tools table](../SKILL.md#tools). For scanner flags, see [CLI reference](./cli-reference.md).
-
----
-
-## Validation loop (always)
-
-AI is the glue between every tool in this loop. Tools produce raw signals; AI decides what's important, what's a false positive, and what needs deeper investigation. No tool output is presented as-is — AI interprets, prioritizes, and filters at every step.
-
-1. Read the finding context from `summary.md` + the specific `findings.json` entry
-2. **AI triages**: is this finding plausible given the codebase context? Worth investigating or likely noise?
-3. If `lspHints[]` are provided, run those pre-computed checks first
-4. Read the code at the flagged location — **AI judges**: does the code actually show the problem, or is the scanner misreading intent?
-5. Trace surrounding context — find references for types/vars, call hierarchy for functions
-6. **AI decides**:
-   - **confirmed**: evidence supports the finding — AI explains why it matters
-   - **dismissed**: false positive — AI explains why the scanner was wrong (e.g., intentional pattern, read-only config, test-only usage)
-   - **uncertain**: missing data — AI says what's unresolved and what additional evidence would resolve it
-
-Never present scanner output as fact without running this loop. AI's role is not just to use tools but to filter, prioritize, and explain — turning raw signals into actionable understanding.
+For the validation loop (confirmed/dismissed/uncertain flow), see [SKILL.md Stage 6](../SKILL.md#stage-6-validate--score). For tool params, see [SKILL.md tools table](../SKILL.md#tools). For scanner flags, see [CLI reference](./cli-reference.md).
 
 ---
 
@@ -63,51 +45,6 @@ Prioritize fixes where hotspots and critical paths overlap.
 | Halstead effort | estimated comprehension effort | very high effort suggests split/refactor |
 
 Use thresholds as heuristics, not absolute truth.
-
----
-
-## Combined coverage guarantee
-
-The AST + LSP + Octocode + AI stack covers every analysis dimension when applied in both directions:
-
-| Layer | Bottom-up role (structure → meaning) | Top-down role (intent → proof) |
-|-------|--------------------------------------|-------------------------------|
-| **AST** | Detects structural patterns — zero false-positive syntax-level proof | Confirms hypothesized patterns exist in live source |
-| **LSP** | Resolves symbols, measures fan-in/fan-out, traces call chains | Validates AI-hypothesized relationships with semantic evidence |
-| **Octocode** | Discovers project scope, file metadata, code search | Locates targets from architectural understanding, maps blast radius |
-| **AI** (the glue) | Interprets every tool output, filters false positives, decides what matters, prioritizes what to chase next | Forms hypotheses from design intent, drives investigation direction, decides when evidence is sufficient to stop |
-
-AI is the connective tissue between every tool. AST, LSP, and Octocode each produce raw data — AI turns it into judgment. Specifically, AI:
-- **Prioritizes**: reads scan output and decides which findings warrant investigation vs which are noise
-- **Filters FPs**: uses codebase context, naming conventions, and architectural understanding to dismiss false positives that tools cannot catch (e.g., high fan-in on a read-only config module is normal, not a coupling hotspot)
-- **Connects signals**: recognizes when a coupling finding + a cycle finding + a complexity finding on the same file are convergent evidence of a real problem
-- **Directs investigation**: decides which tool to run next based on what's been learned so far, not a fixed script
-
-If bottom-up detection finds nothing, top-down AI reasoning may still uncover design-level issues. If AI suspects a problem, bottom-up tools provide deterministic proof. The combination is exhaustive because AI bridges the gap between what tools can detect and what actually matters.
-
-## Confidence discipline
-
-- **high**: structural proof + direct code evidence
-- **medium**: semantic/graph signal confirmed with references/call graph
-- **uncertain**: partial evidence or unresolved conflicts
-
-If scan and semantic validation disagree, report both and lower confidence.
-
----
-
-## Coverage map (finding families)
-
-Use this to confirm broad feature coverage during reviews:
-
-- **Architecture**: cycles, coupling, boundaries, path-risk hubs
-- **Code quality**: complexity, maintainability, duplication, unsafe patterns
-- **Performance**: loop/await misuse, sync I/O, timer/listener hygiene
-- **Security**: sink risks, unsafe evaluation, secret exposure patterns
-- **Dead code**: dead exports, dead re-exports, unused dependencies
-- **Test quality**: brittle tests, mock-heavy tests, missing cleanup/assertions
-- **Semantic** (`--semantic`): type-hierarchy and usage-graph findings
-
-For exact category names in your CLI version, run `run.js --help` and extract from `findings.json`. See [CLI reference](./cli-reference.md).
 
 ---
 

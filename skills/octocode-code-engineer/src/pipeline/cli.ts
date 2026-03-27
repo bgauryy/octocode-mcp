@@ -287,7 +287,7 @@ export function parseArgs(argv: string[]): AnalysisOptions {
 export function printHelp(): void {
   console.log(`
 Usage:
-  node scripts/index.js [options]
+  node scripts/run.js [options]
 
 Options:
   --root <path>                 Analyze a different repo root (default: cwd)
@@ -345,7 +345,7 @@ Options:
                                 Examples: --exclude=architecture
                                           --exclude=dead-export,unsafe-any
   --semantic                    Enable semantic analysis phase (TypeChecker + LanguageService).
-                                Adds 14 categories: over-abstraction, concrete-dependency,
+                                Adds 12 categories: over-abstraction, concrete-dependency,
                                 circular-type-dependency, unused-parameter,
                                 deep-override-chain, interface-compliance, unused-import,
                                 orphan-implementation, shotgun-surgery, move-to-caller,

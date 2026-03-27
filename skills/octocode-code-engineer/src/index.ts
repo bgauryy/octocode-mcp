@@ -1,4 +1,3 @@
-import { isDirectRun } from './common/is-direct-run.js';
 import {
   buildConsumedFromModule,
   computeHotFiles,
@@ -402,11 +401,3 @@ export function assignFindingIds(
   return { findings, byFile };
 }
 
-if (isDirectRun(import.meta.url)) {
-  import('./pipeline/main.js')
-    .then(m => m.main())
-    .catch((error: unknown) => {
-      console.error(error);
-      process.exit(1);
-    });
-}

@@ -1,29 +1,6 @@
 # Tool Workflows — Research Methodology & Patterns
 
-Step-focused workflows for code analysis. Each step describes **what to achieve** — use the [SKILL.md tools table](../SKILL.md#tools) and [CLI reference](./cli-reference.md) for exact tool params and flags.
-
----
-
-## The Research Funnel
-
-Every investigation uses both directions — **bottom-up** (structure → meaning) and **top-down** (intent → proof). AST, LSP, and Octocode produce raw signals at each stage; **AI is the glue** that interprets results, decides what's important, filters false positives, and chooses what to investigate next. No tool output is meaningful without AI judgment connecting it to context.
-
-The bottom-up funnel narrows progressively:
-
-```
-STRUCTURE → SEARCH → FETCH
- 80-90%      90-99%    100%
-```
-
-| Stage | Goal | Achieve by |
-|-------|------|------------|
-| 1. Structure | Know where to look (80-90% reduction) | Explore project layout, find files by size/name/time, scan dependency graph |
-| 2. Search | Know what and where (90-99%) | Text search for patterns, AST search for structure, LSP for semantic references |
-| 3. Fetch | Read the evidence (100%) | Read file content at targeted locations, jump to definitions |
-
-**Top-down (reverse funnel)** — when AI reasoning or scan findings provide exact coordinates (e.g. `lspHints`, architectural hypotheses), skip straight to semantic proof or content reading. The top-down path: AI forms hypothesis → Octocode locates targets → LSP validates semantic relationships → AST confirms structural pattern. This catches design-level issues (coupling, boundary erosion, missing coverage) that bottom-up structural detection alone would miss.
-
-**Key rule**: always search before reading. Never read a file without knowing where to look first. Use both directions — bottom-up to surface candidates, top-down to validate architectural intent.
+Step-focused workflows for code analysis. For the research funnel and discovery flow, see [SKILL.md](../SKILL.md#discovery-flow). For tool params and flags, see [CLI reference](./cli-reference.md).
 
 ---
 
@@ -43,23 +20,6 @@ STRUCTURE → SEARCH → FETCH
 | "Architecture hotspots?" | Scan with graph analysis → validate hotFiles with reference counts |
 | "Structural smells?" | AST preset sweep (batch multiple presets in parallel) |
 | "Did my fix work?" | Re-scan scoped to changed files + AST preset check + project toolchain |
-
----
-
-## Efficiency Principles
-
-| Principle | DO | DON'T |
-|-----------|-----|-------|
-| Layer order | Structure → Search → Fetch | Jump to LSP without search context |
-| LSP prerequisite | Text search first to get lineHint | Guess lineHint values |
-| AST tools | tree-search to triage, search.js to prove | Use tree-search as proof of live behavior |
-| Discovery | Use file-list-only mode for broad discovery, then drill into specific files | Request full content on first call |
-| Large files | Target sections with match strings | Read full content on files >200 lines |
-| Reference types | Find references for types/vars; call hierarchy for functions | Call hierarchy on types (fails) |
-| Batching | Run independent tool calls in parallel | Run sequential when order doesn't matter |
-| Re-scanning | Scope to changed files after fixes | Full re-scan when one file changed |
-
-See [SKILL.md tools table](../SKILL.md#tools) for tool params and [AST reference](./ast-reference.md) for search presets.
 
 ---
 
@@ -336,16 +296,3 @@ Use when public behavior changed or a risky change needs an operational plan.
 
 **Output**: updated docs list + compatibility note + rollout/rollback plan, or explicit statement that no public docs or rollout work was needed.
 
----
-
-## Tool Reference
-
-For exact tool parameters, flags, and schemas:
-
-| What | Where |
-|------|-------|
-| MCP tool params (localSearchCode, lspFindReferences, etc.) | [SKILL.md tools table](../SKILL.md#tools) |
-| Scanner CLI flags (--scope, --features, --graph, etc.) | [CLI reference](./cli-reference.md) |
-| Scan output schemas (findings.json, architecture.json, etc.) | [Output files](./output-files.md) |
-| AST search presets and pattern syntax | [AST reference](./ast-reference.md) |
-| Validation loop and per-category tactics | [Validation playbooks](./validation-playbooks.md) |
