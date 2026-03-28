@@ -3,14 +3,16 @@ name: CI - Lint, Build & Test
 on:
   pull_request:
 
-# Cancel in-progress runs for the same PR/branch
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  health:
-    name: Health
+  checks:
+    name: Health, Lint & Typecheck
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -20,6 +22,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'yarn'
 
       - name: Enable Corepack
         run: corepack enable
@@ -33,45 +36,8 @@ jobs:
       - name: Verify docs and workflow references
         run: yarn docs:verify
 
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Install dependencies
-        run: yarn install --immutable
-
       - name: Run ESLint
         run: yarn lint
-
-  typecheck:
-    name: Typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Install dependencies
-        run: yarn install --immutable
 
       - name: Build shared package types
         run: yarn workspace octocode-shared run build:dev
@@ -79,8 +45,8 @@ jobs:
       - name: Run type checks
         run: yarn typecheck
 
-  build:
-    name: Build
+  build-and-test:
+    name: Build & Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -90,6 +56,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'yarn'
 
       - name: Enable Corepack
         run: corepack enable
@@ -103,27 +70,6 @@ jobs:
       - name: Verify build outputs
         run: node scripts/workspace-health.mjs check-outputs
 
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Install dependencies
-        run: yarn install --immutable
-
-      - name: Build packages
-        run: yarn build
-
       - name: Run tests with coverage
         run: yarn test
 
@@ -136,31 +82,21 @@ jobs:
             packages/*/coverage/
           retention-days: 7
 
-  # Summary job that depends on all checks
   pr-validation-complete:
     name: PR Validation Complete
-    needs: [health, lint, typecheck, build, test]
+    needs: [checks, build-and-test]
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Check all jobs passed
         run: |
-          if [ "${{ needs.health.result }}" != "success" ] || \
-             [ "${{ needs.lint.result }}" != "success" ] || \
-             [ "${{ needs.typecheck.result }}" != "success" ] || \
-             [ "${{ needs.build.result }}" != "success" ] || \
-             [ "${{ needs.test.result }}" != "success" ]; then
+          if [ "${{ needs.checks.result }}" != "success" ] || \
+             [ "${{ needs.build-and-test.result }}" != "success" ]; then
             echo "❌ One or more CI jobs failed"
-            echo "   Health: ${{ needs.health.result }}"
-            echo "   Lint: ${{ needs.lint.result }}"
-            echo "   Typecheck: ${{ needs.typecheck.result }}"
-            echo "   Build: ${{ needs.build.result }}"
-            echo "   Test: ${{ needs.test.result }}"
+            echo "   Checks: ${{ needs.checks.result }}"
+            echo "   Build & Test: ${{ needs.build-and-test.result }}"
             exit 1
           fi
           echo "✅ All CI checks passed!"
-          echo "   Health: ${{ needs.health.result }}"
-          echo "   Lint: ${{ needs.lint.result }}"
-          echo "   Typecheck: ${{ needs.typecheck.result }}"
-          echo "   Build: ${{ needs.build.result }}"
-          echo "   Test: ${{ needs.test.result }}"
+          echo "   Checks: ${{ needs.checks.result }}"
+          echo "   Build & Test: ${{ needs.build-and-test.result }}"

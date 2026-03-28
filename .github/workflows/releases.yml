@@ -10,8 +10,7 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   build-binaries:
@@ -95,8 +94,10 @@ jobs:
 
       - name: Test binary execution
         run: |
-          if [[ "${{ matrix.name }}" == *"windows"* ]]; then
-            echo "⏭️  Skipping execution test for Windows binary on Linux"
+          if [[ "${{ matrix.target }}" == *"windows"* ]] || \
+             [[ "${{ matrix.target }}" == *"arm64"* ]] || \
+             [[ "${{ matrix.target }}" == *"musl"* ]]; then
+            echo "⏭️  Skipping execution test for cross-compiled binary (${{ matrix.target }})"
           else
             echo "🧪 Testing binary execution..."
             ./${{ matrix.artifact }} --version || echo "⚠️  Warning: Binary version check failed"
@@ -142,6 +143,8 @@ jobs:
     name: Upload to Release
     needs: [build-binaries, build-source]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -175,6 +178,8 @@ jobs:
     name: Create Checksums
     needs: upload-to-release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -262,7 +267,7 @@ jobs:
                 {"name": "Status", "value": "$STATUS_ESCAPED", "inline": true},
                 {"name": "Tag", "value": "\`$TAG_ESCAPED\`", "inline": true},
                 {"name": "Platforms", "value": "Linux x64, Linux ARM64, Alpine, macOS ARM64, macOS x64, Windows", "inline": false},
-                {"name": "Download", "value": "[View Release](https://github.com/${{ github.repository }}/releases/tag/$TAG)", "inline": false}
+                {"name": "Download", "value": "[View Release](https://github.com/${{ github.repository }}/releases/tag/$TAG_ESCAPED)", "inline": false}
               ],
               "footer": {"text": "GitHub Actions • $(date -u +'%Y-%m-%d %H:%M:%S UTC')"}
             }]
