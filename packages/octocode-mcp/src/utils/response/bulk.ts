@@ -21,18 +21,33 @@ import {
 const DEFAULT_BULK_CONCURRENCY = 3;
 
 /**
- * Timeout per query in bulk operations (default 60s).
+ * Maximum timeout per query in bulk operations (default 60s).
  * Configurable via OCTOCODE_BULK_QUERY_TIMEOUT_MS.
- *
- * Timeout interaction: This is the INNER timeout — each query in a bulk operation
- * gets this limit. The security wrapper (withSecurityValidation) applies an OUTER
- * 60s timeout to the entire tool call. For N queries, the outer timeout fires at 60s
- * regardless of per-query limits. Example: 3 queries × 55s = 165s total, but the
- * outer timeout aborts at 60s. Tune this for single-query tools; for multi-query,
- * consider: min(TOOL_TIMEOUT_MS / maxQueries, BULK_QUERY_TIMEOUT_MS).
  */
 const BULK_QUERY_TIMEOUT_MS =
   parseInt(process.env.OCTOCODE_BULK_QUERY_TIMEOUT_MS || '60000', 10) || 60000;
+
+/**
+ * The outer (security wrapper) timeout that bounds the entire tool call.
+ * Used to compute an adaptive per-query timeout so multi-query operations
+ * don't hit the outer wall before all queries complete.
+ */
+const OUTER_TIMEOUT_MS =
+  parseInt(process.env.OCTOCODE_TOOL_TIMEOUT_MS || '60000', 10) || 60000;
+
+/** Minimum per-query timeout to avoid impractically short budgets */
+const MIN_QUERY_TIMEOUT_MS = 5_000;
+
+/**
+ * Compute per-query timeout that respects the outer tool timeout.
+ * For a single query the full budget applies; for N queries each gets
+ * a fair share, clamped between MIN_QUERY_TIMEOUT_MS and BULK_QUERY_TIMEOUT_MS.
+ */
+function computeQueryTimeout(queryCount: number): number {
+  if (queryCount <= 1) return BULK_QUERY_TIMEOUT_MS;
+  const fair = Math.floor(OUTER_TIMEOUT_MS / queryCount);
+  return Math.max(MIN_QUERY_TIMEOUT_MS, Math.min(fair, BULK_QUERY_TIMEOUT_MS));
+}
 
 export async function executeBulkOperation<TQuery extends object>(
   queries: Array<TQuery>,
@@ -172,7 +187,7 @@ async function processBulkQueries<TQuery extends object>(
   );
 
   const queryResults = await executeWithErrorIsolation(queryPromiseFunctions, {
-    timeout: BULK_QUERY_TIMEOUT_MS,
+    timeout: computeQueryTimeout(queries.length),
     continueOnError: true,
     concurrency, // Configurable concurrent requests to balance rate limiting vs throughput
     onError: (error: Error, index: number) => {

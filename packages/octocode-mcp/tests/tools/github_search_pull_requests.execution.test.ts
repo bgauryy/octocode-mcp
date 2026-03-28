@@ -8,11 +8,18 @@ vi.mock('../../src/tools/providerExecution.js', () => ({
       searchPullRequests: mockSearchPullRequests,
     },
   })),
+  createLazyProviderContext: vi.fn(() =>
+    vi.fn(() => ({
+      provider: {
+        searchPullRequests: mockSearchPullRequests,
+      },
+    }))
+  ),
   executeProviderOperation: vi.fn(),
 }));
 
 import {
-  createProviderExecutionContext,
+  createLazyProviderContext,
   executeProviderOperation,
 } from '../../src/tools/providerExecution.js';
 import { searchMultipleGitHubPullRequests } from '../../src/tools/github_search_pull_requests/execution.js';
@@ -49,7 +56,7 @@ describe('github_search_pull_requests/execution', () => {
     expect(getFirstText(result)).toContain(
       'Query too long. Maximum 256 characters allowed.'
     );
-    expect(createProviderExecutionContext).toHaveBeenCalledTimes(1);
+    expect(createLazyProviderContext).toHaveBeenCalledTimes(1);
     expect(executeProviderOperation).not.toHaveBeenCalled();
     expect(mockSearchPullRequests).not.toHaveBeenCalled();
   });
@@ -74,7 +81,7 @@ describe('github_search_pull_requests/execution', () => {
     expect(getFirstText(result)).toContain(
       'At least one valid search parameter, filter, or PR number is required.'
     );
-    expect(createProviderExecutionContext).toHaveBeenCalledTimes(1);
+    expect(createLazyProviderContext).toHaveBeenCalledTimes(1);
     expect(executeProviderOperation).not.toHaveBeenCalled();
     expect(mockSearchPullRequests).not.toHaveBeenCalled();
   });

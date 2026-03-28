@@ -130,6 +130,25 @@ All presets (run `--list-presets` to verify against your version):
 
 ---
 
+## TypeScript pattern matching — best practices
+
+Pattern mode (`-p`) matches the full AST structure. In TypeScript, type annotations are part of the AST, so patterns must account for them or they will silently miss matches.
+
+**Common pitfall:** `async function $NAME($$$PARAMS)` returns 0 matches on functions with return types like `async function foo(): Promise<void>` — the `: Promise<void>` is a required part of the AST shape.
+
+| Scenario | Approach | Why |
+|----------|----------|-----|
+| Find all functions | `-k function_declaration` | Kind ignores type annotations |
+| Find all async functions | `--preset async-function` | Preset uses kind + regex internally |
+| Find specific call patterns | `-p 'JSON.parse($X)'` | Call expressions don't have TS types |
+| Find method calls | `-p 'console.$M($$$A)'` | Method calls don't have TS types |
+| Match including types | `-p 'function $N($P: string): string { $$$B }'` | Must include exact type shape |
+| Structural smells | `--preset empty-catch` etc. | Presets are TS-aware by design |
+
+**Rule of thumb:** Use `--kind` or `--preset` for declarations (functions, classes, exports, imports). Use `-p` pattern for call expressions, assignments, and code shapes where type annotations are not involved.
+
+---
+
 ## Recommended AST workflow
 
 1. `tree-search.js` to narrow candidate files/functions

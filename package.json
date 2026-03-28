@@ -28,6 +28,7 @@
     "verify": "node ./scripts/workspace-health.mjs verify"
   },
   "devDependencies": {
+    "@anthropic-ai/claude-code": "^2.1.86",
     "@eslint/js": "^9.27.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.1.5",

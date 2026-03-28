@@ -13,7 +13,7 @@ import type { ToolExecutionArgs } from '../../types/execution.js';
 import { handleCatchError, createSuccessResult } from '../utils.js';
 import { executeWithToolBoundary } from '../executionGuard.js';
 import {
-  createProviderExecutionContext,
+  createLazyProviderContext,
   providerSupports,
 } from '../providerExecution.js';
 import { cloneRepo } from './cloneRepo.js';
@@ -48,9 +48,7 @@ export async function executeCloneRepo(
   args: ToolExecutionArgs<CloneRepoQuery>
 ): Promise<CallToolResult> {
   const { queries, authInfo, responseCharOffset, responseCharLength } = args;
-  let providerContext:
-    | ReturnType<typeof createProviderExecutionContext>
-    | undefined;
+  const getProviderContext = createLazyProviderContext(authInfo);
 
   return executeBulkOperation(
     queries,
@@ -60,7 +58,7 @@ export async function executeCloneRepo(
         query,
         contextMessage: `Clone failed for ${query.owner}/${query.repo}`,
         execute: async () => {
-          providerContext ??= createProviderExecutionContext(authInfo);
+          const providerContext = getProviderContext();
 
           if (!providerSupports(providerContext, 'cloneRepo')) {
             return handleCatchError(

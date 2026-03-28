@@ -1,60 +1,16 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { toMCPSchema } from '../../types/toolTypes.js';
-import { withSecurityValidation } from '../../utils/securityBridge.js';
-import type { ToolInvocationCallback } from '../../types.js';
 import type { FileContentQuery } from './types.js';
-import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/proxies.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { FileContentBulkQuerySchema } from './scheme.js';
-import { invokeCallbackSafely } from '../utils.js';
 import { fetchMultipleGitHubFileContents } from './execution.js';
 import { GitHubFetchContentOutputSchema } from '../../scheme/outputSchemas.js';
+import { createRemoteToolRegistration } from '../registerRemoteTool.js';
 
-export function registerFetchGitHubFileContentTool(
-  server: McpServer,
-  callback?: ToolInvocationCallback
-) {
-  return server.registerTool(
-    TOOL_NAMES.GITHUB_FETCH_CONTENT,
-    {
-      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_FETCH_CONTENT],
-      inputSchema: toMCPSchema(FileContentBulkQuerySchema),
-      outputSchema: toMCPSchema(GitHubFetchContentOutputSchema),
-      annotations: {
-        title: 'GitHub File Content Fetch',
-        readOnlyHint: false, // may write files to disk in directory mode
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
-      },
-    },
-    withSecurityValidation(
-      TOOL_NAMES.GITHUB_FETCH_CONTENT,
-      async (
-        args: {
-          queries: FileContentQuery[];
-          responseCharOffset?: number;
-          responseCharLength?: number;
-        },
-        authInfo,
-        sessionId
-      ): Promise<CallToolResult> => {
-        const queries = args.queries || [];
-
-        await invokeCallbackSafely(
-          callback,
-          TOOL_NAMES.GITHUB_FETCH_CONTENT,
-          queries
-        );
-
-        return fetchMultipleGitHubFileContents({
-          queries,
-          responseCharOffset: args.responseCharOffset,
-          responseCharLength: args.responseCharLength,
-          authInfo,
-          sessionId,
-        });
-      }
-    )
-  );
-}
+export const registerFetchGitHubFileContentTool =
+  createRemoteToolRegistration<FileContentQuery>({
+    name: TOOL_NAMES.GITHUB_FETCH_CONTENT,
+    title: 'GitHub File Content Fetch',
+    inputSchema: FileContentBulkQuerySchema,
+    outputSchema: GitHubFetchContentOutputSchema,
+    executionFn: fetchMultipleGitHubFileContents,
+    annotations: { readOnlyHint: false },
+  });

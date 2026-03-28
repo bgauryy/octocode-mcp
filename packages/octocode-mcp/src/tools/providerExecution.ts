@@ -88,6 +88,18 @@ export function createProviderExecutionContext(
   }
 }
 
+/**
+ * Create a lazily-initialized provider context.
+ * The context is created on first call and reused for subsequent calls,
+ * avoiding repeated provider lookups within a single bulk operation.
+ */
+export function createLazyProviderContext(
+  authInfo?: AuthInfo
+): () => ProviderExecutionContext {
+  let ctx: ProviderExecutionContext | undefined;
+  return () => (ctx ??= createProviderExecutionContext(authInfo));
+}
+
 export function providerSupports(
   context: Pick<ProviderExecutionContext, 'capabilities'>,
   capability: keyof ProviderCapabilities

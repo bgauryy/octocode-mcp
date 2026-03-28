@@ -234,7 +234,6 @@ export const TS_TREE_SITTER_CONTROL_TYPES = new Set<string>([
   'for_of_statement',
   'for_await_statement',
   'conditional_expression',
-  'conditional_expression?',
   'catch_clause',
 ]);
 

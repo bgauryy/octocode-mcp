@@ -100,19 +100,41 @@ export class LSPOperations {
   }
 
   /**
+   * Assert that the connection is ready, returning the live connection.
+   * Throws if the LSP client hasn't been initialized yet.
+   */
+  private requireConnection(): MessageConnection {
+    if (!this.connection || !this.initialized) {
+      throw new Error('LSP client not initialized');
+    }
+    return this.connection;
+  }
+
+  /**
+   * Open a document, run an LSP operation, and guarantee the document is
+   * closed afterwards — even if the operation throws.
+   */
+  private async withDocument<T>(
+    filePath: string,
+    fn: (connection: MessageConnection) => Promise<T>
+  ): Promise<T> {
+    const connection = this.requireConnection();
+    await this.documentManager.openDocument(filePath);
+    try {
+      return await fn(connection);
+    } finally {
+      await this.documentManager.closeDocument(filePath);
+    }
+  }
+
+  /**
    * Go to definition
    */
   async gotoDefinition(
     filePath: string,
     position: ExactPosition
   ): Promise<CodeSnippet[]> {
-    if (!this.connection || !this.initialized) {
-      throw new Error('LSP client not initialized');
-    }
-
-    await this.documentManager.openDocument(filePath);
-
-    try {
+    return this.withDocument(filePath, async connection => {
       const params: DefinitionParams = {
         textDocument: { uri: toUri(filePath) } as TextDocumentIdentifier,
         position: {
@@ -123,13 +145,10 @@ export class LSPOperations {
 
       const result = await sendRequestWithTimeout<
         Location | Location[] | LocationLink[] | null
-      >(this.connection, 'textDocument/definition', params);
+      >(connection, 'textDocument/definition', params);
 
       return this.locationsToSnippets(result);
-    } finally {
-      // Close document to prevent memory leak
-      await this.documentManager.closeDocument(filePath);
-    }
+    });
   }
 
   /**
@@ -140,13 +159,7 @@ export class LSPOperations {
     position: ExactPosition,
     includeDeclaration = true
   ): Promise<CodeSnippet[]> {
-    if (!this.connection || !this.initialized) {
-      throw new Error('LSP client not initialized');
-    }
-
-    await this.documentManager.openDocument(filePath);
-
-    try {
+    return this.withDocument(filePath, async connection => {
       const params: ReferenceParams = {
         textDocument: { uri: toUri(filePath) } as TextDocumentIdentifier,
         position: {
@@ -157,16 +170,13 @@ export class LSPOperations {
       };
 
       const result = await sendRequestWithTimeout<Location[] | null>(
-        this.connection,
+        connection,
         'textDocument/references',
         params
       );
 
       return this.locationsToSnippets(result);
-    } finally {
-      // Close document to prevent memory leak
-      await this.documentManager.closeDocument(filePath);
-    }
+    });
   }
 
   /**
@@ -176,13 +186,7 @@ export class LSPOperations {
     filePath: string,
     position: ExactPosition
   ): Promise<CallHierarchyItem[]> {
-    if (!this.connection || !this.initialized) {
-      throw new Error('LSP client not initialized');
-    }
-
-    await this.documentManager.openDocument(filePath);
-
-    try {
+    return this.withDocument(filePath, async connection => {
       const params: CallHierarchyPrepareParams = {
         textDocument: { uri: toUri(filePath) } as TextDocumentIdentifier,
         position: {
@@ -193,26 +197,21 @@ export class LSPOperations {
 
       const result = await sendRequestWithTimeout<
         LSPCallHierarchyItem[] | null
-      >(this.connection, 'textDocument/prepareCallHierarchy', params);
+      >(connection, 'textDocument/prepareCallHierarchy', params);
 
       if (!result || !Array.isArray(result)) {
         return [];
       }
 
       return result.map(item => this.convertCallHierarchyItem(item));
-    } finally {
-      // Close document to prevent memory leak
-      await this.documentManager.closeDocument(filePath);
-    }
+    });
   }
 
   /**
    * Get incoming calls (who calls this function)
    */
   async getIncomingCalls(item: CallHierarchyItem): Promise<IncomingCall[]> {
-    if (!this.connection || !this.initialized) {
-      throw new Error('LSP client not initialized');
-    }
+    const connection = this.requireConnection();
 
     const params: CallHierarchyIncomingCallsParams = {
       item: this.toProtocolCallHierarchyItem(item),
@@ -220,7 +219,7 @@ export class LSPOperations {
 
     const result = await sendRequestWithTimeout<
       CallHierarchyIncomingCall[] | null
-    >(this.connection, 'callHierarchy/incomingCalls', params);
+    >(connection, 'callHierarchy/incomingCalls', params);
 
     if (!result || !Array.isArray(result)) {
       return [];
@@ -244,9 +243,7 @@ export class LSPOperations {
    * Get outgoing calls (what this function calls)
    */
   async getOutgoingCalls(item: CallHierarchyItem): Promise<OutgoingCall[]> {
-    if (!this.connection || !this.initialized) {
-      throw new Error('LSP client not initialized');
-    }
+    const connection = this.requireConnection();
 
     const params: CallHierarchyOutgoingCallsParams = {
       item: this.toProtocolCallHierarchyItem(item),
@@ -254,7 +251,7 @@ export class LSPOperations {
 
     const result = await sendRequestWithTimeout<
       CallHierarchyOutgoingCall[] | null
-    >(this.connection, 'callHierarchy/outgoingCalls', params);
+    >(connection, 'callHierarchy/outgoingCalls', params);
 
     if (!result || !Array.isArray(result)) {
       return [];
@@ -336,9 +333,6 @@ export class LSPOperations {
     return snippets;
   }
 
-  /**
-   * Convert LSP CallHierarchyItem to our CallHierarchyItem
-   */
   /**
    * Convert LSP CallHierarchyItem to our CallHierarchyItem.
    * Defensive: handles malformed LSP responses with missing range/selectionRange.

@@ -1,60 +1,15 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { toMCPSchema } from '../../types/toolTypes.js';
-import { withSecurityValidation } from '../../utils/securityBridge.js';
-import type { ToolInvocationCallback } from '../../types.js';
 import type { GitHubReposSearchQuery } from './types.js';
-import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/proxies.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { GitHubReposSearchQuerySchema } from './scheme.js';
-import { invokeCallbackSafely } from '../utils.js';
 import { searchMultipleGitHubRepos } from './execution.js';
 import { GitHubSearchRepositoriesOutputSchema } from '../../scheme/outputSchemas.js';
+import { createRemoteToolRegistration } from '../registerRemoteTool.js';
 
-export function registerSearchGitHubReposTool(
-  server: McpServer,
-  callback?: ToolInvocationCallback
-) {
-  return server.registerTool(
-    TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-    {
-      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES],
-      inputSchema: toMCPSchema(GitHubReposSearchQuerySchema),
-      outputSchema: toMCPSchema(GitHubSearchRepositoriesOutputSchema),
-      annotations: {
-        title: 'GitHub Repository Search',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
-      },
-    },
-    withSecurityValidation(
-      TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-      async (
-        args: {
-          queries: GitHubReposSearchQuery[];
-          responseCharOffset?: number;
-          responseCharLength?: number;
-        },
-        authInfo,
-        sessionId
-      ): Promise<CallToolResult> => {
-        const queries = args.queries || [];
-
-        await invokeCallbackSafely(
-          callback,
-          TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
-          queries
-        );
-
-        return searchMultipleGitHubRepos({
-          queries,
-          responseCharOffset: args.responseCharOffset,
-          responseCharLength: args.responseCharLength,
-          authInfo,
-          sessionId,
-        });
-      }
-    )
-  );
-}
+export const registerSearchGitHubReposTool =
+  createRemoteToolRegistration<GitHubReposSearchQuery>({
+    name: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES,
+    title: 'GitHub Repository Search',
+    inputSchema: GitHubReposSearchQuerySchema,
+    outputSchema: GitHubSearchRepositoriesOutputSchema,
+    executionFn: searchMultipleGitHubRepos,
+  });

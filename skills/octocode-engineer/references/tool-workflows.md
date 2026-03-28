@@ -1,6 +1,6 @@
 # Tool Workflows — Research Methodology & Patterns
 
-Step-focused workflows for code analysis. For the research funnel and discovery flow, see [SKILL.md](../SKILL.md#discovery-flow). For tool params and flags, see [CLI reference](./cli-reference.md).
+Step-focused workflows for code analysis. For multi-angle investigation principles and tool descriptions, see [SKILL.md](../SKILL.md#how-to-investigate). For tool params and flags, see [CLI reference](./cli-reference.md).
 
 ---
 

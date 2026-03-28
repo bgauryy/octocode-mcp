@@ -14,6 +14,7 @@ import {
   mapFileContentToolQuery,
 } from '../providerMappers.js';
 import {
+  createLazyProviderContext,
   createProviderExecutionContext,
   executeProviderOperation,
   providerSupports,
@@ -57,9 +58,7 @@ export async function fetchMultipleGitHubFileContents(
   args: ToolExecutionArgs<FileContentQuery>
 ): Promise<CallToolResult> {
   const { queries, authInfo, responseCharOffset, responseCharLength } = args;
-  let providerContext:
-    | ReturnType<typeof createProviderExecutionContext>
-    | undefined;
+  const getProviderContext = createLazyProviderContext(authInfo);
 
   const hasDirectoryQuery = queries.some(q => q.type === 'directory');
   const hasFileQuery = queries.some(q => q.type !== 'directory');
@@ -73,7 +72,7 @@ export async function fetchMultipleGitHubFileContents(
     queries,
     async (query: FileContentQuery, _index: number) => {
       try {
-        providerContext ??= createProviderExecutionContext(authInfo);
+        const providerContext = getProviderContext();
 
         if (query.type === 'directory') {
           return handleDirectoryFetch(query, authInfo, providerContext);

@@ -232,7 +232,7 @@ function parserForExt(ext: string): AstParser {
     case '.tsx':
       return astTsx;
     case '.jsx':
-      return astJs;
+      return astTsx;
     case '.js':
     case '.mjs':
     case '.cjs':

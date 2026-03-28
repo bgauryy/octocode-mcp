@@ -14,7 +14,7 @@ import {
   mapRepoStructureToolQuery,
 } from '../providerMappers.js';
 import {
-  createProviderExecutionContext,
+  createLazyProviderContext,
   executeProviderOperation,
 } from '../providerExecution.js';
 
@@ -46,11 +46,7 @@ export async function exploreMultipleRepositoryStructures(
   args: ToolExecutionArgs<GitHubViewRepoStructureQuery>
 ): Promise<CallToolResult> {
   const { queries, authInfo, responseCharOffset, responseCharLength } = args;
-  let providerContext:
-    | ReturnType<typeof createProviderExecutionContext>
-    | undefined;
-  const getProviderContext = () =>
-    (providerContext ??= createProviderExecutionContext(authInfo));
+  const getProviderContext = createLazyProviderContext(authInfo);
 
   return executeBulkOperation(
     queries,
