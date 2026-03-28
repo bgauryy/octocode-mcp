@@ -402,5 +402,122 @@ function f() {
       expect(result).not.toBeNull();
       expect(result!.functions[0].source).toBe('tree-sitter');
     });
+
+    it('computes cognitiveComplexity > 0 for nested control flow', () => {
+      const code = `function complexFn(x: number, y: boolean) {
+  if (x > 0) {           // +1
+    if (y) {              // +2 (1 + nesting=1)
+      for (let i = 0; i < x; i++) {  // +3 (1 + nesting=2)
+        if (i % 2 === 0) {           // +4 (1 + nesting=3)
+          console.log(i);
+        }
+      }
+    }
+  }
+  return x;
+}`;
+      const result = analyzeTreeSitterFile(
+        '/repo/src/cognitive.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      const fn = result!.functions[0];
+      expect(fn.cognitiveComplexity).toBeGreaterThanOrEqual(10);
+    });
+
+    it('computes cognitiveComplexity = 0 for simple linear function', () => {
+      const code = `function simple() {
+  const a = 1;
+  const b = 2;
+  return a + b;
+}`;
+      const result = analyzeTreeSitterFile(
+        '/repo/src/simple.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      expect(result!.functions[0].cognitiveComplexity).toBe(0);
+    });
+
+    it('handles else-if without double-counting nesting', () => {
+      const code = `function classify(x: number) {
+  if (x > 100) {
+    return 'high';
+  } else if (x > 50) {
+    return 'medium';
+  } else if (x > 0) {
+    return 'low';
+  } else {
+    return 'none';
+  }
+}`;
+      const result = analyzeTreeSitterFile(
+        '/repo/src/elseif.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      const fn = result!.functions[0];
+      expect(fn.cognitiveComplexity).toBeGreaterThan(0);
+      expect(fn.cognitiveComplexity).toBeLessThan(10);
+    });
+
+    it('increments for logical operators (&&, ||, ??)', () => {
+      const code = `function guard(a: any, b: any, c: any) {
+  if (a && b || c) {
+    return true;
+  }
+  return false;
+}`;
+      const result = analyzeTreeSitterFile(
+        '/repo/src/logical.ts',
+        code,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(result).not.toBeNull();
+      const fn = result!.functions[0];
+      expect(fn.cognitiveComplexity).toBeGreaterThanOrEqual(3);
+    });
+
+    it('cognitiveComplexity reflects nesting depth penalty', () => {
+      const shallow = `function shallow(x: boolean) { if (x) { return 1; } return 0; }`;
+      const deep = `function deep(x: boolean, y: boolean) {
+  if (x) {
+    if (y) {
+      return 1;
+    }
+  }
+  return 0;
+}`;
+      const shallowResult = analyzeTreeSitterFile(
+        '/repo/src/shallow.ts',
+        shallow,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      const deepResult = analyzeTreeSitterFile(
+        '/repo/src/deep.ts',
+        deep,
+        testOpts,
+        'test-pkg',
+        null
+      );
+      expect(shallowResult).not.toBeNull();
+      expect(deepResult).not.toBeNull();
+      expect(deepResult!.functions[0].cognitiveComplexity).toBeGreaterThan(
+        shallowResult!.functions[0].cognitiveComplexity
+      );
+    });
   }
 );

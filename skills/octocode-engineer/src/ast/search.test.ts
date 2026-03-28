@@ -645,3 +645,116 @@ describe('formatTextOutput with context', () => {
     expect(output).not.toContain('undefined');
   });
 });
+
+describe('new AST search presets', () => {
+  it('catch-rethrow: finds catch blocks that re-throw', () => {
+    const source = `
+try { doStuff(); } catch (e) { throw e; }
+try { doOther(); } catch (e) { console.error(e); throw e; }
+try { ok(); } catch (e) { handleError(e); }
+`;
+    const preset = PRESETS['catch-rethrow'];
+    const matches = searchFile('test.ts', source, preset, null, 100);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('catch-rethrow: no match when catch handles error', () => {
+    const source = `try { doStuff(); } catch (e) { handleError(e); }`;
+    const preset = PRESETS['catch-rethrow'];
+    const matches = searchFile('test.ts', source, preset, null, 100);
+    expect(matches.length).toBe(0);
+  });
+
+  it('promise-all: finds Promise.all calls', () => {
+    const source = `
+const results = await Promise.all([fetch('/a'), fetch('/b')]);
+const single = await fetch('/c');
+`;
+    const preset = PRESETS['promise-all'];
+    const matches = searchFile('test.ts', source, preset, null, 100);
+    expect(matches.length).toBe(1);
+  });
+
+  it('promise-all: no match without Promise.all', () => {
+    const source = `const x = await fetch('/a');`;
+    const preset = PRESETS['promise-all'];
+    const matches = searchFile('test.ts', source, preset, null, 100);
+    expect(matches.length).toBe(0);
+  });
+
+  it('boolean-param: finds boolean-typed parameters', () => {
+    const source = `function toggle(visible: boolean, active: boolean) { return visible && active; }`;
+    const preset = PRESETS['boolean-param'];
+    const matches = searchFile('test.ts', source, preset, null, 100);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('boolean-param: no match for non-boolean params', () => {
+    const source = `function add(a: number, b: number) { return a + b; }`;
+    const preset = PRESETS['boolean-param'];
+    const matches = searchFile('test.ts', source, preset, null, 100);
+    expect(matches.length).toBe(0);
+  });
+
+  it('magic-number: finds numeric literals excluding 0 and 1', () => {
+    const source = `
+const x = 42;
+const y = 0;
+const z = 1;
+const w = 100;
+`;
+    const preset = PRESETS['magic-number'];
+    const matches = searchFile('test.ts', source, preset, null, 100);
+    expect(matches.length).toBe(2);
+    expect(matches.some(m => m.text === '42')).toBe(true);
+    expect(matches.some(m => m.text === '100')).toBe(true);
+  });
+
+  it('magic-number: no match for 0 and 1', () => {
+    const source = `const x = 0; const y = 1;`;
+    const preset = PRESETS['magic-number'];
+    const matches = searchFile('test.ts', source, preset, null, 100);
+    expect(matches.length).toBe(0);
+  });
+
+  it('deep-callback: finds 3+ nested arrow functions', () => {
+    const source = `
+const f = () => {
+  return () => {
+    return () => {
+      return 42;
+    };
+  };
+};
+`;
+    const preset = PRESETS['deep-callback'];
+    const matches = searchFile('test.ts', source, preset, null, 100);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('deep-callback: no match for 2 levels', () => {
+    const source = `const f = () => { return () => { return 1; }; };`;
+    const preset = PRESETS['deep-callback'];
+    const matches = searchFile('test.ts', source, preset, null, 100);
+    expect(matches.length).toBe(0);
+  });
+
+  it('unused-var: finds variable declarations without call expressions', () => {
+    const source = `
+const x = 42;
+const y = "hello";
+`;
+    const preset = PRESETS['unused-var'];
+    const matches = searchFile('test.ts', source, preset, null, 100);
+    expect(matches.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('all new presets are defined in PRESETS object', () => {
+    const newPresets = ['catch-rethrow', 'promise-all', 'boolean-param', 'magic-number', 'deep-callback', 'unused-var'];
+    for (const name of newPresets) {
+      expect(PRESETS[name]).toBeDefined();
+      expect(PRESETS[name].description).toBeTruthy();
+      expect(PRESETS[name].rule).toBeDefined();
+    }
+  });
+});

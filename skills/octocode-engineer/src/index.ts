@@ -3,13 +3,17 @@ import {
   computeHotFiles,
   detectAwaitInLoop,
   detectBarrelExplosion,
+  detectBooleanParameterCluster,
   detectBoundaryViolations,
+  detectCatchRethrow,
+  detectChangeRisk,
   detectCognitiveComplexity,
   detectCommonJsInEsm,
   detectCriticalPaths,
   detectDeadExports,
   detectDeadFiles,
   detectDeadReExports,
+  detectDeepNesting,
   detectDependencyCycles,
   detectDistanceFromMainSequence,
   detectDuplicateFlowStructures,
@@ -17,6 +21,7 @@ import {
   detectEmptyCatchBlocks,
   detectExcessiveParameters,
   detectExportStarLeak,
+  detectExportSurfaceDensity,
   detectFeatureEnvy,
   detectFunctionOptimization,
   detectGodFunctions,
@@ -29,11 +34,14 @@ import {
   detectListenerLeakRisk,
   detectLowCohesion,
   detectLowMaintainability,
+  detectMagicStrings,
   detectMegaFolders,
   detectMessageChains,
   detectMissingErrorBoundary,
+  detectMultipleReturnPaths,
   detectNamespaceImport,
   detectOrphanModules,
+  detectPromiseAllUnhandled,
   detectPromiseMisuse,
   detectSdpViolations,
   detectSimilarFunctionBodies,
@@ -86,6 +94,18 @@ import type {
   FlowMapEntry,
   RedundantFlowGroup,
 } from './types/index.js';
+
+export { bus } from './pipeline/progress.js';
+export type { ProgressPhase, ProgressEvent } from './pipeline/progress.js';
+export { createOptions, OptionsError } from './pipeline/create-options.js';
+export { HELP_TEXT } from './pipeline/cli.js';
+export { EXIT_SUCCESS, EXIT_FINDINGS, EXIT_ERROR, computeGateScore } from './pipeline/main.js';
+export { resolveAffectedFiles } from './pipeline/affected.js';
+export { saveBaseline, filterKnownFindings } from './pipeline/baseline.js';
+export { formatFindings } from './pipeline/reporters.js';
+export { loadConfigFile, mergeConfigIntoDefaults } from './pipeline/config-loader.js';
+
+type DependencyStateArg = DependencyState | undefined;
 
 export {
   buildDependencySummary,
@@ -187,7 +207,6 @@ function collectArchitectureFindings(
     () => detectUnusedNpmDeps(dependencyState.externalCounts, pkgJsonDeps, pkgJsonDevDeps),
     () => detectBoundaryViolations(dependencyState),
     () => detectBarrelExplosion(dependencyState, options.thresholds.barrelSymbolThreshold),
-    () => detectGodModules(fileSummaries, dependencyState, options.thresholds.godModuleStatements, options.thresholds.godModuleExports),
     () => detectMegaFolders(fileSummaries),
     () => detectLowCohesion(dependencyState),
     () => detectDistanceFromMainSequence(dependencyState),
@@ -209,7 +228,8 @@ function collectCodeQualityFindings(
   controlDuplicates: RedundantFlowGroup[],
   fileSummaries: FileEntry[],
   options: AnalysisOptions,
-  flowMap: Map<string, FlowMapEntry[]>
+  flowMap: Map<string, FlowMapEntry[]>,
+  dependencyState?: DependencyStateArg
 ): DetectorFn[] {
   return [
     () => detectDuplicateFunctionBodies(duplicates),
@@ -233,6 +253,17 @@ function collectCodeQualityFindings(
     () => detectUnboundedCollection(fileSummaries),
     () => detectMessageChains(fileSummaries),
     () => detectSimilarFunctionBodies(flowMap, options.thresholds.similarityThreshold),
+    () => detectDeepNesting(fileSummaries, options.thresholds.deepNestingThreshold),
+    () => detectMultipleReturnPaths(fileSummaries, options.thresholds.multipleReturnThreshold),
+    () => detectCatchRethrow(fileSummaries),
+    () => detectMagicStrings(fileSummaries, options.thresholds.magicStringMinOccurrences),
+    () => detectBooleanParameterCluster(fileSummaries, options.thresholds.booleanParamThreshold),
+    () => detectPromiseAllUnhandled(fileSummaries),
+    () => detectExportSurfaceDensity(fileSummaries, dependencyState),
+    () => detectChangeRisk(fileSummaries, flowMap, dependencyState),
+    ...(dependencyState
+      ? [() => detectGodModules(fileSummaries, dependencyState, options.thresholds.godModuleStatements, options.thresholds.godModuleExports)]
+      : []),
   ];
 }
 
@@ -314,7 +345,8 @@ export function buildIssueCatalog(
         controlDuplicates,
         fileSummaries,
         options,
-        flowMap
+        flowMap,
+        dependencyState
       )
       : []),
     ...(enabledPillars.security ? collectSecurityFindings(fileSummaries) : []),
@@ -401,3 +433,36 @@ export function assignFindingIds(
   return { findings, byFile };
 }
 
+/**
+ * Programmatic scan API — the equivalent of dependency-cruiser's `cruise()`
+ * or madge's constructor. Runs the full analysis pipeline without CLI I/O.
+ *
+ * Usage:
+ * ```ts
+ * import { scan, DEFAULT_OPTS } from './index.js';
+ * const result = await scan({ root: '/path/to/project', graph: true });
+ * console.log(result.exitCode); // 0=clean, 1=findings, 2=error
+ * ```
+ */
+export async function scan(
+  overrides: Partial<AnalysisOptions> = {}
+): Promise<ScanResult> {
+  const { DEFAULT_OPTS } = await import('./types/constants.js');
+  const opts: AnalysisOptions = {
+    ...DEFAULT_OPTS,
+    ...overrides,
+    thresholds: { ...DEFAULT_OPTS.thresholds, ...overrides.thresholds },
+  };
+
+  const { createOptions } = await import('./pipeline/create-options.js');
+  const finalOpts = createOptions({ args: opts });
+
+  const { main } = await import('./pipeline/main.js');
+  const exitCode = await main(finalOpts);
+
+  return { exitCode };
+}
+
+export interface ScanResult {
+  exitCode: number;
+}

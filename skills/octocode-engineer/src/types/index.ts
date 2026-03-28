@@ -1,5 +1,7 @@
 export type {
   AnalysisOptions,
+  BooleanParamCluster,
+  CatchRethrowEntry,
   CodeLocation,
   ConsoleLogEntry,
   ControlMapEntry,
@@ -9,8 +11,11 @@ export type {
   HalsteadMetrics,
   Location,
   MagicNumberEntry,
+  MagicStringEntry,
   MessageChainEntry,
   Metrics,
+  PromiseAllUnhandledEntry,
+  ReporterFormat,
   Thresholds,
   TreeSitterMetrics,
 } from './core.js';

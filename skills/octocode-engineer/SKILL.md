@@ -20,12 +20,12 @@ flowchart TD
     D -->|"layout, files, search"| Local["Local Tools\n(search, structure, files)"]
     D -->|"lineHint"| LSP["LSP\n(definition, refs, calls)"]
     D -->|"presets, patterns"| AST["AST Scripts\n(structural proof)"]
-    D -->|"full scan"| Scanner["Scanner\n(86 detectors, 5 pillars)"]
+    D -->|"full scan"| Scanner["Scanner\n(94 detectors, 5 pillars)"]
 
     Local -->|text patterns\nfile locations| V{AI Validation}
     LSP -->|blast radius\ncall chains| V
     AST -->|structural facts\npattern matches| V
-    Scanner -->|hypotheses\nmetrics| V
+    Scanner -->|hypotheses\n94 categories| V
 
     V -->|"2+ layers agree"| C([Confirmed Finding])
     V -->|"1 layer only"| U([Uncertain — needs more evidence])
@@ -37,7 +37,7 @@ flowchart TD
 | **Local tools** (search, structure, files, content) | Where things are, what the code says | Scope, layout, text patterns, `lineHint` for LSP |
 | **LSP** (definition, references, call hierarchy) | Semantic relationships between symbols | Blast radius, call chains, dead code proof |
 | **AST** (search.js, tree-search.js) | Structural code patterns | Empty catches, `any` types, nested ternaries — things regex can't prove |
-| **Scanner** (run.js) | Cross-cutting analysis across 5 pillars | 86 detector categories, dependency graph, per-function metrics |
+| **Scanner** (run.js) | Cross-cutting analysis across 5 pillars | 94 finding categories, dependency graph, per-function metrics |
 
 **Confidence levels:**
 - `confirmed` — 2+ tool families agree
@@ -92,7 +92,7 @@ node <SKILL_DIR>/scripts/ast/search.js -p 'console.$METHOD($$$ARGS)' --root <tar
 node <SKILL_DIR>/scripts/ast/search.js --kind function_declaration --root <target> --json
 ```
 
-16 presets: `empty-catch`, `console-log`, `console-any`, `debugger`, `todo-fixme`, `any-type`, `type-assertion`, `non-null-assertion`, `fat-arrow-body`, `nested-ternary`, `throw-string`, `switch-no-default`, `class-declaration`, `async-function`, `export-default`, `import-star`.
+22 presets: `empty-catch`, `console-log`, `console-any`, `debugger`, `todo-fixme`, `any-type`, `type-assertion`, `non-null-assertion`, `fat-arrow-body`, `nested-ternary`, `throw-string`, `switch-no-default`, `class-declaration`, `async-function`, `export-default`, `import-star`, `catch-rethrow` (catch blocks containing a throw — simplification candidates), `promise-all`, `boolean-param` (boolean type annotations in function signatures), `magic-number`, `deep-callback`, `unused-var`.
 
 **TypeScript pattern best practices** — patterns must match the full AST structure including type annotations:
 
@@ -111,13 +111,17 @@ See [AST reference](./references/ast-reference.md) for pattern wildcards (`$X`, 
 
 ```bash
 node <SKILL_DIR>/scripts/ast/tree-search.js -i .octocode/scan -k function_declaration --limit 25
+node <SKILL_DIR>/scripts/ast/tree-search.js -i .octocode/scan -p 'async' --json
+node <SKILL_DIR>/scripts/ast/tree-search.js -i .octocode/scan -k arrow_function --file src/utils.ts --section functions
 ```
+
+Additional options: `-p <pattern>` (text pattern), `--json` (JSON output), `--file <path>` (filter by file), `--section <name>` (filter by tree section), `-C N` (context lines), `--ignore-case`.
 
 **Triage** with `tree-search.js` (fast, cached). **Prove** with `search.js` (live source, authoritative).
 
 ### Scanner (`run.js`) — Full Deterministic Analysis
 
-Heaviest tool. Runs TypeScript Compiler + tree-sitter across the codebase. Produces hypotheses across 5 analysis pillars with 86 detector categories.
+Heaviest tool. Runs TypeScript Compiler + tree-sitter across the codebase. Produces hypotheses across 5 analysis pillars with 94 finding categories.
 
 ```bash
 node <SKILL_DIR>/scripts/run.js [flags]
@@ -125,23 +129,31 @@ node <SKILL_DIR>/scripts/run.js [flags]
 
 **5 pillars:**
 - **Architecture** (28 categories): dependency cycles, coupling, god modules, SDP violations, chokepoints, critical paths, layer violations, barrel explosions
-- **Code quality** (26 categories): complexity, duplicates, halstead effort, maintainability, unsafe `any`, empty catch, promise misuse, memory leaks, god functions
+- **Code quality** (34 categories): complexity, duplicates, halstead effort, maintainability, unsafe `any`, empty catch, promise misuse, memory leaks, god functions, deep nesting, multiple returns, catch-rethrow, magic strings, boolean param clusters, unhandled promise combinators, export surface density, change risk
 - **Dead code** (12 categories): dead exports/files, unused deps, barrel explosions, orphan implementations
 - **Security** (12 categories): secrets, eval, injection, XSS, prototype pollution, path traversal, command injection
 - **Test quality** (8 categories): assertion density, excessive mocking, cleanup, focused tests
 
 **Additional capabilities:**
-- `--semantic`: 12 of the 86 categories require this flag — TypeChecker-powered analysis (over-abstraction, shotgun surgery, unused params, circular types, and more)
+- `--semantic`: 12 of the 94 finding categories require this flag — TypeChecker-powered analysis (over-abstraction, shotgun surgery, unused params, circular types, and more)
 - `--graph` / `--graph-advanced`: dependency graph with Mermaid, chokepoints, SCC clusters
 - `--flow`: flow enrichment for richer evidence metadata
 - `--scope=path` or `--scope=file:functionName`: focus on specific areas
-- `--parser auto|typescript|tree-sitter`: engine selection (`auto` = tree-sitter with TS fallback)
+- `--parser auto|typescript|tree-sitter`: engine selection (`auto` = TypeScript primary + tree-sitter for node-count metadata; `tree-sitter` = tree-sitter primary + TypeScript for dependencies)
 - `--layer-order ui,service,repository`: automatic layer violation detection
 - `--similarity-threshold 0.8`: near-clone / duplicate function detection
 - `--features` / `--exclude`: select or skip pillars and individual categories (mutually exclusive)
 - `--findings-limit N`: cap total findings; `--no-diversify` for pure severity ordering (default interleaves categories)
 - `--all`: enable everything (`--include-tests --semantic`)
 - Incremental caching (use `--no-cache` to force full re-scan, `--clear-cache` to wipe)
+- `--affected [revision]`: scope to git-changed files + their transitive dependents (default: HEAD)
+- `--save-baseline` / `--ignore-known [file]`: progressive adoption — save current findings, suppress known ones
+- `--reporter default|compact|github-actions`: CI-friendly output (one-line or `::warning`/`::error` annotations)
+- `--focus <module>` + `--focus-depth N`: graph neighborhood exploration (show module + N hops)
+- `--collapse N`: fold graph nodes to folder depth for high-level architecture view
+- `--at-least N`: fail if gate score below threshold (CI quality gate; uses count-based `100/(1+(findings/files)/10)`, distinct from severity-weighted feature scores in `summary.md`)
+- `--config <file>`: explicit config; auto-discovers `.octocode-scan.json`, `.octocode-scan.jsonc`, or `package.json#octocode`
+- Additional flags (`--root`, `--out`, `--json`, `--emit-tree`/`--no-tree`, `--deep-link-topn`, `--tree-depth`): see `node <SKILL_DIR>/scripts/run.js --help`
 
 **Key thresholds** (tune for stricter or looser analysis):
 
@@ -155,8 +167,24 @@ node <SKILL_DIR>/scripts/run.js [flags]
 | Maintainability | `--maintainability-index-threshold` | 20 | MI below this = high-risk |
 | God module | `--god-module-statements` / `--god-module-exports` | 500/20 | Size thresholds |
 | God function | `--god-function-statements` | 100 | Statement count threshold |
+| God function | `--god-function-mi-threshold` | 10 | MI threshold (fires when MI < N and LOC > 30) |
+| Parameters | `--parameter-threshold` | 5 | Max function parameters before flagging |
+| Halstead | `--halstead-effort-threshold` | 500000 | Halstead effort threshold |
 | Duplicates | `--similarity-threshold` | 0.85 | Jaccard similarity for near-clones |
+| Duplicates | `--min-function-statements` | 6 | Min function body statements for duplicate matching |
+| Duplicates | `--min-flow-statements` | 6 | Min control-flow statements for duplicate matching |
+| Duplicates | `--flow-dup-threshold` | 3 | Min occurrences for a repeated flow to become a finding |
+| Nesting | `--deep-nesting-threshold` | 5 | Max branch/loop nesting depth |
+| Returns | `--multiple-return-threshold` | 6 | Max return/throw paths per function |
+| Magic strings | `--magic-string-min-occurrences` | 3 | Min repetitions to flag a string literal |
+| Boolean params | `--boolean-param-threshold` | 3 | Min boolean params to flag a function |
+| Architecture | `--barrel-symbol-threshold` | 30 | Re-export count for barrel-explosion |
+| Architecture | `--sdp-min-delta` | 0.15 | Min instability delta for SDP violations |
+| Architecture | `--sdp-max-source-instability` | 0.6 | Max source instability to report SDP |
+| Semantic | `--override-chain-threshold` | 3 | Max method override depth (requires `--semantic`) |
+| Semantic | `--shotgun-threshold` | 8 | Unique-file threshold for shotgun-surgery (requires `--semantic`) |
 | Security | `--secret-entropy-threshold` | 4.5 | Shannon entropy for secret detection |
+| Security | `--secret-min-length` | 20 | Min string length for entropy-based secret detection |
 | Tests | `--mock-threshold` | 10 | Max mock/spy calls per test file |
 
 **Common profiles:**
@@ -175,6 +203,11 @@ node <SKILL_DIR>/scripts/run.js [flags]
 | Strict type safety | `--any-threshold 0` |
 | Layer enforcement | `--layer-order ui,service,repository --features=architecture` |
 | Detect near-clones | `--similarity-threshold 0.8 --features=code-quality` |
+| CI gate | `--reporter github-actions --at-least 60` |
+| PR diff check | `--affected HEAD~1 --reporter compact` |
+| Progressive adoption | `--save-baseline` then `--ignore-known --at-least 60` |
+| Module zoom | `--graph --focus=src/session.ts --focus-depth 2` |
+| High-level arch | `--graph --collapse 2` |
 
 **Drill-down workflow** — progressive narrowing from broad to surgical:
 
@@ -192,7 +225,7 @@ node <SKILL_DIR>/scripts/run.js [flags]
 - Scoped scans affect `ast-trees.txt` — `tree-search.js` picks the latest scan, which may be the narrow one. Point to a full-scan timestamp explicitly if needed.
 - When in doubt, compare against a broad baseline: `run.js --graph --flow` with no scope
 
-Output: `.octocode/scan/<timestamp>/` — `summary.json`, `summary.md`, `findings.json`, pillar files, `file-inventory.json`, `ast-trees.txt`, `graph.md`.
+Output: `.octocode/scan/<timestamp>/` — `summary.json`, `summary.md`, `findings.json`, `architecture.json`, `code-quality.json`, `dead-code.json`, `file-inventory.json`. Conditional: `security.json` and `test-quality.json` (only when findings exist), `ast-trees.txt` (unless `--no-tree`), `graph.md` (requires `--graph`).
 
 See [CLI reference](./references/cli-reference.md) for all flags and thresholds. See [output files](./references/output-files.md) for JSON schemas and read order.
 
@@ -324,6 +357,21 @@ Use TDD for behavioral fixes when practical: failing test → fix → pass → f
 
 More cross-validation patterns: [validation playbooks](./references/validation-playbooks.md).
 
+### External tools — ask user before running
+
+`npx` only. Scanner already covers duplicates, unused deps, dead exports — no external tool needed for those.
+
+| Tool | When | Command |
+|------|------|---------|
+| eslint | Lint & auto-fix | `npx eslint --fix <path>` |
+| tsc | Type check | `npx tsc --noEmit` |
+| stylelint | CSS/SCSS | `npx stylelint "**/*.css"` |
+| knip | Framework-aware dead code | `npx knip --exports` |
+| type-coverage | Type safety % | `npx type-coverage --strict --detail` |
+| dep-cruiser | Custom arch rules | `npx depcruise --no-config -T err <path>` |
+
+Details: [external tools](./references/externals.md).
+
 ### Architecture interpretation signals
 
 When raw architecture findings are noisy, use these structural signals to prioritize:
@@ -447,3 +495,5 @@ Present plan to user. Ask before proceeding.
 - [Output files](./references/output-files.md) — JSON schemas, read order, key reference
 - [AST reference](./references/ast-reference.md) — presets, patterns, tree-search
 - [Validation playbooks](./references/validation-playbooks.md) — per-category validation with worked examples
+- [External Tools](./references/externals.md) — `npx` cross-validation: eslint, tsc, stylelint, knip, type-coverage, dep-cruiser
+- [Quality Indicators](./references/quality-indicators.md) — complete catalog of 34 code quality detectors, 22 AST presets, metrics, algorithms, thresholds

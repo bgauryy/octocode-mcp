@@ -181,6 +181,69 @@ export const PRESETS: Record<string, PresetRule> = {
     },
     description: 'Namespace imports (import * as X)',
   },
+  'catch-rethrow': {
+    rule: {
+      kind: 'catch_clause',
+      has: {
+        kind: 'statement_block',
+        has: {
+          kind: 'throw_statement',
+        },
+      },
+    },
+    description: 'Catch blocks that only re-throw the caught error',
+  },
+  'promise-all': {
+    rule: {
+      pattern: 'Promise.all($$$ARGS)',
+    },
+    description: 'Promise.all calls (check for missing error handling)',
+  },
+  'boolean-param': {
+    rule: {
+      kind: 'type_annotation',
+      has: {
+        kind: 'predefined_type',
+        regex: '^boolean$',
+      },
+    },
+    description: 'Function parameters typed as boolean',
+  },
+  'magic-number': {
+    rule: {
+      kind: 'number',
+      not: {
+        regex: '^[01]$',
+      },
+    },
+    description: 'Numeric literals (excluding 0 and 1) — potential magic numbers',
+  },
+  'deep-callback': {
+    rule: {
+      kind: 'arrow_function',
+      inside: {
+        kind: 'arrow_function',
+        inside: {
+          kind: 'arrow_function',
+          stopBy: 'end',
+        },
+        stopBy: 'end',
+      },
+    },
+    description: 'Deeply nested arrow function callbacks (3+ levels)',
+  },
+  'unused-var': {
+    rule: {
+      kind: 'variable_declarator',
+      not: {
+        has: {
+          kind: 'call_expression',
+          stopBy: 'end',
+        },
+      },
+    },
+    description: 'Variable declarations without call expressions (candidates for dead code)',
+  },
 };
 
 function isTestFile(filePath: string): boolean {

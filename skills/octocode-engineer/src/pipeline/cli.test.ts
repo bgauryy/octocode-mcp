@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { parseArgs } from './cli.js';
+import { parseArgs, HELP_TEXT } from './cli.js';
+import { OptionsError } from './create-options.js';
 import { DEFAULT_OPTS } from '../types/index.js';
 
 describe('parseArgs', () => {
@@ -490,22 +491,250 @@ describe('parseArgs', () => {
     expect(opts.includeTests).toBe(true);
   });
 
-  it('throws when --features and --exclude are both provided', () => {
-    const exitSpy = vi
-      .spyOn(process, 'exit')
-      .mockImplementation((() => {}) as never);
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    parseArgs(['--features=architecture', '--exclude=dead-code']);
-    expect(consoleSpy).toHaveBeenCalledWith(
-      '--features and --exclude are mutually exclusive. Use one or the other.'
-    );
-    expect(exitSpy).toHaveBeenCalledWith(1);
-    exitSpy.mockRestore();
-    consoleSpy.mockRestore();
+  it('throws OptionsError when --features and --exclude are both provided', () => {
+    expect(() =>
+      parseArgs(['--features=architecture', '--exclude=dead-code'])
+    ).toThrow(OptionsError);
+    expect(() =>
+      parseArgs(['--features=architecture', '--exclude=dead-code'])
+    ).toThrow('mutually exclusive');
+  });
+
+  it('exports HELP_TEXT as a constant', () => {
+    expect(typeof HELP_TEXT).toBe('string');
+    expect(HELP_TEXT).toContain('--root');
+    expect(HELP_TEXT).toContain('--scope');
+    expect(HELP_TEXT).toContain('--features');
   });
 
   it('auto-enables includeTests when features include any test-quality category', () => {
     const opts = parseArgs(['--features=missing-mock-restoration']);
     expect(opts.includeTests).toBe(true);
+  });
+
+  describe('Tier 1+2 flags', () => {
+    it('--affected defaults to HEAD', () => {
+      const opts = parseArgs(['--affected']);
+      expect(opts.affected).toBe('HEAD');
+    });
+
+    it('--affected accepts revision', () => {
+      const opts = parseArgs(['--affected', 'main']);
+      expect(opts.affected).toBe('main');
+    });
+
+    it('--affected=value inline syntax', () => {
+      const opts = parseArgs(['--affected=HEAD~3']);
+      expect(opts.affected).toBe('HEAD~3');
+    });
+
+    it('--save-baseline sets boolean', () => {
+      const opts = parseArgs(['--save-baseline']);
+      expect(opts.saveBaseline).toBe(true);
+    });
+
+    it('--ignore-known defaults to .octocode/baseline.json', () => {
+      const opts = parseArgs(['--ignore-known']);
+      expect(opts.ignoreKnown).toBe('.octocode/baseline.json');
+    });
+
+    it('--ignore-known accepts custom path', () => {
+      const opts = parseArgs(['--ignore-known', 'my-baseline.json']);
+      expect(opts.ignoreKnown).toBe('my-baseline.json');
+    });
+
+    it('--reporter accepts valid formats', () => {
+      expect(parseArgs(['--reporter', 'compact']).reporter).toBe('compact');
+      expect(parseArgs(['--reporter', 'github-actions']).reporter).toBe('github-actions');
+      expect(parseArgs(['--reporter', 'default']).reporter).toBe('default');
+    });
+
+    it('--focus sets module path', () => {
+      const opts = parseArgs(['--focus', 'src/session.ts']);
+      expect(opts.focus).toBe('src/session.ts');
+    });
+
+    it('--focus=value inline syntax', () => {
+      const opts = parseArgs(['--focus=src/session.ts']);
+      expect(opts.focus).toBe('src/session.ts');
+    });
+
+    it('--focus-depth sets depth', () => {
+      const opts = parseArgs(['--focus-depth', '3']);
+      expect(opts.focusDepth).toBe(3);
+    });
+
+    it('--collapse sets folder depth', () => {
+      const opts = parseArgs(['--collapse', '2']);
+      expect(opts.collapse).toBe(2);
+    });
+
+    it('--collapse=N inline syntax', () => {
+      const opts = parseArgs(['--collapse=3']);
+      expect(opts.collapse).toBe(3);
+    });
+
+    it('--at-least sets score threshold', () => {
+      const opts = parseArgs(['--at-least', '60']);
+      expect(opts.atLeast).toBe(60);
+    });
+
+    it('--at-least=N inline syntax', () => {
+      const opts = parseArgs(['--at-least=75']);
+      expect(opts.atLeast).toBe(75);
+    });
+
+    it('--config sets config file path', () => {
+      const opts = parseArgs(['--config', '.my-config.json']);
+      expect(opts.configFile).toBe('.my-config.json');
+    });
+
+    it('new flags have correct defaults', () => {
+      const opts = parseArgs([]);
+      expect(opts.affected).toBeNull();
+      expect(opts.saveBaseline).toBe(false);
+      expect(opts.ignoreKnown).toBeNull();
+      expect(opts.reporter).toBe('default');
+      expect(opts.focus).toBeNull();
+      expect(opts.focusDepth).toBe(1);
+      expect(opts.collapse).toBeNull();
+      expect(opts.atLeast).toBeNull();
+      expect(opts.configFile).toBeNull();
+    });
+
+    it('HELP_TEXT includes new flags', () => {
+      expect(HELP_TEXT).toContain('--affected');
+      expect(HELP_TEXT).toContain('--save-baseline');
+      expect(HELP_TEXT).toContain('--ignore-known');
+      expect(HELP_TEXT).toContain('--reporter');
+      expect(HELP_TEXT).toContain('--focus');
+      expect(HELP_TEXT).toContain('--focus-depth');
+      expect(HELP_TEXT).toContain('--collapse');
+      expect(HELP_TEXT).toContain('--at-least');
+      expect(HELP_TEXT).toContain('--config');
+    });
+
+    it('--affected does not consume the next flag as revision', () => {
+      const opts = parseArgs(['--affected', '--graph']);
+      expect(opts.affected).toBe('HEAD');
+      expect(opts.graph).toBe(true);
+    });
+
+    it('--ignore-known does not consume the next flag as path', () => {
+      const opts = parseArgs(['--ignore-known', '--graph']);
+      expect(opts.ignoreKnown).toBe('.octocode/baseline.json');
+      expect(opts.graph).toBe(true);
+    });
+  });
+
+  describe('documented common profiles parse without error', () => {
+    it('CI gate profile', () => {
+      const opts = parseArgs(['--reporter', 'github-actions', '--at-least', '60']);
+      expect(opts.reporter).toBe('github-actions');
+      expect(opts.atLeast).toBe(60);
+    });
+
+    it('PR diff check profile', () => {
+      const opts = parseArgs(['--affected', 'HEAD~1', '--reporter', 'compact']);
+      expect(opts.affected).toBe('HEAD~1');
+      expect(opts.reporter).toBe('compact');
+    });
+
+    it('progressive adoption save profile', () => {
+      const opts = parseArgs(['--save-baseline']);
+      expect(opts.saveBaseline).toBe(true);
+    });
+
+    it('progressive adoption check profile', () => {
+      const opts = parseArgs(['--ignore-known', '--at-least', '60']);
+      expect(opts.ignoreKnown).toBe('.octocode/baseline.json');
+      expect(opts.atLeast).toBe(60);
+    });
+
+    it('module zoom profile', () => {
+      const opts = parseArgs([
+        '--graph',
+        '--focus', 'src/session.ts',
+        '--focus-depth', '2',
+      ]);
+      expect(opts.graph).toBe(true);
+      expect(opts.focus).toBe('src/session.ts');
+      expect(opts.focusDepth).toBe(2);
+    });
+
+    it('high-level arch profile', () => {
+      const opts = parseArgs(['--graph', '--collapse', '2']);
+      expect(opts.graph).toBe(true);
+      expect(opts.collapse).toBe(2);
+    });
+
+    it('full combination profile', () => {
+      const opts = parseArgs([
+        '--affected', 'main',
+        '--reporter', 'compact',
+        '--save-baseline',
+        '--at-least', '70',
+        '--graph',
+        '--focus', 'src/tools',
+        '--focus-depth', '3',
+        '--config', '.my-scan.json',
+      ]);
+      expect(opts.affected).toBe('main');
+      expect(opts.reporter).toBe('compact');
+      expect(opts.saveBaseline).toBe(true);
+      expect(opts.atLeast).toBe(70);
+      expect(opts.graph).toBe(true);
+      expect(opts.focus).toBe('src/tools');
+      expect(opts.focusDepth).toBe(3);
+      expect(opts.configFile).toBe('.my-scan.json');
+    });
+  });
+
+  describe('v2 quality threshold flags', () => {
+    it('parses --deep-nesting-threshold', () => {
+      expect(
+        parseArgs(['--deep-nesting-threshold', '8']).thresholds.deepNestingThreshold
+      ).toBe(8);
+    });
+
+    it('parses --multiple-return-threshold', () => {
+      expect(
+        parseArgs(['--multiple-return-threshold', '10']).thresholds.multipleReturnThreshold
+      ).toBe(10);
+    });
+
+    it('parses --magic-string-min-occurrences', () => {
+      expect(
+        parseArgs(['--magic-string-min-occurrences', '5']).thresholds.magicStringMinOccurrences
+      ).toBe(5);
+    });
+
+    it('parses --boolean-param-threshold', () => {
+      expect(
+        parseArgs(['--boolean-param-threshold', '4']).thresholds.booleanParamThreshold
+      ).toBe(4);
+    });
+
+    it('defaults are correct for new thresholds', () => {
+      const opts = parseArgs([]);
+      expect(opts.thresholds.deepNestingThreshold).toBe(5);
+      expect(opts.thresholds.multipleReturnThreshold).toBe(6);
+      expect(opts.thresholds.magicStringMinOccurrences).toBe(3);
+      expect(opts.thresholds.booleanParamThreshold).toBe(3);
+    });
+
+    it('warns on unknown flags', () => {
+      const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      parseArgs(['--sematic']);
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining('unknown flag'));
+      spy.mockRestore();
+    });
+
+    it('new threshold flags appear in HELP_TEXT', () => {
+      expect(HELP_TEXT).toContain('--deep-nesting-threshold');
+      expect(HELP_TEXT).toContain('--multiple-return-threshold');
+      expect(HELP_TEXT).toContain('--magic-string-min-occurrences');
+      expect(HELP_TEXT).toContain('--boolean-param-threshold');
+    });
   });
 });

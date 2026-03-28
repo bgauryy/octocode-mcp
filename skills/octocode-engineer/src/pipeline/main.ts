@@ -15,6 +15,12 @@ import {
   setCacheEntry,
 } from './cache.js';
 import { parseArgs } from './cli.js';
+import { loadConfigFile, mergeConfigIntoDefaults } from './config-loader.js';
+import { createOptions, OptionsError } from './create-options.js';
+import { attachConsoleFeedback, bus } from './progress.js';
+import { resolveAffectedFiles } from './affected.js';
+import { saveBaseline, filterKnownFindings } from './baseline.js';
+import { formatFindings } from './reporters.js';
 import { collectDependencyProfile } from '../analysis/dependencies.js';
 import { buildDependencySummary } from '../analysis/dependency-summary.js';
 import {
@@ -52,6 +58,7 @@ import {
 } from '../reporting/analysis.js';
 import { diverseTopRecommendations } from '../reporting/summary-md.js';
 import { generateMermaidGraph, writeMultiFileReport } from '../reporting/writer.js';
+import type { GraphRenderOptions } from '../reporting/writer.js';
 import { PILLAR_CATEGORIES, SEMANTIC_CATEGORIES } from '../types/index.js';
 
 import type { SemanticProfile } from '../analysis/semantic.js';
@@ -415,8 +422,26 @@ interface ScanState {
   treeSitterError: string | null;
 }
 
-async function initScanState(): Promise<ScanState | null> {
-  const options = parseArgs(process.argv.slice(2));
+async function initScanState(
+  prebuiltOptions?: AnalysisOptions
+): Promise<ScanState | null> {
+  let options: AnalysisOptions;
+  if (prebuiltOptions) {
+    options = prebuiltOptions;
+  } else {
+    const { DEFAULT_OPTS } = await import('../types/constants.js');
+    const cliArgs = createOptions({ args: parseArgs(process.argv.slice(2)) });
+    const config = loadConfigFile(cliArgs.root, cliArgs.configFile);
+    options = config
+      ? mergeConfigIntoDefaults(DEFAULT_OPTS, config, cliArgs)
+      : cliArgs;
+  }
+
+  if (!options.json && !prebuiltOptions) {
+    attachConsoleFeedback();
+  }
+
+  bus.progress('startup', 'Options parsed', `root=${options.root}`);
 
   if (options.clearCache) {
     clearCache(options.root);
@@ -471,6 +496,8 @@ async function initScanState(): Promise<ScanState | null> {
       void 0;
     }
   }
+
+  bus.progress('discovery', `Found ${packages.length} package(s)`, packages.map(p => p.name).join(', '));
 
   return {
     options,
@@ -537,6 +564,7 @@ type CachedResult = {
 
 function collectFileData(state: ScanState): void {
   const { options, packages, useTreeSitter, summary, flowMap, controlMap, trees, fileSummaries, parseErrors, dependencyState, packageFileStats } = state;
+  bus.progress('cache-check', options.noCache ? 'Cache disabled' : 'Loading cache');
   const cache = options.noCache ? null : loadCache(options.root);
   const newCache = createEmptyCache(options.root);
 
@@ -785,9 +813,11 @@ function collectFileData(state: ScanState): void {
   }
 
   summary.totalDependencyFiles = dependencyState.files.size;
+  bus.progress('parse', `Parsed ${fileSummaries.length} files`, `${state.cacheHits} cache hits`);
 }
 
-function analyzeAndReport(state: ScanState): void {
+function analyzeAndReport(state: ScanState): number {
+  bus.progress('detect', 'Running detectors');
   const { options, effectiveParser, summary, flowMap, controlMap, trees, fileSummaries, parseErrors, dependencyState, allPkgJsonDeps, allPkgJsonDevDeps, isLegacyMode, outputDir, outputPath, treeSitterAvailable, treeSitterError } = state;
 
   const { duplicateFunctions, redundantFlows, duplicateFlowHints } =
@@ -804,6 +834,7 @@ function analyzeAndReport(state: ScanState): void {
     fileCriticalityByPath,
     options
   );
+  bus.progress('graph', 'Computing graph analytics');
   const graphAnalytics = computeGraphAnalytics(
     dependencyState,
     dependencySummary,
@@ -813,6 +844,7 @@ function analyzeAndReport(state: ScanState): void {
     ? buildAdvancedGraphFindings(graphAnalytics, dependencyState, fileSummaries)
     : [];
 
+  bus.progress('semantic', options.semantic ? 'Running semantic analysis' : 'Skipping semantic (not requested)');
   const semanticFindings = runSemanticPhase(
     fileSummaries,
     dependencyState,
@@ -863,6 +895,27 @@ function analyzeAndReport(state: ScanState): void {
     graphAnalytics,
     { flowEnabled: !!options.flow }
   );
+  if (options.affected) {
+    const affectedPaths = resolveAffectedFiles(
+      options.root, options.affected, dependencyState
+    );
+    if (affectedPaths.length > 0) {
+      const affectedSet = new Set(affectedPaths);
+      findings = findings.filter(f => affectedSet.has(f.file));
+      bus.progress('detect', `--affected: ${affectedPaths.length} files in scope, ${findings.length} findings`);
+    }
+  }
+
+  if (options.ignoreKnown) {
+    const { filtered, suppressedCount } = filterKnownFindings(
+      findings, options.ignoreKnown, options.root
+    );
+    if (suppressedCount > 0) {
+      bus.progress('detect', `--ignore-known: suppressed ${suppressedCount} known findings`);
+    }
+    findings = filtered;
+  }
+
   const reportAnalysis = computeReportAnalysisSummary(
     findings,
     enrichedFileSummaries,
@@ -948,7 +1001,19 @@ function analyzeAndReport(state: ScanState): void {
     report.astTrees = trees;
   }
 
-  if (options.json) {
+  bus.progress('report', `${findings.length} findings generated`);
+
+  if (options.saveBaseline) {
+    const baselinePath = saveBaseline(options.root, findings);
+    if (!options.json) {
+      console.error(`Baseline saved: ${path.relative(options.root, baselinePath)} (${findings.length} findings)`);
+    }
+  }
+
+  if (options.reporter !== 'default') {
+    const formatted = formatFindings(findings, options.reporter, options.root);
+    process.stdout.write(formatted + '\n');
+  } else if (options.json) {
     console.log(JSON.stringify(report));
   } else {
     printConsoleResults(
@@ -972,10 +1037,16 @@ function analyzeAndReport(state: ScanState): void {
       );
     }
     if (options.graph) {
+      const gOpts: GraphRenderOptions = {
+        focus: options.focus,
+        focusDepth: options.focusDepth,
+        collapse: options.collapse,
+      };
       const graphMd = generateMermaidGraph(
         dependencyState,
         dependencySummary,
-        fileCriticalityByPath
+        fileCriticalityByPath,
+        gOpts
       );
       const graphPath = outputPath.replace(/\.json$/, '-graph.md');
       fs.writeFileSync(graphPath, graphMd, 'utf8');
@@ -986,13 +1057,20 @@ function analyzeAndReport(state: ScanState): void {
       }
     }
   } else if (outputDir) {
+    bus.progress('write', `Writing report to ${path.relative(options.root, outputDir)}`);
+    const gOpts: GraphRenderOptions = {
+      focus: options.focus,
+      focusDepth: options.focusDepth,
+      collapse: options.collapse,
+    };
     const outputFiles = writeMultiFileReport(
       outputDir,
       report,
       options,
       dependencyState,
       dependencySummary,
-      fileCriticalityByPath
+      fileCriticalityByPath,
+      gOpts
     );
     if (!options.json) {
       const relDir = path.relative(options.root, outputDir);
@@ -1002,13 +1080,39 @@ function analyzeAndReport(state: ScanState): void {
       }
     }
   }
+
+  bus.progress('done', 'Scan complete', `${findings.length} findings`);
+
+  if (options.atLeast != null) {
+    const totalFiles = summary.totalFiles ?? 1;
+    const gateScore = computeGateScore(findings.length, totalFiles);
+    if (gateScore < options.atLeast) {
+      console.error(
+        `Gate score ${gateScore} is below --at-least threshold ${options.atLeast}`
+      );
+      return -1;
+    }
+  }
+
+  return findings.length;
 }
 
-async function main(): Promise<void> {
-  const state = await initScanState();
-  if (!state) return;
+export function computeGateScore(findingsCount: number, totalFiles: number): number {
+  const ratio = findingsCount / Math.max(totalFiles, 1);
+  return Math.round(100 / (1 + ratio / 10));
+}
+
+export const EXIT_SUCCESS = 0;
+export const EXIT_FINDINGS = 1;
+export const EXIT_ERROR = 2;
+
+async function main(options?: AnalysisOptions): Promise<number> {
+  const state = await initScanState(options);
+  if (!state) return EXIT_SUCCESS;
   collectFileData(state);
-  analyzeAndReport(state);
+  const findingsCount = analyzeAndReport(state);
+  if (findingsCount < 0) return EXIT_FINDINGS;
+  return findingsCount > 0 ? EXIT_FINDINGS : EXIT_SUCCESS;
 }
 
 export { main };
@@ -1067,8 +1171,17 @@ function buildFindingStats(
 }
 
 if (isDirectRun(import.meta.url)) {
-  main().catch((error: unknown) => {
-    console.error(error);
-    process.exit(1);
-  });
+  main()
+    .then(code => {
+      process.exitCode = code;
+    })
+    .catch((error: unknown) => {
+      if (error instanceof OptionsError) {
+        console.error(error.message);
+        process.exitCode = EXIT_ERROR;
+      } else {
+        console.error(error);
+        process.exitCode = EXIT_ERROR;
+      }
+    });
 }

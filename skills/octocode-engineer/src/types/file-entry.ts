@@ -10,12 +10,16 @@ import type {
   TopLevelEffect,
 } from './collectors.js';
 import type {
+  BooleanParamCluster,
+  CatchRethrowEntry,
   CodeLocation,
   ConsoleLogEntry,
   FlowEntry,
   FunctionEntry,
   MagicNumberEntry,
+  MagicStringEntry,
   MessageChainEntry,
+  PromiseAllUnhandledEntry,
 } from './core.js';
 import type { DependencyProfile } from './dependency.js';
 
@@ -80,6 +84,10 @@ export interface FileEntry {
   cfgFlags?: CfgFlags;
   consoleLogs?: ConsoleLogEntry[];
   messageChains?: MessageChainEntry[];
+  magicStrings?: MagicStringEntry[];
+  catchRethrows?: CatchRethrowEntry[];
+  booleanParamClusters?: BooleanParamCluster[];
+  promiseAllUnhandled?: PromiseAllUnhandledEntry[];
   issueIds?: string[];
 }
 

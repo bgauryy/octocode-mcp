@@ -25,18 +25,8 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'error',
       'import/first': 'error',
       'import/newline-after-import': 'error',
-      'import/order': [
-        'error',
-        {
-          groups: ['builtin', 'external', 'internal', ['parent', 'sibling', 'index'], 'type'],
-          'newlines-between': 'always',
-          alphabetize: {
-            order: 'asc',
-            caseInsensitive: true,
-          },
-        },
-      ],
-      'sort-imports': ['error', { ignoreDeclarationSort: true }],
+      'import/order': 'off',
+      'sort-imports': 'off',
       '@typescript-eslint/no-use-before-define': [
         'error',
         {

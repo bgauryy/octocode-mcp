@@ -70,7 +70,8 @@ export function writeMultiFileReport(
   options: AnalysisOptions,
   dependencyState: DependencyState,
   dependencySummary: DependencySummary,
-  fileCriticalityByPath: Map<string, FileCriticality>
+  fileCriticalityByPath: Map<string, FileCriticality>,
+  graphOpts: GraphRenderOptions = {}
 ): Record<string, string> {
   fs.mkdirSync(dir, { recursive: true });
 
@@ -224,7 +225,8 @@ export function writeMultiFileReport(
     const graphMd = generateMermaidGraph(
       dependencyState,
       dependencySummary,
-      fileCriticalityByPath
+      fileCriticalityByPath,
+      graphOpts
     );
     fs.writeFileSync(path.join(dir, 'graph.md'), graphMd, 'utf8');
     outputFiles.graph = 'graph.md';
@@ -298,10 +300,17 @@ export function writeMultiFileReport(
   return outputFiles;
 }
 
+export interface GraphRenderOptions {
+  focus?: string | null;
+  focusDepth?: number;
+  collapse?: number | null;
+}
+
 export function generateMermaidGraph(
   dependencyState: DependencyState,
   dependencySummary: DependencySummary,
-  _fileCriticalityByPath: Map<string, FileCriticality>
+  _fileCriticalityByPath: Map<string, FileCriticality>,
+  renderOpts: GraphRenderOptions = {}
 ): string {
   const lines: string[] = [];
   lines.push('# Dependency Graph\n');
@@ -328,14 +337,30 @@ export function generateMermaidGraph(
   const renderedNodes = new Set<string>();
   const renderedEdges = new Set<string>();
 
-  const topModules = [
-    ...(dependencySummary.outgoingTop || []).slice(0, 15),
-    ...(dependencySummary.inboundTop || []).slice(0, 15),
-    ...(dependencySummary.criticalModules || []).slice(0, 10),
-  ];
-  const moduleSet = new Set(topModules.map(m => m.file));
-  for (const cycle of (dependencySummary.cycles || []).slice(0, 5)) {
-    for (const f of cycle.path) moduleSet.add(f);
+  let moduleSet: Set<string>;
+
+  if (renderOpts.focus) {
+    moduleSet = collectFocusNeighborhood(
+      renderOpts.focus,
+      renderOpts.focusDepth ?? 1,
+      dependencyState
+    );
+    lines.push(`%% Focus: ${renderOpts.focus} (depth=${renderOpts.focusDepth ?? 1})`);
+  } else {
+    const topModules = [
+      ...(dependencySummary.outgoingTop || []).slice(0, 15),
+      ...(dependencySummary.inboundTop || []).slice(0, 15),
+      ...(dependencySummary.criticalModules || []).slice(0, 10),
+    ];
+    moduleSet = new Set(topModules.map(m => m.file));
+    for (const cycle of (dependencySummary.cycles || []).slice(0, 5)) {
+      for (const f of cycle.path) moduleSet.add(f);
+    }
+  }
+
+  if (renderOpts.collapse != null && renderOpts.collapse > 0) {
+    const collapsed = collapseToFolderDepth(moduleSet, dependencyState, renderOpts.collapse);
+    return renderCollapsedGraph(collapsed, lines);
   }
 
   for (const file of moduleSet) {
@@ -444,5 +469,85 @@ export function generateMermaidGraph(
     lines.push('');
   }
 
+  return lines.join('\n');
+}
+
+export function collectFocusNeighborhood(
+  focus: string,
+  depth: number,
+  state: DependencyState
+): Set<string> {
+  const focusKey = [...state.outgoing.keys()].find(
+    k => k === focus || k.endsWith(`/${focus}`)
+  );
+  if (!focusKey) return new Set();
+
+  const result = new Set<string>([focusKey]);
+  let frontier = new Set([focusKey]);
+
+  for (let d = 0; d < depth; d++) {
+    const next = new Set<string>();
+    for (const node of frontier) {
+      for (const neighbor of state.outgoing.get(node) || []) {
+        if (!result.has(neighbor)) { result.add(neighbor); next.add(neighbor); }
+      }
+      for (const neighbor of state.incoming.get(node) || []) {
+        if (!result.has(neighbor)) { result.add(neighbor); next.add(neighbor); }
+      }
+    }
+    frontier = next;
+    if (frontier.size === 0) break;
+  }
+  return result;
+}
+
+interface CollapsedEdge { from: string; to: string; weight: number }
+
+export function collapseToFolderDepth(
+  moduleSet: Set<string>,
+  state: DependencyState,
+  depth: number
+): { nodes: Set<string>; edges: CollapsedEdge[] } {
+  const toFolder = (f: string) => f.split('/').slice(0, depth).join('/');
+  const nodes = new Set<string>();
+  const edgeMap = new Map<string, number>();
+
+  for (const file of moduleSet) nodes.add(toFolder(file));
+
+  for (const file of moduleSet) {
+    const from = toFolder(file);
+    for (const dep of state.outgoing.get(file) || []) {
+      const to = toFolder(dep);
+      if (from === to) continue;
+      nodes.add(to);
+      const key = `${from}::${to}`;
+      edgeMap.set(key, (edgeMap.get(key) || 0) + 1);
+    }
+  }
+
+  const edges: CollapsedEdge[] = [];
+  for (const [key, weight] of edgeMap) {
+    const [from, to] = key.split('::');
+    edges.push({ from, to, weight });
+  }
+
+  return { nodes, edges };
+}
+
+function renderCollapsedGraph(
+  data: { nodes: Set<string>; edges: CollapsedEdge[] },
+  lines: string[]
+): string {
+  const sanitize = (id: string): string => id.replace(/[^a-zA-Z0-9]/g, '_');
+
+  for (const node of data.nodes) {
+    lines.push(`  ${sanitize(node)}["${node}"]`);
+  }
+  for (const edge of data.edges) {
+    const label = edge.weight > 1 ? `|${edge.weight}|` : '';
+    lines.push(`  ${sanitize(edge.from)} -->${label} ${sanitize(edge.to)}`);
+  }
+  lines.push('```\n');
+  lines.push(`> Collapsed to folder depth. ${data.nodes.size} folders, ${data.edges.length} edges.\n`);
   return lines.join('\n');
 }

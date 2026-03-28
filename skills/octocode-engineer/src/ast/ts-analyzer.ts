@@ -29,6 +29,8 @@ import { TS_CONTROL_KINDS } from '../types/index.js';
 
 import type {
   AnalysisOptions,
+  BooleanParamCluster,
+  CatchRethrowEntry,
   CodeLocation,
   DependencyProfile,
   FileCriticality,
@@ -38,9 +40,11 @@ import type {
   FunctionEntry,
   Location,
   MagicNumberEntry,
+  MagicStringEntry,
   Metrics,
   NodeBudget,
   PackageFileSummary,
+  PromiseAllUnhandledEntry,
   TreeEntry,
 } from '../types/index.js';
 
@@ -400,6 +404,7 @@ export function analyzeSourceFile(
 
   analyzeAsyncPatterns(sourceFile, fileEntry);
   collectFileProfiles(sourceFile, fileRelative, fileEntry);
+  collectSmartQualityData(sourceFile, fileRelative, fileEntry);
 
   return fileEntry;
 }
@@ -506,4 +511,169 @@ function collectFileProfiles(
       fileEntry.prototypePollutionSites = ppSites;
     }
   }
+}
+
+const PROMISE_COMBINATORS = new Set(['all', 'allSettled', 'race', 'any']);
+const PROMISE_KIND_MAP: Record<string, PromiseAllUnhandledEntry['kind']> = {
+  all: 'Promise.all',
+  allSettled: 'Promise.allSettled',
+  race: 'Promise.race',
+  any: 'Promise.any',
+};
+
+function collectSmartQualityData(
+  sourceFile: ts.SourceFile,
+  fileRelative: string,
+  fileEntry: FileEntry
+): void {
+  if (isTestFile(fileRelative)) return;
+
+  const magicStrings: MagicStringEntry[] = [];
+  const catchRethrows: CatchRethrowEntry[] = [];
+  const booleanParamClusters: BooleanParamCluster[] = [];
+  const promiseAllUnhandled: PromiseAllUnhandledEntry[] = [];
+
+  const stringCompareValues = new Map<string, CodeLocation[]>();
+
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isBinaryExpression(node) &&
+      (node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+        node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken ||
+        node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
+        node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken)
+    ) {
+      const checkStringLiteral = (operand: ts.Expression): void => {
+        if (ts.isStringLiteral(operand) && operand.text.length > 0) {
+          const loc = getLineAndCharacter(sourceFile, operand);
+          const locs = stringCompareValues.get(operand.text) || [];
+          locs.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+          stringCompareValues.set(operand.text, locs);
+        }
+      };
+      checkStringLiteral(node.left);
+      checkStringLiteral(node.right);
+    }
+
+    if (ts.isSwitchStatement(node)) {
+      for (const clause of node.caseBlock.clauses) {
+        if (ts.isCaseClause(clause) && ts.isStringLiteral(clause.expression)) {
+          const text = clause.expression.text;
+          if (text.length > 0) {
+            const loc = getLineAndCharacter(sourceFile, clause.expression);
+            const locs = stringCompareValues.get(text) || [];
+            locs.push({ file: fileRelative, lineStart: loc.lineStart, lineEnd: loc.lineEnd });
+            stringCompareValues.set(text, locs);
+          }
+        }
+      }
+    }
+
+    if (ts.isCatchClause(node)) {
+      const block = node.block;
+      if (
+        block.statements.length === 1 &&
+        ts.isThrowStatement(block.statements[0])
+      ) {
+        const throwExpr = block.statements[0].expression;
+        const catchParam = node.variableDeclaration?.name;
+        if (
+          throwExpr &&
+          catchParam &&
+          ts.isIdentifier(catchParam) &&
+          ts.isIdentifier(throwExpr) &&
+          throwExpr.text === catchParam.text
+        ) {
+          const loc = getLineAndCharacter(sourceFile, node);
+          catchRethrows.push({
+            file: fileRelative,
+            lineStart: loc.lineStart,
+            lineEnd: loc.lineEnd,
+          });
+        }
+      }
+    }
+
+    if (isFunctionLike(node)) {
+      const funcNode = node as ts.FunctionLikeDeclaration;
+      if (funcNode.parameters && funcNode.parameters.length >= 2) {
+        let boolCount = 0;
+        for (const param of funcNode.parameters) {
+          if (
+            param.type &&
+            param.type.kind === ts.SyntaxKind.BooleanKeyword
+          ) {
+            boolCount++;
+          }
+        }
+        if (boolCount >= 3) {
+          const name = getFunctionName(node, sourceFile);
+          const loc = getLineAndCharacter(sourceFile, node);
+          booleanParamClusters.push({
+            name,
+            booleanCount: boolCount,
+            totalParams: funcNode.parameters.length,
+            lineStart: loc.lineStart,
+            lineEnd: loc.lineEnd,
+          });
+        }
+      }
+    }
+
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === 'Promise' &&
+      PROMISE_COMBINATORS.has(node.expression.name.text)
+    ) {
+      const combinator = node.expression.name.text;
+      let hasTryCatch = false;
+      let hasCatchChain = false;
+      let parent = node.parent;
+      while (parent) {
+        if (ts.isTryStatement(parent)) {
+          hasTryCatch = true;
+          break;
+        }
+        if (
+          ts.isCallExpression(parent) &&
+          ts.isPropertyAccessExpression(parent.expression) &&
+          parent.expression.name.text === 'catch'
+        ) {
+          hasCatchChain = true;
+          break;
+        }
+        if (isFunctionLike(parent)) break;
+        parent = parent.parent;
+      }
+
+      if (!hasTryCatch && !hasCatchChain) {
+        const loc = getLineAndCharacter(sourceFile, node);
+        promiseAllUnhandled.push({
+          file: fileRelative,
+          lineStart: loc.lineStart,
+          lineEnd: loc.lineEnd,
+          kind: PROMISE_KIND_MAP[combinator] || 'Promise.all',
+        });
+      }
+    }
+
+    ts.forEachChild(node, visit);
+  };
+
+  ts.forEachChild(sourceFile, visit);
+
+  for (const [value, locs] of stringCompareValues) {
+    if (locs.length >= 2) {
+      for (const loc of locs) {
+        magicStrings.push({ ...loc, value });
+      }
+    }
+  }
+
+  if (magicStrings.length > 0) fileEntry.magicStrings = magicStrings;
+  if (catchRethrows.length > 0) fileEntry.catchRethrows = catchRethrows;
+  if (booleanParamClusters.length > 0) fileEntry.booleanParamClusters = booleanParamClusters;
+  if (promiseAllUnhandled.length > 0) fileEntry.promiseAllUnhandled = promiseAllUnhandled;
 }

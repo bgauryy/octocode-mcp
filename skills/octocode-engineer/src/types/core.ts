@@ -55,6 +55,24 @@ export interface MessageChainEntry {
   lineEnd: number;
 }
 
+export interface MagicStringEntry extends CodeLocation {
+  value: string;
+}
+
+export type CatchRethrowEntry = CodeLocation;
+
+export interface BooleanParamCluster {
+  name: string;
+  booleanCount: number;
+  totalParams: number;
+  lineStart: number;
+  lineEnd: number;
+}
+
+export interface PromiseAllUnhandledEntry extends CodeLocation {
+  kind: 'Promise.all' | 'Promise.allSettled' | 'Promise.race' | 'Promise.any';
+}
+
 export interface TreeSitterMetrics extends Metrics {
   statements: number;
 }
@@ -129,6 +147,10 @@ export interface Thresholds {
   anyThreshold: number;
   flowDupThreshold: number;
   similarityThreshold: number;
+  deepNestingThreshold: number;
+  multipleReturnThreshold: number;
+  magicStringMinOccurrences: number;
+  booleanParamThreshold: number;
 
   // Semantic
   overrideChainThreshold: number;
@@ -141,6 +163,8 @@ export interface Thresholds {
   // Test quality
   mockThreshold: number;
 }
+
+export type ReporterFormat = 'default' | 'compact' | 'github-actions';
 
 export interface AnalysisOptions {
   root: string;
@@ -166,4 +190,14 @@ export interface AnalysisOptions {
   maxRecsPerCategory: number;
   deepLinkTopN: number;
   thresholds: Thresholds;
+
+  affected: string | null;
+  saveBaseline: boolean;
+  ignoreKnown: string | null;
+  reporter: ReporterFormat;
+  focus: string | null;
+  focusDepth: number;
+  collapse: number | null;
+  atLeast: number | null;
+  configFile: string | null;
 }
