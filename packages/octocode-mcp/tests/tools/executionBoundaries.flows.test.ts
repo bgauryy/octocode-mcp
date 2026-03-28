@@ -47,6 +47,12 @@ vi.mock('../../src/tools/providerExecution.js', () => ({
     providerType: 'github',
     token: 'test-token',
   }),
+  createLazyProviderContext: vi.fn(() =>
+    vi.fn().mockReturnValue({
+      providerType: 'github',
+      token: 'test-token',
+    })
+  ),
   providerSupports: vi.fn().mockReturnValue(true),
 }));
 

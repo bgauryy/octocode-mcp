@@ -1,60 +1,15 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { toMCPSchema } from '../../types/toolTypes.js';
-import { withSecurityValidation } from '../../utils/securityBridge.js';
-import type { ToolInvocationCallback } from '../../types.js';
 import type { GitHubViewRepoStructureQuery } from './types.js';
-import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/proxies.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { GitHubViewRepoStructureBulkQuerySchema } from './scheme.js';
-import { invokeCallbackSafely } from '../utils.js';
 import { exploreMultipleRepositoryStructures } from './execution.js';
 import { GitHubViewRepoStructureOutputSchema } from '../../scheme/outputSchemas.js';
+import { createRemoteToolRegistration } from '../registerRemoteTool.js';
 
-export function registerViewGitHubRepoStructureTool(
-  server: McpServer,
-  callback?: ToolInvocationCallback
-) {
-  return server.registerTool(
-    TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-    {
-      description: DESCRIPTIONS[TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE],
-      inputSchema: toMCPSchema(GitHubViewRepoStructureBulkQuerySchema),
-      outputSchema: toMCPSchema(GitHubViewRepoStructureOutputSchema),
-      annotations: {
-        title: 'GitHub Repository Structure Explorer',
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
-      },
-    },
-    withSecurityValidation(
-      TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-      async (
-        args: {
-          queries: GitHubViewRepoStructureQuery[];
-          responseCharOffset?: number;
-          responseCharLength?: number;
-        },
-        authInfo,
-        sessionId
-      ): Promise<CallToolResult> => {
-        const queries = args.queries || [];
-
-        await invokeCallbackSafely(
-          callback,
-          TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
-          queries
-        );
-
-        return exploreMultipleRepositoryStructures({
-          queries,
-          responseCharOffset: args.responseCharOffset,
-          responseCharLength: args.responseCharLength,
-          authInfo,
-          sessionId,
-        });
-      }
-    )
-  );
-}
+export const registerViewGitHubRepoStructureTool =
+  createRemoteToolRegistration<GitHubViewRepoStructureQuery>({
+    name: TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE,
+    title: 'GitHub Repository Structure Explorer',
+    inputSchema: GitHubViewRepoStructureBulkQuerySchema,
+    outputSchema: GitHubViewRepoStructureOutputSchema,
+    executionFn: exploreMultipleRepositoryStructures,
+  });

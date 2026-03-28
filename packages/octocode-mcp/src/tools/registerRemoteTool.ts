@@ -1,0 +1,100 @@
+/**
+ * Factory for registering remote (GitHub/GitLab/Bitbucket) tools with the MCP server.
+ *
+ * Eliminates the repeated registration boilerplate across all remote tool modules.
+ * Each remote tool only needs to supply its unique configuration; the factory
+ * handles security wrapping, callback invocation, and execution arg assembly.
+ */
+
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { toMCPSchema } from '../types/toolTypes.js';
+import { withSecurityValidation } from '../utils/securityBridge.js';
+import type { ToolInvocationCallback } from '../types.js';
+import { DESCRIPTIONS } from './toolMetadata/proxies.js';
+import { invokeCallbackSafely } from './utils.js';
+import type { ToolExecutionArgs } from '../types/execution.js';
+
+export interface RemoteToolConfig<TQuery> {
+  /** Tool name (must be a key in TOOL_NAMES) */
+  name: string;
+  /** Human-readable title for MCP annotations */
+  title: string;
+  /** Zod input schema for validation */
+  inputSchema: object;
+  /** Zod output schema for structured content */
+  outputSchema: object;
+  /** The execution function that processes bulk queries */
+  executionFn: (args: ToolExecutionArgs<TQuery>) => Promise<CallToolResult>;
+  /** MCP tool annotations (defaults provided for typical read-only tools) */
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
+}
+
+/**
+ * Create a registration function for a remote tool.
+ *
+ * Handles the common pattern shared by all remote tools:
+ * 1. Register with MCP server using name, description, schemas
+ * 2. Wrap handler with withSecurityValidation
+ * 3. Invoke callback safely
+ * 4. Assemble ToolExecutionArgs and delegate to executionFn
+ */
+export function createRemoteToolRegistration<TQuery>(
+  config: RemoteToolConfig<TQuery>
+): (server: McpServer, callback?: ToolInvocationCallback) => ReturnType<McpServer['registerTool']> {
+  const {
+    name,
+    title,
+    inputSchema,
+    outputSchema,
+    executionFn,
+    annotations,
+  } = config;
+
+  return (server: McpServer, callback?: ToolInvocationCallback) => {
+    return server.registerTool(
+      name,
+      {
+        description: DESCRIPTIONS[name],
+        inputSchema: toMCPSchema(inputSchema),
+        outputSchema: toMCPSchema(outputSchema),
+        annotations: {
+          title,
+          readOnlyHint: annotations?.readOnlyHint ?? true,
+          destructiveHint: annotations?.destructiveHint ?? false,
+          idempotentHint: annotations?.idempotentHint ?? true,
+          openWorldHint: annotations?.openWorldHint ?? true,
+        },
+      },
+      withSecurityValidation(
+        name,
+        async (
+          args: {
+            queries: TQuery[];
+            responseCharOffset?: number;
+            responseCharLength?: number;
+          },
+          authInfo,
+          sessionId
+        ): Promise<CallToolResult> => {
+          const queries = args.queries || [];
+
+          await invokeCallbackSafely(callback, name, queries);
+
+          return executionFn({
+            queries,
+            responseCharOffset: args.responseCharOffset,
+            responseCharLength: args.responseCharLength,
+            authInfo,
+            sessionId,
+          });
+        }
+      )
+    );
+  };
+}

@@ -18,7 +18,7 @@ import {
   mapRepoSearchToolQuery,
 } from '../providerMappers.js';
 import {
-  createProviderExecutionContext,
+  createLazyProviderContext,
   executeProviderOperations,
   type ProviderOperationResult,
 } from '../providerExecution.js';
@@ -187,11 +187,7 @@ export async function searchMultipleGitHubRepos(
   args: ToolExecutionArgs<GitHubReposSearchQuery>
 ): Promise<CallToolResult> {
   const { queries, authInfo, responseCharOffset, responseCharLength } = args;
-  let providerContext:
-    | ReturnType<typeof createProviderExecutionContext>
-    | undefined;
-  const getProviderContext = () =>
-    (providerContext ??= createProviderExecutionContext(authInfo));
+  const getProviderContext = createLazyProviderContext(authInfo);
 
   return executeBulkOperation(
     queries,

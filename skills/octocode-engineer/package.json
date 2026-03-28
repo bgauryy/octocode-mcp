@@ -1,5 +1,5 @@
 {
-  "name": "octocode-local-code-quality",
+  "name": "@octocode/engineer-skill",
   "version": "1.0.0",
   "description": "AST-based code quality analysis with duplicate detection, complexity metrics, and dependency graph intelligence. TypeScript in src/ compiles to scripts/ (yarn build or npm run build).",
   "keywords": [

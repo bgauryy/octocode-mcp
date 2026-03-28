@@ -2,7 +2,7 @@
 
 How to validate findings before presenting them. Every scanner finding is a hypothesis — never present it as fact without validation.
 
-For the validation loop (confirmed/dismissed/uncertain flow), see [SKILL.md Stage 6](../SKILL.md#stage-6-validate--score). For tool params, see [SKILL.md tools table](../SKILL.md#tools). For scanner flags, see [CLI reference](./cli-reference.md).
+For the validation loop (confirmed/dismissed/uncertain), see [SKILL.md](../SKILL.md#cross-validate-findings). For tool descriptions, see [SKILL.md tools](../SKILL.md#tools). For scanner flags, see [CLI reference](./cli-reference.md).
 
 ---
 
