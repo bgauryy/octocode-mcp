@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 import { ALL_CATEGORIES, DEFAULT_OPTS, PILLAR_CATEGORIES } from '../types/index.js';
+import { OptionsError, resolveExcludeToFeatures } from './create-options.js';
 
 import type { AnalysisOptions, Thresholds } from '../types/index.js';
 
@@ -12,6 +13,24 @@ function parseNumeric(raw: string | undefined, fallback: number): number {
 function parseDecimal(raw: string | undefined, fallback: number): number {
   const n = parseFloat(raw ?? '');
   return Number.isNaN(n) ? fallback : n;
+}
+
+function setIntOpt(
+  target: Record<string, number>,
+  key: string,
+  raw: string,
+  defaults: Record<string, number>
+): void {
+  target[key] = parseNumeric(raw, defaults[key]);
+}
+
+function setFloatOpt(
+  target: Record<string, number>,
+  key: string,
+  raw: string,
+  defaults: Record<string, number>
+): void {
+  target[key] = parseDecimal(raw, defaults[key]);
 }
 
 function resolveCategories(val: string, flagName: string): Set<string> {
@@ -116,6 +135,9 @@ const BOOL_FLAGS: Record<
     o.includeTests = true;
     o.semantic = true;
   },
+  '--save-baseline': o => {
+    o.saveBaseline = true;
+  },
 };
 
 const CORE_INT_FLAGS: Record<string, keyof AnalysisOptions> = {
@@ -123,6 +145,7 @@ const CORE_INT_FLAGS: Record<string, keyof AnalysisOptions> = {
   '--deep-link-topn': 'deepLinkTopN',
   '--tree-depth': 'treeDepth',
   '--max-recs-per-category': 'maxRecsPerCategory',
+  '--focus-depth': 'focusDepth',
 };
 
 const THRESHOLD_INT_FLAGS: Record<string, keyof Thresholds> = {
@@ -147,6 +170,10 @@ const THRESHOLD_INT_FLAGS: Record<string, keyof Thresholds> = {
   '--shotgun-threshold': 'shotgunThreshold',
   '--secret-min-length': 'secretMinLength',
   '--mock-threshold': 'mockThreshold',
+  '--deep-nesting-threshold': 'deepNestingThreshold',
+  '--multiple-return-threshold': 'multipleReturnThreshold',
+  '--magic-string-min-occurrences': 'magicStringMinOccurrences',
+  '--boolean-param-threshold': 'booleanParamThreshold',
 };
 
 const THRESHOLD_FLOAT_FLAGS: Record<string, keyof Thresholds> = {
@@ -180,6 +207,19 @@ const SPECIAL_FLAGS: Record<string, FlagHandler> = {
     opts.thresholds.layerOrder = argv[i + 1].split(',').map(s => s.trim());
     return i + 1;
   },
+  '--reporter': (opts, argv, i) => {
+    const next = argv[i + 1];
+    if (!['default', 'compact', 'github-actions'].includes(next)) {
+      console.error(`Unsupported reporter: ${next}. Use default|compact|github-actions`);
+      process.exit(1);
+    }
+    opts.reporter = next as AnalysisOptions['reporter'];
+    return i + 1;
+  },
+  '--config': (opts, argv, i) => {
+    opts.configFile = argv[i + 1];
+    return i + 1;
+  },
   '--help': () => {
     printHelp();
     return process.exit(0) as never;
@@ -204,22 +244,31 @@ export function parseArgs(argv: string[]): AnalysisOptions {
 
     if (CORE_INT_FLAGS[arg]) {
       const key = CORE_INT_FLAGS[arg];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (opts as any)[key] = parseNumeric(argv[++i], (DEFAULT_OPTS as any)[key]);
+      setIntOpt(
+        opts as unknown as Record<string, number>,
+        key, argv[++i],
+        DEFAULT_OPTS as unknown as Record<string, number>
+      );
       continue;
     }
 
     if (THRESHOLD_INT_FLAGS[arg]) {
       const key = THRESHOLD_INT_FLAGS[arg];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (opts.thresholds as any)[key] = parseNumeric(argv[++i], (DEFAULT_OPTS.thresholds as any)[key]);
+      setIntOpt(
+        opts.thresholds as unknown as Record<string, number>,
+        key, argv[++i],
+        DEFAULT_OPTS.thresholds as unknown as Record<string, number>
+      );
       continue;
     }
 
     if (THRESHOLD_FLOAT_FLAGS[arg]) {
       const key = THRESHOLD_FLOAT_FLAGS[arg];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (opts.thresholds as any)[key] = parseDecimal(argv[++i], (DEFAULT_OPTS.thresholds as any)[key]);
+      setFloatOpt(
+        opts.thresholds as unknown as Record<string, number>,
+        key, argv[++i],
+        DEFAULT_OPTS.thresholds as unknown as Record<string, number>
+      );
       continue;
     }
 
@@ -258,20 +307,58 @@ export function parseArgs(argv: string[]): AnalysisOptions {
       excludeSet = resolveCategories(val, 'exclude');
       continue;
     }
+
+    if (arg === '--affected' || arg.startsWith('--affected=')) {
+      opts.affected = arg.startsWith('--affected=')
+        ? arg.slice('--affected='.length)
+        : (argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : 'HEAD');
+      continue;
+    }
+
+    if (arg === '--ignore-known' || arg.startsWith('--ignore-known=')) {
+      opts.ignoreKnown = arg.startsWith('--ignore-known=')
+        ? arg.slice('--ignore-known='.length)
+        : (argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : '.octocode/baseline.json');
+      continue;
+    }
+
+    if (arg === '--focus' || arg.startsWith('--focus=')) {
+      opts.focus = arg.startsWith('--focus=')
+        ? arg.slice('--focus='.length)
+        : argv[++i];
+      continue;
+    }
+
+    if (arg === '--collapse' || arg.startsWith('--collapse=')) {
+      const val = arg.startsWith('--collapse=')
+        ? arg.slice('--collapse='.length)
+        : argv[++i];
+      opts.collapse = parseNumeric(val, 2);
+      continue;
+    }
+
+    if (arg === '--at-least' || arg.startsWith('--at-least=')) {
+      const val = arg.startsWith('--at-least=')
+        ? arg.slice('--at-least='.length)
+        : argv[++i];
+      opts.atLeast = parseNumeric(val, 0);
+      continue;
+    }
+
+    if (arg.startsWith('--')) {
+      console.warn(`Warning: unknown flag "${arg}" — ignored.`);
+    }
   }
 
   opts.packageRoot = path.join(opts.root, 'packages');
 
   if (opts.features !== null && excludeSet !== null) {
-    console.error(
+    throw new OptionsError(
       '--features and --exclude are mutually exclusive. Use one or the other.'
     );
-    process.exit(1);
   }
   if (excludeSet !== null) {
-    opts.features = new Set(
-      [...ALL_CATEGORIES].filter(c => !excludeSet!.has(c))
-    );
+    opts.features = resolveExcludeToFeatures(excludeSet);
   }
 
   if (opts.features !== null) {
@@ -284,8 +371,7 @@ export function parseArgs(argv: string[]): AnalysisOptions {
   return opts;
 }
 
-export function printHelp(): void {
-  console.log(`
+export const HELP_TEXT = `
 Usage:
   node scripts/run.js [options]
 
@@ -357,6 +443,11 @@ Options:
   --secret-entropy-threshold N  Shannon entropy threshold for secret detection (default 4.5)
   --secret-min-length N         Min string length for entropy-based secret detection (default 20)
   --similarity-threshold N      Jaccard similarity threshold for near-clone detection (default 0.85)
+  --deep-nesting-threshold N    Max branch/loop nesting depth before flagging (default 5)
+  --multiple-return-threshold N Max return/throw paths per function before flagging (default 6)
+  --magic-string-min-occurrences N
+                                Min repeated string comparisons to flag as magic string (default 3)
+  --boolean-param-threshold N   Min boolean params per function to flag as cluster (default 3)
   --mock-threshold N            Max mock/spy calls per test file (default 10)
   --no-diversify                Disable category-aware diversification when truncating findings.
                                 By default, --findings-limit interleaves categories so the
@@ -364,6 +455,34 @@ Options:
   --no-cache                    Disable incremental cache; re-parse all files
   --clear-cache                 Delete the analysis cache and exit (no scan)
   --all                         Enable all features: --include-tests --semantic
+
+  --affected [revision]         Scope to files changed since git revision (default: HEAD) plus
+                                their transitive dependents. Like dep-cruiser's --affected flag.
+                                Examples: --affected
+                                          --affected HEAD~3
+                                          --affected main
+  --save-baseline               Save current findings to .octocode/baseline.json for future
+                                comparison. Use with --ignore-known for progressive adoption.
+  --ignore-known [file]         Suppress findings matching a baseline file (default:
+                                .octocode/baseline.json). Findings are matched by (category, file).
+  --reporter <format>           Output format: default|compact|github-actions (default: default)
+                                compact: one-line per finding for terminal/CI logs
+                                github-actions: ::warning annotations for GitHub Actions
+  --focus <module>              Show only this module and its neighbors in the dependency graph.
+                                Requires --graph. Use with --focus-depth to control neighbor hops.
+                                Examples: --focus src/session.ts
+                                          --focus=src/session.ts
+                                          --focus packages/octocode-mcp/src/tools
+  --focus-depth N               Neighbor depth for --focus (default 1). 2 = friends-of-friends.
+  --collapse N                  Collapse graph nodes to folder depth N. Reduces large graphs to
+                                high-level architecture view. Example: --collapse 2
+  --at-least N                  Fail (exit 1) if health score drops below N (0-100). Use in CI
+                                to enforce a quality floor. Example: --at-least 60
+  --config <file>               Path to config file. Also auto-discovers .octocode-scan.json,
+                                .octocode-scan.jsonc, or package.json#octocode in the project root.
   --help                        Show this message
-`);
+`;
+
+export function printHelp(): void {
+  console.log(HELP_TEXT);
 }

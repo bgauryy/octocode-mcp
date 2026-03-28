@@ -29,6 +29,10 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
   anyThreshold: 5,
   flowDupThreshold: 3,
   similarityThreshold: 0.85,
+  deepNestingThreshold: 5,
+  multipleReturnThreshold: 6,
+  magicStringMinOccurrences: 3,
+  booleanParamThreshold: 3,
 
   // Semantic
   overrideChainThreshold: 3,
@@ -76,6 +80,16 @@ export const DEFAULT_OPTS: AnalysisOptions = {
   maxRecsPerCategory: 2,
   deepLinkTopN: 12,
   thresholds: { ...DEFAULT_THRESHOLDS },
+
+  affected: null,
+  saveBaseline: false,
+  ignoreKnown: null,
+  reporter: 'default',
+  focus: null,
+  focusDepth: 1,
+  collapse: null,
+  atLeast: null,
+  configFile: null,
 };
 
 export const PILLAR_CATEGORIES: Record<string, string[]> = {
@@ -136,6 +150,14 @@ export const PILLAR_CATEGORIES: Record<string, string[]> = {
     'unbounded-collection',
     'similar-function-body',
     'message-chain',
+    'deep-nesting',
+    'multiple-return-paths',
+    'catch-rethrow',
+    'magic-string',
+    'boolean-parameter-cluster',
+    'promise-all-unhandled',
+    'export-surface-density',
+    'change-risk',
   ],
   'dead-code': [
     'dead-export',

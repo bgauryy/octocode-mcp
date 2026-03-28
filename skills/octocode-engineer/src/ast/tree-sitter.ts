@@ -127,6 +127,68 @@ function collectTreeSitterMetrics(
   return metrics;
 }
 
+const COGNITIVE_NESTING_TYPES = new Set([
+  'if_statement',
+  'for_statement',
+  'for_in_statement',
+  'for_of_statement',
+  'for_await_statement',
+  'while_statement',
+  'do_statement',
+  'catch_clause',
+  'conditional_expression',
+  'switch_statement',
+]);
+
+const COGNITIVE_LOGICAL_TYPES = new Set(['&&', '||', '??']);
+
+function computeTreeSitterCognitiveComplexity(node: SyntaxNode): number {
+  let total = 0;
+
+  const visit = (current: SyntaxNode, nesting: number): void => {
+    let increment = 0;
+    let nestable = false;
+
+    if (COGNITIVE_NESTING_TYPES.has(current.type)) {
+      increment = 1;
+      nestable = true;
+    }
+
+    if (current.type === 'binary_expression') {
+      for (const child of current.children) {
+        if (!child.isNamed && COGNITIVE_LOGICAL_TYPES.has(child.type)) {
+          increment = 1;
+          break;
+        }
+      }
+    }
+
+    if (
+      current.type === 'if_statement' &&
+      current.parent?.type === 'else_clause'
+    ) {
+      increment = 1;
+      nestable = false;
+    }
+
+    if (nestable) {
+      total += increment + nesting;
+      for (const child of current.children) {
+        visit(child, nesting + 1);
+      }
+      return;
+    }
+
+    total += increment;
+    for (const child of current.children) {
+      visit(child, nesting);
+    }
+  };
+
+  visit(node, 0);
+  return total;
+}
+
 function inferTreeSitterFunctionName(node: SyntaxNode, _text: string): string {
   const identifier = node.namedChildren.find(child =>
     ['identifier', 'property_identifier', 'type_identifier'].includes(
@@ -290,7 +352,7 @@ export function analyzeTreeSitterFile(
         awaits: metrics.awaits,
         calls: metrics.calls,
         loops: metrics.loops,
-        cognitiveComplexity: 0,
+        cognitiveComplexity: computeTreeSitterCognitiveComplexity(node),
         source: 'tree-sitter',
       };
 

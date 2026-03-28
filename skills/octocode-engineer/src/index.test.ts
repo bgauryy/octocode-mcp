@@ -1153,7 +1153,7 @@ describe('category group constants', () => {
   });
 
   it('code quality group has expected categories', () => {
-    expect(CODE_QUALITY_CATEGORIES.size).toBe(26);
+    expect(CODE_QUALITY_CATEGORIES.size).toBe(34);
   });
 
   it('dead code group has 11 categories', () => {
@@ -2097,10 +2097,15 @@ describe('end-to-end output validation', () => {
     const scriptPath = path.join(process.cwd(), 'scripts', 'run.js');
     const monorepoRoot = path.join(process.cwd(), '..', '..');
     try {
-      execSync(
-        `node "${scriptPath}" --root "${monorepoRoot}" --out "${dir}" --no-tree`,
-        { cwd: process.cwd(), encoding: 'utf8', timeout: 30000 }
-      );
+      try {
+        execSync(
+          `node "${scriptPath}" --root "${monorepoRoot}" --out "${dir}" --no-tree`,
+          { cwd: process.cwd(), encoding: 'utf8', timeout: 30000 }
+        );
+      } catch (execErr: unknown) {
+        const e = execErr as { status?: number };
+        if (e.status !== 1) throw execErr;
+      }
 
       expect(fs.existsSync(`${dir}/summary.md`)).toBe(true);
       expect(fs.existsSync(`${dir}/summary.json`)).toBe(true);
@@ -4419,5 +4424,556 @@ describe('buildIssueCatalog detector paths via buildIssueCatalog', () => {
       optsWithLayers
     );
     expect(findings.some(f => f.category === 'layer-violation')).toBe(true);
+  });
+});
+
+describe('new v2 quality detectors via buildIssueCatalog', () => {
+  const testOpts2 = { ...DEFAULT_OPTS, findingsLimit: 500, includeTests: false };
+
+  function makeEntry2(
+    file: string,
+    overrides: Partial<FileEntry> = {}
+  ): FileEntry {
+    return {
+      package: 'test-pkg',
+      file,
+      parseEngine: 'typescript',
+      nodeCount: 0,
+      kindCounts: {},
+      functions: [],
+      flows: [],
+      dependencyProfile: {
+        internalDependencies: [],
+        externalDependencies: [],
+        unresolvedDependencies: [],
+        declaredExports: [],
+        importedSymbols: [],
+        reExports: [],
+      },
+      ...overrides,
+    };
+  }
+
+  describe('detectDeepNesting', () => {
+    it('triggers when function has branch depth >= threshold', () => {
+      const entry = makeEntry2('src/deep.ts', {
+        functions: [
+          makeFn({
+            name: 'deepFn',
+            file: 'src/deep.ts',
+            maxBranchDepth: 6,
+            maxLoopDepth: 0,
+            statementCount: 20,
+          }),
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      const deep = findings.filter(f => f.category === 'deep-nesting');
+      expect(deep.length).toBe(1);
+      expect(deep[0].title).toContain('6');
+      expect(deep[0].title).toContain('deepFn');
+    });
+
+    it('triggers when function has loop depth >= threshold', () => {
+      const entry = makeEntry2('src/loops.ts', {
+        functions: [
+          makeFn({
+            name: 'loopFn',
+            file: 'src/loops.ts',
+            maxBranchDepth: 1,
+            maxLoopDepth: 7,
+            statementCount: 15,
+          }),
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'deep-nesting')).toBe(true);
+    });
+
+    it('does not trigger when depth is below threshold', () => {
+      const entry = makeEntry2('src/shallow.ts', {
+        functions: [
+          makeFn({ maxBranchDepth: 2, maxLoopDepth: 1, statementCount: 10 }),
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'deep-nesting')).toBe(false);
+    });
+
+    it('skips test files', () => {
+      const entry = makeEntry2('src/__tests__/deep.test.ts', {
+        functions: [
+          makeFn({ maxBranchDepth: 10, maxLoopDepth: 10, statementCount: 50 }),
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'deep-nesting')).toBe(false);
+    });
+
+    it('severity scales with nesting depth', () => {
+      const low = makeEntry2('src/low.ts', {
+        functions: [makeFn({ name: 'fn', file: 'src/low.ts', maxBranchDepth: 5, statementCount: 10 })],
+      });
+      const high = makeEntry2('src/high.ts', {
+        functions: [makeFn({ name: 'fn', file: 'src/high.ts', maxBranchDepth: 9, statementCount: 10 })],
+      });
+      const { findings: lowF } = buildIssueCatalog(
+        [], [], [low], minimalDepSummary(), emptyState(), testOpts2
+      );
+      const { findings: highF } = buildIssueCatalog(
+        [], [], [high], minimalDepSummary(), emptyState(), testOpts2
+      );
+      const lowSev = lowF.find(f => f.category === 'deep-nesting')?.severity;
+      const highSev = highF.find(f => f.category === 'deep-nesting')?.severity;
+      expect(lowSev).toBe('low');
+      expect(highSev).toBe('high');
+    });
+  });
+
+  describe('detectMultipleReturnPaths', () => {
+    it('triggers when function has returns >= threshold', () => {
+      const entry = makeEntry2('src/multi.ts', {
+        functions: [
+          makeFn({
+            name: 'multiFn',
+            file: 'src/multi.ts',
+            returns: 7,
+            statementCount: 20,
+          }),
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      const multi = findings.filter(f => f.category === 'multiple-return-paths');
+      expect(multi.length).toBe(1);
+      expect(multi[0].title).toContain('7');
+    });
+
+    it('does not trigger below threshold', () => {
+      const entry = makeEntry2('src/few.ts', {
+        functions: [makeFn({ returns: 3, statementCount: 10 })],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'multiple-return-paths')).toBe(false);
+    });
+
+    it('skips test files', () => {
+      const entry = makeEntry2('src/x.test.ts', {
+        functions: [makeFn({ returns: 20, statementCount: 50 })],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'multiple-return-paths')).toBe(false);
+    });
+  });
+
+  describe('detectCatchRethrow', () => {
+    it('triggers from pre-collected catchRethrows data', () => {
+      const entry = makeEntry2('src/rethrow.ts', {
+        catchRethrows: [
+          { file: 'src/rethrow.ts', lineStart: 5, lineEnd: 8 },
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      const cr = findings.filter(f => f.category === 'catch-rethrow');
+      expect(cr.length).toBe(1);
+      expect(cr[0].severity).toBe('low');
+      expect(cr[0].title).toContain('Catch-rethrow');
+    });
+
+    it('does not trigger when no catchRethrows', () => {
+      const entry = makeEntry2('src/clean.ts');
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'catch-rethrow')).toBe(false);
+    });
+
+    it('skips test files', () => {
+      const entry = makeEntry2('src/__tests__/rethrow.test.ts', {
+        catchRethrows: [
+          { file: 'src/__tests__/rethrow.test.ts', lineStart: 5, lineEnd: 8 },
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'catch-rethrow')).toBe(false);
+    });
+  });
+
+  describe('detectMagicStrings', () => {
+    it('triggers when string appears >= minOccurrences across files', () => {
+      const e1 = makeEntry2('src/a.ts', {
+        magicStrings: [
+          { file: 'src/a.ts', lineStart: 1, lineEnd: 1, value: 'active' },
+          { file: 'src/a.ts', lineStart: 5, lineEnd: 5, value: 'active' },
+        ],
+      });
+      const e2 = makeEntry2('src/b.ts', {
+        magicStrings: [
+          { file: 'src/b.ts', lineStart: 3, lineEnd: 3, value: 'active' },
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [e1, e2], minimalDepSummary(), emptyState(), testOpts2
+      );
+      const ms = findings.filter(f => f.category === 'magic-string');
+      expect(ms.length).toBe(1);
+      expect(ms[0].title).toContain('active');
+      expect(ms[0].title).toContain('3');
+    });
+
+    it('does not trigger below minOccurrences', () => {
+      const entry = makeEntry2('src/single.ts', {
+        magicStrings: [
+          { file: 'src/single.ts', lineStart: 1, lineEnd: 1, value: 'rare' },
+          { file: 'src/single.ts', lineStart: 3, lineEnd: 3, value: 'rare' },
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'magic-string')).toBe(false);
+    });
+
+    it('severity scales with occurrence count', () => {
+      const entries = Array.from({ length: 1 }, () =>
+        makeEntry2('src/many.ts', {
+          magicStrings: Array.from({ length: 9 }, (_, i) => ({
+            file: 'src/many.ts',
+            lineStart: i + 1,
+            lineEnd: i + 1,
+            value: 'status',
+          })),
+        })
+      );
+      const { findings } = buildIssueCatalog(
+        [], [], entries, minimalDepSummary(), emptyState(), testOpts2
+      );
+      const ms = findings.filter(f => f.category === 'magic-string');
+      expect(ms.length).toBe(1);
+      expect(ms[0].severity).toBe('high');
+    });
+  });
+
+  describe('detectBooleanParameterCluster', () => {
+    it('triggers from pre-collected booleanParamClusters', () => {
+      const entry = makeEntry2('src/flags.ts', {
+        booleanParamClusters: [
+          {
+            name: 'configure',
+            booleanCount: 3,
+            totalParams: 4,
+            lineStart: 1,
+            lineEnd: 5,
+          },
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      const bp = findings.filter(f => f.category === 'boolean-parameter-cluster');
+      expect(bp.length).toBe(1);
+      expect(bp[0].severity).toBe('medium');
+      expect(bp[0].title).toContain('3');
+      expect(bp[0].title).toContain('configure');
+    });
+
+    it('does not trigger when below threshold', () => {
+      const entry = makeEntry2('src/few.ts', {
+        booleanParamClusters: [
+          { name: 'fn', booleanCount: 2, totalParams: 3, lineStart: 1, lineEnd: 3 },
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'boolean-parameter-cluster')).toBe(false);
+    });
+
+    it('skips test files', () => {
+      const entry = makeEntry2('src/flags.test.ts', {
+        booleanParamClusters: [
+          { name: 'testFn', booleanCount: 4, totalParams: 4, lineStart: 1, lineEnd: 5 },
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'boolean-parameter-cluster')).toBe(false);
+    });
+  });
+
+  describe('detectPromiseAllUnhandled', () => {
+    it('triggers from pre-collected promiseAllUnhandled', () => {
+      const entry = makeEntry2('src/fetch.ts', {
+        promiseAllUnhandled: [
+          { file: 'src/fetch.ts', lineStart: 10, lineEnd: 10, kind: 'Promise.all' },
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      const pa = findings.filter(f => f.category === 'promise-all-unhandled');
+      expect(pa.length).toBe(1);
+      expect(pa[0].severity).toBe('medium');
+      expect(pa[0].title).toContain('Promise.all');
+    });
+
+    it('detects multiple kinds (race, any)', () => {
+      const entry = makeEntry2('src/multi.ts', {
+        promiseAllUnhandled: [
+          { file: 'src/multi.ts', lineStart: 1, lineEnd: 1, kind: 'Promise.race' },
+          { file: 'src/multi.ts', lineStart: 5, lineEnd: 5, kind: 'Promise.any' },
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      const pa = findings.filter(f => f.category === 'promise-all-unhandled');
+      expect(pa.length).toBe(2);
+      expect(pa.some(f => f.title.includes('Promise.race'))).toBe(true);
+      expect(pa.some(f => f.title.includes('Promise.any'))).toBe(true);
+    });
+
+    it('skips test files', () => {
+      const entry = makeEntry2('src/fetch.spec.ts', {
+        promiseAllUnhandled: [
+          { file: 'src/fetch.spec.ts', lineStart: 1, lineEnd: 1, kind: 'Promise.all' },
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'promise-all-unhandled')).toBe(false);
+    });
+  });
+
+  describe('detectExportSurfaceDensity', () => {
+    it('triggers when export ratio >= 50%', () => {
+      const fns = Array.from({ length: 5 }, (_, i) =>
+        makeFn({
+          name: `fn${i}`,
+          file: 'src/dense.ts',
+          statementCount: 5,
+        })
+      );
+      const entry = makeEntry2('src/dense.ts', {
+        functions: fns,
+        dependencyProfile: {
+          internalDependencies: [],
+          externalDependencies: [],
+          unresolvedDependencies: [],
+          declaredExports: Array.from({ length: 15 }, (_, i) => ({
+            name: `export${i}`,
+            kind: 'function' as const,
+            isType: false,
+            isDefault: false,
+          })),
+          importedSymbols: [],
+          reExports: [],
+        },
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      const esd = findings.filter(f => f.category === 'export-surface-density');
+      expect(esd.length).toBe(1);
+      expect(esd[0].title).toContain('%');
+    });
+
+    it('does not trigger when ratio < 50%', () => {
+      const fns = Array.from({ length: 10 }, (_, i) =>
+        makeFn({ name: `fn${i}`, file: 'src/normal.ts', statementCount: 10 })
+      );
+      const entry = makeEntry2('src/normal.ts', {
+        functions: fns,
+        dependencyProfile: {
+          internalDependencies: [],
+          externalDependencies: [],
+          unresolvedDependencies: [],
+          declaredExports: [
+            { name: 'main', kind: 'function' as const, isType: false, isDefault: false },
+          ],
+          importedSymbols: [],
+          reExports: [],
+        },
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'export-surface-density')).toBe(false);
+    });
+
+    it('does not trigger for small files (< 20 statements)', () => {
+      const entry = makeEntry2('src/small.ts', {
+        functions: [makeFn({ statementCount: 5, file: 'src/small.ts' })],
+        dependencyProfile: {
+          internalDependencies: [],
+          externalDependencies: [],
+          unresolvedDependencies: [],
+          declaredExports: Array.from({ length: 5 }, (_, i) => ({
+            name: `e${i}`,
+            kind: 'function' as const,
+            isType: false,
+            isDefault: false,
+          })),
+          importedSymbols: [],
+          reExports: [],
+        },
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'export-surface-density')).toBe(false);
+    });
+  });
+
+  describe('detectChangeRisk', () => {
+    it('triggers when multiple quality signals overlap', () => {
+      const entry = makeEntry2('src/risky.ts', {
+        functions: [
+          makeFn({
+            name: 'complexFn',
+            file: 'src/risky.ts',
+            complexity: 25,
+            cognitiveComplexity: 30,
+            maintainabilityIndex: 10,
+            statementCount: 50,
+          }),
+          makeFn({
+            name: 'anotherFn',
+            file: 'src/risky.ts',
+            complexity: 20,
+            cognitiveComplexity: 25,
+            maintainabilityIndex: 15,
+            statementCount: 30,
+          }),
+        ],
+        emptyCatches: [{ file: 'src/risky.ts', lineStart: 10, lineEnd: 12 }],
+        promiseAllUnhandled: [
+          { file: 'src/risky.ts', lineStart: 20, lineEnd: 20, kind: 'Promise.all' as const },
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      const cr = findings.filter(f => f.category === 'change-risk');
+      expect(cr.length).toBe(1);
+      expect(['medium', 'high', 'critical']).toContain(cr[0].severity);
+      expect(cr[0].title).toContain('Change-risk score');
+    });
+
+    it('does not trigger when risk score < 4', () => {
+      const entry = makeEntry2('src/clean.ts', {
+        functions: [
+          makeFn({ complexity: 3, cognitiveComplexity: 2, statementCount: 10 }),
+        ],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'change-risk')).toBe(false);
+    });
+
+    it('skips test files', () => {
+      const entry = makeEntry2('src/__tests__/risky.test.ts', {
+        functions: [
+          makeFn({ complexity: 30, cognitiveComplexity: 30, maintainabilityIndex: 5, statementCount: 100 }),
+        ],
+        emptyCatches: [{ file: 'src/__tests__/risky.test.ts', lineStart: 1, lineEnd: 2 }],
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      expect(findings.some(f => f.category === 'change-risk')).toBe(false);
+    });
+
+    it('severity critical when score >= 8', () => {
+      const entry = makeEntry2('src/terrible.ts', {
+        functions: [
+          makeFn({
+            name: 'fn1',
+            file: 'src/terrible.ts',
+            complexity: 40,
+            cognitiveComplexity: 50,
+            maintainabilityIndex: 5,
+            statementCount: 80,
+          }),
+          makeFn({
+            name: 'fn2',
+            file: 'src/terrible.ts',
+            complexity: 35,
+            cognitiveComplexity: 40,
+            maintainabilityIndex: 8,
+            statementCount: 60,
+          }),
+          makeFn({
+            name: 'fn3',
+            file: 'src/terrible.ts',
+            complexity: 30,
+            cognitiveComplexity: 25,
+            maintainabilityIndex: 12,
+            statementCount: 40,
+          }),
+        ],
+        emptyCatches: [{ file: 'src/terrible.ts', lineStart: 1, lineEnd: 2 }],
+        promiseAllUnhandled: [
+          { file: 'src/terrible.ts', lineStart: 5, lineEnd: 5, kind: 'Promise.all' as const },
+        ],
+        dependencyProfile: {
+          internalDependencies: [],
+          externalDependencies: [],
+          unresolvedDependencies: [],
+          declaredExports: Array.from({ length: 20 }, (_, i) => ({
+            name: `e${i}`,
+            kind: 'function' as const,
+            isType: false,
+            isDefault: false,
+          })),
+          importedSymbols: [],
+          reExports: [],
+        },
+      });
+      const { findings } = buildIssueCatalog(
+        [], [], [entry], minimalDepSummary(), emptyState(), testOpts2
+      );
+      const cr = findings.filter(f => f.category === 'change-risk');
+      expect(cr.length).toBe(1);
+      expect(cr[0].severity).toBe('critical');
+    });
+  });
+
+  describe('new categories registered in PILLAR_CATEGORIES', () => {
+    it('all new categories exist in code-quality pillar', () => {
+      const newCategories = [
+        'deep-nesting',
+        'multiple-return-paths',
+        'catch-rethrow',
+        'magic-string',
+        'boolean-parameter-cluster',
+        'promise-all-unhandled',
+        'export-surface-density',
+        'change-risk',
+      ];
+      for (const cat of newCategories) {
+        expect(PILLAR_CATEGORIES['code-quality']).toContain(cat);
+      }
+    });
   });
 });

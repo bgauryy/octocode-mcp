@@ -1,11 +1,3 @@
-/**
- * Factory for registering remote (GitHub/GitLab/Bitbucket) tools with the MCP server.
- *
- * Eliminates the repeated registration boilerplate across all remote tool modules.
- * Each remote tool only needs to supply its unique configuration; the factory
- * handles security wrapping, callback invocation, and execution arg assembly.
- */
-
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { toMCPSchema } from '../types/toolTypes.js';
@@ -46,15 +38,12 @@ export interface RemoteToolConfig<TQuery> {
  */
 export function createRemoteToolRegistration<TQuery>(
   config: RemoteToolConfig<TQuery>
-): (server: McpServer, callback?: ToolInvocationCallback) => ReturnType<McpServer['registerTool']> {
-  const {
-    name,
-    title,
-    inputSchema,
-    outputSchema,
-    executionFn,
-    annotations,
-  } = config;
+): (
+  server: McpServer,
+  callback?: ToolInvocationCallback
+) => ReturnType<McpServer['registerTool']> {
+  const { name, title, inputSchema, outputSchema, executionFn, annotations } =
+    config;
 
   return (server: McpServer, callback?: ToolInvocationCallback) => {
     return server.registerTool(

@@ -63,5 +63,16 @@ if (missingPackages.length > 0) {
 }
 
 // Dependencies are now available — load and run the main scanner
-const { main } = await import('./pipeline/main.js');
-await main();
+const { main, EXIT_ERROR } = await import('./pipeline/main.js');
+const { OptionsError } = await import('./pipeline/create-options.js');
+try {
+  const exitCode = await main();
+  process.exitCode = exitCode;
+} catch (err: unknown) {
+  if (err instanceof OptionsError) {
+    process.stderr.write(`${err.message}\n`);
+  } else {
+    console.error(err);
+  }
+  process.exitCode = EXIT_ERROR;
+}

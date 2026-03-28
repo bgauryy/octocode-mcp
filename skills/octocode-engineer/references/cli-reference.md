@@ -52,6 +52,13 @@ Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — 
 | Force full re-parse | `--no-cache` |
 | Clear cache | `--clear-cache` |
 | JSON to stdout | `--json` |
+| CI gate | `--reporter github-actions --at-least 60` |
+| PR diff check | `--affected HEAD~1 --reporter compact` |
+| Progressive adoption (save) | `--save-baseline` |
+| Progressive adoption (check) | `--ignore-known --at-least 60` |
+| Module neighborhood graph | `--graph --focus=src/session.ts --focus-depth 2` |
+| High-level architecture | `--graph --collapse 2` |
+| Use config file | `--config .octocode-scan.json` |
 
 ---
 
@@ -127,6 +134,15 @@ cat .octocode/scan/<latest>/findings.json | jq '.optimizationFindings[].category
 | `--no-cache` | off | Disable incremental cache; re-parse all files |
 | `--clear-cache` | — | Delete the analysis cache and exit (no scan) |
 | `--all` | off | Enable all features: `--include-tests --semantic` |
+| `--affected [revision]` | off | Scope to git-changed files + transitive dependents (default: HEAD) |
+| `--save-baseline` | off | Save current findings to `.octocode/baseline.json` |
+| `--ignore-known [file]` | off | Suppress findings matching baseline (default: `.octocode/baseline.json`) |
+| `--reporter <format>` | `default` | Output format: `default`, `compact`, `github-actions` |
+| `--focus <module>` | off | Show only this module and neighbors in graph (requires `--graph`). Supports `--focus=path` syntax |
+| `--focus-depth N` | 1 | Neighbor depth for `--focus` |
+| `--collapse N` | off | Collapse graph nodes to folder depth N |
+| `--at-least N` | off | Fail (exit 1) if gate score below N (0-100). Uses count-based formula, distinct from severity-weighted feature scores in `summary.md` |
+| `--config <file>` | auto-discover | Config file path. Auto-discovers `.octocode-scan.json`, `.octocode-scan.jsonc`, or `package.json#octocode` |
 | `--help`, `-h` | — | Show help message |
 
 ### Thresholds — Architecture
@@ -159,6 +175,10 @@ cat .octocode/scan/<latest>/findings.json | jq '.optimizationFindings[].category
 | `--min-flow-statements N` | 6 | Min control-flow statements for duplicate matching |
 | `--flow-dup-threshold N` | 3 | Min occurrences for a repeated flow to become a finding |
 | `--similarity-threshold N` | 0.85 | Jaccard similarity threshold for near-clone detection |
+| `--deep-nesting-threshold N` | 5 | Max branch/loop nesting depth before flagging |
+| `--multiple-return-threshold N` | 6 | Max return/throw paths per function before flagging |
+| `--magic-string-min-occurrences N` | 3 | Min repetitions of a string literal to flag as magic string |
+| `--boolean-param-threshold N` | 3 | Min boolean params per function to flag as cluster |
 | `--max-recs-per-category N` | 2 | Max findings per category in top recommendations |
 
 ### Thresholds — Semantic (require `--semantic`)

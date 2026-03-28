@@ -1862,3 +1862,283 @@ describe('collectTestProfile (via analyzeSourceFile)', () => {
     );
   });
 });
+
+describe('collectSmartQualityData', () => {
+  it('collects magic strings from === comparisons', () => {
+    const code = `
+function check(status: string) {
+  if (status === 'active') { return 1; }
+  if (status === 'active') { return 2; }
+  if (status === 'inactive') { return 0; }
+}`;
+    const src = parse(code);
+    const result = analyzeSourceFile(
+      src,
+      'pkg',
+      emptyPackageSummary(),
+      testOpts,
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
+    expect(result.magicStrings).toBeDefined();
+    expect(result.magicStrings!.length).toBeGreaterThanOrEqual(2);
+    expect(result.magicStrings!.some(ms => ms.value === 'active')).toBe(true);
+  });
+
+  it('collects magic strings from switch/case clauses', () => {
+    const code = `
+function handle(action: string) {
+  switch (action) {
+    case 'create': return 1;
+    case 'update': return 2;
+    case 'create': return 3;
+  }
+}`;
+    const src = parse(code);
+    const result = analyzeSourceFile(
+      src,
+      'pkg',
+      emptyPackageSummary(),
+      testOpts,
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
+    expect(result.magicStrings).toBeDefined();
+    expect(result.magicStrings!.some(ms => ms.value === 'create')).toBe(true);
+  });
+
+  it('does not collect magic strings from test files', () => {
+    const code = `
+function check(s: string) {
+  if (s === 'test') return 1;
+  if (s === 'test') return 2;
+}`;
+    const src = ts.createSourceFile(
+      '/repo/src/__tests__/check.test.ts',
+      code,
+      ts.ScriptTarget.ESNext,
+      true
+    );
+    const result = analyzeSourceFile(
+      src,
+      'pkg',
+      emptyPackageSummary(),
+      testOpts,
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
+    expect(result.magicStrings).toBeUndefined();
+  });
+
+  it('collects catch-rethrow patterns', () => {
+    const code = `
+function risky() {
+  try {
+    doStuff();
+  } catch (e) {
+    throw e;
+  }
+}`;
+    const src = parse(code);
+    const result = analyzeSourceFile(
+      src,
+      'pkg',
+      emptyPackageSummary(),
+      testOpts,
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
+    expect(result.catchRethrows).toBeDefined();
+    expect(result.catchRethrows!.length).toBe(1);
+  });
+
+  it('does not flag catch blocks that transform errors', () => {
+    const code = `
+function safe() {
+  try { doStuff(); } catch (e) { console.error(e); throw new Error('wrapped'); }
+}`;
+    const src = parse(code);
+    const result = analyzeSourceFile(
+      src,
+      'pkg',
+      emptyPackageSummary(),
+      testOpts,
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
+    expect(result.catchRethrows).toBeUndefined();
+  });
+
+  it('does not flag catch blocks with multiple statements', () => {
+    const code = `
+function logged() {
+  try { doStuff(); } catch (e) { console.error(e); throw e; }
+}`;
+    const src = parse(code);
+    const result = analyzeSourceFile(
+      src,
+      'pkg',
+      emptyPackageSummary(),
+      testOpts,
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
+    expect(result.catchRethrows).toBeUndefined();
+  });
+
+  it('collects boolean parameter clusters', () => {
+    const code = `
+function configure(verbose: boolean, debug: boolean, strict: boolean) {
+  return { verbose, debug, strict };
+}`;
+    const src = parse(code);
+    const result = analyzeSourceFile(
+      src,
+      'pkg',
+      emptyPackageSummary(),
+      testOpts,
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
+    expect(result.booleanParamClusters).toBeDefined();
+    expect(result.booleanParamClusters!.length).toBe(1);
+    expect(result.booleanParamClusters![0].booleanCount).toBe(3);
+    expect(result.booleanParamClusters![0].totalParams).toBe(3);
+  });
+
+  it('does not flag functions with fewer than 3 boolean params', () => {
+    const code = `function toggle(a: boolean, b: boolean) { return a && b; }`;
+    const src = parse(code);
+    const result = analyzeSourceFile(
+      src,
+      'pkg',
+      emptyPackageSummary(),
+      testOpts,
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
+    expect(result.booleanParamClusters).toBeUndefined();
+  });
+
+  it('collects unhandled Promise.all calls', () => {
+    const code = `
+async function loadAll() {
+  const results = await Promise.all([fetch('/a'), fetch('/b')]);
+  return results;
+}`;
+    const src = parse(code);
+    const result = analyzeSourceFile(
+      src,
+      'pkg',
+      emptyPackageSummary(),
+      testOpts,
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
+    expect(result.promiseAllUnhandled).toBeDefined();
+    expect(result.promiseAllUnhandled!.length).toBe(1);
+    expect(result.promiseAllUnhandled![0].kind).toBe('Promise.all');
+  });
+
+  it('does not flag Promise.all inside try-catch', () => {
+    const code = `
+async function safeFetch() {
+  try {
+    const results = await Promise.all([fetch('/a')]);
+    return results;
+  } catch (e) {
+    return [];
+  }
+}`;
+    const src = parse(code);
+    const result = analyzeSourceFile(
+      src,
+      'pkg',
+      emptyPackageSummary(),
+      testOpts,
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
+    expect(result.promiseAllUnhandled).toBeUndefined();
+  });
+
+  it('does not flag Promise.all with .catch() chain', () => {
+    const code = `
+async function safeFetch() {
+  const results = await Promise.all([fetch('/a')]).catch(() => []);
+  return results;
+}`;
+    const src = parse(code);
+    const result = analyzeSourceFile(
+      src,
+      'pkg',
+      emptyPackageSummary(),
+      testOpts,
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
+    expect(result.promiseAllUnhandled).toBeUndefined();
+  });
+
+  it('detects Promise.race and Promise.any', () => {
+    const code = `
+async function raceAndAny() {
+  const first = await Promise.race([fetch('/a'), fetch('/b')]);
+  const any = await Promise.any([fetch('/c'), fetch('/d')]);
+}`;
+    const src = parse(code);
+    const result = analyzeSourceFile(
+      src,
+      'pkg',
+      emptyPackageSummary(),
+      testOpts,
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
+    expect(result.promiseAllUnhandled).toBeDefined();
+    expect(result.promiseAllUnhandled!.length).toBe(2);
+    const kinds = result.promiseAllUnhandled!.map(p => p.kind);
+    expect(kinds).toContain('Promise.race');
+    expect(kinds).toContain('Promise.any');
+  });
+
+  it('does not collect smart quality data from test files', () => {
+    const code = `
+function check(s: string) {
+  if (s === 'test') return 1;
+  if (s === 'test') return 2;
+  try { x(); } catch (e) { throw e; }
+}`;
+    const src = ts.createSourceFile(
+      '/repo/src/__tests__/check.test.ts',
+      code,
+      ts.ScriptTarget.ESNext,
+      true
+    );
+    const result = analyzeSourceFile(
+      src,
+      'pkg',
+      emptyPackageSummary(),
+      testOpts,
+      emptyMaps(),
+      [],
+      emptyProfile
+    );
+    expect(result.magicStrings).toBeUndefined();
+    expect(result.catchRethrows).toBeUndefined();
+    expect(result.booleanParamClusters).toBeUndefined();
+    expect(result.promiseAllUnhandled).toBeUndefined();
+  });
+});

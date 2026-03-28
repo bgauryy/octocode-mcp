@@ -33,7 +33,8 @@ export default tseslint.config(
       ecmaVersion: 2022,
       sourceType: 'module',
       parserOptions: {
-        project: null, // Disable type-aware linting for performance
+        project: null,
+        tsconfigRootDir: import.meta.dirname,
       },
     },
     rules: {

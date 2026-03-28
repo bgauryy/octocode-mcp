@@ -11,26 +11,18 @@ This directory contains the active CI/CD workflows for the Octocode monorepo.
 
 ## CI (`ci.yml`)
 
-The pull request workflow now checks the repo quality contract explicitly:
+The pull request workflow runs two parallel jobs to minimize wall-clock time:
 
-1. `health`
-   Runs `yarn health:check`, `yarn docs:verify`, captures a scan architecture snapshot (`scripts/architecture-snapshot.mjs`), and enforces architecture/maintainability non-regression gates (`scripts/score-gate.mjs`).
-2. `lint`
-   Runs `yarn lint`.
-3. `typecheck`
-   Runs `yarn typecheck`.
-4. `build`
-   Runs `yarn build` and `node scripts/workspace-health.mjs check-outputs`.
-5. `test`
-   Runs `yarn test` and uploads per-package coverage artifacts.
+1. `checks` — Health, Lint & Typecheck
+   Runs `yarn health:check`, `yarn docs:verify`, `yarn lint`, builds shared types, then `yarn typecheck`.
+2. `build-and-test` — Build & Test
+   Runs `yarn build`, verifies outputs, then `yarn test` and uploads per-package coverage artifacts.
 
 Useful local commands before opening a PR:
 
 ```bash
 yarn health:check
 yarn docs:verify
-node scripts/architecture-snapshot.mjs --summary skills/octocode-code-engineer/.octocode/scan/check-each-tool-current/summary.json --out .octocode/scan/architecture-snapshot.json
-node scripts/score-gate.mjs --summary skills/octocode-code-engineer/.octocode/scan/check-each-tool-current/summary.json --min-aspect architecture-structure:67 --min-aspect maintainability-evolvability:68 --max-category shotgun-surgery:21 --max-category high-coupling:15 --max-category missing-error-boundary:42 --max-category cognitive-complexity:22
 yarn lint
 yarn typecheck
 yarn build

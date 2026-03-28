@@ -66,6 +66,7 @@ node <SKILL_DIR>/scripts/ast/tree-search.js -i .octocode/scan -k function_declar
 ```
 
 Useful options:
+- `--ignore-case` case-insensitive matching
 - `-i, --input` scan root or timestamp directory
 - `-k` node kind filter (supports `snake_case` and `PascalCase`)
 - `-p` regex pattern to match against any AST tree line
@@ -127,6 +128,12 @@ All presets (run `--list-presets` to verify against your version):
 | `async-function` | Async function declarations |
 | `export-default` | Default exports |
 | `import-star` | Namespace imports (`import * as X`) |
+| `catch-rethrow` | Catch blocks that only re-throw the caught error |
+| `promise-all` | `Promise.all` calls (check for missing error handling) |
+| `boolean-param` | Function parameters typed as `boolean` |
+| `magic-number` | Numeric literals (excluding 0 and 1) — potential magic numbers |
+| `deep-callback` | Deeply nested arrow function callbacks (3+ levels) |
+| `unused-var` | Variable declarations without call expressions (dead code candidates) |
 
 ---
 

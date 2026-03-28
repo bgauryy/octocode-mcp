@@ -70,6 +70,14 @@ export {
   detectListenerLeakRisk,
   detectUnboundedCollection,
   detectSimilarFunctionBodies,
+  detectDeepNesting,
+  detectMultipleReturnPaths,
+  detectCatchRethrow,
+  detectMagicStrings,
+  detectBooleanParameterCluster,
+  detectPromiseAllUnhandled,
+  detectExportSurfaceDensity,
+  detectChangeRisk,
 } from './code-quality.js';
 
 export {

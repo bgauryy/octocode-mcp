@@ -5,9 +5,11 @@ import { isTestFile } from '../common/utils.js';
 
 import type { FindingDraft } from './shared.js';
 import type {
+  DependencyState,
   DuplicateGroup,
   FileEntry,
   Finding,
+  FlowMapEntry,
   RedundantFlowGroup,
 } from '../types/index.js';
 
@@ -961,6 +963,346 @@ export function detectMessageChains(fileSummaries: FileEntry[]): FindingDraft[] 
         ],
       });
     }
+  }
+  return findings;
+}
+
+export function detectDeepNesting(
+  fileSummaries: FileEntry[],
+  threshold: number
+): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    for (const fn of entry.functions) {
+      const maxDepth = Math.max(fn.maxBranchDepth, fn.maxLoopDepth);
+      if (maxDepth < threshold) continue;
+      if (!canAddFinding(findings)) return findings;
+      const severity: Finding['severity'] = maxDepth >= threshold + 3 ? 'high' : maxDepth >= threshold + 1 ? 'medium' : 'low';
+      findings.push({
+        severity,
+        category: 'deep-nesting',
+        file: entry.file,
+        lineStart: fn.lineStart,
+        lineEnd: fn.lineEnd,
+        title: `Deep nesting ${maxDepth} levels in ${fn.name || '<anon>'}`,
+        reason: `Function has ${maxDepth}-level nesting (branch=${fn.maxBranchDepth}, loop=${fn.maxLoopDepth}), exceeding the ${threshold}-level threshold. Each nesting level multiplies the reader's cognitive load and increases the likelihood of logic errors.`,
+        files: [entry.file],
+        suggestedFix: {
+          strategy: 'Flatten nesting with guard clauses, early returns, or extraction.',
+          steps: [
+            'Convert nested if-blocks to guard clauses with early returns.',
+            'Extract deeply nested logic into named helper functions.',
+            'Replace nested loops with array methods (map/filter/reduce).',
+          ],
+        },
+        impact: 'Deeply nested code is hard to read, test, and modify. Each nesting level compounds the number of control-flow paths.',
+        tags: ['nesting', 'readability', 'complexity'],
+      });
+    }
+  }
+  return findings;
+}
+
+export function detectMultipleReturnPaths(
+  fileSummaries: FileEntry[],
+  threshold: number
+): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    for (const fn of entry.functions) {
+      if (fn.returns < threshold) continue;
+      if (!canAddFinding(findings)) return findings;
+      const severity: Finding['severity'] = fn.returns >= threshold + 4 ? 'high' : fn.returns >= threshold + 2 ? 'medium' : 'low';
+      findings.push({
+        severity,
+        category: 'multiple-return-paths',
+        file: entry.file,
+        lineStart: fn.lineStart,
+        lineEnd: fn.lineEnd,
+        title: `${fn.returns} return paths in ${fn.name || '<anon>'}`,
+        reason: `Function has ${fn.returns} return/throw points — the reader must track every exit path to understand the function's behavior. This exceeds the ${threshold} threshold.`,
+        files: [entry.file],
+        suggestedFix: {
+          strategy: 'Consolidate return points to reduce exit-path tracking.',
+          steps: [
+            'Replace scattered returns with a single result variable assigned conditionally.',
+            'Use early guard clauses for error cases only.',
+            'Consider splitting into smaller functions with clear single-responsibility.',
+          ],
+        },
+        impact: 'Many return paths make it harder to reason about what a function returns and to add post-processing.',
+        tags: ['returns', 'readability', 'flow'],
+      });
+    }
+  }
+  return findings;
+}
+
+export function detectCatchRethrow(fileSummaries: FileEntry[]): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    if (!entry.catchRethrows || entry.catchRethrows.length === 0) continue;
+    for (const loc of entry.catchRethrows) {
+      if (!canAddFinding(findings)) return findings;
+      findings.push({
+        severity: 'low',
+        category: 'catch-rethrow',
+        file: entry.file,
+        lineStart: loc.lineStart,
+        lineEnd: loc.lineEnd,
+        title: 'Catch-rethrow without transformation',
+        reason: 'A catch block that only re-throws the caught error is a no-op — it adds indentation and obscures the stack trace without adding value.',
+        files: [entry.file],
+        suggestedFix: {
+          strategy: 'Remove the try-catch or add meaningful error handling.',
+          steps: [
+            'If no transformation is needed, remove the try-catch entirely.',
+            'If logging is intended, add a log statement before re-throwing.',
+            'If wrapping, throw a new error with the original as cause.',
+          ],
+        },
+        impact: 'Pointless catch blocks add noise and can accidentally swallow stack-trace context.',
+        tags: ['error-handling', 'noise', 'cleanup'],
+      });
+    }
+  }
+  return findings;
+}
+
+export function detectMagicStrings(
+  fileSummaries: FileEntry[],
+  minOccurrences: number
+): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  const globalCounts = new Map<string, Array<{ file: string; lineStart: number; lineEnd: number }>>();
+
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    if (!entry.magicStrings) continue;
+    for (const ms of entry.magicStrings) {
+      const list = globalCounts.get(ms.value) || [];
+      list.push({ file: ms.file, lineStart: ms.lineStart, lineEnd: ms.lineEnd });
+      globalCounts.set(ms.value, list);
+    }
+  }
+
+  for (const [value, locs] of globalCounts) {
+    if (locs.length < minOccurrences) continue;
+    if (!canAddFinding(findings)) return findings;
+    const uniqueFiles = [...new Set(locs.map(l => l.file))];
+    const severity: Finding['severity'] = locs.length >= 8 ? 'high' : locs.length >= 5 ? 'medium' : 'low';
+    findings.push({
+      severity,
+      category: 'magic-string',
+      file: locs[0].file,
+      lineStart: locs[0].lineStart,
+      lineEnd: locs[0].lineEnd,
+      title: `Magic string "${value.length > 30 ? value.slice(0, 27) + '...' : value}" appears ${locs.length} times`,
+      reason: `The string literal "${value}" is used in ${locs.length} comparisons across ${uniqueFiles.length} file(s). If the value changes, every occurrence must be updated — a classic source of silent bugs.`,
+      files: uniqueFiles,
+      suggestedFix: {
+        strategy: 'Extract to a named constant or enum.',
+        steps: [
+          `Create a const (e.g. const ${value.toUpperCase().replace(/[^A-Z0-9]/g, '_')} = '${value}').`,
+          'Replace all usages with the constant reference.',
+          'Consider an enum if there are multiple related string values.',
+        ],
+      },
+      impact: 'Magic strings scatter domain knowledge across the codebase and are invisible to refactoring tools.',
+      tags: ['magic-value', 'maintainability', 'duplication'],
+    });
+  }
+  return findings;
+}
+
+export function detectBooleanParameterCluster(
+  fileSummaries: FileEntry[],
+  threshold: number
+): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    if (!entry.booleanParamClusters) continue;
+    for (const cluster of entry.booleanParamClusters) {
+      if (cluster.booleanCount < threshold) continue;
+      if (!canAddFinding(findings)) return findings;
+      findings.push({
+        severity: 'medium',
+        category: 'boolean-parameter-cluster',
+        file: entry.file,
+        lineStart: cluster.lineStart,
+        lineEnd: cluster.lineEnd,
+        title: `${cluster.booleanCount} boolean params in ${cluster.name || '<anon>'}`,
+        reason: `Function has ${cluster.booleanCount} boolean parameters out of ${cluster.totalParams} total. Boolean flags are opaque at call sites (e.g. doThing(true, false, true)) and each flag doubles the function's behavior space.`,
+        files: [entry.file],
+        suggestedFix: {
+          strategy: 'Replace boolean clusters with an options object or separate functions.',
+          steps: [
+            'Create an options/config object type with named fields.',
+            'Replace boolean parameters with the options object.',
+            'Consider splitting into distinct functions for each behavior variant.',
+          ],
+        },
+        impact: 'Boolean parameter clusters make call sites unreadable and the function hard to test — 2^N behavior combinations.',
+        tags: ['api-design', 'readability', 'parameters'],
+      });
+    }
+  }
+  return findings;
+}
+
+export function detectPromiseAllUnhandled(fileSummaries: FileEntry[]): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    if (!entry.promiseAllUnhandled) continue;
+    for (const loc of entry.promiseAllUnhandled) {
+      if (!canAddFinding(findings)) return findings;
+      findings.push({
+        severity: 'medium',
+        category: 'promise-all-unhandled',
+        file: entry.file,
+        lineStart: loc.lineStart,
+        lineEnd: loc.lineEnd,
+        title: `${loc.kind} without error handling`,
+        reason: `${loc.kind} is called without a surrounding try-catch or .catch() chain. If any of the composed promises reject, the rejection will propagate unhandled.`,
+        files: [entry.file],
+        suggestedFix: {
+          strategy: 'Wrap in try-catch or add .catch() to the promise chain.',
+          steps: [
+            'Add a try-catch around the await expression.',
+            'Or chain a .catch() handler onto the Promise combinator.',
+            'Consider Promise.allSettled if partial failure is acceptable.',
+          ],
+        },
+        impact: 'Unhandled rejections from promise combinators crash Node.js processes and cause silent failures in browsers.',
+        tags: ['error-handling', 'async', 'reliability'],
+      });
+    }
+  }
+  return findings;
+}
+
+export function detectExportSurfaceDensity(
+  fileSummaries: FileEntry[],
+  dependencyState?: DependencyState
+): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  if (!dependencyState) return findings;
+
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    const depProfile = entry.dependencyProfile;
+    if (!depProfile) continue;
+    const totalStatements = entry.functions.reduce((s, f) => s + f.statementCount, 0)
+      + entry.flows.length;
+    if (totalStatements < 20) continue;
+    const exportCount = depProfile.declaredExports?.length || 0;
+    if (exportCount === 0) continue;
+    const ratio = exportCount / totalStatements;
+    if (ratio < 0.5) continue;
+    if (!canAddFinding(findings)) return findings;
+    const severity: Finding['severity'] = ratio >= 0.8 ? 'high' : ratio >= 0.6 ? 'medium' : 'low';
+    findings.push({
+      severity,
+      category: 'export-surface-density',
+      file: entry.file,
+      lineStart: 1,
+      lineEnd: 1,
+      title: `${Math.round(ratio * 100)}% export density (${exportCount} exports / ~${totalStatements} statements)`,
+      reason: `This module exports ${exportCount} symbols from ~${totalStatements} total statements — a ${Math.round(ratio * 100)}% export surface. High export density means nearly everything is public API, increasing coupling and reducing the ability to refactor internals.`,
+      files: [entry.file],
+      suggestedFix: {
+        strategy: 'Reduce the public API by making non-essential symbols internal.',
+        steps: [
+          'Audit each export — does it need to be consumed externally?',
+          'Convert unnecessary exports to module-private functions.',
+          'Consider splitting into a public facade and private implementation module.',
+        ],
+      },
+      impact: 'High export density couples consumers to internal implementation, making any change a potential breaking change.',
+      tags: ['encapsulation', 'api-surface', 'coupling'],
+    });
+  }
+  return findings;
+}
+
+export function detectChangeRisk(
+  fileSummaries: FileEntry[],
+  _flowMap: Map<string, FlowMapEntry[]>,
+  _dependencyState?: DependencyState
+): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+
+  for (const entry of fileSummaries) {
+    if (isTestFile(entry.file)) continue;
+    let riskScore = 0;
+    const signals: string[] = [];
+
+    const avgComplexity = entry.functions.length > 0
+      ? entry.functions.reduce((s, f) => s + f.complexity, 0) / entry.functions.length
+      : 0;
+    if (avgComplexity > 15) {
+      riskScore += 2;
+      signals.push(`high avg complexity (${avgComplexity.toFixed(1)})`);
+    }
+
+    const maxCognitive = entry.functions.reduce((m, f) => Math.max(m, f.cognitiveComplexity), 0);
+    if (maxCognitive > 20) {
+      riskScore += 2;
+      signals.push(`high cognitive complexity (${maxCognitive})`);
+    }
+
+    const lowMiCount = entry.functions.filter(f => f.maintainabilityIndex !== undefined && f.maintainabilityIndex < 20).length;
+    if (lowMiCount > 0) {
+      riskScore += lowMiCount;
+      signals.push(`${lowMiCount} function(s) with low MI`);
+    }
+
+    if (entry.emptyCatches && entry.emptyCatches.length > 0) {
+      riskScore += 1;
+      signals.push(`${entry.emptyCatches.length} empty catches`);
+    }
+    if (entry.promiseAllUnhandled && entry.promiseAllUnhandled.length > 0) {
+      riskScore += 1;
+      signals.push(`${entry.promiseAllUnhandled.length} unhandled promise combinators`);
+    }
+
+    const depProfile = entry.dependencyProfile;
+    if (depProfile && depProfile.declaredExports) {
+      const exportCount = depProfile.declaredExports.length;
+      if (exportCount > 15) {
+        riskScore += 1;
+        signals.push(`${exportCount} exports`);
+      }
+    }
+
+    if (riskScore < 4) continue;
+    if (!canAddFinding(findings)) return findings;
+    const severity: Finding['severity'] = riskScore >= 8 ? 'critical' : riskScore >= 6 ? 'high' : 'medium';
+    findings.push({
+      severity,
+      category: 'change-risk',
+      file: entry.file,
+      lineStart: 1,
+      lineEnd: 1,
+      title: `Change-risk score ${riskScore}: ${signals.slice(0, 3).join(', ')}`,
+      reason: `This file has a composite change-risk score of ${riskScore}, derived from: ${signals.join('; ')}. Files with multiple overlapping quality signals are the most likely to introduce regressions when modified.`,
+      files: [entry.file],
+      suggestedFix: {
+        strategy: 'Reduce risk incrementally — address the highest-impact signal first.',
+        steps: [
+          'Check test coverage for this file — add tests if missing.',
+          'Address the highest-severity individual finding first.',
+          'Consider splitting the module to isolate high-risk logic.',
+        ],
+      },
+      impact: 'Files with multiple quality issues compound risk — each change is likely to trigger regressions in hard-to-predict ways.',
+      tags: ['risk', 'composite', 'priority'],
+    });
   }
   return findings;
 }
