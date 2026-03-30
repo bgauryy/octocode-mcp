@@ -79,7 +79,8 @@ export async function checkAndPrintEnvironmentWithLoader(): Promise<NodeEnvironm
     npmVersion: npmCheck.version,
     registryStatus: registryCheck.status,
     registryLatency: registryCheck.latency,
-    octocodePackageAvailable: true,
+    octocodePackageAvailable:
+      npmCheck.installed && registryCheck.status === 'ok',
     octocodePackageVersion: null,
   };
 

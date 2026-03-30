@@ -44,7 +44,7 @@ function formatCategory(category: string): string {
 
 function getCategoryIcon(category: MCPCategory): string {
   const icons: Record<MCPCategory, string> = {
-    'browser-automation': '',
+    'browser-automation': 'WEB',
     database: 'DB',
     'cloud-platform': 'CLOUD',
     'developer-tools': 'DEV',
@@ -100,9 +100,13 @@ export async function selectTargetClient(): Promise<{
     'claude-desktop',
     'claude-code',
     'opencode',
+    'codex',
+    'gemini-cli',
     'windsurf',
     'trae',
     'antigravity',
+    'goose',
+    'kiro',
     'zed',
     'vscode-cline',
     'vscode-roo',
@@ -193,7 +197,8 @@ async function promptCustomPath(): Promise<string | null> {
   if (!customPath || !customPath.trim()) return null;
 
   if (customPath.startsWith('~')) {
-    return customPath.replace('~', process.env.HOME || '');
+    const home = process.env.HOME || process.env.USERPROFILE || '';
+    return customPath.replace('~', home);
   }
 
   return customPath;
@@ -416,7 +421,9 @@ export async function selectPopular(): Promise<
   console.log();
   console.log(`  ${dim('[Step 3/6]')} ${bold('Select MCP')}`);
 
-  const popular = MCP_REGISTRY.slice(0, 20);
+  const popular = [...MCP_REGISTRY]
+    .sort((a, b) => (b.stars ?? 0) - (a.stars ?? 0))
+    .slice(0, 20);
   return await selectFromList(popular, 'Popular MCPs');
 }
 

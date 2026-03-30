@@ -11,7 +11,7 @@ import {
   copyDirectory,
 } from './fs.js';
 import { join, resolve, relative, isAbsolute, sep } from 'node:path';
-import { mkdirSync, statSync, readdirSync, unlinkSync } from 'node:fs';
+import { mkdirSync, statSync, readdirSync, unlinkSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import { getSkillsSourcePath, getAvailableSkills } from './skills.js';
 import { parseSkillFrontmatter } from './parsers/frontmatter.js';
@@ -211,6 +211,10 @@ function installLocalSkill(
       return { success: false, error: 'Skill not found in bundled source' };
     }
 
+    if (dirExists(destPath)) {
+      rmSync(destPath, { recursive: true, force: true });
+    }
+
     copyDirectory(sourcePath, destPath);
     return { success: true };
   } catch (error) {
@@ -241,6 +245,13 @@ export async function fetchMarketplaceTree(
   }
 
   const data = (await response.json()) as GitHubTreeResponse;
+
+  if (data.truncated) {
+    console.warn(
+      `[octocode] GitHub tree response was truncated for ${source.owner}/${source.repo}. Some skills may be missing.`
+    );
+  }
+
   return data.tree;
 }
 

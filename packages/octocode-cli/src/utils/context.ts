@@ -1,9 +1,10 @@
 import { homedir } from 'node:os';
+import path from 'node:path';
 import { runCommand } from './shell.js';
 
 interface AppContext {
   cwd: string;
-  ide: 'Cursor' | 'VS Code' | 'Terminal' | 'Unknown';
+  ide: 'Cursor' | 'VS Code' | 'Terminal';
   git?: {
     branch: string;
     root: string;
@@ -21,8 +22,10 @@ export function getAppContext(): AppContext {
 function getShortCwd(): string {
   const cwd = process.cwd();
   const home = homedir();
-  if (cwd.startsWith(home)) {
-    return '~' + cwd.slice(home.length);
+  const normalizedCwd = path.normalize(cwd);
+  const normalizedHome = path.normalize(home);
+  if (normalizedCwd.toLowerCase().startsWith(normalizedHome.toLowerCase())) {
+    return '~' + normalizedCwd.slice(normalizedHome.length);
   }
   return cwd;
 }
@@ -48,7 +51,7 @@ function detectGit(): AppContext['git'] | undefined {
   const branch = runCommand('git', ['branch', '--show-current']);
 
   return {
-    root: root.stdout.split('/').pop() || 'repo',
+    root: path.basename(root.stdout.trim()) || 'repo',
     branch: branch.success ? branch.stdout : 'HEAD',
   };
 }

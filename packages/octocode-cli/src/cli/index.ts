@@ -37,11 +37,6 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
     return true;
   }
 
-  if (hasHelpFlag(args)) {
-    showCommandHelp(command);
-    return true;
-  }
-
   await command.handler(args);
   return true;
 }

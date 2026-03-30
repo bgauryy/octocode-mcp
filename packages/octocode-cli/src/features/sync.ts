@@ -228,6 +228,17 @@ export function executeSyncToClients(
     : snapshots.filter(s => s.exists);
 
   for (const snapshot of clients) {
+    if (snapshot.exists && snapshot.config === null) {
+      results.set(snapshot.client, {
+        success: false,
+        error:
+          'Config file exists but could not be parsed (corrupt JSON?) — skipping to avoid data loss',
+      });
+      errors.push(
+        `${MCP_CLIENTS[snapshot.client]?.name || snapshot.client}: corrupt config — skipped`
+      );
+      continue;
+    }
     const mergedConfig = buildMergedConfig(snapshot.config, mcpsToSync);
 
     const writeResult = writeMCPConfig(snapshot.configPath, mergedConfig);

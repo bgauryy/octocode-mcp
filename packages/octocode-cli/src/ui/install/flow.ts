@@ -303,7 +303,6 @@ async function performInstall(state: InstallFlowState): Promise<void> {
   );
 
   const spinner = new Spinner('Configuring octocode-mcp...').start();
-  await new Promise(resolve => setTimeout(resolve, 500));
 
   const result = installOctocodeForClient({
     client: state.client!,

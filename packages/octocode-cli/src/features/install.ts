@@ -292,12 +292,16 @@ export function detectAvailableClients(): MCPClient[] {
     'claude-desktop',
     'claude-code',
     'opencode',
+    'codex',
+    'gemini-cli',
     'vscode-cline',
     'vscode-roo',
     'vscode-continue',
     'windsurf',
     'trae',
     'antigravity',
+    'goose',
+    'kiro',
     'zed',
   ];
 

@@ -130,8 +130,6 @@ export async function runSyncFlow(): Promise<void> {
           'Scanning client configurations...'
         ).start();
 
-        await new Promise(resolve => setTimeout(resolve, 300));
-
         const snapshots = readAllClientConfigs();
         state.analysis = analyzeSyncState(snapshots);
 
@@ -341,8 +339,6 @@ export async function runSyncFlow(): Promise<void> {
 
         const spinner = new Spinner('Syncing configurations...').start();
 
-        await new Promise(resolve => setTimeout(resolve, 500));
-
         const result = executeSyncToClients(
           analysis.clients,
           payload,
@@ -408,6 +404,7 @@ export async function quickSync(options: {
 
   const resolutions: ConflictResolution[] = [];
   if (options.force) {
+    // --force auto-resolves by picking the first variant (alphabetical by client detection order)
     for (const diff of analysis.conflicts) {
       const firstVariant = Array.from(diff.variants.entries())[0];
       if (firstVariant) {

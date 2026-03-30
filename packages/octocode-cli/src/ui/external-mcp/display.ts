@@ -53,19 +53,23 @@ export function printInstallPreview(
   console.log(c('blue', ' └' + '─'.repeat(60) + '┘'));
   console.log();
 
+  const mergedEnv = {
+    ...(mcp.installConfig.env || {}),
+    ...envValues,
+  };
   const serverConfig = {
     command: mcp.installConfig.command,
     args: [...mcp.installConfig.args],
-    ...(Object.keys(envValues).length > 0 && { env: envValues }),
+    ...(Object.keys(mergedEnv).length > 0 && { env: mergedEnv }),
   };
 
   console.log(`  ${dim('Server ID:')} ${c('cyan', mcp.id)}`);
   console.log(`  ${dim('Command:')} ${c('green', serverConfig.command)}`);
   console.log(`  ${dim('Args:')} ${c('yellow', serverConfig.args.join(' '))}`);
 
-  if (Object.keys(envValues).length > 0) {
+  if (Object.keys(mergedEnv).length > 0) {
     console.log(`  ${dim('Environment Variables:')}`);
-    for (const [key, value] of Object.entries(envValues)) {
+    for (const [key, value] of Object.entries(mergedEnv)) {
       const displayValue =
         value.length > 30 ? value.slice(0, 27) + '...' : value;
       console.log(`    ${c('cyan', key)}: ${dim(displayValue)}`);

@@ -93,7 +93,9 @@ export function copyDirectory(src: string, dest: string): boolean {
       const destPath = path.join(dest, entry.name);
 
       if (entry.isDirectory()) {
-        copyDirectory(srcPath, destPath);
+        if (!copyDirectory(srcPath, destPath)) {
+          return false;
+        }
       } else {
         fs.copyFileSync(srcPath, destPath);
       }
