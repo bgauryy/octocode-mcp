@@ -272,7 +272,7 @@ async function installSkill(skill: MarketplaceSkill): Promise<boolean> {
       `  ${dim('Location:')} ${c('cyan', path.join(destDir, skill.name))}`
     );
     console.log();
-    console.log(`  ${bold('The skill is now available in Claude Code!')}`);
+    console.log(`  ${bold('The skill is now available in your AI client!')}`);
   } else {
     spinner.fail(`Failed to install ${skill.displayName}`);
     console.log();
@@ -352,19 +352,18 @@ async function showOfficialFlowMenu(
       value: 'install-all',
       description: dim('One-click install of all Octocode skills'),
     });
+    choices.push({
+      name: `${c('cyan', 'List')} Browse Skills Individually`,
+      value: 'browse',
+      description: dim('View details and install one by one'),
+    });
   } else {
     choices.push({
-      name: `${c('green', '✅')} All skills installed!`,
+      name: `${c('green', '✅')} All skills installed — Browse to reinstall or view details`,
       value: 'browse',
-      description: dim('Browse to reinstall or view details'),
+      description: dim('View details and reinstall individually'),
     });
   }
-
-  choices.push({
-    name: `${c('cyan', 'List')} Browse Skills Individually`,
-    value: 'browse',
-    description: dim('View details and install one by one'),
-  });
 
   choices.push(
     new Separator() as unknown as {
@@ -460,7 +459,7 @@ async function installAllSkills(skills: MarketplaceSkill[]): Promise<void> {
   }
 
   console.log();
-  console.log(`  ${bold('Skills are now available in Claude Code!')}`);
+  console.log(`  ${bold('Skills are now available in your AI client!')}`);
   console.log();
 
   await pressEnterToContinue();
@@ -577,12 +576,12 @@ export async function runOctocodeSkillsFlow(): Promise<void> {
     return;
   }
 
-  const notInstalledCount = skills.filter(
-    s => !isSkillInstalled(s.name)
-  ).length;
-
   let inFlow = true;
   while (inFlow) {
+    const notInstalledCount = skills.filter(
+      s => !isSkillInstalled(s.name)
+    ).length;
+
     const menuChoice = await showOfficialFlowMenu(
       skills.length,
       notInstalledCount

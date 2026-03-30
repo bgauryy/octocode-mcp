@@ -34,7 +34,7 @@ interface InstalledSkill {
   isRecommended: boolean;
 }
 
-type SkillsMenuChoice = 'manage' | 'view' | 'marketplace' | 'back';
+type SkillsMenuChoice = 'manage' | 'marketplace' | 'back';
 type ManageSkillsChoice = InstalledSkill | 'back';
 
 async function pressEnterToContinue(): Promise<void> {
@@ -204,44 +204,6 @@ async function showSkillsMenu(
   return choice;
 }
 
-function showSkillsStatus(info: ReturnType<typeof getSkillsInfo>): void {
-  const { destDir, skillsStatus, notInstalled } = info;
-
-  if (skillsStatus.length === 0) {
-    console.log(`  ${dim('No skills available.')}`);
-    console.log();
-    return;
-  }
-
-  console.log(`  ${bold('Skills:')}`);
-  console.log();
-  for (const skill of skillsStatus) {
-    if (skill.installed) {
-      console.log(
-        `    ${c('green', '✅')} ${skill.name} - ${c('green', 'installed')}`
-      );
-    } else {
-      console.log(
-        `    ${c('yellow', '○')} ${skill.name} - ${dim('not installed')}`
-      );
-    }
-  }
-  console.log();
-
-  console.log(`  ${bold('Installation path:')}`);
-  console.log(`  ${c('cyan', destDir)}`);
-  console.log();
-
-  if (notInstalled.length === 0) {
-    console.log(`  ${c('green', '✅')} All skills are installed!`);
-  } else {
-    console.log(
-      `  ${c('yellow', 'INFO')} ${notInstalled.length} skill(s) not installed`
-    );
-  }
-  console.log();
-}
-
 function formatSkillName(name: string): string {
   const acronyms = ['PR', 'API', 'UI', 'CLI', 'MCP', 'AI'];
   const formatted = name
@@ -272,7 +234,7 @@ async function selectInstalledSkill(
   }> = [];
 
   for (const skill of skills) {
-    const starTag = skill.isRecommended ? c('yellow', '') : '';
+    const starTag = skill.isRecommended ? c('yellow', '★ ') : '';
     const sourceTag = skill.isBundled
       ? c('cyan', ' [bundled]')
       : c('magenta', ' [community]');
@@ -512,10 +474,6 @@ export async function runSkillsMenu(): Promise<void> {
         await runMarketplaceFlow();
         break;
 
-      case 'view':
-        showSkillsStatus(info);
-        await pressEnterToContinue();
-        break;
       case 'back':
       default:
         inSkillsMenu = false;

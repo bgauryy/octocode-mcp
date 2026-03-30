@@ -25,7 +25,7 @@ const ALL_AVAILABLE_TOOLS = {
   github: [
     {
       id: 'githubSearchCode',
-      name: '- Search Code',
+      name: 'Search Code',
       description: 'Search for code patterns in GitHub repositories',
     },
     {
@@ -35,17 +35,17 @@ const ALL_AVAILABLE_TOOLS = {
     },
     {
       id: 'githubViewRepoStructure',
-      name: '- View Repo Structure',
+      name: 'View Repo Structure',
       description: 'Browse repository directory structure',
     },
     {
       id: 'githubSearchRepositories',
-      name: '- Search Repositories',
+      name: 'Search Repositories',
       description: 'Search for GitHub repositories',
     },
     {
       id: 'githubSearchPullRequests',
-      name: '- Search Pull Requests',
+      name: 'Search Pull Requests',
       description: 'Search for pull requests and view diffs',
     },
     {
@@ -63,7 +63,7 @@ const ALL_AVAILABLE_TOOLS = {
     },
     {
       id: 'localViewStructure',
-      name: '- View Structure',
+      name: 'View Structure',
       description: 'Browse local directory structure',
     },
     {

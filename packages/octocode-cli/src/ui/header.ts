@@ -72,7 +72,7 @@ export function printGoodbye(): void {
     `     ${c('green', '-')} ${dim('Prompts:')}  Use ${c('cyan', '/research')}, ${c('cyan', '/plan')}, ${c('cyan', '/implement')} in chat`
   );
   console.log(
-    `     ${c('green', '-')} ${dim('Skills:')}   Add all via ${c('cyan', 'Manage System Skills')} -> ${c('cyan', 'Octocode Official')}`
+    `     ${c('green', '-')} ${dim('Skills:')}   Add all via ${c('cyan', 'Octocode Skills')} or ${c('cyan', 'Manage System Skills')} -> ${c('cyan', 'Browse Marketplace')}`
   );
   console.log(
     `     ${c('green', '-')} ${dim('Context:')}  Add ${c('cyan', 'AGENTS.md')} to your project ${dim('(you can ask octocode)')}`

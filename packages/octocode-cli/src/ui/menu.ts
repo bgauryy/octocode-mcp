@@ -80,9 +80,9 @@ function buildSkillsMenuItem(skills: SkillsState): {
 } {
   if (!skills.sourceExists || !skills.hasSkills) {
     return {
-      name: '- Manage System Skills',
+      name: `${dim('- Manage System Skills')}`,
       value: 'skills',
-      description: dim('Not available'),
+      description: dim('Not available — no skill sources found'),
     };
   }
 
@@ -510,11 +510,15 @@ async function showAuthMenu(
   if (isUsingEnv && hasEnv) {
     const envVar =
       status.envTokenSource?.replace('env:', '') || 'environment variable';
-    choices.push({
-      name: `- Using ${c('cyan', envVar)} ${dim('(takes priority)')}`,
-      value: 'back',
-      description: 'Token set via environment variable',
-    });
+    choices.push(
+      new Separator(
+        `  ${c('green', '✅')} Using ${c('cyan', envVar)} ${dim('(takes priority)')}`
+      ) as unknown as {
+        name: string;
+        value: AuthMenuChoice;
+        description?: string;
+      }
+    );
 
     choices.push(
       new Separator() as unknown as {
@@ -973,9 +977,7 @@ function printEnvHeader(): void {
   console.log(`  ${bold('Environment')}`);
 }
 
-async function displayEnvironmentStatus(
-  _authStatus: OctocodeAuthStatus
-): Promise<void> {
+async function displayEnvironmentStatus(): Promise<void> {
   printEnvHeader();
 
   const envStatus = await checkAndPrintEnvironmentWithLoader();
@@ -1006,7 +1008,7 @@ export async function runMenuLoop(): Promise<void> {
       clearScreen();
       printWelcome();
 
-      await displayEnvironmentStatus(state.githubAuth);
+      await displayEnvironmentStatus();
     }
     firstRun = false;
 

@@ -149,7 +149,10 @@ function printServerConfig(server: MCPServer, indent: string = '     '): void {
   if (server.env && Object.keys(server.env).length > 0) {
     console.log(`${indent}${dim('env:')}`);
     for (const [key, value] of Object.entries(server.env)) {
-      const displayValue = key.toLowerCase().includes('token')
+      const isSensitive = /token|secret|key|password|auth|credential/i.test(
+        key
+      );
+      const displayValue = isSensitive
         ? '***'
         : value && value.length > 30
           ? value.slice(0, 30) + '...'

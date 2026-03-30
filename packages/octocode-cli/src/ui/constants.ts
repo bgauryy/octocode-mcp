@@ -54,6 +54,26 @@ export const CLIENT_INFO = {
     description: 'High-performance code editor',
     url: 'https://zed.dev',
   },
+  codex: {
+    name: 'Codex',
+    description: 'OpenAI Codex CLI agent',
+    url: 'https://github.com/openai/codex',
+  },
+  'gemini-cli': {
+    name: 'Gemini CLI',
+    description: 'Google Gemini CLI',
+    url: 'https://github.com/google-gemini/gemini-cli',
+  },
+  goose: {
+    name: 'Goose',
+    description: 'Block AI coding agent',
+    url: 'https://block.github.io/goose',
+  },
+  kiro: {
+    name: 'Kiro',
+    description: 'AWS AI IDE',
+    url: 'https://kiro.dev',
+  },
   custom: {
     name: 'Custom Path',
     description: 'Specify your own MCP config path',

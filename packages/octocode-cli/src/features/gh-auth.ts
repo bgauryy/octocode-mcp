@@ -24,7 +24,7 @@ export function checkGitHubAuth(): GitHubAuthStatus {
 
   if (result.success) {
     const usernameMatch = result.stdout.match(
-      /Logged in to github\.com.*account\s+(\S+)/i
+      /Logged in to \S+.*account\s+(\S+)/i
     );
     const username = usernameMatch ? usernameMatch[1] : undefined;
 

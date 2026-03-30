@@ -42,9 +42,13 @@ function getAllClientsWithStatus(): Array<{
     'claude-desktop',
     'claude-code',
     'opencode',
+    'codex',
+    'gemini-cli',
     'windsurf',
     'trae',
     'antigravity',
+    'goose',
+    'kiro',
     'zed',
     'vscode-cline',
     'vscode-roo',
@@ -343,7 +347,8 @@ async function promptInstallToNewClient(
 
 function expandPath(inputPath: string): string {
   if (inputPath.startsWith('~')) {
-    return path.join(process.env.HOME || '', inputPath.slice(1));
+    const home = process.env.HOME || process.env.USERPROFILE || '';
+    return path.join(home, inputPath.slice(1));
   }
   return inputPath;
 }
@@ -376,6 +381,11 @@ async function promptCustomPath(): Promise<string | null> {
   );
   console.log(`    ${dim('•')} ~/.config/zed/settings.json ${dim('(Zed)')}`);
   console.log(`    ${dim('•')} ~/.continue/config.json ${dim('(Continue)')}`);
+  console.log(
+    `    ${dim('•')} ~/.codex/config.toml ${dim('(Codex - TOML format)')}`
+  );
+  console.log(`    ${dim('•')} ~/.gemini/settings.json ${dim('(Gemini CLI)')}`);
+  console.log(`    ${dim('•')} ~/.kiro/mcp.json ${dim('(Kiro)')}`);
   console.log();
 
   const customPath = await input({
@@ -424,11 +434,11 @@ export async function promptLocalTools(): Promise<boolean | null> {
     message: 'Enable local tools?',
     choices: [
       {
-        name: `${c('yellow', '○')} Disable ${dim('(Recommended)')} - ${dim('Use only GitHub tools')}`,
+        name: `${c('green', '●')} Disable ${dim('(Recommended)')} - ${dim('Use only GitHub tools')}`,
         value: 'disable' as const,
       },
       {
-        name: `${c('green', '●')} Enable - ${dim('Allow local file exploration')}`,
+        name: `${c('yellow', '○')} Enable - ${dim('Allow local file exploration')}`,
         value: 'enable' as const,
       },
       new Separator() as unknown as { name: string; value: LocalToolsChoice },

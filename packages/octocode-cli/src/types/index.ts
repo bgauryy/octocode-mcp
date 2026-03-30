@@ -41,6 +41,10 @@ export type MCPClient =
   | 'antigravity'
   | 'zed'
   | 'opencode'
+  | 'codex'
+  | 'gemini-cli'
+  | 'goose'
+  | 'kiro'
   | 'custom';
 
 export type IDE = 'cursor' | 'claude';

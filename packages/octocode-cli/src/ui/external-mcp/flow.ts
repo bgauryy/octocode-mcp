@@ -505,7 +505,8 @@ export async function runExternalMCPFlow(): Promise<void> {
             console.log(
               `  ${dim('Skipped - keeping existing configuration.')}`
             );
-            return;
+            currentStep = 'browse';
+            break;
           }
 
           if (duplicateChoice === 'back') {

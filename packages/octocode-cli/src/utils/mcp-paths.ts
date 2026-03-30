@@ -114,6 +114,37 @@ export const MCP_CLIENTS: Record<MCPClient, MCPClientInfo> = {
     url: 'https://opencode.ai',
     envVars: ['OPENCODE'],
   },
+  codex: {
+    id: 'codex',
+    name: 'Codex',
+    description: 'OpenAI Codex CLI agent',
+    category: 'cli',
+    url: 'https://github.com/openai/codex',
+    envVars: ['CODEX_HOME', 'CODEX_SANDBOX_TYPE'],
+  },
+  'gemini-cli': {
+    id: 'gemini-cli',
+    name: 'Gemini CLI',
+    description: 'Google Gemini CLI',
+    category: 'cli',
+    url: 'https://github.com/google-gemini/gemini-cli',
+    envVars: ['GEMINI_API_KEY'],
+  },
+  goose: {
+    id: 'goose',
+    name: 'Goose',
+    description: 'Block AI coding agent',
+    category: 'desktop',
+    url: 'https://block.github.io/goose',
+    envVars: ['GOOSE_MODE'],
+  },
+  kiro: {
+    id: 'kiro',
+    name: 'Kiro',
+    description: 'AWS AI IDE',
+    category: 'ide',
+    url: 'https://kiro.dev',
+  },
   custom: {
     id: 'custom',
     name: 'Custom Path',
@@ -205,6 +236,28 @@ export function getMCPConfigPath(
 
       return path.join(appSupport, 'opencode', 'config.json');
 
+    case 'codex':
+      return path.join(HOME, '.codex', 'config.toml');
+
+    case 'gemini-cli':
+      return path.join(HOME, '.gemini', 'settings.json');
+
+    case 'goose':
+      if (isWindows) {
+        return path.join(getAppDataPath(), 'goose', 'config.yaml');
+      }
+      if (isMac) {
+        return path.join(appSupport, 'goose', 'config.yaml');
+      }
+
+      return path.join(appSupport, 'goose', 'config.yaml');
+
+    case 'kiro':
+      if (isWindows) {
+        return path.join(getAppDataPath(), 'Kiro', 'mcp.json');
+      }
+      return path.join(HOME, '.kiro', 'mcp.json');
+
     case 'custom':
       throw new Error('Custom path requires customPath parameter');
 
@@ -213,6 +266,10 @@ export function getMCPConfigPath(
   }
 }
 
+/**
+ * Checks whether the client's config directory exists (NOT the config file itself).
+ * Use `configFileExists()` to check for the actual config file.
+ */
 export function clientConfigExists(
   client: MCPClient,
   customPath?: string
@@ -225,6 +282,8 @@ export function clientConfigExists(
     return false;
   }
 }
+
+export { clientConfigExists as clientConfigDirExists };
 
 export function configFileExists(
   client: MCPClient,
@@ -266,7 +325,25 @@ export function detectCurrentClient(): MCPClient | null {
     return 'opencode';
   }
 
+  if (env.CODEX_HOME || env.CODEX_SANDBOX_TYPE) {
+    return 'codex';
+  }
+
+  if (env.GEMINI_API_KEY) {
+    return 'gemini-cli';
+  }
+
+  if (env.GOOSE_MODE) {
+    return 'goose';
+  }
+
   if (env.VSCODE_PID || env.TERM_PROGRAM === 'vscode') {
+    if (env.ROO_CLINE || env.ROO) {
+      return 'vscode-roo';
+    }
+    if (env.CONTINUE_GLOBAL_DIR) {
+      return 'vscode-continue';
+    }
     return 'vscode-cline';
   }
 
@@ -288,6 +365,10 @@ export function detectAvailableClients(): MCPClient[] {
     'antigravity',
     'zed',
     'opencode',
+    'codex',
+    'gemini-cli',
+    'goose',
+    'kiro',
   ];
 
   for (const client of clients) {

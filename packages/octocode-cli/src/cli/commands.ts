@@ -290,6 +290,16 @@ function normalizeMCPClient(value: string): MCPClient | null {
       return 'vscode-continue';
     case 'opencode':
       return 'opencode';
+    case 'codex':
+      return 'codex';
+    case 'gemini':
+    case 'gemini-cli':
+    case 'geminicli':
+      return 'gemini-cli';
+    case 'goose':
+      return 'goose';
+    case 'kiro':
+      return 'kiro';
     case 'custom':
       return 'custom';
     default:
@@ -370,7 +380,7 @@ const installCommand: CLICommand = {
     {
       name: 'ide',
       description:
-        'IDE to configure: cursor, claude-desktop, claude-code, windsurf, zed, vscode-cline, vscode-roo, vscode-continue, opencode, trae, antigravity',
+        'IDE to configure: cursor, claude-desktop, claude-code, windsurf, zed, vscode-cline, vscode-roo, vscode-continue, opencode, trae, antigravity, codex, gemini-cli, goose, kiro',
       hasValue: true,
     },
     {
@@ -461,6 +471,10 @@ const installCommand: CLICommand = {
       'opencode',
       'trae',
       'antigravity',
+      'codex',
+      'gemini-cli',
+      'goose',
+      'kiro',
     ];
     if (!supportedIDEs.includes(ide)) {
       console.log();
@@ -730,9 +744,9 @@ const authCommand: CLICommand = {
       return;
     }
 
-    const status = getAuthStatus();
+    const status = getAuthStatus(hostname);
 
-    await showAuthStatus();
+    await showAuthStatus(hostname);
 
     await loadInquirer();
 
@@ -755,7 +769,7 @@ const authCommand: CLICommand = {
     if (action === 'login') {
       await loginCommand.handler({ command: 'login', args: [], options: {} });
     } else if (action === 'logout') {
-      await oauthLogout();
+      await oauthLogout(hostname);
       console.log();
       console.log(`  ${c('green', '✓')} Successfully logged out`);
       console.log();
@@ -790,7 +804,7 @@ async function showAuthStatus(hostname: string = 'github.com'): Promise<void> {
     }
     console.log(`  ${dim('Host:')} ${status.hostname}`);
     console.log(
-      `  ${dim('Source:')} ${formatTokenSource(status.tokenSource || 'none')}`
+      `  ${dim('Source:')} ${formatTokenSource(status.tokenSource || 'none', status.envTokenSource)}`
     );
   } else {
     console.log(`  ${c('yellow', '⚠')} ${c('yellow', 'Not authenticated')}`);
@@ -846,8 +860,14 @@ const skillsCommand: CLICommand = {
       typeof rawSkill === 'string' && rawSkill.length > 0
         ? rawSkill
         : undefined;
-    const rawTargets = args.options['targets'] ?? args.options['t'];
-    const rawMode = args.options['mode'] ?? args.options['m'];
+    const rawTargets =
+      subcommand === 'remove'
+        ? undefined
+        : (args.options['targets'] ?? args.options['t']);
+    const rawMode =
+      subcommand === 'remove'
+        ? undefined
+        : (args.options['mode'] ?? args.options['m']);
     let installMode: SkillInstallMode = 'copy';
     if (typeof rawMode === 'string' && rawMode.trim().length > 0) {
       const normalizedMode = rawMode.trim().toLowerCase();
@@ -894,7 +914,7 @@ const skillsCommand: CLICommand = {
     let installStrategy: SkillInstallStrategy = installMode;
 
     if (
-      (subcommand === 'install' || subcommand === 'remove') &&
+      subcommand === 'install' &&
       process.stdout.isTTY &&
       (!hasExplicitTargets || !hasExplicitMode)
     ) {
@@ -1345,7 +1365,7 @@ const statusCommand: CLICommand = {
       );
       console.log(`  ${dim('Host:')} ${status.hostname}`);
       console.log(
-        `  ${dim('Source:')} ${formatTokenSource(status.tokenSource || 'none')}`
+        `  ${dim('Source:')} ${formatTokenSource(status.tokenSource || 'none', status.envTokenSource)}`
       );
       if (status.tokenExpired) {
         console.log(
@@ -1513,7 +1533,7 @@ const mcpCommand: CLICommand = {
       name: 'client',
       short: 'c',
       description:
-        'Target client: cursor, claude-desktop, claude-code, windsurf, trae, antigravity, zed, vscode-cline, vscode-roo, vscode-continue, opencode',
+        'Target client: cursor, claude-desktop, claude-code, windsurf, trae, antigravity, zed, vscode-cline, vscode-roo, vscode-continue, opencode, codex, gemini-cli, goose, kiro',
       hasValue: true,
     },
     {
@@ -1575,7 +1595,7 @@ const mcpCommand: CLICommand = {
           `  ${c('red', 'X')} Invalid --client value: ${c('yellow', rawClient)}`
         );
         console.log(
-          `  ${dim('Allowed values:')} cursor, claude-desktop, claude-code, windsurf, trae, antigravity, zed, vscode-cline, vscode-roo, vscode-continue, opencode`
+          `  ${dim('Allowed values:')} cursor, claude-desktop, claude-code, windsurf, trae, antigravity, zed, vscode-cline, vscode-roo, vscode-continue, opencode, codex, gemini-cli, goose, kiro`
         );
         console.log();
         process.exitCode = 1;
