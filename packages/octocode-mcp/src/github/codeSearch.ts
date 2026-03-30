@@ -192,7 +192,7 @@ async function transformToOptimizedFormat(
             );
           }
           if (sanitizationResult.warnings.length > 0) {
-            sanitizationResult.warnings.forEach(w =>
+            sanitizationResult.warnings.forEach((w: string) =>
               allMatchLocationsSet.add(`${item.path}: ${w}`)
             );
           }

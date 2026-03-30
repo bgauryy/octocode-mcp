@@ -1,6 +1,6 @@
 {
   "name": "octocode-cli",
-  "version": "1.2.9",
+  "version": "1.2.10",
   "description": "Interactive CLI installer for octocode-mcp - Configure MCP servers for Cursor, Claude Desktop, and more",
   "keywords": [
     "ai-coding",
@@ -27,8 +27,9 @@
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
   "type": "module",
-  "main": "out/octocode-cli.js",
-  "bin": "./out/octocode-cli.js",
+  "bin": {
+    "octocode-cli": "./out/octocode-cli.js"
+  },
   "files": [
     "out",
     "skills",
@@ -58,19 +59,17 @@
     "validate:skills:json": "npx tsx scripts/validate-skills-marketplace.ts --json",
     "verify": "yarn lint && yarn typecheck && yarn test && yarn validate:mcp && yarn validate:skills"
   },
-  "dependencies": {
+  "devDependencies": {
     "@inquirer/prompts": "^8.1.0",
     "@octokit/auth-oauth-device": "^8.0.3",
     "@octokit/oauth-methods": "^6.0.2",
     "@octokit/request": "^10.0.7",
-    "octocode-shared": "workspace:^",
-    "open": "^11.0.0"
-  },
-  "devDependencies": {
     "@types/node": "^22.15.29",
     "@vitest/coverage-v8": "^4.0.16",
     "esbuild": "^0.27.2",
     "eslint": "^9.18.0",
+    "octocode-shared": "workspace:^",
+    "open": "^11.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.16"

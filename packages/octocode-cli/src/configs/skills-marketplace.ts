@@ -277,6 +277,18 @@ export const SKILLS_MARKETPLACES: MarketplaceSource[] = [
     description: 'Web APIs for Web AI — auto-updated, manually reviewed',
     url: 'https://github.com/webmaxru/agent-skills/tree/main/skills',
   },
+  {
+    id: 'vercel-labs-skills',
+    name: 'Vercel Labs',
+    type: 'github',
+    owner: 'vercel-labs',
+    repo: 'skills',
+    branch: 'main',
+    skillsPath: 'skills',
+    skillPattern: 'skill-folders',
+    description: 'Open agent skills ecosystem CLI by Vercel',
+    url: 'https://github.com/vercel-labs/skills/tree/main/skills',
+  },
 ];
 
 export function getMarketplaceById(id: string): MarketplaceSource | undefined {
