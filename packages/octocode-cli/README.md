@@ -91,13 +91,13 @@ Full options and examples: [CLI Reference](https://github.com/bgauryy/octocode-m
 Default target is `claude-code` (`~/.claude/skills/`). Use `--targets` for multiple clients and `--mode` to choose copy or symlink.
 
 ```bash
-octocode skills list                                        # see what's installed
-octocode skills install                                     # install all (default target)
-octocode skills install --skill octocode-researcher         # install one skill
-octocode skills install --skill octocode-researcher --force # update existing
-octocode skills install --targets claude-code,cursor,codex  # multi-target
-octocode skills install --targets claude-code,cursor --mode symlink
-octocode skills remove --skill octocode-researcher --targets claude-code,cursor
+npx octocode-cli skills list                                        # see what's installed
+npx octocode-cli skills install                                     # install all (default target)
+npx octocode-cli skills install --skill octocode-researcher         # install one skill
+npx octocode-cli skills install --skill octocode-researcher --force # update existing
+npx octocode-cli skills install --targets claude-code,cursor,codex  # multi-target
+npx octocode-cli skills install --targets claude-code,cursor --mode symlink
+npx octocode-cli skills remove --skill octocode-researcher --targets claude-code,cursor
 ```
 
 Supported `--targets`: `claude-code`, `claude-desktop`, `cursor`, `codex`, `opencode`.
@@ -128,11 +128,11 @@ Full reference: [Skills Guide](https://github.com/bgauryy/octocode-mcp/blob/main
 
 ```bash
 npx node-doctor                          # diagnose environment
-rm -rf ~/.octocode && octocode-cli login # reset credentials
-octocode-cli status                      # verify auth
+rm -rf ~/.octocode && npx octocode-cli login # reset credentials
+npx octocode-cli status                      # verify auth
 ```
 
-- **Token expired** — run `octocode-cli login`.
+- **Token expired** — run `npx octocode-cli login`.
 - **Browser not opening** — copy the authorization URL from the terminal.
 
 ---

@@ -233,7 +233,7 @@ export async function processFileContentAPI(
     );
   }
   if (sanitizationResult.warnings.length > 0) {
-    sanitizationResult.warnings.forEach(warning =>
+    sanitizationResult.warnings.forEach((warning: string) =>
       matchLocationsSet.add(warning)
     );
   }
