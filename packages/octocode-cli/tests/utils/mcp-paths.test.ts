@@ -386,9 +386,7 @@ describe('MCP Paths Utilities', () => {
 
     it('should return available clients', async () => {
       const { dirExists } = await import('../../src/utils/fs.js');
-      vi.mocked(dirExists).mockImplementation(path => {
-        return path?.includes('.cursor') || path?.includes('Claude');
-      });
+      vi.mocked(dirExists).mockReturnValue(true);
 
       const { detectAvailableClients } =
         await import('../../src/utils/mcp-paths.js');
@@ -396,6 +394,7 @@ describe('MCP Paths Utilities', () => {
 
       expect(result).toContain('cursor');
       expect(result).toContain('claude-desktop');
+      expect(result.length).toBeGreaterThan(2);
     });
   });
 
