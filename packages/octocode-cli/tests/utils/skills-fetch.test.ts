@@ -948,23 +948,25 @@ Body.
       expect(twoMdTree.tree.length).toBe(2);
 
       let rawFetchCount = 0;
-      vi.mocked(global.fetch).mockImplementation(async (input: RequestInfo) => {
-        const url = String(input);
-        if (url.includes('api.github.com')) {
-          return {
-            ok: true,
-            json: async () => twoMdTree,
-          } as Response;
+      vi.mocked(global.fetch).mockImplementation(
+        async (input: string | URL | Request) => {
+          const url = String(input);
+          if (url.includes('api.github.com')) {
+            return {
+              ok: true,
+              json: async () => twoMdTree,
+            } as Response;
+          }
+          rawFetchCount += 1;
+          if (rawFetchCount === 1) {
+            return {
+              ok: true,
+              text: async () => mockSkillContent,
+            } as Response;
+          }
+          return Promise.reject(new Error('fetch failed'));
         }
-        rawFetchCount += 1;
-        if (rawFetchCount === 1) {
-          return {
-            ok: true,
-            text: async () => mockSkillContent,
-          } as Response;
-        }
-        return Promise.reject(new Error('fetch failed'));
-      });
+      );
 
       const skills = await fetchMarketplaceSkills(mockSource, {
         skipCache: true,

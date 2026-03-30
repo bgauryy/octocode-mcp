@@ -63,7 +63,7 @@ describe('Skills Marketplace Registry', () => {
     it('should have valid GitHub URLs', () => {
       for (const marketplace of SKILLS_MARKETPLACES) {
         expect(marketplace.url).toMatch(
-          /^https:\/\/github\.com\/[\w-]+\/[\w-]+((\/[\w-]+)*)?$/
+          /^https:\/\/github\.com\/[\w-]+\/[\w-]+((\/[\w.-]+)*)?$/
         );
       }
     });
