@@ -5,6 +5,24 @@ import { rm } from 'fs/promises';
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
+const nodeExternals = [
+  ...builtinModules,
+  ...builtinModules.map((m) => `node:${m}`),
+];
+
+// CJS-in-ESM shim: bundled CJS deps (e.g. mute-stream) use require()
+// for Node builtins, which doesn't exist in ESM output. Provide the
+// CJS globals so esbuild's __require wrapper resolves correctly.
+const shimBanner = [
+  '#!/usr/bin/env node',
+  "import { createRequire as __createRequire } from 'module';",
+  "import { fileURLToPath as __fileURLToPath } from 'url';",
+  "import { dirname as __dirname_fn } from 'path';",
+  'const require = __createRequire(import.meta.url);',
+  'const __filename = __fileURLToPath(import.meta.url);',
+  'const __dirname = __dirname_fn(__filename);',
+].join('\n');
+
 await rm('out', { recursive: true, force: true });
 
 await esbuild.build({
@@ -16,11 +34,8 @@ await esbuild.build({
   outfile: 'out/octocode-cli.js',
   minify: true,
   treeShaking: true,
-  banner: { js: '#!/usr/bin/env node' },
-  external: [
-    ...builtinModules,
-    ...builtinModules.map((m) => `node:${m}`),
-  ],
+  banner: { js: shimBanner },
+  external: nodeExternals,
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },

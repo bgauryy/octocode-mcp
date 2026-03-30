@@ -1,3 +1,12 @@
+import {
+  select as _select,
+  confirm as _confirm,
+  input as _input,
+  checkbox as _checkbox,
+  search as _search,
+  Separator as _Separator,
+} from '@inquirer/prompts';
+
 type SelectConfig<T> = {
   message: string;
   choices: Array<
@@ -92,53 +101,22 @@ type SeparatorClass = {
   new (separator?: string): SeparatorInstance;
 };
 
-const notLoadedError = (): never => {
-  throw new Error('Inquirer not loaded. Call loadInquirer() first.');
-};
+export const select = _select as unknown as SelectFunction;
+export const confirm = _confirm as unknown as ConfirmFunction;
+export const input = _input as unknown as InputFunction;
+export const checkbox = _checkbox as unknown as CheckboxFunction;
+export const search = _search as unknown as SearchFunction;
+export const Separator = _Separator as unknown as SeparatorClass;
 
-export let select: SelectFunction = notLoadedError as unknown as SelectFunction;
-export let confirm: ConfirmFunction =
-  notLoadedError as unknown as ConfirmFunction;
-export let input: InputFunction = notLoadedError as unknown as InputFunction;
-export let checkbox: CheckboxFunction =
-  notLoadedError as unknown as CheckboxFunction;
-export let search: SearchFunction = notLoadedError as unknown as SearchFunction;
-export let Separator: SeparatorClass = class {
-  type = 'separator' as const;
-  separator = '';
-  constructor() {
-    throw new Error('Inquirer not loaded. Call loadInquirer() first.');
-  }
-} as unknown as SeparatorClass;
-
-let loaded = false;
-
-export async function loadInquirer(): Promise<void> {
-  if (loaded) return;
-
-  try {
-    const inquirer = await import('@inquirer/prompts');
-    select = inquirer.select as SelectFunction;
-    confirm = inquirer.confirm as ConfirmFunction;
-    input = inquirer.input as InputFunction;
-    checkbox = inquirer.checkbox as CheckboxFunction;
-    search = inquirer.search as SearchFunction;
-    Separator = inquirer.Separator as SeparatorClass;
-    loaded = true;
-  } catch {
-    console.error('\n  ❌ Missing dependency: @inquirer/prompts');
-    console.error('  Please install it first:\n');
-    console.error('    npm install @inquirer/prompts\n');
-    process.exit(1);
-  }
-}
+// Kept for backward compatibility -- all callers already call this before
+// using prompts. Now a no-op since @inquirer/prompts is statically imported.
+export async function loadInquirer(): Promise<void> {}
 
 export function isInquirerLoaded(): boolean {
-  return loaded;
+  return true;
 }
 
 export async function selectWithCancel<T>(config: SelectConfig<T>): Promise<T> {
-  const inquirer = await import('@inquirer/prompts');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (await inquirer.select(config as any)) as T;
+  return (await select(config as any)) as T;
 }
