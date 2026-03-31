@@ -38,6 +38,9 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.52.0"
   },
+  "resolutions": {
+    "axios": "1.13.2"
+  },
   "private": true,
   "workspaces": [
     "skills/*",

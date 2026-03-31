@@ -27,9 +27,7 @@
   "bugs": "https://github.com/bgauryy/octocode-mcp/issues",
   "license": "MIT",
   "type": "module",
-  "bin": {
-    "octocode-cli": "./out/octocode-cli.js"
-  },
+  "bin": "./out/octocode-cli.js",
   "files": [
     "out",
     "skills",

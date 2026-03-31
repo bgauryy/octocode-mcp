@@ -3438,7 +3438,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"axios@npm:^1.13.2":
+"axios@npm:1.13.2":
   version: 1.13.2
   resolution: "axios@npm:1.13.2"
   dependencies:
@@ -7129,7 +7129,7 @@ __metadata:
     "@types/picomatch": "npm:^4.0.2"
     "@vitest/coverage-v8": "npm:^4.0.16"
     "@vitest/ui": "npm:^4.0.16"
-    axios: "npm:^1.13.2"
+    axios: "npm:1.13.2"
     clean-css: "npm:^5.3.3"
     esbuild: "npm:^0.27.2"
     eslint: "npm:^9.18.0"
