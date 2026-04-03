@@ -387,7 +387,8 @@ describe('MCP Paths Utilities', () => {
     it('should return available clients', async () => {
       const { dirExists } = await import('../../src/utils/fs.js');
       vi.mocked(dirExists).mockImplementation(path => {
-        return path?.includes('.cursor') || path?.includes('Claude');
+        const lower = path?.toLowerCase() ?? '';
+        return lower.includes('.cursor') || lower.includes('claude');
       });
 
       const { detectAvailableClients } =

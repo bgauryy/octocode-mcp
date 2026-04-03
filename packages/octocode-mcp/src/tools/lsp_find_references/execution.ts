@@ -4,6 +4,7 @@ import { executeBulkOperation } from '../../utils/response/bulk.js';
 import { findReferences } from './lsp_find_references.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { TOOL_NAME } from './constants.js';
+import { executeWithToolBoundary } from '../executionGuard.js';
 
 export { TOOL_NAME };
 
@@ -18,7 +19,13 @@ export async function executeFindReferences(
 
   return executeBulkOperation(
     queries || [],
-    async (query: LSPFindReferencesQuery) => findReferences(query),
+    async (query: LSPFindReferencesQuery) =>
+      executeWithToolBoundary({
+        toolName: TOOL_NAME,
+        query,
+        contextMessage: 'lspFindReferences execution failed',
+        execute: async () => findReferences(query),
+      }),
     {
       toolName: TOOL_NAME,
       responseCharOffset,

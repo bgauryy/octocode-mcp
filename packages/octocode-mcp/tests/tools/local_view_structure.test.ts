@@ -1362,6 +1362,28 @@ describe('localViewStructure', () => {
       );
     });
 
+    it('should produce unified error shape from createErrorResult on ls failure', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: false,
+        code: 1,
+        stdout: '',
+        stderr: 'ls: permission denied',
+      });
+
+      const result = await viewStructure({
+        path: '/test/path',
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe(
+        LOCAL_TOOL_ERROR_CODES.COMMAND_EXECUTION_FAILED
+      );
+      expect(typeof result.error).toBe('string');
+      // createErrorResult uses ToolError.message which includes the command name prefix
+      expect(result.error).toContain("Command 'ls' failed");
+      expect(result.error).toContain('permission denied');
+    });
+
     it('should handle unreadable directories', async () => {
       mockReaddir.mockRejectedValue(new Error('Permission denied'));
 

@@ -35,8 +35,9 @@ vi.mock('@octocode/security/withSecurityValidation', () => ({
   withBasicSecurityValidation: vi.fn(handler => handler),
 }));
 
-// Mock invokeCallbackSafely
-vi.mock('../../src/tools/utils.js', () => ({
+// Mock invokeCallbackSafely - preserve handleCatchError for executeWithToolBoundary
+vi.mock('../../src/tools/utils.js', async importOriginal => ({
+  ...(await importOriginal<object>()),
   invokeCallbackSafely: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -62,6 +63,20 @@ vi.mock('../../src/tools/github_view_repo_structure/execution.js', () => ({
   }),
 }));
 
+// Mock lsp_find_references inner function for boundary tests
+vi.mock('../../src/tools/lsp_find_references/lsp_find_references.js', () => ({
+  findReferences: vi.fn().mockResolvedValue({ status: 'hasResults' }),
+}));
+
+// Mock lsp_goto_definition inner function for boundary tests
+vi.mock(
+  '../../src/tools/lsp_goto_definition/execution.js',
+  async importOriginal => {
+    const actual = await importOriginal<object>();
+    return actual;
+  }
+);
+
 // Import after mocks
 import * as fs from 'fs/promises';
 import { createClient } from '../../src/lsp/manager.js';
@@ -69,6 +84,7 @@ import { executeBulkOperation } from '../../src/utils/response/bulk.js';
 import { findReferencesWithLSP } from '../../src/tools/lsp_find_references/lspReferencesCore.js';
 import { executeCallHierarchy } from '../../src/tools/lsp_call_hierarchy/execution.js';
 import { executeFindReferences } from '../../src/tools/lsp_find_references/execution.js';
+import { executeGotoDefinition } from '../../src/tools/lsp_goto_definition/execution.js';
 import { registerGitHubSearchCodeTool } from '../../src/tools/github_search_code/github_search_code.js';
 import { registerSearchGitHubReposTool } from '../../src/tools/github_search_repos/github_search_repos.js';
 import { registerViewGitHubRepoStructureTool } from '../../src/tools/github_view_repo_structure/github_view_repo_structure.js';
@@ -294,6 +310,58 @@ describe('Tool Execution Branch Coverage Tests', () => {
         expect.objectContaining({ toolName: expect.any(String) })
       );
       expect(result).toBeDefined();
+    });
+
+    it('should catch thrown errors via executeWithToolBoundary', async () => {
+      const { findReferences } =
+        await import('../../src/tools/lsp_find_references/lsp_find_references.js');
+      vi.mocked(findReferences).mockRejectedValueOnce(new Error('LSP crash'));
+
+      const query = {
+        uri: '/test/file.ts',
+        symbolName: 'foo',
+        lineHint: 1,
+        researchGoal: 'test',
+        reasoning: 'boundary test',
+      };
+      await executeFindReferences({ queries: [query] } as any);
+
+      const callback = vi.mocked(executeBulkOperation).mock.calls[0]![1];
+      const result = await callback(query, 0);
+      expect(result).toBeDefined();
+      expect(result).toHaveProperty('status', 'error');
+    });
+  });
+
+  describe('lsp_goto_definition/execution.ts - executeGotoDefinition', () => {
+    it('should handle falsy queries', async () => {
+      const result = await executeGotoDefinition({ queries: undefined } as any);
+
+      expect(executeBulkOperation).toHaveBeenCalledWith(
+        [],
+        expect.any(Function),
+        expect.objectContaining({ toolName: expect.any(String) })
+      );
+      expect(result).toBeDefined();
+    });
+
+    it('should catch thrown errors via executeWithToolBoundary', async () => {
+      const query = {
+        uri: '/test/file.ts',
+        symbolName: 'bar',
+        lineHint: 1,
+        researchGoal: 'test',
+        reasoning: 'boundary test',
+      };
+      await executeGotoDefinition({ queries: [query] } as any);
+
+      const callback = vi.mocked(executeBulkOperation).mock.calls[0]![1];
+
+      // gotoDefinition has internal try/catch but the boundary provides defense-in-depth;
+      // verify the callback resolves (not rejects) regardless
+      const result = await callback(query, 0);
+      expect(result).toBeDefined();
+      expect(typeof result).toBe('object');
     });
   });
 

@@ -71,22 +71,18 @@ export async function viewStructure(
     const result = await safeExec(command, args);
 
     if (!result.success) {
-      // Provide more detailed error message including stderr
       const stderrMsg = result.stderr?.trim();
       const toolError = ToolErrors.commandExecutionFailed(
         'ls',
         new Error(stderrMsg || 'Unknown error'),
         stderrMsg
       );
-      return {
-        status: 'error',
-        error: stderrMsg || 'ls command failed',
-        errorCode: toolError.errorCode,
-        hints: [
-          stderrMsg ? `Error: ${stderrMsg}` : 'ls command failed',
-          ...getHints(TOOL_NAMES.LOCAL_VIEW_STRUCTURE, 'error'),
-        ],
-      };
+      return createErrorResult(toolError, query, {
+        toolName: TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
+        customHints: stderrMsg
+          ? [`Error: ${stderrMsg}`]
+          : ['ls command failed'],
+      }) as ViewStructureResult;
     }
 
     const entries = query.details
