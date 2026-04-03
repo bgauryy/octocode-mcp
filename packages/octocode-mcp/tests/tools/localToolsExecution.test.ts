@@ -408,9 +408,7 @@ describe('Local Tools Execution', () => {
       const { executeBulkOperation } =
         await import('../../src/utils/response/bulk.js');
       const { viewStructure } =
-        await import(
-          '../../src/tools/local_view_structure/local_view_structure.js'
-        );
+        await import('../../src/tools/local_view_structure/local_view_structure.js');
 
       vi.mocked(viewStructure).mockRejectedValueOnce(
         new Error('Unexpected failure')

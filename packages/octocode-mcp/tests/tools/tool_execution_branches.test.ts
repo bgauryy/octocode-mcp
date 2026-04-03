@@ -69,10 +69,13 @@ vi.mock('../../src/tools/lsp_find_references/lsp_find_references.js', () => ({
 }));
 
 // Mock lsp_goto_definition inner function for boundary tests
-vi.mock('../../src/tools/lsp_goto_definition/execution.js', async importOriginal => {
-  const actual = await importOriginal<object>();
-  return actual;
-});
+vi.mock(
+  '../../src/tools/lsp_goto_definition/execution.js',
+  async importOriginal => {
+    const actual = await importOriginal<object>();
+    return actual;
+  }
+);
 
 // Import after mocks
 import * as fs from 'fs/promises';
@@ -310,12 +313,9 @@ describe('Tool Execution Branch Coverage Tests', () => {
     });
 
     it('should catch thrown errors via executeWithToolBoundary', async () => {
-      const { findReferences } = await import(
-        '../../src/tools/lsp_find_references/lsp_find_references.js'
-      );
-      vi.mocked(findReferences).mockRejectedValueOnce(
-        new Error('LSP crash')
-      );
+      const { findReferences } =
+        await import('../../src/tools/lsp_find_references/lsp_find_references.js');
+      vi.mocked(findReferences).mockRejectedValueOnce(new Error('LSP crash'));
 
       const query = {
         uri: '/test/file.ts',
