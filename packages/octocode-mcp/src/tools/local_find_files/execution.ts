@@ -5,6 +5,7 @@ import { executeBulkOperation } from '../../utils/response/bulk.js';
 import { findFiles } from './findFiles.js';
 import { FindFilesQuerySchema } from './scheme.js';
 import { createErrorResult } from '../utils.js';
+import { executeWithToolBoundary } from '../executionGuard.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 
 /**
@@ -19,14 +20,22 @@ export async function executeFindFiles(
 
   return executeBulkOperation(
     queries || [],
-    async (query: FindFilesQuery) => {
-      const validation = FindFilesQuerySchema.safeParse(query);
-      if (!validation.success) {
-        const messages = validation.error.issues.map(i => i.message).join('; ');
-        return createErrorResult(`Validation error: ${messages}`, query);
-      }
-      return findFiles(query);
-    },
+    async (query: FindFilesQuery) =>
+      executeWithToolBoundary({
+        toolName: TOOL_NAMES.LOCAL_FIND_FILES,
+        query,
+        contextMessage: 'localFindFiles execution failed',
+        execute: async () => {
+          const validation = FindFilesQuerySchema.safeParse(query);
+          if (!validation.success) {
+            const messages = validation.error.issues
+              .map(i => i.message)
+              .join('; ');
+            return createErrorResult(`Validation error: ${messages}`, query);
+          }
+          return findFiles(query);
+        },
+      }),
     {
       toolName: TOOL_NAMES.LOCAL_FIND_FILES,
       responseCharOffset,

@@ -237,6 +237,31 @@ describe('Local Tools Execution', () => {
         { toolName: 'localFindFiles' }
       );
     });
+
+    it('should catch thrown errors via executeWithToolBoundary', async () => {
+      const { executeFindFiles } =
+        await import('../../src/tools/local_find_files/execution.js');
+      const { executeBulkOperation } =
+        await import('../../src/utils/response/bulk.js');
+      const { findFiles } =
+        await import('../../src/tools/local_find_files/findFiles.js');
+
+      vi.mocked(findFiles).mockRejectedValueOnce(
+        new Error('Unexpected failure')
+      );
+
+      const query = {
+        researchGoal: 'Test',
+        reasoning: 'boundary test',
+        path: '/test',
+      };
+      await executeFindFiles({ queries: [query] });
+
+      const callback = vi.mocked(executeBulkOperation).mock.calls[0]![1];
+      const result = await callback(query, 0);
+      expect(result).toBeDefined();
+      expect(result).toHaveProperty('status', 'error');
+    });
   });
 
   describe('executeRipgrepSearch', () => {
@@ -375,6 +400,33 @@ describe('Local Tools Execution', () => {
         expect.any(Function),
         { toolName: 'localViewStructure' }
       );
+    });
+
+    it('should catch thrown errors via executeWithToolBoundary', async () => {
+      const { executeViewStructure } =
+        await import('../../src/tools/local_view_structure/execution.js');
+      const { executeBulkOperation } =
+        await import('../../src/utils/response/bulk.js');
+      const { viewStructure } =
+        await import(
+          '../../src/tools/local_view_structure/local_view_structure.js'
+        );
+
+      vi.mocked(viewStructure).mockRejectedValueOnce(
+        new Error('Unexpected failure')
+      );
+
+      const query = {
+        researchGoal: 'Test',
+        reasoning: 'boundary test',
+        path: '/test',
+      };
+      await executeViewStructure({ queries: [query] });
+
+      const callback = vi.mocked(executeBulkOperation).mock.calls[0]![1];
+      const result = await callback(query, 0);
+      expect(result).toBeDefined();
+      expect(result).toHaveProperty('status', 'error');
     });
   });
 });

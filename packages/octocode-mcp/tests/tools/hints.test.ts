@@ -247,6 +247,19 @@ describe('Hints Module', () => {
       expect(hints.length).toBe(0);
     });
 
+    it('should include base hints for known tools', () => {
+      const baseHints = TOOL_HINTS.base.hasResults;
+      expect(baseHints.length).toBeGreaterThan(0);
+
+      const toolHints = getToolHints(
+        TOOL_NAMES.GITHUB_SEARCH_CODE,
+        'hasResults'
+      );
+      baseHints.forEach(baseHint => {
+        expect(toolHints).toContain(baseHint);
+      });
+    });
+
     it('should return empty array for undefined result type', () => {
       const hints = getToolHints(
         TOOL_NAMES.GITHUB_SEARCH_CODE,

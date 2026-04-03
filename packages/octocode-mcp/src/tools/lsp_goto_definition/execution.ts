@@ -27,6 +27,7 @@ import type { ToolExecutionArgs } from '../../types/execution.js';
 import { applyOutputSizeLimit } from '../../utils/pagination/outputSizeLimit.js';
 import { serializeForPagination } from '../../utils/pagination/core.js';
 import { safeReadFile } from '../../lsp/validation.js';
+import { executeWithToolBoundary } from '../executionGuard.js';
 
 export const TOOL_NAME = TOOL_NAMES.LSP_GOTO_DEFINITION;
 
@@ -41,7 +42,13 @@ export async function executeGotoDefinition(
 
   return executeBulkOperation(
     queries || [],
-    async (query: LSPGotoDefinitionQuery) => gotoDefinition(query),
+    async (query: LSPGotoDefinitionQuery) =>
+      executeWithToolBoundary({
+        toolName: TOOL_NAME,
+        query,
+        contextMessage: 'lspGotoDefinition execution failed',
+        execute: async () => gotoDefinition(query),
+      }),
     {
       toolName: TOOL_NAME,
       responseCharOffset,

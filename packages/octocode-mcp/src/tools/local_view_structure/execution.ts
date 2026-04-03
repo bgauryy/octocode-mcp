@@ -5,6 +5,7 @@ import { executeBulkOperation } from '../../utils/response/bulk.js';
 import { viewStructure } from './local_view_structure.js';
 import { ViewStructureQuerySchema } from './scheme.js';
 import { createErrorResult } from '../utils.js';
+import { executeWithToolBoundary } from '../executionGuard.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 
 /**
@@ -19,14 +20,22 @@ export async function executeViewStructure(
 
   return executeBulkOperation(
     queries || [],
-    async (query: ViewStructureQuery) => {
-      const validation = ViewStructureQuerySchema.safeParse(query);
-      if (!validation.success) {
-        const messages = validation.error.issues.map(i => i.message).join('; ');
-        return createErrorResult(`Validation error: ${messages}`, query);
-      }
-      return viewStructure(query);
-    },
+    async (query: ViewStructureQuery) =>
+      executeWithToolBoundary({
+        toolName: TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
+        query,
+        contextMessage: 'localViewStructure execution failed',
+        execute: async () => {
+          const validation = ViewStructureQuerySchema.safeParse(query);
+          if (!validation.success) {
+            const messages = validation.error.issues
+              .map(i => i.message)
+              .join('; ');
+            return createErrorResult(`Validation error: ${messages}`, query);
+          }
+          return viewStructure(query);
+        },
+      }),
     {
       toolName: TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
       responseCharOffset,

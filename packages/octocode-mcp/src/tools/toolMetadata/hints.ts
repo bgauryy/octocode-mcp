@@ -58,7 +58,7 @@ export const TOOL_HINTS = new Proxy({} as ToolHintsType, {
 });
 
 /**
- * Gets combined hints for a tool.
+ * Gets combined base + tool-specific hints for a tool.
  */
 export function getToolHintsSync(
   toolName: string,
@@ -68,8 +68,9 @@ export function getToolHintsSync(
   if (!metadata || !metadata.tools[toolName]) {
     return [];
   }
+  const baseHints = metadata.baseHints?.[resultType] ?? [];
   const toolHints = metadata.tools[toolName]?.hints[resultType] ?? [];
-  return [...toolHints];
+  return [...baseHints, ...toolHints];
 }
 
 /**
