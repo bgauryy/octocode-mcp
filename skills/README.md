@@ -17,6 +17,7 @@ Specialized AI agent skills extending OctoCode's capabilities.
 | Code understanding & implementation | **Engineer** | "How does X work?", "Implement this", "Audit quality" |
 | Brutal code critique | **Roast** | "Roast my code", "Find antipatterns" |
 | Prompt hardening | **Prompt Optimizer** | "Optimize this SKILL.md", "Agent skips steps" |
+| Design system & UI architecture | **Design** | "Generate DESIGN.md", "Design system for this app", "Design review" |
 | Repo documentation | **Doc Writer** | "Document this project", "Create dev docs" |
 
 ---
@@ -70,7 +71,14 @@ Brutal code critique with `file:line` citations. Severity levels: gentle > nucle
 
 Turns weak prompts into enforceable protocols. Gates, FORBIDDEN lists, failure analysis. Preserves intent, adds reliability. Not for short prompts (<50 lines) or already-optimized docs.
 
-### 10. Documentation Writer
+### 10. Design
+`octocode-design/`
+
+Dynamic design-system and UI architecture skill for client apps. Generates `DESIGN.md` using Octocode MCP local tools first, then adapts depth by project maturity (existing vs new). Covers visual language, styling strategy, component architecture, framework constraints, accessibility, performance, responsive behavior, SEO, and implementation mapping.
+
+> See [README](https://github.com/bgauryy/octocode-mcp/blob/main/skills/octocode-design/README.md)
+
+### 11. Documentation Writer
 `octocode-documentation-writer/`
 
 6-phase pipeline: Discovery > Questions > Research > Orchestration > Writing > QA. Produces 16+ validated docs.
