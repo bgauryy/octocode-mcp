@@ -197,10 +197,6 @@ export function minifyJavaScriptCore(content: string): string {
   } /* v8 ignore stop */
 }
 
-// ============================================================================
-// Async Minification Strategies (uses external libs for better quality)
-// ============================================================================
-
 /**
  * Async JavaScript minification using Terser.
  */

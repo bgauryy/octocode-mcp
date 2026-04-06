@@ -119,41 +119,7 @@ export GITHUB_API_URL="https://github.mycompany.com/api/v3"
 
 The default is `https://api.github.com` if `GITHUB_API_URL` is not set.
 
----
-
-## Available Tools
-
-All tools are available when GitHub is the active provider:
-
-| Tool | Description |
-|------|-------------|
-| `githubSearchCode` | Search code patterns across repositories |
-| `githubSearchRepositories` | Discover repositories by keywords or topics |
-| `githubSearchPullRequests` | Search pull requests with extensive filters |
-| `githubGetFileContent` | Read file content or fetch a directory to disk |
-| `githubViewRepoStructure` | Browse repository file tree |
-| `githubCloneRepo` | Clone a repo locally for deep analysis with local + LSP tools |
-| `packageSearch` | Lookup NPM/PyPI packages (works with all providers) |
-
-### GitHub-Only Features
-
-These features are exclusive to GitHub and not available with GitLab or Bitbucket:
-
-- **`githubCloneRepo`** — Clone repositories (or subdirectories via sparse checkout) for local + LSP analysis. Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
-- **`githubGetFileContent` directory mode** — Fetch an entire directory to disk (`type: "directory"`). Same requirements as clone.
-
----
-
-## Configuration Reference
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GITHUB_TOKEN` | — | GitHub personal access token (or use `OCTOCODE_TOKEN` / `GH_TOKEN`) |
-| `GITHUB_API_URL` | `https://api.github.com` | GitHub API endpoint (change for GitHub Enterprise) |
-| `ENABLE_LOCAL` | `false` | Enable local filesystem + LSP tools |
-| `ENABLE_CLONE` | `false` | Enable `githubCloneRepo` and directory fetch (requires `ENABLE_LOCAL=true`) |
-
-For complete configuration options, see the [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md).
+For available tools and detailed usage, see the [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md). For all configuration options, see the [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md).
 
 ---
 

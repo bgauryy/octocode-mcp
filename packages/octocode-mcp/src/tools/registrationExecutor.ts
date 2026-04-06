@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolInvocationCallback } from '../types.js';
 import type { ToolConfig } from './toolConfig.js';
 
-export type ToolRegistrationOutcome =
+type ToolRegistrationOutcome =
   | { status: 'success' }
   | { status: 'failed'; toolName: string }
   | { status: 'skipped' };

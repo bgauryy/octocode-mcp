@@ -38,10 +38,6 @@ import {
 import { versionControlPatterns } from '../src/regexes/vcs.js';
 import { allRegexPatterns } from '../src/regexes/index.js';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 /** Reset lastIndex so the same RegExp can be reused across tests. */
 function resetAndTest(re: RegExp, sample: string): boolean {
   re.lastIndex = 0;
@@ -52,7 +48,6 @@ type Sample = { match: string[]; noMatch: string[] };
 
 /** Map from pattern name to test samples. */
 const SAMPLES: Record<string, Sample> = {
-  // ── AI Providers ──────────────────────────────────────────────────────────
   openaiApiKeyLegacy: {
     match: [
       'sk-1234567890abcdefT3BlbkFJ1234567890abcdef',
@@ -214,7 +209,6 @@ const SAMPLES: Record<string, Sample> = {
     noMatch: ['OTHER_KEY=' + 'a'.repeat(32)],
   },
 
-  // ── Analytics ─────────────────────────────────────────────────────────────
   vercelToken: {
     match: [
       'vcp_' + 'a'.repeat(24),
@@ -250,7 +244,6 @@ const SAMPLES: Record<string, Sample> = {
     noMatch: ['hcaik_tooshort', 'nothcaik_' + 'a'.repeat(32)],
   },
 
-  // ── Auth & Crypto ──────────────────────────────────────────────────────────
   jwtToken: {
     match: [
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POkA',
@@ -531,7 +524,6 @@ const SAMPLES: Record<string, Sample> = {
     noMatch: ['MY_VAR="short"', 'PLAIN_TEXT=notaquotedvalue'],
   },
 
-  // ── AWS ───────────────────────────────────────────────────────────────────
   awsAccessKeyId: {
     // prefix (4) + exactly 16 uppercase alphanum; ASIAIOSFODNN7EXAMPLEX has 17 chars after ASIA
     match: [
@@ -592,7 +584,6 @@ const SAMPLES: Record<string, Sample> = {
     noMatch: ['arn:aws:iam::123456789012:role/MyRole'],
   },
 
-  // ── Cloud Providers ───────────────────────────────────────────────────────
   googleApiKey: {
     match: ['AIzaSy' + 'a'.repeat(30), 'AIza' + 'a'.repeat(30)],
     noMatch: ['AIza' + 'a'.repeat(10), 'notAIza' + 'a'.repeat(30)],
@@ -880,7 +871,6 @@ const SAMPLES: Record<string, Sample> = {
     noMatch: ['short.cloudflareaccess.com', 'a'.repeat(40) + '.cloudflare.com'],
   },
 
-  // ── Communications (Slack) ────────────────────────────────────────────────
   slackBotToken: {
     match: ['xoxb-1234567890-1234567890-' + 'a'.repeat(10)],
     noMatch: [
@@ -971,7 +961,6 @@ const SAMPLES: Record<string, Sample> = {
     noMatch: ["OTHER_KEY='" + 'a'.repeat(32) + "'"],
   },
 
-  // ── Social Media ──────────────────────────────────────────────────────────
   twitterBearerToken: {
     // exactly 21 A's + 50+ alphanumeric
     match: ['A'.repeat(21) + 'a'.repeat(50)],
@@ -1027,7 +1016,6 @@ const SAMPLES: Record<string, Sample> = {
     noMatch: ["other_token: '" + 'a'.repeat(40) + "'"],
   },
 
-  // ── Shipping & Logistics ───────────────────────────────────────────────────
   shippoApiToken: {
     // shippo_live|test_ + exactly 40 hex chars [a-fA-F0-9]
     match: ['shippo_live_' + 'a'.repeat(40), 'shippo_test_' + 'a'.repeat(40)],
@@ -1092,7 +1080,6 @@ const SAMPLES: Record<string, Sample> = {
     noMatch: ['sm_aat_' + 'a'.repeat(16)],
   },
 
-  // ── Databases ─────────────────────────────────────────────────────────────
   postgresqlConnectionString: {
     match: [
       'postgresql://user:password@localhost/mydb',
@@ -1213,7 +1200,6 @@ const SAMPLES: Record<string, Sample> = {
     noMatch: ['postgresql://user:password@localhost/mydb'],
   },
 
-  // ── Developer Tools ───────────────────────────────────────────────────────
   npmAccessToken: {
     // npm_ + exactly 36 alphanumeric
     match: ['npm_' + 'a'.repeat(36)],
@@ -1406,7 +1392,6 @@ const SAMPLES: Record<string, Sample> = {
     noMatch: ['OTHER_KEY=eyJ' + 'a'.repeat(50)],
   },
 
-  // ── Monitoring & Mapping ──────────────────────────────────────────────────
   mapboxSecretToken: {
     // sk.eyJ + exactly 87 [a-zA-Z0-9._-]
     match: ['sk.eyJ' + 'a'.repeat(87)],
@@ -1488,7 +1473,6 @@ const SAMPLES: Record<string, Sample> = {
     noMatch: ["other_token: '12345678-1234-1234-1234-123456789012'"],
   },
 
-  // ── Payments & Commerce ────────────────────────────────────────────────────
   stripeSecretKey: {
     match: [
       'sk_live_' + 'a'.repeat(20),
@@ -1650,7 +1634,6 @@ const SAMPLES: Record<string, Sample> = {
     noMatch: ['a'.repeat(32), 'short-us1'],
   },
 
-  // ── Version Control ───────────────────────────────────────────────────────
   gitlabPersonalAccessToken: {
     match: ['glpat-' + 'a'.repeat(20), 'glpat-' + 'a'.repeat(30)],
     noMatch: ['glpat-tooshort', 'notglpat-' + 'a'.repeat(20)],
@@ -1746,10 +1729,6 @@ const SAMPLES: Record<string, Sample> = {
   },
 };
 
-// ---------------------------------------------------------------------------
-// Structural validation tests (applies to ALL patterns)
-// ---------------------------------------------------------------------------
-
 const allPatternArrays = [
   { name: 'aiProviderPatterns', patterns: aiProviderPatterns },
   { name: 'analyticsModernPatterns', patterns: analyticsModernPatterns },
@@ -1805,10 +1784,6 @@ describe('All regex patterns — structural integrity', () => {
     });
   }
 });
-
-// ---------------------------------------------------------------------------
-// Per-pattern match / no-match tests
-// ---------------------------------------------------------------------------
 
 describe('All regex patterns — match correctness', () => {
   for (const [patternName, samples] of Object.entries(SAMPLES)) {

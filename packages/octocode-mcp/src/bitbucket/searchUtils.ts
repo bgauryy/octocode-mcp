@@ -1,6 +1,6 @@
 import type { BitbucketCodeSearchItem } from './types.js';
 
-export interface BitbucketRepositoryIdentity {
+interface BitbucketRepositoryIdentity {
   workspace: string;
   repoSlug: string;
 }

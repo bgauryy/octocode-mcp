@@ -14,10 +14,6 @@ export {
   _getCacheState,
 } from './resolverCache.js';
 
-// ============================================================================
-// CONVENIENCE ACCESSOR
-// ============================================================================
-
 import { getConfigSync } from './resolverCache.js';
 
 /**

@@ -8,10 +8,6 @@
 
 import type { BitbucketAPIError, BitbucketAPIResponse } from './types.js';
 
-// ============================================================================
-// ERROR CONSTANTS
-// ============================================================================
-
 export const BITBUCKET_ERROR_CODES = {
   RATE_LIMITED: {
     code: 'BB_RATE_LIMITED',
@@ -42,10 +38,6 @@ export const BITBUCKET_ERROR_CODES = {
     message: 'Network error connecting to Bitbucket.',
   },
 } as const;
-
-// ============================================================================
-// ERROR HANDLING
-// ============================================================================
 
 export function handleBitbucketAPIError(error: unknown): BitbucketAPIError {
   if (isBitbucketHTTPError(error)) {

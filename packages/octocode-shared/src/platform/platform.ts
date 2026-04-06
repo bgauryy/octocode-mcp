@@ -7,10 +7,6 @@
 import os from 'node:os';
 import path from 'node:path';
 
-// ============================================================================
-// Platform Detection
-// ============================================================================
-
 /** Check if running on Windows */
 export const isWindows: boolean = os.platform() === 'win32';
 

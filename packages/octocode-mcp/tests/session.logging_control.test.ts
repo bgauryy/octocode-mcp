@@ -254,10 +254,6 @@ describe('Session Logging Control', () => {
     });
   });
 
-  // =========================================================================
-  // Tool call logging blocked when LOG=false — end-to-end through sendLog
-  // =========================================================================
-
   describe('Tool call logging is blocked end-to-end when LOG=false', () => {
     beforeEach(async () => {
       process.env.LOG = 'false';
@@ -315,10 +311,6 @@ describe('Session Logging Control', () => {
       expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
     });
   });
-
-  // =========================================================================
-  // Session init ALWAYS logs — comprehensive tests
-  // =========================================================================
 
   describe('Session init follows LOG setting', () => {
     afterEach(() => {

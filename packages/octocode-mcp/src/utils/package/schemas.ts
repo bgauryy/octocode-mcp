@@ -7,10 +7,6 @@
 
 import { z } from 'zod/v4';
 
-// ============================================================================
-// NPM VIEW RESULT
-// ============================================================================
-
 /**
  * Schema for `npm view <pkg> --json` output.
  * Permissive: requires name+version, rest is optional.
@@ -57,10 +53,6 @@ export const NpmViewResultSchema = z
   })
   .passthrough();
 
-// ============================================================================
-// NPM REGISTRY SEARCH API
-// ============================================================================
-
 /**
  * Schema for a single result item from the npm registry search API
  * `GET https://registry.npmjs.org/-/v1/search?text=<query>&size=<n>`
@@ -102,10 +94,6 @@ export const NpmRegistrySearchSchema = z
     total: z.union([z.number(), z.string()]).optional(),
   })
   .passthrough();
-
-// ============================================================================
-// NPM DEPRECATION
-// ============================================================================
 
 /**
  * Schema for `npm view <pkg> deprecated --json` output.

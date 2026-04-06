@@ -10,9 +10,6 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// =============================================================================
-// STEP 1: Create mocks with vi.hoisted (NO IMPORTS ALLOWED IN THIS CALLBACK!)
-// =============================================================================
 const { fsMocks, execMocks, pathValidatorMocks, mocks, createStats, helpers } =
   vi.hoisted(() => {
     // Create all mock functions
@@ -195,9 +192,6 @@ const { fsMocks, execMocks, pathValidatorMocks, mocks, createStats, helpers } =
     };
   });
 
-// =============================================================================
-// STEP 2: Apply mocks to modules
-// =============================================================================
 vi.mock('fs', () => fsMocks);
 vi.mock('../../src/utils/exec/safe.js', () => ({
   safeExec: execMocks.safeExec,
@@ -209,15 +203,8 @@ vi.mock('../../src/utils/exec/commandAvailability.js', () => ({
 }));
 vi.mock('@octocode/security/pathValidator', () => pathValidatorMocks);
 
-// =============================================================================
-// STEP 3: Import modules under test AFTER mocks are set up
-// =============================================================================
 const { viewStructure } =
   await import('../../src/tools/local_view_structure/local_view_structure.js');
-
-// =============================================================================
-// TESTS
-// =============================================================================
 
 describe('Example: Using Unified Test Helpers', () => {
   beforeEach(() => {

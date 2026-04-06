@@ -69,9 +69,6 @@ describe('GitHub Provider Delegates', () => {
     vi.clearAllMocks();
   });
 
-  // ==========================================================================
-  // GITHUB CONTENT TESTS
-  // ==========================================================================
   describe('githubContent', () => {
     describe('parseGitHubProjectId', () => {
       it('should return undefined owner and repo when projectId is undefined', () => {
@@ -274,9 +271,6 @@ describe('GitHub Provider Delegates', () => {
     });
   });
 
-  // ==========================================================================
-  // GITHUB STRUCTURE TESTS
-  // ==========================================================================
   describe('githubStructure', () => {
     describe('parseGitHubProjectId', () => {
       it('should return undefined owner and repo when projectId is undefined', () => {
@@ -418,9 +412,6 @@ describe('GitHub Provider Delegates', () => {
     });
   });
 
-  // ==========================================================================
-  // GITHUB SEARCH TESTS
-  // ==========================================================================
   describe('githubSearch', () => {
     describe('parseGitHubProjectId', () => {
       it('should return undefined owner and repo when projectId is undefined', () => {
@@ -705,9 +696,6 @@ describe('GitHub Provider Delegates', () => {
     });
   });
 
-  // ==========================================================================
-  // GITHUB PULL REQUESTS TESTS
-  // ==========================================================================
   describe('githubPullRequests', () => {
     describe('parseGitHubProjectId', () => {
       it('should return undefined owner and repo when projectId is undefined', () => {

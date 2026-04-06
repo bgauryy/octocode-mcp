@@ -7,7 +7,7 @@ import type { FileContentQuery } from './providerQueries.js';
 
 const DEFAULT_CONTENT_PAGE_SIZE = 20_000;
 
-export interface ExtractedFileContent {
+interface ExtractedFileContent {
   content: string;
   hints?: string[];
   pagination?: PaginationInfo;

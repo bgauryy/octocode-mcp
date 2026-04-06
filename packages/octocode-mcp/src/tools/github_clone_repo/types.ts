@@ -9,11 +9,6 @@
  * Both modes cache results for 24 hours under ~/.octocode/repos/.
  */
 
-import type {
-  GitHubCloneRepoData,
-  GitHubCloneRepoToolResult,
-} from '../../scheme/outputTypes.js';
-
 /**
  * Single query for cloning / fetching a repository.
  */
@@ -84,9 +79,3 @@ export interface CloneRepoResult {
   /** Sparse path fetched (undefined = full clone) */
   sparse_path?: string;
 }
-
-/** Final user-facing success data derived from the output schema */
-export type CloneRepoOutputData = GitHubCloneRepoData;
-
-/** Final user-facing flattened query result derived from the output schema */
-export type CloneRepoToolResult = GitHubCloneRepoToolResult;

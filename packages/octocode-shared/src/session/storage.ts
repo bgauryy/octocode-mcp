@@ -30,8 +30,6 @@ import {
 // Current schema version
 const CURRENT_VERSION = 1 as const;
 
-// ─── Public API ─────────────────────────────────────────────────────────────
-
 /**
  * Default session statistics
  */

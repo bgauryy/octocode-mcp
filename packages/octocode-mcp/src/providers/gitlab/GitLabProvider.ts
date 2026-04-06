@@ -53,10 +53,6 @@ export class GitLabProvider implements ICodeHostProvider {
     this.config = config;
   }
 
-  // ============================================================================
-  // CODE SEARCH
-  // ============================================================================
-
   async searchCode(
     query: CodeSearchQuery
   ): Promise<ProviderResponse<CodeSearchResult>> {
@@ -66,10 +62,6 @@ export class GitLabProvider implements ICodeHostProvider {
       return this.handleError(error);
     }
   }
-
-  // ============================================================================
-  // FILE CONTENT
-  // ============================================================================
 
   async getFileContent(
     query: FileContentQuery
@@ -81,10 +73,6 @@ export class GitLabProvider implements ICodeHostProvider {
     }
   }
 
-  // ============================================================================
-  // REPO SEARCH
-  // ============================================================================
-
   async searchRepos(
     query: RepoSearchQuery
   ): Promise<ProviderResponse<RepoSearchResult>> {
@@ -94,10 +82,6 @@ export class GitLabProvider implements ICodeHostProvider {
       return this.handleError(error);
     }
   }
-
-  // ============================================================================
-  // PULL REQUEST (MERGE REQUEST) SEARCH
-  // ============================================================================
 
   async searchPullRequests(
     query: PullRequestQuery
@@ -113,10 +97,6 @@ export class GitLabProvider implements ICodeHostProvider {
     }
   }
 
-  // ============================================================================
-  // REPO STRUCTURE
-  // ============================================================================
-
   async getRepoStructure(
     query: RepoStructureQuery
   ): Promise<ProviderResponse<RepoStructureResult>> {
@@ -129,10 +109,6 @@ export class GitLabProvider implements ICodeHostProvider {
       return this.handleError(error);
     }
   }
-
-  // ============================================================================
-  // DEFAULT BRANCH RESOLUTION
-  // ============================================================================
 
   async resolveDefaultBranch(projectId: string): Promise<string> {
     try {
@@ -150,10 +126,6 @@ export class GitLabProvider implements ICodeHostProvider {
       return 'main';
     }
   }
-
-  // ============================================================================
-  // HELPER METHODS
-  // ============================================================================
 
   private handleError(error: unknown): ProviderResponse<never> {
     const apiError = handleGitLabAPIError(error);

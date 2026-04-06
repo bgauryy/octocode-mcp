@@ -138,12 +138,6 @@ export interface BulkToolResponse {
   responsePagination?: PaginationInfo;
 }
 
-export type {
-  SensitiveDataPattern,
-  SanitizationResult,
-  ValidationResult,
-} from '@octocode/security/types';
-
 /**
  * Token source types for tracking where the GitHub token came from.
  */

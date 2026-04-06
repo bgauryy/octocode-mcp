@@ -113,8 +113,6 @@ describe('Session Storage Edge Cases', () => {
     vi.resetAllMocks();
   });
 
-  // ─── Category 1: File Corruption Handling ─────────────────────────────────
-
   describe('File Corruption Handling', () => {
     describe('Empty File', () => {
       it('should handle empty session file gracefully', () => {
@@ -351,8 +349,6 @@ describe('Session Storage Edge Cases', () => {
     });
   });
 
-  // ─── Category 2: Disk Full / I/O Errors ───────────────────────────────────
-
   describe('Disk Full and I/O Error Handling', () => {
     describe('Write Fails - Disk Full (ENOSPC)', () => {
       it('should propagate disk full error on writeFileSync', () => {
@@ -466,8 +462,6 @@ describe('Session Storage Edge Cases', () => {
       });
     });
   });
-
-  // ─── Category 3: Concurrent Access ────────────────────────────────────────
 
   describe('Concurrent Access Handling', () => {
     describe('Multiple Increments in Same Process', () => {
@@ -585,8 +579,6 @@ describe('Session Storage Edge Cases', () => {
     });
   });
 
-  // ─── Category 4: Permission Issues ────────────────────────────────────────
-
   describe('Permission Error Handling', () => {
     describe('Read Permission Denied', () => {
       it('should handle EACCES when reading session file', () => {
@@ -649,8 +641,6 @@ describe('Session Storage Edge Cases', () => {
       });
     });
   });
-
-  // ─── Category 5: Exit Handler Edge Cases ──────────────────────────────────
 
   describe('Exit Handler Edge Cases', () => {
     const signalTestSession = (): PersistedSession => ({
@@ -830,8 +820,6 @@ describe('Session Storage Edge Cases', () => {
     });
   });
 
-  // ─── Category 6: Recovery & Resilience ────────────────────────────────────
-
   describe('Recovery and Resilience', () => {
     describe('Recovery After Corruption', () => {
       it('should create fresh session after detecting corruption', () => {
@@ -942,8 +930,6 @@ describe('Session Storage Edge Cases', () => {
       });
     });
   });
-
-  // ─── Category 7: Rate Limit Specific Edge Cases ───────────────────────────
 
   describe('Rate Limit Specific Edge Cases', () => {
     describe('Increment Without Session', () => {
@@ -1092,8 +1078,6 @@ describe('Session Storage Edge Cases', () => {
       });
     });
   });
-
-  // ─── Category 8: Additional Edge Cases ────────────────────────────────────
 
   describe('Additional Edge Cases', () => {
     describe('Empty Update Object', () => {

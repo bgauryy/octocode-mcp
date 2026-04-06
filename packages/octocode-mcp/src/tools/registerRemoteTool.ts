@@ -7,7 +7,7 @@ import { DESCRIPTIONS } from './toolMetadata/proxies.js';
 import { invokeCallbackSafely } from './utils.js';
 import type { ToolExecutionArgs } from '../types/execution.js';
 
-export interface RemoteToolConfig<TQuery> {
+interface RemoteToolConfig<TQuery> {
   /** Tool name (must be a key in TOOL_NAMES) */
   name: string;
   /** Human-readable title for MCP annotations */

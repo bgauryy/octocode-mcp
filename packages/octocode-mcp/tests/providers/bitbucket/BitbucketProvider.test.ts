@@ -56,10 +56,6 @@ describe('BitbucketProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // searchCode
-  // ==========================================================================
-
   describe('searchCode', () => {
     it('should return 400 when no workspace (no projectId)', async () => {
       const result = await provider.searchCode({ keywords: ['test'] });
@@ -155,10 +151,6 @@ describe('BitbucketProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // getFileContent
-  // ==========================================================================
-
   describe('getFileContent', () => {
     it('should resolve default branch when ref not provided', async () => {
       vi.mocked(getBitbucketDefaultBranch).mockResolvedValue('develop');
@@ -245,10 +237,6 @@ describe('BitbucketProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // searchRepos
-  // ==========================================================================
-
   describe('searchRepos', () => {
     it('should return 400 when no owner/workspace', async () => {
       const result = await provider.searchRepos({ keywords: ['test'] });
@@ -330,10 +318,6 @@ describe('BitbucketProvider', () => {
       expect(result.provider).toBe('bitbucket');
     });
   });
-
-  // ==========================================================================
-  // searchPullRequests
-  // ==========================================================================
 
   describe('searchPullRequests', () => {
     it('should return 400 when no projectId', async () => {
@@ -459,10 +443,6 @@ describe('BitbucketProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // getRepoStructure
-  // ==========================================================================
-
   describe('getRepoStructure', () => {
     it('should call API and build structure from entries', async () => {
       vi.mocked(viewBitbucketRepoStructureAPI).mockResolvedValue({
@@ -549,10 +529,6 @@ describe('BitbucketProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // resolveDefaultBranch
-  // ==========================================================================
-
   describe('resolveDefaultBranch', () => {
     it('should resolve default branch from API', async () => {
       vi.mocked(getBitbucketDefaultBranch).mockResolvedValue('develop');
@@ -573,10 +549,6 @@ describe('BitbucketProvider', () => {
       expect(branch).toBe('main');
     });
   });
-
-  // ==========================================================================
-  // handleError (via thrown errors)
-  // ==========================================================================
 
   describe('handleError', () => {
     it('should handle 429 errors without rate limit fields', async () => {
@@ -632,10 +604,6 @@ describe('BitbucketProvider', () => {
     });
   });
 });
-
-// ============================================================================
-// TRANSFORM FUNCTIONS (tested directly)
-// ============================================================================
 
 describe('transformCodeSearchResult', () => {
   it('should transform items with content matches', () => {
@@ -1129,10 +1097,6 @@ describe('mapPRState', () => {
     expect(() => mapPRState('  ')).toThrow(/Invalid Bitbucket PR state/);
   });
 });
-
-// ============================================================================
-// parseBitbucketProjectId
-// ============================================================================
 
 describe('parseBitbucketProjectId', () => {
   it('should parse valid projectId', () => {

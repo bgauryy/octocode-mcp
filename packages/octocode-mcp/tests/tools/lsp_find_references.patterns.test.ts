@@ -69,9 +69,6 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
     vi.restoreAllMocks();
   });
 
-  // ========================================================================
-  // buildGrepFilterArgsArray: exclude patterns with / vs without /
-  // ========================================================================
   describe('buildGrepFilterArgsArray', () => {
     it('should use --exclude-dir for patterns containing /', () => {
       const args = buildGrepFilterArgsArray(undefined, [
@@ -105,9 +102,6 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
     });
   });
 
-  // ========================================================================
-  // buildGrepSearchArgs: exclude-only patterns branch
-  // ========================================================================
   describe('buildGrepSearchArgs - exclude only', () => {
     it('should include default extensions when only excludePattern is provided', () => {
       const args = buildGrepSearchArgs('/workspace', 'myFunc', undefined, [
@@ -132,9 +126,6 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
     });
   });
 
-  // ========================================================================
-  // findWorkspaceRoot: marker detection
-  // ========================================================================
   describe('findWorkspaceRoot', () => {
     it('should find workspace root when marker exists', async () => {
       vi.mocked(access).mockResolvedValue(undefined);
@@ -158,9 +149,6 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
     });
   });
 
-  // ========================================================================
-  // findReferencesWithPatternMatching: core functionality
-  // ========================================================================
   describe('findReferencesWithPatternMatching', () => {
     const setupSpawnSuccess = (stdout: string) => {
       mockStdoutOn.mockImplementation(
@@ -758,9 +746,6 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
     });
   });
 
-  // ========================================================================
-  // isLikelyDefinition: additional patterns
-  // ========================================================================
   describe('isLikelyDefinition - additional patterns', () => {
     it('should detect pub Rust definitions', () => {
       expect(isLikelyDefinition('pub fn create() {', 'create')).toBe(true);

@@ -40,10 +40,6 @@ import {
   evictExpiredClones,
 } from './cache.js';
 
-// ─────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────
-
 /** Timeout for the git clone operation (2 min) */
 const CLONE_TIMEOUT_MS = 2 * 60 * 1000;
 
@@ -55,10 +51,6 @@ const GIT_ALLOWED_ENV_VARS = [
   ...TOOLING_ALLOWED_ENV_VARS,
   'GIT_TERMINAL_PROMPT',
 ] as const;
-
-// ─────────────────────────────────────────────────────────────────────
-// Public API
-// ─────────────────────────────────────────────────────────────────────
 
 /**
  * Clone (or return from cache) a GitHub repository.
@@ -75,17 +67,14 @@ export async function cloneRepo(
 ): Promise<CloneRepoResult> {
   const { owner, repo, sparse_path, forceRefresh } = query;
 
-  // ── Pre-flight: verify git is installed ──────────────────────────
   await assertGitAvailable();
 
-  // ── Resolve branch ──────────────────────────────────────────────
   const branch =
     query.branch ?? (await resolveDefaultBranch(owner, repo, authInfo));
 
   const octocodeDir = getOctocodeDir();
   const cloneDir = getCloneDir(octocodeDir, owner, repo, branch, sparse_path);
 
-  // ── 1. Cache hit? ───────────────────────────────────────────────
   // Skip the cache entirely when the caller requests a forced refresh.
   // Only accept cache from a real clone, not from a directoryFetch.
   const cacheResult = isCacheHit(cloneDir);
@@ -100,12 +89,10 @@ export async function cloneRepo(
     };
   }
 
-  // ── 2. Evict expired clones & wipe stale cache ─────────────────
   evictExpiredClones(octocodeDir);
   removeCloneDir(cloneDir);
   ensureCloneParentDir(cloneDir);
 
-  // ── 3. Clone ────────────────────────────────────────────────────
   const resolvedToken = pickToken(authInfo, token);
 
   if (sparse_path) {
@@ -121,7 +108,6 @@ export async function cloneRepo(
     await executeFullClone(owner, repo, branch, cloneDir, resolvedToken);
   }
 
-  // ── 4. Write cache metadata ─────────────────────────────────────
   const newMeta = createCacheMeta(owner, repo, branch, 'clone', sparse_path);
   writeCacheMeta(cloneDir, newMeta);
 
@@ -134,10 +120,6 @@ export async function cloneRepo(
     ...(sparse_path ? { sparse_path } : {}),
   };
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// Git operations
-// ─────────────────────────────────────────────────────────────────────
 
 /**
  * Full shallow clone: `git clone --depth 1 --single-branch`
@@ -219,10 +201,6 @@ async function executeSparseClone(
     undefined // no token for local operation
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────
 
 function repoUrl(owner: string, repo: string): string {
   return `https://github.com/${owner}/${repo}.git`;

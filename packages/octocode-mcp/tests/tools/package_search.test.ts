@@ -242,9 +242,6 @@ vi.mock('../../src/utils/http/cache.js', () => ({
   clearAllCache: vi.fn(),
 }));
 
-// ---------------------------------------------------------------------------
-// Mock: globalThis.fetch (used by fetchWithRetries in npm view/search paths)
-// ---------------------------------------------------------------------------
 const mockFetch = vi.fn();
 let _originalFetch: unknown;
 

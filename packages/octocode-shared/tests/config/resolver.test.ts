@@ -383,10 +383,6 @@ describe('config/resolver', () => {
     });
   });
 
-  // ============================================================================
-  // COMPREHENSIVE FALLBACK CHAIN TESTS: env → file → default
-  // ============================================================================
-
   describe('fallback chain: env → file → default', () => {
     describe('github.apiUrl', () => {
       it('env overrides file', () => {
@@ -880,10 +876,6 @@ describe('config/resolver', () => {
     });
   });
 
-  // ============================================================================
-  // SOURCE DETECTION TESTS
-  // ============================================================================
-
   describe('source detection', () => {
     it('source is "defaults" when no file and no env', () => {
       vi.mocked(existsSync).mockReturnValue(false);
@@ -1113,10 +1105,6 @@ describe('config/resolver', () => {
       expect(config.local.enabled).toBe(DEFAULT_CONFIG.local.enabled);
     });
   });
-
-  // ============================================================================
-  // EMPTY CONFIG {} — must resolve to all defaults
-  // ============================================================================
 
   describe('empty config {} uses all defaults', () => {
     it('empty object {} resolves every field to its default', () => {

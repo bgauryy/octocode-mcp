@@ -9,8 +9,6 @@ import {
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-// ── Mocks ────────────────────────────────────────────────────────────
-
 const mockGetOctokit = vi.hoisted(() =>
   vi.fn().mockResolvedValue({
     rest: {
@@ -43,8 +41,6 @@ import {
   MAX_DIRECTORY_FILES,
   MAX_TOTAL_SIZE,
 } from '../../src/github/directoryFetch.js';
-
-// ── Test helpers ────────────────────────────────────────────────────
 
 let testDir: string;
 
@@ -91,8 +87,6 @@ function mockFetchResponses(contents: Record<string, string>) {
     return { ok: false, status: 404 };
   });
 }
-
-// ── Tests ────────────────────────────────────────────────────────────
 
 describe('directoryFetch', () => {
   beforeEach(() => {
@@ -564,8 +558,6 @@ describe('directoryFetch', () => {
       expect(existsSync(expiredDir)).toBe(false);
     });
 
-    // ── Clone-protection tests ──────────────────────────────────────
-
     it('should use clone cache when source is "clone" (never degrade)', async () => {
       const cloneDir = join(testDir, 'repos', 'owner', 'repo', 'main');
       const dirPath = join(cloneDir, 'src');
@@ -730,8 +722,6 @@ describe('directoryFetch', () => {
         'version 2'
       );
     });
-
-    // ── Override / fresh content tests ─────────────────────────────────
 
     it('should override existing files with fresh content', async () => {
       // First fetch: file has old content

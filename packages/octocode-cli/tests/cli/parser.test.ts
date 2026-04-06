@@ -131,6 +131,46 @@ describe('CLI Parser', () => {
       expect(result.args).toEqual(['install']);
       expect(result.options).toEqual({ k: 'octocode-roast' });
     });
+
+    it('should synthesize the tool command from top-level --tool usage', () => {
+      const result = parseArgs([
+        '--tool',
+        'localSearchCode',
+        '{"path":".","pattern":"runCLI"}',
+      ]);
+
+      expect(result.command).toBe('tool');
+      expect(result.args).toEqual([
+        'localSearchCode',
+        '{"path":".","pattern":"runCLI"}',
+      ]);
+      expect(result.options).toEqual({
+        tool: 'localSearchCode',
+      });
+    });
+
+    it('should keep legacy --input available for migration errors', () => {
+      const result = parseArgs([
+        '--tool',
+        'localSearchCode',
+        '--input',
+        '{"path":".","pattern":"runCLI"}',
+      ]);
+
+      expect(result.command).toBe('tool');
+      expect(result.args).toEqual(['localSearchCode']);
+      expect(result.options).toEqual({
+        tool: 'localSearchCode',
+        input: '{"path":".","pattern":"runCLI"}',
+      });
+    });
+
+    it('should parse --tools-context as a top-level boolean flag', () => {
+      const result = parseArgs(['--tools-context']);
+
+      expect(result.command).toBeNull();
+      expect(result.options).toEqual({ 'tools-context': true });
+    });
   });
 
   describe('hasHelpFlag', () => {

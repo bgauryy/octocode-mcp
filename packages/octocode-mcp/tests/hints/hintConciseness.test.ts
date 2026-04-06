@@ -21,9 +21,6 @@ beforeAll(async () => {
 });
 
 describe('Hint conciseness', () => {
-  // =========================================================================
-  // 1. Empty string filtering
-  // =========================================================================
   describe('empty string filtering in bulk responses', () => {
     it('should strip empty strings from hints in hasResults result', async () => {
       const queries = [{ id: 'q1' }];
@@ -116,9 +113,6 @@ describe('Hint conciseness', () => {
     });
   });
 
-  // =========================================================================
-  // 2. Integration block conditionalized to mode: "detailed"
-  // =========================================================================
   describe('Integration block in ripgrep results', () => {
     const makeFiles = (count: number) =>
       Array.from({ length: count }, (_, i) => ({
@@ -198,9 +192,6 @@ describe('Hint conciseness', () => {
     });
   });
 
-  // =========================================================================
-  // 3. Path error hints are concise
-  // =========================================================================
   describe('path error hint conciseness', () => {
     it('should produce at most 2 hints for path outside allowed dirs', () => {
       const result = validateToolPath(
@@ -270,9 +261,6 @@ describe('Hint conciseness', () => {
     });
   });
 
-  // =========================================================================
-  // 4. "Good result size" hint removed
-  // =========================================================================
   describe('"Good result size" removal', () => {
     const makeFiles = (count: number) =>
       Array.from({ length: count }, (_, i) => ({

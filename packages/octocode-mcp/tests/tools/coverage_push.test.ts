@@ -5,9 +5,6 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// ==========================================================================
-// 1. github_search_code/hints.ts - Error hint branches (68.42% branch)
-// ==========================================================================
 import { hints as codeSearchHints } from '../../src/tools/github_search_code/hints.js';
 
 describe('github_search_code hints - error branches', () => {
@@ -67,9 +64,6 @@ describe('github_search_code hints - error branches', () => {
   });
 });
 
-// ==========================================================================
-// 2. contentExtractor.ts - Empty matches branch (79.41% branch, line 61)
-// ==========================================================================
 import { extractMatchingLines } from '../../src/tools/local_fetch_content/contentExtractor.js';
 
 describe('contentExtractor - empty matches branch', () => {
@@ -89,9 +83,6 @@ describe('contentExtractor - empty matches branch', () => {
   });
 });
 
-// ==========================================================================
-// 4. repoStructureRecursive.ts - error branches (73.33%, lines 22, 73)
-// ==========================================================================
 import { fetchDirectoryContentsRecursivelyAPI } from '../../src/github/repoStructureRecursive.js';
 
 vi.mock('../../src/github/client.js', () => ({

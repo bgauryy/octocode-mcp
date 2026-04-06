@@ -17,10 +17,6 @@ import { getGitlab } from './client.js';
 import { handleGitLabAPIError } from './errors.js';
 import { generateCacheKey, withDataCache } from '../utils/http/cache.js';
 
-// ============================================================================
-// MERGE REQUEST SEARCH
-// ============================================================================
-
 /**
  * Merge request search result.
  */

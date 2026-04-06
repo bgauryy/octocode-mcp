@@ -185,6 +185,9 @@ For detailed authentication setup and troubleshooting, see the [Authentication S
 **Quick tips not covered there:**
 - **401/bad credentials:** Verify token: `curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user`. Ensure scopes include `repo`, `read:user`, `read:org`.
 - **GitLab:** Test connection: `curl --header "PRIVATE-TOKEN: $GITLAB_TOKEN" https://gitlab.com/api/v4/user`
+
+---
+
 ## 4. MCP Server Connection Issues
 
 ### Server Not Starting

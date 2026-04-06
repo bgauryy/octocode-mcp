@@ -20,10 +20,6 @@ import {
 import { handleGitLabAPIError, createGitLabError } from './errors.js';
 import { generateCacheKey, withDataCache } from '../utils/http/cache.js';
 
-// ============================================================================
-// FILE CONTENT
-// ============================================================================
-
 /**
  * Fetch file content from GitLab.
  *

@@ -17,10 +17,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
 import fs from 'fs';
 
-// ============================================================================
-// ContentSanitizer — chunked detection & error paths
-// ============================================================================
-
 describe('ContentSanitizer — coverage gaps', () => {
   // Use direct import to avoid mock interference
   let ContentSanitizer: typeof import('../src/contentSanitizer.js').ContentSanitizer;
@@ -273,10 +269,6 @@ describe('ContentSanitizer — coverage gaps', () => {
   });
 });
 
-// ============================================================================
-// commandValidator — find/git edge cases
-// ============================================================================
-
 describe('commandValidator — coverage gaps', () => {
   let validateCommand: typeof import('../src/commandValidator.js').validateCommand;
 
@@ -503,10 +495,6 @@ describe('commandValidator — coverage gaps', () => {
   });
 });
 
-// ============================================================================
-// executionContextValidator — generic error path
-// ============================================================================
-
 describe('executionContextValidator — coverage gaps', () => {
   let validateExecutionContext: typeof import('../src/executionContextValidator.js').validateExecutionContext;
 
@@ -557,10 +545,6 @@ describe('executionContextValidator — coverage gaps', () => {
   });
 });
 
-// ============================================================================
-// ignoredPathFilter — shouldIgnoreFile with full path input
-// ============================================================================
-
 describe('ignoredPathFilter — coverage gaps', () => {
   let shouldIgnoreFile: typeof import('../src/ignoredPathFilter.js').shouldIgnoreFile;
 
@@ -584,10 +568,6 @@ describe('ignoredPathFilter — coverage gaps', () => {
     expect(shouldIgnoreFile('C:\\Users\\app\\.env')).toBe(true);
   });
 });
-
-// ============================================================================
-// pathUtils — normalizePath edge cases & HOME_DIR fallback
-// ============================================================================
 
 describe('pathUtils — coverage gaps', () => {
   let redactPath: typeof import('../src/pathUtils.js').redactPath;
@@ -647,10 +627,6 @@ describe('pathUtils — coverage gaps', () => {
   });
 });
 
-// ============================================================================
-// pathValidator — ENAMETOOLONG and unexpected error paths
-// ============================================================================
-
 describe('pathValidator — coverage gaps', () => {
   let PathValidator: typeof import('../src/pathValidator.js').PathValidator;
 
@@ -695,10 +671,6 @@ describe('pathValidator — coverage gaps', () => {
     vi.restoreAllMocks();
   });
 });
-
-// ============================================================================
-// registry — validation edge cases
-// ============================================================================
 
 describe('registry — coverage gaps', () => {
   let securityRegistry: import('../src/registry.js').SecurityRegistry;
@@ -785,10 +757,6 @@ describe('registry — coverage gaps', () => {
     expect(v3).toBeGreaterThan(v2);
   });
 });
-
-// ============================================================================
-// withSecurityValidation — abort signal, timeout, local tool logging
-// ============================================================================
 
 describe('withSecurityValidation — coverage gaps', () => {
   let withSecurityValidation: typeof import('../src/withSecurityValidation.js').withSecurityValidation;
@@ -1008,10 +976,6 @@ describe('withSecurityValidation — coverage gaps', () => {
   });
 });
 
-// ============================================================================
-// Security penetration — additional bypass vectors
-// ============================================================================
-
 describe('Security penetration — additional bypass vectors', () => {
   describe('ContentSanitizer — prototype pollution via nested objects', () => {
     it('should block constructor key in deeply nested objects', async () => {
@@ -1149,10 +1113,6 @@ describe('Security penetration — additional bypass vectors', () => {
     });
   });
 });
-
-// ============================================================================
-// SecurityRegistry — freeze, ReDoS protection, cached getters
-// ============================================================================
 
 describe('SecurityRegistry — freeze & ReDoS protection', () => {
   let securityRegistry: import('../src/registry.js').SecurityRegistry;
@@ -1357,10 +1317,6 @@ describe('SecurityRegistry — freeze & ReDoS protection', () => {
   });
 });
 
-// ============================================================================
-// ContentSanitizer — input size guard (MAX_CONTENT_SIZE)
-// ============================================================================
-
 describe('ContentSanitizer — input size guard', () => {
   let ContentSanitizer: typeof import('../src/contentSanitizer.js').ContentSanitizer;
 
@@ -1387,10 +1343,6 @@ describe('ContentSanitizer — input size guard', () => {
     expect(result.content).not.toBe('[CONTENT-REDACTED-SIZE-LIMIT]');
   });
 });
-
-// ============================================================================
-// ContentSanitizer — pattern caching
-// ============================================================================
 
 describe('ContentSanitizer — pattern caching', () => {
   let ContentSanitizer: typeof import('../src/contentSanitizer.js').ContentSanitizer;
@@ -1436,10 +1388,6 @@ describe('ContentSanitizer — pattern caching', () => {
   });
 });
 
-// ============================================================================
-// pathValidator — getType returning 'symlink' and null for non-standard entries
-// ============================================================================
-
 describe('pathValidator — getType edge cases', () => {
   let PathValidator: typeof import('../src/pathValidator.js').PathValidator;
 
@@ -1481,10 +1429,6 @@ describe('pathValidator — getType edge cases', () => {
     vi.restoreAllMocks();
   });
 });
-
-// ============================================================================
-// withSecurityValidation — handler throwing error inside withToolTimeout
-// ============================================================================
 
 describe('withSecurityValidation — handler error in withToolTimeout', () => {
   let withSecurityValidation: typeof import('../src/withSecurityValidation.js').withSecurityValidation;

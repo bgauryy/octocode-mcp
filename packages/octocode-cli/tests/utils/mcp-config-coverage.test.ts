@@ -33,10 +33,6 @@ describe('MCP Config Coverage Tests', () => {
     vi.clearAllMocks();
   });
 
-  // ============================================================================
-  // getOctocodeServerConfig - env options
-  // ============================================================================
-
   describe('getOctocodeServerConfig with env options', () => {
     it('should include ENABLE_LOCAL env when enableLocal is true', async () => {
       const { getOctocodeServerConfig } =
@@ -108,10 +104,6 @@ describe('MCP Config Coverage Tests', () => {
     });
   });
 
-  // ============================================================================
-  // getOctocodeServerConfigWindows - env options
-  // ============================================================================
-
   describe('getOctocodeServerConfigWindows with env options', () => {
     it('should include env options for direct method on Windows', async () => {
       const { getOctocodeServerConfigWindows } =
@@ -151,10 +143,6 @@ describe('MCP Config Coverage Tests', () => {
     });
   });
 
-  // ============================================================================
-  // mergeOctocodeConfig with env options
-  // ============================================================================
-
   describe('mergeOctocodeConfig with env options', () => {
     it('should merge config with env options', async () => {
       const { mergeOctocodeConfig } =
@@ -193,10 +181,6 @@ describe('MCP Config Coverage Tests', () => {
       expect(result.mcpServers!.octocode).toBeDefined();
     });
   });
-
-  // ============================================================================
-  // registryEntryToServerConfig
-  // ============================================================================
 
   describe('registryEntryToServerConfig', () => {
     const mockEntry: MCPRegistryEntry = {
@@ -311,10 +295,6 @@ describe('MCP Config Coverage Tests', () => {
     });
   });
 
-  // ============================================================================
-  // mergeExternalMCPConfig
-  // ============================================================================
-
   describe('mergeExternalMCPConfig', () => {
     const mockEntry: MCPRegistryEntry = {
       id: 'external-server',
@@ -392,10 +372,6 @@ describe('MCP Config Coverage Tests', () => {
     });
   });
 
-  // ============================================================================
-  // isExternalMCPConfigured
-  // ============================================================================
-
   describe('isExternalMCPConfigured', () => {
     it('should return true when external MCP is configured', async () => {
       const { isExternalMCPConfigured } =
@@ -441,10 +417,6 @@ describe('MCP Config Coverage Tests', () => {
       expect(isExternalMCPConfigured(config, 'my-external-mcp')).toBe(false);
     });
   });
-
-  // ============================================================================
-  // removeExternalMCPConfig
-  // ============================================================================
 
   describe('removeExternalMCPConfig', () => {
     it('should remove existing external MCP', async () => {
@@ -505,10 +477,6 @@ describe('MCP Config Coverage Tests', () => {
       expect(result.mcpServers).toEqual({});
     });
   });
-
-  // ============================================================================
-  // getInstalledExternalMCPs
-  // ============================================================================
 
   describe('getInstalledExternalMCPs', () => {
     const registry: MCPRegistryEntry[] = [
@@ -614,10 +582,6 @@ describe('MCP Config Coverage Tests', () => {
       expect(result).toEqual([]);
     });
   });
-
-  // ============================================================================
-  // validateRequiredEnvVars
-  // ============================================================================
 
   describe('validateRequiredEnvVars', () => {
     const entryWithRequiredVars: MCPRegistryEntry = {
@@ -731,10 +695,6 @@ describe('MCP Config Coverage Tests', () => {
     });
   });
 
-  // ============================================================================
-  // getClientInstallStatus with custom path
-  // ============================================================================
-
   describe('getClientInstallStatus with custom path', () => {
     it('should use custom path when provided', async () => {
       const { getMCPConfigPath, configFileExists } =
@@ -758,10 +718,6 @@ describe('MCP Config Coverage Tests', () => {
       expect(result.configPath).toBe('/custom/path/config.json');
     });
   });
-
-  // ============================================================================
-  // getAllClientInstallStatus - comprehensive check
-  // ============================================================================
 
   describe('getAllClientInstallStatus comprehensive', () => {
     it('should check all 8 supported clients', async () => {
@@ -819,10 +775,6 @@ describe('MCP Config Coverage Tests', () => {
     });
   });
 
-  // ============================================================================
-  // Edge cases for getConfiguredMethod
-  // ============================================================================
-
   describe('getConfiguredMethod edge cases', () => {
     it('should return null for node command', async () => {
       const { getConfiguredMethod } =
@@ -860,10 +812,6 @@ describe('MCP Config Coverage Tests', () => {
       ).toBeNull();
     });
   });
-
-  // ============================================================================
-  // Windows platform behavior in mergeOctocodeConfig
-  // ============================================================================
 
   describe('mergeOctocodeConfig Windows behavior', () => {
     it('should use Windows config when isWindows is true', async () => {

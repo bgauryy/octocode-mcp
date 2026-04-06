@@ -36,12 +36,6 @@ import {
   buildGrepFilterArgsArray,
 } from '../../src/tools/lsp_find_references/lspReferencesPatterns.js';
 
-// =============================================================================
-// Finding 1 — HIGH: Shell injection via exec()
-// escapeForRegex is a pure function — no mocks needed.
-// build*Args functions return arrays for spawn() — no shell interpretation.
-// =============================================================================
-
 describe('Finding 1 — escapeForRegex + command args safety', () => {
   it('leaves shell metacharacters alone (safe because spawn bypasses shell)', () => {
     expect(escapeForRegex("'; rm -rf / #")).toBe("'; rm -rf / #");
@@ -102,12 +96,6 @@ describe('Finding 1 — escapeForRegex + command args safety', () => {
     expect(patternArg).toContain('\\|');
   });
 });
-
-// =============================================================================
-// Finding 2 — MEDIUM: Telemetry sends repo names and research goals
-// Mock: axios (external HTTP) — already mocked in setup.ts
-// Real: initializeSession, logToolCall, initialize, cleanup
-// =============================================================================
 
 describe('Finding 2 — Telemetry excludes sensitive data', () => {
   let savedLog: string | undefined;
@@ -186,13 +174,6 @@ describe('Finding 2 — Telemetry excludes sensitive data', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 });
-
-// =============================================================================
-// Finding 6 — LOW: Credential env vars passed to child processes
-// buildChildProcessEnv is pure — no mocks needed.
-// Key/allowlist tests are in security-resilience.test.ts.
-// This file tests VALUE leakage: do secret strings appear anywhere in output?
-// =============================================================================
 
 describe('Finding 6 — No secret values leak to child env', () => {
   const savedEnv: Record<string, string | undefined> = {};

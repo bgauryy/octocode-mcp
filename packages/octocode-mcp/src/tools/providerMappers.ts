@@ -17,7 +17,7 @@ import type {
 } from './github_search_repos/types.js';
 import type { GitHubViewRepoStructureQuery } from './github_view_repo_structure/types.js';
 
-export function toProviderProjectId(
+function toProviderProjectId(
   owner?: string,
   repo?: string
 ): string | undefined {

@@ -7,10 +7,6 @@
 
 import { z } from 'zod/v4';
 
-// ============================================================================
-// RIPGREP JSON MESSAGE SCHEMAS
-// ============================================================================
-
 const RipgrepPathSchema = z.object({ text: z.string() });
 
 const RipgrepSubmatchSchema = z.object({

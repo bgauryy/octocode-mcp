@@ -102,10 +102,6 @@ describe('MCP protocol exposure: instructions, tools, and prompts', () => {
     await mcpServer?.close();
   });
 
-  // -------------------------------------------------------------------------
-  // Instructions
-  // -------------------------------------------------------------------------
-
   it('client receives non-empty instructions from the server', () => {
     const instructions = client.getInstructions();
     expect(instructions).toBeDefined();
@@ -117,10 +113,6 @@ describe('MCP protocol exposure: instructions, tools, and prompts', () => {
     const instructions = client.getInstructions()!;
     expect(instructions).toContain(MOCK_INSTRUCTIONS);
   });
-
-  // -------------------------------------------------------------------------
-  // Tools
-  // -------------------------------------------------------------------------
 
   it('server exposes tools with non-empty descriptions', async () => {
     const { tools } = await client.listTools();
@@ -166,10 +158,6 @@ describe('MCP protocol exposure: instructions, tools, and prompts', () => {
       expect(expectedNames).toContain(tool.name);
     }
   });
-
-  // -------------------------------------------------------------------------
-  // Prompts
-  // -------------------------------------------------------------------------
 
   it('server exposes prompts with non-empty descriptions', async () => {
     const { prompts } = await client.listPrompts();

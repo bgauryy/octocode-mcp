@@ -21,9 +21,3 @@
 | Need | Doc |
 |------|-----|
 | Move from GitHub search to local analysis | [Clone & Local Tools Workflow](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/CLONE_AND_LOCAL_TOOLS_WORKFLOW.md) |
-
-## Architecture
-
-| Need | Doc |
-|------|-----|
-| Tools runtime architecture decisions | [Tools Architecture Decision Summary](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/TOOLS_ARCHITECTURE_DECISION_SUMMARY.md) |

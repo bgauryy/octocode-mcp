@@ -33,10 +33,6 @@ import {
   TOOLING_ALLOWED_ENV_VARS,
 } from '../utils/exec/spawn.js';
 
-// ─────────────────────────────────────────────────────────────────────
-// Timeout helper – prevents timer leaks in Promise.race patterns
-// ─────────────────────────────────────────────────────────────────────
-
 /**
  * Race a promise against a timeout, properly cleaning up the timer
  * when the main promise settles (win or lose). This prevents the

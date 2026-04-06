@@ -28,6 +28,7 @@ import { loadInquirer, select, checkbox } from '../utils/prompts.js';
 import { checkNodeInPath, checkNpmInPath } from '../features/node-check.js';
 import { IDE_INFO, CLIENT_INFO, INSTALL_METHOD_INFO } from '../ui/constants.js';
 import { Spinner } from '../utils/spinner.js';
+import { toolCommand } from './tool-command.js';
 
 function getIDEDisplayName(ide: string): string {
   if (ide in CLIENT_INFO) {
@@ -2004,6 +2005,7 @@ const commands: CLICommand[] = [
   logoutCommand,
   skillsCommand,
   mcpCommand,
+  toolCommand,
   cacheCommand,
   tokenCommand,
   statusCommand,

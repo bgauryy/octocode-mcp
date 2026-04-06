@@ -15,10 +15,6 @@ export const CONFIG_SCHEMA_VERSION = 1;
  */
 export const CONFIG_FILE_NAME = '.octocoderc';
 
-// ============================================================================
-// CONFIGURATION SECTION TYPES
-// ============================================================================
-
 /**
  * GitHub-specific configuration
  */
@@ -111,10 +107,6 @@ export interface OutputConfigOptions {
   /** Shared pagination defaults for tool outputs */
   pagination?: OutputPaginationConfigOptions;
 }
-
-// ============================================================================
-// MAIN CONFIGURATION TYPES
-// ============================================================================
 
 /**
  * Complete .octocoderc configuration schema (raw file structure)
@@ -224,10 +216,6 @@ export interface ResolvedConfig {
   /** Path to config file (if loaded from file) */
   configPath?: string;
 }
-
-// ============================================================================
-// VALIDATION TYPES
-// ============================================================================
 
 /**
  * Result of configuration validation

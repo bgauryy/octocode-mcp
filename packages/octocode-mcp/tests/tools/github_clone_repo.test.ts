@@ -9,10 +9,6 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-// ─────────────────────────────────────────────────────────────────────
-// 1. Schema validation tests (security-critical)
-// ─────────────────────────────────────────────────────────────────────
-
 import { BulkCloneRepoSchema } from '../../src/tools/github_clone_repo/scheme.js';
 
 function parseSchema(overrides: Record<string, unknown>) {
@@ -162,10 +158,6 @@ describe('githubCloneRepo schema validation', () => {
     });
   });
 });
-
-// ─────────────────────────────────────────────────────────────────────
-// 2. Cache tests (pure, no mocks needed)
-// ─────────────────────────────────────────────────────────────────────
 
 import {
   getCloneDir,
@@ -662,10 +654,6 @@ describe('github_clone_repo cache', () => {
     });
   });
 });
-
-// ─────────────────────────────────────────────────────────────────────
-// 3. cloneRepo logic tests (with mocks)
-// ─────────────────────────────────────────────────────────────────────
 
 const mockSpawnWithTimeout = vi.hoisted(() => vi.fn());
 const mockGetOctokit = vi.hoisted(() => vi.fn());
@@ -1468,10 +1456,6 @@ describe('cloneRepo', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────
-// 4. Execution handler tests
-// ─────────────────────────────────────────────────────────────────────
-
 const mockGetActiveProvider = vi.hoisted(() => vi.fn());
 const mockGetActiveProviderConfig = vi.hoisted(() => vi.fn());
 const mockGetProvider = vi.hoisted(() => vi.fn());
@@ -1499,10 +1483,6 @@ function createMockProviderCapabilities(type?: string) {
     supportsMultiTopicSearch: type === 'github',
   };
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// 4.5. Registration test
-// ─────────────────────────────────────────────────────────────────────
 
 describe('registerGitHubCloneRepoTool', () => {
   it('registers the tool with correct name and metadata', () => {
@@ -1655,10 +1635,6 @@ describe('registerGitHubCloneRepoTool', () => {
     }
   });
 });
-
-// ─────────────────────────────────────────────────────────────────────
-// 5. Execution handler tests
-// ─────────────────────────────────────────────────────────────────────
 
 describe('executeCloneRepo', () => {
   let execTestDir: string;

@@ -29,8 +29,6 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
 const WORKSPACE = process.cwd(); // packages/octocode-mcp
 const HOME = os.homedir();
 const PARENT = path.dirname(WORKSPACE);
@@ -62,8 +60,6 @@ describe('SEC-01: PathValidator – Path Traversal Attacks', () => {
     v = strictValidator();
   });
 
-  // ── 1a. Classic traversals ────────────────────────────────────────────────
-
   describe('Classic ../ traversal', () => {
     const attacks = [
       `${WORKSPACE}/../../../etc/passwd`,
@@ -82,8 +78,6 @@ describe('SEC-01: PathValidator – Path Traversal Attacks', () => {
       });
     });
   });
-
-  // ── 1b. Mixed separators ──────────────────────────────────────────────────
 
   describe('Mixed and alternative separators', () => {
     it('should BLOCK backslash traversal', () => {
@@ -110,8 +104,6 @@ describe('SEC-01: PathValidator – Path Traversal Attacks', () => {
     });
   });
 
-  // ── 1c. Absolute system paths ─────────────────────────────────────────────
-
   describe('Absolute system paths', () => {
     const systemPaths = [
       '/',
@@ -133,8 +125,6 @@ describe('SEC-01: PathValidator – Path Traversal Attacks', () => {
       });
     });
   });
-
-  // ── 1d. Sibling / prefix collision ────────────────────────────────────────
 
   describe('Sibling directory & prefix collision', () => {
     it('should BLOCK workspace prefix + extra chars', () => {
@@ -161,8 +151,6 @@ describe('SEC-01: PathValidator – Path Traversal Attacks', () => {
       expect(v.validate(GRANDPARENT).isValid).toBe(false);
     });
   });
-
-  // ── 1e. Valid paths (sanity check) ────────────────────────────────────────
 
   describe('Valid workspace paths – sanity checks', () => {
     it('should ALLOW workspace root', () => {

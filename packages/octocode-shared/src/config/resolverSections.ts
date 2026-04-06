@@ -32,10 +32,6 @@ import {
   MAX_OUTPUT_DEFAULT_CHAR_LENGTH,
 } from './defaults.js';
 
-// ============================================================================
-// ENVIRONMENT VARIABLE PARSING
-// ============================================================================
-
 /**
  * Parse a boolean environment variable.
  *
@@ -105,10 +101,6 @@ export function parseLoggingEnv(
   // Any other value (including 'true', '1', 'yes', 'anything') means enabled
   return true;
 }
-
-// ============================================================================
-// SECTION RESOLVERS
-// ============================================================================
 
 /**
  * Resolve GitHub configuration.

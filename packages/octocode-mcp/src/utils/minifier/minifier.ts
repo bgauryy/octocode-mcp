@@ -23,10 +23,6 @@ import {
   minifyHTMLAsync,
 } from './minifierStrategies.js';
 
-// ============================================================================
-// Shared Utilities
-// ============================================================================
-
 /** Extension options for minifier: lowercase with 'txt' fallback */
 const MINIFIER_EXT_OPTIONS = { lowercase: true, fallback: 'txt' } as const;
 
@@ -40,10 +36,6 @@ function getFileConfig(filePath: string): FileTypeMinifyConfig {
 
   return MINIFY_CONFIG.fileTypes[ext] || { strategy: 'general' };
 }
-
-// ============================================================================
-// Synchronous Minification (regex-based, no external deps)
-// ============================================================================
 
 /**
  * Synchronous content minification - fast, regex-based, no external dependencies.
@@ -85,10 +77,6 @@ export function minifyContentSync(content: string, filePath: string): string {
     return content;
   } /* v8 ignore stop */
 }
-
-// ============================================================================
-// Async Minification (uses external libs for better quality)
-// ============================================================================
 
 /**
  * Async content minification - uses terser/clean-css/html-minifier for better quality.

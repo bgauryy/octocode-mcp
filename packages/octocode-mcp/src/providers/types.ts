@@ -45,10 +45,6 @@ import type {
   RepoStructureResult,
 } from './providerResults.js';
 
-// ============================================================================
-// PROVIDER CONFIGURATION
-// ============================================================================
-
 /**
  * Supported code hosting providers.
  * Default is 'github' .
@@ -81,10 +77,6 @@ export interface ProviderCapabilities {
   supportsMultiTopicSearch: boolean;
 }
 
-// ============================================================================
-// PROVIDER RESPONSE TYPE
-// ============================================================================
-
 /**
  * Standardized response from provider operations.
  */
@@ -107,10 +99,6 @@ export interface ProviderResponse<T> {
     retryAfter?: number;
   };
 }
-
-// ============================================================================
-// PROVIDER INTERFACE
-// ============================================================================
 
 /**
  * Interface that all code hosting providers must implement.
@@ -150,10 +138,6 @@ export interface ICodeHostProvider {
    */
   resolveDefaultBranch(projectId: string): Promise<string>;
 }
-
-// ============================================================================
-// TYPE GUARDS
-// ============================================================================
 
 /**
  * Check if a response is successful.

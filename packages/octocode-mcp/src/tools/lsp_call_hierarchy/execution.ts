@@ -6,8 +6,6 @@ import type { ToolExecutionArgs } from '../../types/execution.js';
 import { TOOL_NAME } from './constants.js';
 import { executeWithToolBoundary } from '../executionGuard.js';
 
-export { TOOL_NAME };
-
 /**
  * Execute bulk LSP call hierarchy operation.
  * Wraps processCallHierarchy with bulk operation handling for multiple queries.

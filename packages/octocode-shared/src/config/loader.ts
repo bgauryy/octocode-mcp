@@ -10,18 +10,10 @@ import { paths } from '../paths.js';
 import type { OctocodeConfig, LoadConfigResult } from './types.js';
 import { OctocodeConfigSchema } from './schemas.js';
 
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-
 /**
  * Full path to configuration file
  */
 export const CONFIG_FILE_PATH = paths.config;
-
-// ============================================================================
-// JSON5-LIKE PARSER
-// ============================================================================
 
 /**
  * Strip comments and trailing commas from JSON5-like content.
@@ -114,10 +106,6 @@ function parseJson5(content: string): unknown {
   const jsonContent = stripJson5Features(content);
   return JSON.parse(jsonContent);
 }
-
-// ============================================================================
-// LOADER FUNCTIONS
-// ============================================================================
 
 /**
  * Check if configuration file exists.

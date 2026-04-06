@@ -78,62 +78,7 @@ The default is `https://gitlab.com` if `GITLAB_HOST` is not set.
 
 > **Note:** The GitLab client reads `GITLAB_HOST` from environment variables. Use the env var for reliability.
 
----
-
-## Available Tools
-
-All tools use the `github*` prefix but work with GitLab when in GitLab mode:
-
-| Tool | GitLab Support | Notes |
-|------|---------------|-------|
-| `githubSearchCode` | Full | Scoped to project (group + project required) |
-| `githubSearchRepositories` | Full | Search projects by keyword/topic |
-| `githubSearchPullRequests` | Full | Maps to Merge Requests (MR IID) |
-| `githubGetFileContent` | Full | `branch` (ref) recommended to avoid extra API call |
-| `githubViewRepoStructure` | Full | Browse project file tree |
-| `githubCloneRepo` | Not supported | Clone/directory fetch is GitHub only |
-| `packageSearch` | N/A | Works independently (NPM/PyPI lookup) |
-
----
-
-## Parameter Mapping
-
-GitLab uses different terminology. Octocode translates automatically:
-
-| Unified Parameter | GitHub | GitLab |
-|-------------------|--------|--------|
-| `owner` | Organization / User | Group / Namespace |
-| `repo` | Repository | Project name |
-| `owner/repo` | `owner/repo` | `group/project` (or numeric Project ID) |
-| `branch` | Branch name | Ref (branch, tag, or commit SHA) |
-| `prNumber` | Pull Request # | Merge Request IID |
-| `state: "open"` | Open PRs | `opened` MRs |
-| `state: "closed"` | Closed PRs | `closed` MRs |
-| `state: "merged"` | N/A (closed + merged) | `merged` MRs |
-
----
-
-## GitLab-Specific Behavior
-
-### Project-Scoped Code Search
-
-GitLab code search requires project scope. Always provide both `owner` and `repo`:
-
-```
-githubSearchCode(owner="my-group", repo="my-project", keywordsToSearch=["middleware"])
-```
-
-### Branch/Ref is Recommended
-
-While the default branch is auto-detected, providing `branch` explicitly avoids an extra API call:
-
-```
-githubGetFileContent(owner="group", repo="project", path="src/main.ts", branch="main")
-```
-
-### Merge Request States
-
-GitLab supports an additional `merged` state that GitHub doesn't have. Use `state: "merged"` to find only merged MRs.
+For available tools, parameter mapping, and GitLab-specific behavior, see the [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md). For all configuration options, see the [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md).
 
 ---
 
@@ -177,18 +122,6 @@ Some advanced query parameters from the unified interface are not yet mapped to 
 - **Repo search**: `stars`, `size`, `created`, `updated` filters
 - **MR search**: `commenter`, `involves`, `mentions`, `reviewRequested`, `draft`, `withCommits`
 - **File content**: `charOffset`, `charLength`, `fullContent`, `matchStringContextLines`
-
----
-
-## Configuration Reference
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GITLAB_TOKEN` | — | GitLab personal access token (primary) |
-| `GL_TOKEN` | — | GitLab token (fallback) |
-| `GITLAB_HOST` | `https://gitlab.com` | GitLab instance URL |
-
-For complete configuration options, see the [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md).
 
 ---
 

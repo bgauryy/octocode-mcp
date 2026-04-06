@@ -9,10 +9,6 @@ import type {
   LocalFindFilesToolResult,
 } from '../../scheme/outputTypes.js';
 
-// ============================================================================
-// INPUT TYPES
-// ============================================================================
-
 /**
  * Query parameters for finding local files
  */
@@ -50,10 +46,6 @@ export interface FindFilesQuery {
   researchGoal?: string;
   reasoning?: string;
 }
-
-// ============================================================================
-// OUTPUT TYPES
-// ============================================================================
 
 export type FoundFile = LocalFindFilesEntry;
 

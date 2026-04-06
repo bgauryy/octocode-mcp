@@ -8,10 +8,6 @@ import {
   resolveLocal,
 } from '../../src/config/resolverSections.js';
 
-// ============================================================================
-// UNIT TESTS: parseBooleanEnv
-// ============================================================================
-
 describe('parseBooleanEnv', () => {
   it('should return undefined for undefined', () => {
     expect(parseBooleanEnv(undefined)).toBeUndefined();
@@ -67,10 +63,6 @@ describe('parseBooleanEnv', () => {
   });
 });
 
-// ============================================================================
-// UNIT TESTS: parseIntEnv
-// ============================================================================
-
 describe('parseIntEnv', () => {
   it('should return undefined for undefined', () => {
     expect(parseIntEnv(undefined)).toBeUndefined();
@@ -111,10 +103,6 @@ describe('parseIntEnv', () => {
   });
 });
 
-// ============================================================================
-// UNIT TESTS: parseStringArrayEnv
-// ============================================================================
-
 describe('parseStringArrayEnv', () => {
   it('should return undefined for undefined', () => {
     expect(parseStringArrayEnv(undefined)).toBeUndefined();
@@ -148,10 +136,6 @@ describe('parseStringArrayEnv', () => {
     expect(parseStringArrayEnv('only')).toEqual(['only']);
   });
 });
-
-// ============================================================================
-// UNIT TESTS: parseLoggingEnv
-// ============================================================================
 
 describe('parseLoggingEnv', () => {
   it('should return undefined for undefined input', () => {
@@ -244,10 +228,6 @@ describe('parseLoggingEnv', () => {
   });
 });
 
-// ============================================================================
-// INTEGRATION TESTS: resolveTelemetry with parseLoggingEnv semantics
-// ============================================================================
-
 describe('resolveTelemetry', () => {
   const originalEnv = process.env;
 
@@ -332,10 +312,6 @@ describe('resolveTelemetry', () => {
     });
   });
 });
-
-// ============================================================================
-// INTEGRATION TESTS: resolveLocal with ENABLE_CLONE
-// ============================================================================
 
 describe('resolveLocal', () => {
   const originalEnv = process.env;

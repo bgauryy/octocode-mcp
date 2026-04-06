@@ -25,12 +25,6 @@ import {
 } from '../../src/utils/mcp-config.js';
 import { fetchRawContent } from '../../src/utils/skills-fetch.js';
 
-// =============================================================================
-// Finding 3 — MEDIUM: CLI config files written with world-readable perms
-// Real fs: writes temp files, checks permissions with statSync
-// No mocks.
-// =============================================================================
-
 describe('Finding 3 — writeFileContent uses restrictive permissions', () => {
   const testDir = join(tmpdir(), `octocode-audit-f3-${Date.now()}`);
 
@@ -76,12 +70,6 @@ describe('Finding 3 — writeFileContent uses restrictive permissions', () => {
   });
 });
 
-// =============================================================================
-// Finding 4 — MEDIUM: Predictable temp file path (/tmp/index.js)
-// Pure functions: getOctocodeServerConfig, getOctocodeServerConfigWindows
-// No mocks.
-// =============================================================================
-
 describe('Finding 4 — Direct installer uses unique temp directory', () => {
   it('Linux direct install: mktemp, trap, strict mode, no hardcoded /tmp', () => {
     const config = getOctocodeServerConfig('direct');
@@ -110,12 +98,6 @@ describe('Finding 4 — Direct installer uses unique temp directory', () => {
     expect(config.args).toEqual(['octocode-mcp@latest']);
   });
 });
-
-// =============================================================================
-// Finding 5 — LOW: Skills marketplace downloads without integrity verification
-// Mock: global.fetch (external HTTP)
-// Real: fetchRawContent (size checks, error handling)
-// =============================================================================
 
 describe('Finding 5 — Skills download guardrails', () => {
   const source = {

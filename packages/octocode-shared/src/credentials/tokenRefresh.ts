@@ -49,15 +49,12 @@ export interface RefreshResult {
 }
 
 /** Dependency: function to get credentials from storage */
-export type GetCredentialsFn = (
+type GetCredentialsFn = (
   hostname?: string
 ) => Promise<StoredCredentials | null>;
 
 /** Dependency: function to update a token in storage */
-export type UpdateTokenFn = (
-  hostname: string,
-  token: OAuthToken
-) => Promise<boolean>;
+type UpdateTokenFn = (hostname: string, token: OAuthToken) => Promise<boolean>;
 
 /**
  * Refresh an expired OAuth token using the refresh token

@@ -8,24 +8,12 @@ import { logSessionError } from '../../session.js';
 import { CompleteMetadata, ToolNames } from '../../types/metadata.js';
 import { RawCompleteMetadataSchema } from './schemas.js';
 
-// ============================================================================
-// Constants
-// ============================================================================
-
 const METADATA_URL = 'https://octocodeai.com/api/mcpContent';
-
-// ============================================================================
-// State
-// ============================================================================
 
 let METADATA_JSON: CompleteMetadata | null = null;
 let initializationPromise: Promise<void> | null = null;
 let metadataCache: CompleteMetadata | null = null;
 let metadataPromise: Promise<CompleteMetadata> | null = null;
-
-// ============================================================================
-// Helpers
-// ============================================================================
 
 /**
  * Deep freezes an object to prevent mutations.
@@ -110,10 +98,6 @@ export async function getMetadata(): Promise<CompleteMetadata> {
   }
 }
 
-// ============================================================================
-// Public API
-// ============================================================================
-
 /**
  * Gets the current metadata, throwing if not initialized.
  * @internal Used by proxies and helper functions.
@@ -168,10 +152,6 @@ export async function loadToolContent(): Promise<CompleteMetadata> {
   }
   return getMetadataOrThrow();
 }
-
-// ============================================================================
-// Testing Utilities
-// ============================================================================
 
 /**
  * Resets metadata state. FOR TESTING ONLY.

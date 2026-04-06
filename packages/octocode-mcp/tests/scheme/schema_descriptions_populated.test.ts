@@ -20,10 +20,6 @@ import {
   collectJsonSchemaDescriptions,
 } from './fixtures.js';
 
-// ---------------------------------------------------------------------------
-// Expected described fields per tool (source of truth: each tool's scheme.ts)
-// ---------------------------------------------------------------------------
-
 const EXPECTED_FIELDS: Record<string, readonly string[]> = {
   github_search_code: [
     'queries',
@@ -364,10 +360,6 @@ const BULK_SCHEMA_EXPORTS: Record<string, string> = {
 
 // Mock metadata and JSON Schema walker imported from shared fixtures
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe('ALL tool schemas: every .describe() field is non-empty after metadata init', () => {
   let schemaModules: Record<string, Record<string, unknown>>;
   let zod: typeof import('zod/v4');
@@ -417,10 +409,6 @@ describe('ALL tool schemas: every .describe() field is non-empty after metadata 
     };
   }, 15000);
 
-  // -----------------------------------------------------------------------
-  // Per-tool: zero empty descriptions + exact field list
-  // -----------------------------------------------------------------------
-
   it.each(Object.keys(EXPECTED_FIELDS))(
     '%s — zero empty descriptions, all expected fields present',
     toolKey => {
@@ -468,10 +456,6 @@ describe('ALL tool schemas: every .describe() field is non-empty after metadata 
     }
   );
 
-  // -----------------------------------------------------------------------
-  // Summary: total coverage across all tools
-  // -----------------------------------------------------------------------
-
   it('total described field count across all 14 tools', () => {
     let totalDescribed = 0;
     let totalEmpty = 0;
@@ -493,10 +477,6 @@ describe('ALL tool schemas: every .describe() field is non-empty after metadata 
     // 14 tools × avg ~15 fields each = expect well over 100 described fields
     expect(totalDescribed).toBeGreaterThan(100);
   });
-
-  // -----------------------------------------------------------------------
-  // All 14 tools are covered (guard against missing tools)
-  // -----------------------------------------------------------------------
 
   it('covers exactly 14 tools', () => {
     expect(Object.keys(EXPECTED_FIELDS)).toHaveLength(14);

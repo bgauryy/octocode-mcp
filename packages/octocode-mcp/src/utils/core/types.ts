@@ -5,7 +5,6 @@
 import type {
   LocalFindFilesEntry,
   LocalFindFilesToolResult,
-  LocalGetFileContentMatchRange,
   LocalGetFileContentToolResult,
   LocalSearchCodeFile,
   LocalSearchCodeMatch,
@@ -34,8 +33,6 @@ export interface ExecOptions {
   /** Tool name for memory tracking (optional) */
   toolName?: string;
 }
-
-export type { PathValidationResult } from '@octocode/security/types';
 
 /**
  * Base query schema fields (inherited from octocode-mcp)
@@ -204,8 +201,6 @@ export interface FetchContentQuery extends BaseQuery {
 }
 
 export type FetchContentResult = LocalGetFileContentToolResult;
-
-export type MatchRange = LocalGetFileContentMatchRange;
 
 /**
  * Cache statistics for monitoring and debugging

@@ -6,8 +6,6 @@ import { existsSync, rmSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-// ── Mock setup ───────────────────────────────────────────────────────
-
 const mockGetOctokit = vi.hoisted(() =>
   vi.fn().mockResolvedValue({
     rest: {
@@ -120,8 +118,6 @@ function createMockProvider(type?: string) {
     }),
   };
 }
-
-// ── Tests ────────────────────────────────────────────────────────────
 
 describe('fetchMultipleGitHubFileContents - directory mode', () => {
   beforeEach(() => {
@@ -364,8 +360,6 @@ describe('fetchMultipleGitHubFileContents - directory mode', () => {
       result.content?.map(c => ('text' in c ? c.text : '')).join('') || '';
     expect(text).toContain('error');
   });
-
-  // ── GitHub-only provider guard ──────────────────────────────────────
 
   it('should reject directory fetch when provider is gitlab', async () => {
     mockGetActiveProvider.mockReturnValue('gitlab');

@@ -80,9 +80,6 @@ describe('GitLab Provider Delegates', () => {
     vi.clearAllMocks();
   });
 
-  // ==========================================================================
-  // GITLAB CONTENT TESTS
-  // ==========================================================================
   describe('gitlabContent', () => {
     describe('parseGitLabProjectId', () => {
       it('should throw error when projectId is undefined', () => {
@@ -375,9 +372,6 @@ describe('GitLab Provider Delegates', () => {
     });
   });
 
-  // ==========================================================================
-  // GITLAB STRUCTURE TESTS
-  // ==========================================================================
   describe('gitlabStructure', () => {
     describe('parseGitLabProjectId', () => {
       it('should throw error when projectId is undefined', () => {
@@ -493,9 +487,6 @@ describe('GitLab Provider Delegates', () => {
     });
   });
 
-  // ==========================================================================
-  // GITLAB SEARCH TESTS
-  // ==========================================================================
   describe('gitlabSearch', () => {
     describe('parseGitLabProjectId', () => {
       it('should throw error when projectId is undefined', () => {
@@ -794,9 +785,6 @@ describe('GitLab Provider Delegates', () => {
     });
   });
 
-  // ==========================================================================
-  // GITLAB PULL REQUESTS TESTS
-  // ==========================================================================
   describe('gitlabPullRequests', () => {
     describe('parseGitLabProjectId', () => {
       it('should throw error when projectId is undefined', () => {

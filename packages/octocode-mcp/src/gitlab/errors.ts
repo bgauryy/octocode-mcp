@@ -9,10 +9,6 @@
 
 import type { GitLabAPIError, GitLabAPIResponse } from './types.js';
 
-// ============================================================================
-// ERROR CONSTANTS
-// ============================================================================
-
 export const GITLAB_ERROR_CODES = {
   RATE_LIMITED: {
     code: 'GL_RATE_LIMITED',
@@ -47,10 +43,6 @@ export const GITLAB_ERROR_CODES = {
     message: 'This feature requires GitLab Premium or higher.',
   },
 } as const;
-
-// ============================================================================
-// ERROR HANDLING
-// ============================================================================
 
 /**
  * Handle GitLab API errors and convert to standardized format.

@@ -242,7 +242,7 @@ export function clearAllCache(): void {
  * Prefix should match the logical cache prefix (e.g. "local-", "gh-api-").
  * Returns number of removed entries.
  */
-export function clearCacheByPrefix(prefix: string): number {
+function clearCacheByPrefix(prefix: string): number {
   const keys = cache.keys();
   let cleared = 0;
 

@@ -69,12 +69,6 @@ export const TOOLING_ALLOWED_ENV_VARS = [
 ] as const;
 
 /**
- * Default allowlist for local process execution.
- * Keep this minimal for local tools and generic subprocesses.
- */
-export const DEFAULT_ALLOWED_ENV_VARS = CORE_ALLOWED_ENV_VARS;
-
-/**
  * Proxy env vars are intentionally NOT included in core/default allowlists.
  * Commands that truly need network proxy support must opt in explicitly.
  */
@@ -98,7 +92,7 @@ const SIGKILL_GRACE_MS = 5_000;
 
 export function buildChildProcessEnv(
   envOverrides: Record<string, string | undefined> = {},
-  allowEnvVars: readonly string[] = DEFAULT_ALLOWED_ENV_VARS
+  allowEnvVars: readonly string[] = CORE_ALLOWED_ENV_VARS
 ): typeof process.env {
   const childEnv: Record<string, string | undefined> = {};
 
@@ -174,7 +168,7 @@ export function spawnWithTimeout(
     timeout = 30000,
     cwd,
     env = {},
-    allowEnvVars = DEFAULT_ALLOWED_ENV_VARS,
+    allowEnvVars = CORE_ALLOWED_ENV_VARS,
     maxOutputSize = DEFAULT_MAX_OUTPUT_SIZE_BYTES,
   } = options;
 
@@ -358,7 +352,7 @@ export function spawnCheckSuccess(
 ): Promise<boolean> {
   return new Promise(resolve => {
     let killed = false;
-    const { allowEnvVars = DEFAULT_ALLOWED_ENV_VARS } = options;
+    const { allowEnvVars = CORE_ALLOWED_ENV_VARS } = options;
 
     let childProcess: ChildProcess;
     try {

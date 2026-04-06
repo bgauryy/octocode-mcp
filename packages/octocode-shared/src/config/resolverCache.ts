@@ -25,10 +25,6 @@ import {
 
 const logger = createLogger('octocode-config');
 
-// ============================================================================
-// CORE RESOLUTION (moved here to avoid circular dependency)
-// ============================================================================
-
 /**
  * Build resolved configuration from file config and environment.
  *
@@ -141,10 +137,6 @@ export async function resolveConfig(): Promise<ResolvedConfig> {
   return resolveConfigSync();
 }
 
-// ============================================================================
-// IN-MEMORY CACHE
-// ============================================================================
-
 /** Cached resolved configuration */
 let cachedConfig: ResolvedConfig | null = null;
 
@@ -153,10 +145,6 @@ let cacheTimestamp: number = 0;
 
 /** Cache TTL in milliseconds (1 minute) */
 const CACHE_TTL_MS = 60000;
-
-// ============================================================================
-// PUBLIC API
-// ============================================================================
 
 /**
  * Get fully resolved configuration (sync).
@@ -220,10 +208,6 @@ export function invalidateConfigCache(): void {
   cachedConfig = null;
   cacheTimestamp = 0;
 }
-
-// ============================================================================
-// TESTING UTILITIES
-// ============================================================================
 
 /**
  * @internal - For testing only

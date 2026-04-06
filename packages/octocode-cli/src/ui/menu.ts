@@ -35,6 +35,7 @@ import {
 } from '../features/gh-auth.js';
 import { getCredentials, hasEnvToken } from '../utils/token-storage.js';
 import open from 'open';
+import { runToolTerminalFlow } from './tool-terminal.js';
 
 async function pressEnterToContinue(): Promise<void> {
   console.log();
@@ -50,6 +51,7 @@ type MenuChoice =
   | 'skills'
   | 'auth'
   | 'mcp-config'
+  | 'terminal'
   | 'exit';
 
 type OctocodeMenuChoice = 'configure' | 'install' | 'back';
@@ -267,6 +269,12 @@ async function showMainMenu(state: AppState): Promise<MenuChoice> {
     name: '- Manage System MCP',
     value: 'mcp-config',
     description: 'Add, sync and configure MCP across all IDEs',
+  });
+
+  choices.push({
+    name: '- Tool Terminal',
+    value: 'terminal',
+    description: 'Run Octocode tools directly from an interactive terminal',
   });
 
   choices.push(
@@ -962,6 +970,10 @@ async function handleMenuChoice(choice: MenuChoice): Promise<boolean> {
 
     case 'mcp-config':
       await runMCPConfigFlow();
+      return true;
+
+    case 'terminal':
+      await runToolTerminalFlow();
       return true;
 
     case 'exit':

@@ -25,10 +25,6 @@ describe('resolveWorkspaceRoot', () => {
     process.env = savedEnv;
   });
 
-  // =========================================================================
-  // PRIORITY CHAIN
-  // =========================================================================
-
   describe('priority chain', () => {
     it('explicit parameter wins over env var', () => {
       const explicit = path.join(cwd, 'explicit-root');
@@ -45,10 +41,6 @@ describe('resolveWorkspaceRoot', () => {
       expect(resolveWorkspaceRoot()).toBe(cwd);
     });
   });
-
-  // =========================================================================
-  // EXPLICIT PARAMETER
-  // =========================================================================
 
   describe('explicit parameter', () => {
     it('should resolve absolute path as-is', () => {
@@ -69,10 +61,6 @@ describe('resolveWorkspaceRoot', () => {
       );
     });
   });
-
-  // =========================================================================
-  // WORKSPACE_ROOT ENV VAR
-  // =========================================================================
 
   describe('WORKSPACE_ROOT env var', () => {
     it('should resolve absolute env path', () => {
@@ -106,10 +94,6 @@ describe('resolveWorkspaceRoot', () => {
     });
   });
 
-  // =========================================================================
-  // RETURN VALUE PROPERTIES
-  // =========================================================================
-
   describe('return value properties', () => {
     it('should always return an absolute path', () => {
       expect(path.isAbsolute(resolveWorkspaceRoot())).toBe(true);
@@ -136,10 +120,6 @@ describe('resolveWorkspaceRoot', () => {
       expect(resolveWorkspaceRoot()).toBe(resolveWorkspaceRoot());
     });
   });
-
-  // =========================================================================
-  // SECURITY: ATTACK VECTORS
-  // =========================================================================
 
   describe('security - path traversal via env', () => {
     it('should ignore traversal env root when resolved path does not exist', () => {

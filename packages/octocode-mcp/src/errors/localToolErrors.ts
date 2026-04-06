@@ -1,7 +1,3 @@
-// ============================================================================
-// LOCAL TOOL ERROR CODES (for local file operations)
-// ============================================================================
-
 /**
  * Error codes for local tool operations (file system, search, pagination)
  * Uses camelCase values for consistency with tool responses

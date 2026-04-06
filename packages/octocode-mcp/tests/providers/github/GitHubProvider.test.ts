@@ -61,9 +61,6 @@ describe('GitHubProvider', () => {
     vi.clearAllMocks();
   });
 
-  // ==========================================================================
-  // CONSTRUCTOR TESTS
-  // ==========================================================================
   describe('constructor', () => {
     it('should create provider with default config (no config)', () => {
       const provider = new GitHubProvider();
@@ -108,9 +105,6 @@ describe('GitHubProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // SEARCH CODE TESTS
-  // ==========================================================================
   describe('searchCode', () => {
     describe('success cases', () => {
       it('should search code successfully with minimal query', async () => {
@@ -471,9 +465,6 @@ describe('GitHubProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // GET FILE CONTENT TESTS
-  // ==========================================================================
   describe('getFileContent', () => {
     describe('success cases', () => {
       it('should fetch file content successfully', async () => {
@@ -730,9 +721,6 @@ describe('GitHubProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // SEARCH REPOS TESTS
-  // ==========================================================================
   describe('searchRepos', () => {
     describe('success cases', () => {
       it('should search repositories successfully', async () => {
@@ -1028,9 +1016,6 @@ describe('GitHubProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // SEARCH PULL REQUESTS TESTS
-  // ==========================================================================
   describe('searchPullRequests', () => {
     describe('success cases', () => {
       it('should search pull requests successfully', async () => {
@@ -1520,9 +1505,6 @@ describe('GitHubProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // GET REPO STRUCTURE TESTS
-  // ==========================================================================
   describe('getRepoStructure', () => {
     describe('success cases', () => {
       it('should get repository structure successfully', async () => {
@@ -1856,9 +1838,6 @@ describe('GitHubProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // PARSE PROJECT ID TESTS
-  // ==========================================================================
   describe('parseProjectId helper', () => {
     it('should parse valid projectId', async () => {
       mockSearchGitHubCodeAPI.mockResolvedValue({
@@ -1938,9 +1917,6 @@ describe('GitHubProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // ERROR HANDLING TESTS
-  // ==========================================================================
   describe('error handling (handleError)', () => {
     it('should convert Error instances to ProviderResponse', async () => {
       const customError = new Error('Custom error message');
@@ -1992,9 +1968,6 @@ describe('GitHubProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // PROVIDER TYPE PROPERTY TEST
-  // ==========================================================================
   describe('provider type', () => {
     it('should have readonly type property set to github', () => {
       expect(provider.type).toBe('github');
@@ -2002,9 +1975,6 @@ describe('GitHubProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // AUTH INFO PROPAGATION TESTS
-  // ==========================================================================
   describe('auth info propagation', () => {
     it('should pass authInfo to searchGitHubCodeAPI', async () => {
       const authInfo = { token: 'test-token', clientId: 'client', scopes: [] };
@@ -2151,10 +2121,6 @@ describe('GitHubProvider', () => {
       );
     });
   });
-
-  // ==========================================================================
-  // RESOLVE DEFAULT BRANCH
-  // ==========================================================================
 
   describe('resolveDefaultBranch', () => {
     it('should resolve default branch for a valid projectId', async () => {

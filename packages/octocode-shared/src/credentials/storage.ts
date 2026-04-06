@@ -69,10 +69,6 @@ const logger = createLogger('token-storage');
 // Re-export env functions from envTokens.ts (backward compat)
 export { getTokenFromEnv, getEnvTokenSource, hasEnvToken, ENV_TOKEN_VARS };
 
-// ============================================================================
-// PUBLIC API - CRUD OPERATIONS
-// ============================================================================
-
 /**
  * Store credentials using encrypted file storage
  *

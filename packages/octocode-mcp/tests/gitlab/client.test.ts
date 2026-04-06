@@ -640,10 +640,6 @@ describe('GitLab Client', () => {
     });
   });
 
-  // ==========================================================================
-  // DEFAULT BRANCH CACHE
-  // ==========================================================================
-
   describe('default branch cache', () => {
     beforeEach(() => {
       clearDefaultBranchCache();
@@ -680,10 +676,6 @@ describe('GitLab Client', () => {
       expect(getCachedDefaultBranch('project-200')).toBe('branch-200');
     });
   });
-
-  // ==========================================================================
-  // RETRY LOGIC
-  // ==========================================================================
 
   describe('withRetry', () => {
     beforeEach(() => {
