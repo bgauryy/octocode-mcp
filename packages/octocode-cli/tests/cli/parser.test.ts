@@ -131,6 +131,39 @@ describe('CLI Parser', () => {
       expect(result.args).toEqual(['install']);
       expect(result.options).toEqual({ k: 'octocode-roast' });
     });
+
+    it('should synthesize the tool command from top-level --tool usage', () => {
+      const result = parseArgs([
+        '--tool',
+        'localSearchCode',
+        '--path',
+        '.',
+        '--pattern',
+        'runCLI',
+      ]);
+
+      expect(result.command).toBe('tool');
+      expect(result.args).toEqual(['localSearchCode']);
+      expect(result.options).toEqual({
+        tool: 'localSearchCode',
+        path: '.',
+        pattern: 'runCLI',
+      });
+    });
+
+    it('should support single-dash long-form tool syntax with =', () => {
+      const result = parseArgs([
+        '-tool=localSearchCode',
+        '-input={"path":".","pattern":"runCLI"}',
+      ]);
+
+      expect(result.command).toBe('tool');
+      expect(result.args).toEqual(['localSearchCode']);
+      expect(result.options).toEqual({
+        tool: 'localSearchCode',
+        input: '{"path":".","pattern":"runCLI"}',
+      });
+    });
   });
 
   describe('hasHelpFlag', () => {

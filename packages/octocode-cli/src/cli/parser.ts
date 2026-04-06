@@ -1,6 +1,6 @@
 import type { ParsedArgs } from './types.js';
 
-// These options consume the next argv token. `-h` is --help; use `-H` for --hostname.
+// These options always consume the next argv token. `-h` is --help; use `-H` for --hostname.
 const OPTIONS_WITH_VALUES = new Set([
   'ide',
   'method',
@@ -27,7 +27,54 @@ const OPTIONS_WITH_VALUES = new Set([
   'category',
   'env',
   'config',
+  'tool',
+  'input',
+  'responseCharLength',
+  'responseCharOffset',
 ]);
+
+const BOOLEAN_OPTIONS = new Set([
+  'help',
+  'h',
+  'version',
+  'v',
+  'force',
+  'source',
+  'json',
+  'status',
+  'dry-run',
+  'installed',
+  'repos',
+  'skills',
+  'logs',
+  'all',
+  'tools',
+  'local',
+  'lsp',
+  'api',
+  'list',
+  'schema',
+]);
+
+const SINGLE_DASH_LONG_OPTIONS = new Set([
+  'tool',
+  'input',
+  'output',
+  'responseCharLength',
+  'responseCharOffset',
+]);
+
+function shouldConsumeNextValue(args: ParsedArgs, key: string): boolean {
+  if (BOOLEAN_OPTIONS.has(key)) {
+    return false;
+  }
+
+  if (OPTIONS_WITH_VALUES.has(key)) {
+    return true;
+  }
+
+  return args.command === 'tool' || typeof args.options['tool'] === 'string';
+}
 
 export function parseArgs(argv: string[] = process.argv.slice(2)): ParsedArgs {
   const result: ParsedArgs = {
@@ -45,7 +92,7 @@ export function parseArgs(argv: string[] = process.argv.slice(2)): ParsedArgs {
       if (value !== undefined) {
         result.options[key] = value;
       } else if (
-        OPTIONS_WITH_VALUES.has(key) &&
+        shouldConsumeNextValue(result, key) &&
         i + 1 < argv.length &&
         !argv[i + 1].startsWith('-')
       ) {
@@ -53,6 +100,40 @@ export function parseArgs(argv: string[] = process.argv.slice(2)): ParsedArgs {
         i++;
       } else {
         result.options[key] = true;
+      }
+    } else if (arg.startsWith('-') && !arg.startsWith('--') && arg.length > 2) {
+      const normalized = arg.slice(1);
+      const [key, value] = normalized.split('=');
+
+      if (SINGLE_DASH_LONG_OPTIONS.has(key)) {
+        if (value !== undefined) {
+          result.options[key] = value;
+        } else if (
+          shouldConsumeNextValue(result, key) &&
+          i + 1 < argv.length &&
+          !argv[i + 1].startsWith('-')
+        ) {
+          result.options[key] = argv[i + 1];
+          i++;
+        } else {
+          result.options[key] = true;
+        }
+      } else {
+        const flags = normalized;
+        const lastFlag = flags[flags.length - 1];
+        if (
+          flags.length === 1 &&
+          OPTIONS_WITH_VALUES.has(lastFlag) &&
+          i + 1 < argv.length &&
+          !argv[i + 1].startsWith('-')
+        ) {
+          result.options[lastFlag] = argv[i + 1];
+          i++;
+        } else {
+          for (const flag of flags) {
+            result.options[flag] = true;
+          }
+        }
       }
     } else if (arg.startsWith('-') && arg.length > 1) {
       const flags = arg.slice(1);
@@ -71,12 +152,21 @@ export function parseArgs(argv: string[] = process.argv.slice(2)): ParsedArgs {
         }
       }
     } else if (!result.command) {
-      result.command = arg;
+      if (typeof result.options['tool'] === 'string') {
+        result.args.push(arg);
+      } else {
+        result.command = arg;
+      }
     } else {
       result.args.push(arg);
     }
 
     i++;
+  }
+
+  if (!result.command && typeof result.options['tool'] === 'string') {
+    result.command = 'tool';
+    result.args = [result.options['tool'], ...result.args];
   }
 
   return result;

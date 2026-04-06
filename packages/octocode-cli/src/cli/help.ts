@@ -29,6 +29,9 @@ export function showHelp(): void {
     `    ${c('magenta', 'mcp')}         Manage MCP marketplace non-interactively`
   );
   console.log(
+    `    ${c('magenta', 'tool')}        Run Octocode research tools directly`
+  );
+  console.log(
     `    ${c('magenta', 'auth')}        Manage GitHub authentication`
   );
   console.log(`    ${c('magenta', 'login')}       Authenticate with GitHub`);
@@ -92,6 +95,14 @@ export function showHelp(): void {
   console.log(`    ${dim('# Remove one installed skill')}`);
   console.log(
     `    ${c('yellow', 'octocode skills remove --skill octocode-researcher --targets claude-code,cursor')}`
+  );
+  console.log();
+  console.log(`    ${dim('# Run a tool directly')}`);
+  console.log(
+    `    ${c('yellow', 'octocode --tool localSearchCode --path . --pattern runCLI')}`
+  );
+  console.log(
+    `    ${c('yellow', 'octocode tool githubSearchCode --input \'{\"owner\":\"bgauryy\",\"repo\":\"octocode-mcp\",\"keywordsToSearch\":[\"tool\"]}\'')}`
   );
   console.log();
   console.log(c('magenta', `  ─── 🔍🐙 ${bold('https://octocode.ai')} ───`));

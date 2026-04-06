@@ -1,11 +1,18 @@
 import { parseArgs, hasHelpFlag, hasVersionFlag } from './parser.js';
 import { findCommand } from './commands.js';
 import { showHelp, showCommandHelp, showVersion } from './help.js';
+import { showToolHelp } from './tool-command.js';
 
 export async function runCLI(argv?: string[]): Promise<boolean> {
   const args = parseArgs(argv);
 
   if (hasHelpFlag(args)) {
+    if (args.command === 'tool' && typeof args.args[0] === 'string') {
+      if (showToolHelp(args.args[0])) {
+        return true;
+      }
+    }
+
     if (args.command) {
       const cmd = findCommand(args.command);
       if (cmd) {
