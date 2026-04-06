@@ -85,78 +85,7 @@ Setting either token (when no GitLab token is set) activates **Bitbucket mode**.
 
 > **Note:** Bitbucket Cloud (`api.bitbucket.org`) is the default. Self-hosted Bitbucket Server/Data Center uses a different API and is **not yet supported**.
 
----
-
-## Available Tools
-
-All tools use the `github*` prefix but work with Bitbucket when in Bitbucket mode:
-
-| Tool | Bitbucket Support | Notes |
-|------|------------------|-------|
-| `githubSearchCode` | Full | Workspace-scoped (workspace + repo slug required) |
-| `githubSearchRepositories` | Full | Search repos within a workspace |
-| `githubSearchPullRequests` | Full | Maps to Bitbucket Pull Requests |
-| `githubGetFileContent` | Full | Branch auto-detected if omitted |
-| `githubViewRepoStructure` | Full | Browse repository file tree |
-| `githubCloneRepo` | Not supported | Clone/directory fetch is GitHub only |
-| `packageSearch` | N/A | Works independently (NPM/PyPI lookup) |
-
----
-
-## Parameter Mapping
-
-Bitbucket uses different terminology. Octocode translates automatically:
-
-| Unified Parameter | GitHub | Bitbucket |
-|-------------------|--------|-----------|
-| `owner` | Organization / User | Workspace |
-| `repo` | Repository | Repository slug |
-| `owner/repo` | `owner/repo` | `workspace/repo_slug` |
-| `branch` | Branch name | Branch name (or commit SHA) |
-| `prNumber` | Pull Request # | Pull Request ID |
-| `state: "open"` | Open PRs | `OPEN` PRs |
-| `state: "closed"` | Closed PRs | `DECLINED` PRs |
-| `merged=true` | Merged filter | `MERGED` PRs |
-
----
-
-## Bitbucket-Specific Behavior
-
-### Workspace-Scoped Code Search
-
-Bitbucket code search is scoped to a **workspace**. You must provide `owner` (workspace):
-
-```
-githubSearchCode(owner="my-workspace", keywordsToSearch=["middleware"])
-```
-
-To scope to a specific repository, also provide `repo`:
-
-```
-githubSearchCode(owner="my-workspace", repo="my-repo", keywordsToSearch=["middleware"])
-```
-
-### Branch/Ref Auto-Detection
-
-The default branch is auto-detected via the Bitbucket API. Providing `branch` explicitly avoids an extra API call:
-
-```
-githubGetFileContent(owner="workspace", repo="repo-slug", path="src/main.ts", branch="main")
-```
-
-### No Star Counts
-
-Bitbucket does not expose star/watch counts in its API. Repository search results will show `stars: 0` for all Bitbucket repositories.
-
-### Pull Request States
-
-Bitbucket uses different PR state names:
-
-| Unified State | Bitbucket State |
-|---------------|-----------------|
-| `open` | `OPEN` |
-| `closed` | `DECLINED` |
-| `merged` (filter) | `MERGED` |
+For available tools, parameter mapping, and Bitbucket-specific behavior, see the [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md). For all configuration options, see the [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md).
 
 ---
 
@@ -184,19 +113,6 @@ Some advanced query parameters from the unified interface are not yet mapped to 
 - **Repo search**: `stars`, `size`, `created`, `updated` range filters
 - **PR search**: `commenter`, `involves`, `mentions`, `review-requested`, `draft`, `withCommits`
 - **File content**: Server-side `matchString` — client-side matching is used instead
-
----
-
-## Configuration Reference
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `BITBUCKET_TOKEN` | — | Bitbucket app password or OAuth token (primary) |
-| `BB_TOKEN` | — | Bitbucket token (fallback) |
-| `BITBUCKET_USERNAME` | — | Bitbucket username (enables Basic auth) |
-| `BITBUCKET_HOST` | `https://api.bitbucket.org/2.0` | Bitbucket Cloud API endpoint |
-
-For complete configuration options, see the [Configuration Reference](https://github.com/bgauryy/octocode-mcp/blob/main/docs/CONFIGURATION_REFERENCE.md).
 
 ---
 
