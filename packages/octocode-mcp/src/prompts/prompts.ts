@@ -80,7 +80,7 @@ export function registerPrompts(
 
     const promptOptions = {
       description: prompt.description,
-      argsSchema: argsShape,
+      ...(Object.keys(argsShape).length > 0 ? { argsSchema: argsShape } : {}),
     };
     server.registerPrompt(prompt.name, promptOptions, handler);
   }

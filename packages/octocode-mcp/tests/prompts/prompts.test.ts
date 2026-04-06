@@ -17,6 +17,19 @@ describe('Prompts Registration', () => {
     } as unknown as McpServer;
   });
 
+  function getCallAt(index: number) {
+    const call = registerPromptSpy.mock.calls[index];
+    if (!call) throw new Error(`No registerPrompt call at index ${index}`);
+    return call;
+  }
+
+  function getMessageText(result: GetPromptResult): string {
+    const msg = result.messages[0];
+    if (!msg) throw new Error('No message in result');
+    if (msg.content.type !== 'text') throw new Error('Expected text content');
+    return msg.content.text;
+  }
+
   const baseMetadata: CompleteMetadata = {
     instructions: 'Test instructions',
     prompts: {},
@@ -96,10 +109,10 @@ describe('Prompts Registration', () => {
 
       const useOpts = useCall[1] as {
         description: string;
-        argsSchema: Record<string, z.ZodType>;
+        argsSchema?: Record<string, z.ZodType>;
       };
       expect(useOpts.description).toBe('Use prompt description');
-      expect(Object.keys(useOpts.argsSchema).length).toBe(0);
+      expect(useOpts.argsSchema).toBeUndefined();
     });
 
     it('should skip prompts with missing name', () => {
@@ -311,6 +324,268 @@ describe('Prompts Registration', () => {
     });
   });
 
+  describe('argsSchema conditional inclusion', () => {
+    it('should omit argsSchema when prompt has no args property', () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          help: {
+            name: 'help',
+            description: 'Show help',
+            content: 'Help content',
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      const opts = getCallAt(0)[1] as Record<string, unknown>;
+      expect(opts.description).toBe('Show help');
+      expect(opts).not.toHaveProperty('argsSchema');
+    });
+
+    it('should omit argsSchema when prompt has empty args array', () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          help: {
+            name: 'help',
+            description: 'Show help',
+            content: 'Help content',
+            args: [],
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      const opts = getCallAt(0)[1] as Record<string, unknown>;
+      expect(opts).not.toHaveProperty('argsSchema');
+    });
+
+    it('should omit argsSchema when all args are invalid and filtered out', () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          test: {
+            name: 'Test',
+            description: 'Desc',
+            content: 'Content',
+            args: [
+              null as unknown as { name: string; description: string },
+              { name: 123 as unknown as string, description: 'bad' },
+            ],
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      const opts = getCallAt(0)[1] as Record<string, unknown>;
+      expect(opts).not.toHaveProperty('argsSchema');
+    });
+
+    it('should include argsSchema when prompt has valid args', () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          research: {
+            name: 'research',
+            description: 'Research a repo',
+            content: 'Research content',
+            args: [
+              { name: 'repo', description: 'Repo URL', required: true },
+              { name: 'branch', description: 'Branch name' },
+            ],
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      const opts = getCallAt(0)[1] as {
+        argsSchema: Record<string, z.ZodType>;
+      };
+      expect(opts.argsSchema).toBeDefined();
+      expect(Object.keys(opts.argsSchema)).toEqual(['repo', 'branch']);
+    });
+
+    it('should mark required args as non-optional in argsSchema', () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          test: {
+            name: 'test',
+            description: 'Desc',
+            content: 'Content',
+            args: [
+              {
+                name: 'required_arg',
+                description: 'Must provide',
+                required: true,
+              },
+            ],
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      const opts = getCallAt(0)[1] as {
+        argsSchema: Record<string, z.ZodType>;
+      };
+      const schema = z.object(
+        opts.argsSchema as Record<string, z.ZodType<unknown>>
+      );
+      expect(schema.safeParse({ required_arg: 'val' }).success).toBe(true);
+      expect(schema.safeParse({}).success).toBe(false);
+    });
+
+    it('should mark non-required args as optional in argsSchema', () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          test: {
+            name: 'test',
+            description: 'Desc',
+            content: 'Content',
+            args: [{ name: 'optional_arg', description: 'May omit' }],
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      const opts = getCallAt(0)[1] as {
+        argsSchema: Record<string, z.ZodType>;
+      };
+      const schema = z.object(
+        opts.argsSchema as Record<string, z.ZodType<unknown>>
+      );
+      expect(schema.safeParse({}).success).toBe(true);
+      expect(schema.safeParse({ optional_arg: 'val' }).success).toBe(true);
+    });
+  });
+
+  describe('No-args prompt handler (bug fix: prompts/get with undefined arguments)', () => {
+    it('should return content when handler receives undefined args', async () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          help: {
+            name: 'help',
+            description: 'Show help',
+            content: 'This is the help text.',
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      const handler = getCallAt(0)[2] as (
+        args: unknown
+      ) => Promise<GetPromptResult>;
+      const result = await handler(undefined);
+
+      expect(result.messages).toHaveLength(1);
+      expect(getMessageText(result)).toBe('This is the help text.');
+    });
+
+    it('should return content when handler receives null args', async () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          help: {
+            name: 'help',
+            description: 'Show help',
+            content: 'Help text here.',
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      const handler = getCallAt(0)[2] as (
+        args: unknown
+      ) => Promise<GetPromptResult>;
+      const result = await handler(null);
+
+      expect(getMessageText(result)).toBe('Help text here.');
+    });
+
+    it('should return content when handler receives empty object args', async () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          help: {
+            name: 'help',
+            description: 'Show help',
+            content: 'Help text.',
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      const handler = getCallAt(0)[2] as (
+        args: unknown
+      ) => Promise<GetPromptResult>;
+      const result = await handler({});
+
+      expect(getMessageText(result)).toBe('Help text.');
+    });
+  });
+
+  describe('Prompt with args - handler receives valid arguments', () => {
+    it('should append args when handler receives populated object', async () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          research: {
+            name: 'research',
+            description: 'Research a repo',
+            content: 'Base research content',
+            args: [{ name: 'repo', description: 'Repo URL', required: true }],
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      const handler = getCallAt(0)[2] as (
+        args: Record<string, unknown>
+      ) => Promise<GetPromptResult>;
+      const result = await handler({ repo: 'octocode-mcp' });
+
+      expect(getMessageText(result)).toBe(
+        'Base research content\n\nUse Input\n\nrepo: octocode-mcp\n'
+      );
+    });
+
+    it('should return base content when args-prompt handler receives undefined', async () => {
+      const metadata: CompleteMetadata = {
+        ...baseMetadata,
+        prompts: {
+          research: {
+            name: 'research',
+            description: 'Research a repo',
+            content: 'Base research content',
+            args: [{ name: 'repo', description: 'Repo URL', required: true }],
+          },
+        },
+      };
+
+      registerPrompts(mockServer, metadata);
+
+      const handler = getCallAt(0)[2] as (
+        args: unknown
+      ) => Promise<GetPromptResult>;
+      const result = await handler(undefined);
+
+      expect(getMessageText(result)).toBe('Base research content');
+    });
+  });
+
   describe('Edge Cases', () => {
     it('should do nothing when prompts is undefined', () => {
       const metadata: CompleteMetadata = {
@@ -342,7 +617,7 @@ describe('Prompts Registration', () => {
       registerPrompts(mockServer, metadata);
 
       expect(registerPromptSpy).toHaveBeenCalledTimes(1);
-      const call = registerPromptSpy.mock.calls[0];
+      const call = getCallAt(0);
       const opts = call[1] as {
         argsSchema: Record<string, z.ZodType>;
       };
