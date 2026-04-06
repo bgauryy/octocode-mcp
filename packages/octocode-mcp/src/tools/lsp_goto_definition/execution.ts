@@ -187,7 +187,7 @@ function escapeRegExp(value: string): string {
  * on import/re-export lines. Prefers the queried symbol token position
  * before the "from" clause to avoid matching module path text.
  */
-export function resolveImportSymbolCharacter(
+function resolveImportSymbolCharacter(
   lineContent: string,
   symbolName: string,
   fallbackCharacter: number

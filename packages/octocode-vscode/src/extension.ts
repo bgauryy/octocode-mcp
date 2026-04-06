@@ -45,8 +45,6 @@ function getEditorInfo(): {
   return detectEditorInfo(vscode.env.appName);
 }
 
-// ===== GitHub Authentication Functions =====
-
 /**
  * Get the current GitHub token - prefers OAuth session, falls back to manual config
  */
@@ -558,7 +556,6 @@ export async function activate(
       })
     );
 
-    // ===== GitHub Authentication Commands =====
     context.subscriptions.push(
       vscode.commands.registerCommand('octocode.loginGitHub', async () => {
         await loginToGitHub();

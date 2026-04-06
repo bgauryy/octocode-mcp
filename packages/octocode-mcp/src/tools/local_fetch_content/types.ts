@@ -8,10 +8,6 @@ import type {
   LocalGetFileContentToolResult,
 } from '../../scheme/outputTypes.js';
 
-// ============================================================================
-// INPUT TYPES
-// ============================================================================
-
 /**
  * Query parameters for fetching local file content
  */
@@ -31,10 +27,6 @@ export interface FetchContentQuery {
   researchGoal?: string;
   reasoning?: string;
 }
-
-// ============================================================================
-// OUTPUT TYPES
-// ============================================================================
 
 export type FetchContentPagination = LocalGetFileContentPagination;
 

@@ -128,10 +128,6 @@ describe('GitLab Repository Structure', () => {
     vi.clearAllMocks();
   });
 
-  // ============================================================================
-  // VALIDATION TESTS
-  // ============================================================================
-
   describe('viewGitLabRepositoryStructureAPI - Validation', () => {
     it('should return error when projectId is missing', async () => {
       const params = {} as GitLabTreeQuery;
@@ -189,10 +185,6 @@ describe('GitLab Repository Structure', () => {
       );
     });
   });
-
-  // ============================================================================
-  // SUCCESS SCENARIOS
-  // ============================================================================
 
   describe('viewGitLabRepositoryStructureAPI - Success', () => {
     it('should fetch repository structure successfully', async () => {
@@ -331,10 +323,6 @@ describe('GitLab Repository Structure', () => {
       }
     });
   });
-
-  // ============================================================================
-  // FILTERING TESTS
-  // ============================================================================
 
   describe('viewGitLabRepositoryStructureAPI - Filtering', () => {
     it('should filter out ignored directories', async () => {
@@ -483,10 +471,6 @@ describe('GitLab Repository Structure', () => {
       }
     });
   });
-
-  // ============================================================================
-  // PAGINATION TESTS
-  // ============================================================================
 
   describe('viewGitLabRepositoryStructureAPI - Pagination', () => {
     it('should paginate results with default perPage', async () => {
@@ -642,10 +626,6 @@ describe('GitLab Repository Structure', () => {
       }
     });
   });
-
-  // ============================================================================
-  // CACHING TESTS
-  // ============================================================================
 
   describe('viewGitLabRepositoryStructureAPI - Caching', () => {
     it('should generate cache key with projectId', async () => {
@@ -816,10 +796,6 @@ describe('GitLab Repository Structure', () => {
     });
   });
 
-  // ============================================================================
-  // ERROR HANDLING TESTS
-  // ============================================================================
-
   describe('viewGitLabRepositoryStructureAPI - Error Handling', () => {
     it('should handle GitLab API errors', async () => {
       // withDataCache calls the operation which will throw
@@ -962,10 +938,6 @@ describe('GitLab Repository Structure', () => {
       expect(result).toHaveProperty('type', 'unknown');
     });
   });
-
-  // ============================================================================
-  // buildStructureFromItems TESTS (via pagination)
-  // ============================================================================
 
   describe('buildStructureFromItems - via pagination', () => {
     it('should build structure with root-level items', async () => {
@@ -1157,10 +1129,6 @@ describe('GitLab Repository Structure', () => {
     });
   });
 
-  // ============================================================================
-  // transformGitLabTree TESTS
-  // ============================================================================
-
   describe('transformGitLabTree', () => {
     it('should transform tree items to unified format', () => {
       const items: GitLabTreeItem[] = [
@@ -1305,10 +1273,6 @@ describe('GitLab Repository Structure', () => {
       expect(files).toHaveLength(3);
     });
   });
-
-  // ============================================================================
-  // INTEGRATION TESTS
-  // ============================================================================
 
   describe('Integration scenarios', () => {
     it('should handle full workflow: fetch, filter, paginate', async () => {

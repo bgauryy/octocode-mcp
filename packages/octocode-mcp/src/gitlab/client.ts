@@ -15,20 +15,12 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 3;
 const MAX_RETRY_AFTER_SECONDS = 60;
 
-// ============================================================================
-// TYPES
-// ============================================================================
-
-export type GitLabClient = InstanceType<typeof Gitlab>;
+type GitLabClient = InstanceType<typeof Gitlab>;
 
 interface ClientConfig {
   token?: string;
   host?: string;
 }
-
-// ============================================================================
-// CONFIGURATION
-// ============================================================================
 
 /**
  * Get GitLab host from env > config file > default.
@@ -45,10 +37,6 @@ function getGitLabHost(): string {
 function getGitLabToken(): string | undefined {
   return process.env.GITLAB_TOKEN || process.env.GL_TOKEN;
 }
-
-// ============================================================================
-// CLIENT CACHING
-// ============================================================================
 
 const CACHE_TTL_SECONDS = 5 * 60;
 const CACHE_CHECK_PERIOD_SECONDS = 60;
@@ -79,10 +67,6 @@ function getCacheKey(config?: ClientConfig): string {
   const tokenHash = hashToken(config?.token || getGitLabToken());
   return `gitlab:${host}:${tokenHash}`;
 }
-
-// ============================================================================
-// PUBLIC API
-// ============================================================================
 
 /**
  * Get a GitLab client instance.
@@ -171,10 +155,6 @@ export function clearGitLabClient(config?: ClientConfig): void {
   clientCache.del(cacheKey);
 }
 
-// ============================================================================
-// DEFAULT BRANCH CACHE
-// ============================================================================
-
 const MAX_BRANCH_CACHE_SIZE = 200;
 const defaultBranchCache = new Map<string, string>();
 
@@ -193,10 +173,6 @@ export function cacheDefaultBranch(projectId: string, branch: string): void {
 export function clearDefaultBranchCache(): void {
   defaultBranchCache.clear();
 }
-
-// ============================================================================
-// RETRY UTILITY
-// ============================================================================
 
 function isRetryableStatus(status: number): boolean {
   return status === 429 || (status >= 500 && status < 600);

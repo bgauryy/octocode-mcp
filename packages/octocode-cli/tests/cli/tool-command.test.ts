@@ -3,6 +3,48 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const publicMocks = vi.hoisted(() => ({
   initialize: vi.fn().mockResolvedValue(undefined),
   initializeProviders: vi.fn().mockResolvedValue([]),
+  loadToolContent: vi.fn().mockResolvedValue({
+    instructions: 'Use Octocode tools carefully.',
+    prompts: {},
+    toolNames: {},
+    baseSchema: {
+      mainResearchGoal: 'main goal',
+      researchGoal: 'goal',
+      reasoning: 'reasoning',
+      bulkQuery: (toolName: string) => `queries for ${toolName}`,
+    },
+    tools: {
+      githubSearchCode: {
+        name: 'githubSearchCode',
+        description: 'Search code in GitHub repositories.',
+        schema: {
+          keywordsToSearch: 'Search terms',
+          owner: 'Repository owner',
+        },
+        hints: { hasResults: [], empty: [] },
+      },
+      localSearchCode: {
+        name: 'localSearchCode',
+        description: 'Search local code with ripgrep.',
+        schema: {
+          path: 'Path to search',
+          pattern: 'Pattern to find',
+        },
+        hints: { hasResults: [], empty: [] },
+      },
+      githubCloneRepo: {
+        name: 'githubCloneRepo',
+        description: 'Clone a repository locally.',
+        schema: {
+          owner: 'Repository owner',
+          repo: 'Repository name',
+        },
+        hints: { hasResults: [], empty: [] },
+      },
+    },
+    baseHints: { hasResults: [], empty: [] },
+    genericErrorHints: [],
+  }),
   localSearchCode: vi.fn().mockResolvedValue({
     content: [{ type: 'text', text: 'tool output' }],
   }),
@@ -14,7 +56,7 @@ const publicMocks = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('../../../octocode-mcp/src/public.js', async () => {
+vi.mock('octocode-mcp/public', async () => {
   const { z } = await import('zod/v4');
 
   const localBase = z.object({
@@ -33,6 +75,7 @@ vi.mock('../../../octocode-mcp/src/public.js', async () => {
   return {
     initialize: publicMocks.initialize,
     initializeProviders: publicMocks.initializeProviders,
+    loadToolContent: publicMocks.loadToolContent,
     executeRipgrepSearch: publicMocks.localSearchCode,
     executeFetchContent: publicMocks.noop,
     executeFindFiles: publicMocks.noop,
@@ -117,18 +160,17 @@ describe('toolCommand', () => {
     process.exitCode = originalExitCode;
   });
 
-  it('executes a tool from direct CLI options with smart coercion', async () => {
+  it('executes a tool from a positional JSON payload', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
     await toolCommand.handler({
       command: 'tool',
-      args: ['localSearchCode'],
+      args: [
+        'localSearchCode',
+        '{"path":".","pattern":"runCLI","fixedString":true,"include":["ts","tsx"],"limit":5}',
+      ],
       options: {
-        path: '.',
-        pattern: 'runCLI',
-        fixedString: true,
-        include: 'ts,tsx',
-        limit: '5',
+        tool: 'localSearchCode',
       },
     });
 
@@ -151,16 +193,16 @@ describe('toolCommand', () => {
     expect(process.exitCode).toBeUndefined();
   });
 
-  it('accepts JSON input payloads and preserves bulk wrapper fields', async () => {
+  it('accepts JSON bulk payloads from the positional input string', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
     await toolCommand.handler({
       command: 'tool',
-      args: ['githubSearchCode'],
-      options: {
-        input:
-          '{"queries":[{"keywordsToSearch":["tool"],"owner":"bgauryy","repo":"octocode-mcp"}],"responseCharLength":1200}',
-      },
+      args: [
+        'githubSearchCode',
+        '{"queries":[{"keywordsToSearch":["tool"],"owner":"bgauryy","repo":"octocode-mcp"}],"responseCharLength":1200}',
+      ],
+      options: { tool: 'githubSearchCode' },
     });
 
     expect(publicMocks.githubSearchCode).toHaveBeenCalledWith({
@@ -179,13 +221,31 @@ describe('toolCommand', () => {
     expect(consoleSpy).toHaveBeenCalledWith('github output');
   });
 
+  it('supports JSON output mode for canonical tool execution', async () => {
+    const { toolCommand } = await import('../../src/cli/tool-command.js');
+
+    await toolCommand.handler({
+      command: 'tool',
+      args: ['localSearchCode', '{"path":".","pattern":"runCLI"}'],
+      options: {
+        tool: 'localSearchCode',
+        output: 'json',
+      },
+    });
+
+    expect(publicMocks.localSearchCode).toHaveBeenCalledTimes(1);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"content"')
+    );
+  });
+
   it('shows schema help when a tool is selected without input', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
     await toolCommand.handler({
       command: 'tool',
       args: ['localSearchCode'],
-      options: {},
+      options: { tool: 'localSearchCode' },
     });
 
     expect(publicMocks.localSearchCode).not.toHaveBeenCalled();
@@ -195,5 +255,95 @@ describe('toolCommand', () => {
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining('Required')
     );
+  });
+
+  it('shows schema help when --schema is provided', async () => {
+    const { toolCommand } = await import('../../src/cli/tool-command.js');
+
+    await toolCommand.handler({
+      command: 'tool',
+      args: ['localSearchCode'],
+      options: { tool: 'localSearchCode', schema: true },
+    });
+
+    expect(publicMocks.localSearchCode).not.toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Example'));
+  });
+
+  it('rejects legacy --input usage and points to the canonical contract', async () => {
+    const { toolCommand } = await import('../../src/cli/tool-command.js');
+
+    await toolCommand.handler({
+      command: 'tool',
+      args: ['localSearchCode'],
+      options: {
+        tool: 'localSearchCode',
+        input: '{"path":".","pattern":"runCLI"}',
+      },
+    });
+
+    expect(publicMocks.localSearchCode).not.toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Use octocode-cli --tool')
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('rejects legacy tool-specific flags and requires one JSON payload', async () => {
+    const { toolCommand } = await import('../../src/cli/tool-command.js');
+
+    await toolCommand.handler({
+      command: 'tool',
+      args: ['localSearchCode'],
+      options: {
+        tool: 'localSearchCode',
+        path: '.',
+        pattern: 'runCLI',
+      },
+    });
+
+    expect(publicMocks.localSearchCode).not.toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Pass one JSON object string')
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('rejects invalid JSON payloads for canonical tool usage', async () => {
+    const { toolCommand } = await import('../../src/cli/tool-command.js');
+
+    await toolCommand.handler({
+      command: 'tool',
+      args: ['localSearchCode', '{"path":".","pattern":"runCLI"'],
+      options: {
+        tool: 'localSearchCode',
+      },
+    });
+
+    expect(publicMocks.localSearchCode).not.toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Tool input must be valid JSON')
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('builds tools context from MCP instructions and tool schemas', async () => {
+    const { getToolsContextString } =
+      await import('../../src/cli/tool-command.js');
+
+    const context = await getToolsContextString();
+
+    expect(publicMocks.loadToolContent).toHaveBeenCalledTimes(1);
+    expect(context).toContain('CLI Contract:');
+    expect(context).toContain(
+      "octocode-cli --tool <toolName> '<json-stringified-input>'"
+    );
+    expect(context).toContain('Use Octocode tools carefully.');
+    expect(context).toContain('1. githubSearchCode');
+    expect(context).toContain('2. githubCloneRepo');
+    expect(context).toContain('3. localSearchCode');
+    expect(context).toContain('Input schema:');
+    expect(context).toContain('"keywordsToSearch"');
+    expect(context).toContain('"owner": "Repository owner"');
   });
 });

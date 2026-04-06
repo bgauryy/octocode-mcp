@@ -9,26 +9,21 @@ export const DEFAULTS = {
   MAX_OUTPUT_CHARS: 2000, // Maximum output characters (~500 tokens) - use charLength for pagination
 } as const;
 
-// ===== RESOURCE LIMITS =====
-
 /**
  * Centralized resource limits for memory, tokens, pagination, and execution
  * All magic numbers and limits are consolidated here for consistency and maintainability
  */
 export const RESOURCE_LIMITS = {
-  // ===== MCP Token Limits =====
   /** Maximum tokens allowed in MCP response (25K token limit) */
   MCP_MAX_TOKENS: 25000,
   /** Average characters per token (used for estimation) */
   CHARS_PER_TOKEN: 4,
 
-  // ===== Pagination Defaults =====
   /** Default character length for pagination (10K chars ~2.5K tokens) */
   DEFAULT_CHAR_LENGTH: 10000,
   /** Recommended character length for safe pagination */
   RECOMMENDED_CHAR_LENGTH: 10000,
 
-  // ===== Size Limits =====
   /** Maximum characters for fetch_content operations (50K chars ~12.5K tokens) */
   MAX_FETCH_CONTENT_CHARS: 50000,
   /** Maximum output size in bytes (10MB safety limit) */
@@ -36,7 +31,6 @@ export const RESOURCE_LIMITS = {
   /** File size threshold for requiring pagination (100KB) */
   LARGE_FILE_THRESHOLD_KB: 100,
 
-  // ===== Entry Limits =====
   /** Number of entries before pagination should be used */
   MAX_ENTRIES_BEFORE_PAGINATION: 100,
   /** Default maximum number of files to process */
@@ -56,11 +50,9 @@ export const RESOURCE_LIMITS = {
   /** Maximum directory entries to display in tree view */
   MAX_DIR_ENTRIES_TREE: 1000,
 
-  // ===== Execution =====
   /** Default command execution timeout in milliseconds (30 seconds) */
   DEFAULT_EXEC_TIMEOUT_MS: 30000,
 
-  // ===== Search =====
   /** Default maximum matches to return per file */
   DEFAULT_MAX_MATCHES_PER_FILE: 3,
   /** Default context lines around matches */
@@ -78,7 +70,6 @@ export const RESOURCE_LIMITS = {
   /** Maximum files per page */
   MAX_FILES_PER_PAGE: 20,
 
-  // ===== Ripgrep-specific thresholds for chunking guidance =====
   /** Maximum directory size in MB before suggesting chunking workflow (100MB) */
   MAX_RIPGREP_DIRECTORY_SIZE_MB: 100,
   /** Maximum file count before suggesting chunking workflow */
@@ -86,7 +77,6 @@ export const RESOURCE_LIMITS = {
   /** Estimated average file size in bytes for directory size estimation (50KB) */
   ESTIMATED_AVG_FILE_SIZE_BYTES: 50 * 1024,
 
-  // ===== Binary Analysis =====
   /** Maximum bytes to process in binary operations */
   BINARY_MAX_BYTES: 10 * 1024,
   /** Default number of hex dump lines to display */
@@ -94,13 +84,11 @@ export const RESOURCE_LIMITS = {
   /** Default minimum string length for string extraction */
   BINARY_DEFAULT_MIN_STRING_LENGTH: 6,
 
-  // ===== Archive =====
   /** Maximum files to list from archive */
   MAX_ARCHIVE_FILES: 1000,
   /** Default maximum files to list from archive */
   DEFAULT_ARCHIVE_MAX_FILES: 200,
 
-  // ===== Memory Management =====
   /** Global memory limit for all operations (100MB) */
   GLOBAL_MEMORY_LIMIT_BYTES: 100 * 1024 * 1024,
   /** Per-operation memory limit (10MB) */
@@ -108,7 +96,6 @@ export const RESOURCE_LIMITS = {
   /** Timeout for stale memory reservations (5 minutes) */
   MEMORY_RESERVATION_TIMEOUT_MS: 5 * 60 * 1000,
 
-  // ===== Token Warning Thresholds =====
   /** Token threshold for critical warnings (>50K tokens) */
   TOKEN_CRITICAL_THRESHOLD: 50000,
   /** Token threshold for high warnings (>25K tokens) */

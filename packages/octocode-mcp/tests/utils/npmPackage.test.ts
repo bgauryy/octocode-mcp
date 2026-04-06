@@ -12,17 +12,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { clearAllCache } from '../../src/utils/http/cache.js';
 import type { NpmPackageResult } from '../../src/utils/package/common.js';
 
-// ---------------------------------------------------------------------------
-// Mock: fetchWithRetries (used by view/search paths in npm.ts)
-// ---------------------------------------------------------------------------
 const mockFetchWithRetries = vi.fn();
 vi.mock('../../src/utils/http/fetch.js', () => ({
   fetchWithRetries: (...args: unknown[]) => mockFetchWithRetries(...args),
 }));
 
-// ---------------------------------------------------------------------------
-// Mock: executeNpmCommand (still used by checkNpmDeprecation)
-// ---------------------------------------------------------------------------
 const mockExecuteNpmCommand = vi.fn();
 vi.mock('../../src/utils/exec/npm.js', () => ({
   executeNpmCommand: (...args: unknown[]) => mockExecuteNpmCommand(...args),
@@ -37,9 +31,6 @@ import {
   _resetNpmRegistryUrlCache,
 } from '../../src/utils/package/npm.js';
 
-// ---------------------------------------------------------------------------
-// Helpers — helpers return plain JSON (fetchWithRetries returns parsed JSON)
-// ---------------------------------------------------------------------------
 function makeSearchResult(
   items: Array<{
     name: string;
@@ -455,9 +446,6 @@ describe('isExactPackageName', () => {
   });
 });
 
-// ===========================================================================
-// mapToResult — extended metadata coverage
-// ===========================================================================
 describe('mapToResult - extended metadata coverage', () => {
   it('should extract author as string when fetchMetadata is true', async () => {
     mockFetchWithRetries.mockResolvedValue({
@@ -659,9 +647,6 @@ describe('mapToResult - extended metadata coverage', () => {
   });
 });
 
-// ===========================================================================
-// searchNpmPackageViaSearch — result handling via registry search API
-// ===========================================================================
 describe('searchNpmPackageViaSearch - result handling', () => {
   it('should fetch metadata for each search result when fetchMetadata is true', async () => {
     // First call: registry search
@@ -760,9 +745,6 @@ describe('searchNpmPackageViaSearch - result handling', () => {
   });
 });
 
-// ===========================================================================
-// cache behavior
-// ===========================================================================
 describe('cache behavior - empty results not cached', () => {
   it('should NOT cache error results from fetchPackageDetails failure', async () => {
     // Make ALL attempts fail (including retries) so result1 is an error
@@ -814,9 +796,6 @@ describe('cache behavior - empty results not cached', () => {
   });
 });
 
-// ===========================================================================
-// repository URL normalization
-// ===========================================================================
 describe('repository URL normalization', () => {
   it('should strip git+ prefix from repository URL', async () => {
     mockFetchWithRetries.mockResolvedValue({
@@ -884,12 +863,6 @@ describe('repository URL normalization', () => {
   });
 });
 
-// ===========================================================================
-// fetchNpmPackageByView — success cases
-// ===========================================================================
-// ===========================================================================
-// getNpmRegistryUrl — dynamic registry URL from npm config
-// ===========================================================================
 describe('getNpmRegistryUrl', () => {
   it('should return registry URL from npm config get registry', async () => {
     mockExecuteNpmCommand.mockResolvedValueOnce({
@@ -963,9 +936,6 @@ describe('getNpmRegistryUrl', () => {
   });
 });
 
-// ===========================================================================
-// checkNpmRegistryReachable — registry connectivity check (uses globalThis.fetch HEAD)
-// ===========================================================================
 describe('checkNpmRegistryReachable', () => {
   let mockGlobalFetch: ReturnType<typeof vi.fn>;
 
@@ -1054,9 +1024,6 @@ describe('checkNpmRegistryReachable', () => {
   });
 });
 
-// ===========================================================================
-// searchNpmPackage — uses dynamic registry URL
-// ===========================================================================
 describe('searchNpmPackage - custom registry URL', () => {
   it('should use custom registry URL for exact package lookup', async () => {
     mockExecuteNpmCommand.mockResolvedValueOnce({

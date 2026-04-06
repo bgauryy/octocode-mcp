@@ -18,14 +18,10 @@ import { handleGitLabAPIError, createGitLabError } from './errors.js';
 import { generateCacheKey, withDataCache } from '../utils/http/cache.js';
 import { shouldIgnoreDir, shouldIgnoreFile } from '../utils/file/filters.js';
 
-// ============================================================================
-// REPOSITORY STRUCTURE
-// ============================================================================
-
 /**
  * Repository structure result.
  */
-export interface GitLabRepoStructureResult {
+interface GitLabRepoStructureResult {
   projectId: number | string;
   projectPath: string;
   branch: string;

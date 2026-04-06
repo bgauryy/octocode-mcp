@@ -56,10 +56,6 @@ export class GitHubProvider implements ICodeHostProvider {
     }
   }
 
-  // ============================================================================
-  // CODE SEARCH
-  // ============================================================================
-
   async searchCode(
     query: CodeSearchQuery
   ): Promise<ProviderResponse<CodeSearchResult>> {
@@ -73,10 +69,6 @@ export class GitHubProvider implements ICodeHostProvider {
       return this.handleError(error);
     }
   }
-
-  // ============================================================================
-  // FILE CONTENT
-  // ============================================================================
 
   async getFileContent(
     query: FileContentQuery
@@ -92,10 +84,6 @@ export class GitHubProvider implements ICodeHostProvider {
     }
   }
 
-  // ============================================================================
-  // REPO SEARCH
-  // ============================================================================
-
   async searchRepos(
     query: RepoSearchQuery
   ): Promise<ProviderResponse<RepoSearchResult>> {
@@ -105,10 +93,6 @@ export class GitHubProvider implements ICodeHostProvider {
       return this.handleError(error);
     }
   }
-
-  // ============================================================================
-  // PULL REQUEST SEARCH
-  // ============================================================================
 
   async searchPullRequests(
     query: PullRequestQuery
@@ -124,10 +108,6 @@ export class GitHubProvider implements ICodeHostProvider {
     }
   }
 
-  // ============================================================================
-  // REPO STRUCTURE
-  // ============================================================================
-
   async getRepoStructure(
     query: RepoStructureQuery
   ): Promise<ProviderResponse<RepoStructureResult>> {
@@ -141,10 +121,6 @@ export class GitHubProvider implements ICodeHostProvider {
       return this.handleError(error);
     }
   }
-
-  // ============================================================================
-  // DEFAULT BRANCH RESOLUTION
-  // ============================================================================
 
   async resolveDefaultBranch(projectId: string): Promise<string> {
     const { owner, repo } = parseGitHubProjectId(projectId);

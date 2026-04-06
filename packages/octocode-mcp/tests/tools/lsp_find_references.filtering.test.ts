@@ -11,10 +11,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { LSPFindReferencesQuery } from '../../src/tools/lsp_find_references/scheme.js';
 
-// ============================================================================
-// UNIT TESTS: Pure functions (no mocks needed)
-// ============================================================================
-
 describe('File Pattern Filtering - Unit Tests', () => {
   describe('matchesFilePatterns', () => {
     let matchesFilePatterns: typeof import('../../src/tools/lsp_find_references/lspReferencesCore.js').matchesFilePatterns;
@@ -262,10 +258,6 @@ describe('File Pattern Filtering - Unit Tests', () => {
     });
   });
 });
-
-// ============================================================================
-// INTEGRATION TESTS: LSP path with filtering and lazy enhancement
-// ============================================================================
 
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(),

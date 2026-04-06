@@ -60,10 +60,6 @@ describe('GitLab Code Search', () => {
     vi.clearAllMocks();
   });
 
-  // ============================================================================
-  // VALIDATION TESTS
-  // ============================================================================
-
   describe('Validation Errors', () => {
     it('should return error for empty search query', async () => {
       const result = await searchGitLabCodeAPI({
@@ -109,10 +105,6 @@ describe('GitLab Code Search', () => {
       expect(mockSearchAll).not.toHaveBeenCalled();
     });
   });
-
-  // ============================================================================
-  // PROJECT-SCOPED SEARCH TESTS
-  // ============================================================================
 
   describe('Project-scoped Search', () => {
     it('should search within a specific project by numeric ID', async () => {
@@ -224,10 +216,6 @@ describe('GitLab Code Search', () => {
     });
   });
 
-  // ============================================================================
-  // GROUP-SCOPED SEARCH TESTS
-  // ============================================================================
-
   describe('Group-scoped Search', () => {
     it('should search within a specific group by numeric ID', async () => {
       const mockItems: GitLabCodeSearchItem[] = [
@@ -303,10 +291,6 @@ describe('GitLab Code Search', () => {
       });
     });
   });
-
-  // ============================================================================
-  // FILTER TESTS
-  // ============================================================================
 
   describe('Path/Filename/Extension Filters', () => {
     it('should append path filter to search query', async () => {
@@ -391,10 +375,6 @@ describe('GitLab Code Search', () => {
       );
     });
   });
-
-  // ============================================================================
-  // PAGINATION TESTS
-  // ============================================================================
 
   describe('Pagination', () => {
     it('should use default pagination values', async () => {
@@ -575,10 +555,6 @@ describe('GitLab Code Search', () => {
       }
     });
   });
-
-  // ============================================================================
-  // CACHING TESTS
-  // ============================================================================
 
   describe('Caching Behavior', () => {
     it('should generate unique cache keys for different searches', async () => {
@@ -800,10 +776,6 @@ describe('GitLab Code Search', () => {
     });
   });
 
-  // ============================================================================
-  // ERROR HANDLING TESTS
-  // ============================================================================
-
   describe('Error Handling', () => {
     it('should handle Gitbeaker HTTP 401 unauthorized error', async () => {
       const gitbeakerError = {
@@ -1018,10 +990,6 @@ describe('GitLab Code Search', () => {
     });
   });
 
-  // ============================================================================
-  // RESPONSE STRUCTURE TESTS
-  // ============================================================================
-
   describe('Response Structure', () => {
     it('should return correctly structured success response', async () => {
       const mockItems: GitLabCodeSearchItem[] = [
@@ -1085,10 +1053,6 @@ describe('GitLab Code Search', () => {
     });
   });
 });
-
-// ============================================================================
-// TRANSFORM FUNCTION TESTS
-// ============================================================================
 
 describe('transformGitLabCodeSearchItem', () => {
   it('should transform GitLab code search item to unified format', () => {
@@ -1285,10 +1249,6 @@ describe('transformGitLabCodeSearchItem', () => {
   });
 });
 
-// ============================================================================
-// EDGE CASES AND INTEGRATION TESTS
-// ============================================================================
-
 describe('Edge Cases', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1428,10 +1388,6 @@ describe('Edge Cases', () => {
     }
   });
 });
-
-// ============================================================================
-// SEARCH TYPE TESTS
-// ============================================================================
 
 describe('Search Type Parameter', () => {
   beforeEach(() => {

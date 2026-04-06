@@ -24,10 +24,6 @@ export type {
   RoleAnnotations,
 } from './types/responseTypes.js';
 
-// ============================================================================
-// BASIC RESULT API
-// ============================================================================
-
 export function createResult(options: {
   data: unknown;
   instructions?: string;
@@ -51,16 +47,12 @@ export function createResult(options: {
   };
 }
 
-// ============================================================================
-// ROLE-BASED API (single-result / non-bulk tools)
-// ============================================================================
 // Response patterns:
 // - **Bulk tools** (githubSearchCode, localSearchCode, etc.): Use createResponseFormat
 //   via bulk.ts → createBulkResponse. Single YAML block with instructions + results[].
 // - **Role-based** (createRoleBasedResult, ContentBuilder, QuickResult): For single-result
 //   or non-bulk tools that need structured role separation (system/assistant/user).
 //   Currently exported for future use; bulk tools do not use this pattern.
-// ============================================================================
 
 /**
  * Content block builder for role-based responses.
@@ -319,10 +311,6 @@ export const QuickResult = {
     });
   },
 };
-
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
 
 /**
  * Clean data and prepare for structuredContent

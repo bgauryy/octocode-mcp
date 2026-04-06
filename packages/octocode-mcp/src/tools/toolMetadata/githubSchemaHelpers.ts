@@ -166,10 +166,6 @@ export const GITHUB_VIEW_REPO_STRUCTURE = createSchemaHelper(
   };
 };
 
-// ============================================================================
-// Package Search Schema Helper
-// ============================================================================
-
 export const PACKAGE_SEARCH = createSchemaHelper(TOOL_NAMES.PACKAGE_SEARCH) as {
   search: {
     ecosystem: string;

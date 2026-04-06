@@ -36,10 +36,6 @@ describe('extra allowed roots via SecurityRegistry', () => {
   );
   const filePath = path.join(repoPath, 'src', 'React.ts');
 
-  // =========================================================================
-  // PathValidator: registry roots as allowed root
-  // =========================================================================
-
   describe('PathValidator includes registry roots', () => {
     it('should include registered root in allowed roots', () => {
       const validator = new PathValidator({ workspaceRoot: '/tmp/myproject' });
@@ -75,10 +71,6 @@ describe('extra allowed roots via SecurityRegistry', () => {
     });
   });
 
-  // =========================================================================
-  // executionContextValidator: allow commands in registered roots
-  // =========================================================================
-
   describe('executionContextValidator allows registry roots', () => {
     it('should allow cwd inside registered root', () => {
       expect(validateExecutionContext(repoPath)).toMatchObject({
@@ -99,10 +91,6 @@ describe('extra allowed roots via SecurityRegistry', () => {
       });
     });
   });
-
-  // =========================================================================
-  // No registered roots: only workspace root is allowed
-  // =========================================================================
 
   describe('without registered roots', () => {
     beforeEach(() => {

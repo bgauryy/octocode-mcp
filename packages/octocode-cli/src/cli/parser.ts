@@ -54,11 +54,10 @@ const BOOLEAN_OPTIONS = new Set([
   'api',
   'list',
   'schema',
+  'tools-context',
 ]);
 
 const SINGLE_DASH_LONG_OPTIONS = new Set([
-  'tool',
-  'input',
   'output',
   'responseCharLength',
   'responseCharOffset',

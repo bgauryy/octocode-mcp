@@ -76,7 +76,7 @@ function createTool(
   };
 }
 
-export interface ToolCatalog {
+interface ToolCatalog {
   GITHUB_SEARCH_CODE: ToolConfig;
   GITHUB_FETCH_CONTENT: ToolConfig;
   GITHUB_VIEW_REPO_STRUCTURE: ToolConfig;
@@ -94,7 +94,7 @@ export interface ToolCatalog {
   ALL_TOOLS: ToolConfig[];
 }
 
-export function createToolCatalog(
+function createToolCatalog(
   gateway: ToolMetadataGateway = DEFAULT_TOOL_METADATA_GATEWAY
 ): ToolCatalog {
   const GITHUB_SEARCH_CODE = createTool(gateway, 'GITHUB_SEARCH_CODE', {
@@ -261,7 +261,4 @@ export const LOCAL_RIPGREP = DEFAULT_TOOL_CATALOG.LOCAL_RIPGREP;
 export const LOCAL_VIEW_STRUCTURE = DEFAULT_TOOL_CATALOG.LOCAL_VIEW_STRUCTURE;
 export const LOCAL_FIND_FILES = DEFAULT_TOOL_CATALOG.LOCAL_FIND_FILES;
 export const LOCAL_FETCH_CONTENT = DEFAULT_TOOL_CATALOG.LOCAL_FETCH_CONTENT;
-export const LSP_GOTO_DEFINITION = DEFAULT_TOOL_CATALOG.LSP_GOTO_DEFINITION;
-export const LSP_FIND_REFERENCES = DEFAULT_TOOL_CATALOG.LSP_FIND_REFERENCES;
-export const LSP_CALL_HIERARCHY = DEFAULT_TOOL_CATALOG.LSP_CALL_HIERARCHY;
 export const ALL_TOOLS = DEFAULT_TOOL_CATALOG.ALL_TOOLS;

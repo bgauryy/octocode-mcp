@@ -11,10 +11,6 @@ import type {
   ResolvedConfig,
 } from './types.js';
 
-// ============================================================================
-// SECTION DEFAULTS
-// ============================================================================
-
 /**
  * Default GitHub configuration
  */
@@ -88,10 +84,6 @@ export const DEFAULT_OUTPUT_CONFIG: RequiredOutputConfig = {
   },
 };
 
-// ============================================================================
-// COMPLETE DEFAULT CONFIG
-// ============================================================================
-
 /**
  * Complete default configuration
  * Used as fallback when .octocoderc is missing or invalid
@@ -108,10 +100,6 @@ export const DEFAULT_CONFIG: Omit<ResolvedConfig, 'source' | 'configPath'> = {
   lsp: DEFAULT_LSP_CONFIG,
   output: DEFAULT_OUTPUT_CONFIG,
 };
-
-// ============================================================================
-// CONFIGURATION LIMITS
-// ============================================================================
 
 /** Minimum timeout - 5 seconds (prevents accidental misconfiguration) */
 export const MIN_TIMEOUT = 5000;

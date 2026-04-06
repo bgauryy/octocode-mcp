@@ -12,7 +12,7 @@ import { pathValidator } from '@octocode/security/pathValidator';
 /**
  * Result of LSP server path validation
  */
-export interface ValidationResult {
+interface ValidationResult {
   /** Whether the path is valid and safe to execute */
   isValid: boolean;
   /** Resolved absolute path (if valid) */

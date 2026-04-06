@@ -283,8 +283,6 @@ export function clientConfigExists(
   }
 }
 
-export { clientConfigExists as clientConfigDirExists };
-
 export function configFileExists(
   client: MCPClient,
   customPath?: string

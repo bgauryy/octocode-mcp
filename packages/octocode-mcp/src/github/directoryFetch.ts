@@ -37,10 +37,6 @@ import {
   evictExpiredClones,
 } from '../tools/github_clone_repo/cache.js';
 
-// ─────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────
-
 /** Maximum number of files to fetch from a directory */
 export const MAX_DIRECTORY_FILES = 50;
 
@@ -106,10 +102,6 @@ const BINARY_EXTENSIONS = new Set([
   '.min.css',
 ]);
 
-// ─────────────────────────────────────────────────────────────────────
-// Types (internal)
-// ─────────────────────────────────────────────────────────────────────
-
 interface DirectoryEntry {
   name: string;
   path: string;
@@ -117,10 +109,6 @@ interface DirectoryEntry {
   size: number;
   download_url: string | null;
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// Public API
-// ─────────────────────────────────────────────────────────────────────
 
 /**
  * Fetch all files in a GitHub directory and save them to disk.
@@ -153,7 +141,6 @@ export async function fetchDirectoryContents(
     );
   }
 
-  // ── 1. Cache hit? ─────────────────────────────────────────────
   const cacheResult = isCacheHit(cloneDir);
   if (cacheResult.hit) {
     const isCloneCache = cacheResult.meta.source === 'clone';
@@ -201,7 +188,6 @@ export async function fetchDirectoryContents(
     }
   }
 
-  // ── 2. List directory via Contents API ────────────────────────
   const octokit = await getOctokit(authInfo);
   const { data } = await octokit.rest.repos.getContent({
     owner,
@@ -216,7 +202,6 @@ export async function fetchDirectoryContents(
     );
   }
 
-  // ── 3. Filter entries ─────────────────────────────────────────
   const fileEntries: DirectoryEntry[] = data
     .filter((item): item is DirectoryEntry & { download_url: string } => {
       if (item.type !== 'file') return false;
@@ -228,7 +213,6 @@ export async function fetchDirectoryContents(
     })
     .slice(0, MAX_DIRECTORY_FILES);
 
-  // ── 4. Parallel fetch via download_url ────────────────────────
   const token = authInfo?.token;
   const fetchedFiles = await fetchFilesInBatches(
     fileEntries,
@@ -236,7 +220,6 @@ export async function fetchDirectoryContents(
     token
   );
 
-  // ── 5. Enforce total size limit ───────────────────────────────
   let totalSize = 0;
   const filesToSave: Array<{ entry: DirectoryEntry; content: string }> = [];
   for (const { entry, content } of fetchedFiles) {
@@ -245,7 +228,6 @@ export async function fetchDirectoryContents(
     filesToSave.push({ entry, content });
   }
 
-  // ── 6. Clean stale directory and write fresh files ─────────────
   // Evict any globally-expired clones before writing new content.
   evictExpiredClones(octocodeDir);
   ensureCloneParentDir(cloneDir);
@@ -271,7 +253,6 @@ export async function fetchDirectoryContents(
     });
   }
 
-  // ── 7. Write cache metadata ───────────────────────────────────
   // Mark as 'directoryFetch' so the clone tool knows this is NOT
   // a full/sparse clone and will re-clone instead of trusting it.
   const meta = createCacheMeta(owner, repo, branch, 'directoryFetch');
@@ -290,10 +271,6 @@ export async function fetchDirectoryContents(
     directoryPath: path,
   };
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// Internal helpers
-// ─────────────────────────────────────────────────────────────────────
 
 /**
  * Fetch files in batches with concurrency control.

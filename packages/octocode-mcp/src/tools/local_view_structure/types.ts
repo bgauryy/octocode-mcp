@@ -8,10 +8,6 @@ import type {
   LocalViewStructureToolResult,
 } from '../../scheme/outputTypes.js';
 
-// ============================================================================
-// INPUT TYPES
-// ============================================================================
-
 /**
  * Query parameters for viewing local directory structure
  */
@@ -41,10 +37,6 @@ export interface ViewStructureQuery {
   researchGoal?: string;
   reasoning?: string;
 }
-
-// ============================================================================
-// OUTPUT TYPES
-// ============================================================================
 
 export type ViewStructurePagination = LocalViewStructurePagination;
 

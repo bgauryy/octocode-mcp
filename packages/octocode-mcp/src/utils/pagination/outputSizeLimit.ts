@@ -31,7 +31,7 @@ function readConfiguredDefaultCharLength(): number | undefined {
 /**
  * Options for applying output size limits
  */
-export interface OutputSizeLimitOptions {
+interface OutputSizeLimitOptions {
   /** Character offset for pagination (0-based) */
   charOffset?: number;
   /** Character length for pagination */
@@ -45,7 +45,7 @@ export interface OutputSizeLimitOptions {
 /**
  * Result of applying output size limits
  */
-export interface OutputSizeLimitResult {
+interface OutputSizeLimitResult {
   /** The (possibly paginated) content */
   content: string;
   /** Whether the content was limited/paginated */

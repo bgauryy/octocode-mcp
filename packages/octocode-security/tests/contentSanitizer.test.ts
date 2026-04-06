@@ -1122,10 +1122,6 @@ describe('ContentSanitizer', () => {
     });
   });
 
-  // =========================================================================
-  // T1 — Nesting depth boundary conditions
-  // =========================================================================
-
   describe('nesting depth boundary', () => {
     function buildNested(levels: number): Record<string, unknown> {
       let obj: Record<string, unknown> = { value: 'bottom' };
@@ -1160,10 +1156,6 @@ describe('ContentSanitizer', () => {
       expect(result.isValid).toBe(false);
     });
   });
-
-  // =========================================================================
-  // T4 — Numeric parameter passthrough
-  // =========================================================================
 
   describe('numeric parameter passthrough', () => {
     it('should pass numeric values through without modification', () => {

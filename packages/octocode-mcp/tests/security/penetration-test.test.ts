@@ -41,9 +41,6 @@ vi.mock('octocode-shared', () => ({
   getConfigSync: () => ({ output: { format: 'yaml' } }),
 }));
 
-// ============================================================================
-// REALISTIC SECRETS (used across all attack vectors)
-// ============================================================================
 const SECRETS = {
   AWS_KEY: 'AKIAIOSFODNN7EXAMPLE',
   AWS_SECRET:
@@ -105,10 +102,6 @@ function assertObjectSecretsAbsent(obj: unknown): void {
   }
 }
 
-// ============================================================================
-// ATTACK VECTOR 1: REGEX EVASION
-// Attempt to bypass secret detection using encoding, splitting, obfuscation
-// ============================================================================
 describe('ATTACK-01: Regex Evasion', () => {
   it('should catch secrets with surrounding whitespace noise', () => {
     const padded = `   \t  ${SECRETS.AWS_KEY}  \n  `;
@@ -206,10 +199,6 @@ const key = "${SECRETS.AWS_KEY}";
   });
 });
 
-// ============================================================================
-// ATTACK VECTOR 2: COMMAND INJECTION
-// Attempt to execute arbitrary commands through tool inputs
-// ============================================================================
 describe('ATTACK-02: Command Injection', () => {
   it('should block shell metacharacters in rg arguments', () => {
     expect(validateCommand('rg', ['pattern', '; rm -rf /']).isValid).toBe(
@@ -351,10 +340,6 @@ describe('ATTACK-02: Command Injection', () => {
   });
 });
 
-// ============================================================================
-// ATTACK VECTOR 3: PATH TRAVERSAL
-// Attempt to read files outside the workspace
-// ============================================================================
 describe('ATTACK-03: Path Traversal', () => {
   let validator: PathValidator;
 
@@ -488,10 +473,6 @@ describe('ATTACK-03: Path Traversal', () => {
   });
 });
 
-// ============================================================================
-// ATTACK VECTOR 4: EXECUTION CONTEXT ESCAPE
-// Attempt to execute commands outside workspace
-// ============================================================================
 describe('ATTACK-04: Execution Context Escape', () => {
   it('should block execution in /tmp', () => {
     expect(validateExecutionContext('/tmp').isValid).toBe(false);
@@ -515,10 +496,6 @@ describe('ATTACK-04: Execution Context Escape', () => {
   });
 });
 
-// ============================================================================
-// ATTACK VECTOR 5: PROTOTYPE POLLUTION
-// Attempt to pollute object prototypes via input parameters
-// ============================================================================
 describe('ATTACK-05: Prototype Pollution', () => {
   it('should block __proto__ key from JSON-parsed input', () => {
     // Real attack vector: JSON.parse creates __proto__ as own property
@@ -568,10 +545,6 @@ describe('ATTACK-05: Prototype Pollution', () => {
   });
 });
 
-// ============================================================================
-// ATTACK VECTOR 6: INPUT SIZE BOMBS
-// Attempt DoS via oversized inputs
-// ============================================================================
 describe('ATTACK-06: Input Size Bombs', () => {
   it('should truncate strings exceeding 10,000 characters', () => {
     const longString = 'A'.repeat(50000);
@@ -609,10 +582,6 @@ describe('ATTACK-06: Input Size Bombs', () => {
   });
 });
 
-// ============================================================================
-// ATTACK VECTOR 7: OUTPUT SANITIZATION BYPASS
-// Attempt to leak secrets through various output channels
-// ============================================================================
 describe('ATTACK-07: Output Channel Bypass', () => {
   it('should sanitize secrets in text content blocks', () => {
     for (const [name, secret] of Object.entries(SECRETS)) {
@@ -704,10 +673,6 @@ describe('ATTACK-07: Output Channel Bypass', () => {
   });
 });
 
-// ============================================================================
-// ATTACK VECTOR 8: SECURITY WRAPPER BYPASS
-// Attempt to bypass withSecurityValidation / withBasicSecurityValidation
-// ============================================================================
 describe('ATTACK-08: Security Wrapper Bypass', () => {
   it('should sanitize secrets in input parameters', async () => {
     const handler = vi.fn().mockResolvedValue({
@@ -779,10 +744,6 @@ describe('ATTACK-08: Security Wrapper Bypass', () => {
   });
 });
 
-// ============================================================================
-// ATTACK VECTOR 9: DOUBLE SANITIZATION CONSISTENCY
-// Verify ContentSanitizer + maskSensitiveData work together
-// ============================================================================
 describe('ATTACK-09: Double-Layer Sanitization', () => {
   for (const [name, secret] of Object.entries(SECRETS)) {
     it(`should catch ${name} through both sanitization layers`, () => {
@@ -807,10 +768,6 @@ describe('ATTACK-09: Double-Layer Sanitization', () => {
   }
 });
 
-// ============================================================================
-// ATTACK VECTOR 10: TYPE CONFUSION
-// Attempt to bypass validation with unexpected types
-// ============================================================================
 describe('ATTACK-10: Type Confusion', () => {
   it('should handle non-string content gracefully', () => {
     // @ts-expect-error - deliberate type confusion attack
@@ -869,10 +826,6 @@ describe('ATTACK-10: Type Confusion', () => {
   });
 });
 
-// ============================================================================
-// ATTACK VECTOR 11: MASK QUALITY
-// Verify masking doesn't leak partial secrets
-// ============================================================================
 describe('ATTACK-11: Mask Quality', () => {
   it('should not leak the first half of a secret via masking', () => {
     const masked = maskSensitiveData(SECRETS.AWS_KEY);
@@ -911,10 +864,6 @@ describe('ATTACK-11: Mask Quality', () => {
   });
 });
 
-// ============================================================================
-// ATTACK VECTOR 12: ENVIRONMENT VARIABLE MANIPULATION
-// Attempt to exploit env vars used in security decisions
-// ============================================================================
 describe('ATTACK-12: Environment Variable Attacks', () => {
   const origEnv = { ...process.env };
 
@@ -948,9 +897,6 @@ describe('ATTACK-12: Environment Variable Attacks', () => {
   });
 });
 
-// ============================================================================
-// ATTACK VECTOR 13: EDGE CASES IN CONTENT SANITIZATION
-// ============================================================================
 describe('ATTACK-13: Content Sanitization Edge Cases', () => {
   it('should handle empty string', () => {
     const result = ContentSanitizer.sanitizeContent('');
@@ -1006,9 +952,6 @@ describe('ATTACK-13: Content Sanitization Edge Cases', () => {
   });
 });
 
-// ============================================================================
-// ATTACK VECTOR 14: FIND COMMAND ABUSE
-// ============================================================================
 describe('ATTACK-14: Find Command Abuse', () => {
   it('should block -printf (info leak)', () => {
     expect(
@@ -1053,9 +996,6 @@ describe('ATTACK-14: Find Command Abuse', () => {
   });
 });
 
-// ============================================================================
-// ATTACK VECTOR 15: GIT SPARSE-CHECKOUT ABUSE
-// ============================================================================
 describe('ATTACK-15: Git Sparse-Checkout Abuse', () => {
   it('should allow legitimate sparse-checkout actions', () => {
     expect(
@@ -1082,10 +1022,6 @@ describe('ATTACK-15: Git Sparse-Checkout Abuse', () => {
   });
 });
 
-// ============================================================================
-// ATTACK VECTOR 16: SAFE CONTENT PRESERVATION
-// Ensure legitimate content isn't corrupted by security measures
-// ============================================================================
 describe('ATTACK-16: False Positive Prevention', () => {
   it('should preserve normal code through sanitization', () => {
     const code = `
@@ -1138,11 +1074,6 @@ export default calculateTotal;
   });
 });
 
-// ============================================================================
-// EXTENSIBILITY: SecurityRegistry
-// Core extensibility tests are in octocode-security/tests/registry.test.ts
-// (same-package tests share the singleton). Here we verify the API is exported.
-// ============================================================================
 describe('EXTENSIBILITY: SecurityRegistry export', () => {
   it('should export SecurityRegistry class and securityRegistry singleton', async () => {
     const mod = await import('@octocode/security');

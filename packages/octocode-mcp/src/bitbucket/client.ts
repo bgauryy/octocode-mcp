@@ -16,10 +16,6 @@ import {
   getBitbucketUsername,
 } from '../bitbucketConfig.js';
 
-// ============================================================================
-// TYPES
-// ============================================================================
-
 type BitbucketClient = ReturnType<
   typeof BitbucketCloud.createBitbucketCloudClient
 >;
@@ -29,10 +25,6 @@ interface ClientConfig {
   host?: string;
   username?: string;
 }
-
-// ============================================================================
-// CLIENT CACHING
-// ============================================================================
 
 const CACHE_TTL_SECONDS = 5 * 60;
 const CACHE_CHECK_PERIOD_SECONDS = 60;
@@ -55,10 +47,6 @@ function getCacheKey(config?: ClientConfig): string {
   );
   return `bitbucket:${host}:${tokenHash}`;
 }
-
-// ============================================================================
-// PUBLIC API
-// ============================================================================
 
 export function getBitbucketClient(config?: ClientConfig): BitbucketClient {
   const cacheKey = getCacheKey(config);
@@ -103,10 +91,6 @@ export function clearBitbucketClient(config?: ClientConfig): void {
   clientCache.del(cacheKey);
 }
 
-// ============================================================================
-// DEFAULT BRANCH CACHE
-// ============================================================================
-
 const MAX_BRANCH_CACHE_SIZE = 200;
 const defaultBranchCache = new Map<string, string>();
 
@@ -125,10 +109,6 @@ export function cacheDefaultBranch(projectId: string, branch: string): void {
 export function clearDefaultBranchCache(): void {
   defaultBranchCache.clear();
 }
-
-// ============================================================================
-// AUTH HEADER HELPER
-// ============================================================================
 
 export function getAuthHeader(config?: ClientConfig): string {
   const token = config?.token || getBitbucketToken();

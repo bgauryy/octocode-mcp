@@ -25,10 +25,6 @@
  * 3. Hardcoded defaults (lowest)
  */
 
-// ============================================================================
-// TYPE EXPORTS
-// ============================================================================
-
 export type {
   // Main config types
   OctocodeConfig,
@@ -61,10 +57,6 @@ export type {
   RequiredOutputPaginationConfig,
 } from './types.js';
 
-// ============================================================================
-// CONSTANT EXPORTS
-// ============================================================================
-
 export { CONFIG_SCHEMA_VERSION, CONFIG_FILE_NAME } from './types.js';
 
 export {
@@ -91,10 +83,6 @@ export {
 
 export { CONFIG_FILE_PATH } from './loader.js';
 // Note: OCTOCODE_DIR is already exported from credentials module
-
-// ============================================================================
-// FUNCTION EXPORTS
-// ============================================================================
 
 // Loader functions
 export {

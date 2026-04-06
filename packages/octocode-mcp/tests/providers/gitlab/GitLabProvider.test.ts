@@ -51,10 +51,6 @@ describe('GitLabProvider', () => {
     provider = new GitLabProvider();
   });
 
-  // ============================================================================
-  // CONSTRUCTOR TESTS
-  // ============================================================================
-
   describe('constructor', () => {
     it('should create provider with gitlab type', () => {
       expect(provider.type).toBe('gitlab');
@@ -73,10 +69,6 @@ describe('GitLabProvider', () => {
       expect(p.type).toBe('gitlab');
     });
   });
-
-  // ============================================================================
-  // CODE SEARCH TESTS
-  // ============================================================================
 
   describe('searchCode', () => {
     describe('success cases', () => {
@@ -394,10 +386,6 @@ describe('GitLabProvider', () => {
     });
   });
 
-  // ============================================================================
-  // FILE CONTENT TESTS
-  // ============================================================================
-
   describe('getFileContent', () => {
     describe('success cases', () => {
       it('should get file content successfully with ref', async () => {
@@ -668,10 +656,6 @@ describe('GitLabProvider', () => {
       });
     });
   });
-
-  // ============================================================================
-  // REPO SEARCH TESTS
-  // ============================================================================
 
   describe('searchRepos', () => {
     describe('success cases', () => {
@@ -1010,10 +994,6 @@ describe('GitLabProvider', () => {
       });
     });
   });
-
-  // ============================================================================
-  // PULL REQUEST (MERGE REQUEST) SEARCH TESTS
-  // ============================================================================
 
   describe('searchPullRequests', () => {
     describe('success cases', () => {
@@ -1790,10 +1770,6 @@ describe('GitLabProvider', () => {
     });
   });
 
-  // ============================================================================
-  // REPO STRUCTURE TESTS
-  // ============================================================================
-
   describe('getRepoStructure', () => {
     describe('success cases', () => {
       it('should get repository structure successfully', async () => {
@@ -2030,10 +2006,6 @@ describe('GitLabProvider', () => {
     });
   });
 
-  // ============================================================================
-  // PARSE PROJECT ID HELPER TESTS
-  // ============================================================================
-
   describe('parseProjectId helper', () => {
     it('should parse numeric project ID', async () => {
       const mockApiResponse = {
@@ -2120,10 +2092,6 @@ describe('GitLabProvider', () => {
     });
   });
 
-  // ============================================================================
-  // HANDLE ERROR HELPER TESTS
-  // ============================================================================
-
   describe('handleError helper', () => {
     it('should extract message from Error instance', async () => {
       vi.mocked(searchGitLabCodeAPI).mockRejectedValue(
@@ -2174,10 +2142,6 @@ describe('GitLabProvider', () => {
       expect(result.error).toBe('An unknown error occurred');
     });
   });
-
-  // ============================================================================
-  // EDGE CASES
-  // ============================================================================
 
   describe('edge cases', () => {
     it('should handle empty search results', async () => {
@@ -2275,10 +2239,6 @@ describe('GitLabProvider', () => {
     });
   });
 
-  // ==========================================================================
-  // RESOLVE DEFAULT BRANCH
-  // ==========================================================================
-
   describe('resolveDefaultBranch', () => {
     it('should resolve default branch from GitLab Projects.show', async () => {
       const mockProjectsShow = vi
@@ -2342,10 +2302,6 @@ describe('GitLabProvider', () => {
       });
     });
   });
-
-  // ==========================================================================
-  // RATE LIMIT LOGGING
-  // ==========================================================================
 
   describe('logRateLimit on error', () => {
     it('should call logRateLimit when error has rate limit info', async () => {

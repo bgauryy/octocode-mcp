@@ -9,7 +9,7 @@ type TerminalCommand =
   | { kind: 'list' }
   | { kind: 'execute'; toolName: string; inputText?: string };
 
-export function parseToolTerminalLine(line: string): TerminalCommand {
+function parseToolTerminalLine(line: string): TerminalCommand {
   const trimmed = line.trim();
 
   if (trimmed.length === 0) {
@@ -36,10 +36,7 @@ export function parseToolTerminalLine(line: string): TerminalCommand {
   };
 }
 
-function buildParsedArgs(
-  toolName: string,
-  inputText?: string
-): ParsedArgs {
+function buildParsedArgs(toolName: string, inputText?: string): ParsedArgs {
   return {
     command: 'tool',
     args: inputText ? [toolName, inputText] : [toolName],
@@ -53,10 +50,10 @@ export async function runToolTerminalFlow(): Promise<void> {
   console.log();
   console.log(`  ${c('magenta', bold('Tool Terminal'))}`);
   console.log(
-    `  ${dim('Type')} ${c('cyan', 'list')} ${dim('for tools,')} ${c('cyan', '<toolName> {"json":true}')} ${dim('to run, or')} ${c('cyan', 'exit')} ${dim('to return.')}`
+    `  ${dim('Type')} ${c('cyan', 'list')} ${dim('for tools,')} ${c('cyan', '<toolName> {"path":".","pattern":"runCLI"}')} ${dim('to run, or')} ${c('cyan', 'exit')} ${dim('to return.')}`
   );
 
-  showAvailableTools();
+  await showAvailableTools();
 
   while (true) {
     const line = await input({
@@ -76,11 +73,13 @@ export async function runToolTerminalFlow(): Promise<void> {
     }
 
     if (command.kind === 'list') {
-      showAvailableTools();
+      await showAvailableTools();
       continue;
     }
 
-    await executeToolCommand(buildParsedArgs(command.toolName, command.inputText));
+    await executeToolCommand(
+      buildParsedArgs(command.toolName, command.inputText)
+    );
     console.log();
   }
 }

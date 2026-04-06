@@ -706,7 +706,7 @@ const LocalViewStructureEntrySchema = z
 /**
  * Shared fallback output schema.
  */
-export const BulkToolDataSchema = z.object({}).catchall(z.unknown());
+const BulkToolDataSchema = z.object({}).catchall(z.unknown());
 
 export const BulkToolOutputSchema = createBulkOutputSchema(BulkToolDataSchema);
 

@@ -46,9 +46,6 @@ import type { SecurityDepsConfig } from '../src/withSecurityValidation.js';
 
 const workspace = process.cwd();
 
-// ---------------------------------------------------------------------------
-// Quick Start
-// ---------------------------------------------------------------------------
 describe('README: Quick Start', () => {
   it('PathValidator blocks path traversal', () => {
     const validator = new PathValidator({
@@ -91,9 +88,6 @@ describe('README: Quick Start', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// PathValidator
-// ---------------------------------------------------------------------------
 describe('README: PathValidator', () => {
   describe('constructor', () => {
     it('accepts workspaceRoot, additionalRoots, includeHomeDir', () => {
@@ -230,9 +224,6 @@ describe('README: PathValidator', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// ContentSanitizer
-// ---------------------------------------------------------------------------
 describe('README: ContentSanitizer', () => {
   describe('sanitizeContent()', () => {
     it('replaces secrets with [REDACTED-*] tokens', () => {
@@ -341,9 +332,6 @@ describe('README: ContentSanitizer', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// maskSensitiveData
-// ---------------------------------------------------------------------------
 describe('README: maskSensitiveData', () => {
   it('partially masks secrets (alternating chars)', () => {
     const masked = maskSensitiveData(
@@ -367,9 +355,6 @@ describe('README: maskSensitiveData', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// validateCommand
-// ---------------------------------------------------------------------------
 describe('README: validateCommand', () => {
   it('allows rg with valid flags', () => {
     expect(validateCommand('rg', ['--json', 'pattern', './src'])).toEqual({
@@ -428,9 +413,6 @@ describe('README: validateCommand', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// withSecurityValidation
-// ---------------------------------------------------------------------------
 describe('README: withSecurityValidation', () => {
   it('wraps handler with input sanitization', async () => {
     const handler = withSecurityValidation<{ query: string }>(
@@ -527,9 +509,6 @@ describe('README: helper exports', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// validateExecutionContext
-// ---------------------------------------------------------------------------
 describe('README: validateExecutionContext', () => {
   it('returns isValid: true for workspace-internal path', () => {
     const result = validateExecutionContext(
@@ -564,9 +543,6 @@ describe('README: validateExecutionContext', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// resolveWorkspaceRoot
-// ---------------------------------------------------------------------------
 describe('README: resolveWorkspaceRoot', () => {
   const savedEnv = process.env.WORKSPACE_ROOT;
 
@@ -595,9 +571,6 @@ describe('README: resolveWorkspaceRoot', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Ignored Path Filters
-// ---------------------------------------------------------------------------
 describe('README: Ignored Path Filters', () => {
   describe('shouldIgnore()', () => {
     it('returns true for .git paths', () => {
@@ -648,9 +621,6 @@ describe('README: Ignored Path Filters', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Regex Patterns
-// ---------------------------------------------------------------------------
 describe('README: Regex Patterns', () => {
   it('allRegexPatterns is a non-empty array', () => {
     expect(Array.isArray(allRegexPatterns)).toBe(true);
@@ -680,9 +650,6 @@ describe('README: Regex Patterns', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Path Utilities
-// ---------------------------------------------------------------------------
 describe('README: Path Utilities — redactPath', () => {
   it('returns project-relative path within workspace', () => {
     const result = redactPath(
@@ -708,9 +675,6 @@ describe('README: Path Utilities — redactPath', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Security Constants
-// ---------------------------------------------------------------------------
 describe('README: Security Constants', () => {
   it('ALLOWED_COMMANDS matches documented list', () => {
     expect([...ALLOWED_COMMANDS]).toEqual(['rg', 'ls', 'find', 'grep', 'git']);
@@ -734,9 +698,6 @@ describe('README: Security Constants', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Types — compile-time verification via type assertions
-// ---------------------------------------------------------------------------
 describe('README: Types', () => {
   it('SanitizationResult has documented shape', () => {
     const r: SanitizationResult = {
@@ -817,9 +778,6 @@ describe('README: Types', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Sub-path Exports — verify each sub-path import resolves
-// ---------------------------------------------------------------------------
 describe('README: Sub-path Exports', () => {
   it('all documented sub-path exports resolve', async () => {
     const pathValidatorMod = await import('../src/pathValidator.js');

@@ -7,7 +7,7 @@ export type McpClientDef = {
   configKey: 'mcpServers' | 'servers';
 };
 
-export type EditorInfo = {
+type EditorInfo = {
   name: string;
   scheme: string;
   mcpConfigPath: string | null;

@@ -10,7 +10,7 @@ import { z } from 'zod/v4';
 /**
  * Schema for session statistics
  */
-export const SessionStatsSchema = z.object({
+const SessionStatsSchema = z.object({
   toolCalls: z.number(),
   promptCalls: z.number(),
   errors: z.number(),

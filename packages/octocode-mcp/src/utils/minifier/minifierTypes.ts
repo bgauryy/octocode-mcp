@@ -24,7 +24,7 @@ export interface FileTypeMinifyConfig {
   comments?: CommentPatternGroup | CommentPatternGroup[];
 }
 
-export interface MinifyConfig {
+interface MinifyConfig {
   commentPatterns: {
     [key in CommentPatternGroup]: RegExp[];
   };

@@ -1,18 +1,15 @@
 import type { components } from '@octokit/openapi-types';
 import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods';
 
-// ============================================================================
-// OCTOKIT SCHEMA TYPE ALIASES
-// These types are derived directly from Octokit's OpenAPI-generated schemas.
-// Reference: https://github.com/octokit/openapi-types.ts
-// Schema source: https://github.com/github/rest-api-description
-// ============================================================================
+/**
+ * Octokit REST types from OpenAPI-generated schemas.
+ * @see https://github.com/octokit/openapi-types
+ * @see https://github.com/github/rest-api-description
+ */
 
-// ─── Repository Types ───────────────────────────────────────────────────────
 /** Full repository details. Schema: components['schemas']['full-repository'] */
 export type Repository = components['schemas']['full-repository'];
 
-// ─── Content Types ──────────────────────────────────────────────────────────
 /**
  * Content directory entry (single item from directory listing).
  * Schema: components['schemas']['content-directory'][number]
@@ -23,7 +20,6 @@ export type Repository = components['schemas']['full-repository'];
 export type ContentDirectoryEntry =
   components['schemas']['content-directory'][number];
 
-// ─── Search Result Types ────────────────────────────────────────────────────
 /** Code search result item. Schema: components['schemas']['code-search-result-item'] */
 export type CodeSearchResultItem =
   components['schemas']['code-search-result-item'];
@@ -36,7 +32,6 @@ export type RepoSearchResultItem =
 export type IssueSearchResultItem =
   components['schemas']['issue-search-result-item'];
 
-// ─── Pull Request Types ─────────────────────────────────────────────────────
 /** Diff entry for file changes. Schema: components['schemas']['diff-entry'] */
 export type DiffEntry = components['schemas']['diff-entry'];
 
@@ -46,7 +41,6 @@ export type PullRequestItem = components['schemas']['pull-request'];
 /** Simplified pull request. Schema: components['schemas']['pull-request-simple'] */
 export type PullRequestSimple = components['schemas']['pull-request-simple'];
 
-// ─── Comment Types ──────────────────────────────────────────────────────────
 /** Issue comment. Schema: components['schemas']['issue-comment'] */
 export type IssueComment = components['schemas']['issue-comment'];
 

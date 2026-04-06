@@ -636,10 +636,6 @@ describe('commandValidator', () => {
       });
     });
 
-    // =========================================================================
-    // T2 — git -c config key injection prevention
-    // =========================================================================
-
     describe('git -c config key injection prevention', () => {
       describe('global -c (before subcommand)', () => {
         it('should block core.sshCommand (command execution)', () => {
@@ -769,10 +765,6 @@ describe('commandValidator', () => {
         });
       });
     });
-
-    // =========================================================================
-    // T3 — git clone URL protocol validation
-    // =========================================================================
 
     describe('git clone URL protocol validation', () => {
       it('should allow https:// URLs', () => {

@@ -10,10 +10,6 @@ import type {
   GitHubSearchPullRequestsToolResult,
 } from '../../scheme/outputTypes.js';
 
-// ============================================================================
-// INPUT TYPES
-// ============================================================================
-
 /**
  * Query parameters for searching pull requests
  */
@@ -66,10 +62,6 @@ export interface GitHubPullRequestSearchQuery {
   researchGoal?: string;
   reasoning?: string;
 }
-
-// ============================================================================
-// OUTPUT TYPES
-// ============================================================================
 
 /** Final user-facing pull request item derived from the output schema */
 export type PullRequestInfo = GitHubPullRequestOutput;

@@ -10,7 +10,7 @@ export function showHelp(): void {
   );
   console.log();
   console.log(`  ${bold('USAGE')}`);
-  console.log(`    ${c('magenta', 'octocode')} [command] [options]`);
+  console.log(`    ${c('magenta', 'octocode-cli')} [command] [options]`);
   console.log();
   console.log(`  ${bold('COMMANDS')}`);
   console.log(
@@ -29,9 +29,6 @@ export function showHelp(): void {
     `    ${c('magenta', 'mcp')}         Manage MCP marketplace non-interactively`
   );
   console.log(
-    `    ${c('magenta', 'tool')}        Run Octocode research tools directly`
-  );
-  console.log(
     `    ${c('magenta', 'auth')}        Manage GitHub authentication`
   );
   console.log(`    ${c('magenta', 'login')}       Authenticate with GitHub`);
@@ -45,65 +42,74 @@ export function showHelp(): void {
   console.log();
   console.log(`  ${bold('OPTIONS')}`);
   console.log(`    ${c('cyan', '-h, --help')}       Show this help message`);
+  console.log(
+    `    ${c('cyan', '--tools-context')}  Print Octocode MCP instructions and tool schemas`
+  );
+  console.log(
+    `    ${c('cyan', '--tool <name> <json>')}  Run one Octocode tool with one JSON payload`
+  );
   console.log(`    ${c('cyan', '-v, --version')}    Show version number`);
   console.log();
   console.log(`  ${bold('EXAMPLES')}`);
   console.log(`    ${dim('# Interactive mode')}`);
-  console.log(`    ${c('yellow', 'octocode')}`);
+  console.log(`    ${c('yellow', 'octocode-cli')}`);
   console.log();
   console.log(`    ${dim('# Install for Cursor using npx')}`);
   console.log(
-    `    ${c('yellow', 'octocode install --ide cursor --method npx')}`
+    `    ${c('yellow', 'octocode-cli install --ide cursor --method npx')}`
   );
   console.log();
   console.log(`    ${dim('# Install for Claude Desktop using direct method')}`);
   console.log(
-    `    ${c('yellow', 'octocode install --ide claude --method direct')}`
+    `    ${c('yellow', 'octocode-cli install --ide claude-desktop --method direct')}`
   );
   console.log();
   console.log(`    ${dim('# Check GitHub authentication')}`);
-  console.log(`    ${c('yellow', 'octocode auth')}`);
+  console.log(`    ${c('yellow', 'octocode-cli auth')}`);
   console.log();
   console.log(`    ${dim('# Get token from Octocode (default)')}`);
-  console.log(`    ${c('yellow', 'octocode token')}`);
+  console.log(`    ${c('yellow', 'octocode-cli token')}`);
   console.log();
   console.log(`    ${dim('# Get token from gh CLI')}`);
-  console.log(`    ${c('yellow', 'octocode token --type=gh')}`);
+  console.log(`    ${c('yellow', 'octocode-cli token --type=gh')}`);
   console.log();
   console.log(`    ${dim('# Sync MCP configs across all IDEs')}`);
-  console.log(`    ${c('yellow', 'octocode sync')}`);
-  console.log(`    ${c('yellow', 'octocode sync --status')}`);
+  console.log(`    ${c('yellow', 'octocode-cli sync')}`);
+  console.log(`    ${c('yellow', 'octocode-cli sync --status')}`);
   console.log();
   console.log(`    ${dim('# MCP marketplace via CLI')}`);
-  console.log(`    ${c('yellow', 'octocode mcp list --search browser')}`);
+  console.log(`    ${c('yellow', 'octocode-cli mcp list --search browser')}`);
   console.log(
-    `    ${c('yellow', 'octocode mcp install --id playwright-mcp --client cursor --force')}`
+    `    ${c('yellow', 'octocode-cli mcp install --id playwright-mcp --client cursor --force')}`
   );
   console.log(
-    `    ${c('yellow', 'octocode mcp remove --id playwright-mcp --client cursor')}`
+    `    ${c('yellow', 'octocode-cli mcp remove --id playwright-mcp --client cursor')}`
   );
   console.log();
   console.log(`    ${dim('# Install Octocode skills')}`);
-  console.log(`    ${c('yellow', 'octocode skills install')}`);
+  console.log(`    ${c('yellow', 'octocode-cli skills install')}`);
   console.log(
-    `    ${c('yellow', 'octocode skills install --skill octocode-researcher')}`
+    `    ${c('yellow', 'octocode-cli skills install --skill octocode-researcher')}`
   );
   console.log(
-    `    ${c('yellow', 'octocode skills install --targets claude-code,cursor,codex --mode symlink')}`
+    `    ${c('yellow', 'octocode-cli skills install --targets claude-code,cursor,codex --mode symlink')}`
   );
   console.log();
   console.log(`    ${dim('# Remove one installed skill')}`);
   console.log(
-    `    ${c('yellow', 'octocode skills remove --skill octocode-researcher --targets claude-code,cursor')}`
+    `    ${c('yellow', 'octocode-cli skills remove --skill octocode-researcher --targets claude-code,cursor')}`
   );
   console.log();
   console.log(`    ${dim('# Run a tool directly')}`);
   console.log(
-    `    ${c('yellow', 'octocode --tool localSearchCode --path . --pattern runCLI')}`
+    `    ${c('yellow', `octocode-cli --tool localSearchCode '{"path":".","pattern":"runCLI"}'`)}`
   );
   console.log(
-    `    ${c('yellow', 'octocode tool githubSearchCode --input \'{\"owner\":\"bgauryy\",\"repo\":\"octocode-mcp\",\"keywordsToSearch\":[\"tool\"]}\'')}`
+    `    ${c('yellow', `octocode-cli --tool githubSearchCode '{"owner":"bgauryy","repo":"octocode-mcp","keywordsToSearch":["tool"]}'`)}`
   );
+  console.log();
+  console.log(`    ${dim('# Print MCP instructions and tool schemas')}`);
+  console.log(`    ${c('yellow', 'octocode-cli --tools-context')}`);
   console.log();
   console.log(c('magenta', `  ─── 🔍🐙 ${bold('https://octocode.ai')} ───`));
   console.log();
@@ -111,14 +117,16 @@ export function showHelp(): void {
 
 export function showCommandHelp(command: CLICommand): void {
   console.log();
-  console.log(`  ${c('magenta', bold('🔍🐙 octocode ' + command.name))}`);
+  console.log(`  ${c('magenta', bold('🔍🐙 octocode-cli ' + command.name))}`);
   console.log();
   console.log(`  ${command.description}`);
   console.log();
 
   if (command.usage) {
     console.log(`  ${bold('USAGE')}`);
-    console.log(`    ${command.usage}`);
+    console.log(
+      `    ${command.usage.replace(/\boctocode\b/g, 'octocode-cli')}`
+    );
     console.log();
   }
 
@@ -142,5 +150,5 @@ export function showCommandHelp(command: CLICommand): void {
 export function showVersion(): void {
   const version =
     typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'unknown';
-  console.log(`octocode v${version}`);
+  console.log(`octocode-cli v${version}`);
 }

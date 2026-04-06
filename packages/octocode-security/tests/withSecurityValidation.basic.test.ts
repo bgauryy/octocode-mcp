@@ -691,10 +691,6 @@ describe('withSecurityValidation - Additional Coverage', () => {
     });
   });
 
-  // =========================================================================
-  // S1 — Output sanitization: secrets in tool output must be masked
-  // =========================================================================
-
   describe('output passthrough (sanitization delegated to unified layer)', () => {
     it('should return raw handler output without modifying content', async () => {
       const SECRET = 'ghp_abc123xyz456789012345678901234567890';

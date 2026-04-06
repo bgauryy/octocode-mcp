@@ -6,10 +6,6 @@
  * @module bitbucket/types
  */
 
-// ============================================================================
-// API RESPONSE TYPES
-// ============================================================================
-
 export interface BitbucketAPIError {
   error: string;
   status: number;
@@ -25,10 +21,6 @@ export type BitbucketAPIResponse<T> =
   | { data: T; status: number }
   | BitbucketAPIError;
 
-// ============================================================================
-// PAGINATED RESPONSE
-// ============================================================================
-
 export interface BitbucketPaginatedResponse<T> {
   values: T[];
   page?: number;
@@ -37,10 +29,6 @@ export interface BitbucketPaginatedResponse<T> {
   next?: string;
   previous?: string;
 }
-
-// ============================================================================
-// SEARCH TYPES
-// ============================================================================
 
 interface BitbucketCodeSearchSegment {
   text: string;
@@ -80,10 +68,6 @@ export interface BitbucketCodeSearchResult {
   };
 }
 
-// ============================================================================
-// REPOSITORY TYPES
-// ============================================================================
-
 export interface BitbucketRepository {
   uuid: string;
   name: string;
@@ -107,10 +91,6 @@ export interface BitbucketRepository {
   owner?: { display_name: string; username?: string; uuid: string };
 }
 
-// ============================================================================
-// FILE CONTENT TYPES
-// ============================================================================
-
 export interface BitbucketFileContentResult {
   content: string;
   path: string;
@@ -119,10 +99,6 @@ export interface BitbucketFileContentResult {
   encoding: 'utf-8';
   lastCommitSha?: string;
 }
-
-// ============================================================================
-// TREE/STRUCTURE TYPES
-// ============================================================================
 
 export interface BitbucketTreeEntry {
   type: 'commit_file' | 'commit_directory';
@@ -133,10 +109,6 @@ export interface BitbucketTreeEntry {
     self?: { href: string };
   };
 }
-
-// ============================================================================
-// PULL REQUEST TYPES
-// ============================================================================
 
 export interface BitbucketPullRequest {
   id: number;

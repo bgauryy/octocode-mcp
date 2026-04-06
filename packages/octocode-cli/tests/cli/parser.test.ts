@@ -136,25 +136,25 @@ describe('CLI Parser', () => {
       const result = parseArgs([
         '--tool',
         'localSearchCode',
-        '--path',
-        '.',
-        '--pattern',
-        'runCLI',
+        '{"path":".","pattern":"runCLI"}',
       ]);
 
       expect(result.command).toBe('tool');
-      expect(result.args).toEqual(['localSearchCode']);
+      expect(result.args).toEqual([
+        'localSearchCode',
+        '{"path":".","pattern":"runCLI"}',
+      ]);
       expect(result.options).toEqual({
         tool: 'localSearchCode',
-        path: '.',
-        pattern: 'runCLI',
       });
     });
 
-    it('should support single-dash long-form tool syntax with =', () => {
+    it('should keep legacy --input available for migration errors', () => {
       const result = parseArgs([
-        '-tool=localSearchCode',
-        '-input={"path":".","pattern":"runCLI"}',
+        '--tool',
+        'localSearchCode',
+        '--input',
+        '{"path":".","pattern":"runCLI"}',
       ]);
 
       expect(result.command).toBe('tool');
@@ -163,6 +163,13 @@ describe('CLI Parser', () => {
         tool: 'localSearchCode',
         input: '{"path":".","pattern":"runCLI"}',
       });
+    });
+
+    it('should parse --tools-context as a top-level boolean flag', () => {
+      const result = parseArgs(['--tools-context']);
+
+      expect(result.command).toBeNull();
+      expect(result.options).toEqual({ 'tools-context': true });
     });
   });
 

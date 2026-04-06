@@ -11,10 +11,6 @@ import type {
   LspSymbolKind,
 } from '../../scheme/outputTypes.js';
 
-// ============================================================================
-// INPUT TYPES
-// ============================================================================
-
 /**
  * Query parameters for LSP goto definition
  */
@@ -31,10 +27,6 @@ export interface LSPGotoDefinitionQuery {
   reasoning?: string;
 }
 
-// ============================================================================
-// SHARED LSP TYPES
-// ============================================================================
-
 export type ExactPosition = LspExactPosition;
 
 export type LSPRange = LspRange;
@@ -42,10 +34,6 @@ export type LSPRange = LspRange;
 export type SymbolKind = LspSymbolKind;
 
 export type CodeSnippet = LspCodeSnippet;
-
-// ============================================================================
-// OUTPUT TYPES
-// ============================================================================
 
 /**
  * LSP error types

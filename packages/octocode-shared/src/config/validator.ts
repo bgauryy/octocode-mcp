@@ -16,10 +16,6 @@ import {
   MAX_OUTPUT_DEFAULT_CHAR_LENGTH,
 } from './defaults.js';
 
-// ============================================================================
-// VALIDATION HELPERS
-// ============================================================================
-
 /**
  * Validate a URL string.
  *
@@ -173,10 +169,6 @@ function validateString(value: unknown, field: string): string | null {
 
   return null;
 }
-
-// ============================================================================
-// SECTION VALIDATORS
-// ============================================================================
 
 function validateGitHub(github: unknown, errors: string[]): void {
   if (github === undefined || github === null) return;
@@ -379,10 +371,6 @@ function validateOutput(output: unknown, errors: string[]): void {
     }
   }
 }
-
-// ============================================================================
-// MAIN VALIDATOR
-// ============================================================================
 
 /**
  * Validate a configuration object against the schema.

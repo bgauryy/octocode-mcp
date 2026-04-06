@@ -4,7 +4,7 @@ import type {
   BitbucketAPIResponse,
 } from '../../bitbucket/types.js';
 
-export interface BitbucketProjectId {
+interface BitbucketProjectId {
   workspace: string;
   repoSlug: string;
 }

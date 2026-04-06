@@ -8,7 +8,7 @@ export interface WalkStats {
   skipped: number;
 }
 
-export interface WalkDirectoryOptions {
+interface WalkDirectoryOptions {
   basePath: string;
   currentPath: string;
   depth: number;

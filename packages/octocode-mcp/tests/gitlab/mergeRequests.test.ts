@@ -81,10 +81,6 @@ describe('GitLab Merge Requests', () => {
     vi.resetAllMocks();
   });
 
-  // ============================================================================
-  // searchGitLabMergeRequestsAPI Tests
-  // ============================================================================
-
   describe('searchGitLabMergeRequestsAPI', () => {
     describe('fetch specific MR by iid', () => {
       it('should fetch specific MR when projectId and iid are provided', async () => {
@@ -869,10 +865,6 @@ describe('GitLab Merge Requests', () => {
     });
   });
 
-  // ============================================================================
-  // getGitLabMRNotes Tests
-  // ============================================================================
-
   describe('getGitLabMRNotes', () => {
     it('should fetch MR notes successfully', async () => {
       const mockNotes: GitLabMRNote[] = [
@@ -1020,10 +1012,6 @@ describe('GitLab Merge Requests', () => {
     });
   });
 
-  // ============================================================================
-  // getGitLabMRChanges Tests
-  // ============================================================================
-
   describe('getGitLabMRChanges', () => {
     it('should fetch MR changes successfully', async () => {
       const mockChanges = [
@@ -1141,10 +1129,6 @@ describe('GitLab Merge Requests', () => {
       expect(result).toHaveProperty('status', 413);
     });
   });
-
-  // ============================================================================
-  // transformGitLabMergeRequest Tests
-  // ============================================================================
 
   describe('transformGitLabMergeRequest', () => {
     const createMockMR = (

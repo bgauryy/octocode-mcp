@@ -71,9 +71,6 @@ describe('GitLab Projects Search', () => {
     vi.resetAllMocks();
   });
 
-  // ===========================================================================
-  // searchGitLabProjectsAPI - Success Scenarios
-  // ===========================================================================
   describe('searchGitLabProjectsAPI - Success Scenarios', () => {
     it('should search projects successfully with basic search term', async () => {
       const mockProjects = [
@@ -231,9 +228,6 @@ describe('GitLab Projects Search', () => {
     });
   });
 
-  // ===========================================================================
-  // searchGitLabProjectsAPI - Client-Side Filtering
-  // ===========================================================================
   describe('searchGitLabProjectsAPI - Client-Side Filtering', () => {
     describe('Stars filtering', () => {
       it('should filter by minStars', async () => {
@@ -604,9 +598,6 @@ describe('GitLab Projects Search', () => {
     });
   });
 
-  // ===========================================================================
-  // searchGitLabProjectsAPI - Pagination
-  // ===========================================================================
   describe('searchGitLabProjectsAPI - Pagination', () => {
     it('should indicate hasMore when results equal perPage', async () => {
       const mockProjects = Array(20)
@@ -718,9 +709,6 @@ describe('GitLab Projects Search', () => {
     });
   });
 
-  // ===========================================================================
-  // searchGitLabProjectsAPI - Caching
-  // ===========================================================================
   describe('searchGitLabProjectsAPI - Caching', () => {
     it('should use cache with session ID', async () => {
       const { withDataCache, generateCacheKey } =
@@ -829,9 +817,6 @@ describe('GitLab Projects Search', () => {
     });
   });
 
-  // ===========================================================================
-  // searchGitLabProjectsAPI - Error Handling
-  // ===========================================================================
   describe('searchGitLabProjectsAPI - Error Handling', () => {
     it('should handle API errors through handleGitLabAPIError', async () => {
       const mockError = new Error('GitLab API Error');
@@ -942,9 +927,6 @@ describe('GitLab Projects Search', () => {
     });
   });
 
-  // ===========================================================================
-  // getGitLabProject
-  // ===========================================================================
   describe('getGitLabProject', () => {
     it('should get project by numeric ID', async () => {
       const mockProject = createMockProject({ id: 123, name: 'my-project' });
@@ -1088,9 +1070,6 @@ describe('GitLab Projects Search', () => {
     });
   });
 
-  // ===========================================================================
-  // transformGitLabProject
-  // ===========================================================================
   describe('transformGitLabProject', () => {
     it('should transform GitLab project to unified format', () => {
       const project = createMockProject({
@@ -1312,9 +1291,6 @@ describe('GitLab Projects Search', () => {
     });
   });
 
-  // ===========================================================================
-  // Edge Cases and Integration
-  // ===========================================================================
   describe('Edge Cases', () => {
     it('should handle projects with all optional fields missing', async () => {
       const minimalProject: GitLabProject = {

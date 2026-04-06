@@ -1,14 +1,3 @@
-export interface PackageSearchInput {
-  ecosystem: 'npm' | 'python';
-  name: string;
-  searchLimit?: number;
-  npmFetchMetadata?: boolean;
-  pythonFetchMetadata?: boolean;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-}
-
 export interface MinimalPackageResult {
   name: string;
   repository: string | null;

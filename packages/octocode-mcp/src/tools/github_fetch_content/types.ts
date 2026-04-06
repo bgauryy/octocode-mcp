@@ -10,10 +10,6 @@ import type {
   GitHubFetchContentToolResult,
 } from '../../scheme/outputTypes.js';
 
-// ============================================================================
-// INPUT TYPES
-// ============================================================================
-
 /**
  * Content fetch type: file (default) or directory.
  * When 'directory', the tool fetches all files in the directory,
@@ -46,10 +42,6 @@ export interface FileContentQuery {
   researchGoal?: string;
   reasoning?: string;
 }
-
-// ============================================================================
-// OUTPUT TYPES
-// ============================================================================
 
 /** Final user-facing success data derived from the output schema */
 export type ContentResultData = GitHubFetchContentData;
@@ -87,10 +79,6 @@ interface GitHubFileContentApiResultBase {
 
 export interface GitHubFileContentApiResult
   extends GitHubFileContentApiResultBase, GitHubFileContentApiData {}
-
-// ============================================================================
-// DIRECTORY FETCH TYPES
-// ============================================================================
 
 /** Single file entry fetched from a directory */
 export type DirectoryFileEntry = GitHubDirectoryFileEntry;

@@ -69,13 +69,6 @@ export function getGitLabHost(): string {
 }
 
 /**
- * Get the source of the current GitLab token.
- */
-export function getGitLabTokenSource(): GitLabTokenSourceType {
-  return resolveGitLabToken().source;
-}
-
-/**
  * Check if GitLab is configured with a valid token.
  */
 export function isGitLabConfigured(): boolean {

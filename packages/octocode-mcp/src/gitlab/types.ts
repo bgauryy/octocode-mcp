@@ -6,10 +6,6 @@
  * @module gitlab/types
  */
 
-// ============================================================================
-// API RESPONSE TYPES
-// ============================================================================
-
 /**
  * GitLab API error structure.
  */
@@ -37,10 +33,6 @@ export interface GitLabAPISuccess<T> {
  * GitLab API response (success or error).
  */
 export type GitLabAPIResponse<T> = GitLabAPISuccess<T> | GitLabAPIError;
-
-// ============================================================================
-// PROJECT TYPES
-// ============================================================================
 
 /**
  * GitLab project/repository information.
@@ -81,10 +73,6 @@ export interface GitLabProject {
     repo_branches: string;
   };
 }
-
-// ============================================================================
-// CODE SEARCH TYPES
-// ============================================================================
 
 /**
  * GitLab code search query parameters.
@@ -140,10 +128,6 @@ export interface GitLabCodeSearchResult {
   };
 }
 
-// ============================================================================
-// FILE CONTENT TYPES
-// ============================================================================
-
 /**
  * GitLab file content query parameters.
  */
@@ -176,10 +160,6 @@ export interface GitLabFileContent {
   last_commit_id: string;
   execute_filemode: boolean;
 }
-
-// ============================================================================
-// MERGE REQUEST TYPES
-// ============================================================================
 
 /**
  * GitLab merge request query parameters.
@@ -306,10 +286,6 @@ export interface GitLabMRNote {
   resolved?: boolean;
 }
 
-// ============================================================================
-// REPOSITORY TREE TYPES
-// ============================================================================
-
 /**
  * GitLab repository tree query parameters.
  */
@@ -340,10 +316,6 @@ export interface GitLabTreeItem {
   path: string;
   mode: string;
 }
-
-// ============================================================================
-// PROJECTS SEARCH TYPES
-// ============================================================================
 
 /**
  * GitLab projects search query parameters.
@@ -386,7 +358,3 @@ export interface GitLabProjectsSearchQuery {
   createdAfter?: string;
   createdBefore?: string;
 }
-
-// ============================================================================
-// TYPE GUARDS
-// ============================================================================

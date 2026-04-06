@@ -1,7 +1,7 @@
 import { TOOL_METADATA_ERRORS } from '../errors/domainErrors.js';
 import type { ToolConfig } from './toolConfig.js';
 
-export interface MetadataPolicyDeps {
+interface MetadataPolicyDeps {
   hasTool: (toolName: string) => boolean;
   logSessionErrorSafe: (toolName: string, errorCode: string) => void;
 }

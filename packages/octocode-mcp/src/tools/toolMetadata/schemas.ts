@@ -4,10 +4,6 @@
  */
 import { z } from 'zod/v4';
 
-// ============================================================================
-// Prompt Schemas
-// ============================================================================
-
 export const PromptArgumentSchema = z.object({
   name: z.string(),
   description: z.string(),
@@ -21,10 +17,6 @@ export const PromptMetadataSchema = z.object({
   args: z.array(PromptArgumentSchema).optional(),
 });
 
-// ============================================================================
-// Tool Schemas
-// ============================================================================
-
 export const ToolMetadataSchema = z.object({
   name: z.string(),
   description: z.string(),
@@ -37,20 +29,12 @@ export const ToolMetadataSchema = z.object({
   }),
 });
 
-// ============================================================================
-// Base Schema
-// ============================================================================
-
 export const BaseSchemaSchema = z.object({
   mainResearchGoal: z.string(),
   researchGoal: z.string(),
   reasoning: z.string(),
   bulkQueryTemplate: z.string(),
 });
-
-// ============================================================================
-// Bulk Operations Schema
-// ============================================================================
 
 export const BulkOperationsSchema = z.object({
   instructions: z
@@ -62,10 +46,6 @@ export const BulkOperationsSchema = z.object({
     })
     .optional(),
 });
-
-// ============================================================================
-// Complete Metadata Schema (Raw API Response)
-// ============================================================================
 
 export const RawCompleteMetadataSchema = z.object({
   instructions: z.string(),
@@ -80,11 +60,3 @@ export const RawCompleteMetadataSchema = z.object({
   genericErrorHints: z.array(z.string()),
   bulkOperations: BulkOperationsSchema.optional(),
 });
-
-// ============================================================================
-// Inferred Types
-// ============================================================================
-
-export type RawCompleteMetadataSchemaType = z.infer<
-  typeof RawCompleteMetadataSchema
->;
