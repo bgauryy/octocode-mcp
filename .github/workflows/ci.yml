@@ -16,10 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
           cache: 'yarn'
@@ -45,6 +45,9 @@ jobs:
       - name: Build security package types
         run: yarn workspace @octocode/security run build:dev
 
+      - name: Build MCP package types
+        run: yarn workspace octocode-mcp run build:dev
+
       - name: Run type checks
         run: yarn typecheck
 
@@ -53,10 +56,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
           cache: 'yarn'

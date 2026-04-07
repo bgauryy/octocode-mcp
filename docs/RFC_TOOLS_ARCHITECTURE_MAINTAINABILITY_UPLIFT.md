@@ -235,7 +235,7 @@ Every reference below directly supports either the current-state diagnosis or th
 - [packages/octocode-mcp/src/tools/local_fetch_content/fetchContent.ts#L36](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/src/tools/local_fetch_content/fetchContent.ts#L36) - High-complexity flow in maintainability hotspot.
 - [packages/octocode-mcp/src/tools/local_view_structure/structureWalker.ts#L22](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/src/tools/local_view_structure/structureWalker.ts#L22) - Excessive parameter signature; supports parameter-object refactor.
 - [packages/octocode-mcp/src/tools/lsp_call_hierarchy/callHierarchyPatterns.ts#L198](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/src/tools/lsp_call_hierarchy/callHierarchyPatterns.ts#L198) - High-parameter/high-complexity fallback path.
-- [packages/octocode-mcp/src/tools/toolRegistry.ts](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/src/tools/toolRegistry.ts) - Dynamic tool registry (`enable`/`disable`/`remove`).
+- `packages/octocode-mcp/src/tools/toolRegistry.ts` *(proposed — not yet created)* - Dynamic tool registry (`enable`/`disable`/`remove`).
 - [packages/octocode-mcp/tests/tools/toolsManager.di.test.ts#L49](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/tests/tools/toolsManager.di.test.ts#L49) - DI seam tests.
 - [packages/octocode-mcp/tests/tools/lsp_call_hierarchy.patterns.test.ts#L9](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/tests/tools/lsp_call_hierarchy.patterns.test.ts#L9) - TDD proof for parser/body extraction behavior.
 

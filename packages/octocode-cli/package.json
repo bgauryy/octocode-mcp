@@ -66,6 +66,7 @@
     "@vitest/coverage-v8": "^4.0.16",
     "esbuild": "^0.27.2",
     "eslint": "^9.18.0",
+    "octocode-mcp": "workspace:^",
     "octocode-shared": "workspace:^",
     "open": "^11.0.0",
     "tsx": "^4.21.0",
