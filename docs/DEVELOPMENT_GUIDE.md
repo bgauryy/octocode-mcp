@@ -74,7 +74,7 @@
 
 - **Node.js**: >= 20.0.0
 - **VS Code**: `octocode-vscode` requires >= 1.85.0
-- **Core**: `@modelcontextprotocol/sdk`, `zod`, `vitest`, `typescript`
+- **Core**: `@modelcontextprotocol/sdk` (^1.29.0), `zod`, `vitest`, `typescript`
 - **LSP**: `typescript-language-server`, `vscode-languageserver-protocol`
 
 ## Testing Protocol

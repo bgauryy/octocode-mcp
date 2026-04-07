@@ -220,7 +220,10 @@ export function renderTreesText(
 export function isTestFile(filePath: string): boolean {
   return (
     /(?:^|[\\/])(?:__tests__|__test__|tests)(?:[\\/]|$)/.test(filePath) ||
-    /(?:\.test|_test|\.spec)\.(?:ts|tsx|js|jsx|mjs|cjs)$/.test(filePath)
+    /(?:\.test|_test|\.spec)\.(?:ts|tsx|js|jsx|mjs|cjs)$/.test(filePath) ||
+    /(?:^|[\\/])test_[^/\\]*\.py$/.test(filePath) ||
+    /_test\.py$/.test(filePath) ||
+    /(?:^|[\\/])conftest\.py$/.test(filePath)
   );
 }
 

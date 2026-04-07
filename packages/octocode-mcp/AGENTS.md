@@ -83,6 +83,7 @@ src/
 │
 ├── tools/                   # 🔧 Tool implementations (modular structure)
 │   ├── toolConfig.ts        # Tool registry & configuration
+│   ├── toolRegistry.ts      # Dynamic tool management (enable/disable/remove)
 │   ├── toolMetadata.ts      # Dynamic metadata from API
 │   ├── toolNames.ts         # Static tool name constants
 │   ├── toolsManager.ts      # Tool registration orchestrator
@@ -403,15 +404,18 @@ tools/<tool_name>/
 ### Tool Registration Flow
 
 ```
-Schema (Zod) → Security Wrapper → Bulk Handler → Implementation → Sanitizer → Response
+Schema (Zod) → registerTool() → Security Wrapper → Bulk Handler → Implementation → Sanitizer → Response
 ```
 
 1. **Schema Validation** (`<tool>/scheme.ts`) - Zod validates inputs
-2. **Security Wrapper** (`withSecurityValidation.ts`) - Input sanitization, secret detection
-3. **Bulk Operations** (`<tool>/execution.ts`) - Parallel query execution (1-5 queries)
-4. **Tool Implementation** - Business logic, API calls
-5. **Content Sanitizer** (`contentSanitizer.ts`) - Output secret redaction
-6. **Response Formatting** (`responses.ts`) - YAML output with priority ordering
+2. **Registration** (`server.registerTool()`) - `inputSchema`, `outputSchema`, `annotations`
+3. **Security Wrapper** (`withSecurityValidation.ts`) - Input sanitization, secret detection
+4. **Bulk Operations** (`<tool>/execution.ts`) - Parallel query execution (1-5 queries)
+5. **Tool Implementation** - Business logic, API calls
+6. **Content Sanitizer** (`contentSanitizer.ts`) - Output secret redaction
+7. **Response** (`responses.ts`) - YAML/JSON text + `structuredContent`
+
+Tools return `structuredContent` validated by the SDK against `outputSchema`. `RegisteredTool` handles are stored in `toolRegistry.ts` for runtime `enable()`/`disable()`/`remove()`. The server advertises `listChanged: true` and defers background work to the `oninitialized` callback.
 
 ### Key Design Decisions
 
@@ -525,9 +529,11 @@ yarn test:ui
 |---------|---------|
 | Entry point | `src/index.ts` |
 | Tool registration | `src/tools/toolsManager.ts`, `src/tools/toolConfig.ts` |
+| Tool registry | `src/tools/toolRegistry.ts` |
 | Tool modules | `src/tools/<tool_name>/` (scheme.ts, execution.ts, types.ts) |
 | Hints system | `src/hints/` |
 | Security wrapper | `src/security/withSecurityValidation.ts` |
+| Output sanitization | `src/utils/secureServer.ts` |
 | Secret detection | `src/security/contentSanitizer.ts`, `src/security/regexes/` |
 | Path validation | `src/security/pathValidator.ts` |
 | GitHub client | `src/github/client.ts` |

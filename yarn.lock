@@ -5,6 +5,20 @@ __metadata:
   version: 8
   cacheKey: 10c0
 
+"@ast-grep/lang-python@npm:^0.0.6":
+  version: 0.0.6
+  resolution: "@ast-grep/lang-python@npm:0.0.6"
+  dependencies:
+    "@ast-grep/setup-lang": "npm:0.0.6"
+  peerDependencies:
+    tree-sitter-cli: 0.25.8
+  peerDependenciesMeta:
+    tree-sitter-cli:
+      optional: true
+  checksum: 10c0/cde8ac9a6780f67cf0f8782113c652559fbd230ed1a9d3fe09e41e4f6395893beb67a986be6645148ce95eab44addcc974485a73081ec0ddfac1eb0832d9ee0b
+  languageName: node
+  linkType: hard
+
 "@ast-grep/napi-darwin-arm64@npm:0.42.1":
   version: 0.42.1
   resolution: "@ast-grep/napi-darwin-arm64@npm:0.42.1"
@@ -101,6 +115,13 @@ __metadata:
     "@ast-grep/napi-win32-x64-msvc":
       optional: true
   checksum: 10c0/560c360522a98cff508bdb0d839c36d364afd296a8b04d2193ad63fdec352c949d803565cde74c11f7d496e8e6f2f105ed6129ebbd9f9f4e286f39a2eed14f02
+  languageName: node
+  linkType: hard
+
+"@ast-grep/setup-lang@npm:0.0.6":
+  version: 0.0.6
+  resolution: "@ast-grep/setup-lang@npm:0.0.6"
+  checksum: 10c0/3c98ab73a5dc5b67cf4c51cf451401cc120b272cbe36847dd9bc522ccda175e8e230b32d9b417ed7ea3eb866e714151013a1865283c9353f5393494cabddc9ce
   languageName: node
   linkType: hard
 
@@ -1086,6 +1107,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@octocode/engineer-skill@workspace:skills/octocode-engineer"
   dependencies:
+    "@ast-grep/lang-python": "npm:^0.0.6"
     "@ast-grep/napi": "npm:^0.42.0"
     "@eslint/js": "npm:^9.27.0"
     "@types/node": "npm:^22.15.29"
@@ -1093,6 +1115,7 @@ __metadata:
     eslint: "npm:^9.27.0"
     eslint-plugin-import: "npm:^2.32.0"
     tree-sitter: "npm:^0.25.0"
+    tree-sitter-python: "npm:^0.23.6"
     tree-sitter-typescript: "npm:^0.23.2"
     typescript: "npm:^5.9.3"
     typescript-eslint: "npm:^8.52.0"
@@ -8326,6 +8349,22 @@ __metadata:
     tree-sitter:
       optional: true
   checksum: 10c0/0b5cefcf4d072bbd5807603355cd87b349a0e2423d76ff64a39b24a150690d1f30424e537f8f6c11c2ac62613abe37d7f06f513e1dee8f07b04f714aba4cec40
+  languageName: node
+  linkType: hard
+
+"tree-sitter-python@npm:^0.23.6":
+  version: 0.23.6
+  resolution: "tree-sitter-python@npm:0.23.6"
+  dependencies:
+    node-addon-api: "npm:^8.3.0"
+    node-gyp: "npm:latest"
+    node-gyp-build: "npm:^4.8.4"
+  peerDependencies:
+    tree-sitter: ^0.22.1
+  peerDependenciesMeta:
+    tree-sitter:
+      optional: true
+  checksum: 10c0/8101e5c23c1536e619b47f7a9460bc212ac9e77b45200666832531bb40bfe9d989235058ba75a610bc14df63fd47f1d8d3312acb1e38932d9673fd5c2d8f9652
   languageName: node
   linkType: hard
 

@@ -3,6 +3,7 @@ import path from 'node:path';
 import * as ts from 'typescript';
 
 import type { AnalysisOptions, Thresholds } from './core.js';
+import type { DependencyProfile } from './dependency.js';
 
 export const DEFAULT_THRESHOLDS: Thresholds = {
   // Architecture
@@ -222,6 +223,7 @@ export const ALLOWED_EXTS = new Set([
   '.jsx',
   '.mjs',
   '.cjs',
+  '.py',
 ]);
 export const IMPORT_RESOLVE_EXTS = [
   '.ts',
@@ -268,6 +270,36 @@ export const TS_TREE_SITTER_FUNCTION_TYPES = new Set<string>([
   'arrow_function',
   'function_expression',
 ]);
+
+export const PY_TREE_SITTER_CONTROL_TYPES = new Set<string>([
+  'if_statement',
+  'for_statement',
+  'while_statement',
+  'try_statement',
+  'except_clause',
+  'with_statement',
+  'conditional_expression',
+  'match_statement',
+]);
+
+export const PY_TREE_SITTER_FUNCTION_TYPES = new Set<string>([
+  'function_definition',
+]);
+
+export const PYTHON_EXTS = new Set(['.py']);
+
+export function isPythonFile(ext: string): boolean {
+  return PYTHON_EXTS.has(ext);
+}
+
+export const EMPTY_DEPENDENCY_PROFILE: DependencyProfile = {
+  internalDependencies: [],
+  externalDependencies: [],
+  unresolvedDependencies: [],
+  declaredExports: [],
+  importedSymbols: [],
+  reExports: [],
+};
 
 interface SeverityOrder {
   [key: string]: number;

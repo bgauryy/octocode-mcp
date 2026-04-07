@@ -144,20 +144,48 @@ The scanner detects quality indicators across 5 pillars: **Architecture**, **Cod
 
 ---
 
-## AST Search Presets (22 total)
+## AST Search Presets (35 total: 22 JS/TS + 13 Python)
 
-### Existing Presets
-`empty-catch`, `console-log`, `console-any`, `debugger`, `todo-fixme`, `any-type`, `type-assertion`, `non-null-assertion`, `fat-arrow-body`, `nested-ternary`, `throw-string`, `switch-no-default`, `class-declaration`, `async-function`, `export-default`, `import-star`
+### JavaScript / TypeScript Presets (22)
+`empty-catch`, `console-log`, `console-any`, `debugger`, `todo-fixme`, `any-type`, `type-assertion`, `non-null-assertion`, `fat-arrow-body`, `nested-ternary`, `throw-string`, `switch-no-default`, `class-declaration`, `async-function`, `export-default`, `import-star`, `catch-rethrow`, `promise-all`, `boolean-param`, `magic-number`, `deep-callback`, `unused-var`
 
-### New Presets (v2)
+### Python Presets (13)
+All prefixed with `py-` to avoid collision with JS/TS presets.
+
 | Preset | Description |
 |--------|-------------|
-| `catch-rethrow` | Catch blocks that only re-throw the caught error |
-| `promise-all` | Promise.all calls — check for missing error handling |
-| `boolean-param` | Function parameters typed as boolean |
-| `magic-number` | Numeric literals (excluding 0 and 1) |
-| `deep-callback` | 3+ levels of nested arrow function callbacks |
-| `unused-var` | Variable declarations without call expressions |
+| `py-bare-except` | `except:` clause with no exception type |
+| `py-pass-except` | `except: pass` — silently swallowed exception |
+| `py-broad-except` | Overly broad `except Exception` / `except BaseException` |
+| `py-global-stmt` | `global` variable mutation |
+| `py-exec-call` | `exec()` — dynamic code execution |
+| `py-eval-call` | `eval()` — dynamic evaluation |
+| `py-star-import` | `from X import *` — wildcard import |
+| `py-assert` | `assert` statements (stripped with `-O` flag) |
+| `py-mutable-default` | Mutable default arguments (list/dict/set literal) |
+| `py-todo-fixme` | TODO, FIXME, HACK, XXX, BUG comments |
+| `py-print-call` | `print()` calls in production code |
+| `py-class` | All class definitions |
+| `py-async-function` | Async function definitions |
+
+---
+
+## Python Scanner Coverage
+
+The scanner supports Python files (`.py`) for tree-sitter-based analysis: function metrics (complexity, nesting, cognitive complexity), flow detection, duplicate detection, and AST tree snapshots. The following **do not apply to Python** and are automatically skipped:
+
+| Category | Reason |
+|----------|--------|
+| `unsafe-any` | TypeScript-specific (`any` type) |
+| `type-assertion-escape` | TypeScript `as` expressions |
+| `non-null-assertion` (detector) | TypeScript `!` operator |
+| `halstead-effort` | TypeScript Compiler API only |
+| `low-maintainability` (MI) | TypeScript Compiler API only |
+| All semantic categories (`--semantic`) | TypeScript LanguageService only |
+| Dependency graph / import resolution | JS/TS module resolution only |
+| `dead-export`, `dead-re-export`, `unused-import` | JS/TS import/export system |
+
+**What works for Python**: cyclomatic complexity, cognitive complexity, god-function (by statement count), deep-nesting, multiple-return-paths, duplicate-function-body, duplicate-flow-structure, similar-function-body, all AST presets (`py-*`), AST tree snapshots.
 
 ---
 

@@ -214,7 +214,7 @@ cat .octocode/scan/<latest>/findings.json | jq '.optimizationFindings[].category
 
 Low or zero findings can mean the codebase is clean — or the scope missed analyzable files. Before trusting a clean result:
 
-1. **Confirm the scope has source files**: `--scope=docs/` or a path with only `.md` files will produce 0 findings. Use `localViewStructure` or `ls` to verify the scope contains `.ts`/`.js`/`.tsx` files.
+1. **Confirm the scope has source files**: `--scope=docs/` or a path with only `.md` files will produce 0 findings. Use `localViewStructure` or `ls` to verify the scope contains `.ts`/`.js`/`.tsx`/`.py` files.
 2. **Test-quality needs test files**: `--features=test-quality` without `--include-tests` will produce 0 findings — test files are excluded by default.
 3. **Suspiciously low count? Broaden one level**: try removing `--scope` or removing `--features` temporarily to compare against a baseline full run. If the full run has findings and the scoped run doesn't, the scope was too narrow.
 4. **Scoped scans affect downstream tools**: `ast-trees.txt` from a scoped scan only contains AST trees for scoped files. If you later run `tree-search.js -i .octocode/scan`, it picks the latest scan — which may be the narrow one. Either point to a full-scan timestamp explicitly or re-run a full scan.

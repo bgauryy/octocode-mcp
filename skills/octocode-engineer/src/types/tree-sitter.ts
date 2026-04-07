@@ -30,6 +30,7 @@ export interface TreeSitterRuntime {
   available: boolean;
   parserTs: Parser | null;
   parserTsx: Parser | null;
+  parserPy: Parser | null;
   error?: string;
 }
 

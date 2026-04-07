@@ -7,6 +7,9 @@ import {
   makeTreeSitterFingerprint,
 } from '../common/utils.js';
 import {
+  isPythonFile,
+  PY_TREE_SITTER_CONTROL_TYPES,
+  PY_TREE_SITTER_FUNCTION_TYPES,
   TS_TREE_SITTER_CONTROL_TYPES,
   TS_TREE_SITTER_FUNCTION_TYPES,
 } from '../types/index.js';
@@ -294,10 +297,14 @@ export function analyzeTreeSitterFile(
   if (!treeSitterRuntime?.available) return null;
 
   const ext = path.extname(filePath);
-  const parser =
-    ext === '.tsx' || ext === '.jsx'
-      ? treeSitterRuntime.parserTsx
-      : treeSitterRuntime.parserTs;
+  let parser: Parser | null;
+  if (isPythonFile(ext)) {
+    parser = treeSitterRuntime.parserPy;
+  } else if (ext === '.tsx' || ext === '.jsx') {
+    parser = treeSitterRuntime.parserTsx;
+  } else {
+    parser = treeSitterRuntime.parserTs;
+  }
   if (!parser) return null;
 
   const tree = parser.parse(sourceText);
@@ -322,10 +329,18 @@ export function analyzeTreeSitterFile(
     }
   }
 
+  const isPy = isPythonFile(ext);
+  const functionTypes = isPy
+    ? PY_TREE_SITTER_FUNCTION_TYPES
+    : TS_TREE_SITTER_FUNCTION_TYPES;
+  const controlTypes = isPy
+    ? PY_TREE_SITTER_CONTROL_TYPES
+    : TS_TREE_SITTER_CONTROL_TYPES;
+
   const visit = (node: SyntaxNode): void => {
     fileEntry.nodeCount += 1;
 
-    if (TS_TREE_SITTER_FUNCTION_TYPES.has(node.type)) {
+    if (functionTypes.has(node.type)) {
       const loc = makeLocationFromTree(node, options.root, filePath);
       const metrics = collectTreeSitterMetrics(node, sourceText);
       const statementCount = countTreeSitterStatements(node);
@@ -373,7 +388,7 @@ export function analyzeTreeSitterFile(
       }
     }
 
-    if (TS_TREE_SITTER_CONTROL_TYPES.has(node.type)) {
+    if (controlTypes.has(node.type)) {
       const loc = makeLocationFromTree(node, options.root, filePath);
       const statementCount = countControlFlowBodyStatements(node);
       const flowEntry: FlowEntry = {
@@ -446,10 +461,26 @@ export async function resolveTreeSitter(): Promise<TreeSitterRuntime> {
       (tsxLang || tsLang) as Parameters<Parser['setLanguage']>[0]
     );
 
+    let parserPy: Parser | null = null;
+    try {
+      const pythonMod: Record<string, unknown> =
+        // @ts-expect-error tree-sitter-python has no type declarations
+        await import('tree-sitter-python');
+      const pyLang =
+        pythonMod.default || pythonMod;
+      if (pyLang) {
+        parserPy = new (ParserClass as new () => Parser)();
+        parserPy.setLanguage(pyLang as Parameters<Parser['setLanguage']>[0]);
+      }
+    } catch {
+      // tree-sitter-python not installed — Python analysis via tree-sitter disabled
+    }
+
     treeSitterRuntime = {
       available: true,
       parserTs,
       parserTsx,
+      parserPy,
     };
     return treeSitterRuntime;
   } catch (error: unknown) {
@@ -457,6 +488,7 @@ export async function resolveTreeSitter(): Promise<TreeSitterRuntime> {
       available: false,
       parserTs: null,
       parserTsx: null,
+      parserPy: null,
       error: String((error as Error)?.message || error),
     };
     return treeSitterRuntime;

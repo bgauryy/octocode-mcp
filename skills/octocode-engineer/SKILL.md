@@ -1,6 +1,6 @@
 ---
 name: octocode-engineer
-description: "System-aware engineering skill for code understanding, safe implementation, refactoring, architecture review, and quality analysis. Use this before planning and for general task support when an agent must start with local Octocode tools, use AST search/tree-search to prove structure, and combine those checks with LSP and scanner results to understand flows, feature surfaces, system summary, blast radius, contracts, documentation gaps, build/configuration risks, and architectural risk instead of looking only at one file. Aims to improve any system, and is especially effective for Node-based applications."
+description: "System-aware engineering skill for understanding code, safe changes, refactoring, and architecture review with AST, LSP, and scanner tools. Use this before planning and for general task support when an agent must understand structure, flows, blast radius, and architectural risk before acting."
 ---
 
 # Octocode Engineer
@@ -39,7 +39,7 @@ Use this skill to:
 This is not only a code-editing skill.
 It is a structure, architecture, and flow-analysis skill that also supports coding.
 It aims to make systems easier to extend, safer to evolve, and smarter to work in over time.
-It applies to any system, but is especially effective for Node and TypeScript applications where module boundaries, async flows, contracts, package dependencies, and runtime edges must stay clean.
+It applies to any system, and is especially effective for Node/TypeScript and Python applications where module boundaries, async flows, contracts, package dependencies, and runtime edges must stay clean.
 
 ## When To Use It
 
@@ -163,11 +163,13 @@ AST is a primary checking tool in this skill, especially for validating smells, 
 
 Use AST tools for things like:
 - empty catch blocks
-- `any` usage
-- nested ternaries
-- broad exports
+- `any` usage (TS) / bare except (Python)
+- nested ternaries (TS) / mutable defaults (Python)
+- broad exports / wildcard imports
 - repeated structural patterns
 - verifying whether a smell is real or just a text coincidence
+
+Python presets are prefixed with `py-` (e.g. `--preset py-bare-except`). Use `--list-presets` to see all available presets for both JS/TS and Python.
 
 Rule: `tree-search.js` is for fast narrowing. `search.js` is the authoritative proof on live code.
 Rule: if a structural claim matters, check it with AST before presenting it as fact.
@@ -419,11 +421,15 @@ If the answer only explains one file, it is usually incomplete.
 
 ## References
 
-Use these only when needed:
-- [Tool workflows](./references/tool-workflows.md)
-- [CLI reference](./references/cli-reference.md)
-- [Output files](./references/output-files.md)
-- [AST reference](./references/ast-reference.md)
-- [Validation playbooks](./references/validation-playbooks.md)
-- [Quality indicators](./references/quality-indicators.md)
-- [External tools](./references/externals.md)
+Use these only when needed. Pick the right reference for the situation:
+
+| Situation | Reference |
+|-----------|-----------|
+| Which tool to use, what order | [Tool workflows](./references/tool-workflows.md) |
+| Scanner flags, thresholds, scope syntax | [CLI reference](./references/cli-reference.md) |
+| Reading scan artifacts (summary.json, findings.json, etc.) | [Output files](./references/output-files.md) |
+| AST presets, pattern syntax, Python node kinds | [AST reference](./references/ast-reference.md) |
+| Confirming or dismissing a finding | [Validation playbooks](./references/validation-playbooks.md) |
+| Detector catalog, metrics, severity thresholds | [Quality indicators](./references/quality-indicators.md) |
+| How to present findings to the user | [Output format](./references/output-format.md) |
+| eslint, tsc, knip, ruff, mypy, and other external tools | [External tools](./references/externals.md) |

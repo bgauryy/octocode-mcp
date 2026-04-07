@@ -2,12 +2,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   type AstSearchOptions,
   PRESETS,
   collectSearchFiles,
+  ensurePythonRegistered,
   formatTextOutput,
   parseSearchArgs,
   runSearch,
@@ -756,5 +757,226 @@ const y = "hello";
       expect(PRESETS[name].description).toBeTruthy();
       expect(PRESETS[name].rule).toBeDefined();
     }
+  });
+});
+
+describe('Python presets', () => {
+  beforeAll(async () => {
+    await ensurePythonRegistered();
+  });
+
+  it('all Python presets are defined in PRESETS', () => {
+    const pyPresets = [
+      'py-bare-except', 'py-pass-except', 'py-broad-except',
+      'py-global-stmt', 'py-exec-call', 'py-eval-call',
+      'py-star-import', 'py-assert', 'py-mutable-default',
+      'py-todo-fixme', 'py-print-call', 'py-class', 'py-async-function',
+    ];
+    for (const name of pyPresets) {
+      expect(PRESETS[name], `${name} missing`).toBeDefined();
+      expect(PRESETS[name].description).toBeTruthy();
+      expect(PRESETS[name].rule).toBeDefined();
+    }
+  });
+
+  it('py-bare-except: finds bare except clause', () => {
+    const source = 'try:\n    x = 1\nexcept:\n    pass\n';
+    const matches = searchFile('test.py', source, PRESETS['py-bare-except'], null, 100);
+    expect(matches.length).toBe(1);
+    expect(matches[0].kind).toBe('except_clause');
+  });
+
+  it('py-pass-except: finds except-pass blocks', () => {
+    const source = 'try:\n    x = 1\nexcept Exception:\n    pass\n';
+    const matches = searchFile('test.py', source, PRESETS['py-pass-except'], null, 100);
+    expect(matches.length).toBe(1);
+  });
+
+  it('py-broad-except: finds Exception/BaseException', () => {
+    const source = 'try:\n    x = 1\nexcept Exception:\n    pass\ntry:\n    y = 2\nexcept ValueError:\n    pass\n';
+    const matches = searchFile('test.py', source, PRESETS['py-broad-except'], null, 100);
+    expect(matches.length).toBe(1);
+  });
+
+  it('py-global-stmt: finds global statements', () => {
+    const source = 'def foo():\n    global x\n    x = 1\n';
+    const matches = searchFile('test.py', source, PRESETS['py-global-stmt'], null, 100);
+    expect(matches.length).toBe(1);
+  });
+
+  it('py-exec-call: finds exec() calls', () => {
+    const source = 'exec("x = 1")\ny = 2\n';
+    const matches = searchFile('test.py', source, PRESETS['py-exec-call'], null, 100);
+    expect(matches.length).toBe(1);
+  });
+
+  it('py-eval-call: finds eval() calls', () => {
+    const source = 'result = eval("1+1")\neval(input())\n';
+    const matches = searchFile('test.py', source, PRESETS['py-eval-call'], null, 100);
+    expect(matches.length).toBe(2);
+  });
+
+  it('py-star-import: finds wildcard imports', () => {
+    const source = 'from os import *\nimport sys\n';
+    const matches = searchFile('test.py', source, PRESETS['py-star-import'], null, 100);
+    expect(matches.length).toBe(1);
+  });
+
+  it('py-assert: finds assert statements', () => {
+    const source = 'assert x > 0\nassert True\ny = 1\n';
+    const matches = searchFile('test.py', source, PRESETS['py-assert'], null, 100);
+    expect(matches.length).toBe(2);
+  });
+
+  it('py-mutable-default: finds mutable default arguments', () => {
+    const source = 'def foo(a=[]):\n    pass\ndef bar(a={}):\n    pass\ndef ok(a=None):\n    pass\n';
+    const matches = searchFile('test.py', source, PRESETS['py-mutable-default'], null, 100);
+    expect(matches.length).toBe(2);
+  });
+
+  it('py-todo-fixme: finds TODO/FIXME comments', () => {
+    const source = '# TODO: fix this\nx = 1\n# FIXME: broken\n';
+    const matches = searchFile('test.py', source, PRESETS['py-todo-fixme'], null, 100);
+    expect(matches.length).toBe(2);
+  });
+
+  it('py-print-call: finds print() calls', () => {
+    const source = 'print("hello")\nprint(1, 2)\nx = 1\n';
+    const matches = searchFile('test.py', source, PRESETS['py-print-call'], null, 100);
+    expect(matches.length).toBe(2);
+  });
+
+  it('py-class: finds class definitions', () => {
+    const source = 'class Foo:\n    pass\nclass Bar(Foo):\n    pass\n';
+    const matches = searchFile('test.py', source, PRESETS['py-class'], null, 100);
+    expect(matches.length).toBe(2);
+  });
+
+  it('py-async-function: finds async function definitions', () => {
+    const source = 'async def foo():\n    await bar()\ndef normal():\n    pass\n';
+    const matches = searchFile('test.py', source, PRESETS['py-async-function'], null, 100);
+    expect(matches.length).toBe(1);
+  });
+});
+
+describe('Python file collection', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ast-py-collect-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('collects .py files alongside .ts files', () => {
+    fs.writeFileSync(path.join(tmpDir, 'a.ts'), '', 'utf8');
+    fs.writeFileSync(path.join(tmpDir, 'b.py'), '', 'utf8');
+    fs.writeFileSync(path.join(tmpDir, 'c.txt'), '', 'utf8');
+    const files = collectSearchFiles(tmpDir, { includeTests: false, ignoreDirs: new Set() });
+    expect(files).toHaveLength(2);
+    expect(files.some(f => f.endsWith('.ts'))).toBe(true);
+    expect(files.some(f => f.endsWith('.py'))).toBe(true);
+  });
+
+  it('excludes Python test files by default', () => {
+    fs.writeFileSync(path.join(tmpDir, 'main.py'), '', 'utf8');
+    fs.writeFileSync(path.join(tmpDir, 'test_main.py'), '', 'utf8');
+    fs.writeFileSync(path.join(tmpDir, 'main_test.py'), '', 'utf8');
+    const files = collectSearchFiles(tmpDir, { includeTests: false, ignoreDirs: new Set() });
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/main\.py$/);
+  });
+
+  it('includes Python test files when flag is set', () => {
+    fs.writeFileSync(path.join(tmpDir, 'main.py'), '', 'utf8');
+    fs.writeFileSync(path.join(tmpDir, 'test_main.py'), '', 'utf8');
+    const files = collectSearchFiles(tmpDir, { includeTests: true, ignoreDirs: new Set() });
+    expect(files).toHaveLength(2);
+  });
+});
+
+describe('Python searchFile integration', () => {
+  beforeAll(async () => {
+    await ensurePythonRegistered();
+  });
+
+  it('finds pattern matches in Python source', () => {
+    const source = 'def greet(name):\n    print("Hello", name)\n    print("Done")\n';
+    const matches = searchFile('test.py', source, { rule: { kind: 'call', has: { kind: 'identifier', regex: '^print$' } } }, null, 100);
+    expect(matches.length).toBe(2);
+    expect(matches[0].lineStart).toBeGreaterThan(0);
+    expect(matches[0].file).toBe('test.py');
+  });
+
+  it('finds kind matches in Python', () => {
+    const source = 'def foo():\n    return 1\ndef bar():\n    return 2\nx = 1\n';
+    const matches = searchFile('test.py', source, { rule: { kind: 'function_definition' } }, null, 100);
+    expect(matches.length).toBe(2);
+    expect(matches.every(m => m.kind === 'function_definition')).toBe(true);
+  });
+
+  it('respects limit for Python files', () => {
+    const source = 'print(1)\nprint(2)\nprint(3)\nprint(4)\nprint(5)\n';
+    const matches = searchFile('test.py', source, { rule: { kind: 'call', has: { kind: 'identifier', regex: '^print$' } } }, null, 3);
+    expect(matches.length).toBe(3);
+  });
+
+  it('returns empty array when no matches in Python', () => {
+    const source = 'x = 1\n';
+    const matches = searchFile('test.py', source, { rule: { kind: 'call', has: { kind: 'identifier', regex: '^print$' } } }, null, 100);
+    expect(matches.length).toBe(0);
+  });
+});
+
+describe('Python runSearch integration', () => {
+  let tmpDir: string;
+
+  beforeAll(async () => {
+    await ensurePythonRegistered();
+  });
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ast-py-search-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function defaultOpts(overrides: Partial<AstSearchOptions> = {}): AstSearchOptions {
+    return {
+      root: tmpDir,
+      pattern: null,
+      kind: null,
+      preset: null,
+      rule: null,
+      json: false,
+      limit: 500,
+      includeTests: false,
+      ignoreDirs: new Set(['.git', 'node_modules', 'dist']),
+      context: 0,
+      ...overrides,
+    };
+  }
+
+  it('searches Python files with preset', () => {
+    const f1 = path.join(tmpDir, 'main.py');
+    fs.writeFileSync(f1, 'try:\n    x = 1\nexcept:\n    pass\n', 'utf8');
+    const opts = defaultOpts({ preset: 'py-bare-except' });
+    const result = runSearch([f1], opts, tmpDir);
+    expect(result.totalMatches).toBeGreaterThanOrEqual(1);
+    expect(result.queryType).toBe('preset');
+  });
+
+  it('searches mixed Python and TypeScript files', () => {
+    const f1 = path.join(tmpDir, 'a.ts');
+    fs.writeFileSync(f1, 'console.log("hello");\n', 'utf8');
+    const f2 = path.join(tmpDir, 'b.py');
+    fs.writeFileSync(f2, '# TODO: fix\n', 'utf8');
+    const opts = defaultOpts({ preset: 'todo-fixme' });
+    const result = runSearch([f1, f2], opts, tmpDir);
+    expect(result.totalMatches).toBeGreaterThanOrEqual(1);
   });
 });
