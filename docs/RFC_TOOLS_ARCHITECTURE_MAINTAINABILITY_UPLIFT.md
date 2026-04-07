@@ -85,6 +85,7 @@ flowchart LR
      - `toolFilters.ts` (enable/disable/toolsToRun logic)
      - `metadataPolicy.ts` (metadata existence and error-code behavior)
      - `registrationExecutor.ts` (parallel registration and result aggregation)
+     - `toolRegistry.ts` (dynamic tool management — `enable()`/`disable()`/`remove()`)
 
 2. **Introduce metadata gateway abstraction**
    - Current coupling hotspot: direct proxy usage (`TOOL_NAMES`, `DESCRIPTIONS`, metadata checks) in registration/config paths.
@@ -234,7 +235,8 @@ Every reference below directly supports either the current-state diagnosis or th
 - [packages/octocode-mcp/src/tools/local_fetch_content/fetchContent.ts#L36](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/src/tools/local_fetch_content/fetchContent.ts#L36) - High-complexity flow in maintainability hotspot.
 - [packages/octocode-mcp/src/tools/local_view_structure/structureWalker.ts#L22](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/src/tools/local_view_structure/structureWalker.ts#L22) - Excessive parameter signature; supports parameter-object refactor.
 - [packages/octocode-mcp/src/tools/lsp_call_hierarchy/callHierarchyPatterns.ts#L198](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/src/tools/lsp_call_hierarchy/callHierarchyPatterns.ts#L198) - High-parameter/high-complexity fallback path.
-- [packages/octocode-mcp/tests/tools/toolsManager.di.test.ts#L49](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/tests/tools/toolsManager.di.test.ts#L49) - Existing DI seam tests that validate direction.
+- [packages/octocode-mcp/src/tools/toolRegistry.ts](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/src/tools/toolRegistry.ts) - Dynamic tool registry (`enable`/`disable`/`remove`).
+- [packages/octocode-mcp/tests/tools/toolsManager.di.test.ts#L49](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/tests/tools/toolsManager.di.test.ts#L49) - DI seam tests.
 - [packages/octocode-mcp/tests/tools/lsp_call_hierarchy.patterns.test.ts#L9](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/tests/tools/lsp_call_hierarchy.patterns.test.ts#L9) - TDD proof for parser/body extraction behavior.
 
 ### Local Scan Artifacts

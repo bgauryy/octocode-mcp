@@ -11,12 +11,33 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { js as astJs, ts as astTs, tsx as astTsx } from '@ast-grep/napi';
+import {
+  js as astJs,
+  parse as astParse,
+  registerDynamicLanguage,
+  ts as astTs,
+  tsx as astTsx,
+} from '@ast-grep/napi';
 
 import { isDirectRun } from '../common/is-direct-run.js';
-import { ALLOWED_EXTS } from '../types/index.js';
+import { ALLOWED_EXTS, isPythonFile } from '../types/index.js';
 
 import type { NapiConfig, SgNode, SgRoot } from '@ast-grep/napi';
+
+let pythonRegistered = false;
+
+async function ensurePythonRegistered(): Promise<boolean> {
+  if (pythonRegistered) return true;
+  try {
+    const langMod = await import('@ast-grep/lang-python');
+    const config = langMod.default;
+    registerDynamicLanguage({ python: config });
+    pythonRegistered = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export interface AstSearchOptions {
   root: string;
@@ -244,6 +265,108 @@ export const PRESETS: Record<string, PresetRule> = {
     },
     description: 'Variable declarations without call expressions (candidates for dead code)',
   },
+
+  // ── Python presets ──────────────────────────────────────────────
+  'py-bare-except': {
+    rule: {
+      kind: 'except_clause',
+      not: {
+        has: { kind: 'identifier' },
+      },
+    },
+    description: '[Python] Bare except: clause with no exception type',
+  },
+  'py-pass-except': {
+    rule: {
+      kind: 'except_clause',
+      has: {
+        kind: 'block',
+        has: { kind: 'pass_statement' },
+      },
+    },
+    description: '[Python] except: pass — silently swallowed exception',
+  },
+  'py-broad-except': {
+    rule: {
+      kind: 'except_clause',
+      has: {
+        kind: 'identifier',
+        regex: '^(Exception|BaseException)$',
+      },
+    },
+    description: '[Python] Overly broad except (Exception/BaseException)',
+  },
+  'py-global-stmt': {
+    rule: {
+      kind: 'global_statement',
+    },
+    description: '[Python] Global variable mutation',
+  },
+  'py-exec-call': {
+    rule: {
+      kind: 'call',
+      has: { kind: 'identifier', regex: '^exec$' },
+    },
+    description: '[Python] exec() — dynamic code execution',
+  },
+  'py-eval-call': {
+    rule: {
+      kind: 'call',
+      has: { kind: 'identifier', regex: '^eval$' },
+    },
+    description: '[Python] eval() — dynamic evaluation',
+  },
+  'py-star-import': {
+    rule: {
+      kind: 'import_from_statement',
+      has: { kind: 'wildcard_import' },
+    },
+    description: '[Python] from X import * — wildcard import',
+  },
+  'py-assert': {
+    rule: {
+      kind: 'assert_statement',
+    },
+    description: '[Python] assert statement (stripped with -O flag)',
+  },
+  'py-mutable-default': {
+    rule: {
+      kind: 'default_parameter',
+      any: [
+        { has: { kind: 'list' } },
+        { has: { kind: 'dictionary' } },
+        { has: { kind: 'set' } },
+      ],
+    },
+    description: '[Python] Mutable default argument (list/dict/set literal)',
+  },
+  'py-todo-fixme': {
+    rule: {
+      kind: 'comment',
+      regex: '(?i)(TODO|FIXME|HACK|XXX|BUG)',
+    },
+    description: '[Python] TODO, FIXME, HACK, XXX, BUG comments',
+  },
+  'py-print-call': {
+    rule: {
+      kind: 'call',
+      has: { kind: 'identifier', regex: '^print$' },
+    },
+    description: '[Python] print() calls in production code',
+  },
+  'py-class': {
+    rule: {
+      kind: 'class_definition',
+    },
+    description: '[Python] All class definitions',
+  },
+  'py-async-function': {
+    rule: {
+      kind: 'function_definition',
+      regex: '^async ',
+    },
+    description: '[Python] Async function definitions',
+  },
 };
 
 function isTestFile(filePath: string): boolean {
@@ -251,7 +374,10 @@ function isTestFile(filePath: string): boolean {
   return (
     /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/.test(base) ||
     base.startsWith('test_') ||
-    filePath.includes('__tests__')
+    /^test_.*\.py$/.test(base) ||
+    /_test\.py$/.test(base) ||
+    filePath.includes('__tests__') ||
+    filePath.includes('/tests/')
   );
 }
 
@@ -290,8 +416,10 @@ export function collectSearchFiles(
 
 type AstParser = { parse(src: string): SgRoot };
 
-function parserForExt(ext: string): AstParser {
+function parserForExt(ext: string): AstParser | 'python' {
   switch (ext) {
+    case '.py':
+      return 'python';
     case '.tsx':
       return astTsx;
     case '.jsx':
@@ -368,7 +496,10 @@ export function searchFile(
   const parser = parserForExt(ext);
   let nodes: SgNode[];
   try {
-    const root = parser.parse(source).root();
+    const root =
+      parser === 'python'
+        ? astParse('python', source).root()
+        : parser.parse(source).root();
     nodes = root.findAll(matcher);
   } catch {
     return [];
@@ -674,7 +805,7 @@ async function main(): Promise<void> {
     } else {
       console.log('\nAvailable presets:\n');
       for (const [name, preset] of Object.entries(PRESETS)) {
-        console.log(`  ${name.padEnd(22)} ${preset.description}`);
+        console.log(`  ${name.padEnd(26)} ${preset.description}`);
       }
       console.log('');
     }
@@ -694,6 +825,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const hasPython = files.some(f => isPythonFile(path.extname(f)));
+  if (hasPython) {
+    await ensurePythonRegistered();
+  }
+
   const result = runSearch(files, opts, opts.root);
 
   if (opts.json) {
@@ -702,6 +838,8 @@ async function main(): Promise<void> {
     console.log(formatTextOutput(result, opts, opts.root));
   }
 }
+
+export { ensurePythonRegistered };
 
 if (isDirectRun(import.meta.url)) {
   main().catch((error: unknown) => {

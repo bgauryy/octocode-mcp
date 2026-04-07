@@ -59,7 +59,7 @@ import {
 import { diverseTopRecommendations } from '../reporting/summary-md.js';
 import { generateMermaidGraph, writeMultiFileReport } from '../reporting/writer.js';
 import type { GraphRenderOptions } from '../reporting/writer.js';
-import { PILLAR_CATEGORIES, SEMANTIC_CATEGORIES } from '../types/index.js';
+import { EMPTY_DEPENDENCY_PROFILE, isPythonFile, PILLAR_CATEGORIES, SEMANTIC_CATEGORIES } from '../types/index.js';
 
 import type { SemanticProfile } from '../analysis/semantic.js';
 import type {
@@ -612,6 +612,95 @@ function collectFileData(state: ScanState): void {
       }
 
       const ext = path.extname(filePath);
+
+      if (isPythonFile(ext)) {
+        if (!analysisFileSet.has(filePath)) continue;
+        const relPath = path.relative(options.root, filePath);
+        const stat = fs.statSync(filePath);
+        const statKey = { mtimeMs: stat.mtimeMs, size: stat.size };
+
+        if (cache && isCacheHit(cache, relPath, statKey)) {
+          const raw = getCachedResult(cache, relPath) as CachedResult | undefined;
+          if (raw?.fileEntry) {
+            for (const [key, entries] of raw.flowMapEntries ?? [])
+              for (const entry of entries) increment(flowMap, key, entry);
+            for (const [key, entries] of raw.controlMapEntries ?? [])
+              for (const entry of entries) increment(controlMap, key, entry);
+            const fileSummary: FileEntry = { ...raw.fileEntry, dependencyProfile: raw.fileEntry.dependencyProfile ?? { ...EMPTY_DEPENDENCY_PROFILE } };
+            packageStats.fileCount += 1;
+            packageStats.nodeCount += fileSummary.nodeCount;
+            packageStats.functionCount += fileSummary.functions.length;
+            packageStats.flowCount += fileSummary.flows.length;
+            for (const [k, count] of Object.entries(fileSummary.kindCounts))
+              packageStats.kindCounts[k] = (packageStats.kindCounts[k] || 0) + count;
+            for (const fn of fileSummary.functions) packageStats.functions.push(fn);
+            if (raw.treeEntry) trees.push(raw.treeEntry);
+            summary.totalFiles += 1;
+            summary.totalNodes += fileSummary.nodeCount;
+            summary.totalFunctions += fileSummary.functions.length;
+            summary.totalFlows += fileSummary.flows.length;
+            fileSummaries.push(fileSummary);
+            setCacheEntry(newCache, relPath, statKey, raw);
+            state.cacheHits++;
+            continue;
+          }
+        }
+
+        try {
+          const fileFlowMap = new Map<string, FlowMapEntry[]>();
+          const fileControlMap = new Map<string, ControlMapEntry[]>();
+          const treeSitterEntry = useTreeSitter
+            ? analyzeTreeSitterFile(filePath, text, options, pkg.name, { flowMap: fileFlowMap, controlMap: fileControlMap })
+            : null;
+
+          if (treeSitterEntry) {
+            const fileSummary: FileEntry = {
+              package: pkg.name,
+              file: relPath,
+              parseEngine: 'tree-sitter',
+              nodeCount: treeSitterEntry.nodeCount,
+              kindCounts: {},
+              functions: treeSitterEntry.functions,
+              flows: treeSitterEntry.flows,
+              dependencyProfile: { ...EMPTY_DEPENDENCY_PROFILE },
+            };
+            if (treeSitterEntry.tree && options.emitTree) {
+              trees.push({ package: pkg.name, file: relPath, tree: treeSitterEntry.tree });
+            }
+            packageStats.fileCount += 1;
+            packageStats.nodeCount += treeSitterEntry.nodeCount;
+            packageStats.functionCount += treeSitterEntry.functions.length;
+            packageStats.flowCount += treeSitterEntry.flows.length;
+            for (const fn of treeSitterEntry.functions) packageStats.functions.push(fn);
+
+            for (const [key, entries] of fileFlowMap)
+              for (const entry of entries) increment(flowMap, key, entry);
+            for (const [key, entries] of fileControlMap)
+              for (const entry of entries) increment(controlMap, key, entry);
+
+            const toCache: CachedResult = {
+              fileEntry: fileSummary,
+              flowMapEntries: [...fileFlowMap.entries()],
+              controlMapEntries: [...fileControlMap.entries()],
+              ...(treeSitterEntry.tree && options.emitTree && { treeEntry: { package: pkg.name, file: relPath, tree: treeSitterEntry.tree } }),
+            };
+            setCacheEntry(newCache, relPath, statKey, toCache);
+
+            summary.totalFiles += 1;
+            summary.totalNodes += treeSitterEntry.nodeCount;
+            summary.totalFunctions += treeSitterEntry.functions.length;
+            summary.totalFlows += treeSitterEntry.flows.length;
+            fileSummaries.push(fileSummary);
+          }
+        } catch (error: unknown) {
+          parseErrors.push({
+            file: path.relative(options.root, filePath),
+            message: String((error as Error)?.message || error),
+          });
+        }
+        continue;
+      }
+
       const source = ts.createSourceFile(
         filePath,
         text,

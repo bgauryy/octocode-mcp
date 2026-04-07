@@ -37,8 +37,10 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@ast-grep/lang-python": "^0.0.6",
     "@ast-grep/napi": "^0.42.0",
     "tree-sitter": "^0.25.0",
+    "tree-sitter-python": "^0.23.6",
     "tree-sitter-typescript": "^0.23.2"
   },
   "devDependencies": {

@@ -110,6 +110,8 @@ node <SKILL_DIR>/scripts/ast/search.js --preset any-type --json --root src/
 
 All presets (run `--list-presets` to verify against your version):
 
+### JavaScript / TypeScript presets
+
 | Preset | Detects |
 |--------|---------|
 | `empty-catch` | Empty catch blocks that silently swallow errors |
@@ -135,6 +137,26 @@ All presets (run `--list-presets` to verify against your version):
 | `deep-callback` | Deeply nested arrow function callbacks (3+ levels) |
 | `unused-var` | Variable declarations without call expressions (dead code candidates) |
 
+### Python presets
+
+All Python presets are prefixed with `py-` to avoid collision with JS/TS presets.
+
+| Preset | Detects |
+|--------|---------|
+| `py-bare-except` | `except:` clause with no exception type |
+| `py-pass-except` | `except: pass` — silently swallowed exception |
+| `py-broad-except` | Overly broad `except Exception` / `except BaseException` |
+| `py-global-stmt` | `global` variable mutation |
+| `py-exec-call` | `exec()` — dynamic code execution |
+| `py-eval-call` | `eval()` — dynamic evaluation |
+| `py-star-import` | `from X import *` — wildcard import |
+| `py-assert` | `assert` statements (stripped with `-O` flag) |
+| `py-mutable-default` | Mutable default arguments (list/dict/set literal) |
+| `py-todo-fixme` | TODO, FIXME, HACK, XXX, BUG comments |
+| `py-print-call` | `print()` calls in production code |
+| `py-class` | All class definitions |
+| `py-async-function` | Async function definitions |
+
 ---
 
 ## TypeScript pattern matching — best practices
@@ -153,6 +175,26 @@ Pattern mode (`-p`) matches the full AST structure. In TypeScript, type annotati
 | Structural smells | `--preset empty-catch` etc. | Presets are TS-aware by design |
 
 **Rule of thumb:** Use `--kind` or `--preset` for declarations (functions, classes, exports, imports). Use `-p` pattern for call expressions, assignments, and code shapes where type annotations are not involved.
+
+---
+
+## Python pattern matching — best practices
+
+Python uses different tree-sitter node kinds than TypeScript. Key differences:
+
+| Concept | TypeScript kind | Python kind |
+|---------|----------------|-------------|
+| Function | `function_declaration` | `function_definition` |
+| Class | `class_declaration` | `class_definition` |
+| Try/catch | `catch_clause` | `except_clause` |
+| Import | `import_statement` | `import_statement` / `import_from_statement` |
+| Arrow / lambda | `arrow_function` | `lambda` |
+| Block body | `statement_block` | `block` |
+| Call | `call_expression` | `call` |
+
+**Note:** Python patterns in ast-grep use `µ` (micro sign) as the metavariable character instead of `$` because `$` is not valid in Python identifiers. When using `--preset` or `--rule`, this is handled automatically. When using `-p` pattern mode, use `µNAME` for single captures and `µµµNAME` for variadic.
+
+**Rule of thumb for Python:** Prefer `--kind` and `--preset` (the `py-*` presets) over raw pattern mode. Kind queries work identically across languages.
 
 ---
 
