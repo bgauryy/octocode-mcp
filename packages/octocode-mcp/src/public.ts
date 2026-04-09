@@ -21,7 +21,25 @@ export * from './public/server.js';
 // Tool execution functions and security
 export * from './public/tools.js';
 
-// Zod schemas — import directly from @octocodeai/octocode-core
+// Zod schemas (re-exported from @octocodeai/octocode-core for convenience)
+export {
+  GitHubCodeSearchQuerySchema,
+  GitHubViewRepoStructureQuerySchema,
+  GitHubReposSearchSingleQuerySchema,
+  GitHubPullRequestSearchQuerySchema,
+  FileContentQuerySchema,
+  RipgrepQuerySchema,
+  FetchContentQuerySchema,
+  FindFilesQuerySchema,
+  ViewStructureQuerySchema,
+  LSPGotoDefinitionQuerySchema,
+  LSPFindReferencesQuerySchema,
+  LSPCallHierarchyQuerySchema,
+  PackageSearchQuerySchema,
+} from '@octocodeai/octocode-core';
+
+// Tool metadata loading
+export { loadToolContent } from './tools/toolMetadata/state.js';
 
 // Response formatting
 export * from './public/responses.js';
