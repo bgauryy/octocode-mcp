@@ -170,7 +170,12 @@ describe('Local Tools Execution', () => {
         await import('../../src/utils/response/bulk.js');
 
       const queries = [
-        { id: 'test', researchGoal: 'Test', reasoning: 'Schema validation', path: '/test' },
+        {
+          id: 'test',
+          researchGoal: 'Test',
+          reasoning: 'Schema validation',
+          path: '/test',
+        },
       ];
       await executeFindFiles({ queries: queries as any });
 
@@ -190,7 +195,12 @@ describe('Local Tools Execution', () => {
         await import('../../src/tools/local_find_files/findFiles.js');
 
       const queries = [
-        { id: 'test', researchGoal: 'Test', reasoning: 'Schema validation', path: '/test' },
+        {
+          id: 'test',
+          researchGoal: 'Test',
+          reasoning: 'Schema validation',
+          path: '/test',
+        },
       ];
       await executeFindFiles({ queries: queries as any });
 
@@ -335,7 +345,12 @@ describe('Local Tools Execution', () => {
         await import('../../src/utils/response/bulk.js');
 
       const queries = [
-        { id: 'test', researchGoal: 'Test', reasoning: 'Schema validation', path: '/test' },
+        {
+          id: 'test',
+          researchGoal: 'Test',
+          reasoning: 'Schema validation',
+          path: '/test',
+        },
       ];
       await executeViewStructure({ queries: queries as any });
 
@@ -355,7 +370,12 @@ describe('Local Tools Execution', () => {
         await import('../../src/tools/local_view_structure/local_view_structure.js');
 
       const queries = [
-        { id: 'test', researchGoal: 'Test', reasoning: 'Schema validation', path: '/test' },
+        {
+          id: 'test',
+          researchGoal: 'Test',
+          reasoning: 'Schema validation',
+          path: '/test',
+        },
       ];
       await executeViewStructure({ queries: queries as any });
 

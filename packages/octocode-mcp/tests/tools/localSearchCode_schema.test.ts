@@ -954,7 +954,6 @@ describe('localSearchCode Schema Tests - All Schema Parameters', () => {
       });
       expect(query.debug).toBe(true);
     });
-
   });
 
   /**
