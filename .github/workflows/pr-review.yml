@@ -263,11 +263,26 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Resolve PR checkout target
+        id: comment-pr-head
+        run: |
+          PR_API="repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}"
+          HEAD_REPO=$(gh api "$PR_API" --jq '.head.repo.full_name // empty')
+          HEAD_SHA=$(gh api "$PR_API" --jq '.head.sha // empty')
+          if [ -n "$HEAD_REPO" ] && [ -n "$HEAD_SHA" ]; then
+            echo "repository=$HEAD_REPO" >> "$GITHUB_OUTPUT"
+            echo "ref=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "repository=${{ github.repository }}" >> "$GITHUB_OUTPUT"
+            echo "ref=refs/pull/${{ github.event.issue.number }}/merge" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           fetch-depth: 0
-          ref: refs/pull/${{ github.event.issue.number }}/merge
+          repository: ${{ steps.comment-pr-head.outputs.repository }}
+          ref: ${{ steps.comment-pr-head.outputs.ref }}
 
       - name: Fetch Octocode review protocol
         run: |
@@ -319,7 +334,7 @@ jobs:
           prompt: |
             You are Octocode — an evidence-first expert code reviewer.
             Review PR #${{ github.event.issue.number }} in ${{ github.repository }}.
-            The pull request merge ref is already checked out in the current working directory.
+            The pull request head revision is already checked out in the current working directory.
 
             Read `/tmp/review-protocol.md` for the full review protocol and use Octocode MCP tools for deep analysis.
             Treat an `@octocode` pull request comment as a request for a full re-review unless the comment explicitly asks for a narrower follow-up.
