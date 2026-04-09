@@ -2,7 +2,7 @@ name: AI PR Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
   issue_comment:
     types: [created]
@@ -30,19 +30,28 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           fetch-depth: 0
 
       - name: Fetch Octocode review protocol
         run: |
           BASE="https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/skills/octocode-pull-request-reviewer"
-          FILES="SKILL.md references/flow-analysis-protocol.md references/review-guidelines.md references/domain-reviewers.md references/output-template.md references/verification-checklist.md"
+          FILES="SKILL.md references/dependency-check.md references/flow-analysis-protocol.md references/review-guidelines.md references/domain-reviewers.md references/execution-lifecycle.md references/parallel-agent-protocol.md references/output-template.md references/verification-checklist.md"
           > /tmp/review-protocol.md
+          FAIL=0
           for f in $FILES; do
             printf '\n---\n# SOURCE: %s\n---\n' "$f" >> /tmp/review-protocol.md
-            curl -fsSL "$BASE/$f" >> /tmp/review-protocol.md 2>/dev/null || true
+            if ! curl -fsSL "$BASE/$f" >> /tmp/review-protocol.md; then
+              echo "WARNING: Failed to fetch $f"
+              FAIL=$((FAIL + 1))
+            fi
           done
+          TOTAL=$(echo $FILES | wc -w)
+          if [ "$FAIL" -ge "$TOTAL" ]; then
+            echo "ERROR: All $TOTAL protocol downloads failed"
+            exit 1
+          fi
 
       - name: Write MCP config
         run: |
@@ -51,7 +60,7 @@ jobs:
             "mcpServers": {
               "octocode": {
                 "command": "npx",
-                "args": ["-y", "octocode-mcp@latest"],
+                "args": ["-y", "octocode-mcp@14.0.1"],
                 "env": {
                   "GITHUB_TOKEN": "${{ github.token }}",
                   "ENABLE_LOCAL": "true"
@@ -61,14 +70,21 @@ jobs:
           }
           EOF
 
+      - name: Snapshot existing Octocode reviews
+        id: review-count-before
+        run: |
+          COUNT=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
+            --jq '[.[] | select(.user.login == "github-actions[bot]" and .state != "DISMISSED")] | length')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
       - name: Run Octocode PR Review
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@657fb7c9c986158a19624b357bcbc8c6deb83598  # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ github.token }}
           prompt: |
             You are Octocode — an evidence-first expert code reviewer.
             Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+            The pull request merge ref is already checked out in the current working directory.
 
             ## Step 1: Load Review Protocol (REQUIRED)
 
@@ -127,9 +143,13 @@ jobs:
             - Flag still-open previous review comments as unresolved
             - Keep only HIGH/MED confidence findings with actionable code fixes
             - Cap at ~7 most impactful issues, ordered by severity
+            - Use `mcp__github_inline_comment__create_inline_comment` with `confirmed: true`
+              for the strongest line-specific findings
             - Each finding: `file:line`, confidence (HIGH/MED), problem, diff-format fix
 
             ### Phase 6 — Submit Review
+            For line-specific issues, prefer inline review comments and avoid duplicating the same
+            wording in the final summary.
             Write the review body to `/tmp/review-body.md`, then submit with exactly ONE of:
             - `gh pr review ${{ github.event.pull_request.number }} --approve -F /tmp/review-body.md`
             - `gh pr review ${{ github.event.pull_request.number }} --request-changes -F /tmp/review-body.md`
@@ -191,15 +211,40 @@ jobs:
             - Every finding MUST cite a specific file:line.
             - ALWAYS use `localSearchCode` BEFORE any LSP tool to obtain lineHint.
             - Check existing PR comments FIRST — avoid duplicates, flag unresolved ones.
+            - For high-confidence line-specific issues, prefer
+              `mcp__github_inline_comment__create_inline_comment` with `confirmed: true`.
             - Be concise. Evidence over opinion. No filler.
             - Submit exactly one `gh pr review` verdict. Do NOT use `gh pr comment`.
           claude_args: |
             --max-turns 25
             --mcp-config /tmp/mcp-config.json
-            --allowedTools "mcp__octocode__localSearchCode,mcp__octocode__localGetFileContent,mcp__octocode__localViewStructure,mcp__octocode__localFindFiles,mcp__octocode__lspGotoDefinition,mcp__octocode__lspFindReferences,mcp__octocode__lspCallHierarchy,mcp__octocode__githubSearchPullRequests,mcp__octocode__githubGetFileContent,mcp__octocode__githubSearchCode,mcp__octocode__githubViewRepoStructure,mcp__octocode__packageSearch,Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Read,Write,Glob"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,mcp__octocode__localSearchCode,mcp__octocode__localGetFileContent,mcp__octocode__localViewStructure,mcp__octocode__localFindFiles,mcp__octocode__lspGotoDefinition,mcp__octocode__lspFindReferences,mcp__octocode__lspCallHierarchy,mcp__octocode__githubSearchPullRequests,mcp__octocode__githubGetFileContent,mcp__octocode__githubSearchCode,mcp__octocode__githubViewRepoStructure,mcp__octocode__packageSearch,Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Read,Write,Glob"
         env:
           MCP_TIMEOUT: "90000"
           MCP_TOOL_TIMEOUT: "45000"
+
+      - name: Check review verdict
+        run: |
+          COUNT_BEFORE="${{ steps.review-count-before.outputs.count }}"
+          COUNT_AFTER=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
+            --jq '[.[] | select(.user.login == "github-actions[bot]" and .state != "DISMISSED")] | length')
+          VERDICT=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
+            --jq '([.[] | select(.user.login == "github-actions[bot]" and .state != "DISMISSED")] | last | .state) // "NONE"')
+          echo "Review count before: $COUNT_BEFORE"
+          echo "Review count after: $COUNT_AFTER"
+          echo "Review verdict: $VERDICT"
+          if [ "$COUNT_AFTER" -le "$COUNT_BEFORE" ]; then
+            echo "::error::Octocode did not submit a fresh review"
+            exit 1
+          fi
+          if [ "$VERDICT" = "NONE" ]; then
+            echo "::error::Octocode review verdict is missing"
+            exit 1
+          fi
+          if [ "$VERDICT" = "CHANGES_REQUESTED" ]; then
+            echo "::error::Octocode requested changes — see review comments"
+            exit 1
+          fi
 
   # Job 2: Interactive review on @octocode comment (interactive mode)
   comment-review:
@@ -210,24 +255,35 @@ jobs:
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
       contains(github.event.comment.body, '@octocode') &&
+      !contains(github.event.comment.body, '@octocode dismiss') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           fetch-depth: 0
+          ref: refs/pull/${{ github.event.issue.number }}/merge
 
       - name: Fetch Octocode review protocol
         run: |
           BASE="https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/skills/octocode-pull-request-reviewer"
-          FILES="SKILL.md references/flow-analysis-protocol.md references/review-guidelines.md references/domain-reviewers.md references/output-template.md references/verification-checklist.md"
+          FILES="SKILL.md references/dependency-check.md references/flow-analysis-protocol.md references/review-guidelines.md references/domain-reviewers.md references/execution-lifecycle.md references/parallel-agent-protocol.md references/output-template.md references/verification-checklist.md"
           > /tmp/review-protocol.md
+          FAIL=0
           for f in $FILES; do
             printf '\n---\n# SOURCE: %s\n---\n' "$f" >> /tmp/review-protocol.md
-            curl -fsSL "$BASE/$f" >> /tmp/review-protocol.md 2>/dev/null || true
+            if ! curl -fsSL "$BASE/$f" >> /tmp/review-protocol.md; then
+              echo "WARNING: Failed to fetch $f"
+              FAIL=$((FAIL + 1))
+            fi
           done
+          TOTAL=$(echo $FILES | wc -w)
+          if [ "$FAIL" -ge "$TOTAL" ]; then
+            echo "ERROR: All $TOTAL protocol downloads failed"
+            exit 1
+          fi
 
       - name: Write MCP config
         run: |
@@ -236,7 +292,7 @@ jobs:
             "mcpServers": {
               "octocode": {
                 "command": "npx",
-                "args": ["-y", "octocode-mcp@latest"],
+                "args": ["-y", "octocode-mcp@14.0.1"],
                 "env": {
                   "GITHUB_TOKEN": "${{ github.token }}",
                   "ENABLE_LOCAL": "true"
@@ -246,25 +302,89 @@ jobs:
           }
           EOF
 
+      - name: Snapshot existing Octocode reviews
+        id: comment-review-count-before
+        run: |
+          PR=${{ github.event.issue.number }}
+          COUNT=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" \
+            --jq '[.[] | select(.user.login == "github-actions[bot]" and .state != "DISMISSED")] | length')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
       - name: Run Octocode Interactive Review
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@657fb7c9c986158a19624b357bcbc8c6deb83598  # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github_token: ${{ github.token }}
           trigger_phrase: "@octocode"
           prompt: |
             You are Octocode — an evidence-first expert code reviewer.
             Review PR #${{ github.event.issue.number }} in ${{ github.repository }}.
+            The pull request merge ref is already checked out in the current working directory.
 
             Read `/tmp/review-protocol.md` for the full review protocol and use Octocode MCP tools for deep analysis.
             Treat an `@octocode` pull request comment as a request for a full re-review unless the comment explicitly asks for a narrower follow-up.
-            Analyze the current PR diff and changed code, avoid duplicating existing comments, and submit exactly one final verdict with `gh pr review`.
-            Do not use `gh pr comment` for the final review.
+            Analyze the current PR diff and changed code, avoid duplicating existing comments, and use
+            `mcp__github_inline_comment__create_inline_comment` with `confirmed: true` for the strongest
+            line-specific findings.
+            Submit exactly one final verdict with `gh pr review`, and do not use `gh pr comment` for the
+            final summary.
           claude_args: |
             --max-turns 25
             --mcp-config /tmp/mcp-config.json
-            --system-prompt "You are Octocode — an evidence-first expert code reviewer. Read /tmp/review-protocol.md for your full review protocol. Use Octocode MCP tools (localSearchCode, lspCallHierarchy, lspFindReferences, githubSearchPullRequests, etc.) for deep analysis. Always use localSearchCode before LSP tools to get lineHint. Submit reviews via gh pr review, not gh pr comment."
-            --allowedTools "mcp__octocode__localSearchCode,mcp__octocode__localGetFileContent,mcp__octocode__localViewStructure,mcp__octocode__localFindFiles,mcp__octocode__lspGotoDefinition,mcp__octocode__lspFindReferences,mcp__octocode__lspCallHierarchy,mcp__octocode__githubSearchPullRequests,mcp__octocode__githubGetFileContent,mcp__octocode__githubSearchCode,mcp__octocode__githubViewRepoStructure,mcp__octocode__packageSearch,Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Read,Write,Glob"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,mcp__octocode__localSearchCode,mcp__octocode__localGetFileContent,mcp__octocode__localViewStructure,mcp__octocode__localFindFiles,mcp__octocode__lspGotoDefinition,mcp__octocode__lspFindReferences,mcp__octocode__lspCallHierarchy,mcp__octocode__githubSearchPullRequests,mcp__octocode__githubGetFileContent,mcp__octocode__githubSearchCode,mcp__octocode__githubViewRepoStructure,mcp__octocode__packageSearch,Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Read,Write,Glob"
         env:
           MCP_TIMEOUT: "90000"
           MCP_TOOL_TIMEOUT: "45000"
+
+      - name: Check review verdict
+        run: |
+          PR=${{ github.event.issue.number }}
+          COUNT_BEFORE="${{ steps.comment-review-count-before.outputs.count }}"
+          COUNT_AFTER=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" \
+            --jq '[.[] | select(.user.login == "github-actions[bot]" and .state != "DISMISSED")] | length')
+          VERDICT=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" \
+            --jq '([.[] | select(.user.login == "github-actions[bot]" and .state != "DISMISSED")] | last | .state) // "NONE"')
+          echo "Review count before: $COUNT_BEFORE"
+          echo "Review count after: $COUNT_AFTER"
+          echo "Review verdict: $VERDICT"
+          if [ "$COUNT_AFTER" -le "$COUNT_BEFORE" ]; then
+            echo "::error::Octocode did not submit a fresh review"
+            exit 1
+          fi
+          if [ "$VERDICT" = "NONE" ]; then
+            echo "::error::Octocode review verdict is missing"
+            exit 1
+          fi
+          if [ "$VERDICT" = "CHANGES_REQUESTED" ]; then
+            echo "::error::Octocode requested changes — see review comments"
+            exit 1
+          fi
+
+  # Job 3: Dismiss review on @octocode dismiss comment
+  dismiss-review:
+    name: Dismiss Octocode Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@octocode dismiss') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Dismiss latest Octocode review
+        run: |
+          PR=${{ github.event.issue.number }}
+          REVIEW_ID=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" \
+            --jq '[.[] | select(.user.login == "github-actions[bot]" and .state != "DISMISSED")] | last | .id')
+          if [ -n "$REVIEW_ID" ] && [ "$REVIEW_ID" != "null" ]; then
+            gh api "repos/${{ github.repository }}/pulls/${PR}/reviews/${REVIEW_ID}/dismissals" \
+              -X PUT -f message="Dismissed by ${{ github.event.comment.user.login }} via @octocode dismiss"
+            gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+              -f content="+1"
+            echo "Dismissed review $REVIEW_ID"
+          else
+            echo "No active Octocode review found to dismiss"
+            gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+              -f content="confused"
+          fi

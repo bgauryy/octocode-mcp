@@ -7,7 +7,7 @@ This directory contains the active CI/CD workflows for the Octocode monorepo.
 | Workflow | Trigger | Purpose |
 |---|---|---|
 | `ci.yml` | Pull requests | Repo health, lint, typecheck, build, test |
-| `pr-review.yml` | Pull requests + `@claude` comments | AI code review via Claude Code + Octocode MCP |
+| `pr-review.yml` | Pull requests + `@octocode` comments | AI code review via Claude Code + Octocode MCP |
 | `releases.yml` | GitHub Release published or manual dispatch | Build and upload `octocode-mcp` binaries |
 
 ## CI (`ci.yml`)
@@ -68,8 +68,19 @@ Runs an automated code review on every PR using [Claude Code Action](https://git
 |---|---|
 | PR opened / synchronized / reopened from the same repository | Automatic full review |
 | PR comment containing `@octocode` from a trusted maintainer | Re-review or respond to follow-up |
+| PR comment containing `@octocode dismiss` from a trusted maintainer | Dismiss the latest Octocode review |
 
 Fork PRs do not auto-review on `pull_request` because GitHub does not expose repository secrets to those runs. Maintainers can trigger the review on fork PRs by commenting `@octocode`.
+
+### Pass / fail enforcement
+
+After the review is posted, the workflow checks the verdict. If Octocode submitted **REQUEST_CHANGES**, the CI check fails — making it usable as a required status check in branch protection. If the review is **APPROVE** or **COMMENT**, the check passes.
+
+To make this a merge gate, go to **Settings > Branches > Branch protection rules** and add `Octocode PR Review` as a required status check.
+
+### Dismissing a review
+
+Comment `@octocode dismiss` on the PR. The workflow dismisses the latest active Octocode review and reacts with a thumbs-up. Only repository owners, members, and collaborators can dismiss.
 
 ### Review capabilities
 
