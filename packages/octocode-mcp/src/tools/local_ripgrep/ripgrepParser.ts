@@ -1,8 +1,6 @@
-import type { RipgrepQuery } from './scheme.js';
-import type {
-  RipgrepFileMatches,
-  SearchStats,
-} from '../../utils/core/types.js';
+import type { RipgrepQuery } from '@octocodeai/octocode-core';
+import type { LocalSearchCodeFile } from '@octocodeai/octocode-core';
+import type { SearchStats } from '../../utils/core/types.js';
 import {
   parseRipgrepJson,
   parseGrepOutput,
@@ -16,7 +14,7 @@ import {
  * @param stdout - Plain text output from ripgrep (one filename per line)
  * @returns Array of file matches with path only (no match details)
  */
-export function parseFilesOnlyOutput(stdout: string): RipgrepFileMatches[] {
+export function parseFilesOnlyOutput(stdout: string): LocalSearchCodeFile[] {
   const lines = stdout.trim().split('\n').filter(Boolean);
   return lines
     .filter(line => !isRipgrepStatsLine(line))
@@ -35,7 +33,7 @@ export function parseFilesOnlyOutput(stdout: string): RipgrepFileMatches[] {
  * @param stdout - Plain text output from ripgrep (path:count per line)
  * @returns Array of file matches with accurate per-file match counts
  */
-export function parseCountOutput(stdout: string): RipgrepFileMatches[] {
+export function parseCountOutput(stdout: string): LocalSearchCodeFile[] {
   const lines = stdout.trim().split('\n').filter(Boolean);
   return lines
     .filter(line => !isRipgrepStatsLine(line))
@@ -74,7 +72,7 @@ export function parseRipgrepOutput(
   stdout: string,
   configuredQuery: RipgrepQuery
 ): {
-  files: RipgrepFileMatches[];
+  files: LocalSearchCodeFile[];
   stats: SearchStats;
 } {
   const isCountOutput = configuredQuery.count || configuredQuery.countMatches;
@@ -107,6 +105,6 @@ export function parseRipgrepOutput(
 export function parseGrepOutputWrapper(
   stdout: string,
   configuredQuery: RipgrepQuery
-): RipgrepFileMatches[] {
+): LocalSearchCodeFile[] {
   return parseGrepOutput(stdout, configuredQuery);
 }

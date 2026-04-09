@@ -18,20 +18,34 @@ vi.mock('../../src/tools/local_fetch_content/fetchContent.js', () => ({
   fetchContent: mocks.fetchContent,
 }));
 
-vi.mock('../../src/tools/local_fetch_content/scheme.js', () => ({
+const minimalCompleteMetadata = {
+  toolNames: {},
+  tools: {},
+  baseSchema: {
+    mainResearchGoal: '',
+    researchGoal: '',
+    reasoning: '',
+    bulkQuery: () => '',
+  },
+  baseHints: { hasResults: [], empty: [] },
+  genericErrorHints: [],
+  instructions: '',
+  prompts: {},
+  bulkOperations: {},
+};
+
+vi.mock('@octocodeai/octocode-core', () => ({
   FetchContentQuerySchema: {
     safeParse: vi.fn().mockReturnValue({ success: true }),
   },
+  RipgrepQuerySchema: {
+    safeParse: vi.fn().mockReturnValue({ success: true }),
+  },
+  completeMetadata: minimalCompleteMetadata,
 }));
 
 vi.mock('../../src/tools/local_ripgrep/searchContentRipgrep.js', () => ({
   searchContentRipgrep: mocks.searchContentRipgrep,
-}));
-
-vi.mock('../../src/tools/local_ripgrep/scheme.js', () => ({
-  RipgrepQuerySchema: {
-    safeParse: vi.fn().mockReturnValue({ success: true }),
-  },
 }));
 
 vi.mock('../../src/tools/lsp_call_hierarchy/callHierarchy.js', () => ({

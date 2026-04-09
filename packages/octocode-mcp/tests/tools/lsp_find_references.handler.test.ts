@@ -194,14 +194,14 @@ describe('LSP Find References Handler Tests', () => {
   describe('Schema exports', () => {
     it('should export BulkLSPFindReferencesSchema', async () => {
       const { BulkLSPFindReferencesSchema } =
-        await import('../../src/tools/lsp_find_references/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(BulkLSPFindReferencesSchema).toBeDefined();
     });
 
     it('should export LSP_FIND_REFERENCES_DESCRIPTION', async () => {
       const { LSP_FIND_REFERENCES_DESCRIPTION } =
-        await import('../../src/tools/lsp_find_references/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(LSP_FIND_REFERENCES_DESCRIPTION).toBeDefined();
       expect(typeof LSP_FIND_REFERENCES_DESCRIPTION).toBe('string');

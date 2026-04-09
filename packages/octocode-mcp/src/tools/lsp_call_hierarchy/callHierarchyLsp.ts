@@ -13,7 +13,7 @@ import type {
   ExactPosition,
   CodeSnippet,
 } from '../../lsp/types.js';
-import type { LSPCallHierarchyQuery } from './scheme.js';
+import type { LSPCallHierarchyQuery } from '@octocodeai/octocode-core';
 import {
   createCallItemKey,
   enhanceCallHierarchyItem,
@@ -81,6 +81,8 @@ export async function callHierarchyWithLSP(
 
     if (query.direction === 'incoming') {
       const contextLines = query.contextLines ?? 2;
+      const callsPerPage = query.callsPerPage ?? 15;
+      const page = query.page ?? 1;
 
       const allIncomingCalls = await gatherIncomingCallsRecursive(
         client,
@@ -110,10 +112,35 @@ export async function callHierarchyWithLSP(
         });
       }
 
+      const totalPages = Math.ceil(allIncomingCalls.length / callsPerPage);
+      if (page > totalPages) {
+        return stripCallHierarchyInternalFields({
+          status: 'empty',
+          item: enhancedTargetItem,
+          direction: 'incoming',
+          depth,
+          incomingCalls: [],
+          pagination: {
+            currentPage: page,
+            totalPages,
+            totalResults: allIncomingCalls.length,
+            hasMore: false,
+            resultsPerPage: callsPerPage,
+          },
+          hints: [
+            ...getHints(TOOL_NAME, 'empty', {
+              direction: 'incoming',
+            } as Record<string, unknown>),
+            `Requested page ${page} is outside available range (1-${totalPages}).`,
+            `Use page=${totalPages} for the last available page.`,
+          ],
+        });
+      }
+
       const { paginatedItems, pagination } = paginateResults(
         allIncomingCalls,
-        query.callsPerPage ?? 15,
-        query.page ?? 1
+        callsPerPage,
+        page
       );
 
       const enhancedItems =
@@ -144,6 +171,8 @@ export async function callHierarchyWithLSP(
       });
     } else {
       const contextLines = query.contextLines ?? 2;
+      const callsPerPage = query.callsPerPage ?? 15;
+      const page = query.page ?? 1;
 
       const allOutgoingCalls = await gatherOutgoingCallsRecursive(
         client,
@@ -172,10 +201,35 @@ export async function callHierarchyWithLSP(
         });
       }
 
+      const totalPages = Math.ceil(allOutgoingCalls.length / callsPerPage);
+      if (page > totalPages) {
+        return stripCallHierarchyInternalFields({
+          status: 'empty',
+          item: enhancedTargetItem,
+          direction: 'outgoing',
+          depth,
+          outgoingCalls: [],
+          pagination: {
+            currentPage: page,
+            totalPages,
+            totalResults: allOutgoingCalls.length,
+            hasMore: false,
+            resultsPerPage: callsPerPage,
+          },
+          hints: [
+            ...getHints(TOOL_NAME, 'empty', {
+              direction: 'outgoing',
+            } as Record<string, unknown>),
+            `Requested page ${page} is outside available range (1-${totalPages}).`,
+            `Use page=${totalPages} for the last available page.`,
+          ],
+        });
+      }
+
       const { paginatedItems, pagination } = paginateResults(
         allOutgoingCalls,
-        query.callsPerPage ?? 15,
-        query.page ?? 1
+        callsPerPage,
+        page
       );
 
       const enhancedItems =

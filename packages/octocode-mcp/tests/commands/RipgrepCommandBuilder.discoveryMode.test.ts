@@ -12,7 +12,7 @@ import { RipgrepCommandBuilder } from '../../src/commands/RipgrepCommandBuilder.
 import {
   RipgrepQuerySchema,
   applyWorkflowMode,
-} from '../../src/tools/local_ripgrep/scheme.js';
+} from '@octocodeai/octocode-core';
 
 const createQuery = (query: Record<string, unknown>) =>
   RipgrepQuerySchema.parse({

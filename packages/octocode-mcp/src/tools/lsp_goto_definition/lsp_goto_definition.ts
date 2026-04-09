@@ -10,10 +10,10 @@ import { toMCPSchema } from '../../types/toolTypes.js';
 import {
   BulkLSPGotoDefinitionSchema,
   LSP_GOTO_DEFINITION_DESCRIPTION,
-} from './scheme.js';
+} from '@octocodeai/octocode-core';
 import { executeGotoDefinition, TOOL_NAME } from './execution.js';
 import { withBasicSecurityValidation } from '../../utils/securityBridge.js';
-import { LspGotoDefinitionOutputSchema } from '../../scheme/outputSchemas.js';
+import { LspGotoDefinitionOutputSchema } from '@octocodeai/octocode-core';
 
 /**
  * Register the LSP Go To Definition tool with the MCP server.

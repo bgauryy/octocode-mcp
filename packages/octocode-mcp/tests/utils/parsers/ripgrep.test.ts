@@ -12,7 +12,7 @@ import {
   parseFilesOnlyOutput,
   parseRipgrepOutput,
 } from '../../../src/tools/local_ripgrep/ripgrepParser.js';
-import type { RipgrepQuery } from '../../../src/tools/local_ripgrep/scheme.js';
+import type { RipgrepQuery } from '@octocodeai/octocode-core';
 
 // Minimal query for testing - only includes fields used by parser functions
 const baseQuery = {

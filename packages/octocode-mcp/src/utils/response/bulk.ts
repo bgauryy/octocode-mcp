@@ -40,13 +40,31 @@ const MIN_QUERY_TIMEOUT_MS = 5_000;
 
 /**
  * Compute per-query timeout that respects the outer tool timeout.
- * For a single query the full budget applies; for N queries each gets
- * a fair share, clamped between MIN_QUERY_TIMEOUT_MS and BULK_QUERY_TIMEOUT_MS.
+ *
+ * Accounts for concurrency: when queries run in parallel, the wall-clock
+ * time equals the slowest query in each batch, not the sum. So each query
+ * in a fully-parallel batch can safely use the full outer budget.
+ *
+ * @param queryCount    Total number of queries.
+ * @param concurrency   Max concurrent queries (determines batch count).
+ * @param minTimeoutMs  Optional floor — guarantees a minimum per-query budget
+ *                      for expensive operations (e.g. LSP cold-start).
+ * @internal Exported for testing.
  */
-function computeQueryTimeout(queryCount: number): number {
+export function computeQueryTimeout(
+  queryCount: number,
+  concurrency: number,
+  minTimeoutMs?: number
+): number {
   if (queryCount <= 1) return BULK_QUERY_TIMEOUT_MS;
-  const fair = Math.floor(OUTER_TIMEOUT_MS / queryCount);
-  return Math.max(MIN_QUERY_TIMEOUT_MS, Math.min(fair, BULK_QUERY_TIMEOUT_MS));
+  const effectiveConcurrency = Math.min(Math.max(concurrency, 1), queryCount);
+  const batches = Math.ceil(queryCount / effectiveConcurrency);
+  const fair = Math.floor(OUTER_TIMEOUT_MS / batches);
+  const computed = Math.max(
+    MIN_QUERY_TIMEOUT_MS,
+    Math.min(fair, BULK_QUERY_TIMEOUT_MS)
+  );
+  return minTimeoutMs ? Math.max(computed, minTimeoutMs) : computed;
 }
 
 export async function executeBulkOperation<TQuery extends object>(
@@ -54,10 +72,12 @@ export async function executeBulkOperation<TQuery extends object>(
   processor: (query: TQuery, index: number) => Promise<ProcessedBulkResult>,
   config: BulkResponseConfig
 ): Promise<CallToolResult> {
+  const concurrency = config.concurrency ?? DEFAULT_BULK_CONCURRENCY;
   const { results, errors } = await processBulkQueries<TQuery>(
     queries,
     processor,
-    config.concurrency ?? DEFAULT_BULK_CONCURRENCY
+    concurrency,
+    config.minQueryTimeoutMs
   );
   return createBulkResponse<TQuery>(config, results, errors, queries);
 }
@@ -157,7 +177,8 @@ function createBulkResponse<TQuery extends object>(
 async function processBulkQueries<TQuery extends object>(
   queries: Array<TQuery>,
   processor: (query: TQuery, index: number) => Promise<ProcessedBulkResult>,
-  concurrency: number
+  concurrency: number,
+  minQueryTimeoutMs?: number
 ): Promise<{
   results: Array<{
     result: ProcessedBulkResult;
@@ -187,9 +208,13 @@ async function processBulkQueries<TQuery extends object>(
   );
 
   const queryResults = await executeWithErrorIsolation(queryPromiseFunctions, {
-    timeout: computeQueryTimeout(queries.length),
+    timeout: computeQueryTimeout(
+      queries.length,
+      concurrency,
+      minQueryTimeoutMs
+    ),
     continueOnError: true,
-    concurrency, // Configurable concurrent requests to balance rate limiting vs throughput
+    concurrency,
     onError: (error: Error, index: number) => {
       errors.push({
         queryIndex: index,

@@ -7,7 +7,6 @@
  * @module tools/lsp_find_references/lspReferencesPatterns
  */
 
-import { access } from 'fs/promises';
 import * as path from 'path';
 import { safeReadFile } from '../../lsp/validation.js';
 
@@ -17,7 +16,7 @@ import type {
   LSPRange,
   LSPPaginationInfo,
 } from '../../lsp/types.js';
-import type { LSPFindReferencesQuery } from './scheme.js';
+import type { LSPFindReferencesQuery } from '@octocodeai/octocode-core';
 import { getHints } from '../../hints/index.js';
 import { RipgrepMatchOnlySchema } from '../../utils/parsers/schemas.js';
 import { matchesFilePatterns } from './lspReferencesCore.js';
@@ -288,55 +287,6 @@ export async function findReferencesWithPatternMatching(
 }
 
 /**
- * Find the workspace root by looking for common markers.
- * Uses async fs.access to avoid blocking the event loop.
- * @internal Exported for testing
- */
-export async function findWorkspaceRoot(filePath: string): Promise<string> {
-  const markers = [
-    'package.json',
-    'tsconfig.json',
-    '.git',
-    'Cargo.toml',
-    'go.mod',
-    'pyproject.toml',
-  ];
-  const initialDir = path.dirname(filePath);
-  return (
-    (await findWorkspaceRootWithMarkers(initialDir, markers, 0)) ?? initialDir
-  );
-}
-
-async function findWorkspaceRootWithMarkers(
-  currentDir: string,
-  markers: readonly string[],
-  depth: number
-): Promise<string | null> {
-  if (depth >= 10) return null;
-
-  const checks = markers.map(async marker => {
-    try {
-      await access(path.join(currentDir, marker));
-      return true;
-    } catch {
-      return false;
-    }
-  });
-
-  const results = await Promise.all(checks);
-  if (results.some(found => found)) {
-    return currentDir;
-  }
-
-  const parentDir = path.dirname(currentDir);
-  if (parentDir === currentDir) {
-    return null;
-  }
-
-  return findWorkspaceRootWithMarkers(parentDir, markers, depth + 1);
-}
-
-/**
  * Build ripgrep glob arguments from include/exclude patterns.
  * @internal Exported for testing
  */
@@ -357,6 +307,8 @@ export function buildRipgrepGlobArgs(
   }
   return args;
 }
+
+export { findWorkspaceRoot } from '../../lsp/workspaceRoot.js';
 
 /**
  * Build ripgrep argv for symbol reference search.

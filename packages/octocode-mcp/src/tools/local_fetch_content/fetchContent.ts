@@ -9,15 +9,15 @@ import {
 } from '../../utils/pagination/core.js';
 import { generatePaginationHints } from '../../utils/pagination/hints.js';
 import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
-import { TOOL_NAMES } from '../toolMetadata/names.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import type {
   FetchContentQuery,
-  FetchContentResult,
-} from '../../utils/core/types.js';
+  LocalGetFileContentToolResult,
+} from '@octocodeai/octocode-core';
 import { ToolErrors } from '../../errors/errorFactories.js';
 import { LOCAL_TOOL_ERROR_CODES } from '../../errors/localToolErrors.js';
 
@@ -33,7 +33,7 @@ interface ExtractionState {
   actualEndLine?: number;
   matchRanges?: Array<{ start: number; end: number }>;
   warnings: string[];
-  earlyResult?: FetchContentResult;
+  earlyResult?: LocalGetFileContentToolResult;
 }
 
 function readConfiguredDefaultCharLength(): number {
@@ -60,7 +60,7 @@ function getDefaultOutputCharLengthSafe(): number {
 
 function validateExtractionOptions(
   query: FetchContentQuery
-): FetchContentResult | null {
+): LocalGetFileContentToolResult | null {
   if (query.fullContent === true && query.matchString !== undefined) {
     return {
       status: 'error',
@@ -72,7 +72,7 @@ function validateExtractionOptions(
         'Use matchString="pattern" to extract specific sections (recommended for large files)',
         'TIP: matchString is more token-efficient — prefer it when you know what to look for',
       ],
-    } as FetchContentResult;
+    } as LocalGetFileContentToolResult;
   }
 
   return null;
@@ -81,7 +81,10 @@ function validateExtractionOptions(
 async function getFileStatsOrError(
   query: FetchContentQuery,
   absolutePath: string
-): Promise<{ fileStats?: FileStats; errorResult?: FetchContentResult }> {
+): Promise<{
+  fileStats?: FileStats;
+  errorResult?: LocalGetFileContentToolResult;
+}> {
   try {
     return {
       fileStats: await stat(absolutePath),
@@ -98,7 +101,7 @@ async function getFileStatsOrError(
         extra: {
           resolvedPath: absolutePath,
         },
-      }) as FetchContentResult,
+      }) as LocalGetFileContentToolResult,
     };
   }
 }
@@ -119,7 +122,7 @@ function createLargeFileErrorResult(
   query: FetchContentQuery,
   absolutePath: string,
   fileSizeKB: number
-): FetchContentResult {
+): LocalGetFileContentToolResult {
   const toolError = ToolErrors.fileTooLarge(
     query.path,
     fileSizeKB,
@@ -135,13 +138,13 @@ function createLargeFileErrorResult(
       'Why matchString works better: Gets only relevant sections, faster, and uses fewer tokens',
       'Critical: fullContent without charLength will fail on large files - always specify a reading strategy',
     ],
-  }) as FetchContentResult;
+  }) as LocalGetFileContentToolResult;
 }
 
 async function readFileContentOrError(
   query: FetchContentQuery,
   absolutePath: string
-): Promise<{ content?: string; errorResult?: FetchContentResult }> {
+): Promise<{ content?: string; errorResult?: LocalGetFileContentToolResult }> {
   try {
     return {
       content: await readFile(absolutePath, 'utf-8'),
@@ -156,7 +159,7 @@ async function readFileContentOrError(
       errorResult: createErrorResult(toolError, query, {
         toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
         extra: { resolvedPath: absolutePath },
-      }) as FetchContentResult,
+      }) as LocalGetFileContentToolResult,
     };
   }
 }
@@ -164,7 +167,7 @@ async function readFileContentOrError(
 function createNoMatchesResult(
   query: FetchContentQuery,
   totalLines: number
-): FetchContentResult {
+): LocalGetFileContentToolResult {
   const contextHints = [
     `Searched ${totalLines} line${totalLines === 1 ? '' : 's'} - no matches found`,
   ];
@@ -391,7 +394,7 @@ function buildSuccessResult(
   fileStats: FileStats,
   totalLines: number,
   defaultOutputCharLength: number
-): FetchContentResult {
+): LocalGetFileContentToolResult {
   if (
     !extraction.resultContent ||
     extraction.resultContent.trim().length === 0
@@ -470,7 +473,7 @@ function buildSuccessResult(
 
 export async function fetchContent(
   query: FetchContentQuery
-): Promise<FetchContentResult> {
+): Promise<LocalGetFileContentToolResult> {
   const defaultOutputCharLength = getDefaultOutputCharLengthSafe();
 
   try {
@@ -479,7 +482,7 @@ export async function fetchContent(
       TOOL_NAMES.LOCAL_FETCH_CONTENT
     );
     if (!pathValidation.isValid) {
-      return pathValidation.errorResult as FetchContentResult;
+      return pathValidation.errorResult as LocalGetFileContentToolResult;
     }
 
     const invalidExtractionResult = validateExtractionOptions(query);
@@ -492,7 +495,7 @@ export async function fetchContent(
     const { fileStats, errorResult: fileStatsError } =
       await getFileStatsOrError(query, absolutePath);
     if (fileStatsError || !fileStats) {
-      return fileStatsError as FetchContentResult;
+      return fileStatsError as LocalGetFileContentToolResult;
     }
 
     const fileSizeBytes =
@@ -509,7 +512,7 @@ export async function fetchContent(
       absolutePath
     );
     if (readError || content === undefined) {
-      return readError as FetchContentResult;
+      return readError as LocalGetFileContentToolResult;
     }
 
     const totalLines = content.split('\n').length;
@@ -533,6 +536,6 @@ export async function fetchContent(
   } catch (error) {
     return createErrorResult(error, query, {
       toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
-    }) as FetchContentResult;
+    }) as LocalGetFileContentToolResult;
   }
 }

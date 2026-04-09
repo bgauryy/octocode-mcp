@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { LSPFindReferencesQuery } from '../../src/tools/lsp_find_references/scheme.js';
+import type { LSPFindReferencesQuery } from '@octocodeai/octocode-core';
 
 // Mock fs/promises for lspReferencesCore
 vi.mock('fs/promises', () => ({

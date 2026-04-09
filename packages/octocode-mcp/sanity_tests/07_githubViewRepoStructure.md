@@ -571,6 +571,180 @@ Displays the file/directory structure of a GitHub repository. Supports depth con
 
 ---
 
+## Schema Edge Cases & Boundary Tests
+
+### TC-E1: Empty Queries Array
+
+**Goal:** Verify empty `queries` array is rejected.
+
+```json
+{"queries": []}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries minItems: 1
+
+---
+
+### TC-E2: Queries Over Max (4 queries, max is 3)
+
+**Goal:** Verify exceeding maxItems is rejected.
+
+```json
+{
+  "queries": [
+    {"id": "q1", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp"},
+    {"id": "q2", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp"},
+    {"id": "q3", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp"},
+    {"id": "q4", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries maxItems is 3
+
+---
+
+### TC-E3: Depth Boundary (0 and 3)
+
+**Goal:** Verify `depth` must be 1-2.
+
+**Expected:**
+- [ ] Schema rejection for `depth: 0` and `depth: 3`
+
+---
+
+### TC-E4: entriesPerPage Boundary (0 and 201)
+
+**Goal:** Verify `entriesPerPage` must be 1-200.
+
+**Expected:**
+- [ ] Schema rejection for `entriesPerPage: 0` and `entriesPerPage: 201`
+
+---
+
+### TC-E5: Empty owner / repo (minLength)
+
+**Goal:** Verify `owner` and `repo` non-empty strings.
+
+```json
+{
+  "queries": [{
+    "id": "empty-owner",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "",
+    "repo": "octocode-mcp"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: owner minLength 1 (repeat with `repo: ""` for repo minLength)
+
+---
+
+### TC-E6: Missing Required owner or repo
+
+**Goal:** Verify required fields are present.
+
+```json
+{
+  "queries": [{
+    "id": "no-repo",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: missing required `repo` (repeat omitting `owner`)
+
+---
+
+### TC-E7: branch Length (when present)
+
+**Goal:** If `branch` is provided, verify length 1-255.
+
+**Expected:**
+- [ ] Schema rejection for empty string `branch: ""` if disallowed
+- [ ] Schema rejection for `branch` longer than 255 characters
+
+---
+
+### TC-E8: Response-Level Pagination
+
+**Goal:** Verify root `responseCharOffset` + `responseCharLength` paginate the full MCP response.
+
+```json
+{
+  "queries": [{
+    "id": "resp",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "branch": "main",
+    "path": "",
+    "depth": 1
+  }],
+  "responseCharOffset": 0,
+  "responseCharLength": 3000
+}
+```
+
+**Expected:**
+- [ ] MCP response truncated to ~3000 chars
+- [ ] `responsePagination` metadata present
+
+---
+
+### TC-E9: Duplicate Query IDs
+
+**Goal:** Verify duplicate `id` values rejected in bulk.
+
+```json
+{
+  "queries": [
+    {"id": "dup", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp"},
+    {"id": "dup", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error: duplicate query ids
+
+---
+
+### TC-E10: Invalid ID Pattern
+
+**Goal:** Verify `id` with invalid characters rejected.
+
+```json
+{
+  "queries": [{
+    "id": "bad id",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: id pattern ^[A-Za-z0-9._:-]+$
+
+---
+
 ## Validation Checklist
 
 ### Core Requirements

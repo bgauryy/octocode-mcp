@@ -5,7 +5,7 @@
 import path from 'path';
 import { pathValidator } from '@octocode/security/pathValidator';
 import { ToolErrors } from '../../errors/errorFactories.js';
-import type { BaseQuery } from '../core/types.js';
+import type { BaseQueryLocal } from '@octocodeai/octocode-core';
 import {
   createErrorResult,
   type UnifiedErrorResult,
@@ -69,7 +69,7 @@ function getPathErrorHints(
  * Validate tool path and return validation result
  */
 export function validateToolPath(
-  query: BaseQuery & { path: string },
+  query: BaseQueryLocal & { path: string },
   toolName: string
 ): ToolPathValidationResult {
   const cwd = process.cwd();

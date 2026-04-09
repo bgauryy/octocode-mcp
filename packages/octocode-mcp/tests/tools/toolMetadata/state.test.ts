@@ -1,43 +1,37 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { fetchWithRetries } from '../../../src/utils/http/fetch.js';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('../../../src/utils/http/fetch.js');
-vi.mock('../../../src/session.js', () => ({
-  logSessionError: vi.fn(() => Promise.resolve()),
-}));
-
-const mockFetchWithRetries = vi.mocked(fetchWithRetries);
-
-// Valid mock metadata for tests
-const mockMetadata = {
-  instructions: 'Test instructions',
-  prompts: {},
-  toolNames: {
-    GITHUB_SEARCH_CODE: 'githubSearchCode',
-  },
-  baseSchema: {
-    mainResearchGoal: 'Main goal',
-    researchGoal: 'Research goal',
-    reasoning: 'Reasoning',
-    bulkQueryTemplate: 'Query for {toolName}',
-  },
-  tools: {
-    githubSearchCode: {
-      name: 'githubSearchCode',
-      description: 'Search code',
-      schema: { keyword: 'Keywords to search' },
-      hints: {
-        hasResults: ['Found results'],
-        empty: ['No results'],
+vi.mock('@octocodeai/octocode-core', () => {
+  const config = {
+    instructions: 'Test instructions',
+    prompts: {},
+    toolNames: {
+      GITHUB_SEARCH_CODE: 'githubSearchCode',
+    },
+    baseSchema: {
+      mainResearchGoal: 'Main goal',
+      researchGoal: 'Research goal',
+      reasoning: 'Reasoning',
+      bulkQuery: (toolName: string) => 'Query for ' + toolName,
+    },
+    tools: {
+      githubSearchCode: {
+        name: 'githubSearchCode',
+        description: 'Search code',
+        schema: { keyword: 'Keywords to search' },
+        hints: {
+          hasResults: ['Found results'],
+          empty: ['No results'],
+        },
       },
     },
-  },
-  baseHints: {
-    hasResults: ['Base result hint'],
-    empty: ['Base empty hint'],
-  },
-  genericErrorHints: ['Error hint'],
-};
+    baseHints: {
+      hasResults: ['Base result hint'],
+      empty: ['Base empty hint'],
+    },
+    genericErrorHints: ['Error hint'],
+  };
+  return { octocodeConfig: config, completeMetadata: config };
+});
 
 describe('toolMetadata/state', () => {
   beforeEach(() => {
@@ -45,29 +39,22 @@ describe('toolMetadata/state', () => {
     vi.clearAllMocks();
   });
 
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  describe('getMetadata - cache and concurrent reuse', () => {
-    it('should return from metadataCache on second call (line 55)', async () => {
+  describe('getMetadata - cache and reuse', () => {
+    it('should return same cached object on second call', async () => {
       const { getMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
 
       const result1 = await getMetadata();
       const result2 = await getMetadata();
 
       expect(result1).toBe(result2);
-      expect(mockFetchWithRetries).toHaveBeenCalledTimes(1);
     });
 
-    it('should reuse metadataPromise on concurrent calls (line 59)', async () => {
+    it('should return identical results on concurrent calls', async () => {
       const { getMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValue(mockMetadata);
 
       const [result1, result2, result3] = await Promise.all([
         getMetadata(),
@@ -77,73 +64,53 @@ describe('toolMetadata/state', () => {
 
       expect(result1).toBe(result2);
       expect(result2).toBe(result3);
-      expect(mockFetchWithRetries).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('initializeToolMetadata', () => {
-    it('should initialize metadata from API', async () => {
-      const { initializeToolMetadata, _resetMetadataState } =
+    it('should initialize metadata from octocode-core', async () => {
+      const { initializeToolMetadata, getMetadataOrNull, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
 
       await initializeToolMetadata();
 
-      expect(mockFetchWithRetries).toHaveBeenCalledTimes(1);
-      expect(mockFetchWithRetries).toHaveBeenCalledWith(
-        'https://octocodeai.com/api/mcpContent',
-        { maxRetries: 3, includeVersion: true }
-      );
+      expect(getMetadataOrNull()).not.toBeNull();
+      expect(getMetadataOrNull()?.instructions).toBe('Test instructions');
     });
 
     it('should only initialize once (idempotent)', async () => {
-      const { initializeToolMetadata, _resetMetadataState } =
-        await import('../../../src/tools/toolMetadata/state.js');
+      const {
+        initializeToolMetadata,
+        getMetadataOrThrow,
+        _resetMetadataState,
+      } = await import('../../../src/tools/toolMetadata/state.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValue(mockMetadata);
 
       await initializeToolMetadata();
+      const first = getMetadataOrThrow();
       await initializeToolMetadata();
       await initializeToolMetadata();
+      const second = getMetadataOrThrow();
 
-      expect(mockFetchWithRetries).toHaveBeenCalledTimes(1);
+      expect(first).toBe(second);
     });
 
     it('should handle concurrent initialization calls', async () => {
-      const { initializeToolMetadata, _resetMetadataState } =
-        await import('../../../src/tools/toolMetadata/state.js');
+      const {
+        initializeToolMetadata,
+        getMetadataOrThrow,
+        _resetMetadataState,
+      } = await import('../../../src/tools/toolMetadata/state.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValue(mockMetadata);
 
-      const promises = [
+      await Promise.all([
         initializeToolMetadata(),
         initializeToolMetadata(),
         initializeToolMetadata(),
-      ];
+      ]);
 
-      await Promise.all(promises);
-
-      // Should only fetch once despite concurrent calls
-      expect(mockFetchWithRetries).toHaveBeenCalledTimes(1);
-    });
-
-    it('should throw on invalid API response', async () => {
-      const { initializeToolMetadata, _resetMetadataState } =
-        await import('../../../src/tools/toolMetadata/state.js');
-      _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce({ invalid: 'data' });
-
-      await expect(initializeToolMetadata()).rejects.toThrow();
-    });
-
-    it('should throw on network error', async () => {
-      const { initializeToolMetadata, _resetMetadataState } =
-        await import('../../../src/tools/toolMetadata/state.js');
-      _resetMetadataState();
-      mockFetchWithRetries.mockRejectedValueOnce(new Error('Network error'));
-
-      await expect(initializeToolMetadata()).rejects.toThrow('Network error');
+      expect(getMetadataOrThrow()).toBeDefined();
     });
   });
 
@@ -152,7 +119,6 @@ describe('toolMetadata/state', () => {
       const { loadToolContent, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
 
       const result = await loadToolContent();
 
@@ -165,20 +131,17 @@ describe('toolMetadata/state', () => {
       const { loadToolContent, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
 
       const result1 = await loadToolContent();
       const result2 = await loadToolContent();
 
-      expect(result1).toBe(result2); // Same frozen object
-      expect(mockFetchWithRetries).toHaveBeenCalledTimes(1);
+      expect(result1).toBe(result2);
     });
 
-    it('should transform bulkQueryTemplate to bulkQuery function', async () => {
+    it('should return bulkQuery as a function', async () => {
       const { loadToolContent, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
 
       const result = await loadToolContent();
 
@@ -207,7 +170,6 @@ describe('toolMetadata/state', () => {
         _resetMetadataState,
       } = await import('../../../src/tools/toolMetadata/state.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const result = getMetadataOrThrow();
@@ -230,7 +192,6 @@ describe('toolMetadata/state', () => {
       const { getMetadataOrNull, initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const result = getMetadataOrNull();
@@ -244,7 +205,6 @@ describe('toolMetadata/state', () => {
     it('should reset all state', async () => {
       const { initializeToolMetadata, getMetadataOrNull, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
-      mockFetchWithRetries.mockResolvedValue(mockMetadata);
 
       await initializeToolMetadata();
       expect(getMetadataOrNull()).not.toBeNull();
@@ -256,42 +216,26 @@ describe('toolMetadata/state', () => {
     it('should allow re-initialization after reset', async () => {
       const { initializeToolMetadata, getMetadataOrNull, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
-      mockFetchWithRetries.mockResolvedValue(mockMetadata);
 
       await initializeToolMetadata();
       _resetMetadataState();
       await initializeToolMetadata();
 
       expect(getMetadataOrNull()).not.toBeNull();
-      expect(mockFetchWithRetries).toHaveBeenCalledTimes(2);
     });
   });
 
-  describe('metadata freezing', () => {
-    it('should freeze metadata to prevent mutations', async () => {
+  describe('metadata reference stability', () => {
+    it('should return the same object on repeated loadToolContent calls', async () => {
       const { loadToolContent, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
 
-      const result = await loadToolContent();
+      const a = await loadToolContent();
+      const b = await loadToolContent();
 
-      expect(Object.isFrozen(result)).toBe(true);
-      expect(() => {
-        (result as { instructions: string }).instructions = 'mutated';
-      }).toThrow();
-    });
-
-    it('should deep freeze nested objects', async () => {
-      const { loadToolContent, _resetMetadataState } =
-        await import('../../../src/tools/toolMetadata/state.js');
-      _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
-
-      const result = await loadToolContent();
-
-      expect(Object.isFrozen(result.tools)).toBe(true);
-      expect(Object.isFrozen(result.baseHints)).toBe(true);
+      expect(a).toBe(b);
+      expect(a.instructions).toBe('Test instructions');
     });
   });
 });

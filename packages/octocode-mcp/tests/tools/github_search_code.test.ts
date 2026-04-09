@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { GitHubCodeSearchQuerySchema } from '../../src/tools/github_search_code/scheme.js';
+import { GitHubCodeSearchQuerySchema } from '@octocodeai/octocode-core';
 
 // Mock the GitHub client
 const mockOctokit = vi.hoisted(() => ({

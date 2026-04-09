@@ -1,240 +1,133 @@
 /**
- * Final coverage tests for the remaining uncovered lines in toolMetadata.ts
+ * Final coverage tests for TOOL_NAMES static fallback before metadata init.
+ * (Runtime validation of fetched metadata was removed when metadata moved to @octocodeai/octocode-core.)
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock session before importing
-vi.mock('../../src/session.js', () => ({
-  logSessionError: vi.fn(() => Promise.resolve()),
+vi.mock('@octocodeai/octocode-core', () => ({
+  octocodeConfig: {
+    instructions: '',
+    prompts: {},
+    toolNames: {
+      GITHUB_FETCH_CONTENT: 'githubGetFileContent',
+      GITHUB_SEARCH_CODE: 'githubSearchCode',
+      GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
+      GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
+      GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
+    },
+    baseSchema: {
+      mainResearchGoal: '',
+      researchGoal: '',
+      reasoning: '',
+      bulkQuery: (_: string) => '',
+    },
+    tools: {},
+    baseHints: { hasResults: [], empty: [] },
+    genericErrorHints: [],
+  },
+  completeMetadata: {
+    instructions: '',
+    prompts: {},
+    toolNames: {
+      GITHUB_FETCH_CONTENT: 'githubGetFileContent',
+      GITHUB_SEARCH_CODE: 'githubSearchCode',
+      GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
+      GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
+      GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
+    },
+    baseSchema: {
+      mainResearchGoal: '',
+      researchGoal: '',
+      reasoning: '',
+      bulkQuery: (_: string) => '',
+    },
+    tools: {},
+    baseHints: { hasResults: [], empty: [] },
+    genericErrorHints: [],
+  },
 }));
 
-// Mock fetchWithRetries to control responses
-vi.mock('../../src/utils/http/fetch.js');
-
-describe('toolMetadata - Final Coverage for Lines 172-176 and 236-243', () => {
+describe('toolMetadata - TOOL_NAMES static fallback (lines 236-243)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
   });
 
-  describe('Invalid API Response Validation (lines 172-176)', () => {
-    it('should throw error and log when API response missing toolNames', async () => {
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      const { logSessionError } = await import('../../src/session.js');
+  it('should use STATIC_TOOL_NAMES when metadata not loaded', async () => {
+    vi.resetModules();
 
-      const mockFetch = vi.mocked(fetchWithRetries);
+    const { TOOL_NAMES } =
+      await import('../../src/tools/toolMetadata/proxies.js');
 
-      // Mock invalid response - missing toolNames
-      mockFetch.mockResolvedValueOnce({
-        instructions: 'test',
-        // Missing toolNames!
-        baseSchema: {},
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-        prompts: {},
-      });
+    const desc1 = Object.getOwnPropertyDescriptor(
+      TOOL_NAMES,
+      'GITHUB_FETCH_CONTENT'
+    );
+    const desc2 = Object.getOwnPropertyDescriptor(
+      TOOL_NAMES,
+      'GITHUB_SEARCH_CODE'
+    );
+    const desc3 = Object.getOwnPropertyDescriptor(
+      TOOL_NAMES,
+      'GITHUB_SEARCH_REPOSITORIES'
+    );
+    const desc4 = Object.getOwnPropertyDescriptor(
+      TOOL_NAMES,
+      'GITHUB_SEARCH_PULL_REQUESTS'
+    );
+    const desc5 = Object.getOwnPropertyDescriptor(
+      TOOL_NAMES,
+      'GITHUB_VIEW_REPO_STRUCTURE'
+    );
 
-      const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata/state.js');
+    expect(desc1).toBeDefined();
+    expect(desc1?.enumerable).toBe(true);
+    expect(desc1?.configurable).toBe(true);
+    expect(typeof desc1?.value).toBe('string');
 
-      // Should throw and log error (lines 172-176)
-      await expect(initializeToolMetadata()).rejects.toThrow();
-      expect(logSessionError).toHaveBeenCalled();
-    });
-
-    it('should throw error when baseSchema is not an object', async () => {
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-
-      const mockFetch = vi.mocked(fetchWithRetries);
-
-      // Invalid baseSchema (not an object)
-      mockFetch.mockResolvedValueOnce({
-        instructions: 'test',
-        toolNames: { GITHUB_FETCH_CONTENT: 'githubGetFileContent' },
-        baseSchema: 'invalid', // Should be object!
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-        prompts: {},
-      });
-
-      const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata/state.js');
-
-      await expect(initializeToolMetadata()).rejects.toThrow();
-    });
-
-    it('should throw error when baseHints is not an object', async () => {
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-
-      const mockFetch = vi.mocked(fetchWithRetries);
-
-      mockFetch.mockResolvedValueOnce({
-        instructions: 'test',
-        toolNames: { GITHUB_FETCH_CONTENT: 'githubGetFileContent' },
-        baseSchema: {},
-        tools: {},
-        baseHints: 'invalid', // Should be object!
-        genericErrorHints: [],
-        prompts: {},
-      });
-
-      const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata/state.js');
-
-      await expect(initializeToolMetadata()).rejects.toThrow();
-    });
-
-    it('should throw error when genericErrorHints is not an array', async () => {
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-
-      const mockFetch = vi.mocked(fetchWithRetries);
-
-      mockFetch.mockResolvedValueOnce({
-        instructions: 'test',
-        toolNames: { GITHUB_FETCH_CONTENT: 'githubGetFileContent' },
-        baseSchema: {},
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: 'invalid', // Should be array!
-        prompts: {},
-      });
-
-      const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata/state.js');
-
-      await expect(initializeToolMetadata()).rejects.toThrow();
-    });
-
-    it('should throw error when prompts is not an object', async () => {
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-
-      const mockFetch = vi.mocked(fetchWithRetries);
-
-      mockFetch.mockResolvedValueOnce({
-        instructions: 'test',
-        toolNames: { GITHUB_FETCH_CONTENT: 'githubGetFileContent' },
-        baseSchema: {},
-        tools: {},
-        baseHints: { hasResults: [], empty: [] },
-        genericErrorHints: [],
-        prompts: 'invalid', // Should be object!
-      });
-
-      const { initializeToolMetadata } =
-        await import('../../src/tools/toolMetadata/state.js');
-
-      await expect(initializeToolMetadata()).rejects.toThrow();
-    });
+    expect(desc2).toBeDefined();
+    expect(desc3).toBeDefined();
+    expect(desc4).toBeDefined();
+    expect(desc5).toBeDefined();
   });
 
-  describe('TOOL_NAMES Static Fallback (lines 236-243)', () => {
-    it('should use STATIC_TOOL_NAMES when metadata not loaded', async () => {
-      vi.resetModules();
+  it('should return undefined for non-existent tool names', async () => {
+    vi.resetModules();
 
-      // Prevent automatic initialization
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      vi.mocked(fetchWithRetries).mockRejectedValue(new Error('No init'));
+    const { TOOL_NAMES } =
+      await import('../../src/tools/toolMetadata/proxies.js');
 
-      const { TOOL_NAMES } =
-        await import('../../src/tools/toolMetadata/proxies.js');
+    const desc = Object.getOwnPropertyDescriptor(
+      TOOL_NAMES,
+      'NON_EXISTENT_TOOL'
+    );
 
-      // Access getOwnPropertyDescriptor early before initialization
-      // This should hit lines 236-243 (STATIC_TOOL_NAMES fallback)
-      const desc1 = Object.getOwnPropertyDescriptor(
-        TOOL_NAMES,
-        'GITHUB_FETCH_CONTENT'
-      );
-      const desc2 = Object.getOwnPropertyDescriptor(
-        TOOL_NAMES,
-        'GITHUB_SEARCH_CODE'
-      );
-      const desc3 = Object.getOwnPropertyDescriptor(
-        TOOL_NAMES,
-        'GITHUB_SEARCH_REPOSITORIES'
-      );
-      const desc4 = Object.getOwnPropertyDescriptor(
-        TOOL_NAMES,
-        'GITHUB_SEARCH_PULL_REQUESTS'
-      );
-      const desc5 = Object.getOwnPropertyDescriptor(
-        TOOL_NAMES,
-        'GITHUB_VIEW_REPO_STRUCTURE'
-      );
+    expect(desc).toBeUndefined();
+  });
 
-      // All should have descriptors from STATIC_TOOL_NAMES
-      expect(desc1).toBeDefined();
-      expect(desc1?.enumerable).toBe(true);
-      expect(desc1?.configurable).toBe(true);
-      expect(typeof desc1?.value).toBe('string');
+  it('should support Object.keys on TOOL_NAMES early', async () => {
+    vi.resetModules();
 
-      expect(desc2).toBeDefined();
-      expect(desc3).toBeDefined();
-      expect(desc4).toBeDefined();
-      expect(desc5).toBeDefined();
-    });
+    const { TOOL_NAMES } =
+      await import('../../src/tools/toolMetadata/proxies.js');
 
-    it('should return undefined for non-existent tool names', async () => {
-      vi.resetModules();
+    const keys = Object.keys(TOOL_NAMES);
 
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      vi.mocked(fetchWithRetries).mockRejectedValue(new Error('No init'));
+    expect(Array.isArray(keys)).toBe(true);
+    expect(keys.length).toBeGreaterThan(0);
+    expect(keys).toContain('GITHUB_FETCH_CONTENT');
+    expect(keys).toContain('GITHUB_SEARCH_CODE');
+  });
 
-      const { TOOL_NAMES } =
-        await import('../../src/tools/toolMetadata/proxies.js');
+  it('should support Object.entries on TOOL_NAMES early', async () => {
+    vi.resetModules();
 
-      // Access non-existent tool name
-      const desc = Object.getOwnPropertyDescriptor(
-        TOOL_NAMES,
-        'NON_EXISTENT_TOOL'
-      );
+    const { TOOL_NAMES } =
+      await import('../../src/tools/toolMetadata/proxies.js');
 
-      // Should return undefined (line 243)
-      expect(desc).toBeUndefined();
-    });
+    const entries = Object.entries(TOOL_NAMES);
 
-    it('should support Object.keys on TOOL_NAMES early', async () => {
-      vi.resetModules();
-
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      vi.mocked(fetchWithRetries).mockRejectedValue(new Error('No init'));
-
-      const { TOOL_NAMES } =
-        await import('../../src/tools/toolMetadata/proxies.js');
-
-      // Object.keys triggers ownKeys and getOwnPropertyDescriptor
-      const keys = Object.keys(TOOL_NAMES);
-
-      expect(Array.isArray(keys)).toBe(true);
-      expect(keys.length).toBeGreaterThan(0);
-      expect(keys).toContain('GITHUB_FETCH_CONTENT');
-      expect(keys).toContain('GITHUB_SEARCH_CODE');
-    });
-
-    it('should support Object.entries on TOOL_NAMES early', async () => {
-      vi.resetModules();
-
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      vi.mocked(fetchWithRetries).mockRejectedValue(new Error('No init'));
-
-      const { TOOL_NAMES } =
-        await import('../../src/tools/toolMetadata/proxies.js');
-
-      // Object.entries also triggers getOwnPropertyDescriptor
-      const entries = Object.entries(TOOL_NAMES);
-
-      expect(Array.isArray(entries)).toBe(true);
-      expect(entries.length).toBeGreaterThan(0);
-    });
+    expect(Array.isArray(entries)).toBe(true);
+    expect(entries.length).toBeGreaterThan(0);
   });
 });

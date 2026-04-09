@@ -6,7 +6,7 @@ import {
   buildPullRequestSearchQuery,
   shouldUseSearchForPRs,
 } from '../../src/github/queryBuilders.js';
-import type { GitHubCodeSearchQuery } from '../../src/tools/github_search_code/types.js';
+import type { GitHubCodeSearchQuery } from '@octocodeai/octocode-core';
 
 // Type assertion helper for test data - allows arrays for test flexibility
 const toCodeSearchQuery = (params: {

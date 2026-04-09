@@ -15,7 +15,7 @@ import type {
 
 import { fetchGitHubFileContentAPI } from '../../github/fileContent.js';
 
-import type { FileContentQuery as GHFileContentQuery } from '../../tools/github_fetch_content/types.js';
+import type { FileContentQuery as GHFileContentQuery } from '@octocodeai/octocode-core';
 import type { GitHubFileContentApiData } from '../../tools/github_fetch_content/types.js';
 import { isGitHubAPIError } from '../../github/githubAPI.js';
 
@@ -65,7 +65,7 @@ export async function getFileContent(
     };
   }
 
-  const githubQuery: GHFileContentQuery = {
+  const githubQuery = {
     owner,
     repo,
     path: query.path,
@@ -80,7 +80,7 @@ export async function getFileContent(
     mainResearchGoal: query.mainResearchGoal,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
-  };
+  } as GHFileContentQuery;
 
   const result = await fetchGitHubFileContentAPI(githubQuery, authInfo);
 

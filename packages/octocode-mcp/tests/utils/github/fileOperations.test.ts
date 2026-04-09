@@ -69,7 +69,7 @@ describe('fetchGitHubFileContentAPI - Parameter Testing', () => {
   describe('Schema defaults', () => {
     it('should have correct schema defaults', async () => {
       const { FileContentQuerySchema } =
-        await import('../../../src/tools/github_fetch_content/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       // Test minimal valid input (only required fields)
       const minimalInput = {

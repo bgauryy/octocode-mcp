@@ -7,13 +7,13 @@ import { toMCPSchema } from '../../types/toolTypes.js';
 import { withSecurityValidation } from '../../utils/securityBridge.js';
 import type { ToolInvocationCallback } from '../../types.js';
 import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/proxies.js';
-import { PackageSearchBulkQuerySchema } from './scheme.js';
-import type { PackageSearchQuery } from './scheme.js';
+import { PackageSearchBulkQuerySchema } from '@octocodeai/octocode-core';
+import type { PackageSearchQuery } from '@octocodeai/octocode-core';
 import { invokeCallbackSafely } from '../utils.js';
 import { checkNpmAvailability } from '../../utils/exec/npm.js';
 import { checkNpmRegistryReachable } from '../../utils/package/npm.js';
 import { searchPackages } from './execution.js';
-import { PackageSearchOutputSchema } from '../../scheme/outputSchemas.js';
+import { PackageSearchOutputSchema } from '@octocodeai/octocode-core';
 
 export async function registerPackageSearchTool(
   server: McpServer,

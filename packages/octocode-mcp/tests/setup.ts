@@ -10,6 +10,12 @@ import {
 // Tests may legitimately register many listeners due to module isolation
 process.setMaxListeners(50);
 
+// Session telemetry and other code paths call global fetch; tests configure via vi.mocked(fetch)
+vi.stubGlobal(
+  'fetch',
+  vi.fn(() => Promise.resolve(new Response('', { status: 200 })))
+);
+
 // Global mock for octocode-shared to prevent filesystem access during tests
 // This is needed because some tests use vi.resetModules() which can break file-level mocks
 
@@ -451,6 +457,7 @@ const mockContent = {
     GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
     GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
     PACKAGE_SEARCH: 'packageSearch',
+    GITHUB_CLONE_REPO: 'githubCloneRepo',
     LOCAL_RIPGREP: 'localSearchCode',
     LOCAL_FETCH_CONTENT: 'localGetFileContent',
     LOCAL_FIND_FILES: 'localFindFiles',
@@ -463,7 +470,8 @@ const mockContent = {
     mainResearchGoal: 'Main research goal description',
     researchGoal: 'Research goal description',
     reasoning: 'Reasoning description',
-    bulkQueryTemplate: 'Research queries for {toolName}',
+    bulkQuery: (toolName: string) =>
+      `Research queries for ${toolName} (1-3 queries per call for optimal resource management). Review schema before use for optimal results`,
   },
   tools: {
     githubGetFileContent: githubFetchContentSchema,
@@ -472,6 +480,20 @@ const mockContent = {
     githubSearchRepositories: mockToolSchema,
     githubViewRepoStructure: mockToolSchema,
     packageSearch: mockToolSchema,
+    githubCloneRepo: {
+      name: 'githubCloneRepo',
+      description: 'Clone GitHub repository to local filesystem',
+      schema: {
+        owner: 'Repository owner (user or org)',
+        repo: 'Repository name',
+        branch: 'Branch/tag/SHA to clone',
+        sparse_path: 'Fetch only this subdirectory (sparse checkout)',
+        forceRefresh: 'Bypass cache and force a fresh clone',
+        charOffset: 'Character offset for output pagination',
+        charLength: 'Character budget for output pagination',
+      },
+      hints: mockToolHints,
+    },
     localSearchCode: localRipgrepSchema,
     localGetFileContent: localFetchContentSchema,
     localFindFiles: localFindFilesSchema,
@@ -491,20 +513,33 @@ const mockContent = {
     'Generic error hint 4',
     'Generic error hint 5',
   ],
+  bulkOperations: {
+    instructions: {
+      base: 'Bulk response with {count} results: {counts}',
+      hasResults: 'Review hasResultsStatusHints for guidance',
+      empty: 'Review emptyStatusHints for no-results scenarios',
+      error: 'Review errorStatusHints for error recovery',
+    },
+  },
 };
 
-// Mock global fetch for metadata loading - MUST be done before any imports that use metadata
-global.fetch = vi.fn().mockResolvedValue({
-  ok: true,
-  json: async () => mockContent,
+// Mock @octocodeai/octocode-core for metadata loading (no HTTP fetch).
+// vi.mock factories are hoisted and run before mockContent is initialized,
+// so we use a mutable holder set via vi.hoisted + a getter for lazy access.
+const _coreMock = vi.hoisted(() => ({ ref: null as unknown }));
+vi.mock('@octocodeai/octocode-core', async importOriginal => {
+  const actual =
+    await importOriginal<typeof import('@octocodeai/octocode-core')>();
+  return {
+    ...actual,
+    get octocodeConfig() {
+      return _coreMock.ref;
+    },
+    get completeMetadata() {
+      return _coreMock.ref;
+    },
+  };
 });
-
-// Mock axios for session logging - MUST be done before any session imports
-vi.mock('axios', () => ({
-  default: {
-    post: vi.fn(),
-  },
-}));
 
 // Mock child_process for exec utilities - MUST be done before any exec imports
 vi.mock('child_process', () => ({
@@ -555,6 +590,9 @@ function captureStderrWrite(chunk: string | Uint8Array): boolean {
 
   return true;
 }
+
+// Wire mock content into the @octocodeai/octocode-core mock before initialization
+_coreMock.ref = mockContent;
 
 // Initialize tool metadata for all tests - using top-level await to ensure it runs before test file imports
 await initializeToolMetadata();

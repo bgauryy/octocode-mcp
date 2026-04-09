@@ -3,7 +3,7 @@
  */
 
 import { BaseCommandBuilder } from './BaseCommandBuilder.js';
-import type { ViewStructureQuery } from '../utils/core/types.js';
+import type { ViewStructureQuery } from '@octocodeai/octocode-core';
 
 /**
  * Builder for ls commands

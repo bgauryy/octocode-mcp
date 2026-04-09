@@ -5,8 +5,8 @@ import type {
 } from './githubAPI';
 import type {
   GitHubReposSearchQuery,
-  SimplifiedRepository,
-} from '../tools/github_search_repos/types.js';
+  GitHubRepositoryOutput,
+} from '@octocodeai/octocode-core';
 import { getOctokit } from './client';
 import { handleGitHubAPIError } from './errors';
 import { buildRepoSearchQuery } from './queryBuilders';
@@ -31,7 +31,7 @@ export async function searchGitHubReposAPI(
   sessionId?: string
 ): Promise<
   GitHubAPIResponse<{
-    repositories: SimplifiedRepository[];
+    repositories: GitHubRepositoryOutput[];
     pagination?: RepoSearchPagination;
   }>
 > {
@@ -57,7 +57,7 @@ export async function searchGitHubReposAPI(
 
   const result = await withDataCache<
     GitHubAPIResponse<{
-      repositories: SimplifiedRepository[];
+      repositories: GitHubRepositoryOutput[];
       pagination?: RepoSearchPagination;
     }>
   >(
@@ -79,7 +79,7 @@ async function searchGitHubReposAPIInternal(
   authInfo?: AuthInfo
 ): Promise<
   GitHubAPIResponse<{
-    repositories: SimplifiedRepository[];
+    repositories: GitHubRepositoryOutput[];
     pagination?: RepoSearchPagination;
   }>
 > {

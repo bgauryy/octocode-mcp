@@ -20,15 +20,14 @@ import type {
 import { searchGitHubCodeAPI } from '../../github/codeSearch.js';
 import { searchGitHubReposAPI } from '../../github/repoSearch.js';
 
-import type { GitHubCodeSearchQuery } from '../../tools/github_search_code/types.js';
-import type { GitHubReposSearchQuery } from '../../tools/github_search_repos/types.js';
+import type {
+  GitHubCodeSearchQuery,
+  GitHubReposSearchQuery,
+  GitHubRepositoryOutput,
+  GitHubSearchRepositoriesData,
+} from '@octocodeai/octocode-core';
 import type { OptimizedCodeSearchResult } from '../../github/githubAPI.js';
 import { isGitHubAPIError } from '../../github/githubAPI.js';
-
-import type {
-  SimplifiedRepository,
-  RepoSearchResult as GHRepoSearchResult,
-} from '../../tools/github_search_repos/types.js';
 
 import { parseGitHubProjectId } from './utils.js';
 export { parseGitHubProjectId } from './utils.js';
@@ -71,10 +70,10 @@ export function transformCodeSearchResult(
  * Transform GitHub repo search result to unified format.
  */
 export function transformRepoSearchResult(
-  data: GHRepoSearchResult
+  data: GitHubSearchRepositoriesData
 ): RepoSearchResult {
   const repositories: UnifiedRepository[] = data.repositories.map(
-    (repo: SimplifiedRepository) => ({
+    (repo: GitHubRepositoryOutput) => ({
       id: `${repo.owner}/${repo.repo}`,
       name: repo.repo,
       fullPath: `${repo.owner}/${repo.repo}`,
@@ -121,7 +120,7 @@ export async function searchCode(
   const { owner: projectOwner, repo } = parseProjectId(query.projectId);
   const owner = projectOwner || query.owner;
 
-  const githubQuery: GitHubCodeSearchQuery = {
+  const githubQuery = {
     keywordsToSearch: query.keywords,
     owner,
     repo,
@@ -134,7 +133,7 @@ export async function searchCode(
     mainResearchGoal: query.mainResearchGoal,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
-  };
+  } as GitHubCodeSearchQuery;
 
   const result = await searchGitHubCodeAPI(githubQuery, authInfo);
 
@@ -169,7 +168,7 @@ export async function searchRepos(
   query: RepoSearchQuery,
   authInfo?: AuthInfo
 ): Promise<ProviderResponse<RepoSearchResult>> {
-  const githubQuery: GitHubReposSearchQuery = {
+  const githubQuery = {
     keywordsToSearch: query.keywords,
     topicsToSearch: query.topics,
     owner: query.owner,
@@ -187,7 +186,7 @@ export async function searchRepos(
     mainResearchGoal: query.mainResearchGoal,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
-  };
+  } as GitHubReposSearchQuery;
 
   const result = await searchGitHubReposAPI(githubQuery, authInfo);
 

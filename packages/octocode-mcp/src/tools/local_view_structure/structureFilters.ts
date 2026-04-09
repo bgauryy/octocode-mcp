@@ -1,4 +1,4 @@
-import type { ViewStructureQuery } from '../../utils/core/types.js';
+import type { ViewStructureQuery } from '@octocodeai/octocode-core';
 import { checkRegexSafety } from '../../utils/core/safeRegex.js';
 
 /**

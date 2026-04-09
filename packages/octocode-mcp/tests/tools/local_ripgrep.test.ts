@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { searchContentRipgrep } from '../../src/tools/local_ripgrep/searchContentRipgrep.js';
 import { LOCAL_TOOL_ERROR_CODES } from '../../src/errors/localToolErrors.js';
-import { RipgrepQuerySchema } from '../../src/tools/local_ripgrep/scheme.js';
+import { RipgrepQuerySchema } from '@octocodeai/octocode-core';
 import { safeExec } from '../../src/utils/exec/safe.js';
 import { checkCommandAvailability } from '../../src/utils/exec/commandAvailability.js';
 import * as pathValidator from '@octocode/security/pathValidator';

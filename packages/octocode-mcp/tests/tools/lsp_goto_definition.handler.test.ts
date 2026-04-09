@@ -295,7 +295,7 @@ describe('LSP Goto Definition Handler Tests', () => {
   describe('Schema validation', () => {
     it('should validate schema shape', async () => {
       const { BulkLSPGotoDefinitionSchema } =
-        await import('../../src/tools/lsp_goto_definition/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       const parsed = BulkLSPGotoDefinitionSchema.safeParse({
         queries: [
@@ -314,7 +314,7 @@ describe('LSP Goto Definition Handler Tests', () => {
 
     it('should export description', async () => {
       const { LSP_GOTO_DEFINITION_DESCRIPTION } =
-        await import('../../src/tools/lsp_goto_definition/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(typeof LSP_GOTO_DEFINITION_DESCRIPTION).toBe('string');
       // Description may be empty if tool not in remote metadata (local-only tool)

@@ -5,17 +5,15 @@ import type {
   RepoSearchResult as ProviderRepoSearchResult,
   RepoStructureResult as ProviderRepoStructureResult,
 } from '../providers/types.js';
-import type { FileContentQuery } from './github_fetch_content/types.js';
 import type {
+  FileContentQuery,
   GitHubCodeSearchQuery,
-  SearchResult,
-} from './github_search_code/types.js';
-import type { GitHubPullRequestSearchQuery } from './github_search_pull_requests/types.js';
-import type {
+  GitHubPullRequestSearchQuery,
   GitHubReposSearchQuery,
-  SimplifiedRepository,
-} from './github_search_repos/types.js';
-import type { GitHubViewRepoStructureQuery } from './github_view_repo_structure/types.js';
+  GitHubRepositoryOutput,
+  GitHubSearchCodeData,
+  GitHubViewRepoStructureQuery,
+} from '@octocodeai/octocode-core';
 
 function toProviderProjectId(
   owner?: string,
@@ -83,7 +81,7 @@ export function mapCodeSearchToolQuery(query: GitHubCodeSearchQuery) {
 export function mapCodeSearchProviderResult(
   data: CodeSearchResult,
   query: GitHubCodeSearchQuery
-): SearchResult {
+): GitHubSearchCodeData {
   const splitRepositoryPath = (repositoryPath: string) => {
     const slashIdx = repositoryPath.lastIndexOf('/');
     if (slashIdx <= 0) {
@@ -128,7 +126,7 @@ export function mapCodeSearchProviderResult(
     };
   });
 
-  const result: SearchResult = { files };
+  const result: GitHubSearchCodeData = { files };
 
   if (data.repositoryContext?.branch) {
     result.repositoryContext = {
@@ -176,7 +174,7 @@ export function mapRepoSearchToolQuery(query: GitHubReposSearchQuery) {
 
 export function mapRepoSearchProviderRepositories(
   repositories: ProviderRepoSearchResult['repositories']
-): SimplifiedRepository[] {
+): GitHubRepositoryOutput[] {
   const splitRepositoryPath = (repositoryPath: string) => {
     const slashIdx = repositoryPath.lastIndexOf('/');
     if (slashIdx <= 0) {

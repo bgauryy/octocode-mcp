@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { RipgrepQuery } from '../../src/tools/local_ripgrep/scheme.js';
+import type { RipgrepQuery } from '@octocodeai/octocode-core';
 
 // Mock the bulk operation module
 vi.mock('../../src/utils/response/bulk.js', () => ({
@@ -33,28 +33,13 @@ vi.mock('../../src/tools/local_view_structure/local_view_structure.js', () => ({
 
 // Mock schema modules so safeParse always succeeds in callback tests
 const mockSafeParse = () => ({ success: true, data: {} });
-vi.mock(
-  '../../src/tools/local_fetch_content/scheme.js',
-  async importOriginal => ({
-    ...(await importOriginal<object>()),
-    FetchContentQuerySchema: { safeParse: mockSafeParse },
-  })
-);
-vi.mock('../../src/tools/local_find_files/scheme.js', async importOriginal => ({
+vi.mock('@octocodeai/octocode-core', async importOriginal => ({
   ...(await importOriginal<object>()),
+  FetchContentQuerySchema: { safeParse: mockSafeParse },
   FindFilesQuerySchema: { safeParse: mockSafeParse },
-}));
-vi.mock('../../src/tools/local_ripgrep/scheme.js', async importOriginal => ({
-  ...(await importOriginal<object>()),
   RipgrepQuerySchema: { safeParse: mockSafeParse },
+  ViewStructureQuerySchema: { safeParse: mockSafeParse },
 }));
-vi.mock(
-  '../../src/tools/local_view_structure/scheme.js',
-  async importOriginal => ({
-    ...(await importOriginal<object>()),
-    ViewStructureQuerySchema: { safeParse: mockSafeParse },
-  })
-);
 
 describe('Local Tools Execution', () => {
   beforeEach(() => {
@@ -70,12 +55,13 @@ describe('Local Tools Execution', () => {
 
       const queries = [
         {
+          id: 'test',
           researchGoal: 'Test',
           reasoning: 'Schema validation',
           path: '/test/file.ts',
         },
       ];
-      await executeFetchContent({ queries });
+      await executeFetchContent({ queries: queries as any });
 
       expect(executeBulkOperation).toHaveBeenCalledWith(
         queries,
@@ -94,12 +80,13 @@ describe('Local Tools Execution', () => {
 
       const queries = [
         {
+          id: 'test',
           researchGoal: 'Test',
           reasoning: 'Schema validation',
           path: '/test/file.ts',
         },
       ];
-      await executeFetchContent({ queries });
+      await executeFetchContent({ queries: queries as any });
 
       // Get the callback function passed to executeBulkOperation
       const mockCall = vi.mocked(executeBulkOperation).mock.calls[0];
@@ -183,9 +170,14 @@ describe('Local Tools Execution', () => {
         await import('../../src/utils/response/bulk.js');
 
       const queries = [
-        { researchGoal: 'Test', reasoning: 'Schema validation', path: '/test' },
+        {
+          id: 'test',
+          researchGoal: 'Test',
+          reasoning: 'Schema validation',
+          path: '/test',
+        },
       ];
-      await executeFindFiles({ queries });
+      await executeFindFiles({ queries: queries as any });
 
       expect(executeBulkOperation).toHaveBeenCalledWith(
         queries,
@@ -203,9 +195,14 @@ describe('Local Tools Execution', () => {
         await import('../../src/tools/local_find_files/findFiles.js');
 
       const queries = [
-        { researchGoal: 'Test', reasoning: 'Schema validation', path: '/test' },
+        {
+          id: 'test',
+          researchGoal: 'Test',
+          reasoning: 'Schema validation',
+          path: '/test',
+        },
       ];
-      await executeFindFiles({ queries });
+      await executeFindFiles({ queries: queries as any });
 
       const mockCall = vi.mocked(executeBulkOperation).mock.calls[0];
       expect(mockCall).toBeDefined();
@@ -251,11 +248,12 @@ describe('Local Tools Execution', () => {
       );
 
       const query = {
+        id: 'test',
         researchGoal: 'Test',
         reasoning: 'boundary test',
         path: '/test',
       };
-      await executeFindFiles({ queries: [query] });
+      await executeFindFiles({ queries: [query] as any });
 
       const callback = vi.mocked(executeBulkOperation).mock.calls[0]![1];
       const result = await callback(query, 0);
@@ -347,9 +345,14 @@ describe('Local Tools Execution', () => {
         await import('../../src/utils/response/bulk.js');
 
       const queries = [
-        { researchGoal: 'Test', reasoning: 'Schema validation', path: '/test' },
+        {
+          id: 'test',
+          researchGoal: 'Test',
+          reasoning: 'Schema validation',
+          path: '/test',
+        },
       ];
-      await executeViewStructure({ queries });
+      await executeViewStructure({ queries: queries as any });
 
       expect(executeBulkOperation).toHaveBeenCalledWith(
         queries,
@@ -367,9 +370,14 @@ describe('Local Tools Execution', () => {
         await import('../../src/tools/local_view_structure/local_view_structure.js');
 
       const queries = [
-        { researchGoal: 'Test', reasoning: 'Schema validation', path: '/test' },
+        {
+          id: 'test',
+          researchGoal: 'Test',
+          reasoning: 'Schema validation',
+          path: '/test',
+        },
       ];
-      await executeViewStructure({ queries });
+      await executeViewStructure({ queries: queries as any });
 
       const mockCall = vi.mocked(executeBulkOperation).mock.calls[0];
       expect(mockCall).toBeDefined();
@@ -415,11 +423,12 @@ describe('Local Tools Execution', () => {
       );
 
       const query = {
+        id: 'test',
         researchGoal: 'Test',
         reasoning: 'boundary test',
         path: '/test',
       };
-      await executeViewStructure({ queries: [query] });
+      await executeViewStructure({ queries: [query] as any });
 
       const callback = vi.mocked(executeBulkOperation).mock.calls[0]![1];
       const result = await callback(query, 0);

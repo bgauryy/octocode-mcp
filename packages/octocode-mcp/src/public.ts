@@ -15,17 +15,31 @@
  * ```
  */
 
-// Types, tool names, and metadata utilities
-export * from './public/types.js';
-
 // Server registration and configuration
 export * from './public/server.js';
 
 // Tool execution functions and security
 export * from './public/tools.js';
 
-// Zod schemas for input validation
-export * from './public/schemas.js';
+// Zod schemas (re-exported from @octocodeai/octocode-core for convenience)
+export {
+  GitHubCodeSearchQuerySchema,
+  GitHubViewRepoStructureQuerySchema,
+  GitHubReposSearchSingleQuerySchema,
+  GitHubPullRequestSearchQuerySchema,
+  FileContentQuerySchema,
+  RipgrepQuerySchema,
+  FetchContentQuerySchema,
+  FindFilesQuerySchema,
+  ViewStructureQuerySchema,
+  LSPGotoDefinitionQuerySchema,
+  LSPFindReferencesQuerySchema,
+  LSPCallHierarchyQuerySchema,
+  PackageSearchQuerySchema,
+} from '@octocodeai/octocode-core';
+
+// Tool metadata loading
+export { loadToolContent } from './tools/toolMetadata/state.js';
 
 // Response formatting
 export * from './public/responses.js';

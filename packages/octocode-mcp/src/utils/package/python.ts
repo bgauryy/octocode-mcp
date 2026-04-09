@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { generateCacheKey, withDataCache } from '../http/cache.js';
 import type {
   PackageSearchAPIResult,
@@ -28,19 +27,23 @@ async function searchPythonPackageInternal(
   for (const nameToTry of uniqueNames) {
     try {
       const encodedName = encodeURIComponent(nameToTry);
-      const response = await axios.get(
+      const response = await fetch(
         `https://pypi.org/pypi/${encodedName}/json`,
         {
-          timeout: 15000,
           headers: {
             Accept: 'application/json',
-            'User-Agent': 'octocode-mcp/8.0.0',
+            'User-Agent': 'octocode-mcp/13.0.0',
           },
-          validateStatus: status => status === 200,
+          signal: AbortSignal.timeout(15000),
         }
       );
 
-      const packageInfo = response.data;
+      if (!response.ok) {
+        if (response.status === 404) continue;
+        throw new Error(`PyPI returned ${response.status}`);
+      }
+
+      const packageInfo = await response.json();
       if (!packageInfo.info) {
         continue;
       }
@@ -147,7 +150,7 @@ async function searchPythonPackageInternal(
         totalFound: 1,
       };
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) {
+      if (error instanceof Error && error.message.includes('404')) {
         continue;
       }
       throw error;

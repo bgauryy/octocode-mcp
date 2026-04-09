@@ -1,6 +1,9 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { type RipgrepQuery, RipgrepQuerySchema } from './scheme.js';
-import { TOOL_NAMES } from '../toolMetadata/names.js';
+import {
+  type RipgrepQuery,
+  RipgrepQuerySchema,
+} from '@octocodeai/octocode-core';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import { searchContentRipgrep } from './searchContentRipgrep.js';
 import { createErrorResult } from '../utils.js';

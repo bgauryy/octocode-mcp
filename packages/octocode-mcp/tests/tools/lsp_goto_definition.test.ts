@@ -85,7 +85,7 @@ describe('LSP Goto Definition Tool', () => {
       vi.resetModules();
 
       const { BulkLSPGotoDefinitionSchema } =
-        await import('../../src/tools/lsp_goto_definition/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(BulkLSPGotoDefinitionSchema).toBeDefined();
       const parsed = BulkLSPGotoDefinitionSchema.safeParse({
@@ -107,7 +107,7 @@ describe('LSP Goto Definition Tool', () => {
       vi.resetModules();
 
       const { BulkLSPGotoDefinitionSchema } =
-        await import('../../src/tools/lsp_goto_definition/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       const parsed = BulkLSPGotoDefinitionSchema.safeParse({
         queries: [
@@ -200,7 +200,7 @@ describe('LSP Goto Definition Tool', () => {
     it('should export tool description', async () => {
       // Don't reset modules - use the initialized metadata from setup.ts
       const { LSP_GOTO_DEFINITION_DESCRIPTION } =
-        await import('../../src/tools/lsp_goto_definition/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(LSP_GOTO_DEFINITION_DESCRIPTION).toBeDefined();
       expect(typeof LSP_GOTO_DEFINITION_DESCRIPTION).toBe('string');

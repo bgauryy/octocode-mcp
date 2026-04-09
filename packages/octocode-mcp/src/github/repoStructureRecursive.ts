@@ -2,7 +2,7 @@
  * Recursive directory content fetching for GitHub repository structure.
  * Extracted from repoStructure.ts.
  */
-import type { GitHubApiFileItem } from '../tools/github_view_repo_structure/scheme.js';
+import type { GitHubApiFileItem } from '../tools/github_view_repo_structure/types.js';
 import { OctokitWithThrottling } from './client';
 
 /**

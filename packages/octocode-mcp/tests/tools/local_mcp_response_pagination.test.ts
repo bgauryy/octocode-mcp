@@ -13,7 +13,7 @@ import {
   LocalSearchCodeOutputSchema,
   LocalViewStructureDataSchema,
   LocalViewStructureOutputSchema,
-} from '../../src/scheme/outputSchemas.js';
+} from '@octocodeai/octocode-core';
 import { registerLocalRipgrepTool } from '../../src/tools/local_ripgrep/register.js';
 import { registerLocalViewStructureTool } from '../../src/tools/local_view_structure/register.js';
 import { registerLocalFindFilesTool } from '../../src/tools/local_find_files/register.js';

@@ -18,16 +18,16 @@ import {
 import { formatFileSize } from '../../utils/file/size.js';
 import type {
   FindFilesQuery,
-  FindFilesResult,
-  FoundFile,
-} from '../../utils/core/types.js';
+  LocalFindFilesEntry,
+  LocalFindFilesToolResult,
+} from '@octocodeai/octocode-core';
 import fs from 'fs';
 import { ToolErrors } from '../../errors/errorFactories.js';
 import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 
 export async function findFiles(
   query: FindFilesQuery
-): Promise<FindFilesResult> {
+): Promise<LocalFindFilesToolResult> {
   const details = query.details ?? true;
   const showLastModified = query.showFileLastModified ?? true;
 
@@ -40,12 +40,12 @@ export async function findFiles(
       );
       return createErrorResult(toolError, query, {
         toolName: TOOL_NAMES.LOCAL_FIND_FILES,
-      }) as FindFilesResult;
+      }) as LocalFindFilesToolResult;
     }
 
     const validation = validateToolPath(query, TOOL_NAMES.LOCAL_FIND_FILES);
     if (!validation.isValid) {
-      return validation.errorResult as FindFilesResult;
+      return validation.errorResult as LocalFindFilesToolResult;
     }
 
     const queryWithSanitizedPath = {
@@ -84,7 +84,7 @@ export async function findFiles(
       return createErrorResult(toolError, query, {
         toolName: TOOL_NAMES.LOCAL_FIND_FILES,
         extra: { stderr: userMessage },
-      }) as FindFilesResult;
+      }) as LocalFindFilesToolResult;
     }
 
     let filePaths = result.stdout
@@ -95,7 +95,7 @@ export async function findFiles(
     const maxFiles = query.limit || 1000;
     filePaths = filePaths.slice(0, maxFiles);
 
-    const files: FoundFile[] = await getFileDetails(
+    const files: LocalFindFilesEntry[] = await getFileDetails(
       filePaths,
       showLastModified
     );
@@ -126,7 +126,7 @@ export async function findFiles(
     }
 
     const sortBy = query.sortBy || 'modified';
-    sortFoundFiles(files, sortBy, showLastModified);
+    sortLocalFindFilesEntrys(files, sortBy, showLastModified);
 
     const filesForOutput = formatForOutput(files, details, showLastModified);
     const totalFiles = filesForOutput.length;
@@ -184,12 +184,12 @@ export async function findFiles(
   } catch (error) {
     return createErrorResult(error, query, {
       toolName: TOOL_NAMES.LOCAL_FIND_FILES,
-    }) as FindFilesResult;
+    }) as LocalFindFilesToolResult;
   }
 }
 
-function sortFoundFiles(
-  files: FoundFile[],
+function sortLocalFindFilesEntrys(
+  files: LocalFindFilesEntry[],
   sortBy: string,
   showLastModified: boolean
 ): void {
@@ -216,12 +216,12 @@ function sortFoundFiles(
 }
 
 function formatForOutput(
-  files: FoundFile[],
+  files: LocalFindFilesEntry[],
   details: boolean,
   showLastModified: boolean
-): FoundFile[] {
+): LocalFindFilesEntry[] {
   return files.map(f => {
-    const result: FoundFile = { path: f.path, type: f.type };
+    const result: LocalFindFilesEntry = { path: f.path, type: f.type };
     if (details) {
       if (f.size !== undefined) {
         result.size = f.size;
@@ -237,10 +237,13 @@ function formatForOutput(
 }
 
 function applyCharPagination(
-  paginatedFiles: FoundFile[],
+  paginatedFiles: LocalFindFilesEntry[],
   charOffset?: number,
   charLength?: number
-): { finalFiles: FoundFile[]; paginationMetadata: PaginationMetadata | null } {
+): {
+  finalFiles: LocalFindFilesEntry[];
+  paginationMetadata: PaginationMetadata | null;
+} {
   if (!charLength) {
     return { finalFiles: paginatedFiles, paginationMetadata: null };
   }
@@ -270,7 +273,7 @@ function applyCharPagination(
     };
   }
 
-  const selectedFiles: FoundFile[] = [];
+  const selectedFiles: LocalFindFilesEntry[] = [];
   let currentPos = 1;
 
   for (let i = 0; i < paginatedFiles.length; i++) {
@@ -310,10 +313,10 @@ function applyCharPagination(
 async function getFileDetails(
   filePaths: string[],
   showModified: boolean = false
-): Promise<FoundFile[]> {
+): Promise<LocalFindFilesEntry[]> {
   const CONCURRENCY_LIMIT = 24;
 
-  const results: FoundFile[] = new Array(filePaths.length);
+  const results: LocalFindFilesEntry[] = new Array(filePaths.length);
 
   const processAtIndex = async (index: number) => {
     const filePath = filePaths[index]!;
@@ -324,7 +327,7 @@ async function getFileDetails(
       if (stats.isDirectory()) type = 'directory';
       else if (stats.isSymbolicLink()) type = 'symlink';
 
-      const file: FoundFile = {
+      const file: LocalFindFilesEntry = {
         path: filePath,
         type,
         size: stats.size,

@@ -872,7 +872,7 @@ describe('[RESILIENCE] Cache key generation edge cases', () => {
 //     Tests call BulkCloneRepoSchema.safeParse() directly — no mocks
 // ═══════════════════════════════════════════════════════════════════════
 
-import { BulkCloneRepoSchema } from '../../src/tools/github_clone_repo/scheme.js';
+import { BulkCloneRepoSchema } from '@octocodeai/octocode-core';
 
 function parseCloneSchema(overrides: Record<string, unknown>) {
   return BulkCloneRepoSchema.safeParse({

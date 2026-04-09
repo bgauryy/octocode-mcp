@@ -1,35 +1,34 @@
-/**
- * Types for github_view_repo_structure tool (githubViewRepoStructure)
- * @module tools/github_view_repo_structure/types
- */
+import type { GitHubRepoStructureDirectoryEntry } from '@octocodeai/octocode-core';
+import type { ContentDirectoryEntry } from '../../github/githubAPI.js';
+import type { PaginationInfo } from '../../types.js';
 
-import type {
-  GitHubRepoStructureDirectoryEntry,
-  GitHubViewRepoStructureData,
-  GitHubViewRepoStructureToolResult,
-} from '../../scheme/outputTypes.js';
+export type GitHubApiFileItem = ContentDirectoryEntry;
 
-/**
- * Query parameters for viewing repository structure
- */
-export interface GitHubViewRepoStructureQuery {
-  id?: string;
+export interface GitHubRepositoryStructureResult {
   owner: string;
   repo: string;
-  branch?: string;
-  path?: string;
-  depth?: number;
-  entriesPerPage?: number;
-  entryPageNumber?: number;
-  charOffset?: number;
-  charLength?: number;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
+  branch: string;
+  defaultBranch?: string;
+  path: string;
+  apiSource: boolean;
+  summary: {
+    totalFiles: number;
+    totalFolders: number;
+    truncated: boolean;
+    filtered: boolean;
+    originalCount: number;
+  };
+  structure: Record<string, GitHubRepoStructureDirectoryEntry>;
+  pagination?: PaginationInfo;
+  hints?: string[];
+  _cachedItems?: { path: string; type: 'file' | 'dir' }[];
 }
 
-export type DirectoryEntry = GitHubRepoStructureDirectoryEntry;
-
-export type RepoStructureResultData = GitHubViewRepoStructureData;
-
-export type RepoStructureResult = GitHubViewRepoStructureToolResult;
+export interface GitHubRepositoryStructureError {
+  error: string;
+  status?: number;
+  triedBranches?: string[];
+  defaultBranch?: string;
+  rateLimitRemaining?: number;
+  rateLimitReset?: number;
+}

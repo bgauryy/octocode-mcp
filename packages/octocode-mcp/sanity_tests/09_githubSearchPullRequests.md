@@ -801,6 +801,296 @@ Searches and retrieves GitHub pull request data. Supports metadata-only, partial
 
 ---
 
+## Schema Edge Cases & Boundary Tests
+
+### TC-E1: Empty Queries Array
+
+**Goal:** Verify empty `queries` array is rejected.
+
+```json
+{"queries": []}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries minItems: 1
+
+---
+
+### TC-E2: Queries Over Max (4 queries, max is 3)
+
+**Goal:** Verify exceeding maxItems is rejected.
+
+```json
+{
+  "queries": [
+    {"id": "q1", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "type": "metadata", "limit": 1},
+    {"id": "q2", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "type": "metadata", "limit": 1},
+    {"id": "q3", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "type": "metadata", "limit": 1},
+    {"id": "q4", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "type": "metadata", "limit": 1}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries maxItems is 3
+
+---
+
+### TC-E3: Invalid state Enum
+
+**Goal:** Verify `state` must be open|closed.
+
+```json
+{
+  "queries": [{
+    "id": "bad-state",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "state": "merged",
+    "type": "metadata",
+    "limit": 3
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: state must be open|closed
+
+---
+
+### TC-E4: Invalid type Enum
+
+**Goal:** Verify `type` must be metadata|fullContent|partialContent.
+
+```json
+{
+  "queries": [{
+    "id": "bad-type",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "type": "summary",
+    "limit": 3
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: type must be metadata|fullContent|partialContent
+
+---
+
+### TC-E5: Invalid sort Enum
+
+**Goal:** Verify `sort` must be created|updated|best-match.
+
+```json
+{
+  "queries": [{
+    "id": "bad-sort",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "sort": "comments",
+    "type": "metadata",
+    "limit": 3
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: sort must be created|updated|best-match
+
+---
+
+### TC-E6: Invalid order Enum
+
+**Goal:** Verify `order` must be asc|desc.
+
+```json
+{
+  "queries": [{
+    "id": "bad-order",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "order": "newest",
+    "type": "metadata",
+    "limit": 3
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: order must be asc|desc
+
+---
+
+### TC-E7: limit Boundary (0 and 11)
+
+**Goal:** Verify `limit` must be 1-10.
+
+**Expected:**
+- [ ] Schema rejection for `limit: 0` and `limit: 11`
+
+---
+
+### TC-E8: page Boundary (0 and 11)
+
+**Goal:** Verify `page` must be 1-10.
+
+**Expected:**
+- [ ] Schema rejection for `page: 0` and `page: 11`
+
+---
+
+### TC-E9: prNumber Zero or Negative
+
+**Goal:** Verify `prNumber` must be > 0 when provided.
+
+```json
+{
+  "queries": [{
+    "id": "bad-pr",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "prNumber": 0,
+    "type": "metadata"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: prNumber must be > 0
+
+---
+
+### TC-E10: Invalid comments Pattern String
+
+**Goal:** Verify `comments` filter matches schema pattern (e.g. count/range), not arbitrary text.
+
+```json
+{
+  "queries": [{
+    "id": "bad-comments",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "comments": "not-a-valid-pattern",
+    "type": "metadata",
+    "limit": 3
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: comments pattern mismatch
+
+---
+
+### TC-E11: Minimal Query (Only Required Fields)
+
+**Goal:** Verify query with only `id`, `mainResearchGoal`, `researchGoal`, `reasoning` is accepted; runtime may error on missing owner/repo per handler.
+
+```json
+{
+  "queries": [{
+    "id": "minimal",
+    "mainResearchGoal": "Minimal PR query",
+    "researchGoal": "Schema accepts required fields only",
+    "reasoning": "Optional params use defaults or fail at execution"
+  }]
+}
+```
+
+**Expected:**
+- [ ] No schema error for the four required fields (if owner/repo are optional at schema level, document; otherwise expect schema error for missing owner/repo)
+
+---
+
+### TC-E12: Response-Level Pagination
+
+**Goal:** Verify root `responseCharOffset` + `responseCharLength` paginate the full MCP response.
+
+```json
+{
+  "queries": [{
+    "id": "resp",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "prNumber": 1,
+    "type": "metadata"
+  }],
+  "responseCharOffset": 0,
+  "responseCharLength": 3000
+}
+```
+
+**Expected:**
+- [ ] MCP response truncated to ~3000 chars
+- [ ] `responsePagination` metadata present
+
+---
+
+### TC-E13: Duplicate Query IDs
+
+**Goal:** Verify duplicate `id` values rejected in bulk.
+
+```json
+{
+  "queries": [
+    {"id": "dup", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "type": "metadata", "limit": 1},
+    {"id": "dup", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "type": "metadata", "limit": 1}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error: duplicate query ids
+
+---
+
+### TC-E14: Invalid ID Pattern
+
+**Goal:** Verify `id` with invalid characters rejected.
+
+```json
+{
+  "queries": [{
+    "id": "pr#1",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "type": "metadata",
+    "limit": 3
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: id pattern ^[A-Za-z0-9._:-]+$
+
+---
+
 ## Validation Checklist
 
 ### Core Requirements

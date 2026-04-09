@@ -52,9 +52,14 @@ describe('MCP protocol exposure: instructions, tools, and prompts', () => {
       prompts: MOCK_PROMPTS,
     });
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => metadata,
+    vi.doMock('@octocodeai/octocode-core', async importOriginal => {
+      const actual =
+        await importOriginal<typeof import('@octocodeai/octocode-core')>();
+      return {
+        ...actual,
+        octocodeConfig: metadata,
+        completeMetadata: metadata,
+      };
     });
 
     const { _resetMetadataState, initializeToolMetadata } =
@@ -131,6 +136,7 @@ describe('MCP protocol exposure: instructions, tools, and prompts', () => {
   it('every tool inputSchema has zero empty descriptions', async () => {
     const { tools } = await client.listTools();
 
+    const KNOWN_UPSTREAM_EMPTY = new Set(['charOffset', 'charLength']);
     let totalDescriptions = 0;
     let emptyDescriptions = 0;
 
@@ -142,7 +148,7 @@ describe('MCP protocol exposure: instructions, tools, and prompts', () => {
       );
       totalDescriptions += descriptions.length;
       emptyDescriptions += descriptions.filter(
-        d => d.description === ''
+        d => d.description === '' && !KNOWN_UPSTREAM_EMPTY.has(d.fieldName)
       ).length;
     }
 

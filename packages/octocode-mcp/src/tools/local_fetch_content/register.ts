@@ -4,10 +4,10 @@ import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import {
   BulkFetchContentSchema,
   LOCAL_FETCH_CONTENT_DESCRIPTION,
-} from './scheme.js';
+} from '@octocodeai/octocode-core';
 import { executeFetchContent } from './execution.js';
 import { withBasicSecurityValidation } from '../../utils/securityBridge.js';
-import { LocalGetFileContentOutputSchema } from '../../scheme/outputSchemas.js';
+import { LocalGetFileContentOutputSchema } from '@octocodeai/octocode-core';
 
 /**
  * Register the local fetch content tool with the MCP server.

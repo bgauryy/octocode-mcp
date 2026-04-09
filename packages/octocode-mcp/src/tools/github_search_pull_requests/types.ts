@@ -1,81 +1,5 @@
-/**
- * Types for github_search_pull_requests tool (githubSearchPullRequests)
- * @module tools/github_search_pull_requests/types
- */
+import type { GitHubSearchPullRequestsPagination } from '@octocodeai/octocode-core';
 
-import type {
-  GitHubPullRequestOutput,
-  GitHubSearchPullRequestsData,
-  GitHubSearchPullRequestsPagination,
-  GitHubSearchPullRequestsToolResult,
-} from '../../scheme/outputTypes.js';
-
-/**
- * Query parameters for searching pull requests
- */
-export interface GitHubPullRequestSearchQuery {
-  id?: string;
-  query?: string;
-  owner?: string;
-  repo?: string;
-  prNumber?: number;
-  state?: 'open' | 'closed';
-  assignee?: string;
-  author?: string;
-  commenter?: string;
-  involves?: string;
-  mentions?: string;
-  'review-requested'?: string;
-  'reviewed-by'?: string;
-  label?: string | string[];
-  'no-label'?: boolean;
-  'no-milestone'?: boolean;
-  'no-project'?: boolean;
-  'no-assignee'?: boolean;
-  head?: string;
-  base?: string;
-  created?: string;
-  updated?: string;
-  closed?: string;
-  'merged-at'?: string;
-  comments?: number | string;
-  reactions?: number | string;
-  interactions?: number | string;
-  merged?: boolean;
-  draft?: boolean;
-  match?: Array<'title' | 'body' | 'comments'>;
-  sort?: 'created' | 'updated' | 'best-match';
-  order?: 'asc' | 'desc';
-  limit?: number;
-  page?: number;
-  withComments?: boolean;
-  withCommits?: boolean;
-  type?: 'metadata' | 'fullContent' | 'partialContent';
-  partialContentMetadata?: {
-    file: string;
-    additions?: number[];
-    deletions?: number[];
-  }[];
-  charOffset?: number;
-  charLength?: number;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-}
-
-/** Final user-facing pull request item derived from the output schema */
-export type PullRequestInfo = GitHubPullRequestOutput;
-
-/** Final user-facing success data derived from the output schema */
-export type PullRequestSearchResultData = GitHubSearchPullRequestsData;
-
-/** Final user-facing flattened query result derived from the output schema */
-export type PullRequestSearchResult = GitHubSearchPullRequestsToolResult;
-
-/** Pagination info for final user-facing pull request search results */
-export type PRSearchPagination = GitHubSearchPullRequestsPagination;
-
-/** Internal GitHub API pull request item before provider normalization */
 export interface GitHubPullRequestApiItem {
   number: number;
   title: string;
@@ -136,15 +60,13 @@ export interface GitHubPullRequestApiItem {
   }>;
 }
 
-/** Internal GitHub API pull request search result data */
 export interface GitHubPullRequestSearchApiData {
   owner?: string;
   repo?: string;
   pull_requests?: GitHubPullRequestApiItem[];
   total_count?: number;
   incomplete_results?: boolean;
-  pagination?: PRSearchPagination;
-  /** Character-based output pagination (when output exceeds size limit) */
+  pagination?: GitHubSearchPullRequestsPagination;
   outputPagination?: {
     charOffset: number;
     charLength: number;
@@ -155,7 +77,6 @@ export interface GitHubPullRequestSearchApiData {
   };
 }
 
-/** Internal GitHub API pull request search result */
 export interface GitHubPullRequestSearchApiResult extends GitHubPullRequestSearchApiData {
   error?: string;
   hints?: string[];

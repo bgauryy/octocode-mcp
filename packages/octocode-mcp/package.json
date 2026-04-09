@@ -96,7 +96,8 @@
   },
   "dependencies": {
     "@coderabbitai/bitbucket": "^1.1.4",
-    "@octocode/security": "workspace:^"
+    "@octocode/security": "workspace:^",
+    "@octocodeai/octocode-core": "^1.0.2"
   },
   "devDependencies": {
     "@gitbeaker/rest": "^43.8.0",
@@ -112,7 +113,6 @@
     "@types/picomatch": "^4.0.2",
     "@vitest/coverage-v8": "^4.0.16",
     "@vitest/ui": "^4.0.16",
-    "axios": "1.13.2",
     "clean-css": "^5.3.3",
     "esbuild": "^0.27.2",
     "eslint": "^9.18.0",

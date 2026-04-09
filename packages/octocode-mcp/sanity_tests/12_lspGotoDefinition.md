@@ -620,6 +620,202 @@ localSearchCode: {
 
 ---
 
+## Schema Edge Cases & Boundary Tests
+
+**Schema reference (input):** `queries` length **1–5**. Per query: `uri` **minLength 1**; `symbolName` **1–255**; `lineHint` **≥ 1**; `contextLines` **0–20**.
+
+**LSP tools (contract):** each query uses **`researchGoal`** and **`reasoning`** only — **do not** send **`mainResearchGoal`** (not in the LSP tool schema). Examples below follow that contract.
+
+### SE-1: Empty `queries` array
+
+**Goal:** Reject bulk payload with zero queries.
+
+```json
+{
+  "queries": []
+}
+```
+
+**Expected:**
+- [ ] Validation or tool error — empty `queries` not allowed
+- [ ] **Response Validation:** bulk error shape if applicable
+
+### SE-2: `queries` over maximum (6 entries, max 5)
+
+**Goal:** Enforce at most **5** queries per request.
+
+```json
+{
+  "queries": [
+    {"id": "1", "uri": "<file>", "symbolName": "a", "lineHint": 1, "researchGoal": "e1", "reasoning": "edge"},
+    {"id": "2", "uri": "<file>", "symbolName": "b", "lineHint": 1, "researchGoal": "e2", "reasoning": "edge"},
+    {"id": "3", "uri": "<file>", "symbolName": "c", "lineHint": 1, "researchGoal": "e3", "reasoning": "edge"},
+    {"id": "4", "uri": "<file>", "symbolName": "d", "lineHint": 1, "researchGoal": "e4", "reasoning": "edge"},
+    {"id": "5", "uri": "<file>", "symbolName": "e", "lineHint": 1, "researchGoal": "e5", "reasoning": "edge"},
+    {"id": "6", "uri": "<file>", "symbolName": "f", "lineHint": 1, "researchGoal": "e6", "reasoning": "edge"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error (too many queries)
+- [ ] Message or hints reference maximum **5**
+
+### SE-3: `lineHint` 0 (below minimum 1)
+
+**Goal:** Reject non–1-based line hint.
+
+```json
+{
+  "queries": [{
+    "uri": "<known_file>",
+    "symbolName": "test",
+    "lineHint": 0,
+    "contextLines": 5,
+    "researchGoal": "lineHint min",
+    "reasoning": "Must be >= 1"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error for `lineHint`
+- [ ] **Hints Validation:** hints mention 1-indexed / minimum **1** if provided
+
+### SE-4: `contextLines` 21 (above maximum 20)
+
+**Goal:** Reject `contextLines` above **20**.
+
+```json
+{
+  "queries": [{
+    "uri": "<known_file>",
+    "symbolName": "test",
+    "lineHint": 1,
+    "contextLines": 21,
+    "researchGoal": "contextLines max",
+    "reasoning": "Above 20"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error for `contextLines`
+- [ ] Allowed range **0–20** reflected in error or hints
+
+### SE-5: Empty `symbolName` (`minLength` 1)
+
+**Goal:** Reject empty symbol name.
+
+```json
+{
+  "queries": [{
+    "uri": "<known_file>",
+    "symbolName": "",
+    "lineHint": 1,
+    "contextLines": 5,
+    "researchGoal": "empty symbolName",
+    "reasoning": "minLength 1"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error; no LSP round-trip
+- [ ] **Response Validation:** per-query error status if bulk shape applies
+
+### SE-6: `symbolName` 256 characters (above maximum 255)
+
+**Goal:** Reject or truncate at boundary — **256** chars must fail schema.
+
+```json
+{
+  "queries": [{
+    "uri": "<known_file>",
+    "symbolName": "<256_char_string>",
+    "lineHint": 1,
+    "contextLines": 5,
+    "researchGoal": "symbolName max+1",
+    "reasoning": "255 max"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error (preferred) **or** document server behavior if it differs
+- [ ] No silent acceptance of overlong `symbolName`
+
+### SE-7: Missing required fields (`uri` / `symbolName` / `lineHint`)
+
+**Goal:** Each required field is enforced.
+
+**Missing `uri`:**
+```json
+{
+  "queries": [{
+    "symbolName": "x",
+    "lineHint": 1,
+    "researchGoal": "missing uri",
+    "reasoning": "required"
+  }]
+}
+```
+
+**Missing `symbolName`:**
+```json
+{
+  "queries": [{
+    "uri": "<known_file>",
+    "lineHint": 1,
+    "researchGoal": "missing symbolName",
+    "reasoning": "required"
+  }]
+}
+```
+
+**Missing `lineHint`:**
+```json
+{
+  "queries": [{
+    "uri": "<known_file>",
+    "symbolName": "x",
+    "researchGoal": "missing lineHint",
+    "reasoning": "required"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Each omission fails validation with a clear missing-field message
+- [ ] No LSP request sent for invalid payloads
+
+### SE-8: Response-level pagination
+
+**Goal:** If the tool returns chunked or paginated definition output, metadata and hints stay consistent.
+
+**Expected:**
+- [ ] **Response Validation:** `instructions` / continuation fields match returned content
+- [ ] **Hints Validation:** next-step hints when more content is available
+
+### SE-9: Duplicate query `id` values
+
+**Goal:** Duplicate `id` in one request is rejected or handled deterministically.
+
+```json
+{
+  "queries": [
+    {"id": "dup", "uri": "<file>", "symbolName": "a", "lineHint": 1, "researchGoal": "a", "reasoning": "edge"},
+    {"id": "dup", "uri": "<file>", "symbolName": "b", "lineHint": 1, "researchGoal": "b", "reasoning": "edge"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error **or** documented dedup behavior
+- [ ] **Response Validation:** `results[].id` aligns with accepted queries when duplicates rejected
+
+---
+
 ## Validation Checklist
 
 ### Core Requirements

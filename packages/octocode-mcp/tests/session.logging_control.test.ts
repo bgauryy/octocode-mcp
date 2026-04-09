@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import axios from 'axios';
 import { deleteSession, _resetSessionState } from 'octocode-shared';
 
 // LOG environment variable is set in individual tests
@@ -30,7 +29,7 @@ describe('Session Logging Control', () => {
 
   describe('When logging is enabled', () => {
     beforeEach(async () => {
-      vi.mocked(axios.post).mockResolvedValue({ data: 'success' });
+      vi.mocked(fetch).mockResolvedValue(new Response('ok'));
       await initialize();
     });
 
@@ -38,8 +37,10 @@ describe('Session Logging Control', () => {
       const session = initializeSession();
       await logSessionInit();
 
-      const callArgs = vi.mocked(axios.post).mock.calls[0]!;
-      const payloadData = callArgs[1] as {
+      const callArgs = vi.mocked(fetch).mock.calls[0]!;
+      const payloadData = JSON.parse(
+        (callArgs[1] as RequestInit).body as string
+      ) as {
         sessionId: string;
         intent: string;
         data: object;
@@ -56,8 +57,10 @@ describe('Session Logging Control', () => {
       const session = initializeSession();
       await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, []);
 
-      const callArgs = vi.mocked(axios.post).mock.calls[0]!;
-      const payloadData = callArgs[1] as {
+      const callArgs = vi.mocked(fetch).mock.calls[0]!;
+      const payloadData = JSON.parse(
+        (callArgs[1] as RequestInit).body as string
+      ) as {
         sessionId: string;
         intent: string;
         data: { tool_name: string; repos: string[] };
@@ -80,8 +83,10 @@ describe('Session Logging Control', () => {
       const session = initializeSession();
       await logToolCall(TOOL_NAMES.GITHUB_FETCH_CONTENT, ['my-owner/my-repo']);
 
-      const callArgs = vi.mocked(axios.post).mock.calls[0]!;
-      const payloadData = callArgs[1] as {
+      const callArgs = vi.mocked(fetch).mock.calls[0]!;
+      const payloadData = JSON.parse(
+        (callArgs[1] as RequestInit).body as string
+      ) as {
         sessionId: string;
         intent: string;
         data: { tool_name: string; repos: string[] };
@@ -104,8 +109,10 @@ describe('Session Logging Control', () => {
       const session = initializeSession();
       await logSessionError('test', 'TEST_ERROR');
 
-      const callArgs = vi.mocked(axios.post).mock.calls[0]!;
-      const payloadData = callArgs[1] as {
+      const callArgs = vi.mocked(fetch).mock.calls[0]!;
+      const payloadData = JSON.parse(
+        (callArgs[1] as RequestInit).body as string
+      ) as {
         sessionId: string;
         intent: string;
         data: { error: string };
@@ -123,35 +130,35 @@ describe('Session Logging Control', () => {
     beforeEach(async () => {
       process.env.LOG = 'false';
       cleanup();
-      vi.mocked(axios.post).mockResolvedValue({ data: 'success' });
+      vi.mocked(fetch).mockResolvedValue(new Response('ok'));
       await initialize();
     });
 
     it('should NOT send session init log when LOG=false', async () => {
       initializeSession();
       await logSessionInit();
-      expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
 
     it('should NOT send tool call log', async () => {
       initializeSession();
       await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, []);
 
-      expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
 
     it('should NOT send tool call log with repos', async () => {
       initializeSession();
       await logToolCall(TOOL_NAMES.GITHUB_FETCH_CONTENT, ['my-owner/my-repo']);
 
-      expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
 
     it('should NOT send error log', async () => {
       initializeSession();
       await logSessionError('test', 'TEST_ERROR');
 
-      expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
 
     it('should skip init, tool calls, and errors', async () => {
@@ -161,7 +168,7 @@ describe('Session Logging Control', () => {
       await logToolCall('test_tool', []);
       await logToolCall('test_tool', ['owner/repo']);
       await logSessionError('test', 'TEST_ERROR');
-      expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
   });
 
@@ -179,13 +186,13 @@ describe('Session Logging Control', () => {
       initializeSession();
 
       await logToolCall('tool1', []);
-      expect(vi.mocked(axios.post)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
 
       // Note: In the current implementation, logging state is cached
       // and cannot be changed dynamically without reinitializing
       // This test documents the current behavior
       await logToolCall('tool2', []);
-      expect(vi.mocked(axios.post)).toHaveBeenCalledTimes(2); // Still called since LOG=true
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2); // Still called since LOG=true
     });
   });
 
@@ -196,8 +203,8 @@ describe('Session Logging Control', () => {
       await initialize();
     });
 
-    it('should not throw errors even if axios would fail', async () => {
-      vi.mocked(axios.post).mockRejectedValue(new Error('Network error'));
+    it('should not throw errors even if fetch would fail', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('Network error'));
 
       initializeSession();
 
@@ -205,7 +212,7 @@ describe('Session Logging Control', () => {
       await logToolCall('test', []);
       await logSessionError('test', 'TEST_ERROR');
 
-      expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
   });
 
@@ -258,7 +265,7 @@ describe('Session Logging Control', () => {
     beforeEach(async () => {
       process.env.LOG = 'false';
       cleanup();
-      vi.mocked(axios.post).mockResolvedValue({ data: 'success' });
+      vi.mocked(fetch).mockResolvedValue(new Response('ok'));
       await initialize();
     });
 
@@ -266,7 +273,7 @@ describe('Session Logging Control', () => {
       initializeSession();
       await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, ['facebook/react']);
 
-      expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
 
     it('should NOT send tool_call for github tools with research fields', async () => {
@@ -279,7 +286,7 @@ describe('Session Logging Control', () => {
         'Need to understand extension host'
       );
 
-      expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
 
     it('should NOT send tool_call for multiple sequential calls', async () => {
@@ -289,14 +296,14 @@ describe('Session Logging Control', () => {
       await logToolCall(TOOL_NAMES.GITHUB_FETCH_CONTENT, ['owner2/repo2']);
       await logToolCall(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, []);
 
-      expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
 
     it('should NOT send tool_call even with empty repos', async () => {
       initializeSession();
       await logToolCall(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, []);
 
-      expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
 
     it('should still update persistent stats even when LOG=false', async () => {
@@ -308,7 +315,7 @@ describe('Session Logging Control', () => {
       // Stats are always updated locally, even when remote logging is off
       expect(incrementToolCalls).toHaveBeenCalledWith(1);
       // But no remote call was made
-      expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
   });
 
@@ -321,27 +328,27 @@ describe('Session Logging Control', () => {
       beforeEach(async () => {
         process.env.LOG = 'false';
         cleanup();
-        vi.mocked(axios.post).mockResolvedValue({ data: 'success' });
+        vi.mocked(fetch).mockResolvedValue(new Response('ok'));
         await initialize();
       });
 
       it('should NOT send init with LOG=false', async () => {
         initializeSession();
         await logSessionInit();
-        expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
       });
 
       it('should NOT send init payload when LOG=false', async () => {
         initializeSession();
         await logSessionInit();
-        expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
       });
 
       it('should NOT send prompt_call when LOG=false', async () => {
         initializeSession();
         await logPromptCall('test-prompt');
 
-        expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
       });
 
       it('should NOT send rate_limit when LOG=false', async () => {
@@ -353,7 +360,7 @@ describe('Session Logging Control', () => {
         };
         await logRateLimit(rateLimitData);
 
-        expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
       });
 
       it('should skip all intents when LOG=false', async () => {
@@ -369,7 +376,7 @@ describe('Session Logging Control', () => {
         await logPromptCall('test-prompt');
         await logRateLimit(rateLimitData);
 
-        expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
       });
 
       it('should skip multiple init calls when LOG=false', async () => {
@@ -377,7 +384,7 @@ describe('Session Logging Control', () => {
 
         await logSessionInit();
         await logSessionInit();
-        expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
       });
     });
 
@@ -385,28 +392,28 @@ describe('Session Logging Control', () => {
       beforeEach(async () => {
         process.env.LOG = '0';
         cleanup();
-        vi.mocked(axios.post).mockResolvedValue({ data: 'success' });
+        vi.mocked(fetch).mockResolvedValue(new Response('ok'));
         await initialize();
       });
 
       it('should NOT send init when LOG=0', async () => {
         initializeSession();
         await logSessionInit();
-        expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
       });
 
       it('should NOT send tool_call when LOG=0', async () => {
         initializeSession();
         await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, []);
 
-        expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
       });
 
       it('should NOT send error when LOG=0', async () => {
         initializeSession();
         await logSessionError('test', 'ERROR');
 
-        expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
       });
     });
 
@@ -414,7 +421,7 @@ describe('Session Logging Control', () => {
       beforeEach(async () => {
         process.env.LOG = 'true';
         cleanup();
-        vi.mocked(axios.post).mockResolvedValue({ data: 'success' });
+        vi.mocked(fetch).mockResolvedValue(new Response('ok'));
         await initialize();
       });
 
@@ -425,11 +432,13 @@ describe('Session Logging Control', () => {
         await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, ['owner/repo']);
         await logSessionError('test', 'ERROR');
 
-        expect(vi.mocked(axios.post)).toHaveBeenCalledTimes(3);
+        expect(vi.mocked(fetch)).toHaveBeenCalledTimes(3);
 
         const intents = vi
-          .mocked(axios.post)
-          .mock.calls.map(call => (call[1] as { intent: string }).intent);
+          .mocked(fetch)
+          .mock.calls.map(
+            call => JSON.parse((call[1] as RequestInit).body as string).intent
+          );
         expect(intents).toEqual(['init', 'tool_call', 'error']);
       });
     });
@@ -442,9 +451,7 @@ describe('Session Logging Control', () => {
       });
 
       it('should not attempt network call for init when LOG=false', async () => {
-        vi.mocked(axios.post).mockRejectedValue(
-          new Error('Connection refused')
-        );
+        vi.mocked(fetch).mockRejectedValue(new Error('Connection refused'));
 
         const stderrSpy = vi
           .spyOn(process.stderr, 'write')
@@ -452,14 +459,14 @@ describe('Session Logging Control', () => {
 
         initializeSession();
         await logSessionInit();
-        expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
         expect(stderrSpy).not.toHaveBeenCalled();
 
         stderrSpy.mockRestore();
       });
 
       it('should not attempt network call for non-Error rejection when LOG=false', async () => {
-        vi.mocked(axios.post).mockRejectedValue('timeout');
+        vi.mocked(fetch).mockRejectedValue('timeout');
 
         const stderrSpy = vi
           .spyOn(process.stderr, 'write')
@@ -467,21 +474,21 @@ describe('Session Logging Control', () => {
 
         initializeSession();
         await logSessionInit();
-        expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
         expect(stderrSpy).not.toHaveBeenCalled();
 
         stderrSpy.mockRestore();
       });
 
       it('should not throw when logging is disabled', async () => {
-        vi.mocked(axios.post).mockRejectedValue(new Error('Network error'));
+        vi.mocked(fetch).mockRejectedValue(new Error('Network error'));
 
         initializeSession();
 
         await expect(logSessionInit()).resolves.not.toThrow();
         await expect(logToolCall('tool', [])).resolves.not.toThrow();
         await expect(logSessionError('test', 'ERR')).resolves.not.toThrow();
-        expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
       });
     });
   });

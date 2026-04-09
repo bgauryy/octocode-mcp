@@ -4,7 +4,7 @@ import {
   MockMcpServer,
 } from '../fixtures/mcp-fixtures.js';
 import { getTextContent } from '../utils/testHelpers.js';
-import { FileContentBulkQuerySchema } from '../../src/tools/github_fetch_content/scheme.js';
+import { FileContentBulkQuerySchema } from '@octocodeai/octocode-core';
 
 const mockInitialize = vi.hoisted(() => vi.fn());
 const mockGetServerConfig = vi.hoisted(() => vi.fn());

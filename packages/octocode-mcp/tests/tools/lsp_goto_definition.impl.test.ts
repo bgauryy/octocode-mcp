@@ -484,14 +484,14 @@ export interface Config {
   describe('Schema Exports', () => {
     it('should export BulkLSPGotoDefinitionSchema', async () => {
       const { BulkLSPGotoDefinitionSchema } =
-        await import('../../src/tools/lsp_goto_definition/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(BulkLSPGotoDefinitionSchema).toBeDefined();
     });
 
     it('should export LSP_GOTO_DEFINITION_DESCRIPTION', async () => {
       const { LSP_GOTO_DEFINITION_DESCRIPTION } =
-        await import('../../src/tools/lsp_goto_definition/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(LSP_GOTO_DEFINITION_DESCRIPTION).toBeDefined();
       expect(typeof LSP_GOTO_DEFINITION_DESCRIPTION).toBe('string');
@@ -519,6 +519,195 @@ export interface Config {
 
       expect(result).toBeDefined();
       expect(result.content?.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Dynamic Import Detection (isDynamicImport)', () => {
+    let isDynamicImport: typeof import('../../src/tools/lsp_goto_definition/execution.js').isDynamicImport;
+
+    beforeEach(async () => {
+      ({ isDynamicImport } =
+        await import('../../src/tools/lsp_goto_definition/execution.js'));
+    });
+
+    it('should detect simple dynamic import', () => {
+      expect(isDynamicImport("const mod = await import('./module')")).toBe(
+        true
+      );
+    });
+
+    it('should detect destructured dynamic import', () => {
+      expect(
+        isDynamicImport(
+          "const { registerTools } = await import('./tools/toolsManager.js')"
+        )
+      ).toBe(true);
+    });
+
+    it('should detect dynamic import with double quotes', () => {
+      expect(isDynamicImport('const mod = await import("./module")')).toBe(
+        true
+      );
+    });
+
+    it('should detect dynamic import without await', () => {
+      expect(isDynamicImport("const mod = import('./module')")).toBe(true);
+    });
+
+    it('should detect dynamic import with .then()', () => {
+      expect(
+        isDynamicImport("import('./module').then(mod => mod.default)")
+      ).toBe(true);
+    });
+
+    it('should NOT detect static import', () => {
+      expect(isDynamicImport("import { foo } from './module'")).toBe(false);
+    });
+
+    it('should NOT detect require()', () => {
+      expect(isDynamicImport("const x = require('./module')")).toBe(false);
+    });
+
+    it('should NOT detect regular function call with import in name', () => {
+      expect(isDynamicImport("const x = importModule('./module')")).toBe(false);
+    });
+
+    it('should handle empty string', () => {
+      expect(isDynamicImport('')).toBe(false);
+    });
+  });
+
+  describe('Dynamic Import Chaining via LSP', () => {
+    it('should chain through dynamic import when LSP resolves to same-file dynamic import line', async () => {
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+      const modulePath = `${process.cwd()}/src/toolsManager.ts`;
+
+      // Override resolver to return position on the dynamic import line (line 3, 0-indexed)
+      vi.mocked(resolverModule.SymbolResolver).mockImplementation(function () {
+        return {
+          resolvePositionFromContent: vi.fn().mockReturnValue({
+            position: { line: 3, character: 10 },
+            foundAtLine: 4,
+          }),
+          extractContext: vi.fn().mockReturnValue({
+            content: 'test content',
+            startLine: 1,
+            endLine: 10,
+          }),
+        };
+      });
+
+      const mockGotoDefinition = vi.fn();
+      // First call: resolves to dynamic import line in same file (line 3)
+      mockGotoDefinition.mockResolvedValueOnce([
+        {
+          uri: testPath,
+          range: {
+            start: { line: 3, character: 0 },
+            end: { line: 3, character: 65 },
+          },
+          content:
+            "const { registerTools } = await import('./toolsManager.js')",
+        },
+      ]);
+      // Second call (chain): returns empty (dynamic imports often fail LSP)
+      mockGotoDefinition.mockResolvedValueOnce([]);
+
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        true
+      );
+      vi.mocked(managerModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
+        gotoDefinition: mockGotoDefinition,
+      } as any);
+
+      vi.mocked(fs.readFile).mockImplementation(async p => {
+        const path = typeof p === 'string' ? p : String(p);
+        if (path === testPath) {
+          return "import { Server } from 'http';\n\nasync function main() {\n  const { registerTools } = await import('./toolsManager.js');\n  registerTools();\n}";
+        }
+        if (path === modulePath) {
+          return 'const a = 1;\nexport async function registerTools() { return {}; }\n';
+        }
+        throw new Error(`Unexpected path: ${path}`);
+      });
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'registerTools',
+            lineHint: 4,
+            contextLines: 0,
+            researchGoal: 'Find registerTools definition',
+            reasoning: 'Testing dynamic import chaining',
+          },
+        ],
+      });
+
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain(modulePath);
+      expect(text).toContain('Followed import chain to source definition');
+    });
+
+    it('should handle dynamic import with LSP returning empty by trying manual module resolution', async () => {
+      process.env.WORKSPACE_ROOT = process.cwd();
+      const testPath = `${process.cwd()}/src/test.ts`;
+      const modulePath = `${process.cwd()}/src/toolsManager.ts`;
+
+      // Override resolver to return position on line 0 (the dynamic import line)
+      vi.mocked(resolverModule.SymbolResolver).mockImplementation(function () {
+        return {
+          resolvePositionFromContent: vi.fn().mockReturnValue({
+            position: { line: 0, character: 8 },
+            foundAtLine: 1,
+          }),
+          extractContext: vi.fn().mockReturnValue({
+            content: 'test content',
+            startLine: 1,
+            endLine: 2,
+          }),
+        };
+      });
+
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        true
+      );
+      vi.mocked(managerModule.createClient).mockResolvedValue({
+        stop: vi.fn(),
+        gotoDefinition: vi.fn().mockResolvedValue([]),
+      } as any);
+
+      vi.mocked(fs.readFile).mockImplementation(async p => {
+        const path = typeof p === 'string' ? p : String(p);
+        if (path === testPath) {
+          return "const { registerTools } = await import('./toolsManager.js');\nregisterTools();";
+        }
+        if (path === modulePath) {
+          return 'export async function registerTools() { return {}; }\n';
+        }
+        throw new Error(`Unexpected path: ${path}`);
+      });
+
+      const handler = createHandler();
+      const result = await handler({
+        queries: [
+          {
+            uri: testPath,
+            symbolName: 'registerTools',
+            lineHint: 1,
+            contextLines: 0,
+            researchGoal: 'Find registerTools from dynamic import',
+            reasoning: 'Testing empty LSP fallback for dynamic imports',
+          },
+        ],
+      });
+
+      const text = result.content?.[0]?.text ?? '';
+      expect(text).toContain(modulePath);
+      expect(text).toContain('status: "hasResults"');
     });
   });
 

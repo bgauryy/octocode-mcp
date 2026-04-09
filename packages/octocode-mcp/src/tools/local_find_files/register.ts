@@ -1,10 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toMCPSchema } from '../../types/toolTypes.js';
 import { TOOL_NAMES } from '../toolMetadata/proxies.js';
-import { BulkFindFilesSchema, LOCAL_FIND_FILES_DESCRIPTION } from './scheme.js';
+import {
+  BulkFindFilesSchema,
+  LOCAL_FIND_FILES_DESCRIPTION,
+} from '@octocodeai/octocode-core';
 import { executeFindFiles } from './execution.js';
 import { withBasicSecurityValidation } from '../../utils/securityBridge.js';
-import { LocalFindFilesOutputSchema } from '../../scheme/outputSchemas.js';
+import { LocalFindFilesOutputSchema } from '@octocodeai/octocode-core';
 
 /**
  * Register the local find files tool with the MCP server.

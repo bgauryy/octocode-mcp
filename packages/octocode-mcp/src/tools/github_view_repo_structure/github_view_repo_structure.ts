@@ -1,8 +1,8 @@
-import type { GitHubViewRepoStructureQuery } from './types.js';
+import type { GitHubViewRepoStructureQuery } from '@octocodeai/octocode-core';
 import { TOOL_NAMES } from '../toolMetadata/proxies.js';
-import { GitHubViewRepoStructureBulkQuerySchema } from './scheme.js';
+import { GitHubViewRepoStructureBulkQuerySchema } from '@octocodeai/octocode-core';
 import { exploreMultipleRepositoryStructures } from './execution.js';
-import { GitHubViewRepoStructureOutputSchema } from '../../scheme/outputSchemas.js';
+import { GitHubViewRepoStructureOutputSchema } from '@octocodeai/octocode-core';
 import { createRemoteToolRegistration } from '../registerRemoteTool.js';
 
 export const registerViewGitHubRepoStructureTool =

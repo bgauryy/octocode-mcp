@@ -92,7 +92,7 @@ describe('LSP Call Hierarchy Tool', () => {
       vi.resetModules();
 
       const { BulkLSPCallHierarchySchema } =
-        await import('../../src/tools/lsp_call_hierarchy/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(BulkLSPCallHierarchySchema).toBeDefined();
       const parsed = BulkLSPCallHierarchySchema.safeParse({
@@ -115,7 +115,7 @@ describe('LSP Call Hierarchy Tool', () => {
       vi.resetModules();
 
       const { BulkLSPCallHierarchySchema } =
-        await import('../../src/tools/lsp_call_hierarchy/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       const parsed = BulkLSPCallHierarchySchema.safeParse({
         queries: [
@@ -388,7 +388,7 @@ describe('LSP Call Hierarchy Tool', () => {
     it('should export tool description', async () => {
       // Don't reset modules - use the initialized metadata from setup.ts
       const { LSP_CALL_HIERARCHY_DESCRIPTION } =
-        await import('../../src/tools/lsp_call_hierarchy/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(LSP_CALL_HIERARCHY_DESCRIPTION).toBeDefined();
       expect(typeof LSP_CALL_HIERARCHY_DESCRIPTION).toBe('string');

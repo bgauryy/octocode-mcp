@@ -13,9 +13,9 @@ import {
 import { parseFileSize, formatFileSize } from '../../utils/file/size.js';
 import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
 import type {
+  LocalViewStructureToolResult,
   ViewStructureQuery,
-  ViewStructureResult,
-} from '../../utils/core/types.js';
+} from '@octocodeai/octocode-core';
 import { ToolErrors } from '../../errors/errorFactories.js';
 import {
   applyEntryFilters,
@@ -27,14 +27,14 @@ import { walkDirectory, type WalkStats } from './structureWalker.js';
 
 export async function viewStructure(
   query: ViewStructureQuery
-): Promise<ViewStructureResult> {
+): Promise<LocalViewStructureToolResult> {
   try {
     const pathValidation = validateToolPath(
       query,
       TOOL_NAMES.LOCAL_VIEW_STRUCTURE
     );
     if (!pathValidation.isValid) {
-      return pathValidation.errorResult as ViewStructureResult;
+      return pathValidation.errorResult as LocalViewStructureToolResult;
     }
 
     // For recursive mode, we use Node.js fs directly (no external command needed)
@@ -57,7 +57,7 @@ export async function viewStructure(
       );
       return createErrorResult(toolError, query, {
         toolName: TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
-      }) as ViewStructureResult;
+      }) as LocalViewStructureToolResult;
     }
 
     const builder = new LsCommandBuilder();
@@ -82,7 +82,7 @@ export async function viewStructure(
         customHints: stderrMsg
           ? [`Error: ${stderrMsg}`]
           : ['ls command failed'],
-      }) as ViewStructureResult;
+      }) as LocalViewStructureToolResult;
     }
 
     const entries = query.details
@@ -188,7 +188,7 @@ async function viewStructureRecursive(
   query: ViewStructureQuery,
   basePath: string,
   showModified: boolean = false
-): Promise<ViewStructureResult> {
+): Promise<LocalViewStructureToolResult> {
   const entries: DirectoryEntry[] = [];
   const maxDepth = query.depth || (query.recursive ? 5 : 2);
 

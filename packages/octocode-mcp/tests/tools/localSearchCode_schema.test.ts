@@ -26,7 +26,7 @@ import {
   applyWorkflowMode,
   validateRipgrepQuery,
   type RipgrepQuery,
-} from '../../src/tools/local_ripgrep/scheme.js';
+} from '@octocodeai/octocode-core';
 
 // Helper to create valid queries (includes required researchGoal/reasoning)
 const createQuery = (
@@ -468,15 +468,7 @@ describe('localSearchCode Schema Tests - All Schema Parameters', () => {
       expect(query.includeStats).toBe(true);
     });
 
-    it('7.8 includeDistribution=true (default)', () => {
-      const query = createQuery({
-        pattern: 'test',
-        path: '/src',
-      });
-      expect(query.includeDistribution).toBe(true);
-    });
-
-    it('7.9 showFileLastModified=true', () => {
+    it('7.8 showFileLastModified=true', () => {
       const query = createQuery({
         pattern: 'test',
         path: '/src',
@@ -584,24 +576,7 @@ describe('localSearchCode Schema Tests - All Schema Parameters', () => {
       expect(query.matchContentLength).toBe(1);
     });
 
-    it('8.11 lineNumbers=true (default)', () => {
-      const query = createQuery({
-        pattern: 'test',
-        path: '/src',
-      });
-      expect(query.lineNumbers).toBe(true);
-    });
-
-    it('8.12 column=true', () => {
-      const query = createQuery({
-        pattern: 'test',
-        path: '/src',
-        column: true,
-      });
-      expect(query.column).toBe(true);
-    });
-
-    it('8.13 large context - warning', () => {
+    it('8.11 large context - warning', () => {
       const query = createQuery({
         pattern: 'test',
         path: '/src',
@@ -979,24 +954,6 @@ describe('localSearchCode Schema Tests - All Schema Parameters', () => {
       });
       expect(query.debug).toBe(true);
     });
-
-    it('12.5 jsonOutput=true', () => {
-      const query = createQuery({
-        pattern: 'test',
-        path: '/src',
-        jsonOutput: true,
-      });
-      expect(query.jsonOutput).toBe(true);
-    });
-
-    it('12.6 vimgrepFormat=true', () => {
-      const query = createQuery({
-        pattern: 'test',
-        path: '/src',
-        vimgrepFormat: true,
-      });
-      expect(query.vimgrepFormat).toBe(true);
-    });
   });
 
   /**
@@ -1072,14 +1029,11 @@ describe('localSearchCode Schema Tests - All Schema Parameters', () => {
         path: '/src',
         beforeContext: 5,
         afterContext: 10,
-        lineNumbers: true,
-        column: true,
         matchContentLength: 600,
       });
       expect(query.beforeContext).toBe(5);
       expect(query.afterContext).toBe(10);
-      expect(query.lineNumbers).toBe(true);
-      expect(query.column).toBe(true);
+      expect(query.matchContentLength).toBe(600);
     });
 
     it('13.6 multiline PCRE2 search', () => {

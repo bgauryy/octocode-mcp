@@ -921,6 +921,155 @@ Displays directory structure of a local path with filtering, sorting, pagination
 
 ---
 
+---
+
+## Schema Edge Cases & Boundary Tests
+
+### TC-31: Depth Below Minimum (0)
+
+**Goal:** Verify `depth: 0` is rejected (minimum is 1).
+
+```json
+{
+  "queries": [{
+    "id": "depth-zero",
+    "path": "<WORKSPACE_ROOT>",
+    "depth": 0,
+    "researchGoal": "Test depth minimum",
+    "reasoning": "Depth must be 1-5"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: depth minimum is 1
+
+---
+
+### TC-32: Depth Above Maximum (6)
+
+**Goal:** Verify `depth: 6` is rejected (maximum is 5).
+
+**Expected:**
+- [ ] Schema validation error: depth maximum is 5
+
+---
+
+### TC-33: entriesPerPage Below Minimum (0)
+
+**Goal:** Verify `entriesPerPage: 0` is rejected (minimum is 1).
+
+**Expected:**
+- [ ] Schema validation error: entriesPerPage minimum is 1
+
+---
+
+### TC-34: entriesPerPage Above Maximum (51)
+
+**Goal:** Verify `entriesPerPage: 51` is rejected (maximum is 50).
+
+**Expected:**
+- [ ] Schema validation error: entriesPerPage maximum is 50
+
+---
+
+### TC-35: Pattern Over Max Length (513 chars)
+
+**Goal:** Verify `pattern` exceeding 512 chars is rejected.
+
+**Expected:**
+- [ ] Schema validation error: pattern maxLength is 512
+
+---
+
+### TC-36: Extensions Array Over Max (101 items)
+
+**Goal:** Verify `extensions` array exceeding 100 items is rejected.
+
+**Expected:**
+- [ ] Schema validation error: extensions maxItems is 100
+
+---
+
+### TC-37: Invalid sortBy Enum
+
+**Goal:** Verify invalid `sortBy` value is rejected.
+
+```json
+{
+  "queries": [{
+    "id": "bad-sort",
+    "path": "<WORKSPACE_ROOT>",
+    "sortBy": "date",
+    "researchGoal": "Test sortBy enum",
+    "reasoning": "sortBy must be name|size|time|extension"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: invalid enum for sortBy
+
+---
+
+### TC-38: Empty Queries Array
+
+**Goal:** Verify empty `queries` array is rejected.
+
+```json
+{"queries": []}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries requires minItems: 1
+
+---
+
+### TC-39: Response-Level Pagination
+
+**Goal:** Verify `responseCharOffset` + `responseCharLength` paginate entire response.
+
+```json
+{
+  "queries": [{"id": "resp", "path": "<WORKSPACE_ROOT>", "depth": 2, "researchGoal": "t", "reasoning": "t"}],
+  "responseCharOffset": 0,
+  "responseCharLength": 3000
+}
+```
+
+**Expected:**
+- [ ] MCP response truncated to ~3000 chars
+- [ ] `responsePagination` metadata present
+
+---
+
+### TC-40: Duplicate Query IDs
+
+**Goal:** Verify duplicate `id` values rejected in bulk.
+
+**Expected:**
+- [ ] Validation error: duplicate query ids
+
+---
+
+### TC-41: Missing Required Path
+
+**Goal:** Verify missing `path` field is rejected.
+
+**Expected:**
+- [ ] Schema validation error: missing required field `path`
+
+---
+
+### TC-42: charLength Over Maximum (10001)
+
+**Goal:** Verify `charLength: 10001` is rejected (maximum is 10000).
+
+**Expected:**
+- [ ] Schema validation error: charLength maximum is 10000
+
+---
+
 ## Validation Checklist
 
 ### Core Requirements

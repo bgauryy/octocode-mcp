@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { RipgrepCommandBuilder } from '../../src/commands/RipgrepCommandBuilder.js';
-import { RipgrepQuerySchema } from '../../src/tools/local_ripgrep/scheme.js';
+import { RipgrepQuerySchema } from '@octocodeai/octocode-core';
 
 const createQuery = (query: Record<string, unknown>) =>
   RipgrepQuerySchema.parse({

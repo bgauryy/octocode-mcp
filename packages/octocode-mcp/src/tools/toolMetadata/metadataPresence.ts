@@ -1,13 +1,7 @@
+import { completeMetadata } from '@octocodeai/octocode-core';
 import { getMetadataOrNull } from './state.js';
 
-/**
- * Checks if a tool exists in the loaded metadata.
- */
 export function isToolInMetadata(toolName: string): boolean {
-  const metadata = getMetadataOrNull();
-  if (!metadata) {
-    return false;
-  }
-  const tools = metadata.tools ?? {};
-  return Object.prototype.hasOwnProperty.call(tools, toolName);
+  const metadata = getMetadataOrNull() ?? completeMetadata;
+  return Object.prototype.hasOwnProperty.call(metadata.tools, toolName);
 }

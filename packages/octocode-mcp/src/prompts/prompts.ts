@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { logPromptCall } from '../session.js';
-import type { CompleteMetadata } from '../types/metadata.js';
+import type { CompleteMetadata } from '@octocodeai/octocode-core';
 
 type PromptHandler = (args: unknown) => Promise<{
   messages: Array<{

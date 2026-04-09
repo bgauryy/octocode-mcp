@@ -1,5 +1,5 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { LSPFindReferencesQuery } from './scheme.js';
+import type { LSPFindReferencesQuery } from '@octocodeai/octocode-core';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import { findReferences } from './lsp_find_references.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
@@ -28,6 +28,7 @@ export async function executeFindReferences(
       toolName: TOOL_NAME,
       responseCharOffset,
       responseCharLength,
+      minQueryTimeoutMs: 30_000,
     }
   );
 }

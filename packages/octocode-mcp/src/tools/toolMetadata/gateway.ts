@@ -1,4 +1,4 @@
-import type { ToolNames } from '../../types/metadata.js';
+import type { ToolNames } from '@octocodeai/octocode-core';
 import { DESCRIPTIONS, isToolInMetadata, TOOL_NAMES } from './proxies.js';
 
 export interface ToolMetadataGateway {

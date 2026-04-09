@@ -26,7 +26,7 @@ import {
   logToolCall,
 } from './session.js';
 import { loadToolContent } from './tools/toolMetadata/state.js';
-import type { CompleteMetadata } from './types/metadata.js';
+import type { CompleteMetadata } from '@octocodeai/octocode-core';
 import { version, name } from '../package.json';
 import { STARTUP_ERRORS } from './errors/domainErrors.js';
 import { startCacheGC, stopCacheGC } from './tools/github_clone_repo/cache.js';

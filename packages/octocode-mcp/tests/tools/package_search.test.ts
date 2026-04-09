@@ -8,7 +8,7 @@ import {
   beforeEach,
   afterEach,
 } from 'vitest';
-import { PackageSearchQuerySchema } from '../../src/tools/package_search/scheme.js';
+import { PackageSearchQuerySchema } from '@octocodeai/octocode-core';
 import type { ToolInvocationCallback } from '../../src/types.js';
 import {
   createMockMcpServer,
@@ -16,8 +16,24 @@ import {
 } from '../fixtures/mcp-fixtures.js';
 import { clearAllCache } from '../../src/utils/http/cache.js';
 
-// Mock axios (for Python/PyPI searches and npm registry)
-const mockAxiosGet = vi.fn();
+/** Delegates PyPI HTTPS calls from setupDefaultFetchMock */
+const mockPypiFetch = vi.fn();
+
+function fetchUrlString(url: string | URL | Request): string {
+  if (typeof url === 'string') return url;
+  if (url instanceof URL) return url.href;
+  return url.url;
+}
+
+/** Build a 200 Response from legacy axios-shaped mocks `{ data: PyPI body }` */
+function pypiJsonResponse(axiosStyle: {
+  data: Record<string, unknown>;
+}): Response {
+  return new Response(JSON.stringify(axiosStyle.data), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
 
 // Store for npm registry responses (package name -> repository URL)
 const npmRegistryResponses: Map<string, string> = new Map();
@@ -187,38 +203,6 @@ function createNpmCommandMock(searchResult: {
   };
 }
 
-vi.mock('axios', () => ({
-  default: {
-    get: (url: string, ...args: unknown[]) => {
-      // Handle npm registry calls
-      if (typeof url === 'string' && url.includes('registry.npmjs.org')) {
-        const packageName = url.split('/').pop() || '';
-        const repoUrl = npmRegistryResponses.get(
-          decodeURIComponent(packageName)
-        );
-        if (repoUrl) {
-          return Promise.resolve({
-            data: {
-              repository: {
-                url: repoUrl,
-              },
-            },
-          });
-        }
-        // Return empty repository if not mocked
-        return Promise.resolve({ data: {} });
-      }
-      // For all other URLs (PyPI, etc.), use the regular mock
-      return mockAxiosGet(url, ...args);
-    },
-    isAxiosError: (error: unknown) =>
-      error &&
-      typeof error === 'object' &&
-      'isAxiosError' in error &&
-      (error as { isAxiosError: boolean }).isAxiosError === true,
-  },
-}));
-
 // Mock executeNpmCommand and checkNpmAvailability (for npm CLI searches)
 const mockExecuteNpmCommand = vi.fn();
 const mockCheckNpmAvailability = vi.fn();
@@ -262,50 +246,59 @@ let lastSearchResult: {
 } | null = null;
 
 function setupDefaultFetchMock(): void {
-  mockFetch.mockImplementation((url: string) => {
-    // Handle registry root URL ping (for checkNpmRegistryReachable)
-    if (typeof url === 'string' && /^https?:\/\/[^/]+\/?$/.test(url)) {
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ db_name: 'registry' }),
-        body: null,
-      });
-    }
-    if (typeof url === 'string' && url.includes('/latest')) {
-      // Extract package name: https://registry.npmjs.org/<pkgName>/latest
-      const withoutProtocol = url.replace('https://registry.npmjs.org/', '');
-      const pkgName = decodeURIComponent(
-        withoutProtocol.slice(0, withoutProtocol.lastIndexOf('/latest'))
-      );
-      const data = npmViewFullResponses.get(pkgName);
-      if (data) {
+  mockFetch.mockImplementation(
+    (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = fetchUrlString(url);
+      if (urlStr.includes('pypi.org/pypi/')) {
+        return mockPypiFetch(urlStr, init);
+      }
+      // Handle registry root URL ping (for checkNpmRegistryReachable)
+      if (/^https?:\/\/[^/]+\/?$/.test(urlStr)) {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () => Promise.resolve(data),
+          json: () => Promise.resolve({ db_name: 'registry' }),
           body: null,
         });
       }
-      return Promise.resolve({
-        ok: false,
-        status: 404,
-        statusText: 'Not Found',
-        body: { cancel: vi.fn().mockResolvedValue(undefined) },
-        headers: new Headers(),
-      });
+      if (urlStr.includes('/latest')) {
+        // Extract package name: https://registry.npmjs.org/<pkgName>/latest
+        const withoutProtocol = urlStr.replace(
+          'https://registry.npmjs.org/',
+          ''
+        );
+        const pkgName = decodeURIComponent(
+          withoutProtocol.slice(0, withoutProtocol.lastIndexOf('/latest'))
+        );
+        const data = npmViewFullResponses.get(pkgName);
+        if (data) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve(data),
+            body: null,
+          });
+        }
+        return Promise.resolve({
+          ok: false,
+          status: 404,
+          statusText: 'Not Found',
+          body: { cancel: vi.fn().mockResolvedValue(undefined) },
+          headers: new Headers(),
+        });
+      }
+      if (urlStr.includes('/-/v1/search')) {
+        const result = lastSearchResult ?? { objects: [], total: 0 };
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(result),
+          body: null,
+        });
+      }
+      return Promise.reject(new Error(`Unexpected fetch call to: ${urlStr}`));
     }
-    if (typeof url === 'string' && url.includes('/-/v1/search')) {
-      const result = lastSearchResult ?? { objects: [], total: 0 };
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(result),
-        body: null,
-      });
-    }
-    return Promise.reject(new Error(`Unexpected fetch call to: ${url}`));
-  });
+  );
 }
 
 function makeErrorFetchResponse(status: number, statusText: string) {
@@ -1050,6 +1043,7 @@ describe('searchPackage - Python', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearAllCache();
+    setupDefaultFetchMock();
   });
 
   it('should return minimal Python package results by default (name and repository only)', async () => {
@@ -1070,7 +1064,7 @@ describe('searchPackage - Python', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1115,7 +1109,7 @@ describe('searchPackage - Python', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1160,7 +1154,7 @@ describe('searchPackage - Python', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1180,15 +1174,7 @@ describe('searchPackage - Python', () => {
   });
 
   it('should handle Python package not found with empty result (consistent with NPM)', async () => {
-    const axiosError = new Error('Not found') as unknown as {
-      isAxiosError: boolean;
-      response: { status: number };
-      message: string;
-    };
-    axiosError.isAxiosError = true;
-    axiosError.response = { status: 404 };
-
-    mockAxiosGet.mockRejectedValue(axiosError);
+    mockPypiFetch.mockResolvedValue(new Response('', { status: 404 }));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1222,7 +1208,7 @@ describe('searchPackage - Python', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1256,7 +1242,7 @@ describe('searchPackage - Python', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1281,6 +1267,7 @@ describe('searchPackage - Name normalization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearAllCache();
+    setupDefaultFetchMock();
   });
 
   it('should normalize Python package name with underscores', async () => {
@@ -1296,7 +1283,7 @@ describe('searchPackage - Name normalization', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1357,6 +1344,7 @@ describe('searchPackage - Python Edge Cases', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearAllCache();
+    setupDefaultFetchMock();
   });
 
   it('should fallback to home_page for repository URL', async () => {
@@ -1373,7 +1361,7 @@ describe('searchPackage - Python Edge Cases', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1406,7 +1394,7 @@ describe('searchPackage - Python Edge Cases', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1438,7 +1426,7 @@ describe('searchPackage - Python Edge Cases', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1472,7 +1460,7 @@ describe('searchPackage - Python Edge Cases', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1494,15 +1482,7 @@ describe('searchPackage - Python Edge Cases', () => {
   });
 
   it('should re-throw non-404 errors', async () => {
-    const networkError = new Error('Network error') as unknown as {
-      isAxiosError: boolean;
-      response?: { status: number };
-      code?: string;
-    };
-    networkError.isAxiosError = true;
-    // Not a 404 - should be re-thrown
-
-    mockAxiosGet.mockRejectedValue(networkError);
+    mockPypiFetch.mockRejectedValue(new Error('Network error'));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1518,23 +1498,23 @@ describe('searchPackage - Python Edge Cases', () => {
 
   it('should skip packages without info object', async () => {
     // First call returns no info, second call (with different name variation) succeeds
-    mockAxiosGet
-      .mockResolvedValueOnce({
-        data: {}, // No info object
-      })
-      .mockResolvedValueOnce({
-        data: {
-          info: {
-            name: 'test-pkg',
-            version: '1.0.0',
-            summary: 'Found on second try',
-            keywords: '',
-            project_urls: {
-              Source: 'https://github.com/test/test-pkg',
+    mockPypiFetch
+      .mockResolvedValueOnce(pypiJsonResponse({ data: {} })) // No info object
+      .mockResolvedValueOnce(
+        pypiJsonResponse({
+          data: {
+            info: {
+              name: 'test-pkg',
+              version: '1.0.0',
+              summary: 'Found on second try',
+              keywords: '',
+              project_urls: {
+                Source: 'https://github.com/test/test-pkg',
+              },
             },
           },
-        },
-      });
+        })
+      );
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1557,21 +1537,21 @@ describe('searchPackage - Python Edge Cases', () => {
 
   it('should skip packages without info object and return description when pythonFetchMetadata is true', async () => {
     // First call returns no info, second call (with different name variation) succeeds
-    mockAxiosGet
-      .mockResolvedValueOnce({
-        data: {}, // No info object
-      })
-      .mockResolvedValueOnce({
-        data: {
-          info: {
-            name: 'test-pkg',
-            version: '1.0.0',
-            summary: 'Found on second try',
-            keywords: '',
-            project_urls: {},
+    mockPypiFetch
+      .mockResolvedValueOnce(pypiJsonResponse({ data: {} }))
+      .mockResolvedValueOnce(
+        pypiJsonResponse({
+          data: {
+            info: {
+              name: 'test-pkg',
+              version: '1.0.0',
+              summary: 'Found on second try',
+              keywords: '',
+              project_urls: {},
+            },
           },
-        },
-      });
+        })
+      );
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1606,7 +1586,7 @@ describe('searchPackage - Python Edge Cases', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1640,7 +1620,7 @@ describe('searchPackage - Python Edge Cases', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1673,7 +1653,7 @@ describe('searchPackage - Python Edge Cases', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -1697,7 +1677,7 @@ describe('Package search response structure', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearAllCache();
-    mockAxiosGet.mockReset();
+    mockPypiFetch.mockReset();
     mockExecuteNpmCommand.mockReset();
     clearNpmRegistryMocks();
     clearNpmCliViewMocks();
@@ -1808,7 +1788,7 @@ describe('registerPackageSearchTool', () => {
     clearAllCache();
     clearNpmCliViewMocks();
     mockExecuteNpmCommand.mockReset();
-    mockAxiosGet.mockReset();
+    mockPypiFetch.mockReset();
     clearNpmRegistryMocks();
     _resetNpmRegistryUrlCache();
     // Default: npm is available
@@ -2025,7 +2005,7 @@ describe('registerPackageSearchTool', () => {
         },
       };
 
-      mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+      mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
       await registerPackageSearchTool(mockServer.server, mockCallback);
 
@@ -2058,7 +2038,7 @@ describe('registerPackageSearchTool', () => {
         },
       };
 
-      mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+      mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
       await registerPackageSearchTool(mockServer.server);
 
@@ -2079,14 +2059,7 @@ describe('registerPackageSearchTool', () => {
     });
 
     it('should generate empty hints for not found (python)', async () => {
-      const axiosError = new Error('Not found') as unknown as {
-        isAxiosError: boolean;
-        response: { status: number };
-      };
-      axiosError.isAxiosError = true;
-      axiosError.response = { status: 404 };
-
-      mockAxiosGet.mockRejectedValue(axiosError);
+      mockPypiFetch.mockResolvedValue(new Response('', { status: 404 }));
 
       await registerPackageSearchTool(mockServer.server);
 
@@ -2286,15 +2259,7 @@ describe('registerPackageSearchTool', () => {
 
   describe('Catch Error Handling', () => {
     it('should handle thrown errors via handleCatchError (line 115)', async () => {
-      // Non-404 errors are re-thrown and caught by handleCatchError
-      const networkError = new Error('Connection refused') as unknown as {
-        isAxiosError: boolean;
-        response?: { status: number };
-      };
-      networkError.isAxiosError = true;
-      // No response.status = not a 404, will be re-thrown
-
-      mockAxiosGet.mockRejectedValue(networkError);
+      mockPypiFetch.mockRejectedValue(new Error('Connection refused'));
 
       await registerPackageSearchTool(mockServer.server);
 
@@ -2442,7 +2407,7 @@ describe('registerPackageSearchTool', () => {
         },
       };
 
-      mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+      mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
       await registerPackageSearchTool(mockServer.server);
 
@@ -2481,7 +2446,7 @@ describe('registerPackageSearchTool', () => {
         },
       };
 
-      mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+      mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
       await registerPackageSearchTool(mockServer.server);
 
@@ -2544,14 +2509,7 @@ describe('registerPackageSearchTool', () => {
     });
 
     it('should return emptyStatusHints with browse link when no python packages found', async () => {
-      const axiosError = new Error('Not found') as unknown as {
-        isAxiosError: boolean;
-        response: { status: number };
-      };
-      axiosError.isAxiosError = true;
-      axiosError.response = { status: 404 };
-
-      mockAxiosGet.mockRejectedValue(axiosError);
+      mockPypiFetch.mockResolvedValue(new Response('', { status: 404 }));
 
       await registerPackageSearchTool(mockServer.server);
 
@@ -2668,7 +2626,7 @@ describe('registerPackageSearchTool', () => {
         })
       );
 
-      mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+      mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
       await registerPackageSearchTool(mockServer.server);
 
@@ -2714,13 +2672,7 @@ describe('registerPackageSearchTool', () => {
         exitCode: 0,
       });
 
-      const axiosError = new Error('Not found') as unknown as {
-        isAxiosError: boolean;
-        response: { status: number };
-      };
-      axiosError.isAxiosError = true;
-      axiosError.response = { status: 404 };
-      mockAxiosGet.mockRejectedValue(axiosError);
+      mockPypiFetch.mockResolvedValue(new Response('', { status: 404 }));
 
       await registerPackageSearchTool(mockServer.server);
 
@@ -2844,7 +2796,7 @@ describe('Task 1: Enhanced GitHub Integration Hints', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     await registerPackageSearchTool(mockServer.server);
 
@@ -2956,13 +2908,7 @@ describe('Task 2: Name Variation Suggestions', () => {
   });
 
   it('should suggest name variations with underscores converted to hyphens for Python', async () => {
-    const axiosError = new Error('Not found') as unknown as {
-      isAxiosError: boolean;
-      response: { status: number };
-    };
-    axiosError.isAxiosError = true;
-    axiosError.response = { status: 404 };
-    mockAxiosGet.mockRejectedValue(axiosError);
+    mockPypiFetch.mockResolvedValue(new Response('', { status: 404 }));
 
     await registerPackageSearchTool(mockServer.server);
 
@@ -3038,13 +2984,7 @@ describe('Task 2: Name Variation Suggestions', () => {
   });
 
   it('should suggest py prefix for Python packages', async () => {
-    const axiosError = new Error('Not found') as unknown as {
-      isAxiosError: boolean;
-      response: { status: number };
-    };
-    axiosError.isAxiosError = true;
-    axiosError.response = { status: 404 };
-    mockAxiosGet.mockRejectedValue(axiosError);
+    mockPypiFetch.mockResolvedValue(new Response('', { status: 404 }));
 
     await registerPackageSearchTool(mockServer.server);
 
@@ -3320,6 +3260,8 @@ describe('Task 4: pythonFetchMetadata Parameter', () => {
 
   it('should return minimal Python package results by default', async () => {
     vi.clearAllMocks();
+    clearAllCache();
+    setupDefaultFetchMock();
 
     const mockPyPIResponse = {
       data: {
@@ -3338,7 +3280,7 @@ describe('Task 4: pythonFetchMetadata Parameter', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',
@@ -3365,6 +3307,8 @@ describe('Task 4: pythonFetchMetadata Parameter', () => {
 
   it('should return full Python package results when pythonFetchMetadata is true', async () => {
     vi.clearAllMocks();
+    clearAllCache();
+    setupDefaultFetchMock();
 
     const mockPyPIResponse = {
       data: {
@@ -3383,7 +3327,7 @@ describe('Task 4: pythonFetchMetadata Parameter', () => {
       },
     };
 
-    mockAxiosGet.mockResolvedValue(mockPyPIResponse);
+    mockPypiFetch.mockResolvedValue(pypiJsonResponse(mockPyPIResponse));
 
     const query: PackageSearchInput = {
       ecosystem: 'python',

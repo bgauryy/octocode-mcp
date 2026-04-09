@@ -5,7 +5,7 @@ import type {
   GitHubAPIResponse,
   OptimizedCodeSearchResult,
 } from './githubAPI';
-import type { GitHubCodeSearchQuery } from '../tools/github_search_code/types.js';
+import type { GitHubCodeSearchQuery } from '@octocodeai/octocode-core';
 import { ContentSanitizer } from '@octocode/security/contentSanitizer';
 import { minifyContent } from '../utils/minifier/minifier.js';
 import { getOctokit } from './client';

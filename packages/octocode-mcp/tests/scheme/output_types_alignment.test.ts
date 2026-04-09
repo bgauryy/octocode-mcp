@@ -33,55 +33,37 @@ import type {
   LspOutgoingCall,
   PackageSearchData,
   PackageSearchPackage,
-} from '../../src/scheme/outputTypes.js';
+} from '@octocodeai/octocode-core';
 import type {
   ContentResultData,
   ContentResult,
   DirectoryFileEntry,
-} from '../../src/tools/github_fetch_content/types.js';
-import type { SearchResult } from '../../src/tools/github_search_code/types.js';
-import type {
+  SearchResult,
   PullRequestInfo,
   PullRequestSearchResultData,
   PullRequestSearchResult,
-} from '../../src/tools/github_search_pull_requests/types.js';
-import type {
   SimplifiedRepository,
   RepoSearchResult,
-} from '../../src/tools/github_search_repos/types.js';
-import type {
   DirectoryEntry,
   RepoStructureResultData,
-} from '../../src/tools/github_view_repo_structure/types.js';
-import type { FetchContentResult } from '../../src/tools/local_fetch_content/types.js';
-import type {
+  FetchContentResult,
   FindFilesResult,
   FoundFile,
-} from '../../src/tools/local_find_files/types.js';
-import type {
   SearchContentResult,
   RipgrepFileMatches,
   RipgrepMatch,
-} from '../../src/tools/local_ripgrep/types.js';
-import type { ViewStructureResult } from '../../src/tools/local_view_structure/types.js';
-import type {
+  ViewStructureResult,
   GotoDefinitionResult,
   CodeSnippet,
-} from '../../src/tools/lsp_goto_definition/types.js';
-import type {
   FindReferencesResult,
   ReferenceLocation,
-} from '../../src/tools/lsp_find_references/types.js';
-import type {
   CallHierarchyResult,
   CallHierarchyItem,
   IncomingCall,
   OutgoingCall,
-} from '../../src/tools/lsp_call_hierarchy/types.js';
-import type {
   PackageSearchResult,
   PackageResultWithRepo,
-} from '../../src/tools/package_search/types.js';
+} from '../../src/public/tools.js';
 
 describe('Output type alignment', () => {
   it('derives GitHub tool output aliases from the output schemas', () => {

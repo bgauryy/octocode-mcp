@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { isLoggingEnabled, getActiveProvider } from './serverConfig.js';
 import { version } from '../package.json';
 import {
@@ -121,11 +120,11 @@ class SessionManager {
         version,
       };
 
-      await axios.post(this.logEndpoint, payload, {
-        timeout: 5000,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      await fetch(this.logEndpoint, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(5000),
       });
     } catch {
       // Telemetry POST failures are non-actionable; avoid stderr noise for stdio MCP consumers.

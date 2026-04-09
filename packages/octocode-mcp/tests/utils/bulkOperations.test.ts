@@ -1589,3 +1589,54 @@ describe('OCTOCODE_BULK_QUERY_TIMEOUT_MS', () => {
     expect(mod.executeBulkOperation).toBeDefined();
   });
 });
+
+describe('computeQueryTimeout (concurrency-aware)', () => {
+  it('should be exported for testing', async () => {
+    const { computeQueryTimeout } =
+      await import('../../src/utils/response/bulk.js');
+    expect(typeof computeQueryTimeout).toBe('function');
+  });
+
+  it('should return full budget for single query', async () => {
+    const { computeQueryTimeout } =
+      await import('../../src/utils/response/bulk.js');
+    const result = computeQueryTimeout(1, 3);
+    expect(result).toBeGreaterThanOrEqual(60000);
+  });
+
+  it('should give full budget when concurrency >= queryCount (parallel)', async () => {
+    const { computeQueryTimeout } =
+      await import('../../src/utils/response/bulk.js');
+    // 2 queries with concurrency 3: 1 batch, each gets full budget
+    const result = computeQueryTimeout(2, 3);
+    expect(result).toBeGreaterThanOrEqual(60000);
+  });
+
+  it('should divide budget by batches when concurrency < queryCount', async () => {
+    const { computeQueryTimeout } =
+      await import('../../src/utils/response/bulk.js');
+    // 5 queries with concurrency 3: ceil(5/3) = 2 batches
+    const result = computeQueryTimeout(5, 3);
+    // 60000 / 2 = 30000
+    expect(result).toBeLessThanOrEqual(30000);
+    expect(result).toBeGreaterThanOrEqual(5000);
+  });
+
+  it('should respect minQueryTimeoutMs when higher than computed', async () => {
+    const { computeQueryTimeout } =
+      await import('../../src/utils/response/bulk.js');
+    // 5 queries, concurrency 3: 2 batches, fair = 30000
+    // But minQueryTimeoutMs = 45000 should override
+    const result = computeQueryTimeout(5, 3, 45000);
+    expect(result).toBe(45000);
+  });
+
+  it('should NOT lower timeout when minQueryTimeoutMs is below computed', async () => {
+    const { computeQueryTimeout } =
+      await import('../../src/utils/response/bulk.js');
+    // 2 queries, concurrency 3: 1 batch, fair = 60000
+    // minQueryTimeoutMs = 30000 should NOT lower it
+    const result = computeQueryTimeout(2, 3, 30000);
+    expect(result).toBeGreaterThanOrEqual(60000);
+  });
+});

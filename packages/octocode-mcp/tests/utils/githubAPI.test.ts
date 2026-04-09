@@ -107,7 +107,7 @@ import { searchGitHubReposAPI } from '../../src/github/repoSearch.js';
 import { fetchGitHubFileContentAPI } from '../../src/github/fileContent.js';
 import { viewGitHubRepositoryStructureAPI } from '../../src/github/repoStructure.js';
 import { searchGitHubPullRequestsAPI } from '../../src/github/pullRequestSearch.js';
-import type { GitHubCodeSearchQuery } from '../../src/tools/github_search_code/types.js';
+import type { GitHubCodeSearchQuery } from '@octocodeai/octocode-core';
 import { initialize, cleanup } from '../../src/serverConfig.js';
 
 describe('GitHub API Utils', () => {

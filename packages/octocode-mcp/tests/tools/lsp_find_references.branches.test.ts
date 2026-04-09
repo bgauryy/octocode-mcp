@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { LSPFindReferencesQuery } from '../../src/tools/lsp_find_references/scheme.js';
+import type { LSPFindReferencesQuery } from '@octocodeai/octocode-core';
 
 // Mock fs/promises
 vi.mock('fs/promises', () => ({
@@ -294,6 +294,79 @@ describe('LSP Find References - Branch Coverage Tests', () => {
       // findWorkspaceRoot is no longer called - process.cwd() is used instead
       expect(patternModule.findWorkspaceRoot).not.toHaveBeenCalled();
       cwdSpy.mockRestore();
+    });
+  });
+
+  describe('global merge semantics', () => {
+    it('should build merged pagination from full branch datasets before final paging', async () => {
+      vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(
+        true
+      );
+
+      const makeLocation = (uri: string, line: number) => ({
+        uri,
+        range: {
+          start: { line, character: 0 },
+          end: { line, character: 4 },
+        },
+        content: `${uri}:${line}`,
+        isDefinition: false,
+      });
+
+      vi.mocked(coreModule.findReferencesWithLSP).mockImplementation(
+        async (_filePath, _workspaceRoot, _position, q) => {
+          const query = q as LSPFindReferencesQuery;
+          const isGlobalRequest =
+            query.page === 1 &&
+            typeof query.referencesPerPage === 'number' &&
+            query.referencesPerPage > 1000;
+          return {
+            status: 'hasResults',
+            locations: isGlobalRequest
+              ? [makeLocation('src/lspA.ts', 1), makeLocation('src/lspB.ts', 2)]
+              : [makeLocation('src/lspA.ts', 1)],
+            hints: [],
+          } as any;
+        }
+      );
+
+      vi.mocked(
+        patternModule.findReferencesWithPatternMatching
+      ).mockImplementation(async (_absolutePath, _workspaceRoot, q) => {
+        const query = q as LSPFindReferencesQuery;
+        const isGlobalRequest =
+          query.page === 1 &&
+          typeof query.referencesPerPage === 'number' &&
+          query.referencesPerPage > 1000;
+        return {
+          status: 'hasResults',
+          locations: isGlobalRequest
+            ? [
+                makeLocation('src/patternA.ts', 3),
+                makeLocation('src/patternB.ts', 4),
+              ]
+            : [makeLocation('src/patternA.ts', 3)],
+          hints: [],
+        } as any;
+      });
+
+      const result = await findReferences({
+        ...baseQuery,
+        page: 2,
+        referencesPerPage: 1,
+      });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.pagination).toEqual(
+        expect.objectContaining({
+          currentPage: 2,
+          totalPages: 4,
+          totalResults: 4,
+          hasMore: true,
+          resultsPerPage: 1,
+        })
+      );
+      expect(result.locations).toHaveLength(1);
     });
   });
 });

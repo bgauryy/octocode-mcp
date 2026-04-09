@@ -3,7 +3,6 @@
  */
 
 import { getHints } from '../../hints/index.js';
-import { resolveWorkspaceRoot } from '@octocode/security/workspaceRoot';
 import { SymbolResolver } from '../../lsp/resolver.js';
 import { RipgrepMatchOnlySchema } from '../../utils/parsers/schemas.js';
 import { safeExec } from '../../utils/exec/safe.js';
@@ -17,7 +16,7 @@ import type {
   SymbolKind,
   LSPPaginationInfo,
 } from '../../lsp/types.js';
-import type { LSPCallHierarchyQuery } from './scheme.js';
+import type { LSPCallHierarchyQuery } from '@octocodeai/octocode-core';
 import {
   CallSite,
   createCallHierarchyItem,
@@ -30,6 +29,7 @@ import { TOOL_NAME } from './constants.js';
 interface IncomingPatternSearchOptions {
   query: LSPCallHierarchyQuery;
   targetFilePath: string;
+  workspaceRoot: string;
   targetItem: CallHierarchyItem;
   depth: number;
   callsPerPage: number;
@@ -54,6 +54,7 @@ interface OutgoingPatternSearchOptions {
 export async function callHierarchyWithPatternMatching(
   query: LSPCallHierarchyQuery,
   absolutePath: string,
+  workspaceRoot: string,
   content: string,
   foundAtLine: number,
   _resolver: SymbolResolver
@@ -71,6 +72,7 @@ export async function callHierarchyWithPatternMatching(
     return await findIncomingCallsWithPatternMatching({
       query,
       targetFilePath: absolutePath,
+      workspaceRoot,
       targetItem,
       depth: query.depth ?? 1,
       callsPerPage: query.callsPerPage ?? 15,
@@ -100,14 +102,13 @@ async function findIncomingCallsWithPatternMatching(
   const {
     query,
     targetFilePath,
+    workspaceRoot,
     targetItem,
     depth,
     callsPerPage,
     page,
     contextLines,
   } = options;
-
-  const workspaceRoot = resolveWorkspaceRoot();
   const symbolName = query.symbolName;
 
   const searchPattern = `\\b${escapeRegex(symbolName)}\\s*\\(`;
@@ -173,6 +174,27 @@ async function findIncomingCallsWithPatternMatching(
 
   const totalResults = callSites.length;
   const totalPages = Math.ceil(totalResults / callsPerPage);
+  if (page > totalPages) {
+    return {
+      status: 'empty',
+      item: targetItem,
+      direction: 'incoming',
+      depth,
+      incomingCalls: [],
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalResults,
+        hasMore: false,
+        resultsPerPage: callsPerPage,
+      },
+      hints: [
+        ...getHints(TOOL_NAME, 'empty'),
+        `Requested page ${page} is outside available range (1-${totalPages}).`,
+        `Use page=${totalPages} for the last available page.`,
+      ],
+    };
+  }
   const startIndex = (page - 1) * callsPerPage;
   const paginatedSites = callSites.slice(startIndex, startIndex + callsPerPage);
 
@@ -349,6 +371,27 @@ async function findOutgoingCallsWithPatternMatching(
 
   const totalResults = uniqueCalls.length;
   const totalPages = Math.ceil(totalResults / callsPerPage);
+  if (page > totalPages) {
+    return {
+      status: 'empty',
+      item: targetItem,
+      direction: 'outgoing',
+      depth,
+      outgoingCalls: [],
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalResults,
+        hasMore: false,
+        resultsPerPage: callsPerPage,
+      },
+      hints: [
+        ...getHints(TOOL_NAME, 'empty'),
+        `Requested page ${page} is outside available range (1-${totalPages}).`,
+        `Use page=${totalPages} for the last available page.`,
+      ],
+    };
+  }
   const startIndex = (page - 1) * callsPerPage;
   const paginatedCalls = uniqueCalls.slice(
     startIndex,

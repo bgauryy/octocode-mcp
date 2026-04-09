@@ -1,5 +1,7 @@
-import type { GitHubCodeSearchQuery } from '../tools/github_search_code/types.js';
-import type { GitHubReposSearchQuery } from '../tools/github_search_repos/types.js';
+import type {
+  GitHubCodeSearchQuery,
+  GitHubReposSearchQuery,
+} from '@octocodeai/octocode-core';
 import { GitHubPullRequestsSearchParams } from './githubAPI';
 
 export function getOwnerQualifier(owner: string): string {

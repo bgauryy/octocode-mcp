@@ -1594,6 +1594,300 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 
 ---
 
+---
+
+## Schema Edge Cases & Boundary Tests
+
+### TC-52: Empty Queries Array (Schema Rejection)
+
+**Goal:** Verify empty `queries` array is rejected.
+
+```json
+{"queries": []}
+```
+
+**Expected:**
+- [ ] Schema validation error: `queries` requires minItems: 1
+- [ ] Clear error message about minimum array length
+
+---
+
+### TC-53: Queries Over Max (6 queries, max is 5)
+
+**Goal:** Verify exceeding maxItems on queries is rejected.
+
+```json
+{
+  "queries": [
+    {"id": "q1", "pattern": "a", "path": "<WORKSPACE_ROOT>", "researchGoal": "t", "reasoning": "t"},
+    {"id": "q2", "pattern": "b", "path": "<WORKSPACE_ROOT>", "researchGoal": "t", "reasoning": "t"},
+    {"id": "q3", "pattern": "c", "path": "<WORKSPACE_ROOT>", "researchGoal": "t", "reasoning": "t"},
+    {"id": "q4", "pattern": "d", "path": "<WORKSPACE_ROOT>", "researchGoal": "t", "reasoning": "t"},
+    {"id": "q5", "pattern": "e", "path": "<WORKSPACE_ROOT>", "researchGoal": "t", "reasoning": "t"},
+    {"id": "q6", "pattern": "f", "path": "<WORKSPACE_ROOT>", "researchGoal": "t", "reasoning": "t"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: `queries` maxItems is 5
+- [ ] Rejected before execution
+
+---
+
+### TC-54: Invalid Query ID (Special Characters)
+
+**Goal:** Verify `id` pattern `^[A-Za-z0-9._:-]+$` is enforced.
+
+```json
+{
+  "queries": [{
+    "id": "invalid id/with spaces!",
+    "pattern": "test",
+    "path": "<WORKSPACE_ROOT>",
+    "researchGoal": "Test id validation",
+    "reasoning": "ID must match pattern"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: `id` does not match pattern
+- [ ] Spaces, `/`, `!` rejected
+
+---
+
+### TC-55: Pattern Empty String (Below minLength)
+
+**Goal:** Verify empty `pattern` is rejected (minLength: 1).
+
+```json
+{
+  "queries": [{
+    "id": "empty-pattern",
+    "pattern": "",
+    "path": "<WORKSPACE_ROOT>",
+    "researchGoal": "Test empty pattern",
+    "reasoning": "Pattern must be non-empty"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: `pattern` minLength is 1
+- [ ] Rejected before execution
+
+---
+
+### TC-56: Pattern Over Max Length (2001 chars)
+
+**Goal:** Verify `pattern` exceeding 2000 chars is rejected.
+
+**Expected:**
+- [ ] Schema validation error: `pattern` maxLength is 2000
+
+---
+
+### TC-57: Invalid Mode Enum
+
+**Goal:** Verify invalid `mode` value is rejected.
+
+```json
+{
+  "queries": [{
+    "id": "bad-mode",
+    "pattern": "test",
+    "path": "<WORKSPACE_ROOT>",
+    "mode": "invalid_mode",
+    "researchGoal": "Test mode enum",
+    "reasoning": "Mode must be discovery|paginated|detailed"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: invalid enum value for `mode`
+- [ ] Only `discovery`, `paginated`, `detailed` accepted
+
+---
+
+### TC-58: Invalid Sort Enum
+
+**Goal:** Verify invalid `sort` value is rejected.
+
+```json
+{
+  "queries": [{
+    "id": "bad-sort",
+    "pattern": "test",
+    "path": "<WORKSPACE_ROOT>",
+    "sort": "alphabetical",
+    "researchGoal": "Test sort enum",
+    "reasoning": "Sort must be path|modified|accessed|created"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: invalid enum value for `sort`
+
+---
+
+### TC-59: Invalid binaryFiles Enum
+
+**Goal:** Verify invalid `binaryFiles` value is rejected.
+
+```json
+{
+  "queries": [{
+    "id": "bad-binary",
+    "pattern": "test",
+    "path": "<WORKSPACE_ROOT>",
+    "binaryFiles": "include",
+    "researchGoal": "Test binaryFiles enum",
+    "reasoning": "binaryFiles must be text|without-match|binary"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: invalid enum value for `binaryFiles`
+
+---
+
+### TC-60: Threads Boundary (0 and 33)
+
+**Goal:** Verify `threads` must be 1-32.
+
+```json
+{
+  "queries": [{
+    "id": "threads-zero",
+    "pattern": "test",
+    "path": "<WORKSPACE_ROOT>",
+    "threads": 0,
+    "researchGoal": "Test threads min boundary",
+    "reasoning": "Threads minimum is 1"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error for threads: 0 (below minimum 1)
+- [ ] Same for threads: 33 (above maximum 32)
+
+---
+
+### TC-61: matchContentLength Boundary (0 and 801)
+
+**Goal:** Verify `matchContentLength` must be 1-800.
+
+**Expected:**
+- [ ] Schema rejection for 0 (below min) and 801 (above max)
+
+---
+
+### TC-62: matchesPerPage Boundary (0 and 101)
+
+**Goal:** Verify `matchesPerPage` must be 1-100.
+
+**Expected:**
+- [ ] Schema rejection for 0 and 101
+
+---
+
+### TC-63: filesPerPage Boundary (0 and 51)
+
+**Goal:** Verify `filesPerPage` must be 1-50.
+
+**Expected:**
+- [ ] Schema rejection for 0 and 51
+
+---
+
+### TC-64: contextLines Boundary (negative and 51)
+
+**Goal:** Verify `contextLines` must be 0-50.
+
+**Expected:**
+- [ ] Schema rejection for -1 and 51
+
+---
+
+### TC-65: Response-Level Pagination (responseCharOffset + responseCharLength)
+
+**Goal:** Verify root-level `responseCharOffset` + `responseCharLength` paginate the entire MCP response.
+
+```json
+{
+  "queries": [{
+    "id": "resp-pagination",
+    "pattern": "export",
+    "path": "<WORKSPACE_ROOT>",
+    "mode": "discovery",
+    "filesPerPage": 20,
+    "researchGoal": "Test response-level pagination",
+    "reasoning": "Root pagination controls total response size"
+  }],
+  "responseCharOffset": 0,
+  "responseCharLength": 2000
+}
+```
+
+**Expected:**
+- [ ] Entire MCP response truncated to ~2000 chars
+- [ ] `responsePagination` metadata shows total size and next offset
+- [ ] Different from per-query charOffset/charLength
+
+---
+
+### TC-66: Duplicate Query IDs (Rejected)
+
+**Goal:** Verify duplicate `id` values within the same bulk call are rejected.
+
+```json
+{
+  "queries": [
+    {"id": "dup", "pattern": "a", "path": "<WORKSPACE_ROOT>", "researchGoal": "t", "reasoning": "t"},
+    {"id": "dup", "pattern": "b", "path": "<WORKSPACE_ROOT>", "researchGoal": "t", "reasoning": "t"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error: duplicate query ids
+
+---
+
+### TC-67: Path Over Max Length (4097 chars)
+
+**Goal:** Verify `path` exceeding 4096 chars is rejected.
+
+**Expected:**
+- [ ] Schema validation error: `path` maxLength is 4096
+
+---
+
+### TC-68: Missing Required Fields
+
+**Goal:** Verify missing required `pattern` or `path` is rejected.
+
+```json
+{
+  "queries": [{
+    "id": "no-pattern",
+    "path": "<WORKSPACE_ROOT>",
+    "researchGoal": "Missing pattern",
+    "reasoning": "Required fields test"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: missing required field `pattern`
+
+---
+
 ## Validation Checklist
 
 ### Core Requirements
@@ -1656,3 +1950,20 @@ Searches code in a local repository using ripgrep. Supports three output modes (
 | 49 | Encoding parameter | ✅ | ✅ | ✅ | |
 | 50 | No unicode | ✅ | ✅ | ✅ | |
 | 51 | Passthru mode | ✅ | ✅ | ✅ | |
+| 52 | Empty queries array (schema) | - | - | - | |
+| 53 | Queries over max (6) | - | - | - | |
+| 54 | Invalid query ID (special chars) | - | - | - | |
+| 55 | Pattern empty string | - | - | - | |
+| 56 | Pattern over max length (2001) | - | - | - | |
+| 57 | Invalid mode enum | - | - | - | |
+| 58 | Invalid sort enum | - | - | - | |
+| 59 | Invalid binaryFiles enum | - | - | - | |
+| 60 | Threads boundary (0 / 33) | - | - | - | |
+| 61 | matchContentLength boundary | - | - | - | |
+| 62 | matchesPerPage boundary | - | - | - | |
+| 63 | filesPerPage boundary | - | - | - | |
+| 64 | contextLines boundary | - | - | - | |
+| 65 | Response-level pagination | ✅ | ✅ | ✅ | |
+| 66 | Duplicate query IDs | - | - | - | |
+| 67 | Path over max length (4097) | - | - | - | |
+| 68 | Missing required fields | - | - | - | |

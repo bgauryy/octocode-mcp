@@ -6,12 +6,12 @@
  *   - repoStructureRecursive.ts: recursive directory content fetching
  */
 import { RequestError } from 'octokit';
-import type { GitHubViewRepoStructureQuery } from '../tools/github_view_repo_structure/types.js';
+import type { GitHubViewRepoStructureQuery } from '@octocodeai/octocode-core';
 import type {
   GitHubApiFileItem,
   GitHubRepositoryStructureResult,
   GitHubRepositoryStructureError,
-} from '../tools/github_view_repo_structure/scheme.js';
+} from '../tools/github_view_repo_structure/types.js';
 import { GITHUB_STRUCTURE_DEFAULTS as STRUCTURE_DEFAULTS } from '../tools/github_view_repo_structure/constants.js';
 import { getOctokit, resolveDefaultBranch } from './client';
 import { handleGitHubAPIError } from './errors';
@@ -249,7 +249,11 @@ export async function viewGitHubRepositoryStructureAPI(
     cacheKey,
     async () => {
       return await viewGitHubRepositoryStructureAPIInternal(
-        { ...params, entriesPerPage: undefined, entryPageNumber: undefined },
+        {
+          ...params,
+          entriesPerPage: undefined as unknown as number,
+          entryPageNumber: undefined as unknown as number,
+        },
         authInfo
       );
     },

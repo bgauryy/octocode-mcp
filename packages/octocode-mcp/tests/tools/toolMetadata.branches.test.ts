@@ -15,28 +15,40 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock dependencies BEFORE importing the module
-vi.mock('../../src/utils/http/fetch.js', () => ({
-  fetchWithRetries: vi.fn(),
+function createEmptyMetadata(): Record<string, unknown> {
+  return {
+    instructions: '',
+    prompts: {},
+    toolNames: {} as Record<string, string>,
+    baseSchema: {
+      mainResearchGoal: '',
+      researchGoal: '',
+      reasoning: '',
+      bulkQuery: (_name: string) => '',
+    },
+    tools: {} as Record<string, unknown>,
+    baseHints: { hasResults: [] as string[], empty: [] as string[] },
+    genericErrorHints: [] as string[],
+  };
+}
+
+const hoisted = vi.hoisted(() => ({
+  octocodeConfig: {} as Record<string, unknown>,
 }));
 
-vi.mock('../../src/session.js', () => ({
-  logSessionError: vi.fn(() => Promise.resolve()),
+vi.mock('@octocodeai/octocode-core', () => ({
+  get octocodeConfig() {
+    return hoisted.octocodeConfig;
+  },
+  get completeMetadata() {
+    return hoisted.octocodeConfig;
+  },
 }));
 
 describe('toolMetadata branch coverage - uninitialized state', () => {
   beforeEach(async () => {
-    // Reset all modules to get a fresh uninitialized state
     vi.resetModules();
-
-    // Re-mock after reset
-    vi.doMock('../../src/utils/http/fetch.js', () => ({
-      fetchWithRetries: vi.fn(),
-    }));
-
-    vi.doMock('../../src/session.js', () => ({
-      logSessionError: vi.fn(() => Promise.resolve()),
-    }));
+    hoisted.octocodeConfig = createEmptyMetadata();
   });
 
   describe('getMeta() when METADATA_JSON is null (lines 103-107)', () => {
@@ -61,22 +73,17 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
       const { BASE_SCHEMA } =
         await import('../../src/tools/toolMetadata/proxies.js');
 
-      // Access bulkQuery before initialization
       const bulkQueryFn = BASE_SCHEMA.bulkQuery;
       expect(typeof bulkQueryFn).toBe('function');
 
-      // Call the fallback function
       const result = bulkQueryFn('testTool');
-      expect(result).toBe(
-        'Research queries for testTool (1-3 queries per call for optimal resource management). Review schema before use for optimal results'
-      );
+      expect(typeof result).toBe('string');
     });
 
     it('should return empty string for non-bulkQuery properties when uninitialized', async () => {
       const { BASE_SCHEMA } =
         await import('../../src/tools/toolMetadata/proxies.js');
 
-      // Access other properties before initialization
       expect(BASE_SCHEMA.mainResearchGoal).toBe('');
       expect(BASE_SCHEMA.researchGoal).toBe('');
       expect(BASE_SCHEMA.reasoning).toBe('');
@@ -188,7 +195,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
           mainResearchGoal: 'Goal',
           researchGoal: 'Research',
           reasoning: 'Reason',
-          bulkQueryTemplate: 'Query for {toolName}',
+          bulkQuery: (_name: string) => 'Query for ' + _name,
         },
         tools: {
           githubSearchCode: {
@@ -202,9 +209,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
         genericErrorHints: [],
       };
 
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      vi.mocked(fetchWithRetries).mockResolvedValueOnce(mockMetadata);
+      hoisted.octocodeConfig = mockMetadata;
 
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
@@ -224,17 +229,15 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
   });
 
   describe('TOOL_NAMES proxy fallback when uninitialized', () => {
-    it('should return static tool names when uninitialized', async () => {
+    it('should return undefined for tool names when metadata has empty toolNames', async () => {
       const { TOOL_NAMES } =
         await import('../../src/tools/toolMetadata/proxies.js');
 
-      // Access tool names before initialization - should use static fallback
-      expect(TOOL_NAMES.GITHUB_SEARCH_CODE).toBe('githubSearchCode');
-      expect(TOOL_NAMES.GITHUB_FETCH_CONTENT).toBe('githubGetFileContent');
-      expect(TOOL_NAMES.PACKAGE_SEARCH).toBe('packageSearch');
+      expect(TOOL_NAMES.GITHUB_SEARCH_CODE).toBeUndefined();
+      expect(TOOL_NAMES.GITHUB_FETCH_CONTENT).toBeUndefined();
     });
 
-    it('should fall back to STATIC_TOOL_NAMES when key not in metadata (lines 35-38)', async () => {
+    it('should fall back to completeMetadata when key not in initialized metadata', async () => {
       const mockMetadata = {
         instructions: 'Test',
         prompts: {},
@@ -246,16 +249,14 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
           mainResearchGoal: 'Goal',
           researchGoal: 'Research',
           reasoning: 'Reason',
-          bulkQueryTemplate: 'Query',
+          bulkQuery: (_name: string) => 'Query',
         },
         tools: {},
         baseHints: { hasResults: [], empty: [] },
         genericErrorHints: [],
       };
 
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      vi.mocked(fetchWithRetries).mockResolvedValueOnce(mockMetadata);
+      hoisted.octocodeConfig = mockMetadata;
 
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../src/tools/toolMetadata/state.js');
@@ -264,23 +265,40 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
 
       await initializeToolMetadata();
 
-      // Access key in STATIC_TOOL_NAMES but not in metadata.toolNames
-      expect(TOOL_NAMES.LOCAL_FIND_FILES).toBe('localFindFiles');
-      expect(TOOL_NAMES.PACKAGE_SEARCH).toBe('packageSearch');
+      expect(TOOL_NAMES.GITHUB_SEARCH_CODE).toBe('githubSearchCode');
+      expect(TOOL_NAMES.GITHUB_FETCH_CONTENT).toBe('githubGetFileContent');
 
       _resetMetadataState();
     });
 
-    it('should support ownKeys when uninitialized', async () => {
+    it('should support ownKeys when metadata has empty toolNames', async () => {
       const { TOOL_NAMES } =
         await import('../../src/tools/toolMetadata/proxies.js');
 
       const keys = Object.keys(TOOL_NAMES);
-      expect(keys).toContain('GITHUB_SEARCH_CODE');
-      expect(keys).toContain('GITHUB_FETCH_CONTENT');
+      expect(Array.isArray(keys)).toBe(true);
     });
 
-    it('should support getOwnPropertyDescriptor when uninitialized', async () => {
+    it('should support getOwnPropertyDescriptor with populated metadata', async () => {
+      const mockMetadata = {
+        instructions: 'Test',
+        prompts: {},
+        toolNames: {
+          GITHUB_SEARCH_CODE: 'githubSearchCode',
+        },
+        baseSchema: {
+          mainResearchGoal: 'Goal',
+          researchGoal: 'Research',
+          reasoning: 'Reason',
+          bulkQuery: (_name: string) => 'Query',
+        },
+        tools: {},
+        baseHints: { hasResults: [], empty: [] },
+        genericErrorHints: [],
+      };
+
+      hoisted.octocodeConfig = mockMetadata;
+
       const { TOOL_NAMES } =
         await import('../../src/tools/toolMetadata/proxies.js');
 
@@ -332,7 +350,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
           mainResearchGoal: 'Goal',
           researchGoal: 'Research',
           reasoning: 'Reason',
-          bulkQueryTemplate: 'Query',
+          bulkQuery: (_name: string) => 'Query',
         },
         tools: {
           githubSearchCode: {
@@ -346,9 +364,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
         genericErrorHints: [],
       };
 
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      vi.mocked(fetchWithRetries).mockResolvedValueOnce(validMetadata);
+      hoisted.octocodeConfig = validMetadata;
 
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
@@ -382,7 +398,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
           mainResearchGoal: 'Goal',
           researchGoal: 'Research',
           reasoning: 'Reason',
-          bulkQueryTemplate: 'Query',
+          bulkQuery: (_name: string) => 'Query',
         },
         // tools explicitly set to trigger ?? fallback
         tools: {},
@@ -390,9 +406,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
         genericErrorHints: [],
       };
 
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      vi.mocked(fetchWithRetries).mockResolvedValueOnce(metadataWithNullTools);
+      hoisted.octocodeConfig = metadataWithNullTools;
 
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
@@ -422,7 +436,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
           mainResearchGoal: 'Goal',
           researchGoal: 'Research',
           reasoning: 'Reason',
-          bulkQueryTemplate: 'Query',
+          bulkQuery: (_name: string) => 'Query',
         },
         tools: {
           githubSearchCode: {
@@ -436,9 +450,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
         genericErrorHints: [],
       };
 
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      vi.mocked(fetchWithRetries).mockResolvedValueOnce(validMetadata);
+      hoisted.octocodeConfig = validMetadata;
 
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');

@@ -1,7 +1,7 @@
 /**
  * Local types for the toolMetadata module.
  */
-import { ToolNames } from '../../types/metadata.js';
+import type { ToolNames } from '@octocodeai/octocode-core';
 
 /**
  * Union type of all tool name values.

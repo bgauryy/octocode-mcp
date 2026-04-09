@@ -899,6 +899,191 @@ localSearchCode: {
 
 ---
 
+## Schema Edge Cases & Boundary Tests
+
+**Schema reference (input):** `queries` length **1–5**; `contextLines` **0–10**; `referencesPerPage` **1–50**; `page` **≥ 1**.
+
+**LSP tools (contract):** each query uses **`researchGoal`** and **`reasoning`** only — **do not** send **`mainResearchGoal`** (not in the LSP tool schema). Examples below follow that contract.
+
+### SE-1: Empty `queries` array
+
+**Goal:** Reject bulk payload with zero queries.
+
+```json
+{
+  "queries": []
+}
+```
+
+**Expected:**
+- [ ] Validation or tool error
+- [ ] **Response Validation:** bulk failure shape if applicable
+
+### SE-2: `referencesPerPage` 0 and 51 (outside 1–50)
+
+**Goal:** Enforce page size **1–50**.
+
+**Zero:**
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "ToolError",
+    "lineHint": 1,
+    "referencesPerPage": 0,
+    "page": 1,
+    "researchGoal": "refs per page 0",
+    "reasoning": "Below min"
+  }]
+}
+```
+
+**Fifty-one:**
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "ToolError",
+    "lineHint": 1,
+    "referencesPerPage": 51,
+    "page": 1,
+    "researchGoal": "refs per page 51",
+    "reasoning": "Above max"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Both fail validation (or explicit equivalent error)
+- [ ] Error or hints cite **1–50**
+
+### SE-3: `page` 0 (below minimum 1)
+
+**Goal:** Reject non-positive page index.
+
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "ToolError",
+    "lineHint": 1,
+    "referencesPerPage": 5,
+    "page": 0,
+    "researchGoal": "page 0",
+    "reasoning": "min page 1"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error for `page`
+- [ ] No references returned for invalid page without masking the error
+
+### SE-4: `contextLines` 11 (above maximum 10)
+
+**Goal:** Reject `contextLines` above **10**.
+
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "ToolError",
+    "lineHint": 1,
+    "contextLines": 11,
+    "researchGoal": "contextLines over max",
+    "reasoning": "max 10"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error for `contextLines`
+- [ ] Allowed range **0–10** in message or hints
+
+### SE-5: Missing required fields
+
+**Goal:** Required query fields are enforced (e.g. `uri`, `symbolName`, `lineHint`, and any mandatory pagination fields per schema).
+
+**Example — missing `lineHint`:**
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "ToolError",
+    "researchGoal": "missing lineHint",
+    "reasoning": "required"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error listing missing required properties
+- [ ] No LSP execution for invalid payload
+
+### SE-6: Response-level pagination
+
+**Goal:** Paginated reference lists expose consistent totals, page index, and continuation.
+
+**Expected:**
+- [ ] **Response Validation:** `instructions` / pagination metadata match `references` slice
+- [ ] **Hints Validation:** hints for next page when more references exist
+
+### SE-7: Duplicate query `id` values
+
+**Goal:** Duplicate `id` in one request is rejected or handled deterministically.
+
+```json
+{
+  "queries": [
+    {"id": "dup", "uri": "<file>", "symbolName": "a", "lineHint": 1, "researchGoal": "a", "reasoning": "edge"},
+    {"id": "dup", "uri": "<file>", "symbolName": "b", "lineHint": 1, "researchGoal": "b", "reasoning": "edge"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error **or** documented dedup rules
+- [ ] **Response Validation:** `results[].id` matches accepted queries when duplicates rejected
+
+### SE-8: Empty `includePattern` / `excludePattern` arrays (allowed)
+
+**Goal:** Empty glob arrays are valid and behave as “no filter” (or as documented).
+
+**Empty include:**
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "ToolError",
+    "lineHint": 1,
+    "includePattern": [],
+    "researchGoal": "empty includePattern",
+    "reasoning": "allowed empty array"
+  }]
+}
+```
+
+**Empty exclude:**
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "ToolError",
+    "lineHint": 1,
+    "excludePattern": [],
+    "researchGoal": "empty excludePattern",
+    "reasoning": "allowed empty array"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Request accepted (no validation error solely due to empty arrays)
+- [ ] Behavior matches TC-18 / docs: typically no path filtering from that array
+- [ ] **Response Validation:** `references` and filter summary consistent with documented semantics
+
+---
+
 ## Validation Checklist
 
 ### Core Requirements

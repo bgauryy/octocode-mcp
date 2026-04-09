@@ -1,9 +1,9 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { ViewStructureQuery } from '../../utils/core/types.js';
+import type { ViewStructureQuery } from '@octocodeai/octocode-core';
 import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import { viewStructure } from './local_view_structure.js';
-import { ViewStructureQuerySchema } from './scheme.js';
+import { ViewStructureQuerySchema } from '@octocodeai/octocode-core';
 import { createErrorResult } from '../utils.js';
 import { executeWithToolBoundary } from '../executionGuard.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';

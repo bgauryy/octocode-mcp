@@ -9,7 +9,7 @@
 
 import { readFile, stat } from 'fs/promises';
 
-import { type LSPFindReferencesQuery } from './scheme.js';
+import { type LSPFindReferencesQuery } from '@octocodeai/octocode-core';
 import { SymbolResolver, SymbolResolutionError } from '../../lsp/resolver.js';
 import { isLanguageServerAvailable } from '../../lsp/manager.js';
 import type {
@@ -22,10 +22,10 @@ import {
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { ToolErrors } from '../../errors/errorFactories.js';
-import { resolveWorkspaceRoot } from '@octocode/security/workspaceRoot';
 import { TOOL_NAME } from './constants.js';
 import { findReferencesWithLSP } from './lspReferencesCore.js';
 import { findReferencesWithPatternMatching } from './lspReferencesPatterns.js';
+import { resolveWorkspaceRootForFile } from '../../lsp/workspaceRoot.js';
 
 /**
  * Find all references to a symbol
@@ -97,16 +97,17 @@ export async function findReferences(
       throw error;
     }
 
-    const workspaceRoot = resolveWorkspaceRoot();
+    const workspaceRoot = await resolveWorkspaceRootForFile(absolutePath);
+    const globalMergeQuery = createGlobalMergeQuery(query);
 
     let lspResult: FindReferencesResult | null = null;
-    if (await isLanguageServerAvailable(absolutePath)) {
+    if (await isLanguageServerAvailable(absolutePath, workspaceRoot)) {
       try {
         lspResult = await findReferencesWithLSP(
           absolutePath,
           workspaceRoot,
           resolvedSymbol.position,
-          query
+          globalMergeQuery
         );
       } catch {
         // LSP find-references failed; pattern matching still returns full text coverage.
@@ -116,8 +117,24 @@ export async function findReferences(
     const patternResult = await findReferencesWithPatternMatching(
       absolutePath,
       workspaceRoot,
-      query
+      globalMergeQuery
     );
+
+    const lspHasLocations =
+      !!lspResult &&
+      lspResult.status === 'hasResults' &&
+      !!lspResult.locations?.length;
+    const patternHasLocations =
+      patternResult.status === 'hasResults' &&
+      !!patternResult.locations?.length;
+
+    if (!lspHasLocations) {
+      return paginateGlobalBranchResult(patternResult, query);
+    }
+
+    if (!patternHasLocations) {
+      return paginateGlobalBranchResult(lspResult!, query);
+    }
 
     return mergeReferenceResults(lspResult, patternResult, query);
   } catch (error) {
@@ -186,6 +203,24 @@ export function mergeReferenceResults(
   const referencesPerPage = query.referencesPerPage ?? 20;
   const page = query.page ?? 1;
   const totalPages = Math.ceil(totalReferences / referencesPerPage);
+  if (totalReferences > 0 && page > totalPages) {
+    return {
+      status: 'empty',
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalResults: totalReferences,
+        hasMore: false,
+        resultsPerPage: referencesPerPage,
+      },
+      hasMultipleFiles: uniqueFiles.size > 1,
+      hints: [
+        ...(lspResult.hints || []),
+        `Requested page ${page} is outside available range (1-${totalPages}).`,
+        `Use page=${totalPages} for the last available page.`,
+      ],
+    };
+  }
   const startIndex = (page - 1) * referencesPerPage;
   const endIndex = Math.min(startIndex + referencesPerPage, totalReferences);
   const paginatedLocations = mergedLocations.slice(startIndex, endIndex);
@@ -212,6 +247,76 @@ export function mergeReferenceResults(
       resultsPerPage: referencesPerPage,
     },
     hasMultipleFiles: uniqueFiles.size > 1,
+    hints,
+  };
+}
+
+function createGlobalMergeQuery(
+  query: LSPFindReferencesQuery
+): LSPFindReferencesQuery {
+  return {
+    ...query,
+    page: 1,
+    referencesPerPage: Number.MAX_SAFE_INTEGER,
+  };
+}
+
+function paginateGlobalBranchResult(
+  result: FindReferencesResult,
+  query: LSPFindReferencesQuery
+): FindReferencesResult {
+  if (result.status !== 'hasResults' || !result.locations?.length) {
+    return result;
+  }
+
+  const referencesPerPage = query.referencesPerPage ?? 20;
+  const page = query.page ?? 1;
+  const totalReferences = result.locations.length;
+  const totalPages = Math.ceil(totalReferences / referencesPerPage);
+  const hasMultipleFiles =
+    new Set(result.locations.map(ref => ref.uri)).size > 1;
+
+  if (totalReferences > 0 && page > totalPages) {
+    return {
+      status: 'empty',
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalResults: totalReferences,
+        hasMore: false,
+        resultsPerPage: referencesPerPage,
+      },
+      hasMultipleFiles,
+      hints: [
+        ...(result.hints || []),
+        `Requested page ${page} is outside available range (1-${totalPages}).`,
+        `Use page=${totalPages} for the last available page.`,
+      ],
+    };
+  }
+
+  const startIndex = (page - 1) * referencesPerPage;
+  const endIndex = Math.min(startIndex + referencesPerPage, totalReferences);
+  const paginatedLocations = result.locations.slice(startIndex, endIndex);
+
+  const hints = [...(result.hints || [])];
+  if (page < totalPages) {
+    hints.push(
+      `Showing page ${page} of ${totalPages}. Use page=${page + 1} for more.`
+    );
+  }
+
+  return {
+    ...result,
+    locations: paginatedLocations,
+    pagination: {
+      currentPage: page,
+      totalPages,
+      totalResults: totalReferences,
+      hasMore: page < totalPages,
+      resultsPerPage: referencesPerPage,
+    },
+    hasMultipleFiles,
     hints,
   };
 }

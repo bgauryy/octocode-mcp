@@ -3,10 +3,10 @@ import { toMCPSchema } from '../../types/toolTypes.js';
 import {
   BulkLSPFindReferencesSchema,
   LSP_FIND_REFERENCES_DESCRIPTION,
-} from './scheme.js';
+} from '@octocodeai/octocode-core';
 import { executeFindReferences } from './execution.js';
 import { withBasicSecurityValidation } from '../../utils/securityBridge.js';
-import { LspFindReferencesOutputSchema } from '../../scheme/outputSchemas.js';
+import { LspFindReferencesOutputSchema } from '@octocodeai/octocode-core';
 import { TOOL_NAME } from './constants.js';
 
 export function registerLSPFindReferencesTool(server: McpServer) {

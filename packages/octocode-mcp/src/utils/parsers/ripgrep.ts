@@ -1,17 +1,17 @@
-import type { RipgrepQuery } from '../../tools/local_ripgrep/scheme.js';
+import type { RipgrepQuery } from '@octocodeai/octocode-core';
 import { RESOURCE_LIMITS } from '../core/constants.js';
 import type {
-  RipgrepFileMatches,
-  RipgrepMatch,
-  SearchStats,
-} from '../core/types.js';
+  LocalSearchCodeFile,
+  LocalSearchCodeMatch,
+} from '@octocodeai/octocode-core';
+import type { SearchStats } from '../core/types.js';
 import { RipgrepJsonMessageSchema } from './schemas.js';
 
 export function parseRipgrepJson(
   jsonOutput: string,
   query: RipgrepQuery
 ): {
-  files: RipgrepFileMatches[];
+  files: LocalSearchCodeFile[];
   stats: SearchStats;
 } {
   const lines = jsonOutput.trim().split('\n').filter(Boolean);
@@ -104,9 +104,9 @@ export function parseRipgrepJson(
   const maxLength =
     query.matchContentLength || RESOURCE_LIMITS.DEFAULT_MATCH_CONTENT_LENGTH;
 
-  const files: RipgrepFileMatches[] = Array.from(fileMap.entries()).map(
+  const files: LocalSearchCodeFile[] = Array.from(fileMap.entries()).map(
     ([path, entry]) => {
-      const matches: RipgrepMatch[] = entry.rawMatches.map(m => {
+      const matches: LocalSearchCodeMatch[] = entry.rawMatches.map(m => {
         const contextLines: string[] = [];
         for (let i = before; i > 0; i--) {
           const ctx = entry.contexts.get(m.lineNumber - i);
@@ -150,7 +150,7 @@ export function parseRipgrepJson(
 export function parseGrepOutput(
   output: string,
   query: RipgrepQuery
-): RipgrepFileMatches[] {
+): LocalSearchCodeFile[] {
   const lines = output.trim().split('\n').filter(Boolean);
 
   type RawMatch = {
@@ -213,9 +213,9 @@ export function parseGrepOutput(
   const maxLength =
     query.matchContentLength || RESOURCE_LIMITS.DEFAULT_MATCH_CONTENT_LENGTH;
 
-  const files: RipgrepFileMatches[] = Array.from(fileMap.entries()).map(
+  const files: LocalSearchCodeFile[] = Array.from(fileMap.entries()).map(
     ([path, rawMatches]) => {
-      const matches: RipgrepMatch[] = rawMatches.map(m => {
+      const matches: LocalSearchCodeMatch[] = rawMatches.map(m => {
         let value = m.lineText.replace(/\n+$/, '');
         const charArray = [...value];
         if (charArray.length > maxLength) {

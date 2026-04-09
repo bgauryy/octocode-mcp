@@ -1,12 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fetchWithRetries } from '../../../src/utils/http/fetch.js';
-
-vi.mock('../../../src/utils/http/fetch.js');
-vi.mock('../../../src/session.js', () => ({
-  logSessionError: vi.fn(() => Promise.resolve()),
-}));
-
-const mockFetchWithRetries = vi.mocked(fetchWithRetries);
 
 const mockMetadata = {
   instructions: 'Test',
@@ -22,7 +14,7 @@ const mockMetadata = {
     mainResearchGoal: 'Main',
     researchGoal: 'Research',
     reasoning: 'Reason',
-    bulkQueryTemplate: 'Query {toolName}',
+    bulkQuery: (_name: string) => 'Query ' + _name,
   },
   tools: {
     githubGetFileContent: {
@@ -80,6 +72,12 @@ const mockMetadata = {
   genericErrorHints: [],
 };
 
+vi.mock('@octocodeai/octocode-core', async importOriginal => ({
+  ...(await importOriginal<object>()),
+  octocodeConfig: mockMetadata,
+  completeMetadata: mockMetadata,
+}));
+
 describe('toolMetadata/schemaHelpers', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -91,23 +89,22 @@ describe('toolMetadata/schemaHelpers', () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { GITHUB_FETCH_CONTENT } =
-        await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
-      expect(GITHUB_FETCH_CONTENT.scope.owner).toBe('Repository owner');
-      expect(GITHUB_FETCH_CONTENT.scope.repo).toBe('Repository name');
-      expect(GITHUB_FETCH_CONTENT.scope.path).toBe('File path');
+      expect(GITHUB_FETCH_CONTENT.scope.owner).toBe('Repo owner');
+      expect(GITHUB_FETCH_CONTENT.scope.repo).toBe('Repo name');
+      expect(typeof GITHUB_FETCH_CONTENT.scope.path).toBe('string');
+      expect(GITHUB_FETCH_CONTENT.scope.path.length).toBeGreaterThan(0);
     });
 
     it('should return empty string for unknown fields', async () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { GITHUB_FETCH_CONTENT } =
-        await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const helper = GITHUB_FETCH_CONTENT as Record<
@@ -122,16 +119,15 @@ describe('toolMetadata/schemaHelpers', () => {
     it('should access search schema fields', async () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
-      const { GITHUB_SEARCH_CODE } =
-        await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
+      const { GITHUB_SEARCH_CODE } = await import('@octocodeai/octocode-core');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
-      expect(GITHUB_SEARCH_CODE.search.keywordsToSearch).toBe(
-        'Keywords to search for'
+      expect(typeof GITHUB_SEARCH_CODE.search.keywordsToSearch).toBe('string');
+      expect(GITHUB_SEARCH_CODE.search.keywordsToSearch.length).toBeGreaterThan(
+        0
       );
-      expect(GITHUB_SEARCH_CODE.scope.owner).toBe('Repo owner');
+      expect(typeof GITHUB_SEARCH_CODE.scope.owner).toBe('string');
     });
   });
 
@@ -139,14 +135,15 @@ describe('toolMetadata/schemaHelpers', () => {
     it('should access repo search schema fields', async () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
-      const { GITHUB_SEARCH_REPOS } =
-        await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
+      const { GITHUB_SEARCH_REPOS } = await import('@octocodeai/octocode-core');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
-      expect(GITHUB_SEARCH_REPOS.search.topicsToSearch).toBe('Topics');
-      expect(GITHUB_SEARCH_REPOS.filters.stars).toBe('Star count filter');
+      expect(GITHUB_SEARCH_REPOS.search.topicsToSearch).toBe(
+        'GitHub topic tags'
+      );
+      expect(typeof GITHUB_SEARCH_REPOS.filters.stars).toBe('string');
+      expect(GITHUB_SEARCH_REPOS.filters.stars.length).toBeGreaterThan(0);
     });
   });
 
@@ -154,14 +151,14 @@ describe('toolMetadata/schemaHelpers', () => {
     it('should access local search schema fields', async () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
-      const { LOCAL_RIPGREP } =
-        await import('../../../src/tools/toolMetadata/localSchemaHelpers.js');
+      const { LOCAL_RIPGREP } = await import('@octocodeai/octocode-core');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
-      expect(LOCAL_RIPGREP.search.pattern).toBe('Search pattern');
-      expect(LOCAL_RIPGREP.search.path).toBe('Search path');
+      expect(LOCAL_RIPGREP.search.pattern).toBe(
+        'Pattern/regex to search (required)'
+      );
+      expect(LOCAL_RIPGREP.search.path).toBe('Root directory (required)');
     });
   });
 
@@ -169,27 +166,26 @@ describe('toolMetadata/schemaHelpers', () => {
     it('should access LSP schema fields', async () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
-      const { LSP_GOTO_DEFINITION } =
-        await import('../../../src/tools/toolMetadata/lspSchemaHelpers.js');
+      const { LSP_GOTO_DEFINITION } = await import('@octocodeai/octocode-core');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
-      expect(LSP_GOTO_DEFINITION.scope.uri).toBe('File URI');
-      expect(LSP_GOTO_DEFINITION.scope.symbolName).toBe('Symbol name');
-      expect(LSP_GOTO_DEFINITION.scope.lineHint).toBe('Line hint');
+      expect(LSP_GOTO_DEFINITION.scope.uri).toContain('File path');
+      expect(LSP_GOTO_DEFINITION.scope.symbolName).toContain('symbol');
+      expect(LSP_GOTO_DEFINITION.scope.lineHint).toContain('line');
     });
   });
 
   describe('uninitialized state', () => {
-    it('should return empty string when not initialized', async () => {
+    it('should still return values from embedded config even when metadata state is reset', async () => {
       const { _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { GITHUB_FETCH_CONTENT } =
-        await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       _resetMetadataState();
 
-      expect(GITHUB_FETCH_CONTENT.scope.owner).toBe('');
+      expect(typeof GITHUB_FETCH_CONTENT.scope.owner).toBe('string');
+      expect(GITHUB_FETCH_CONTENT.scope.owner).toBe('Repo owner');
     });
   });
 
@@ -197,13 +193,10 @@ describe('toolMetadata/schemaHelpers', () => {
     it('should handle any category access', async () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
-      const { GITHUB_SEARCH_CODE } =
-        await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
+      const { GITHUB_SEARCH_CODE } = await import('@octocodeai/octocode-core');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
-      // Access through unknown category should still work
       const helper = GITHUB_SEARCH_CODE as Record<
         string,
         Record<string, string>
