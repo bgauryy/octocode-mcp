@@ -7,6 +7,7 @@ This directory contains the active CI/CD workflows for the Octocode monorepo.
 | Workflow | Trigger | Purpose |
 |---|---|---|
 | `ci.yml` | Pull requests | Repo health, lint, typecheck, build, test |
+| `pr-review.yml` | Pull requests + `@claude` comments | AI code review via Claude Code + Octocode MCP |
 | `releases.yml` | GitHub Release published or manual dispatch | Build and upload `octocode-mcp` binaries |
 
 ## CI (`ci.yml`)
@@ -47,6 +48,52 @@ yarn verify
 - Windows x64
 
 It also uploads the JS build artifact and SHA256 checksums to the release.
+
+## AI PR Review (`pr-review.yml`)
+
+Runs an automated code review on every PR using [Claude Code Action](https://github.com/anthropics/claude-code-action) with [Octocode MCP](https://github.com/bgauryy/octocode-mcp) as a tool server for deep code analysis.
+
+### How it works
+
+1. Checks out the repo with full history (and PR branch for comment triggers).
+2. **Dynamically fetches** the latest [Octocode PR Review Skill](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-pull-request-reviewer) from GitHub — including flow analysis recipes, domain reviewers, output templates, and verification checklists.
+3. Writes an MCP config that starts `octocode-mcp` with `ENABLE_LOCAL=true` and the repo's `GITHUB_TOKEN`.
+4. Runs `anthropics/claude-code-action@v1` with the full review protocol.
+5. Claude uses **all** Octocode MCP tools — local search, LSP (definitions, references, call hierarchy), GitHub API (PR metadata, comments, code search), and package search — to perform deep analysis.
+6. Posts a structured review with ratings, findings, flow impact analysis, and previous comment follow-up.
+
+### Triggers
+
+| Event | Behavior |
+|---|---|
+| PR opened / synchronized / reopened | Automatic full review |
+| PR comment containing `@claude` | Re-review or respond to follow-up |
+
+### Review capabilities
+
+- **13 review domains**: Bug, Security, Architecture, Performance, Code Quality, Error Handling, Flow Impact, Efficiency, UX/Accessibility, Data/Migration Safety, Reliability/Ops, Testing
+- **Flow impact analysis**: Traces callers/consumers of every modified symbol via LSP
+- **PR health check**: Description quality, size, linked issues, test coverage
+- **Measurements**: Correctness, Security, Performance, Maintainability (rated X/5)
+- **Comment awareness**: Checks existing PR comments, flags unresolved ones, avoids duplicates
+- **Confidence model**: HIGH/MED per finding with evidence-backed citations
+- **Actionable fixes**: Every finding includes `file:line` location and diff-format code fix
+
+### Required secrets
+
+| Secret | Description |
+|---|---|
+| `ANTHROPIC_API_KEY` | Anthropic API key from [console.anthropic.com](https://console.anthropic.com/) |
+
+`GITHUB_TOKEN` is provided automatically by GitHub Actions.
+
+### Customization
+
+- Edit the `prompt` in the workflow to change review focus areas or CI overrides.
+- Adjust `--max-turns` in `claude_args` to control depth (default: 25).
+- Add `--model claude-opus-4-6` to `claude_args` for deeper analysis (higher cost).
+- The workflow auto-discovers `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, and `.octocode/pr-guidelines.md` for project-specific guidelines.
+- Add `.octocode/pr-guidelines.md` to your repo with project-specific review rules that override defaults.
 
 ## Maintenance Notes
 

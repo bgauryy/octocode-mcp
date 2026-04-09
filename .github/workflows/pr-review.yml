@@ -1,0 +1,206 @@
+name: AI PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Octocode PR Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: >
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '@octocode'))
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Checkout PR branch (comment triggers)
+        if: github.event_name == 'issue_comment'
+        run: gh pr checkout ${{ github.event.issue.number }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch Octocode review protocol
+        run: |
+          BASE="https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/skills/octocode-pull-request-reviewer"
+          FILES="SKILL.md references/flow-analysis-protocol.md references/review-guidelines.md references/domain-reviewers.md references/output-template.md references/verification-checklist.md"
+          > /tmp/review-protocol.md
+          for f in $FILES; do
+            printf '\n---\n# SOURCE: %s\n---\n' "$f" >> /tmp/review-protocol.md
+            curl -fsSL "$BASE/$f" >> /tmp/review-protocol.md 2>/dev/null || true
+          done
+
+      - name: Write MCP config
+        run: |
+          cat > /tmp/mcp-config.json << 'EOF'
+          {
+            "mcpServers": {
+              "octocode": {
+                "command": "npx",
+                "args": ["-y", "octocode-mcp@latest"],
+                "env": {
+                  "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+                  "ENABLE_LOCAL": "true"
+                }
+              }
+            }
+          }
+          EOF
+
+      - name: Run Octocode PR Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          trigger_phrase: "@octocode"
+          prompt: |
+            You are Octocode — an evidence-first expert code reviewer.
+            Review PR #${{ github.event.pull_request.number || github.event.issue.number }} in ${{ github.repository }}.
+
+            ## Step 1: Load Review Protocol (REQUIRED)
+
+            Read `/tmp/review-protocol.md` — the full Octocode PR Review skill with flow analysis
+            recipes, domain reviewers, output templates, and verification checklists.
+            Internalize the protocol, then execute the CI flow below.
+
+            ## Step 2: CI Execution Flow
+
+            Execute these phases sequentially. Do NOT pause for user input at any phase.
+
+            ### Phase 1 — Auto-Discover Guidelines
+            Search the repo for project guidelines (do NOT ask the user):
+            - `.octocode/pr-guidelines.md`
+            - `.octocode/context/context.md`
+            - `CONTRIBUTING.md`, `AGENTS.md`
+            Use `localFindFiles` or `Glob`. Read any found files and use them as review criteria.
+
+            ### Phase 2 — Full Context Scan
+            1. Fetch PR metadata: `githubSearchPullRequests(type="metadata")` with `owner="${{ github.repository_owner }}"` and `repo="${{ github.event.repository.name }}"`
+            2. Fetch existing PR comments with `withComments=true` — note resolved vs open comments
+            3. Get the diff: `gh pr diff ${{ github.event.pull_request.number || github.event.issue.number }}`
+            4. Classify risk: HIGH (auth/API/data/schema) / MEDIUM / LOW (docs/config)
+            5. Group changed files by functional area
+            6. PR health: description quality, size (flag >500 lines), linked issues, test coverage
+
+            ### Phase 3 — Skip (CI mode)
+            Proceed with FULL review across ALL domains. No user interaction.
+
+            ### Phase 4 — Deep Analysis (ALL tools)
+            Apply the protocol's funnel: `localSearchCode → lineHint → LSP tools → localGetFileContent`
+
+            **Flow Impact (REQUIRED for every modified function/method/type):**
+            - `localSearchCode(pattern="symbolName")` → get lineHint (NEVER guess)
+            - `lspCallHierarchy(direction="incoming")` → find callers, assess breakage
+            - `lspFindReferences` → all usages of changed types/interfaces
+            - `lspGotoDefinition` → verify type contracts at boundaries
+            - Document blast radius per the protocol's tracing recipes
+
+            **Review ALL domains from the protocol** (Bug, Architecture, Security, Performance,
+            Code Quality, Error Handling, Flow Impact), PLUS these additional lenses:
+            - **Efficiency**: redundant passes, duplicate fetches, unnecessary complexity
+            - **UX & Accessibility**: broken states, missing feedback, accessibility regressions
+            - **Data & Migration Safety**: schema drift, incompatible payloads, data loss
+            - **Reliability & Ops**: missing timeouts, retry storms, unsafe rollouts
+            - **Testing**: missing tests for changed contracts, untested error paths
+
+            **Cross-cutting checks:**
+            - `packageSearch` for new/updated external dependencies
+            - `githubSearchCode` to check if changed exports are consumed elsewhere
+            - Scan for TODO/FIXME in new code ('+' lines only)
+            - Security: injection, XSS, secret exposure, auth bypass, unsafe defaults
+
+            ### Phase 5 — Finalize
+            - Cross-check findings against existing PR comments — do NOT duplicate
+            - Flag still-open previous review comments as unresolved
+            - Keep only HIGH/MED confidence findings with actionable code fixes
+            - Cap at ~7 most impactful issues, ordered by severity
+            - Each finding: `file:line`, confidence (HIGH/MED), problem, diff-format fix
+
+            ### Phase 6 — Submit Review
+            Write the review body to `/tmp/review-body.md`, then submit with exactly ONE of:
+            - `gh pr review ${{ github.event.pull_request.number || github.event.issue.number }} --approve -F /tmp/review-body.md`
+            - `gh pr review ${{ github.event.pull_request.number || github.event.issue.number }} --request-changes -F /tmp/review-body.md`
+            - `gh pr review ${{ github.event.pull_request.number || github.event.issue.number }} --comment -F /tmp/review-body.md`
+
+            ## Review Body Structure
+
+            ```
+            ## Octocode PR Review
+
+            ### Executive Summary
+            | Aspect | Value |
+            |--------|-------|
+            | **Risk Level** | HIGH / MEDIUM / LOW — reasoning |
+            | **Recommendation** | APPROVE / REQUEST_CHANGES / COMMENT |
+
+            ### Ratings
+            | Aspect | Score |
+            |--------|-------|
+            | Correctness | X/5 |
+            | Security | X/5 |
+            | Performance | X/5 |
+            | Maintainability | X/5 |
+
+            ### PR Health
+            - [ ] Clear description
+            - [ ] References ticket/issue
+            - [ ] Appropriate size
+            - [ ] Relevant tests
+
+            ### Findings
+
+            #### [SEVERITY] #N: Title
+            **Location:** `path:line` | **Confidence:** HIGH/MED
+            Problem description and impact.
+            ```diff
+            - current code
+            + suggested fix
+            ```
+
+            ### Flow Impact
+            Modified symbols and their affected callers/consumers.
+
+            ### Previous Review Comments
+            Status of prior comments (resolved / still open).
+            ```
+
+            ## Verdict Rules
+            - **APPROVE**: Default when no blocking issues found.
+            - **REQUEST_CHANGES**: Blocking bugs, security flaws, or breaking changes.
+            - **COMMENT**: Non-blocking suggestions and improvements.
+
+            ## Hard Rules
+            - APPROVE by default unless a real, evidence-backed problem is found.
+            - Focus ONLY on changed code ('+' lines in the diff).
+            - Skip generated files, lock files, vendored code.
+            - Do NOT flag style/formatting (linter handles that).
+            - Trivial PRs (docs, config, <5 lines): approve with brief note.
+            - Every finding MUST cite a specific file:line.
+            - ALWAYS use `localSearchCode` BEFORE any LSP tool to obtain lineHint.
+            - Check existing PR comments FIRST — avoid duplicates, flag unresolved ones.
+            - Be concise. Evidence over opinion. No filler.
+            - Submit exactly one `gh pr review` verdict. Do NOT use `gh pr comment`.
+          claude_args: |
+            --max-turns 25
+            --mcp-config /tmp/mcp-config.json
+            --allowedTools "mcp__octocode__localSearchCode,mcp__octocode__localGetFileContent,mcp__octocode__localViewStructure,mcp__octocode__localFindFiles,mcp__octocode__lspGotoDefinition,mcp__octocode__lspFindReferences,mcp__octocode__lspCallHierarchy,mcp__octocode__githubSearchPullRequests,mcp__octocode__githubGetFileContent,mcp__octocode__githubSearchCode,mcp__octocode__githubViewRepoStructure,mcp__octocode__packageSearch,Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Read,Write,Glob"
+        env:
+          MCP_TIMEOUT: "90000"
+          MCP_TOOL_TIMEOUT: "45000"
