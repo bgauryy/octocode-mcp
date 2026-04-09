@@ -149,13 +149,14 @@ describe('Server Lifecycle', () => {
 
   describe('PID file management', () => {
     it('startServer writes PID file on listen', async () => {
-      const { startServer, PID_FILE } = await import('../../server.js');
+      const { PID_FILE } = await import('../../server.js');
 
       const listenSpy = vi.spyOn(app, 'listen').mockImplementation(
-        (_port: any, _host: any, cb: () => void) => {
-          cb();
+        ((...args: any[]) => {
+          const cb = args.find((a: any) => typeof a === 'function');
+          if (cb) cb();
           return { on: vi.fn(), close: vi.fn() } as any;
-        }
+        }) as any
       );
 
       // startServer creates its own app internally, so we test writePidFile via
