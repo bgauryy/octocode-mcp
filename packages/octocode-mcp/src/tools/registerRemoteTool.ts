@@ -3,7 +3,7 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { toMCPSchema } from '../types/toolTypes.js';
 import { withSecurityValidation } from '../utils/securityBridge.js';
 import type { ToolInvocationCallback } from '../types.js';
-import { DESCRIPTIONS } from '@octocodeai/octocode-core';
+import { DESCRIPTIONS } from './toolMetadata/proxies.js';
 import { invokeCallbackSafely } from './utils.js';
 import type { ToolExecutionArgs } from '../types/execution.js';
 

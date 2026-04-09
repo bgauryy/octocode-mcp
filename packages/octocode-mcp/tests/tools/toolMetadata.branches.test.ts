@@ -23,6 +23,9 @@ vi.mock('@octocodeai/octocode-core', () => ({
   get octocodeConfig() {
     return hoisted.octocodeConfig;
   },
+  get completeMetadata() {
+    return hoisted.octocodeConfig;
+  },
 }));
 
 describe('toolMetadata branch coverage - uninitialized state', () => {

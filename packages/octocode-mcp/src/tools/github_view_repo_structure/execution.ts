@@ -1,10 +1,10 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type {
   GitHubViewRepoStructureQuery,
-  RepoStructureResult,
-  DirectoryEntry,
-} from './types.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
+  GitHubViewRepoStructureToolResult,
+  GitHubRepoStructureDirectoryEntry,
+} from '@octocodeai/octocode-core';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { shouldIgnoreFile, shouldIgnoreDir } from '../../utils/file/filters.js';
@@ -19,9 +19,9 @@ import {
 } from '../providerExecution.js';
 
 function filterStructure(
-  structure: Record<string, DirectoryEntry>
-): Record<string, DirectoryEntry> {
-  const filtered: Record<string, DirectoryEntry> = {};
+  structure: Record<string, GitHubRepoStructureDirectoryEntry>
+): Record<string, GitHubRepoStructureDirectoryEntry> {
+  const filtered: Record<string, GitHubRepoStructureDirectoryEntry> = {};
 
   for (const [dirPath, entry] of Object.entries(structure)) {
     const filteredFiles = entry.files.filter(
@@ -122,7 +122,7 @@ export async function exploreMultipleRepositoryStructures(
         'branchFallback',
         'structure',
         'error',
-      ] satisfies Array<keyof RepoStructureResult>,
+      ] satisfies Array<keyof GitHubViewRepoStructureToolResult>,
       responseCharOffset,
       responseCharLength,
     }

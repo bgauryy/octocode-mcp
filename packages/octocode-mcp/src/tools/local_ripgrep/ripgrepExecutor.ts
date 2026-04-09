@@ -5,14 +5,17 @@ import {
 } from '../../commands/GrepCommandBuilder.js';
 import { safeExec } from '../../utils/exec/safe.js';
 import { getLargeFileWorkflowHints } from '../../hints/dynamic.js';
-import { validateRipgrepQuery, type RipgrepQuery } from '@octocodeai/octocode-core';
+import {
+  validateRipgrepQuery,
+  type RipgrepQuery,
+} from '@octocodeai/octocode-core';
 import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
-import type { SearchContentResult } from '../../utils/core/types.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
+import type { LocalSearchCodeToolResult } from '@octocodeai/octocode-core';
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import { LOCAL_TOOL_ERROR_CODES } from '../../errors/localToolErrors.js';
@@ -26,7 +29,7 @@ import { buildSearchResult } from './ripgrepResultBuilder.js';
  */
 export async function executeRipgrepSearchInternal(
   configuredQuery: RipgrepQuery
-): Promise<SearchContentResult> {
+): Promise<LocalSearchCodeToolResult> {
   const validation = validateRipgrepQuery(configuredQuery);
   if (!validation.isValid) {
     return createErrorResult(
@@ -36,7 +39,7 @@ export async function executeRipgrepSearchInternal(
         toolName: TOOL_NAMES.LOCAL_RIPGREP,
         extra: { warnings: validation.warnings },
       }
-    ) as SearchContentResult;
+    ) as LocalSearchCodeToolResult;
   }
 
   if (!configuredQuery.path) {
@@ -47,7 +50,7 @@ export async function executeRipgrepSearchInternal(
         toolName: TOOL_NAMES.LOCAL_RIPGREP,
         extra: { warnings: validation.warnings },
       }
-    ) as SearchContentResult;
+    ) as LocalSearchCodeToolResult;
   }
   const queryWithPath = configuredQuery as RipgrepQuery & { path: string };
   const pathValidation = validateToolPath(
@@ -55,7 +58,7 @@ export async function executeRipgrepSearchInternal(
     TOOL_NAMES.LOCAL_RIPGREP
   );
   if (!pathValidation.isValid) {
-    return pathValidation.errorResult as SearchContentResult;
+    return pathValidation.errorResult as LocalSearchCodeToolResult;
   }
 
   const queryForExec = {
@@ -92,7 +95,7 @@ export async function executeRipgrepSearchInternal(
         'Consider excluding large directories with excludeDir.',
         ...chunkingWarnings,
       ],
-    } as SearchContentResult;
+    } as LocalSearchCodeToolResult;
   }
 
   if (result.code === 1 || (result.success && !result.stdout.trim())) {
@@ -111,7 +114,7 @@ export async function executeRipgrepSearchInternal(
       {
         toolName: TOOL_NAMES.LOCAL_RIPGREP,
       }
-    ) as SearchContentResult;
+    ) as LocalSearchCodeToolResult;
   }
 
   const parsed = parseRipgrepOutput(result.stdout, configuredQuery);
@@ -130,7 +133,7 @@ export async function executeRipgrepSearchInternal(
  */
 export async function executeGrepSearch(
   configuredQuery: RipgrepQuery
-): Promise<SearchContentResult> {
+): Promise<LocalSearchCodeToolResult> {
   const grepWarnings = getGrepFeatureWarnings(configuredQuery);
   grepWarnings.unshift(
     'Using grep fallback (ripgrep not available). Some features may be limited.'
@@ -145,7 +148,7 @@ export async function executeGrepSearch(
         toolName: TOOL_NAMES.LOCAL_RIPGREP,
         extra: { warnings: [...grepWarnings, ...validation.warnings] },
       }
-    ) as SearchContentResult;
+    ) as LocalSearchCodeToolResult;
   }
 
   if (!configuredQuery.path) {
@@ -156,7 +159,7 @@ export async function executeGrepSearch(
         toolName: TOOL_NAMES.LOCAL_RIPGREP,
         extra: { warnings: [...grepWarnings, ...validation.warnings] },
       }
-    ) as SearchContentResult;
+    ) as LocalSearchCodeToolResult;
   }
   const queryWithPath = configuredQuery as RipgrepQuery & { path: string };
 
@@ -165,7 +168,7 @@ export async function executeGrepSearch(
     TOOL_NAMES.LOCAL_RIPGREP
   );
   if (!pathValidation.isValid) {
-    return pathValidation.errorResult as SearchContentResult;
+    return pathValidation.errorResult as LocalSearchCodeToolResult;
   }
 
   const queryForExec = {
@@ -202,7 +205,7 @@ export async function executeGrepSearch(
         'Consider excluding large directories with excludeDir.',
         ...chunkingWarnings,
       ],
-    } as SearchContentResult;
+    } as LocalSearchCodeToolResult;
   }
 
   if (result.code === 1 || (result.success && !result.stdout.trim())) {
@@ -221,7 +224,7 @@ export async function executeGrepSearch(
       {
         toolName: TOOL_NAMES.LOCAL_RIPGREP,
       }
-    ) as SearchContentResult;
+    ) as LocalSearchCodeToolResult;
   }
 
   const parsedFiles = parseGrepOutputWrapper(result.stdout, configuredQuery);

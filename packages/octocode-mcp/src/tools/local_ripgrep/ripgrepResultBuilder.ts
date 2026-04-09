@@ -1,24 +1,24 @@
 import { getHints } from '../../hints/index.js';
 import type { RipgrepQuery } from '@octocodeai/octocode-core';
 import type {
-  SearchContentResult,
-  SearchStats,
-  RipgrepFileMatches,
-} from '../../utils/core/types.js';
+  LocalSearchCodeFile,
+  LocalSearchCodeToolResult,
+} from '@octocodeai/octocode-core';
+import type { SearchStats } from '../../utils/core/types.js';
 import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { promises as fs } from 'fs';
 
 /**
  * Build the final search result with pagination and metadata
  */
 export async function buildSearchResult(
-  parsedFiles: RipgrepFileMatches[],
+  parsedFiles: LocalSearchCodeFile[],
   configuredQuery: RipgrepQuery,
   _searchEngine: 'rg' | 'grep',
   warnings: string[],
   stats?: SearchStats
-): Promise<SearchContentResult> {
+): Promise<LocalSearchCodeToolResult> {
   const filesWithCharOffsets = parsedFiles;
 
   const filesWithMetadata = await Promise.all(
@@ -33,8 +33,8 @@ export async function buildSearchResult(
 
   filesWithMetadata.sort(
     (
-      a: RipgrepFileMatches & { modified?: string },
-      b: RipgrepFileMatches & { modified?: string }
+      a: LocalSearchCodeFile & { modified?: string },
+      b: LocalSearchCodeFile & { modified?: string }
     ) => {
       if (configuredQuery.showFileLastModified && a.modified && b.modified) {
         return new Date(b.modified).getTime() - new Date(a.modified).getTime();
@@ -62,7 +62,7 @@ export async function buildSearchResult(
   // For count/countMatches modes, stats.matchCount is computed from parsed per-file counts.
   // For filesOnly mode (-l), stats are unavailable so fall back to summing individual matchCounts.
   const summedMatches = limitedFiles.reduce(
-    (sum: number, f: RipgrepFileMatches & { modified?: string }) =>
+    (sum: number, f: LocalSearchCodeFile & { modified?: string }) =>
       sum + f.matchCount,
     0
   );
@@ -81,15 +81,15 @@ export async function buildSearchResult(
   const matchesPerPage =
     configuredQuery.matchesPerPage || RESOURCE_LIMITS.DEFAULT_MATCHES_PER_PAGE;
 
-  const finalFiles: RipgrepFileMatches[] = paginatedFiles.map(
-    (file: RipgrepFileMatches & { modified?: string }) => {
+  const finalFiles: LocalSearchCodeFile[] = paginatedFiles.map(
+    (file: LocalSearchCodeFile & { modified?: string }) => {
       const totalFileMatches = file.matches.length;
       const totalMatchPages = Math.ceil(totalFileMatches / matchesPerPage);
       const paginatedMatches = isFileListMode
         ? []
         : file.matches.slice(0, matchesPerPage);
 
-      const result: RipgrepFileMatches = {
+      const result: LocalSearchCodeFile = {
         path: file.path,
         matchCount: isFileListMode ? file.matchCount || 1 : totalFileMatches,
         matches: paginatedMatches,
@@ -160,7 +160,7 @@ export async function buildSearchResult(
 }
 
 function _getStructuredResultSizeHints(
-  files: RipgrepFileMatches[],
+  files: LocalSearchCodeFile[],
   query: RipgrepQuery,
   totalMatches: number
 ): string[] {

@@ -367,9 +367,16 @@ describe('ALL tool schemas: every .describe() field is non-empty after metadata 
   beforeAll(async () => {
     vi.resetModules();
 
-    vi.doMock('@octocodeai/octocode-core', () => ({
-      octocodeConfig: buildMockMetadata(),
-    }));
+    vi.doMock('@octocodeai/octocode-core', async importOriginal => {
+      const actual =
+        await importOriginal<typeof import('@octocodeai/octocode-core')>();
+      const meta = buildMockMetadata();
+      return {
+        ...actual,
+        octocodeConfig: meta,
+        completeMetadata: meta,
+      };
+    });
 
     const { _resetMetadataState, initializeToolMetadata } =
       await import('../../src/tools/toolMetadata/state.js');

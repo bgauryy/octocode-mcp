@@ -1,5 +1,5 @@
-import type { FileContentQuery } from './types.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
+import type { FileContentQuery } from '@octocodeai/octocode-core';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { FileContentBulkQuerySchema } from '@octocodeai/octocode-core';
 import { fetchMultipleGitHubFileContents } from './execution.js';
 import { GitHubFetchContentOutputSchema } from '@octocodeai/octocode-core';

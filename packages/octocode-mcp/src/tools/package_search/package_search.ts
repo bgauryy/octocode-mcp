@@ -6,7 +6,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { toMCPSchema } from '../../types/toolTypes.js';
 import { withSecurityValidation } from '../../utils/securityBridge.js';
 import type { ToolInvocationCallback } from '../../types.js';
-import { TOOL_NAMES, DESCRIPTIONS } from '@octocodeai/octocode-core';
+import { TOOL_NAMES, DESCRIPTIONS } from '../toolMetadata/proxies.js';
 import { PackageSearchBulkQuerySchema } from '@octocodeai/octocode-core';
 import type { PackageSearchQuery } from '@octocodeai/octocode-core';
 import { invokeCallbackSafely } from '../utils.js';

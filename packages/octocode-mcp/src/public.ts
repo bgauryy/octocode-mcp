@@ -15,17 +15,13 @@
  * ```
  */
 
-// Types, tool names, and metadata utilities
-export * from './public/types.js';
-
 // Server registration and configuration
 export * from './public/server.js';
 
 // Tool execution functions and security
 export * from './public/tools.js';
 
-// Zod schemas for input validation
-export * from './public/schemas.js';
+// Zod schemas — import directly from @octocodeai/octocode-core
 
 // Response formatting
 export * from './public/responses.js';

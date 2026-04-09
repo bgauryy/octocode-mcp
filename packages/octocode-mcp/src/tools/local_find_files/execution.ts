@@ -1,6 +1,6 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { FindFilesQuery } from '../../utils/core/types.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
+import type { FindFilesQuery } from '@octocodeai/octocode-core';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import { findFiles } from './findFiles.js';
 import { FindFilesQuerySchema } from '@octocodeai/octocode-core';

@@ -1,6 +1,9 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { GitHubCodeSearchQuery, SearchResult } from './types.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
+import type {
+  GitHubCodeSearchQuery,
+  GitHubSearchCodeData,
+} from '@octocodeai/octocode-core';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { handleCatchError, createSuccessResult } from '../utils.js';
@@ -36,7 +39,7 @@ export async function searchMultipleGitHubCode(
           return providerResult.result;
         }
 
-        const result: SearchResult = mapCodeSearchProviderResult(
+        const result: GitHubSearchCodeData = mapCodeSearchProviderResult(
           providerResult.response.data,
           query
         );

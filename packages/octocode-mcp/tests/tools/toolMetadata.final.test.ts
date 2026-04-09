@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@octocodeai/octocode-core', () => ({
   octocodeConfig: {},
+  completeMetadata: {},
 }));
 
 describe('toolMetadata - TOOL_NAMES static fallback (lines 236-243)', () => {

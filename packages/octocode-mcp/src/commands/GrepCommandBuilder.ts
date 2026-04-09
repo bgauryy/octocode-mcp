@@ -32,7 +32,7 @@ export function getUnsupportedGrepFeatures(
     smartCase: query.smartCase === true,
     multiline: query.multiline === true,
     countMatches: query.countMatches === true,
-    jsonOutput: query.jsonOutput === true,
+    jsonOutput: false,
     sortOptions: query.sort !== undefined && query.sort !== 'path',
     threads: query.threads !== undefined,
     mmap: query.mmap !== undefined,

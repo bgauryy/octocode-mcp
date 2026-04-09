@@ -46,7 +46,7 @@ import {
   BaseQuerySchema,
   BaseQuerySchemaLocal,
   createBulkQuerySchema,
-} from '../../src/public.js';
+} from '@octocodeai/octocode-core';
 
 describe('Public Schema Exports', () => {
   describe('Zod Schema Type Verification', () => {

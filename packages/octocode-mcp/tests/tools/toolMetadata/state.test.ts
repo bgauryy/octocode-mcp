@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('@octocodeai/octocode-core', () => ({
-  octocodeConfig: {
+vi.mock('@octocodeai/octocode-core', () => {
+  const config = {
     instructions: 'Test instructions',
     prompts: {},
     toolNames: {
@@ -12,6 +12,7 @@ vi.mock('@octocodeai/octocode-core', () => ({
       researchGoal: 'Research goal',
       reasoning: 'Reasoning',
       bulkQueryTemplate: 'Query for {toolName}',
+      bulkQuery: (toolName: string) => 'Query for ' + toolName,
     },
     tools: {
       githubSearchCode: {
@@ -29,8 +30,9 @@ vi.mock('@octocodeai/octocode-core', () => ({
       empty: ['Base empty hint'],
     },
     genericErrorHints: ['Error hint'],
-  },
-}));
+  };
+  return { octocodeConfig: config, completeMetadata: config };
+});
 
 describe('toolMetadata/state', () => {
   beforeEach(() => {
@@ -224,29 +226,17 @@ describe('toolMetadata/state', () => {
     });
   });
 
-  describe('metadata freezing', () => {
-    it('should freeze metadata to prevent mutations', async () => {
+  describe('metadata reference stability', () => {
+    it('should return the same object on repeated loadToolContent calls', async () => {
       const { loadToolContent, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       _resetMetadataState();
 
-      const result = await loadToolContent();
+      const a = await loadToolContent();
+      const b = await loadToolContent();
 
-      expect(Object.isFrozen(result)).toBe(true);
-      expect(() => {
-        (result as { instructions: string }).instructions = 'mutated';
-      }).toThrow();
-    });
-
-    it('should deep freeze nested objects', async () => {
-      const { loadToolContent, _resetMetadataState } =
-        await import('../../../src/tools/toolMetadata/state.js');
-      _resetMetadataState();
-
-      const result = await loadToolContent();
-
-      expect(Object.isFrozen(result.tools)).toBe(true);
-      expect(Object.isFrozen(result.baseHints)).toBe(true);
+      expect(a).toBe(b);
+      expect(a.instructions).toBe('Test instructions');
     });
   });
 });

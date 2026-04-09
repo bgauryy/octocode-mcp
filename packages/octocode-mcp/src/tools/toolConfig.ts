@@ -2,7 +2,7 @@ import {
   McpServer,
   RegisteredTool,
 } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { ToolNames } from '../types/metadata.js';
+import type { ToolNames } from '@octocodeai/octocode-core';
 import { ToolInvocationCallback } from '../types.js';
 import { registerGitHubSearchCodeTool } from './github_search_code/github_search_code.js';
 import { registerFetchGitHubFileContentTool } from './github_fetch_content/github_fetch_content.js';

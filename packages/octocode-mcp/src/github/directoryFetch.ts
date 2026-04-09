@@ -24,10 +24,8 @@ import { join, dirname, resolve, sep } from 'node:path';
 import { getOctocodeDir } from 'octocode-shared';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { getOctokit } from './client.js';
-import type {
-  DirectoryFetchResult,
-  DirectoryFileEntry,
-} from '../tools/github_fetch_content/types.js';
+import type { GitHubDirectoryFileEntry } from '@octocodeai/octocode-core';
+import type { DirectoryFetchResult } from '../tools/github_fetch_content/types.js';
 import {
   getCloneDir,
   isCacheHit,
@@ -236,7 +234,7 @@ export async function fetchDirectoryContents(
   }
   mkdirSync(dirPath, { recursive: true, mode: 0o700 });
 
-  const savedFiles: DirectoryFileEntry[] = [];
+  const savedFiles: GitHubDirectoryFileEntry[] = [];
   for (const { entry, content } of filesToSave) {
     const filePath = resolve(join(cloneDir, entry.path));
     // Skip files whose resolved path escapes the clone directory
@@ -361,8 +359,8 @@ async function fetchDownloadUrl(url: string, token?: string): Promise<string> {
 function scanDirectoryStats(
   dirPath: string,
   cloneDir: string
-): { files: DirectoryFileEntry[]; fileCount: number; totalSize: number } {
-  const files: DirectoryFileEntry[] = [];
+): { files: GitHubDirectoryFileEntry[]; fileCount: number; totalSize: number } {
+  const files: GitHubDirectoryFileEntry[] = [];
   let totalSize = 0;
 
   function walk(current: string): void {

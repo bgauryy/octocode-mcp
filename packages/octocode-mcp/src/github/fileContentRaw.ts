@@ -1,6 +1,6 @@
 import { RequestError } from 'octokit';
 import type { GetContentParameters, GitHubAPIResponse } from './githubAPI';
-import type { FileContentQuery } from '../tools/github_fetch_content/types.js';
+import type { FileContentQuery } from '@octocodeai/octocode-core';
 import type { GitHubApiFileItem } from '../tools/github_view_repo_structure/types.js';
 import {
   getOctokit,

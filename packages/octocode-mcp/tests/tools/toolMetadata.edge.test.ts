@@ -36,6 +36,9 @@ vi.mock('@octocodeai/octocode-core', () => ({
     hoisted.octocodeReads++;
     return hoisted.octocodeConfig;
   },
+  get completeMetadata() {
+    return hoisted.octocodeConfig;
+  },
 }));
 
 describe('toolMetadata - Final Edge Cases', () => {

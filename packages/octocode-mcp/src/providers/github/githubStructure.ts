@@ -15,7 +15,7 @@ import type {
 
 import { viewGitHubRepositoryStructureAPI } from '../../github/repoStructure.js';
 
-import type { GitHubViewRepoStructureQuery } from '../../tools/github_view_repo_structure/types.js';
+import type { GitHubViewRepoStructureQuery } from '@octocodeai/octocode-core';
 import type { GitHubRepositoryStructureResult } from '../../tools/github_view_repo_structure/types.js';
 
 import { parseGitHubProjectId } from './utils.js';
@@ -66,7 +66,7 @@ export async function getRepoStructure(
     };
   }
 
-  const githubQuery: GitHubViewRepoStructureQuery = {
+  const githubQuery = {
     owner,
     repo,
     branch: query.ref || 'HEAD',
@@ -77,7 +77,7 @@ export async function getRepoStructure(
     mainResearchGoal: query.mainResearchGoal,
     researchGoal: query.researchGoal,
     reasoning: query.reasoning,
-  };
+  } as GitHubViewRepoStructureQuery;
 
   const result = await viewGitHubRepositoryStructureAPI(githubQuery, authInfo);
 

@@ -1,11 +1,7 @@
-/**
- * Types for package_search tool (packageSearch)
- * @module tools/package_search/types
- */
-
+import type { z } from 'zod/v4';
 import type {
-  PackageSearchData,
-  PackageSearchPackage,
+  NpmPackageQuerySchema,
+  PythonPackageQuerySchema,
 } from '@octocodeai/octocode-core';
 import type {
   MinimalPackageResult as CommonMinimalPackageResult,
@@ -17,42 +13,9 @@ import type {
   DeprecationInfo as CommonDeprecationInfo,
 } from '../../utils/package/common.js';
 
-/**
- * Base query for package search
- */
-interface PackageSearchBaseQuery {
-  id?: string;
-  name: string;
-  searchLimit?: number;
-  charOffset?: number;
-  charLength?: number;
-  mainResearchGoal?: string;
-  researchGoal?: string;
-  reasoning?: string;
-}
+export type NpmPackageSearchQuery = z.infer<typeof NpmPackageQuerySchema>;
 
-/**
- * NPM-specific package search query
- */
-export interface NpmPackageSearchQuery extends PackageSearchBaseQuery {
-  ecosystem: 'npm';
-  npmFetchMetadata?: boolean;
-}
-
-/**
- * Python-specific package search query
- */
-export interface PythonPackageSearchQuery extends PackageSearchBaseQuery {
-  ecosystem: 'python';
-  pythonFetchMetadata?: boolean;
-}
-
-/**
- * Combined package search query type
- */
-export type PackageSearchQuery =
-  | NpmPackageSearchQuery
-  | PythonPackageSearchQuery;
+export type PythonPackageSearchQuery = z.infer<typeof PythonPackageQuerySchema>;
 
 export type MinimalPackageResult = CommonMinimalPackageResult;
 
@@ -62,12 +25,8 @@ export type PythonPackageResult = CommonPythonPackageResult;
 
 export type PackageResult = CommonPackageResult;
 
-export type PackageResultWithRepo = PackageSearchPackage;
-
 export type DeprecationInfo = CommonDeprecationInfo;
 
 export type PackageSearchAPIResult = CommonPackageSearchAPIResult;
 
 export type PackageSearchError = CommonPackageSearchError;
-
-export type PackageSearchResult = PackageSearchData;

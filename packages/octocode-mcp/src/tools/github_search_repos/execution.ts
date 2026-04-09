@@ -1,9 +1,12 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { GitHubReposSearchQuery, SimplifiedRepository } from './types.js';
+import type {
+  GitHubReposSearchQuery,
+  GitHubRepositoryOutput,
+} from '@octocodeai/octocode-core';
 import {
   TOOL_NAMES,
   getDynamicHints as getMetadataDynamicHints,
-} from '@octocodeai/octocode-core';
+} from '../toolMetadata/proxies.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import {
@@ -104,9 +107,9 @@ function createSearchVariants(
 }
 
 function deduplicateRepositories(
-  repositories: SimplifiedRepository[]
-): SimplifiedRepository[] {
-  const uniqueRepositories = new Map<string, SimplifiedRepository>();
+  repositories: GitHubRepositoryOutput[]
+): GitHubRepositoryOutput[] {
+  const uniqueRepositories = new Map<string, GitHubRepositoryOutput>();
 
   for (const repo of repositories) {
     const key = `${repo.owner}/${repo.repo}`;

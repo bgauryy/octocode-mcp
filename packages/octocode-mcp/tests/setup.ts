@@ -503,11 +503,19 @@ const mockContent = {
 // vi.mock factories are hoisted and run before mockContent is initialized,
 // so we use a mutable holder set via vi.hoisted + a getter for lazy access.
 const _coreMock = vi.hoisted(() => ({ ref: null as unknown }));
-vi.mock('@octocodeai/octocode-core', () => ({
-  get octocodeConfig() {
-    return _coreMock.ref;
-  },
-}));
+vi.mock('@octocodeai/octocode-core', async importOriginal => {
+  const actual =
+    await importOriginal<typeof import('@octocodeai/octocode-core')>();
+  return {
+    ...actual,
+    get octocodeConfig() {
+      return _coreMock.ref;
+    },
+    get completeMetadata() {
+      return _coreMock.ref;
+    },
+  };
+});
 
 // Mock child_process for exec utilities - MUST be done before any exec imports
 vi.mock('child_process', () => ({

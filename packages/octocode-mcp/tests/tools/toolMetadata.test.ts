@@ -138,9 +138,13 @@ const hoist = vi.hoisted(() => {
   };
 });
 
-vi.mock('@octocodeai/octocode-core', () => ({
+vi.mock('@octocodeai/octocode-core', async importOriginal => ({
+  ...(await importOriginal<object>()),
   get octocodeConfig() {
     hoist.octocodeReads++;
+    return hoist.store.current;
+  },
+  get completeMetadata() {
     return hoist.store.current;
   },
 }));
@@ -628,8 +632,7 @@ describe('toolMetadata', () => {
     it('should support GITHUB_SEARCH_CODE schema', async () => {
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
-      const { GITHUB_SEARCH_CODE } =
-        await import('@octocodeai/octocode-core');
+      const { GITHUB_SEARCH_CODE } = await import('@octocodeai/octocode-core');
       await initializeToolMetadata();
 
       expect(typeof GITHUB_SEARCH_CODE.search.keywordsToSearch).toBe('string');
@@ -638,8 +641,7 @@ describe('toolMetadata', () => {
     it('should support GITHUB_SEARCH_REPOS schema', async () => {
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
-      const { GITHUB_SEARCH_REPOS } =
-        await import('@octocodeai/octocode-core');
+      const { GITHUB_SEARCH_REPOS } = await import('@octocodeai/octocode-core');
       await initializeToolMetadata();
 
       // Access properties to trigger proxy

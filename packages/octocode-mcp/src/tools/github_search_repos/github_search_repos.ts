@@ -1,5 +1,5 @@
-import type { GitHubReposSearchQuery } from './types.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
+import type { GitHubReposSearchQuery } from '@octocodeai/octocode-core';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { GitHubReposSearchQuerySchema } from '@octocodeai/octocode-core';
 import { searchMultipleGitHubRepos } from './execution.js';
 import { GitHubSearchRepositoriesOutputSchema } from '@octocodeai/octocode-core';

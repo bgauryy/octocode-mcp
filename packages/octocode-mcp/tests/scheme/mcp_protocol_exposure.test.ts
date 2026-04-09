@@ -52,9 +52,15 @@ describe('MCP protocol exposure: instructions, tools, and prompts', () => {
       prompts: MOCK_PROMPTS,
     });
 
-    vi.doMock('@octocodeai/octocode-core', () => ({
-      octocodeConfig: metadata,
-    }));
+    vi.doMock('@octocodeai/octocode-core', async importOriginal => {
+      const actual =
+        await importOriginal<typeof import('@octocodeai/octocode-core')>();
+      return {
+        ...actual,
+        octocodeConfig: metadata,
+        completeMetadata: metadata,
+      };
+    });
 
     const { _resetMetadataState, initializeToolMetadata } =
       await import('../../src/tools/toolMetadata/state.js');

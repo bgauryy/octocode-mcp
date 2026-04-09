@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toMCPSchema } from '../../types/toolTypes.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import {
   BulkViewStructureSchema,
   LOCAL_VIEW_STRUCTURE_DESCRIPTION,

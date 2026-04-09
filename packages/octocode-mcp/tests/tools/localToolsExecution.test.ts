@@ -33,13 +33,10 @@ vi.mock('../../src/tools/local_view_structure/local_view_structure.js', () => ({
 
 // Mock schema modules so safeParse always succeeds in callback tests
 const mockSafeParse = () => ({ success: true, data: {} });
-vi.mock(
-  '@octocodeai/octocode-core',
-  async importOriginal => ({
-    ...(await importOriginal<object>()),
-    FetchContentQuerySchema: { safeParse: mockSafeParse },
-  })
-);
+vi.mock('@octocodeai/octocode-core', async importOriginal => ({
+  ...(await importOriginal<object>()),
+  FetchContentQuerySchema: { safeParse: mockSafeParse },
+}));
 vi.mock('@octocodeai/octocode-core', async importOriginal => ({
   ...(await importOriginal<object>()),
   FindFilesQuerySchema: { safeParse: mockSafeParse },
@@ -48,13 +45,10 @@ vi.mock('@octocodeai/octocode-core', async importOriginal => ({
   ...(await importOriginal<object>()),
   RipgrepQuerySchema: { safeParse: mockSafeParse },
 }));
-vi.mock(
-  '@octocodeai/octocode-core',
-  async importOriginal => ({
-    ...(await importOriginal<object>()),
-    ViewStructureQuerySchema: { safeParse: mockSafeParse },
-  })
-);
+vi.mock('@octocodeai/octocode-core', async importOriginal => ({
+  ...(await importOriginal<object>()),
+  ViewStructureQuerySchema: { safeParse: mockSafeParse },
+}));
 
 describe('Local Tools Execution', () => {
   beforeEach(() => {

@@ -6,7 +6,7 @@ import {
   LSPCallHierarchyQuerySchema,
   LSPFindReferencesQuerySchema,
   LSPGotoDefinitionQuerySchema,
-} from '../../src/public/schemas.js';
+} from '@octocodeai/octocode-core';
 
 describe('LSP schema consistency', () => {
   it('documents explicit bulk query limits for every LSP tool', () => {

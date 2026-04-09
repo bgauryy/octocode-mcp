@@ -2,11 +2,14 @@ import {
   checkCommandAvailability,
   getMissingCommandError,
 } from '../../utils/exec/commandAvailability.js';
-import { applyWorkflowMode, type RipgrepQuery } from '@octocodeai/octocode-core';
+import {
+  applyWorkflowMode,
+  type RipgrepQuery,
+} from '@octocodeai/octocode-core';
 import { createErrorResult } from '../../utils/file/toolHelpers.js';
 import { LOCAL_TOOL_ERROR_CODES } from '../../errors/localToolErrors.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
-import type { SearchContentResult } from '../../utils/core/types.js';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
+import type { LocalSearchCodeToolResult } from '@octocodeai/octocode-core';
 import { ToolErrors } from '../../errors/errorFactories.js';
 import {
   executeRipgrepSearchInternal,
@@ -18,7 +21,7 @@ import {
  */
 export async function searchContentRipgrep(
   query: RipgrepQuery
-): Promise<SearchContentResult> {
+): Promise<LocalSearchCodeToolResult> {
   const configuredQuery = applyWorkflowMode(query);
 
   try {
@@ -36,7 +39,7 @@ export async function searchContentRipgrep(
       );
       return createErrorResult(toolError, configuredQuery, {
         toolName: TOOL_NAMES.LOCAL_RIPGREP,
-      }) as SearchContentResult;
+      }) as LocalSearchCodeToolResult;
     }
 
     // Check for features that don't work with grep
@@ -47,7 +50,7 @@ export async function searchContentRipgrep(
         ),
         configuredQuery,
         { toolName: TOOL_NAMES.LOCAL_RIPGREP }
-      ) as SearchContentResult;
+      ) as LocalSearchCodeToolResult;
     }
 
     return await executeGrepSearch(configuredQuery);
@@ -67,11 +70,11 @@ export async function searchContentRipgrep(
           'Need file names only? FIND_FILES searches metadata without reading content',
           'Strategy: Start with filesOnly=true to see what matched, then narrow before reading content',
         ],
-      } as SearchContentResult;
+      } as LocalSearchCodeToolResult;
     }
 
     return createErrorResult(error, configuredQuery, {
       toolName: TOOL_NAMES.LOCAL_RIPGREP,
-    }) as SearchContentResult;
+    }) as LocalSearchCodeToolResult;
   }
 }

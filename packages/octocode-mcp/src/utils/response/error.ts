@@ -13,7 +13,9 @@ import {
   type ToolError,
 } from '../../errors/ToolError.js';
 import { getHints } from '../../hints/index.js';
-import type { BaseQuery } from '../core/types.js';
+import type { BaseQueryLocal } from '@octocodeai/octocode-core';
+
+type PartialBaseQuery = Partial<BaseQueryLocal>;
 
 export interface UnifiedErrorResult {
   status: 'error';
@@ -85,7 +87,7 @@ function isGitHubApiError(error: unknown): error is GitHubAPIError {
 
 export function createErrorResult(
   error: unknown,
-  _query: BaseQuery,
+  _query: PartialBaseQuery,
   options: CreateErrorResultOptions = {}
 ): UnifiedErrorResult {
   const { toolName, hintContext, extra, customHints, hintSourceError } =

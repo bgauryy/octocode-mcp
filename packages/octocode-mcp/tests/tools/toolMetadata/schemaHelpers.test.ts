@@ -72,8 +72,10 @@ const mockMetadata = {
   genericErrorHints: [],
 };
 
-vi.mock('@octocodeai/octocode-core', () => ({
+vi.mock('@octocodeai/octocode-core', async importOriginal => ({
+  ...(await importOriginal<object>()),
   octocodeConfig: mockMetadata,
+  completeMetadata: mockMetadata,
 }));
 
 describe('toolMetadata/schemaHelpers', () => {
@@ -116,8 +118,7 @@ describe('toolMetadata/schemaHelpers', () => {
     it('should access search schema fields', async () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
-      const { GITHUB_SEARCH_CODE } =
-        await import('@octocodeai/octocode-core');
+      const { GITHUB_SEARCH_CODE } = await import('@octocodeai/octocode-core');
       _resetMetadataState();
       await initializeToolMetadata();
 
@@ -132,8 +133,7 @@ describe('toolMetadata/schemaHelpers', () => {
     it('should access repo search schema fields', async () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
-      const { GITHUB_SEARCH_REPOS } =
-        await import('@octocodeai/octocode-core');
+      const { GITHUB_SEARCH_REPOS } = await import('@octocodeai/octocode-core');
       _resetMetadataState();
       await initializeToolMetadata();
 
@@ -146,8 +146,7 @@ describe('toolMetadata/schemaHelpers', () => {
     it('should access local search schema fields', async () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
-      const { LOCAL_RIPGREP } =
-        await import('@octocodeai/octocode-core');
+      const { LOCAL_RIPGREP } = await import('@octocodeai/octocode-core');
       _resetMetadataState();
       await initializeToolMetadata();
 
@@ -160,8 +159,7 @@ describe('toolMetadata/schemaHelpers', () => {
     it('should access LSP schema fields', async () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
-      const { LSP_GOTO_DEFINITION } =
-        await import('@octocodeai/octocode-core');
+      const { LSP_GOTO_DEFINITION } = await import('@octocodeai/octocode-core');
       _resetMetadataState();
       await initializeToolMetadata();
 
@@ -187,8 +185,7 @@ describe('toolMetadata/schemaHelpers', () => {
     it('should handle any category access', async () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
-      const { GITHUB_SEARCH_CODE } =
-        await import('@octocodeai/octocode-core');
+      const { GITHUB_SEARCH_CODE } = await import('@octocodeai/octocode-core');
       _resetMetadataState();
       await initializeToolMetadata();
 

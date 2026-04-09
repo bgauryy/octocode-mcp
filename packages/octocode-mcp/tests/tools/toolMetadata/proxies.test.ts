@@ -45,6 +45,7 @@ const mockMetadata = {
 
 vi.mock('@octocodeai/octocode-core', () => ({
   octocodeConfig: mockMetadata,
+  completeMetadata: mockMetadata,
 }));
 
 describe('toolMetadata/proxies', () => {

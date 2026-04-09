@@ -65,7 +65,6 @@ describe(`${FLOW_CATALOG.localImpactAnalysis.id}.execution`, () => {
       path: fixtureSourcePath,
       include: ['*.ts'],
       smartCase: true,
-      lineNumbers: true,
       matchContentLength: 200,
       filesPerPage: 10,
       filePageNumber: 1,
@@ -73,7 +72,6 @@ describe(`${FLOW_CATALOG.localImpactAnalysis.id}.execution`, () => {
       binaryFiles: 'without-match',
       sort: 'path',
       includeStats: true,
-      includeDistribution: true,
       showFileLastModified: false,
       researchGoal: 'Find the computeScore definition',
       reasoning: 'Need the definition line before impact analysis',
@@ -166,9 +164,13 @@ describe(`${FLOW_CATALOG.localImpactAnalysis.id}.execution`, () => {
       id: 'inspect_impacted_call_site',
       path: path.join(fixtureRepoPath, impactedLocation!.uri),
       matchString: 'computeScore',
+      fullContent: false,
+      matchStringContextLines: 5,
+      matchStringIsRegex: false,
+      matchStringCaseSensitive: false,
       researchGoal: 'Read one impacted file',
       reasoning: 'Inspect the first impacted call site',
-    });
+    } as Parameters<typeof fetchContent>[0]);
 
     expect(impactedFile.status).toBe('hasResults');
     if (impactedFile.status !== 'hasResults') {
@@ -185,7 +187,6 @@ describe(`${FLOW_CATALOG.localImpactAnalysis.id}.execution`, () => {
       path: '/etc',
       include: ['*.ts'],
       smartCase: true,
-      lineNumbers: true,
       matchContentLength: 120,
       filesPerPage: 10,
       filePageNumber: 1,
@@ -193,7 +194,6 @@ describe(`${FLOW_CATALOG.localImpactAnalysis.id}.execution`, () => {
       binaryFiles: 'without-match',
       sort: 'path',
       includeStats: false,
-      includeDistribution: false,
       showFileLastModified: false,
       researchGoal: 'Attempt invalid traversal for security coverage',
       reasoning: 'Flow must fail closed before command execution',

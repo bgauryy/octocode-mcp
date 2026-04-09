@@ -1,9 +1,9 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type {
   GitHubPullRequestSearchQuery,
-  PullRequestSearchResult,
-} from './types.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
+  GitHubSearchPullRequestsToolResult,
+} from '@octocodeai/octocode-core';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import {
@@ -171,7 +171,7 @@ export async function searchMultipleGitHubPullRequests(
         'outputPagination',
         'total_count',
         'error',
-      ] satisfies Array<keyof PullRequestSearchResult>,
+      ] satisfies Array<keyof GitHubSearchPullRequestsToolResult>,
       responseCharOffset,
       responseCharLength,
     }

@@ -21,7 +21,7 @@ import {
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { getHints } from '../../hints/index.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { applyOutputSizeLimit } from '../../utils/pagination/outputSizeLimit.js';
 import { serializeForPagination } from '../../utils/pagination/core.js';

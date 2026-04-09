@@ -7,7 +7,7 @@
  */
 import type { GitHubAPIResponse } from './githubAPI';
 import type {
-  FileContentQuery,
+  FileContentExecutionQuery,
   GitHubFileContentApiResult,
 } from '../tools/github_fetch_content/types.js';
 import { getOctokit } from './client';
@@ -25,7 +25,7 @@ import {
 } from './fileContentProcess.js';
 
 export async function fetchGitHubFileContentAPI(
-  params: FileContentQuery,
+  params: FileContentExecutionQuery,
   authInfo?: AuthInfo,
   sessionId?: string
 ): Promise<GitHubAPIResponse<GitHubFileContentApiResult>> {

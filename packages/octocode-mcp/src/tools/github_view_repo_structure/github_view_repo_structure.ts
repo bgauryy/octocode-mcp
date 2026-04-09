@@ -1,5 +1,5 @@
-import type { GitHubViewRepoStructureQuery } from './types.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
+import type { GitHubViewRepoStructureQuery } from '@octocodeai/octocode-core';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { GitHubViewRepoStructureBulkQuerySchema } from '@octocodeai/octocode-core';
 import { exploreMultipleRepositoryStructures } from './execution.js';
 import { GitHubViewRepoStructureOutputSchema } from '@octocodeai/octocode-core';

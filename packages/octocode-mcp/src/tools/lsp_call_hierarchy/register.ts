@@ -6,7 +6,7 @@ import {
 } from '@octocodeai/octocode-core';
 import { executeCallHierarchy } from './execution.js';
 import { withBasicSecurityValidation } from '../../utils/securityBridge.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { LspCallHierarchyOutputSchema } from '@octocodeai/octocode-core';
 
 /**

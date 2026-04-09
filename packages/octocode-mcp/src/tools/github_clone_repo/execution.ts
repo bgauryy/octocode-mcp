@@ -6,8 +6,8 @@
  */
 
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { CloneRepoQuery } from './types.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
+import type { CloneRepoQuery } from '@octocodeai/octocode-core';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { handleCatchError, createSuccessResult } from '../utils.js';

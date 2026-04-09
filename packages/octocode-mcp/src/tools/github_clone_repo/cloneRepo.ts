@@ -29,7 +29,8 @@ import {
   spawnWithTimeout,
   TOOLING_ALLOWED_ENV_VARS,
 } from '../../utils/exec/spawn.js';
-import type { CloneRepoQuery, CloneRepoResult } from './types.js';
+import type { CloneRepoQuery } from '@octocodeai/octocode-core';
+import type { CloneRepoResult } from './types.js';
 import {
   getCloneDir,
   isCacheHit,

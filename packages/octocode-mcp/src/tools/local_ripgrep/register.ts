@@ -1,7 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toMCPSchema } from '../../types/toolTypes.js';
-import { TOOL_NAMES } from '@octocodeai/octocode-core';
-import { BulkRipgrepQuerySchema, LOCAL_RIPGREP_DESCRIPTION } from '@octocodeai/octocode-core';
+import { TOOL_NAMES } from '../toolMetadata/proxies.js';
+import {
+  BulkRipgrepQuerySchema,
+  LOCAL_RIPGREP_DESCRIPTION,
+} from '@octocodeai/octocode-core';
 import { executeRipgrepSearch } from './execution.js';
 import { withBasicSecurityValidation } from '../../utils/securityBridge.js';
 import { LocalSearchCodeOutputSchema } from '@octocodeai/octocode-core';
