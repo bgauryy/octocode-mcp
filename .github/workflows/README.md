@@ -55,7 +55,7 @@ Runs an automated code review on every PR using [Claude Code Action](https://git
 
 ### How it works
 
-1. Checks out the repo with full history (and PR branch for comment triggers).
+1. Checks out the repo with full history (and the actual PR head for `@octocode` comment triggers).
 2. **Dynamically fetches** the latest [Octocode PR Review Skill](https://github.com/bgauryy/octocode-mcp/tree/main/skills/octocode-pull-request-reviewer) from GitHub — including flow analysis recipes, domain reviewers, output templates, and verification checklists.
 3. Writes an MCP config that starts `octocode-mcp` with `ENABLE_LOCAL=true` and the repo's `GITHUB_TOKEN`.
 4. Runs `anthropics/claude-code-action@v1` with the full review protocol.
@@ -66,8 +66,10 @@ Runs an automated code review on every PR using [Claude Code Action](https://git
 
 | Event | Behavior |
 |---|---|
-| PR opened / synchronized / reopened | Automatic full review |
-| PR comment containing `@claude` | Re-review or respond to follow-up |
+| PR opened / synchronized / reopened from the same repository | Automatic full review |
+| PR comment containing `@octocode` from a trusted maintainer | Re-review or respond to follow-up |
+
+Fork PRs do not auto-review on `pull_request` because GitHub does not expose repository secrets to those runs. Maintainers can trigger the review on fork PRs by commenting `@octocode`.
 
 ### Review capabilities
 

@@ -23,7 +23,11 @@ jobs:
     name: Octocode PR Review
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: github.event_name == 'pull_request'
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -49,7 +53,7 @@ jobs:
                 "command": "npx",
                 "args": ["-y", "octocode-mcp@latest"],
                 "env": {
-                  "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+                  "GITHUB_TOKEN": "${{ github.token }}",
                   "ENABLE_LOCAL": "true"
                 }
               }
@@ -61,6 +65,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
           prompt: |
             You are Octocode — an evidence-first expert code reviewer.
             Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
@@ -204,11 +209,27 @@ jobs:
     if: >
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
-      contains(github.event.comment.body, '@octocode')
+      contains(github.event.comment.body, '@octocode') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.issue.number }}
+      PR_REPOSITORY: ${{ github.repository }}
     steps:
+      - name: Resolve PR checkout target
+        id: pr
+        run: |
+          gh pr view "$PR_NUMBER" \
+            --repo "$PR_REPOSITORY" \
+            --json headRefOid,headRepository,headRepositoryOwner \
+            --jq '"repository=\(.headRepositoryOwner.login)/\(.headRepository.name)\nref=\(.headRefOid)"' \
+            >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
+          repository: ${{ steps.pr.outputs.repository }}
+          ref: ${{ steps.pr.outputs.ref }}
           fetch-depth: 0
 
       - name: Fetch Octocode review protocol
@@ -230,7 +251,7 @@ jobs:
                 "command": "npx",
                 "args": ["-y", "octocode-mcp@latest"],
                 "env": {
-                  "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+                  "GITHUB_TOKEN": "${{ github.token }}",
                   "ENABLE_LOCAL": "true"
                 }
               }
@@ -242,7 +263,16 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
           trigger_phrase: "@octocode"
+          prompt: |
+            You are Octocode — an evidence-first expert code reviewer.
+            Review PR #${{ github.event.issue.number }} in ${{ github.repository }}.
+
+            Read `/tmp/review-protocol.md` for the full review protocol and use Octocode MCP tools for deep analysis.
+            Treat an `@octocode` pull request comment as a request for a full re-review unless the comment explicitly asks for a narrower follow-up.
+            Analyze the current PR diff and changed code, avoid duplicating existing comments, and submit exactly one final verdict with `gh pr review`.
+            Do not use `gh pr comment` for the final review.
           claude_args: |
             --max-turns 25
             --mcp-config /tmp/mcp-config.json
