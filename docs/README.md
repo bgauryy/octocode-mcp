@@ -23,18 +23,6 @@
 |------|-----|
 | Browse available skills | [skills/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/skills/README.md) |
 
-## GitHub Actions & CI
-
-| Need | Doc |
-|------|-----|
-| Use Octocode as AI PR reviewer in GitHub Actions | [GitHub Actions Setup](https://github.com/bgauryy/octocode-mcp/blob/main/docs/GITHUB_ACTIONS_SETUP.md) |
-
-## RFCs
-
-| Need | Doc |
-|------|-----|
-| Improve tools architecture and maintainability score | [Tools Architecture and Maintainability Uplift RFC](https://github.com/bgauryy/octocode-mcp/blob/main/docs/RFC_TOOLS_ARCHITECTURE_MAINTAINABILITY_UPLIFT.md) |
-
 ## Documentation Rules
 
 - Keep one package docs index per package and link to it from shared indexes.
