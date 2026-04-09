@@ -11,7 +11,7 @@ const mockMetadata = {
     mainResearchGoal: 'Main goal',
     researchGoal: 'Research goal',
     reasoning: 'Reasoning',
-    bulkQueryTemplate: 'Query for {toolName}',
+    bulkQuery: (_name: string) => 'Query for ' + _name,
   },
   tools: {
     githubSearchCode: {
@@ -141,6 +141,7 @@ describe('toolMetadata/proxies', () => {
       _resetMetadataState();
       await initializeToolMetadata();
 
+      expect(typeof BASE_SCHEMA.bulkQuery).toBe('function');
       const result = BASE_SCHEMA.bulkQuery('myTool');
       expect(result).toBe('Query for myTool');
     });
@@ -152,18 +153,19 @@ describe('toolMetadata/proxies', () => {
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
 
+      expect(typeof BASE_SCHEMA.bulkQuery).toBe('function');
       const result = BASE_SCHEMA.bulkQuery('testTool');
-      expect(result).toContain('testTool');
+      expect(result).toBe('Query for testTool');
     });
 
-    it('should return empty string for other fields when not initialized', async () => {
+    it('should fall back to completeMetadata mock for schema fields when not initialized', async () => {
       const { _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { BASE_SCHEMA } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
 
-      expect(BASE_SCHEMA.mainResearchGoal).toBe('');
+      expect(BASE_SCHEMA.mainResearchGoal).toBe('Main goal');
     });
   });
 
@@ -290,14 +292,14 @@ describe('toolMetadata/proxies', () => {
       expect(isToolInMetadata('unknownTool')).toBe(false);
     });
 
-    it('should return false when not initialized', async () => {
+    it('should return false for unknown tool when not initialized (mock has no such tool)', async () => {
       const { _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { isToolInMetadata } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
 
-      expect(isToolInMetadata('githubSearchCode')).toBe(false);
+      expect(isToolInMetadata('unknownTool')).toBe(false);
     });
   });
 
@@ -352,7 +354,7 @@ describe('toolMetadata/proxies', () => {
       expect(hints).toContain('Generic error 1');
     });
 
-    it('should return empty array when not initialized', async () => {
+    it('should return mock generic error hints when not initialized', async () => {
       const { _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { getGenericErrorHintsSync } =
@@ -360,7 +362,7 @@ describe('toolMetadata/proxies', () => {
       _resetMetadataState();
 
       const hints = getGenericErrorHintsSync();
-      expect(hints).toEqual([]);
+      expect(hints).toEqual(['Generic error 1', 'Generic error 2']);
     });
   });
 
@@ -389,14 +391,14 @@ describe('toolMetadata/proxies', () => {
       expect(hints).toEqual([]);
     });
 
-    it('should return empty when not initialized', async () => {
+    it('should return empty for non-existent hint type when not initialized', async () => {
       const { _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { getDynamicHints } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
 
-      const hints = getDynamicHints('githubSearchCode', 'topicsHasResults');
+      const hints = getDynamicHints('githubSearchCode', 'nonexistentHintType');
       expect(hints).toEqual([]);
     });
   });

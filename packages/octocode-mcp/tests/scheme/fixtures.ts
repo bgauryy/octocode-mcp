@@ -213,7 +213,8 @@ export function buildMockMetadata(overrides?: {
       mainResearchGoal: FIELD_DESCRIPTIONS.mainResearchGoal,
       researchGoal: FIELD_DESCRIPTIONS.researchGoal,
       reasoning: FIELD_DESCRIPTIONS.reasoning,
-      bulkQueryTemplate: 'Research queries for {toolName} (1-3 per call)',
+      bulkQuery: (toolName: string) =>
+        'Research queries for ' + toolName + ' (1-3 per call)',
     },
     tools: Object.fromEntries(
       ALL_TOOL_NAMES.map(name => [

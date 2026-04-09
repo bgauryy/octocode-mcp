@@ -22,13 +22,12 @@ describe('LSP schema consistency', () => {
   });
 
   it('uses query-level output pagination descriptions consistently', () => {
-    const schemas = [
+    const schemasWithCharPagination = [
       LSPGotoDefinitionQuerySchema,
-      LSPFindReferencesQuerySchema,
       LSPCallHierarchyQuerySchema,
     ];
 
-    for (const schema of schemas) {
+    for (const schema of schemasWithCharPagination) {
       expect(schema.shape.charOffset.description).toContain(
         'query-level output pagination'
       );
@@ -36,6 +35,8 @@ describe('LSP schema consistency', () => {
         'query-level output pagination'
       );
     }
+
+    expect('charOffset' in LSPFindReferencesQuerySchema.shape).toBe(false);
   });
 
   it('rejects unknown query fields for all LSP single-query schemas', () => {

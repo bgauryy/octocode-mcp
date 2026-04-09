@@ -11,7 +11,6 @@ vi.mock('@octocodeai/octocode-core', () => {
       mainResearchGoal: 'Main goal',
       researchGoal: 'Research goal',
       reasoning: 'Reasoning',
-      bulkQueryTemplate: 'Query for {toolName}',
       bulkQuery: (toolName: string) => 'Query for ' + toolName,
     },
     tools: {
@@ -139,7 +138,7 @@ describe('toolMetadata/state', () => {
       expect(result1).toBe(result2);
     });
 
-    it('should transform bulkQueryTemplate to bulkQuery function', async () => {
+    it('should return bulkQuery as a function', async () => {
       const { loadToolContent, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       _resetMetadataState();

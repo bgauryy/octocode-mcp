@@ -5,8 +5,46 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@octocodeai/octocode-core', () => ({
-  octocodeConfig: {},
-  completeMetadata: {},
+  octocodeConfig: {
+    instructions: '',
+    prompts: {},
+    toolNames: {
+      GITHUB_FETCH_CONTENT: 'githubGetFileContent',
+      GITHUB_SEARCH_CODE: 'githubSearchCode',
+      GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
+      GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
+      GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
+    },
+    baseSchema: {
+      mainResearchGoal: '',
+      researchGoal: '',
+      reasoning: '',
+      bulkQuery: (_: string) => '',
+    },
+    tools: {},
+    baseHints: { hasResults: [], empty: [] },
+    genericErrorHints: [],
+  },
+  completeMetadata: {
+    instructions: '',
+    prompts: {},
+    toolNames: {
+      GITHUB_FETCH_CONTENT: 'githubGetFileContent',
+      GITHUB_SEARCH_CODE: 'githubSearchCode',
+      GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
+      GITHUB_SEARCH_PULL_REQUESTS: 'githubSearchPullRequests',
+      GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
+    },
+    baseSchema: {
+      mainResearchGoal: '',
+      researchGoal: '',
+      reasoning: '',
+      bulkQuery: (_: string) => '',
+    },
+    tools: {},
+    baseHints: { hasResults: [], empty: [] },
+    genericErrorHints: [],
+  },
 }));
 
 describe('toolMetadata - TOOL_NAMES static fallback (lines 236-243)', () => {

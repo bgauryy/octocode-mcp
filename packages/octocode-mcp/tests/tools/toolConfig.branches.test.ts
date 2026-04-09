@@ -48,7 +48,7 @@ describe('toolConfig branch coverage - getDescription fallback (line 26)', () =>
             mainResearchGoal: 'Goal',
             researchGoal: 'Research',
             reasoning: 'Reason',
-            bulkQueryTemplate: 'Query',
+            bulkQuery: (_name: string) => 'Query',
           },
           tools: {
             githubSearchCode: {

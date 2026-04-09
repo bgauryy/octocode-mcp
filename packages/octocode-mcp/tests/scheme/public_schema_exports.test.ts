@@ -205,7 +205,7 @@ describe('Public Schema Exports', () => {
       expect(result.success).toBe(true);
     });
 
-    it('LSPFindReferencesQuerySchema should accept output pagination fields', () => {
+    it('LSPFindReferencesQuerySchema should accept pagination fields', () => {
       const validQuery = {
         id: 'refs_query',
         researchGoal: 'Find symbol usages',
@@ -213,8 +213,8 @@ describe('Public Schema Exports', () => {
         uri: '/tmp/file.ts',
         symbolName: 'foo',
         lineHint: 1,
-        charOffset: 50,
-        charLength: 1000,
+        referencesPerPage: 20,
+        page: 1,
       };
 
       const result = LSPFindReferencesQuerySchema.safeParse(validQuery);
@@ -634,13 +634,11 @@ describe('Public Schema Exports', () => {
       // Check default values are applied
       expect(result.smartCase).toBe(true);
       expect(result.matchContentLength).toBe(200);
-      expect(result.lineNumbers).toBe(true);
       expect(result.filesPerPage).toBe(10);
       expect(result.filePageNumber).toBe(1);
       expect(result.matchesPerPage).toBe(10);
       expect(result.binaryFiles).toBe('without-match');
       expect(result.includeStats).toBe(true);
-      expect(result.includeDistribution).toBe(true);
       expect(result.sort).toBe('path');
       expect(result.showFileLastModified).toBe(false);
     });
@@ -661,7 +659,6 @@ describe('Public Schema Exports', () => {
       expect(result.sortBy).toBe('time');
       expect(result.entriesPerPage).toBe(20);
       expect(result.entryPageNumber).toBe(1);
-      expect(result.summary).toBe(true);
       expect(result.showFileLastModified).toBe(true);
     });
 

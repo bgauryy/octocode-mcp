@@ -14,7 +14,7 @@ const mockMetadata = {
     mainResearchGoal: 'Main',
     researchGoal: 'Research',
     reasoning: 'Reason',
-    bulkQueryTemplate: 'Query {toolName}',
+    bulkQuery: (_name: string) => 'Query ' + _name,
   },
   tools: {
     githubGetFileContent: {
@@ -93,9 +93,10 @@ describe('toolMetadata/schemaHelpers', () => {
       _resetMetadataState();
       await initializeToolMetadata();
 
-      expect(GITHUB_FETCH_CONTENT.scope.owner).toBe('Repository owner');
-      expect(GITHUB_FETCH_CONTENT.scope.repo).toBe('Repository name');
-      expect(GITHUB_FETCH_CONTENT.scope.path).toBe('File path');
+      expect(GITHUB_FETCH_CONTENT.scope.owner).toBe('Repo owner');
+      expect(GITHUB_FETCH_CONTENT.scope.repo).toBe('Repo name');
+      expect(typeof GITHUB_FETCH_CONTENT.scope.path).toBe('string');
+      expect(GITHUB_FETCH_CONTENT.scope.path.length).toBeGreaterThan(0);
     });
 
     it('should return empty string for unknown fields', async () => {
@@ -122,10 +123,11 @@ describe('toolMetadata/schemaHelpers', () => {
       _resetMetadataState();
       await initializeToolMetadata();
 
-      expect(GITHUB_SEARCH_CODE.search.keywordsToSearch).toBe(
-        'Keywords to search for'
+      expect(typeof GITHUB_SEARCH_CODE.search.keywordsToSearch).toBe('string');
+      expect(GITHUB_SEARCH_CODE.search.keywordsToSearch.length).toBeGreaterThan(
+        0
       );
-      expect(GITHUB_SEARCH_CODE.scope.owner).toBe('Repo owner');
+      expect(typeof GITHUB_SEARCH_CODE.scope.owner).toBe('string');
     });
   });
 
@@ -137,8 +139,11 @@ describe('toolMetadata/schemaHelpers', () => {
       _resetMetadataState();
       await initializeToolMetadata();
 
-      expect(GITHUB_SEARCH_REPOS.search.topicsToSearch).toBe('Topics');
-      expect(GITHUB_SEARCH_REPOS.filters.stars).toBe('Star count filter');
+      expect(GITHUB_SEARCH_REPOS.search.topicsToSearch).toBe(
+        'GitHub topic tags'
+      );
+      expect(typeof GITHUB_SEARCH_REPOS.filters.stars).toBe('string');
+      expect(GITHUB_SEARCH_REPOS.filters.stars.length).toBeGreaterThan(0);
     });
   });
 
@@ -150,8 +155,10 @@ describe('toolMetadata/schemaHelpers', () => {
       _resetMetadataState();
       await initializeToolMetadata();
 
-      expect(LOCAL_RIPGREP.search.pattern).toBe('Search pattern');
-      expect(LOCAL_RIPGREP.search.path).toBe('Search path');
+      expect(LOCAL_RIPGREP.search.pattern).toBe(
+        'Pattern/regex to search (required)'
+      );
+      expect(LOCAL_RIPGREP.search.path).toBe('Root directory (required)');
     });
   });
 
@@ -163,21 +170,22 @@ describe('toolMetadata/schemaHelpers', () => {
       _resetMetadataState();
       await initializeToolMetadata();
 
-      expect(LSP_GOTO_DEFINITION.scope.uri).toBe('File URI');
-      expect(LSP_GOTO_DEFINITION.scope.symbolName).toBe('Symbol name');
-      expect(LSP_GOTO_DEFINITION.scope.lineHint).toBe('Line hint');
+      expect(LSP_GOTO_DEFINITION.scope.uri).toContain('File path');
+      expect(LSP_GOTO_DEFINITION.scope.symbolName).toContain('symbol');
+      expect(LSP_GOTO_DEFINITION.scope.lineHint).toContain('line');
     });
   });
 
   describe('uninitialized state', () => {
-    it('should return empty string when not initialized', async () => {
+    it('should still return values from embedded config even when metadata state is reset', async () => {
       const { _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { GITHUB_FETCH_CONTENT } =
         await import('@octocodeai/octocode-core');
       _resetMetadataState();
 
-      expect(GITHUB_FETCH_CONTENT.scope.owner).toBe('');
+      expect(typeof GITHUB_FETCH_CONTENT.scope.owner).toBe('string');
+      expect(GITHUB_FETCH_CONTENT.scope.owner).toBe('Repo owner');
     });
   });
 

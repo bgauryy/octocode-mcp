@@ -26,7 +26,7 @@ const hoist = vi.hoisted(() => {
       mainResearchGoal: 'Main goal description',
       researchGoal: 'Research goal description',
       reasoning: 'Reasoning description',
-      bulkQueryTemplate: 'Research queries for {toolName}',
+      bulkQuery: (toolName: string) => 'Research queries for ' + toolName,
     },
     tools: {
       githubSearchCode: {
@@ -130,11 +130,22 @@ const hoist = vi.hoisted(() => {
     },
   };
 
+  function cloneMetadata<T extends typeof mockMetadata>(src: T): T {
+    const { baseSchema, ...rest } = src;
+    const { bulkQuery, ...baseRest } = baseSchema;
+    return {
+      ...structuredClone({ ...rest, baseSchema: baseRest }),
+      baseSchema: { ...baseRest, bulkQuery },
+    } as T;
+  }
+
   return {
     mockMetadata,
     mockMetadataWithGitHubHints,
+    cloneMetadata,
     store: { current: mockMetadata },
     octocodeReads: 0,
+    completeMetadataReads: 0,
   };
 });
 
@@ -145,6 +156,7 @@ vi.mock('@octocodeai/octocode-core', async importOriginal => ({
     return hoist.store.current;
   },
   get completeMetadata() {
+    hoist.completeMetadataReads++;
     return hoist.store.current;
   },
 }));
@@ -152,13 +164,14 @@ vi.mock('@octocodeai/octocode-core', async importOriginal => ({
 // LOCAL_BASE_HINTS no longer used by getToolHintsSync (moved to server.instructions)
 
 describe('toolMetadata', () => {
-  const { mockMetadata, mockMetadataWithGitHubHints } = hoist;
+  const { mockMetadata, mockMetadataWithGitHubHints, cloneMetadata } = hoist;
 
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    hoist.store.current = structuredClone(hoist.mockMetadata);
+    hoist.store.current = cloneMetadata(hoist.mockMetadata);
     hoist.octocodeReads = 0;
+    hoist.completeMetadataReads = 0;
   });
 
   afterEach(() => {
@@ -173,7 +186,8 @@ describe('toolMetadata', () => {
       await initializeToolMetadata();
 
       expect(getMetadataOrNull()).not.toBeNull();
-      expect(hoist.octocodeReads).toBe(1);
+      expect(getMetadataOrNull()?.instructions).toBe('Test instructions');
+      expect(hoist.completeMetadataReads).toBe(1);
     });
 
     it('should only initialize once', async () => {
@@ -184,7 +198,7 @@ describe('toolMetadata', () => {
       await initializeToolMetadata();
       await initializeToolMetadata();
 
-      expect(hoist.octocodeReads).toBe(1);
+      expect(hoist.completeMetadataReads).toBe(1);
     });
 
     it('should handle concurrent initialization', async () => {
@@ -199,7 +213,7 @@ describe('toolMetadata', () => {
 
       await Promise.all(promises);
 
-      expect(hoist.octocodeReads).toBe(1);
+      expect(hoist.completeMetadataReads).toBe(1);
     });
   });
 
@@ -308,15 +322,21 @@ describe('toolMetadata', () => {
         await import('../../src/tools/toolMetadata/proxies.js');
       await initializeToolMetadata();
 
+      expect(typeof BASE_SCHEMA.bulkQuery).toBe('function');
       const result = BASE_SCHEMA.bulkQuery('testTool');
-      expect(typeof result).toBe('string');
+      expect(result).toBe('Research queries for testTool');
     });
 
     it('should return bulkQuery with tool name', async () => {
+      const { initializeToolMetadata } =
+        await import('../../src/tools/toolMetadata/state.js');
       const { BASE_SCHEMA } =
         await import('../../src/tools/toolMetadata/proxies.js');
+      await initializeToolMetadata();
+
+      expect(typeof BASE_SCHEMA.bulkQuery).toBe('function');
       const result = BASE_SCHEMA.bulkQuery('testTool');
-      expect(typeof result).toBe('string');
+      expect(result).toBe('Research queries for testTool');
     });
   });
 
@@ -736,7 +756,7 @@ describe('toolMetadata', () => {
 
   describe('getToolHintsSync (base hints in server.instructions)', () => {
     it('should return only tool-specific hints for local tools', async () => {
-      hoist.store.current = structuredClone(mockMetadataWithGitHubHints);
+      hoist.store.current = cloneMetadata(mockMetadataWithGitHubHints);
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
       const { getToolHintsSync } =
@@ -750,7 +770,7 @@ describe('toolMetadata', () => {
     });
 
     it('should return only tool-specific hints for localGetFileContent', async () => {
-      hoist.store.current = structuredClone(mockMetadataWithGitHubHints);
+      hoist.store.current = cloneMetadata(mockMetadataWithGitHubHints);
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
       const { getToolHintsSync } =
@@ -763,7 +783,7 @@ describe('toolMetadata', () => {
     });
 
     it('should return only tool-specific hints for GitHub tools', async () => {
-      hoist.store.current = structuredClone(mockMetadataWithGitHubHints);
+      hoist.store.current = cloneMetadata(mockMetadataWithGitHubHints);
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
       const { getToolHintsSync } =
@@ -776,7 +796,7 @@ describe('toolMetadata', () => {
     });
 
     it('should return only tool-specific empty hints for local tools', async () => {
-      hoist.store.current = structuredClone(mockMetadataWithGitHubHints);
+      hoist.store.current = cloneMetadata(mockMetadataWithGitHubHints);
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
       const { getToolHintsSync } =

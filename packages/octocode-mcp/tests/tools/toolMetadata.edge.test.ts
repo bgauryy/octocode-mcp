@@ -16,7 +16,7 @@ const hoisted = vi.hoisted(() => {
       mainResearchGoal: 'goal',
       researchGoal: 'goal',
       reasoning: 'reasoning',
-      bulkQueryTemplate: 'template',
+      bulkQuery: (_name: string) => 'template',
     },
     tools: {},
     baseHints: { hasResults: [], empty: [] },
@@ -28,6 +28,7 @@ const hoisted = vi.hoisted(() => {
     minimalMetadata,
     octocodeConfig: minimalMetadata,
     octocodeReads: 0,
+    completeMetadataReads: 0,
   };
 });
 
@@ -37,6 +38,7 @@ vi.mock('@octocodeai/octocode-core', () => ({
     return hoisted.octocodeConfig;
   },
   get completeMetadata() {
+    hoisted.completeMetadataReads++;
     return hoisted.octocodeConfig;
   },
 }));
@@ -47,6 +49,7 @@ describe('toolMetadata - Final Edge Cases', () => {
     vi.resetModules();
     hoisted.octocodeConfig = { ...hoisted.minimalMetadata };
     hoisted.octocodeReads = 0;
+    hoisted.completeMetadataReads = 0;
   });
 
   describe('Concurrent initialization (line 146)', () => {
@@ -60,7 +63,7 @@ describe('toolMetadata - Final Edge Cases', () => {
 
       await Promise.all([promise1, promise2, promise3]);
 
-      expect(hoisted.octocodeReads).toBe(1);
+      expect(hoisted.completeMetadataReads).toBe(1);
     });
   });
 

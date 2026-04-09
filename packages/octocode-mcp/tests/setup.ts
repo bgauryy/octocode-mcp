@@ -457,6 +457,7 @@ const mockContent = {
     GITHUB_SEARCH_REPOSITORIES: 'githubSearchRepositories',
     GITHUB_VIEW_REPO_STRUCTURE: 'githubViewRepoStructure',
     PACKAGE_SEARCH: 'packageSearch',
+    GITHUB_CLONE_REPO: 'githubCloneRepo',
     LOCAL_RIPGREP: 'localSearchCode',
     LOCAL_FETCH_CONTENT: 'localGetFileContent',
     LOCAL_FIND_FILES: 'localFindFiles',
@@ -469,7 +470,8 @@ const mockContent = {
     mainResearchGoal: 'Main research goal description',
     researchGoal: 'Research goal description',
     reasoning: 'Reasoning description',
-    bulkQueryTemplate: 'Research queries for {toolName}',
+    bulkQuery: (toolName: string) =>
+      `Research queries for ${toolName} (1-3 queries per call for optimal resource management). Review schema before use for optimal results`,
   },
   tools: {
     githubGetFileContent: githubFetchContentSchema,
@@ -478,6 +480,20 @@ const mockContent = {
     githubSearchRepositories: mockToolSchema,
     githubViewRepoStructure: mockToolSchema,
     packageSearch: mockToolSchema,
+    githubCloneRepo: {
+      name: 'githubCloneRepo',
+      description: 'Clone GitHub repository to local filesystem',
+      schema: {
+        owner: 'Repository owner (user or org)',
+        repo: 'Repository name',
+        branch: 'Branch/tag/SHA to clone',
+        sparse_path: 'Fetch only this subdirectory (sparse checkout)',
+        forceRefresh: 'Bypass cache and force a fresh clone',
+        charOffset: 'Character offset for output pagination',
+        charLength: 'Character budget for output pagination',
+      },
+      hints: mockToolHints,
+    },
     localSearchCode: localRipgrepSchema,
     localGetFileContent: localFetchContentSchema,
     localFindFiles: localFindFilesSchema,
@@ -497,6 +513,14 @@ const mockContent = {
     'Generic error hint 4',
     'Generic error hint 5',
   ],
+  bulkOperations: {
+    instructions: {
+      base: 'Bulk response with {count} results: {counts}',
+      hasResults: 'Review hasResultsStatusHints for guidance',
+      empty: 'Review emptyStatusHints for no-results scenarios',
+      error: 'Review errorStatusHints for error recovery',
+    },
+  },
 };
 
 // Mock @octocodeai/octocode-core for metadata loading (no HTTP fetch).

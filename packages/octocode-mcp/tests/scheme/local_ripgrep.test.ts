@@ -55,13 +55,11 @@ describe('localSearchCode schema', () => {
 
       expect(result.smartCase).toBe(true);
       expect(result.matchContentLength).toBe(200);
-      expect(result.lineNumbers).toBe(true);
       expect(result.filesPerPage).toBe(10);
       expect(result.filePageNumber).toBe(1);
       expect(result.matchesPerPage).toBe(10);
       expect(result.binaryFiles).toBe('without-match');
       expect(result.includeStats).toBe(true);
-      expect(result.includeDistribution).toBe(true);
       expect(result.sort).toBe('path');
       expect(result.showFileLastModified).toBe(false);
     });
