@@ -70,14 +70,13 @@ jobs:
           }
           EOF
 
-      - name: Snapshot existing Octocode reviews
-        id: review-count-before
+      - name: Record review start time
+        id: review-start
         run: |
-          COUNT=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
-            --jq '[.[] | select(.user.login == "github-actions[bot]" and .state != "DISMISSED")] | length')
-          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Run Octocode PR Review
+        id: review-agent
         uses: anthropics/claude-code-action@657fb7c9c986158a19624b357bcbc8c6deb83598  # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -224,16 +223,20 @@ jobs:
           MCP_TOOL_TIMEOUT: "45000"
 
       - name: Check review verdict
+        env:
+          GH_TOKEN: ${{ steps.review-agent.outputs.github_token || github.token }}
         run: |
-          COUNT_BEFORE="${{ steps.review-count-before.outputs.count }}"
-          COUNT_AFTER=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
-            --jq '[.[] | select(.user.login == "github-actions[bot]" and .state != "DISMISSED")] | length')
+          START_TS="${{ steps.review-start.outputs.ts }}"
+          REVIEWER_LOGIN=$(gh api user --jq .login)
+          REVIEW_ID=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
+            --jq "([.[] | select(.user.login == \"$REVIEWER_LOGIN\" and .state != \"DISMISSED\" and (.submitted_at // \"\") >= \"$START_TS\")] | last | .id) // \"NONE\"")
           VERDICT=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
-            --jq '([.[] | select(.user.login == "github-actions[bot]" and .state != "DISMISSED")] | last | .state) // "NONE"')
-          echo "Review count before: $COUNT_BEFORE"
-          echo "Review count after: $COUNT_AFTER"
+            --jq "([.[] | select(.user.login == \"$REVIEWER_LOGIN\" and .state != \"DISMISSED\" and (.submitted_at // \"\") >= \"$START_TS\")] | last | .state) // \"NONE\"")
+          echo "Reviewer login: $REVIEWER_LOGIN"
+          echo "Review start time: $START_TS"
+          echo "Fresh review id: $REVIEW_ID"
           echo "Review verdict: $VERDICT"
-          if [ "$COUNT_AFTER" -le "$COUNT_BEFORE" ]; then
+          if [ "$REVIEW_ID" = "NONE" ]; then
             echo "::error::Octocode did not submit a fresh review"
             exit 1
           fi
@@ -302,15 +305,13 @@ jobs:
           }
           EOF
 
-      - name: Snapshot existing Octocode reviews
-        id: comment-review-count-before
+      - name: Record review start time
+        id: comment-review-start
         run: |
-          PR=${{ github.event.issue.number }}
-          COUNT=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" \
-            --jq '[.[] | select(.user.login == "github-actions[bot]" and .state != "DISMISSED")] | length')
-          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Run Octocode Interactive Review
+        id: comment-review-agent
         uses: anthropics/claude-code-action@657fb7c9c986158a19624b357bcbc8c6deb83598  # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -336,17 +337,21 @@ jobs:
           MCP_TOOL_TIMEOUT: "45000"
 
       - name: Check review verdict
+        env:
+          GH_TOKEN: ${{ steps.comment-review-agent.outputs.github_token || github.token }}
         run: |
           PR=${{ github.event.issue.number }}
-          COUNT_BEFORE="${{ steps.comment-review-count-before.outputs.count }}"
-          COUNT_AFTER=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" \
-            --jq '[.[] | select(.user.login == "github-actions[bot]" and .state != "DISMISSED")] | length')
+          START_TS="${{ steps.comment-review-start.outputs.ts }}"
+          REVIEWER_LOGIN=$(gh api user --jq .login)
+          REVIEW_ID=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" \
+            --jq "([.[] | select(.user.login == \"$REVIEWER_LOGIN\" and .state != \"DISMISSED\" and (.submitted_at // \"\") >= \"$START_TS\")] | last | .id) // \"NONE\"")
           VERDICT=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" \
-            --jq '([.[] | select(.user.login == "github-actions[bot]" and .state != "DISMISSED")] | last | .state) // "NONE"')
-          echo "Review count before: $COUNT_BEFORE"
-          echo "Review count after: $COUNT_AFTER"
+            --jq "([.[] | select(.user.login == \"$REVIEWER_LOGIN\" and .state != \"DISMISSED\" and (.submitted_at // \"\") >= \"$START_TS\")] | last | .state) // \"NONE\"")
+          echo "Reviewer login: $REVIEWER_LOGIN"
+          echo "Review start time: $START_TS"
+          echo "Fresh review id: $REVIEW_ID"
           echo "Review verdict: $VERDICT"
-          if [ "$COUNT_AFTER" -le "$COUNT_BEFORE" ]; then
+          if [ "$REVIEW_ID" = "NONE" ]; then
             echo "::error::Octocode did not submit a fresh review"
             exit 1
           fi
@@ -376,8 +381,8 @@ jobs:
         run: |
           PR=${{ github.event.issue.number }}
           REVIEW_ID=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" \
-            --jq '[.[] | select(.user.login == "github-actions[bot]" and .state != "DISMISSED")] | last | .id')
-          if [ -n "$REVIEW_ID" ] && [ "$REVIEW_ID" != "null" ]; then
+            --jq '([.[] | select(.state != "DISMISSED" and ((.body // "") | contains("## Octocode PR Review")))] | last | .id) // "NONE"')
+          if [ -n "$REVIEW_ID" ] && [ "$REVIEW_ID" != "null" ] && [ "$REVIEW_ID" != "NONE" ]; then
             gh api "repos/${{ github.repository }}/pulls/${PR}/reviews/${REVIEW_ID}/dismissals" \
               -X PUT -f message="Dismissed by ${{ github.event.comment.user.login }} via @octocode dismiss"
             gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
