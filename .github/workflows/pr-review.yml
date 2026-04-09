@@ -32,12 +32,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Checkout PR branch (comment triggers)
-        if: github.event_name == 'issue_comment'
-        run: gh pr checkout ${{ github.event.issue.number }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Fetch Octocode review protocol
         run: |
           BASE="https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/skills/octocode-pull-request-reviewer"
