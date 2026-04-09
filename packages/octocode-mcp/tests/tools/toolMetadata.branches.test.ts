@@ -15,28 +15,20 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock dependencies BEFORE importing the module
-vi.mock('../../src/utils/http/fetch.js', () => ({
-  fetchWithRetries: vi.fn(),
+const hoisted = vi.hoisted(() => ({
+  octocodeConfig: {} as Record<string, unknown>,
 }));
 
-vi.mock('../../src/session.js', () => ({
-  logSessionError: vi.fn(() => Promise.resolve()),
+vi.mock('@octocodeai/octocode-core', () => ({
+  get octocodeConfig() {
+    return hoisted.octocodeConfig;
+  },
 }));
 
 describe('toolMetadata branch coverage - uninitialized state', () => {
   beforeEach(async () => {
-    // Reset all modules to get a fresh uninitialized state
     vi.resetModules();
-
-    // Re-mock after reset
-    vi.doMock('../../src/utils/http/fetch.js', () => ({
-      fetchWithRetries: vi.fn(),
-    }));
-
-    vi.doMock('../../src/session.js', () => ({
-      logSessionError: vi.fn(() => Promise.resolve()),
-    }));
+    hoisted.octocodeConfig = {};
   });
 
   describe('getMeta() when METADATA_JSON is null (lines 103-107)', () => {
@@ -202,9 +194,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
         genericErrorHints: [],
       };
 
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      vi.mocked(fetchWithRetries).mockResolvedValueOnce(mockMetadata);
+      hoisted.octocodeConfig = mockMetadata;
 
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
@@ -253,9 +243,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
         genericErrorHints: [],
       };
 
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      vi.mocked(fetchWithRetries).mockResolvedValueOnce(mockMetadata);
+      hoisted.octocodeConfig = mockMetadata;
 
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../src/tools/toolMetadata/state.js');
@@ -346,9 +334,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
         genericErrorHints: [],
       };
 
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      vi.mocked(fetchWithRetries).mockResolvedValueOnce(validMetadata);
+      hoisted.octocodeConfig = validMetadata;
 
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
@@ -390,9 +376,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
         genericErrorHints: [],
       };
 
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      vi.mocked(fetchWithRetries).mockResolvedValueOnce(metadataWithNullTools);
+      hoisted.octocodeConfig = metadataWithNullTools;
 
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
@@ -436,9 +420,7 @@ describe('toolMetadata branch coverage - uninitialized state', () => {
         genericErrorHints: [],
       };
 
-      const { fetchWithRetries } =
-        await import('../../src/utils/http/fetch.js');
-      vi.mocked(fetchWithRetries).mockResolvedValueOnce(validMetadata);
+      hoisted.octocodeConfig = validMetadata;
 
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');

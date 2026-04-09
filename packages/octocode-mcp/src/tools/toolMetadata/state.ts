@@ -1,19 +1,9 @@
-/**
- * Metadata state management - initialization, fetching, and caching.
- * Handles the singleton lifecycle of tool metadata.
- */
-import { fetchWithRetries } from '../../utils/http/fetch.js';
-import { TOOL_METADATA_ERRORS } from '../../errors/domainErrors.js';
-import { logSessionError } from '../../session.js';
+import { octocodeConfig } from '@octocodeai/octocode-core';
 import { CompleteMetadata, ToolNames } from '../../types/metadata.js';
-import { RawCompleteMetadataSchema } from './schemas.js';
-
-const METADATA_URL = 'https://octocodeai.com/api/mcpContent';
 
 let METADATA_JSON: CompleteMetadata | null = null;
 let initializationPromise: Promise<void> | null = null;
 let metadataCache: CompleteMetadata | null = null;
-let metadataPromise: Promise<CompleteMetadata> | null = null;
 
 /**
  * Deep freezes an object to prevent mutations.
@@ -36,66 +26,35 @@ function deepFreeze<T>(obj: T): T {
 }
 
 /**
- * Fetches and validates metadata from the API.
+ * Loads metadata from @octocodeai/octocode-core (synchronous data, async signature preserved).
  */
 export async function getMetadata(): Promise<CompleteMetadata> {
   if (metadataCache) {
     return metadataCache;
   }
 
-  if (metadataPromise) {
-    return metadataPromise;
-  }
+  const raw = octocodeConfig;
+  const toolNames = raw.toolNames as unknown as ToolNames;
 
-  metadataPromise = (async (): Promise<CompleteMetadata> => {
-    const responseData = await fetchWithRetries(METADATA_URL, {
-      maxRetries: 3,
-      includeVersion: true,
-    });
+  const result: CompleteMetadata = {
+    instructions: raw.instructions,
+    prompts: raw.prompts as CompleteMetadata['prompts'],
+    toolNames,
+    baseSchema: {
+      mainResearchGoal: raw.baseSchema.mainResearchGoal,
+      researchGoal: raw.baseSchema.researchGoal,
+      reasoning: raw.baseSchema.reasoning,
+      bulkQuery: (toolName: string) =>
+        raw.baseSchema.bulkQueryTemplate.replace('{toolName}', toolName),
+    },
+    tools: raw.tools as CompleteMetadata['tools'],
+    baseHints: raw.baseHints as CompleteMetadata['baseHints'],
+    genericErrorHints: raw.genericErrorHints,
+    bulkOperations: raw.bulkOperations,
+  };
 
-    const parseResult = RawCompleteMetadataSchema.safeParse(responseData);
-
-    if (!parseResult.success) {
-      await logSessionError(
-        'toolMetadata',
-        TOOL_METADATA_ERRORS.INVALID_API_RESPONSE.code
-      );
-      throw new Error(TOOL_METADATA_ERRORS.INVALID_FORMAT.message);
-    }
-
-    const raw = parseResult.data;
-    const toolNames = raw.toolNames as unknown as ToolNames;
-    const baseSchema = raw.baseSchema;
-
-    // After successful zod validation, properties are guaranteed to exist
-    // Type assertions are safe here since schema validation ensures required fields
-    const result: CompleteMetadata = {
-      instructions: raw.instructions,
-      prompts: raw.prompts as CompleteMetadata['prompts'],
-      toolNames,
-      baseSchema: {
-        mainResearchGoal: baseSchema.mainResearchGoal,
-        researchGoal: baseSchema.researchGoal,
-        reasoning: baseSchema.reasoning,
-        bulkQuery: (toolName: string) =>
-          baseSchema.bulkQueryTemplate.replace('{toolName}', toolName),
-      },
-      tools: raw.tools as CompleteMetadata['tools'],
-      baseHints: raw.baseHints as CompleteMetadata['baseHints'],
-      genericErrorHints: raw.genericErrorHints,
-      bulkOperations: raw.bulkOperations,
-    };
-
-    metadataCache = result;
-    return result;
-  })();
-
-  try {
-    return await metadataPromise;
-  } catch (error) {
-    metadataPromise = null;
-    throw error;
-  }
+  metadataCache = result;
+  return result;
 }
 
 /**
@@ -104,10 +63,6 @@ export async function getMetadata(): Promise<CompleteMetadata> {
  */
 export function getMetadataOrThrow(): CompleteMetadata {
   if (!METADATA_JSON) {
-    logSessionError(
-      'toolMetadata',
-      TOOL_METADATA_ERRORS.INVALID_FORMAT.code
-    ).catch(() => {});
     throw new Error(
       'Tool metadata not initialized. Call and await initializeToolMetadata() before using tool metadata.'
     );
@@ -124,7 +79,7 @@ export function getMetadataOrNull(): CompleteMetadata | null {
 }
 
 /**
- * Initializes tool metadata from the remote API.
+ * Initializes tool metadata from @octocodeai/octocode-core.
  * Safe to call multiple times - subsequent calls are no-ops.
  */
 export async function initializeToolMetadata(): Promise<void> {
@@ -161,5 +116,4 @@ export function _resetMetadataState(): void {
   METADATA_JSON = null;
   initializationPromise = null;
   metadataCache = null;
-  metadataPromise = null;
 }

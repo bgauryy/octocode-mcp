@@ -4,10 +4,8 @@
 
 export type {
   CompleteMetadata,
-  RawCompleteMetadata,
   ToolMetadata,
   ToolNames,
-  BaseSchema,
   PromptMetadata,
   PromptArgument,
   HintStatus,

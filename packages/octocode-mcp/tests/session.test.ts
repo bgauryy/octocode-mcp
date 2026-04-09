@@ -10,7 +10,7 @@ vi.mock('octocode-shared', async importOriginal => {
     ...actual,
     getOrCreateSession: vi.fn(() => ({
       version: 1,
-      sessionId: 'mock-session-id-12345678-1234-4123-8123-123456789012',
+      sessionId: '12345678-1234-4123-8123-123456789012',
       createdAt: '2024-01-01T00:00:00.000Z',
       lastActiveAt: '2024-01-01T00:00:00.000Z',
       stats: { toolCalls: 0, promptCalls: 0, errors: 0, rateLimits: 0 },
@@ -19,7 +19,7 @@ vi.mock('octocode-shared', async importOriginal => {
       success: true,
       session: {
         version: 1,
-        sessionId: 'mock-session-id-12345678-1234-4123-8123-123456789012',
+        sessionId: '12345678-1234-4123-8123-123456789012',
         createdAt: '2024-01-01T00:00:00.000Z',
         lastActiveAt: new Date().toISOString(),
         stats: { toolCalls: count, promptCalls: 0, errors: 0, rateLimits: 0 },
@@ -29,7 +29,7 @@ vi.mock('octocode-shared', async importOriginal => {
       success: true,
       session: {
         version: 1,
-        sessionId: 'mock-session-id-12345678-1234-4123-8123-123456789012',
+        sessionId: '12345678-1234-4123-8123-123456789012',
         createdAt: '2024-01-01T00:00:00.000Z',
         lastActiveAt: new Date().toISOString(),
         stats: { toolCalls: 0, promptCalls: count, errors: 0, rateLimits: 0 },
@@ -39,7 +39,7 @@ vi.mock('octocode-shared', async importOriginal => {
       success: true,
       session: {
         version: 1,
-        sessionId: 'mock-session-id-12345678-1234-4123-8123-123456789012',
+        sessionId: '12345678-1234-4123-8123-123456789012',
         createdAt: '2024-01-01T00:00:00.000Z',
         lastActiveAt: new Date().toISOString(),
         stats: { toolCalls: 0, promptCalls: 0, errors: count, rateLimits: 0 },
@@ -49,7 +49,7 @@ vi.mock('octocode-shared', async importOriginal => {
       success: true,
       session: {
         version: 1,
-        sessionId: 'mock-session-id-12345678-1234-4123-8123-123456789012',
+        sessionId: '12345678-1234-4123-8123-123456789012',
         createdAt: '2024-01-01T00:00:00.000Z',
         lastActiveAt: new Date().toISOString(),
         stats: { toolCalls: 0, promptCalls: 0, errors: 0, rateLimits: count },
@@ -59,7 +59,6 @@ vi.mock('octocode-shared', async importOriginal => {
 });
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import axios from 'axios';
 import {
   initializeSession,
   getSessionManager,
@@ -122,16 +121,27 @@ describe('Session Management', () => {
       // Initialize config and session for logging tests
       await initialize();
       initializeSession();
-      // Mock axios.post AFTER initialization
-      vi.mocked(axios.post).mockResolvedValue({ data: 'ok' });
+      // Mock fetch AFTER initialization (global stub from tests/setup.ts)
+      vi.mocked(fetch).mockResolvedValue(new Response('ok'));
     });
 
     it('should log session initialization', async () => {
       const session = initializeSession();
       await logSessionInit();
 
-      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: expect.any(AbortSignal),
+        })
+      );
+      expect(
+        JSON.parse(
+          (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+        )
+      ).toEqual(
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'init',
@@ -140,13 +150,7 @@ describe('Session Management', () => {
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
           version: expect.any(String),
-        }),
-        {
-          timeout: 5000,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
+        })
       );
     });
 
@@ -154,8 +158,19 @@ describe('Session Management', () => {
       const session = initializeSession();
       await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, []);
 
-      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: expect.any(AbortSignal),
+        })
+      );
+      expect(
+        JSON.parse(
+          (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+        )
+      ).toEqual(
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'tool_call',
@@ -168,13 +183,7 @@ describe('Session Management', () => {
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
           version: expect.any(String),
-        }),
-        {
-          timeout: 5000,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
+        })
       );
     });
 
@@ -182,8 +191,19 @@ describe('Session Management', () => {
       const session = initializeSession();
       await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, ['my-owner/my-repo']);
 
-      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: expect.any(AbortSignal),
+        })
+      );
+      expect(
+        JSON.parse(
+          (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+        )
+      ).toEqual(
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'tool_call',
@@ -196,13 +216,7 @@ describe('Session Management', () => {
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
           version: expect.any(String),
-        }),
-        {
-          timeout: 5000,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
+        })
       );
     });
 
@@ -216,8 +230,19 @@ describe('Session Management', () => {
         'Need to understand auth flow'
       );
 
-      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: expect.any(AbortSignal),
+        })
+      );
+      expect(
+        JSON.parse(
+          (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+        )
+      ).toEqual(
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'tool_call',
@@ -230,13 +255,7 @@ describe('Session Management', () => {
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
           version: expect.any(String),
-        }),
-        {
-          timeout: 5000,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
+        })
       );
     });
 
@@ -250,8 +269,19 @@ describe('Session Management', () => {
         'Need to understand auth flow'
       );
 
-      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: expect.any(AbortSignal),
+        })
+      );
+      expect(
+        JSON.parse(
+          (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+        )
+      ).toEqual(
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'tool_call',
@@ -264,13 +294,7 @@ describe('Session Management', () => {
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
           version: expect.any(String),
-        }),
-        {
-          timeout: 5000,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
+        })
       );
     });
 
@@ -284,8 +308,19 @@ describe('Session Management', () => {
         undefined
       );
 
-      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: expect.any(AbortSignal),
+        })
+      );
+      expect(
+        JSON.parse(
+          (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+        )
+      ).toEqual(
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'tool_call',
@@ -298,13 +333,7 @@ describe('Session Management', () => {
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
           version: expect.any(String),
-        }),
-        {
-          timeout: 5000,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
+        })
       );
     });
 
@@ -312,8 +341,19 @@ describe('Session Management', () => {
       const session = initializeSession();
       await logSessionError('test', 'TEST_ERROR');
 
-      expect(vi.mocked(axios.post)).toHaveBeenCalledWith(
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: expect.any(AbortSignal),
+        })
+      );
+      expect(
+        JSON.parse(
+          (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+        )
+      ).toEqual(
         expect.objectContaining({
           sessionId: session.getSessionId(),
           intent: 'error',
@@ -322,18 +362,12 @@ describe('Session Management', () => {
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
           ),
           version: expect.any(String),
-        }),
-        {
-          timeout: 5000,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }
+        })
       );
     });
 
     it('should handle logging failures gracefully', async () => {
-      vi.mocked(axios.post).mockRejectedValue(new Error('Network error'));
+      vi.mocked(fetch).mockRejectedValue(new Error('Network error'));
 
       initializeSession();
 
@@ -353,13 +387,13 @@ describe('Session Management', () => {
       await logToolCall('test_tool', []);
       await logSessionError('test', 'TEST_ERROR');
 
-      expect(vi.mocked(axios.post)).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
   });
 
   describe('Session Data Structure', () => {
     beforeEach(async () => {
-      vi.mocked(axios.post).mockResolvedValue({ data: 'ok' });
+      vi.mocked(fetch).mockResolvedValue(new Response('ok'));
       // Set environment variable to enable logging
       process.env.LOG = 'true';
       process.env.GITHUB_TOKEN = 'mock-token';
@@ -371,8 +405,10 @@ describe('Session Management', () => {
       const session = initializeSession();
       await session.logInit();
 
-      const call = vi.mocked(axios.post).mock.calls[0];
-      const payload = call?.[1];
+      const call = vi.mocked(fetch).mock.calls[0];
+      const payload = call?.[1]
+        ? JSON.parse((call[1] as RequestInit).body as string)
+        : undefined;
 
       expect(payload).toEqual({
         sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
@@ -389,8 +425,10 @@ describe('Session Management', () => {
       const session = initializeSession();
       await session.logToolCall(TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES, []);
 
-      const call = vi.mocked(axios.post).mock.calls[0];
-      const payload = call?.[1];
+      const call = vi.mocked(fetch).mock.calls[0];
+      const payload = call?.[1]
+        ? JSON.parse((call[1] as RequestInit).body as string)
+        : undefined;
 
       expect(payload).toEqual({
         sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
@@ -413,8 +451,10 @@ describe('Session Management', () => {
         'test-owner/test-repo',
       ]);
 
-      const call = vi.mocked(axios.post).mock.calls[0];
-      const payload = call?.[1];
+      const call = vi.mocked(fetch).mock.calls[0];
+      const payload = call?.[1]
+        ? JSON.parse((call[1] as RequestInit).body as string)
+        : undefined;
 
       expect(payload).toEqual({
         sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
@@ -441,8 +481,10 @@ describe('Session Management', () => {
         'Reasoning text'
       );
 
-      const call = vi.mocked(axios.post).mock.calls[0];
-      const payload = call?.[1];
+      const call = vi.mocked(fetch).mock.calls[0];
+      const payload = call?.[1]
+        ? JSON.parse((call[1] as RequestInit).body as string)
+        : undefined;
 
       expect(payload).toEqual({
         sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
@@ -467,8 +509,10 @@ describe('Session Management', () => {
         'Main goal only'
       );
 
-      const call = vi.mocked(axios.post).mock.calls[0];
-      const payload = call?.[1];
+      const call = vi.mocked(fetch).mock.calls[0];
+      const payload = call?.[1]
+        ? JSON.parse((call[1] as RequestInit).body as string)
+        : undefined;
 
       expect(payload).toEqual({
         sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
@@ -489,8 +533,10 @@ describe('Session Management', () => {
       const session = initializeSession();
       await session.logError('test', 'CONNECTION_FAILED');
 
-      const call = vi.mocked(axios.post).mock.calls[0];
-      const payload = call?.[1];
+      const call = vi.mocked(fetch).mock.calls[0];
+      const payload = call?.[1]
+        ? JSON.parse((call[1] as RequestInit).body as string)
+        : undefined;
 
       expect(payload).toEqual({
         sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),

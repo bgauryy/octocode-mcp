@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import axios from 'axios';
 import {
   initializeSession,
   getSessionManager,
@@ -33,20 +32,30 @@ describe('session.branches', () => {
           stats: { toolCalls: 0, promptCalls: 0, errors: 1, rateLimits: 0 },
         },
       });
-      vi.mocked(axios.post).mockResolvedValue({ data: 'success' });
+      vi.mocked(fetch).mockResolvedValue(new Response('ok'));
 
       await initialize();
       initializeSession();
       await logSessionError('testTool', 'TEST_ERROR');
 
       expect(incrementErrors).toHaveBeenCalledWith(1);
-      expect(axios.post).toHaveBeenCalledWith(
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: expect.any(AbortSignal),
+        })
+      );
+      expect(
+        JSON.parse(
+          (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+        )
+      ).toEqual(
         expect.objectContaining({
           intent: 'error',
           data: { error: 'testTool:TEST_ERROR' },
-        }),
-        expect.any(Object)
+        })
       );
     });
   });
@@ -64,7 +73,7 @@ describe('session.branches', () => {
           stats: { toolCalls: 0, promptCalls: 0, errors: 0, rateLimits: 1 },
         },
       });
-      vi.mocked(axios.post).mockResolvedValue({ data: 'success' });
+      vi.mocked(fetch).mockResolvedValue(new Response('ok'));
 
       await initialize();
       initializeSession();
@@ -78,13 +87,23 @@ describe('session.branches', () => {
       await logRateLimit(rateLimitData);
 
       expect(incrementRateLimits).toHaveBeenCalledWith(1);
-      expect(axios.post).toHaveBeenCalledWith(
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
         'https://octocode-mcp-host.onrender.com/log',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: expect.any(AbortSignal),
+        })
+      );
+      expect(
+        JSON.parse(
+          (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+        )
+      ).toEqual(
         expect.objectContaining({
           intent: 'rate_limit',
           data: rateLimitData,
-        }),
-        expect.any(Object)
+        })
       );
     });
 
@@ -101,7 +120,7 @@ describe('session.branches', () => {
         success: true,
         session: updatedSession as any,
       });
-      vi.mocked(axios.post).mockResolvedValue({ data: 'success' });
+      vi.mocked(fetch).mockResolvedValue(new Response('ok'));
 
       await initialize();
       const session = initializeSession();
@@ -125,7 +144,7 @@ describe('session.branches', () => {
     beforeEach(async () => {
       process.env.LOG = 'false';
       cleanup();
-      vi.mocked(axios.post).mockResolvedValue({ data: 'success' });
+      vi.mocked(fetch).mockResolvedValue(new Response('ok'));
       await initialize();
     });
 
@@ -133,7 +152,7 @@ describe('session.branches', () => {
       initializeSession();
       await logSessionError('testTool', 'TEST_ERROR');
 
-      expect(axios.post).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
 
     it('should skip rate_limit logging when LOG=false', async () => {
@@ -144,20 +163,20 @@ describe('session.branches', () => {
         rate_limit_remaining: 0,
       } as any);
 
-      expect(axios.post).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
 
     it('should skip prompt_call logging when LOG=false', async () => {
       initializeSession();
       await logPromptCall('testPrompt');
 
-      expect(axios.post).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
 
     it('should skip init when LOG=false', async () => {
       const session = initializeSession();
       await session.logInit();
-      expect(axios.post).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
   });
 
@@ -170,7 +189,7 @@ describe('session.branches', () => {
 
     it('should catch and silently ignore HTTP request failures', async () => {
       const error = new Error('Network error');
-      vi.mocked(axios.post).mockRejectedValue(error);
+      vi.mocked(fetch).mockRejectedValue(error);
 
       // Telemetry failures are now silently ignored (no stderr output)
       // to avoid noise for stdio MCP consumers
@@ -181,7 +200,7 @@ describe('session.branches', () => {
       initializeSession();
       await logSessionError('testTool', 'TEST_ERROR');
 
-      expect(axios.post).toHaveBeenCalled();
+      expect(vi.mocked(fetch)).toHaveBeenCalled();
       // Should NOT write to stderr anymore
       expect(stderrWriteSpy).not.toHaveBeenCalledWith(
         expect.stringContaining('[session] Failed to send log')
@@ -191,7 +210,7 @@ describe('session.branches', () => {
     });
 
     it('should handle non-Error rejection values silently', async () => {
-      vi.mocked(axios.post).mockRejectedValue('String error');
+      vi.mocked(fetch).mockRejectedValue('String error');
 
       const stderrWriteSpy = vi
         .spyOn(process.stderr, 'write')
@@ -200,7 +219,7 @@ describe('session.branches', () => {
       initializeSession();
       await logSessionError('testTool', 'TEST_ERROR');
 
-      expect(axios.post).toHaveBeenCalled();
+      expect(vi.mocked(fetch)).toHaveBeenCalled();
       // Should NOT write to stderr anymore
       expect(stderrWriteSpy).not.toHaveBeenCalledWith(
         expect.stringContaining('[session] Failed to send log')
@@ -221,18 +240,18 @@ describe('session.branches', () => {
   describe('logPromptCall - session null branch', () => {
     it('should return early when session manager is null', async () => {
       resetSessionManager();
-      vi.mocked(axios.post).mockResolvedValue({ data: 'success' });
+      vi.mocked(fetch).mockResolvedValue(new Response('ok'));
 
       await logPromptCall('testPrompt');
 
-      expect(axios.post).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
   });
 
   describe('logRateLimit wrapper - session null branch', () => {
     it('should return early when session manager is null', async () => {
       resetSessionManager();
-      vi.mocked(axios.post).mockResolvedValue({ data: 'success' });
+      vi.mocked(fetch).mockResolvedValue(new Response('ok'));
       const rateLimitData = {
         provider: 'github',
         limit: 5000,
@@ -242,7 +261,7 @@ describe('session.branches', () => {
 
       await logRateLimit(rateLimitData);
 
-      expect(axios.post).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
   });
 

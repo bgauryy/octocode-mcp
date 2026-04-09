@@ -39,6 +39,17 @@ import { sanitizeCallToolResult } from '../../src/utils/secureServer.js';
 
 vi.mock('octocode-shared', () => ({
   getConfigSync: () => ({ output: { format: 'yaml' } }),
+  resolveTokenFull: vi.fn(async () => null),
+  getTokenFromEnv: vi.fn(() => null),
+  getEnvTokenSource: vi.fn(() => null),
+  getOrCreateSession: vi.fn(() => ({
+    sessionId: '00000000-0000-4000-8000-000000000000',
+    createdAt: new Date().toISOString(),
+    lastActiveAt: new Date().toISOString(),
+    stats: { toolCalls: 0, promptCalls: 0, errors: 0, rateLimits: 0 },
+  })),
+  incrementToolCalls: vi.fn(() => ({ success: true })),
+  incrementErrors: vi.fn(() => ({ success: true })),
 }));
 
 const SECRETS = {

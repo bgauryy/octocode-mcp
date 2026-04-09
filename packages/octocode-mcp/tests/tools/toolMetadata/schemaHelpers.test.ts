@@ -1,12 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fetchWithRetries } from '../../../src/utils/http/fetch.js';
-
-vi.mock('../../../src/utils/http/fetch.js');
-vi.mock('../../../src/session.js', () => ({
-  logSessionError: vi.fn(() => Promise.resolve()),
-}));
-
-const mockFetchWithRetries = vi.mocked(fetchWithRetries);
 
 const mockMetadata = {
   instructions: 'Test',
@@ -80,6 +72,10 @@ const mockMetadata = {
   genericErrorHints: [],
 };
 
+vi.mock('@octocodeai/octocode-core', () => ({
+  octocodeConfig: mockMetadata,
+}));
+
 describe('toolMetadata/schemaHelpers', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -93,7 +89,6 @@ describe('toolMetadata/schemaHelpers', () => {
       const { GITHUB_FETCH_CONTENT } =
         await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       expect(GITHUB_FETCH_CONTENT.scope.owner).toBe('Repository owner');
@@ -107,7 +102,6 @@ describe('toolMetadata/schemaHelpers', () => {
       const { GITHUB_FETCH_CONTENT } =
         await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const helper = GITHUB_FETCH_CONTENT as Record<
@@ -125,7 +119,6 @@ describe('toolMetadata/schemaHelpers', () => {
       const { GITHUB_SEARCH_CODE } =
         await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       expect(GITHUB_SEARCH_CODE.search.keywordsToSearch).toBe(
@@ -142,7 +135,6 @@ describe('toolMetadata/schemaHelpers', () => {
       const { GITHUB_SEARCH_REPOS } =
         await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       expect(GITHUB_SEARCH_REPOS.search.topicsToSearch).toBe('Topics');
@@ -157,7 +149,6 @@ describe('toolMetadata/schemaHelpers', () => {
       const { LOCAL_RIPGREP } =
         await import('../../../src/tools/toolMetadata/localSchemaHelpers.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       expect(LOCAL_RIPGREP.search.pattern).toBe('Search pattern');
@@ -172,7 +163,6 @@ describe('toolMetadata/schemaHelpers', () => {
       const { LSP_GOTO_DEFINITION } =
         await import('../../../src/tools/toolMetadata/lspSchemaHelpers.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       expect(LSP_GOTO_DEFINITION.scope.uri).toBe('File URI');
@@ -200,10 +190,8 @@ describe('toolMetadata/schemaHelpers', () => {
       const { GITHUB_SEARCH_CODE } =
         await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
-      // Access through unknown category should still work
       const helper = GITHUB_SEARCH_CODE as Record<
         string,
         Record<string, string>

@@ -1,13 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fetchWithRetries } from '../../../src/utils/http/fetch.js';
-
-vi.mock('../../../src/utils/http/fetch.js');
-vi.mock('../../../src/session.js', () => ({
-  logSessionError: vi.fn(() => Promise.resolve()),
-}));
-// LOCAL_BASE_HINTS no longer used by getToolHintsSync (moved to server.instructions)
-
-const mockFetchWithRetries = vi.mocked(fetchWithRetries);
 
 const mockMetadata = {
   instructions: 'Test instructions',
@@ -52,6 +43,10 @@ const mockMetadata = {
   genericErrorHints: ['Generic error 1', 'Generic error 2'],
 };
 
+vi.mock('@octocodeai/octocode-core', () => ({
+  octocodeConfig: mockMetadata,
+}));
+
 describe('toolMetadata/proxies', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -65,7 +60,6 @@ describe('toolMetadata/proxies', () => {
       const { TOOL_NAMES } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       expect(TOOL_NAMES.GITHUB_SEARCH_CODE).toBe('githubSearchCode');
@@ -78,7 +72,6 @@ describe('toolMetadata/proxies', () => {
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
 
-      // Should use STATIC_TOOL_NAMES
       expect(typeof TOOL_NAMES.GITHUB_SEARCH_CODE).toBe('string');
     });
 
@@ -88,7 +81,6 @@ describe('toolMetadata/proxies', () => {
       const { TOOL_NAMES } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const keys = Object.keys(TOOL_NAMES);
@@ -101,7 +93,6 @@ describe('toolMetadata/proxies', () => {
       const { TOOL_NAMES } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const descriptor = Object.getOwnPropertyDescriptor(
@@ -118,7 +109,6 @@ describe('toolMetadata/proxies', () => {
       const { TOOL_NAMES } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const descriptor = Object.getOwnPropertyDescriptor(
@@ -136,7 +126,6 @@ describe('toolMetadata/proxies', () => {
       const { BASE_SCHEMA } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       expect(BASE_SCHEMA.mainResearchGoal).toBe('Main goal');
@@ -149,7 +138,6 @@ describe('toolMetadata/proxies', () => {
       const { BASE_SCHEMA } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const result = BASE_SCHEMA.bulkQuery('myTool');
@@ -185,7 +173,6 @@ describe('toolMetadata/proxies', () => {
       const { GENERIC_ERROR_HINTS } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       expect(GENERIC_ERROR_HINTS.length).toBe(2);
@@ -199,7 +186,6 @@ describe('toolMetadata/proxies', () => {
       const { DESCRIPTIONS } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       expect(DESCRIPTIONS['githubSearchCode']).toBe('Search code on GitHub');
@@ -211,7 +197,6 @@ describe('toolMetadata/proxies', () => {
       const { DESCRIPTIONS } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       expect(DESCRIPTIONS['unknownTool']).toBe('');
@@ -225,7 +210,6 @@ describe('toolMetadata/proxies', () => {
       const { TOOL_HINTS } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const hints = TOOL_HINTS['githubSearchCode'];
@@ -238,7 +222,6 @@ describe('toolMetadata/proxies', () => {
       const { TOOL_HINTS } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const base = TOOL_HINTS.base;
@@ -251,7 +234,6 @@ describe('toolMetadata/proxies', () => {
       const { TOOL_HINTS } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const hints = TOOL_HINTS['unknown'];
@@ -265,7 +247,6 @@ describe('toolMetadata/proxies', () => {
       const { TOOL_HINTS } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const keys = Object.keys(TOOL_HINTS);
@@ -292,7 +273,6 @@ describe('toolMetadata/proxies', () => {
       const { isToolInMetadata } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       expect(isToolInMetadata('githubSearchCode')).toBe(true);
@@ -304,7 +284,6 @@ describe('toolMetadata/proxies', () => {
       const { isToolInMetadata } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       expect(isToolInMetadata('unknownTool')).toBe(false);
@@ -328,7 +307,6 @@ describe('toolMetadata/proxies', () => {
       const { getToolHintsSync } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const hints = getToolHintsSync('githubSearchCode', 'hasResults');
@@ -341,7 +319,6 @@ describe('toolMetadata/proxies', () => {
       const { getToolHintsSync } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const hints = getToolHintsSync('localSearchCode', 'hasResults');
@@ -354,7 +331,6 @@ describe('toolMetadata/proxies', () => {
       const { getToolHintsSync } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const hints = getToolHintsSync('unknown', 'hasResults');
@@ -369,7 +345,6 @@ describe('toolMetadata/proxies', () => {
       const { getGenericErrorHintsSync } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const hints = getGenericErrorHintsSync();
@@ -395,7 +370,6 @@ describe('toolMetadata/proxies', () => {
       const { getDynamicHints } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const hints = getDynamicHints('githubSearchCode', 'topicsHasResults');
@@ -408,7 +382,6 @@ describe('toolMetadata/proxies', () => {
       const { getDynamicHints } =
         await import('../../../src/tools/toolMetadata/proxies.js');
       _resetMetadataState();
-      mockFetchWithRetries.mockResolvedValueOnce(mockMetadata);
       await initializeToolMetadata();
 
       const hints = getDynamicHints('githubSearchCode', 'nonexistent');

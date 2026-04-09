@@ -138,7 +138,7 @@ export interface ToolMetadata {
   hints: {
     hasResults: readonly string[];
     empty: readonly string[];
-    dynamic?: Record<string, string[] | undefined>;
+    dynamic?: Readonly<Record<string, readonly string[]>>;
   };
 }
 
@@ -172,13 +172,6 @@ export interface ToolNames {
   LSP_CALL_HIERARCHY: 'lspCallHierarchy';
 }
 
-export interface BaseSchema {
-  mainResearchGoal: string;
-  researchGoal: string;
-  reasoning: string;
-  bulkQueryTemplate: string;
-}
-
 export interface CompleteMetadata {
   instructions: string;
   prompts: Record<string, PromptMetadata>;
@@ -189,27 +182,6 @@ export interface CompleteMetadata {
     reasoning: string;
     bulkQuery: (toolName: string) => string;
   };
-  tools: Record<string, ToolMetadata>;
-  baseHints: {
-    hasResults: readonly string[];
-    empty: readonly string[];
-  };
-  genericErrorHints: readonly string[];
-  bulkOperations?: {
-    instructions?: {
-      base?: string;
-      hasResults?: string;
-      empty?: string;
-      error?: string;
-    };
-  };
-}
-
-export interface RawCompleteMetadata {
-  instructions: string;
-  prompts: Record<string, PromptMetadata>;
-  toolNames: ToolNames;
-  baseSchema: BaseSchema;
   tools: Record<string, ToolMetadata>;
   baseHints: {
     hasResults: readonly string[];

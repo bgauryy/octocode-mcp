@@ -10,6 +10,12 @@ import {
 // Tests may legitimately register many listeners due to module isolation
 process.setMaxListeners(50);
 
+// Session telemetry and other code paths call global fetch; tests configure via vi.mocked(fetch)
+vi.stubGlobal(
+  'fetch',
+  vi.fn(() => Promise.resolve(new Response('', { status: 200 })))
+);
+
 // Global mock for octocode-shared to prevent filesystem access during tests
 // This is needed because some tests use vi.resetModules() which can break file-level mocks
 
@@ -493,16 +499,13 @@ const mockContent = {
   ],
 };
 
-// Mock global fetch for metadata loading - MUST be done before any imports that use metadata
-global.fetch = vi.fn().mockResolvedValue({
-  ok: true,
-  json: async () => mockContent,
-});
-
-// Mock axios for session logging - MUST be done before any session imports
-vi.mock('axios', () => ({
-  default: {
-    post: vi.fn(),
+// Mock @octocodeai/octocode-core for metadata loading (no HTTP fetch).
+// vi.mock factories are hoisted and run before mockContent is initialized,
+// so we use a mutable holder set via vi.hoisted + a getter for lazy access.
+const _coreMock = vi.hoisted(() => ({ ref: null as unknown }));
+vi.mock('@octocodeai/octocode-core', () => ({
+  get octocodeConfig() {
+    return _coreMock.ref;
   },
 }));
 
@@ -555,6 +558,9 @@ function captureStderrWrite(chunk: string | Uint8Array): boolean {
 
   return true;
 }
+
+// Wire mock content into the @octocodeai/octocode-core mock before initialization
+_coreMock.ref = mockContent;
 
 // Initialize tool metadata for all tests - using top-level await to ensure it runs before test file imports
 await initializeToolMetadata();

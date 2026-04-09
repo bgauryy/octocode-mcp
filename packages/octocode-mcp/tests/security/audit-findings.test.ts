@@ -4,13 +4,13 @@
  * Each test calls REAL code. No source-code string matching.
  *
  * Mocking strategy:
- *   - axios: mocked globally (external HTTP, see setup.ts)
+ *   - fetch: stubbed globally (external HTTP, see setup.ts)
  *   - child_process: mocked globally (external OS, see setup.ts)
  *   - Everything else: REAL imports, REAL execution
  *
  * Coverage unique to this file (not duplicated elsewhere):
  *   Finding 1 — escapeForRegex + command-arg builders (pure functions)
- *   Finding 2 — logToolCall telemetry payload (real session + mocked axios)
+ *   Finding 2 — logToolCall telemetry payload (real session + mocked fetch)
  *   Finding 6 — buildChildProcessEnv value leakage (pure function)
  *
  * Full buildChildProcessEnv key/allowlist tests → security-resilience.test.ts
@@ -18,7 +18,6 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import axios from 'axios';
 import {
   initializeSession,
   resetSessionManager,
@@ -106,7 +105,7 @@ describe('Finding 2 — Telemetry excludes sensitive data', () => {
     cleanup();
     vi.clearAllMocks();
     resetSessionManager();
-    vi.mocked(axios.post).mockResolvedValue({ data: 'ok' });
+    vi.mocked(fetch).mockResolvedValue(new Response('ok'));
     await initialize();
     initializeSession();
   });
@@ -127,13 +126,13 @@ describe('Finding 2 — Telemetry excludes sensitive data', () => {
       'because the CEO told me to'
     );
 
-    expect(axios.post).toHaveBeenCalled();
-    const call = vi.mocked(axios.post).mock.calls[0];
-    const payload = JSON.stringify(call?.[1]);
+    expect(vi.mocked(fetch)).toHaveBeenCalled();
+    const call = vi.mocked(fetch).mock.calls[0];
+    const bodyStr = String((call?.[1] as RequestInit | undefined)?.body ?? '');
 
-    expect(payload).not.toContain('SECRET BUSINESS GOAL');
-    expect(payload).not.toContain('find vulnerable endpoints');
-    expect(payload).not.toContain('because the CEO told me to');
+    expect(bodyStr).not.toContain('SECRET BUSINESS GOAL');
+    expect(bodyStr).not.toContain('find vulnerable endpoints');
+    expect(bodyStr).not.toContain('because the CEO told me to');
   });
 
   it('redacts repo names for non-local tools', async () => {
@@ -145,18 +144,20 @@ describe('Finding 2 — Telemetry excludes sensitive data', () => {
       'r'
     );
 
-    const data = (
-      vi.mocked(axios.post).mock.calls[0]?.[1] as Record<string, any>
-    )?.data;
+    const parsed = JSON.parse(
+      (vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit).body as string
+    ) as Record<string, any>;
+    const data = parsed.data;
     expect(data.repos).toEqual(['[redacted]', '[redacted]']);
   });
 
   it('sends empty repos for local tools', async () => {
     await logToolCall('localSearchCode', ['/Users/me/secret'], 'g', 'r', 'r');
 
-    const data = (
-      vi.mocked(axios.post).mock.calls[0]?.[1] as Record<string, any>
-    )?.data;
+    const parsed = JSON.parse(
+      (vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit).body as string
+    ) as Record<string, any>;
+    const data = parsed.data;
     expect(data.repos).toEqual([]);
   });
 
@@ -165,13 +166,13 @@ describe('Finding 2 — Telemetry excludes sensitive data', () => {
     process.env.LOG = 'false';
     await initialize();
     resetSessionManager();
-    vi.mocked(axios.post).mockClear();
+    vi.mocked(fetch).mockClear();
 
     const session = initializeSession();
     await session.logInit();
     await logToolCall('githubSearchCode', ['repo'], 'g', 'r', 'r');
 
-    expect(axios.post).not.toHaveBeenCalled();
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
   });
 });
 

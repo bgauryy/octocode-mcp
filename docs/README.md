@@ -23,6 +23,12 @@
 |------|-----|
 | Browse available skills | [skills/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/skills/README.md) |
 
+## GitHub Actions & CI
+
+| Need | Doc |
+|------|-----|
+| Use Octocode as AI PR reviewer in GitHub Actions | [GitHub Actions Setup](https://github.com/bgauryy/octocode-mcp/blob/main/docs/GITHUB_ACTIONS_SETUP.md) |
+
 ## RFCs
 
 | Need | Doc |
