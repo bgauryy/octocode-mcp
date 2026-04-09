@@ -33,7 +33,7 @@ import type {
   LspOutgoingCall,
   PackageSearchData,
   PackageSearchPackage,
-} from '../../src/scheme/outputTypes.js';
+} from '@octocodeai/octocode-core';
 import type {
   ContentResultData,
   ContentResult,

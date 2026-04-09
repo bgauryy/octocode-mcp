@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   FileContentQuerySchema,
   FileContentBulkQuerySchema,
-} from '../../src/tools/github_fetch_content/scheme.js';
+} from '@octocodeai/octocode-core';
 
 const TEST_ID = 'test:fetch-content';
 

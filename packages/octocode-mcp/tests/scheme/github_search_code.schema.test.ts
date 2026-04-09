@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GitHubCodeSearchQuerySchema } from '../../src/tools/github_search_code/scheme.js';
+import { GitHubCodeSearchQuerySchema } from '@octocodeai/octocode-core';
 
 describe('GitHubCodeSearchQuerySchema - Pagination', () => {
   // Base required fields for all tests

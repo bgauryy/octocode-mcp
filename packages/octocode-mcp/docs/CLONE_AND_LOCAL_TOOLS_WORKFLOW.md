@@ -222,10 +222,16 @@ Local tools validate all paths against allowed roots. Cloned repos are accessibl
 
 1. **Clone destination**: `~/.octocode/repos/...` is under the octocode home directory
 2. **PathValidator & ExecutionContextValidator**: Both automatically add `~/.octocode/` as an allowed root alongside the workspace directory
-3. **Workspace root resolution**: All tools use a unified `resolveWorkspaceRoot()` function (explicit parameter → `WORKSPACE_ROOT` env → config → `process.cwd()`)
-4. **Result**: Any `localPath` returned by `githubCloneRepo` or `githubGetFileContent` (directory mode) is automatically valid for all local + LSP tools
+3. **Workspace root resolution**: Local tools validate paths against allowed roots, and LSP tools automatically choose project context from the target file path. If a cloned file is inside `WORKSPACE_ROOT`, Octocode keeps that root; otherwise it walks up from the file to the nearest project marker (`package.json`, `tsconfig.json`, `.git`, `Cargo.toml`, `go.mod`, `pyproject.toml`, etc.)
+4. **Result**: Any `localPath` returned by `githubCloneRepo` or `githubGetFileContent` (directory mode) is automatically valid for all local + LSP tools, even when the cloned repo lives outside your current shell workspace
 
 No extra configuration is needed beyond enabling both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
+
+For TypeScript/JavaScript LSP:
+
+- Octocode tries its bundled `typescript-language-server` first.
+- If that bundled server is not available in your environment, install `typescript-language-server` + `typescript` on `PATH`, or set `OCTOCODE_TS_SERVER_PATH`.
+- LSP can analyze bundled/minified `.js` files, but semantic quality is usually much better on original source trees than on large generated artifacts.
 
 ---
 

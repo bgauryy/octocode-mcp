@@ -9,7 +9,7 @@ import {
   applyWorkflowMode,
   validateRipgrepQuery,
   type RipgrepQuery,
-} from '../../src/tools/local_ripgrep/scheme.js';
+} from '@octocodeai/octocode-core';
 
 describe('localSearchCode schema', () => {
   describe('RipgrepQuerySchema', () => {

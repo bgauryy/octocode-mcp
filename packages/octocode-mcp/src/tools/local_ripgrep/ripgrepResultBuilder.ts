@@ -1,12 +1,12 @@
 import { getHints } from '../../hints/index.js';
-import type { RipgrepQuery } from './scheme.js';
+import type { RipgrepQuery } from '@octocodeai/octocode-core';
 import type {
   SearchContentResult,
   SearchStats,
   RipgrepFileMatches,
 } from '../../utils/core/types.js';
 import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
-import { TOOL_NAMES } from '../toolMetadata/proxies.js';
+import { TOOL_NAMES } from '@octocodeai/octocode-core';
 import { promises as fs } from 'fs';
 
 /**

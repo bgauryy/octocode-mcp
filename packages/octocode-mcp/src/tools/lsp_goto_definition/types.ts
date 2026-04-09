@@ -9,7 +9,7 @@ import type {
   LspGotoDefinitionToolResult,
   LspRange,
   LspSymbolKind,
-} from '../../scheme/outputTypes.js';
+} from '@octocodeai/octocode-core';
 
 /**
  * Query parameters for LSP goto definition

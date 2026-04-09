@@ -8,7 +8,7 @@ import type {
   GitHubSearchPullRequestsData,
   GitHubSearchPullRequestsPagination,
   GitHubSearchPullRequestsToolResult,
-} from '../../scheme/outputTypes.js';
+} from '@octocodeai/octocode-core';
 
 /**
  * Query parameters for searching pull requests

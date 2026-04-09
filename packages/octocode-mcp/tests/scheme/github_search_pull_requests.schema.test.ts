@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GitHubPullRequestSearchQuerySchema } from '../../src/tools/github_search_pull_requests/scheme.js';
+import { GitHubPullRequestSearchQuerySchema } from '@octocodeai/octocode-core';
 
 const BASE_RESEARCH_FIELDS = {
   id: 'test:pr-search',

@@ -9,7 +9,7 @@ import {
 } from '../../utils/pagination/core.js';
 import { generatePaginationHints } from '../../utils/pagination/hints.js';
 import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
-import { TOOL_NAMES } from '../toolMetadata/names.js';
+import { TOOL_NAMES } from '@octocodeai/octocode-core';
 import {
   validateToolPath,
   createErrorResult,

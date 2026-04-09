@@ -9,7 +9,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-import { BulkCloneRepoSchema } from '../../src/tools/github_clone_repo/scheme.js';
+import { BulkCloneRepoSchema } from '@octocodeai/octocode-core';
 
 function parseSchema(overrides: Record<string, unknown>) {
   const base = {

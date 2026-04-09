@@ -7,7 +7,7 @@ import type {
   LocalFindFilesEntry,
   LocalFindFilesPagination,
   LocalFindFilesToolResult,
-} from '../../scheme/outputTypes.js';
+} from '@octocodeai/octocode-core';
 
 /**
  * Query parameters for finding local files
@@ -35,6 +35,7 @@ export interface FindFilesQuery {
   readable?: boolean;
   writable?: boolean;
   excludeDir?: string[];
+  sortBy?: 'modified' | 'size' | 'name' | 'path';
   limit?: number;
   details?: boolean;
   filesPerPage?: number;
@@ -42,7 +43,6 @@ export interface FindFilesQuery {
   charOffset?: number;
   charLength?: number;
   showFileLastModified?: boolean;
-  mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }

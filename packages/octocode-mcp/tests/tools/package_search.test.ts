@@ -8,7 +8,7 @@ import {
   beforeEach,
   afterEach,
 } from 'vitest';
-import { PackageSearchQuerySchema } from '../../src/tools/package_search/scheme.js';
+import { PackageSearchQuerySchema } from '@octocodeai/octocode-core';
 import type { ToolInvocationCallback } from '../../src/types.js';
 import {
   createMockMcpServer,

@@ -458,14 +458,14 @@ export function caller() {
   describe('Schema Exports', () => {
     it('should export BulkLSPCallHierarchySchema', async () => {
       const { BulkLSPCallHierarchySchema } =
-        await import('../../src/tools/lsp_call_hierarchy/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(BulkLSPCallHierarchySchema).toBeDefined();
     });
 
     it('should export LSP_CALL_HIERARCHY_DESCRIPTION', async () => {
       const { LSP_CALL_HIERARCHY_DESCRIPTION } =
-        await import('../../src/tools/lsp_call_hierarchy/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(LSP_CALL_HIERARCHY_DESCRIPTION).toBeDefined();
       expect(typeof LSP_CALL_HIERARCHY_DESCRIPTION).toBe('string');

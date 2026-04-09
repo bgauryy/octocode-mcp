@@ -9,7 +9,7 @@ import type {
   LocalSearchCodeMatchPagination,
   LocalSearchCodePagination,
   LocalSearchCodeToolResult,
-} from '../../scheme/outputTypes.js';
+} from '@octocodeai/octocode-core';
 
 /**
  * Query parameters for local code search via ripgrep
@@ -26,10 +26,13 @@ export interface RipgrepSearchQuery {
   caseSensitive?: boolean;
   wholeWord?: boolean;
   invertMatch?: boolean;
+  multiline?: boolean;
+  multilineDotall?: boolean;
   type?: string;
   include?: string[];
   exclude?: string[];
   excludeDir?: string[];
+  binaryFiles?: 'text' | 'without-match' | 'binary';
   noIgnore?: boolean;
   hidden?: boolean;
   followSymlinks?: boolean;
@@ -40,8 +43,6 @@ export interface RipgrepSearchQuery {
   contextLines?: number;
   beforeContext?: number;
   afterContext?: number;
-  lineNumbers?: boolean;
-  column?: boolean;
   maxFiles?: number;
   maxMatchesPerFile?: number;
   matchContentLength?: number;
@@ -51,9 +52,17 @@ export interface RipgrepSearchQuery {
   charOffset?: number;
   charLength?: number;
   includeStats?: boolean;
-  includeDistribution?: boolean;
   showFileLastModified?: boolean;
-  mainResearchGoal?: string;
+  threads?: number;
+  mmap?: boolean;
+  noUnicode?: boolean;
+  encoding?: string;
+  sort?: 'path' | 'modified' | 'accessed' | 'created';
+  sortReverse?: boolean;
+  noMessages?: boolean;
+  lineRegexp?: boolean;
+  passthru?: boolean;
+  debug?: boolean;
   researchGoal?: string;
   reasoning?: string;
 }

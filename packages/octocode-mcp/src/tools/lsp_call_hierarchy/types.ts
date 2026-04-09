@@ -8,7 +8,7 @@ import type {
   LspCallHierarchyToolResult,
   LspIncomingCall,
   LspOutgoingCall,
-} from '../../scheme/outputTypes.js';
+} from '@octocodeai/octocode-core';
 
 /**
  * Query parameters for LSP call hierarchy

@@ -18,7 +18,7 @@ import type {
   LSPPaginationInfo,
   ExactPosition,
 } from '../../lsp/types.js';
-import type { LSPFindReferencesQuery } from './scheme.js';
+import type { LSPFindReferencesQuery } from '@octocodeai/octocode-core';
 import type { SymbolKind } from '../../lsp/types.js';
 import { createClient } from '../../lsp/manager.js';
 import { getHints } from '../../hints/index.js';

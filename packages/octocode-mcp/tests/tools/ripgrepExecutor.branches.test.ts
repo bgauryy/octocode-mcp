@@ -9,7 +9,7 @@ import {
   executeGrepSearch,
   estimateDirectoryStats,
 } from '../../src/tools/local_ripgrep/ripgrepExecutor.js';
-import type { RipgrepQuery } from '../../src/tools/local_ripgrep/scheme.js';
+import type { RipgrepQuery } from '@octocodeai/octocode-core';
 import { safeExec } from '../../src/utils/exec/safe.js';
 import { validateToolPath } from '../../src/utils/file/toolHelpers.js';
 import { promises as fs } from 'fs';

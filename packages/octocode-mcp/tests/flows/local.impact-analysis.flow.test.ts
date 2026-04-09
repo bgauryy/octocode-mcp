@@ -11,7 +11,7 @@ import {
   LspCallHierarchyOutputSchema,
   LspFindReferencesDataSchema,
   LspFindReferencesOutputSchema,
-} from '../../src/scheme/outputSchemas.js';
+} from '@octocodeai/octocode-core';
 import { FLOW_CATALOG } from './catalog.js';
 import {
   createFlowHarness,

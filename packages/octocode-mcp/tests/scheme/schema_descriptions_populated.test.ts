@@ -378,33 +378,22 @@ describe('ALL tool schemas: every .describe() field is non-empty after metadata 
 
     zod = await import('zod/v4');
 
+    const coreSchemas = await import('@octocodeai/octocode-core');
     schemaModules = {
-      github_search_code:
-        await import('../../src/tools/github_search_code/scheme.js'),
-      github_fetch_content:
-        await import('../../src/tools/github_fetch_content/scheme.js'),
-      github_search_repos:
-        await import('../../src/tools/github_search_repos/scheme.js'),
-      github_search_pull_requests:
-        await import('../../src/tools/github_search_pull_requests/scheme.js'),
-      github_view_repo_structure:
-        await import('../../src/tools/github_view_repo_structure/scheme.js'),
-      github_clone_repo:
-        await import('../../src/tools/github_clone_repo/scheme.js'),
-      package_search: await import('../../src/tools/package_search/scheme.js'),
-      local_ripgrep: await import('../../src/tools/local_ripgrep/scheme.js'),
-      local_fetch_content:
-        await import('../../src/tools/local_fetch_content/scheme.js'),
-      local_find_files:
-        await import('../../src/tools/local_find_files/scheme.js'),
-      local_view_structure:
-        await import('../../src/tools/local_view_structure/scheme.js'),
-      lsp_goto_definition:
-        await import('../../src/tools/lsp_goto_definition/scheme.js'),
-      lsp_find_references:
-        await import('../../src/tools/lsp_find_references/scheme.js'),
-      lsp_call_hierarchy:
-        await import('../../src/tools/lsp_call_hierarchy/scheme.js'),
+      github_search_code: coreSchemas,
+      github_fetch_content: coreSchemas,
+      github_search_repos: coreSchemas,
+      github_search_pull_requests: coreSchemas,
+      github_view_repo_structure: coreSchemas,
+      github_clone_repo: coreSchemas,
+      package_search: coreSchemas,
+      local_ripgrep: coreSchemas,
+      local_fetch_content: coreSchemas,
+      local_find_files: coreSchemas,
+      local_view_structure: coreSchemas,
+      lsp_goto_definition: coreSchemas,
+      lsp_find_references: coreSchemas,
+      lsp_call_hierarchy: coreSchemas,
     };
   }, 15000);
 

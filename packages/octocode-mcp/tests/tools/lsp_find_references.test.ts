@@ -87,7 +87,7 @@ describe('LSP Find References Tool', () => {
       vi.resetModules();
 
       const { BulkLSPFindReferencesSchema } =
-        await import('../../src/tools/lsp_find_references/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(BulkLSPFindReferencesSchema).toBeDefined();
       const parsed = BulkLSPFindReferencesSchema.safeParse({
@@ -109,7 +109,7 @@ describe('LSP Find References Tool', () => {
       vi.resetModules();
 
       const { BulkLSPFindReferencesSchema } =
-        await import('../../src/tools/lsp_find_references/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       const parsed = BulkLSPFindReferencesSchema.safeParse({
         queries: [
@@ -198,7 +198,7 @@ describe('LSP Find References Tool', () => {
     it('should export tool description', async () => {
       // Don't reset modules - use the initialized metadata from setup.ts
       const { LSP_FIND_REFERENCES_DESCRIPTION } =
-        await import('../../src/tools/lsp_find_references/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(LSP_FIND_REFERENCES_DESCRIPTION).toBeDefined();
       expect(typeof LSP_FIND_REFERENCES_DESCRIPTION).toBe('string');

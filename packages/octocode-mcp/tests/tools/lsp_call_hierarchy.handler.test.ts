@@ -398,7 +398,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
   describe('Schema validation', () => {
     it('should export BulkLSPCallHierarchySchema', async () => {
       const { BulkLSPCallHierarchySchema } =
-        await import('../../src/tools/lsp_call_hierarchy/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(BulkLSPCallHierarchySchema).toBeDefined();
       const parsed = BulkLSPCallHierarchySchema.safeParse({
@@ -419,7 +419,7 @@ describe('LSP Call Hierarchy Handler Tests', () => {
 
     it('should export description', async () => {
       const { LSP_CALL_HIERARCHY_DESCRIPTION } =
-        await import('../../src/tools/lsp_call_hierarchy/scheme.js');
+        await import('@octocodeai/octocode-core');
 
       expect(typeof LSP_CALL_HIERARCHY_DESCRIPTION).toBe('string');
       // Description may be empty if tool not in remote metadata (local-only tool)

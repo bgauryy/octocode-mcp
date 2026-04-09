@@ -8,15 +8,15 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toMCPSchema } from '../../types/toolTypes.js';
-import { TOOL_NAMES } from '../toolMetadata/proxies.js';
+import { TOOL_NAMES } from '@octocodeai/octocode-core';
 import type { ToolInvocationCallback } from '../../types.js';
 import {
   BulkCloneRepoSchema,
   GITHUB_CLONE_REPO_DESCRIPTION,
-} from './scheme.js';
+} from '@octocodeai/octocode-core';
 import { executeCloneRepo } from './execution.js';
 import { withSecurityValidation } from '../../utils/securityBridge.js';
-import { GitHubCloneRepoOutputSchema } from '../../scheme/outputSchemas.js';
+import { GitHubCloneRepoOutputSchema } from '@octocodeai/octocode-core';
 import { invokeCallbackSafely } from '../utils.js';
 
 export function registerGitHubCloneRepoTool(

@@ -10,7 +10,7 @@ import type {
   LocalSearchCodeMatch,
   LocalSearchCodeToolResult,
   LocalViewStructureToolResult,
-} from '../../scheme/outputTypes.js';
+} from '@octocodeai/octocode-core';
 
 /**
  * Command execution result

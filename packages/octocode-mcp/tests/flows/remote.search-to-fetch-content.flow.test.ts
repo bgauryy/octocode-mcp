@@ -4,7 +4,7 @@ import {
   GitHubFetchContentOutputSchema,
   GitHubSearchCodeDataSchema,
   GitHubSearchCodeOutputSchema,
-} from '../../src/scheme/outputSchemas.js';
+} from '@octocodeai/octocode-core';
 import { registerTools } from '../../src/tools/toolsManager.js';
 import {
   createMockMcpServer,

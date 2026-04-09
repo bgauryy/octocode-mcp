@@ -6,7 +6,7 @@
 import type {
   LocalViewStructurePagination,
   LocalViewStructureToolResult,
-} from '../../scheme/outputTypes.js';
+} from '@octocodeai/octocode-core';
 
 /**
  * Query parameters for viewing local directory structure
@@ -33,7 +33,6 @@ export interface ViewStructureQuery {
   charOffset?: number;
   charLength?: number;
   showFileLastModified?: boolean;
-  mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }

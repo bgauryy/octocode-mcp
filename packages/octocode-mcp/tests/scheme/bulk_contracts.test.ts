@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { BulkCloneRepoSchema } from '../../src/tools/github_clone_repo/scheme.js';
-import { FileContentBulkQuerySchema } from '../../src/tools/github_fetch_content/scheme.js';
-import { GitHubCodeSearchBulkQuerySchema } from '../../src/tools/github_search_code/scheme.js';
-import { GitHubPullRequestSearchBulkQuerySchema } from '../../src/tools/github_search_pull_requests/scheme.js';
-import { GitHubReposSearchQuerySchema } from '../../src/tools/github_search_repos/scheme.js';
-import { GitHubViewRepoStructureBulkQuerySchema } from '../../src/tools/github_view_repo_structure/scheme.js';
-import { BulkFetchContentSchema } from '../../src/tools/local_fetch_content/scheme.js';
-import { BulkFindFilesSchema } from '../../src/tools/local_find_files/scheme.js';
-import { BulkRipgrepQuerySchema } from '../../src/tools/local_ripgrep/scheme.js';
-import { BulkViewStructureSchema } from '../../src/tools/local_view_structure/scheme.js';
-import { BulkLSPCallHierarchySchema } from '../../src/tools/lsp_call_hierarchy/scheme.js';
-import { BulkLSPFindReferencesSchema } from '../../src/tools/lsp_find_references/scheme.js';
-import { BulkLSPGotoDefinitionSchema } from '../../src/tools/lsp_goto_definition/scheme.js';
-import { PackageSearchBulkQuerySchema } from '../../src/tools/package_search/scheme.js';
+import { BulkCloneRepoSchema } from '@octocodeai/octocode-core';
+import { FileContentBulkQuerySchema } from '@octocodeai/octocode-core';
+import { GitHubCodeSearchBulkQuerySchema } from '@octocodeai/octocode-core';
+import { GitHubPullRequestSearchBulkQuerySchema } from '@octocodeai/octocode-core';
+import { GitHubReposSearchQuerySchema } from '@octocodeai/octocode-core';
+import { GitHubViewRepoStructureBulkQuerySchema } from '@octocodeai/octocode-core';
+import { BulkFetchContentSchema } from '@octocodeai/octocode-core';
+import { BulkFindFilesSchema } from '@octocodeai/octocode-core';
+import { BulkRipgrepQuerySchema } from '@octocodeai/octocode-core';
+import { BulkViewStructureSchema } from '@octocodeai/octocode-core';
+import { BulkLSPCallHierarchySchema } from '@octocodeai/octocode-core';
+import { BulkLSPFindReferencesSchema } from '@octocodeai/octocode-core';
+import { BulkLSPGotoDefinitionSchema } from '@octocodeai/octocode-core';
+import { PackageSearchBulkQuerySchema } from '@octocodeai/octocode-core';
 import {
   BulkToolOutputSchema,
   GitHubCloneRepoOutputSchema,
@@ -29,7 +29,7 @@ import {
   LspFindReferencesOutputSchema,
   LspGotoDefinitionOutputSchema,
   PackageSearchOutputSchema,
-} from '../../src/scheme/outputSchemas.js';
+} from '@octocodeai/octocode-core';
 
 describe('Bulk Tool Contracts', () => {
   it('bulk input schemas accept top-level response pagination controls', () => {

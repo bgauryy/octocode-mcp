@@ -1,6 +1,6 @@
 import { BaseCommandBuilder } from './BaseCommandBuilder.js';
 import { RESOURCE_LIMITS } from '../utils/core/constants.js';
-import type { RipgrepQuery } from '../tools/local_ripgrep/scheme.js';
+import type { RipgrepQuery } from '@octocodeai/octocode-core';
 
 export class RipgrepCommandBuilder extends BaseCommandBuilder {
   constructor() {

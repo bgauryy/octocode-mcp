@@ -1,5 +1,5 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { LSPCallHierarchyQuery } from './scheme.js';
+import type { LSPCallHierarchyQuery } from '@octocodeai/octocode-core';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import { processCallHierarchy } from './callHierarchy.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
@@ -28,6 +28,7 @@ export async function executeCallHierarchy(
       toolName: TOOL_NAME,
       responseCharOffset,
       responseCharLength,
+      minQueryTimeoutMs: 30_000,
     }
   );
 }

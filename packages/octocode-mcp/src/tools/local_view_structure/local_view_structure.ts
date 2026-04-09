@@ -5,7 +5,7 @@ import {
   getMissingCommandError,
 } from '../../utils/exec/commandAvailability.js';
 import { getHints } from '../../hints/index.js';
-import { TOOL_NAMES } from '../toolMetadata/proxies.js';
+import { TOOL_NAMES } from '@octocodeai/octocode-core';
 import {
   validateToolPath,
   createErrorResult,

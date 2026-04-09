@@ -5,13 +5,13 @@ import {
 } from '../../commands/GrepCommandBuilder.js';
 import { safeExec } from '../../utils/exec/safe.js';
 import { getLargeFileWorkflowHints } from '../../hints/dynamic.js';
-import { validateRipgrepQuery, type RipgrepQuery } from './scheme.js';
+import { validateRipgrepQuery, type RipgrepQuery } from '@octocodeai/octocode-core';
 import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
-import { TOOL_NAMES } from '../toolMetadata/proxies.js';
+import { TOOL_NAMES } from '@octocodeai/octocode-core';
 import type { SearchContentResult } from '../../utils/core/types.js';
 import { promises as fs } from 'fs';
 import { join } from 'path';

@@ -10,17 +10,18 @@ import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
-import { resolveWorkspaceRoot } from '@octocode/security/workspaceRoot';
 import { SymbolResolver, SymbolResolutionError } from '../../lsp/resolver.js';
 import { isLanguageServerAvailable } from '../../lsp/manager.js';
 import type { CallHierarchyResult } from '../../lsp/types.js';
-import type { LSPCallHierarchyQuery } from './scheme.js';
+import type { LSPCallHierarchyQuery } from '@octocodeai/octocode-core';
 import { ToolErrors } from '../../errors/errorFactories.js';
 import { callHierarchyWithLSP } from './callHierarchyLsp.js';
 import { callHierarchyWithPatternMatching } from './callHierarchyPatterns.js';
 import { applyOutputSizeLimit } from '../../utils/pagination/outputSizeLimit.js';
 import { serializeForPagination } from '../../utils/pagination/core.js';
 import { TOOL_NAME } from './constants.js';
+import { resolveWorkspaceRootForFile } from '../../lsp/workspaceRoot.js';
+import { applyQueryOutputPagination } from '../../utils/response/structuredPagination.js';
 
 /**
  * Process a single call hierarchy query
@@ -79,9 +80,9 @@ export async function processCallHierarchy(
       throw error;
     }
 
-    const workspaceRoot = resolveWorkspaceRoot();
+    const workspaceRoot = await resolveWorkspaceRootForFile(absolutePath);
 
-    if (await isLanguageServerAvailable(absolutePath)) {
+    if (await isLanguageServerAvailable(absolutePath, workspaceRoot)) {
       try {
         const result = await callHierarchyWithLSP(
           absolutePath,
@@ -99,6 +100,7 @@ export async function processCallHierarchy(
     const patternResult = await callHierarchyWithPatternMatching(
       query,
       absolutePath,
+      workspaceRoot,
       content,
       resolvedSymbol.foundAtLine,
       resolver
@@ -130,27 +132,41 @@ function applyCallHierarchyOutputLimit(
 
   if (!sizeLimitResult.wasLimited || !sizeLimitResult.pagination) return result;
 
-  const { pagination } = sizeLimitResult;
-
-  const limitedResult: CallHierarchyResult = {
-    ...result,
-    outputPagination: {
-      charOffset: pagination.charOffset!,
-      charLength: pagination.charLength!,
-      totalChars: pagination.totalChars!,
-      hasMore: pagination.hasMore,
-      currentPage: pagination.currentPage,
-      totalPages: pagination.totalPages,
+  const pagedQueryResult = applyQueryOutputPagination(
+    {
+      id: query.id ?? 'q1',
+      status: result.status,
+      data: result as unknown as Record<string, unknown>,
     },
-  };
+    {
+      charOffset: sizeLimitResult.pagination.charOffset,
+      charLength: sizeLimitResult.pagination.charLength,
+    },
+    TOOL_NAME
+  );
 
-  limitedResult.hints = [
-    ...(result.hints as string[]),
+  const pagedData =
+    pagedQueryResult.data as unknown as Partial<CallHierarchyResult>;
+
+  const combinedHints = [
+    ...((pagedData.hints as string[] | undefined) ?? []),
     ...sizeLimitResult.warnings,
     ...sizeLimitResult.paginationHints,
   ];
 
-  return limitedResult;
+  return {
+    ...result,
+    ...pagedData,
+    outputPagination: {
+      charOffset: sizeLimitResult.pagination.charOffset!,
+      charLength: sizeLimitResult.pagination.charLength!,
+      totalChars: sizeLimitResult.pagination.totalChars!,
+      hasMore: sizeLimitResult.pagination.hasMore,
+      currentPage: sizeLimitResult.pagination.currentPage,
+      totalPages: sizeLimitResult.pagination.totalPages,
+    },
+    hints: Array.from(new Set(combinedHints)),
+  };
 }
 
 export {

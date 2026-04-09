@@ -1,5 +1,5 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { PackageSearchQuery } from './scheme.js';
+import type { PackageSearchQuery } from '@octocodeai/octocode-core';
 import {
   searchPackage,
   checkNpmDeprecation,
@@ -16,7 +16,7 @@ import {
   createSuccessResult,
   createErrorResult,
 } from '../utils.js';
-import { TOOL_NAMES } from '../toolMetadata/proxies.js';
+import { TOOL_NAMES } from '@octocodeai/octocode-core';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 
 function isPackageSearchError(

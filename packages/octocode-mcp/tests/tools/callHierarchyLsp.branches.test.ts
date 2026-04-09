@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { LSPCallHierarchyQuery } from '../../src/tools/lsp_call_hierarchy/scheme.js';
+import type { LSPCallHierarchyQuery } from '@octocodeai/octocode-core';
 import {
   callHierarchyWithLSP,
   gatherIncomingCallsRecursive,

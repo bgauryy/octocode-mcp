@@ -1,4 +1,4 @@
-import type { RipgrepQuery } from './scheme.js';
+import type { RipgrepQuery } from '@octocodeai/octocode-core';
 import type {
   RipgrepFileMatches,
   SearchStats,

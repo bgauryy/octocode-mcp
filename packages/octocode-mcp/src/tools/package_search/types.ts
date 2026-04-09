@@ -6,7 +6,7 @@
 import type {
   PackageSearchData,
   PackageSearchPackage,
-} from '../../scheme/outputTypes.js';
+} from '@octocodeai/octocode-core';
 import type {
   MinimalPackageResult as CommonMinimalPackageResult,
   NpmPackageResult as CommonNpmPackageResult,

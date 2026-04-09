@@ -21,6 +21,8 @@ Or via config: `local.enabled=true`
 | **Bundled** | TypeScript (`.ts`, `.tsx`), JavaScript (`.js`, `.jsx`, `.mjs`, `.cjs`) |
 | **Requires Install** | Python, Go, Rust, Java, Kotlin, C/C++, C#, Ruby, PHP, Swift, Dart, Lua, Zig, Elixir, Scala, Haskell, OCaml, Clojure, Vue, Svelte, YAML, TOML, JSON, HTML, CSS, Bash, SQL, GraphQL, Terraform |
 
+For TypeScript/JavaScript, Octocode first tries its bundled `typescript-language-server` setup. If your environment does not include that bundled server, install `typescript-language-server` + `typescript` on `PATH`, or point `OCTOCODE_TS_SERVER_PATH` at the server binary explicitly.
+
 ### LSP Environment Variables
 
 Override language server paths:
@@ -86,6 +88,12 @@ localViewStructure(path=localPath)              → browse the tree
 localSearchCode(path=localPath, pattern="...")   → search code
 lspGotoDefinition(uri=localPath+"/src/file.ts") → semantic navigation
 ```
+
+For LSP tools, workspace selection is automatic:
+
+- If the target file lives inside `WORKSPACE_ROOT`, Octocode uses that configured workspace root.
+- If the target file is outside `WORKSPACE_ROOT`, Octocode walks up from the file and picks the nearest project root using markers such as `package.json`, `tsconfig.json`, `.git`, `Cargo.toml`, `go.mod`, or `pyproject.toml`.
+- If no marker is found, Octocode falls back to the file's own directory.
 
 > **Note:** `githubCloneRepo` and `githubGetFileContent` directory mode are **GitHub only** — they are not available when GitLab or Bitbucket is the active provider. Both require `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
 
@@ -353,8 +361,9 @@ MCP Client → Octocode MCP → Language Server (spawned)
 ```
 
 - **No IDE required** - Works standalone via spawned language servers
-- **TypeScript/JavaScript bundled** - Works out-of-box
+- **TypeScript/JavaScript bundled** - Works out-of-box in standard Octocode installs; otherwise set `OCTOCODE_TS_SERVER_PATH` or install the server on `PATH`
 - **30+ languages supported** - Python, Go, Rust, Java, etc. (requires server installation)
+- **Automatic project root selection** - Uses `WORKSPACE_ROOT` when the file is inside it, otherwise infers the nearest project root from the target file path
 
 ### `lspGotoDefinition`
 
@@ -437,7 +446,7 @@ MCP Client → Octocode MCP → Language Server (spawned)
 - **Symbol Name Length**: Limited to 255 characters
 - **Depth Parameter**: Capped at 3 to prevent resource exhaustion
 - **Path Redaction**: Paths are always redacted in errors for security
-- **Workspace Root Resolution**: Unified via `resolveWorkspaceRoot()` — explicit parameter → `WORKSPACE_ROOT` env → config file → `process.cwd()`
+- **Workspace Root Resolution**: LSP tools keep `WORKSPACE_ROOT` for files inside it, and otherwise infer the nearest project root from the target file path before spawning language servers or running fallback search
 
 > LSP tools work standalone - no IDE required. TypeScript/JavaScript bundled; other languages need server installation.
 
@@ -447,10 +456,12 @@ MCP Client → Octocode MCP → Language Server (spawned)
 
 | Problem | Solution |
 |---------|----------|
-| "LSP server not found" | Install server, verify in PATH, or set env var |
+| "LSP server not found" | Install the language server, verify it is on `PATH`, or set the matching `OCTOCODE_*_SERVER_PATH` env var. For TS/JS, install or point to `typescript-language-server` + `typescript` if the bundled server is unavailable. |
 | "Symbol not found" | Ensure `symbolName` is exact (case-sensitive), check `lineHint` is ±2 lines of actual position |
-| "Empty results" | Symbol may not exist at location, file may not be in workspace |
+| "Empty results" | Symbol may not exist at location, file may not be in the indexed project, or the file may be a generated/minified bundle with weak semantic structure |
 | "Timeout" | Use smaller `depth`, first request may be slow (server init) |
+| "File is outside WORKSPACE_ROOT" | No extra config is usually needed; Octocode infers the nearest project root from the target file. Only set `WORKSPACE_ROOT` when you want to force a wider project context for files already inside that tree. |
+| "Minified or bundled JS gives noisy results" | LSP can still run on large bundles, but quality is lower than original source. Prefer the source repo, a full clone, or unbundled package files when possible. |
 
 ---
 

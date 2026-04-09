@@ -7,7 +7,7 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { readFile } from 'fs/promises';
 import { dirname, resolve as resolvePath } from 'path';
 
-import type { LSPGotoDefinitionQuery } from './scheme.js';
+import type { LSPGotoDefinitionQuery } from '@octocodeai/octocode-core';
 import { SymbolResolver, SymbolResolutionError } from '../../lsp/resolver.js';
 import { createClient, isLanguageServerAvailable } from '../../lsp/manager.js';
 import type {
@@ -21,12 +21,12 @@ import {
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { getHints } from '../../hints/index.js';
-import { TOOL_NAMES } from '../toolMetadata/proxies.js';
-import { resolveWorkspaceRoot } from '@octocode/security/workspaceRoot';
+import { TOOL_NAMES } from '@octocodeai/octocode-core';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { applyOutputSizeLimit } from '../../utils/pagination/outputSizeLimit.js';
 import { serializeForPagination } from '../../utils/pagination/core.js';
 import { safeReadFile } from '../../lsp/validation.js';
+import { resolveWorkspaceRootForFile } from '../../lsp/workspaceRoot.js';
 import { executeWithToolBoundary } from '../executionGuard.js';
 
 export const TOOL_NAME = TOOL_NAMES.LSP_GOTO_DEFINITION;
@@ -53,6 +53,7 @@ export async function executeGotoDefinition(
       toolName: TOOL_NAME,
       responseCharOffset,
       responseCharLength,
+      minQueryTimeoutMs: 30_000,
     }
   );
 }
@@ -124,9 +125,9 @@ async function gotoDefinition(
       throw error;
     }
 
-    const workspaceRoot = resolveWorkspaceRoot();
+    const workspaceRoot = await resolveWorkspaceRootForFile(absolutePath);
 
-    if (await isLanguageServerAvailable(absolutePath)) {
+    if (await isLanguageServerAvailable(absolutePath, workspaceRoot)) {
       try {
         const result = await gotoDefinitionWithLSP(
           absolutePath,
@@ -178,6 +179,23 @@ export function isImportOrReExport(lineContent: string): boolean {
   return /^(?:import|export)\s+.*\bfrom\b\s+['"]/.test(trimmed);
 }
 
+/**
+ * Detect whether a line contains a dynamic import expression (`import('...')`).
+ *
+ * Covers patterns:
+ * - const { foo } = await import('./module')
+ * - import('./module').then(...)
+ * - const mod = import("./module")
+ *
+ * Uses a negative lookbehind to avoid matching identifiers that end with
+ * "import" (e.g. `reimport`, `importModule`).
+ *
+ * @internal Exported for testing
+ */
+export function isDynamicImport(lineContent: string): boolean {
+  return /(?<![.\w])import\s*\(\s*['"]/.test(lineContent);
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -223,6 +241,34 @@ async function gotoDefinitionWithLSP(
     let locations = await client.gotoDefinition(filePath, _position);
 
     if (!locations || locations.length === 0) {
+      // Before giving up, check if the position is on a dynamic import line.
+      // LSP often can't resolve destructured bindings from dynamic imports.
+      const lines = _content.split(/\r?\n/);
+      const targetLine = lines[_position.line];
+      if (targetLine && isDynamicImport(targetLine)) {
+        const manualLocation = await resolveDefinitionViaModulePath(
+          targetLine,
+          filePath,
+          query.symbolName
+        );
+        if (manualLocation) {
+          return applyGotoDefinitionOutputLimit(
+            {
+              status: 'hasResults',
+              locations: [manualLocation],
+              resolvedPosition: _position,
+              searchRadius: 5,
+              hints: [
+                ...getHints(TOOL_NAME, 'hasResults'),
+                'Resolved via dynamic import module path (.js → .ts)',
+                'Use lspFindReferences to find all usages',
+              ],
+            },
+            query
+          );
+        }
+      }
+
       return {
         status: 'empty',
         error: 'No definition found by language server',
@@ -248,7 +294,10 @@ async function gotoDefinitionWithLSP(
           const lines = locContent.split(/\r?\n/);
           const targetLine = lines[loc.range.start.line];
 
-          if (targetLine && isImportOrReExport(targetLine)) {
+          if (
+            targetLine &&
+            (isImportOrReExport(targetLine) || isDynamicImport(targetLine))
+          ) {
             const importPosition: ExactPosition = {
               line: loc.range.start.line,
               character: resolveImportSymbolCharacter(
@@ -376,10 +425,17 @@ async function resolveDefinitionViaModulePath(
   sourceFileUri: string,
   symbolName: string
 ): Promise<CodeSnippet | null> {
+  // Try static import: from '...'
   const fromMatch = /\bfrom\s+['"](.+?)['"]\s*;?\s*$/.exec(importLine);
-  if (!fromMatch?.[1]) return null;
+  let modulePath: string | null = fromMatch?.[1] ?? null;
 
-  const modulePath = fromMatch[1];
+  // Try dynamic import: import('...')
+  if (!modulePath) {
+    const dynamicMatch = /\bimport\s*\(\s*['"](.+?)['"]\s*\)/.exec(importLine);
+    modulePath = dynamicMatch?.[1] ?? null;
+  }
+
+  if (!modulePath) return null;
   if (!modulePath.startsWith('.')) return null;
 
   const sourceDir = dirname(sourceFileUri);

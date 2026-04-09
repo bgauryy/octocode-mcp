@@ -1,42 +1,43 @@
 /**
  * Public API — Zod schemas for tool input validation.
+ * All schemas are now centralized in @octocodeai/octocode-core.
  */
 
 // --- GitHub Tool Schemas (Single Query) ---
-export { GitHubCodeSearchQuerySchema } from '../tools/github_search_code/scheme.js';
-export { GitHubViewRepoStructureQuerySchema } from '../tools/github_view_repo_structure/scheme.js';
-export { GitHubReposSearchSingleQuerySchema } from '../tools/github_search_repos/scheme.js';
-export { GitHubPullRequestSearchQuerySchema } from '../tools/github_search_pull_requests/scheme.js';
-export { FileContentQuerySchema } from '../tools/github_fetch_content/scheme.js';
+export { GitHubCodeSearchQuerySchema } from '@octocodeai/octocode-core';
+export { GitHubViewRepoStructureQuerySchema } from '@octocodeai/octocode-core';
+export { GitHubReposSearchSingleQuerySchema } from '@octocodeai/octocode-core';
+export { GitHubPullRequestSearchQuerySchema } from '@octocodeai/octocode-core';
+export { FileContentQuerySchema } from '@octocodeai/octocode-core';
 
 // --- GitHub Tool Schemas (Bulk Query) ---
-export { GitHubCodeSearchBulkQuerySchema } from '../tools/github_search_code/scheme.js';
-export { GitHubViewRepoStructureBulkQuerySchema } from '../tools/github_view_repo_structure/scheme.js';
-export { GitHubReposSearchQuerySchema } from '../tools/github_search_repos/scheme.js';
-export { GitHubPullRequestSearchBulkQuerySchema } from '../tools/github_search_pull_requests/scheme.js';
-export { FileContentBulkQuerySchema } from '../tools/github_fetch_content/scheme.js';
+export { GitHubCodeSearchBulkQuerySchema } from '@octocodeai/octocode-core';
+export { GitHubViewRepoStructureBulkQuerySchema } from '@octocodeai/octocode-core';
+export { GitHubReposSearchQuerySchema } from '@octocodeai/octocode-core';
+export { GitHubPullRequestSearchBulkQuerySchema } from '@octocodeai/octocode-core';
+export { FileContentBulkQuerySchema } from '@octocodeai/octocode-core';
 
 // --- Local Tool Schemas (Single Query) ---
-export { RipgrepQuerySchema } from '../tools/local_ripgrep/scheme.js';
-export { FetchContentQuerySchema } from '../tools/local_fetch_content/scheme.js';
-export { FindFilesQuerySchema } from '../tools/local_find_files/scheme.js';
-export { ViewStructureQuerySchema } from '../tools/local_view_structure/scheme.js';
+export { RipgrepQuerySchema } from '@octocodeai/octocode-core';
+export { FetchContentQuerySchema } from '@octocodeai/octocode-core';
+export { FindFilesQuerySchema } from '@octocodeai/octocode-core';
+export { ViewStructureQuerySchema } from '@octocodeai/octocode-core';
 
 // --- Local Tool Schemas (Bulk Query) ---
-export { BulkRipgrepQuerySchema } from '../tools/local_ripgrep/scheme.js';
-export { BulkFetchContentSchema } from '../tools/local_fetch_content/scheme.js';
-export { BulkFindFilesSchema } from '../tools/local_find_files/scheme.js';
-export { BulkViewStructureSchema } from '../tools/local_view_structure/scheme.js';
+export { BulkRipgrepQuerySchema } from '@octocodeai/octocode-core';
+export { BulkFetchContentSchema } from '@octocodeai/octocode-core';
+export { BulkFindFilesSchema } from '@octocodeai/octocode-core';
+export { BulkViewStructureSchema } from '@octocodeai/octocode-core';
 
 // --- LSP Tool Schemas (Single Query) ---
-export { LSPGotoDefinitionQuerySchema } from '../tools/lsp_goto_definition/scheme.js';
-export { LSPFindReferencesQuerySchema } from '../tools/lsp_find_references/scheme.js';
-export { LSPCallHierarchyQuerySchema } from '../tools/lsp_call_hierarchy/scheme.js';
+export { LSPGotoDefinitionQuerySchema } from '@octocodeai/octocode-core';
+export { LSPFindReferencesQuerySchema } from '@octocodeai/octocode-core';
+export { LSPCallHierarchyQuerySchema } from '@octocodeai/octocode-core';
 
 // --- LSP Tool Schemas (Bulk Query) ---
-export { BulkLSPGotoDefinitionSchema } from '../tools/lsp_goto_definition/scheme.js';
-export { BulkLSPFindReferencesSchema } from '../tools/lsp_find_references/scheme.js';
-export { BulkLSPCallHierarchySchema } from '../tools/lsp_call_hierarchy/scheme.js';
+export { BulkLSPGotoDefinitionSchema } from '@octocodeai/octocode-core';
+export { BulkLSPFindReferencesSchema } from '@octocodeai/octocode-core';
+export { BulkLSPCallHierarchySchema } from '@octocodeai/octocode-core';
 
 // --- Package Search Schemas ---
 export {
@@ -44,11 +45,11 @@ export {
   NpmPackageQuerySchema,
   PythonPackageQuerySchema,
   PackageSearchBulkQuerySchema,
-} from '../tools/package_search/scheme.js';
+} from '@octocodeai/octocode-core';
 
 // --- Base Schemas & Schema Utilities ---
 export {
   BaseQuerySchema,
   BaseQuerySchemaLocal,
   createBulkQuerySchema,
-} from '../scheme/baseSchema.js';
+} from '@octocodeai/octocode-core';

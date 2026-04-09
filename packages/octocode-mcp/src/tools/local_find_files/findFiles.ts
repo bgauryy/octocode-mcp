@@ -23,7 +23,7 @@ import type {
 } from '../../utils/core/types.js';
 import fs from 'fs';
 import { ToolErrors } from '../../errors/errorFactories.js';
-import { TOOL_NAMES } from '../toolMetadata/proxies.js';
+import { TOOL_NAMES } from '@octocodeai/octocode-core';
 
 export async function findFiles(
   query: FindFilesQuery

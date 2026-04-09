@@ -902,23 +902,16 @@ function pageToolDataValue(
       ]);
       break;
     case TOOL_NAMES.LSP_CALL_HIERARCHY:
-      if (data.outputPagination) {
-        return {
-          value: data,
-          actualOffset: 0,
-          pageEnd: serialize(data).length,
-          totalChars: serialize(data).length,
-          paginated: false,
-        };
-      }
       page = paginateConfiguredObjectValue(data, request, [
         {
           field: 'incomingCalls',
           kind: 'array',
+          itemPaginator: paginateFallbackValue,
         },
         {
           field: 'outgoingCalls',
           kind: 'array',
+          itemPaginator: paginateFallbackValue,
         },
       ]);
       break;

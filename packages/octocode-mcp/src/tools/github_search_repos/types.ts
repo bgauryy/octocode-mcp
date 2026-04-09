@@ -6,7 +6,7 @@
 import type {
   GitHubRepositoryOutput,
   GitHubSearchRepositoriesData,
-} from '../../scheme/outputTypes.js';
+} from '@octocodeai/octocode-core';
 
 /**
  * Query parameters for searching GitHub repositories

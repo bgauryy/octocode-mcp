@@ -87,7 +87,7 @@ describe('toolMetadata/schemaHelpers', () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { GITHUB_FETCH_CONTENT } =
-        await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       _resetMetadataState();
       await initializeToolMetadata();
 
@@ -100,7 +100,7 @@ describe('toolMetadata/schemaHelpers', () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { GITHUB_FETCH_CONTENT } =
-        await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       _resetMetadataState();
       await initializeToolMetadata();
 
@@ -117,7 +117,7 @@ describe('toolMetadata/schemaHelpers', () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { GITHUB_SEARCH_CODE } =
-        await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       _resetMetadataState();
       await initializeToolMetadata();
 
@@ -133,7 +133,7 @@ describe('toolMetadata/schemaHelpers', () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { GITHUB_SEARCH_REPOS } =
-        await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       _resetMetadataState();
       await initializeToolMetadata();
 
@@ -147,7 +147,7 @@ describe('toolMetadata/schemaHelpers', () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { LOCAL_RIPGREP } =
-        await import('../../../src/tools/toolMetadata/localSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       _resetMetadataState();
       await initializeToolMetadata();
 
@@ -161,7 +161,7 @@ describe('toolMetadata/schemaHelpers', () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { LSP_GOTO_DEFINITION } =
-        await import('../../../src/tools/toolMetadata/lspSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       _resetMetadataState();
       await initializeToolMetadata();
 
@@ -176,7 +176,7 @@ describe('toolMetadata/schemaHelpers', () => {
       const { _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { GITHUB_FETCH_CONTENT } =
-        await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       _resetMetadataState();
 
       expect(GITHUB_FETCH_CONTENT.scope.owner).toBe('');
@@ -188,7 +188,7 @@ describe('toolMetadata/schemaHelpers', () => {
       const { initializeToolMetadata, _resetMetadataState } =
         await import('../../../src/tools/toolMetadata/state.js');
       const { GITHUB_SEARCH_CODE } =
-        await import('../../../src/tools/toolMetadata/githubSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       _resetMetadataState();
       await initializeToolMetadata();
 

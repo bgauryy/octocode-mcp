@@ -41,13 +41,10 @@ export {
   GITHUB_SEARCH_PULL_REQUESTS,
   GITHUB_VIEW_REPO_STRUCTURE,
   PACKAGE_SEARCH,
-} from '../tools/toolMetadata/githubSchemaHelpers.js';
-
-export {
   LOCAL_RIPGREP,
   LOCAL_FETCH_CONTENT,
   LOCAL_FIND_FILES,
   LOCAL_VIEW_STRUCTURE,
-} from '../tools/toolMetadata/localSchemaHelpers.js';
+} from '@octocodeai/octocode-core';
 
 export type { ToolName } from '../tools/toolMetadata/types.js';

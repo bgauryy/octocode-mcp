@@ -2,10 +2,10 @@ import {
   checkCommandAvailability,
   getMissingCommandError,
 } from '../../utils/exec/commandAvailability.js';
-import { applyWorkflowMode, type RipgrepQuery } from './scheme.js';
+import { applyWorkflowMode, type RipgrepQuery } from '@octocodeai/octocode-core';
 import { createErrorResult } from '../../utils/file/toolHelpers.js';
 import { LOCAL_TOOL_ERROR_CODES } from '../../errors/localToolErrors.js';
-import { TOOL_NAMES } from '../toolMetadata/proxies.js';
+import { TOOL_NAMES } from '@octocodeai/octocode-core';
 import type { SearchContentResult } from '../../utils/core/types.js';
 import { ToolErrors } from '../../errors/errorFactories.js';
 import {

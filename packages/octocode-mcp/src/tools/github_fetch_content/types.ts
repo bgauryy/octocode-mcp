@@ -8,7 +8,7 @@ import type {
   GitHubDirectoryFileEntry,
   GitHubFetchContentData,
   GitHubFetchContentToolResult,
-} from '../../scheme/outputTypes.js';
+} from '@octocodeai/octocode-core';
 
 /**
  * Content fetch type: file (default) or directory.

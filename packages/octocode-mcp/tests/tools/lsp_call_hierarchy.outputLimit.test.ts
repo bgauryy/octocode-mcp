@@ -195,6 +195,7 @@ describe('lspCallHierarchy output size limits', () => {
       expect(firstResult.outputPagination.charOffset).toBe(0);
       expect(firstResult.outputPagination.totalChars).toBeGreaterThan(2000);
       expect(firstResult.outputPagination.hasMore).toBeDefined();
+      expect(firstResult.incomingCalls.length).toBeLessThan(100);
     });
 
     it('should NOT add outputPagination when output is small', async () => {
@@ -276,6 +277,7 @@ describe('lspCallHierarchy output size limits', () => {
       expect(firstResult.outputPagination).toBeDefined();
       expect(firstResult.outputPagination.charLength).toBeLessThanOrEqual(1000);
       expect(firstResult.outputPagination.charOffset).toBe(0);
+      expect(firstResult.incomingCalls.length).toBeLessThan(50);
     });
 
     it('should apply charOffset for next page navigation', async () => {
@@ -306,6 +308,125 @@ describe('lspCallHierarchy output size limits', () => {
       expect(firstResult.status).toBe('hasResults');
       expect(firstResult.outputPagination).toBeDefined();
       expect(firstResult.outputPagination.charOffset).toBe(500);
+      expect(firstResult.incomingCalls.length).toBeLessThan(50);
+    });
+  });
+
+  describe('page out-of-range behavior', () => {
+    it('should return empty with pagination metadata when LSP page exceeds range', async () => {
+      const incoming = createLargeIncomingCalls(3);
+      mockLSPClient.getIncomingCalls.mockResolvedValue(incoming);
+
+      const result = await toolHandler({
+        queries: [
+          {
+            uri: '/workspace/file.ts',
+            symbolName: 'targetFunction',
+            lineHint: 6,
+            direction: 'incoming',
+            callsPerPage: 2,
+            page: 10,
+            contextLines: 0,
+            researchGoal: 'test',
+            reasoning: 'test',
+            mainResearchGoal: 'test',
+          },
+        ],
+      });
+
+      const results = JSON.parse(result.content[0]!.text);
+      const firstResult = results[0];
+
+      expect(firstResult.status).toBe('empty');
+      expect(firstResult.pagination).toEqual(
+        expect.objectContaining({
+          currentPage: 10,
+          totalPages: 2,
+          totalResults: 3,
+          hasMore: false,
+          resultsPerPage: 2,
+        })
+      );
+      expect(
+        firstResult.hints.some((h: string) =>
+          h.includes('outside available range')
+        )
+      ).toBe(true);
+    });
+
+    it('should return empty with pagination metadata when pattern page exceeds range', async () => {
+      (managerModule.isLanguageServerAvailable as Mock).mockResolvedValue(
+        false
+      );
+      (checkCommandAvailability as Mock).mockResolvedValue({
+        available: true,
+        command: 'rg',
+      });
+      (safeExec as Mock).mockResolvedValue({
+        success: true,
+        code: 0,
+        stderr: '',
+        stdout: [
+          JSON.stringify({
+            type: 'match',
+            data: {
+              path: { text: '/workspace/src/callerA.ts' },
+              line_number: 11,
+              lines: { text: 'targetFunction()\n' },
+              submatches: [
+                { start: 0, end: 14, match: { text: 'targetFunction' } },
+              ],
+            },
+          }),
+          JSON.stringify({
+            type: 'match',
+            data: {
+              path: { text: '/workspace/src/callerB.ts' },
+              line_number: 22,
+              lines: { text: 'targetFunction()\n' },
+              submatches: [
+                { start: 0, end: 14, match: { text: 'targetFunction' } },
+              ],
+            },
+          }),
+        ].join('\n'),
+      });
+
+      const result = await toolHandler({
+        queries: [
+          {
+            uri: '/workspace/file.ts',
+            symbolName: 'targetFunction',
+            lineHint: 6,
+            direction: 'incoming',
+            callsPerPage: 1,
+            page: 9,
+            contextLines: 0,
+            researchGoal: 'test',
+            reasoning: 'test',
+            mainResearchGoal: 'test',
+          },
+        ],
+      });
+
+      const results = JSON.parse(result.content[0]!.text);
+      const firstResult = results[0];
+
+      expect(firstResult.status).toBe('empty');
+      expect(firstResult.pagination).toEqual(
+        expect.objectContaining({
+          currentPage: 9,
+          totalPages: 2,
+          totalResults: 2,
+          hasMore: false,
+          resultsPerPage: 1,
+        })
+      );
+      expect(
+        firstResult.hints.some((h: string) =>
+          h.includes('outside available range')
+        )
+      ).toBe(true);
     });
   });
 

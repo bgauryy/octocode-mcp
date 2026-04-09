@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LOCAL_TOOL_ERROR_CODES } from '../../src/errors/localToolErrors.js';
 import { fetchContent } from '../../src/tools/local_fetch_content/fetchContent.js';
-import { FetchContentQuerySchema } from '../../src/tools/local_fetch_content/scheme.js';
+import { FetchContentQuerySchema } from '@octocodeai/octocode-core';
 import * as pathValidator from '@octocode/security/pathValidator';
 import * as fs from 'fs/promises';
 

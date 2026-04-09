@@ -3,11 +3,11 @@ import { toMCPSchema } from '../../types/toolTypes.js';
 import {
   BulkLSPCallHierarchySchema,
   LSP_CALL_HIERARCHY_DESCRIPTION,
-} from './scheme.js';
+} from '@octocodeai/octocode-core';
 import { executeCallHierarchy } from './execution.js';
 import { withBasicSecurityValidation } from '../../utils/securityBridge.js';
-import { TOOL_NAMES } from '../toolMetadata/proxies.js';
-import { LspCallHierarchyOutputSchema } from '../../scheme/outputSchemas.js';
+import { TOOL_NAMES } from '@octocodeai/octocode-core';
+import { LspCallHierarchyOutputSchema } from '@octocodeai/octocode-core';
 
 /**
  * Register the LSP call hierarchy tool with the MCP server.

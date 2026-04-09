@@ -3,7 +3,7 @@
  * Extracted from repoStructure.ts.
  */
 import type { GitHubViewRepoStructureQuery } from '../tools/github_view_repo_structure/types.js';
-import type { GitHubRepositoryStructureResult } from '../tools/github_view_repo_structure/scheme.js';
+import type { GitHubRepositoryStructureResult } from '../tools/github_view_repo_structure/types.js';
 import { GITHUB_STRUCTURE_DEFAULTS as STRUCTURE_DEFAULTS } from '../tools/github_view_repo_structure/constants.js';
 import { generateStructurePaginationHints } from '../utils/pagination/hints.js';
 

@@ -617,7 +617,7 @@ describe('toolMetadata', () => {
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
       const { GITHUB_FETCH_CONTENT } =
-        await import('../../src/tools/toolMetadata/githubSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       await initializeToolMetadata();
 
       expect(typeof GITHUB_FETCH_CONTENT.scope.owner).toBe('string');
@@ -629,7 +629,7 @@ describe('toolMetadata', () => {
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
       const { GITHUB_SEARCH_CODE } =
-        await import('../../src/tools/toolMetadata/githubSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       await initializeToolMetadata();
 
       expect(typeof GITHUB_SEARCH_CODE.search.keywordsToSearch).toBe('string');
@@ -639,7 +639,7 @@ describe('toolMetadata', () => {
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
       const { GITHUB_SEARCH_REPOS } =
-        await import('../../src/tools/toolMetadata/githubSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       await initializeToolMetadata();
 
       // Access properties to trigger proxy
@@ -651,7 +651,7 @@ describe('toolMetadata', () => {
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
       const { GITHUB_SEARCH_PULL_REQUESTS } =
-        await import('../../src/tools/toolMetadata/githubSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       await initializeToolMetadata();
 
       const searchProps = GITHUB_SEARCH_PULL_REQUESTS.search;
@@ -662,7 +662,7 @@ describe('toolMetadata', () => {
       const { initializeToolMetadata } =
         await import('../../src/tools/toolMetadata/state.js');
       const { GITHUB_VIEW_REPO_STRUCTURE } =
-        await import('../../src/tools/toolMetadata/githubSchemaHelpers.js');
+        await import('@octocodeai/octocode-core');
       await initializeToolMetadata();
 
       const scopeProps = GITHUB_VIEW_REPO_STRUCTURE.scope;

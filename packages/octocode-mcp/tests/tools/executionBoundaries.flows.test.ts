@@ -18,7 +18,7 @@ vi.mock('../../src/tools/local_fetch_content/fetchContent.js', () => ({
   fetchContent: mocks.fetchContent,
 }));
 
-vi.mock('../../src/tools/local_fetch_content/scheme.js', () => ({
+vi.mock('@octocodeai/octocode-core', () => ({
   FetchContentQuerySchema: {
     safeParse: vi.fn().mockReturnValue({ success: true }),
   },
@@ -28,7 +28,7 @@ vi.mock('../../src/tools/local_ripgrep/searchContentRipgrep.js', () => ({
   searchContentRipgrep: mocks.searchContentRipgrep,
 }));
 
-vi.mock('../../src/tools/local_ripgrep/scheme.js', () => ({
+vi.mock('@octocodeai/octocode-core', () => ({
   RipgrepQuerySchema: {
     safeParse: vi.fn().mockReturnValue({ success: true }),
   },

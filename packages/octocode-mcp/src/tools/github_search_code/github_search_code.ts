@@ -1,8 +1,8 @@
 import type { GitHubCodeSearchQuery } from './types.js';
-import { TOOL_NAMES } from '../toolMetadata/proxies.js';
-import { GitHubCodeSearchBulkQuerySchema } from './scheme.js';
+import { TOOL_NAMES } from '@octocodeai/octocode-core';
+import { GitHubCodeSearchBulkQuerySchema } from '@octocodeai/octocode-core';
 import { searchMultipleGitHubCode } from './execution.js';
-import { GitHubSearchCodeOutputSchema } from '../../scheme/outputSchemas.js';
+import { GitHubSearchCodeOutputSchema } from '@octocodeai/octocode-core';
 import { createRemoteToolRegistration } from '../registerRemoteTool.js';
 
 export const registerGitHubSearchCodeTool =

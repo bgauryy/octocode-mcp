@@ -7,7 +7,7 @@ import type {
   LspFindReferencesPagination,
   LspFindReferencesToolResult,
   LspReferenceLocation,
-} from '../../scheme/outputTypes.js';
+} from '@octocodeai/octocode-core';
 
 /**
  * Query parameters for LSP find references

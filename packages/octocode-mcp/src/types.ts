@@ -106,6 +106,13 @@ export interface BulkResponseConfig {
    * @default 3
    */
   concurrency?: number;
+  /**
+   * Minimum per-query timeout in milliseconds.
+   * Overrides the computed fair-share timeout when it would be lower.
+   * Useful for expensive operations (e.g. LSP cold-start) that need
+   * a guaranteed minimum regardless of query count.
+   */
+  minQueryTimeoutMs?: number;
 }
 
 /** Result of a promise with error isolation */

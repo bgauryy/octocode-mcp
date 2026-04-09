@@ -14,7 +14,7 @@ import type {
   FindFilesResult,
   FetchContentResult,
 } from '../../src/utils/core/types.js';
-import { RipgrepQuerySchema } from '../../src/tools/local_ripgrep/scheme.js';
+import { RipgrepQuerySchema } from '@octocodeai/octocode-core';
 import path from 'path';
 
 const NODE_MODULES_PATH = path.resolve(process.cwd(), 'node_modules');

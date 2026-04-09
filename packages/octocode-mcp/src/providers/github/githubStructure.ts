@@ -16,7 +16,7 @@ import type {
 import { viewGitHubRepositoryStructureAPI } from '../../github/repoStructure.js';
 
 import type { GitHubViewRepoStructureQuery } from '../../tools/github_view_repo_structure/types.js';
-import type { GitHubRepositoryStructureResult } from '../../tools/github_view_repo_structure/scheme.js';
+import type { GitHubRepositoryStructureResult } from '../../tools/github_view_repo_structure/types.js';
 
 import { parseGitHubProjectId } from './utils.js';
 export { parseGitHubProjectId } from './utils.js';

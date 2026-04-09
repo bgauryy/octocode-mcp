@@ -1,9 +1,9 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { FetchContentQuery } from '../../utils/core/types.js';
-import { TOOL_NAMES } from '../toolMetadata/names.js';
+import { TOOL_NAMES } from '@octocodeai/octocode-core';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import { fetchContent } from './fetchContent.js';
-import { FetchContentQuerySchema } from './scheme.js';
+import { FetchContentQuerySchema } from '@octocodeai/octocode-core';
 import { createErrorResult } from '../utils.js';
 import { executeWithToolBoundary } from '../executionGuard.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';

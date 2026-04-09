@@ -3,7 +3,7 @@ import type { GitHubReposSearchQuery, SimplifiedRepository } from './types.js';
 import {
   TOOL_NAMES,
   getDynamicHints as getMetadataDynamicHints,
-} from '../toolMetadata/proxies.js';
+} from '@octocodeai/octocode-core';
 import { executeBulkOperation } from '../../utils/response/bulk.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import {

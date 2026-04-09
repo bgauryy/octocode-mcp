@@ -26,7 +26,7 @@ import {
   applyWorkflowMode,
   validateRipgrepQuery,
   type RipgrepQuery,
-} from '../../src/tools/local_ripgrep/scheme.js';
+} from '@octocodeai/octocode-core';
 
 // Helper to create valid queries (includes required researchGoal/reasoning)
 const createQuery = (

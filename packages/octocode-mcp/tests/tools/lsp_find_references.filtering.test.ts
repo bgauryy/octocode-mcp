@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { LSPFindReferencesQuery } from '../../src/tools/lsp_find_references/scheme.js';
+import type { LSPFindReferencesQuery } from '@octocodeai/octocode-core';
 
 describe('File Pattern Filtering - Unit Tests', () => {
   describe('matchesFilePatterns', () => {

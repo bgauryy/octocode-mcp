@@ -6,7 +6,7 @@
 import type {
   LocalGetFileContentPagination,
   LocalGetFileContentToolResult,
-} from '../../scheme/outputTypes.js';
+} from '@octocodeai/octocode-core';
 
 /**
  * Query parameters for fetching local file content
@@ -23,7 +23,6 @@ export interface FetchContentQuery {
   endLine?: number;
   charOffset?: number;
   charLength?: number;
-  mainResearchGoal?: string;
   researchGoal?: string;
   reasoning?: string;
 }

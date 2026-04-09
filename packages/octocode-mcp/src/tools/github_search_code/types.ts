@@ -3,7 +3,7 @@
  * @module tools/github_search_code/types
  */
 
-import type { GitHubSearchCodeData } from '../../scheme/outputTypes.js';
+import type { GitHubSearchCodeData } from '@octocodeai/octocode-core';
 
 /**
  * Query parameters for GitHub code search
