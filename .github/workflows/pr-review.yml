@@ -221,9 +221,15 @@ jobs:
         run: |
           gh pr view "$PR_NUMBER" \
             --repo "$PR_REPOSITORY" \
-            --json headRefOid,headRepository,headRepositoryOwner \
-            --jq '"repository=\(.headRepositoryOwner.login)/\(.headRepository.name)\nref=\(.headRefOid)"' \
+            --json headRefOid,headRepository,headRepositoryOwner,isCrossRepository \
+            --jq '"is_cross_repository=\(.isCrossRepository)\nrepository=\(.headRepositoryOwner.login)/\(.headRepository.name)\nref=\(.headRefOid)"' \
             >> "$GITHUB_OUTPUT"
+
+      - name: Block fork PR checkout in privileged issue_comment workflow
+        if: ${{ steps.pr.outputs.is_cross_repository == 'true' }}
+        run: |
+          echo "Refusing to checkout fork PR code from privileged issue_comment workflow."
+          exit 1
 
       - name: Checkout repository
         uses: actions/checkout@v5
