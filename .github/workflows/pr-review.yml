@@ -88,7 +88,7 @@ jobs:
             Use `localFindFiles` or `Glob`. Read any found files and use them as review criteria.
 
             ### Phase 2 — Full Context Scan
-            1. Fetch PR metadata: `githubSearchPullRequests(type="metadata")` with `owner="${{ github.repository_owner }}"` and `repo="${{ github.event.repository.name }}"`
+            1. Fetch PR metadata: `githubSearchPullRequests(prNumber=${{ github.event.pull_request.number }}, type="metadata")` with `owner="${{ github.repository_owner }}"` and `repo="${{ github.event.repository.name }}"`
             2. Fetch existing PR comments with `withComments=true` — note resolved vs open comments
             3. Get the diff: `gh pr diff ${{ github.event.pull_request.number }}`
             4. Classify risk: HIGH (auth/API/data/schema) / MEDIUM / LOW (docs/config)
@@ -213,29 +213,10 @@ jobs:
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     env:
       GH_TOKEN: ${{ github.token }}
-      PR_NUMBER: ${{ github.event.issue.number }}
-      PR_REPOSITORY: ${{ github.repository }}
     steps:
-      - name: Resolve PR checkout target
-        id: pr
-        run: |
-          gh pr view "$PR_NUMBER" \
-            --repo "$PR_REPOSITORY" \
-            --json headRefOid,headRepository,headRepositoryOwner,isCrossRepository \
-            --jq '"is_cross_repository=\(.isCrossRepository)\nrepository=\(.headRepositoryOwner.login)/\(.headRepository.name)\nref=\(.headRefOid)"' \
-            >> "$GITHUB_OUTPUT"
-
-      - name: Block fork PR checkout in privileged issue_comment workflow
-        if: ${{ steps.pr.outputs.is_cross_repository == 'true' }}
-        run: |
-          echo "Refusing to checkout fork PR code from privileged issue_comment workflow."
-          exit 1
-
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
-          repository: ${{ steps.pr.outputs.repository }}
-          ref: ${{ steps.pr.outputs.ref }}
           fetch-depth: 0
 
       - name: Fetch Octocode review protocol
