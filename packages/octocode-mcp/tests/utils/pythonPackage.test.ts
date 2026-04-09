@@ -1,7 +1,15 @@
 /**
  * Tests for pythonPackage.ts - specifically for uncovered branches
  */
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  beforeAll,
+  afterAll,
+} from 'vitest';
 import { clearAllCache } from '../../src/utils/http/cache.js';
 
 let originalFetch: typeof fetch;

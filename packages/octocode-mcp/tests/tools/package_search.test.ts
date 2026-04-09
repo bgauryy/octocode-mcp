@@ -263,7 +263,10 @@ function setupDefaultFetchMock(): void {
       }
       if (urlStr.includes('/latest')) {
         // Extract package name: https://registry.npmjs.org/<pkgName>/latest
-        const withoutProtocol = urlStr.replace('https://registry.npmjs.org/', '');
+        const withoutProtocol = urlStr.replace(
+          'https://registry.npmjs.org/',
+          ''
+        );
         const pkgName = decodeURIComponent(
           withoutProtocol.slice(0, withoutProtocol.lastIndexOf('/latest'))
         );

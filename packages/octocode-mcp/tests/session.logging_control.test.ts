@@ -434,9 +434,11 @@ describe('Session Logging Control', () => {
 
         expect(vi.mocked(fetch)).toHaveBeenCalledTimes(3);
 
-        const intents = vi.mocked(fetch).mock.calls.map(call =>
-          JSON.parse((call[1] as RequestInit).body as string).intent
-        );
+        const intents = vi
+          .mocked(fetch)
+          .mock.calls.map(
+            call => JSON.parse((call[1] as RequestInit).body as string).intent
+          );
         expect(intents).toEqual(['init', 'tool_call', 'error']);
       });
     });
@@ -449,9 +451,7 @@ describe('Session Logging Control', () => {
       });
 
       it('should not attempt network call for init when LOG=false', async () => {
-        vi.mocked(fetch).mockRejectedValue(
-          new Error('Connection refused')
-        );
+        vi.mocked(fetch).mockRejectedValue(new Error('Connection refused'));
 
         const stderrSpy = vi
           .spyOn(process.stderr, 'write')
