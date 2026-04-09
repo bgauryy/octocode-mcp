@@ -618,6 +618,215 @@ Reads file content from a GitHub repository. Supports match string extraction wi
 
 ---
 
+## Schema Edge Cases & Boundary Tests
+
+### TC-E1: Empty Queries Array
+
+**Goal:** Verify empty `queries` array is rejected.
+
+```json
+{"queries": []}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries minItems: 1
+
+---
+
+### TC-E2: Queries Over Max (4 queries, max is 3)
+
+**Goal:** Verify exceeding maxItems is rejected.
+
+```json
+{
+  "queries": [
+    {"id": "q1", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "path": "README.md", "fullContent": true},
+    {"id": "q2", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "path": "package.json", "fullContent": true},
+    {"id": "q3", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "path": "LICENSE", "fullContent": true},
+    {"id": "q4", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "path": "CLAUDE.md", "fullContent": true}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries maxItems is 3
+
+---
+
+### TC-E3: Invalid type Enum
+
+**Goal:** Verify `type` must be `file` or `directory`.
+
+```json
+{
+  "queries": [{
+    "id": "bad-type",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "README.md",
+    "type": "blob"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: type must be file|directory
+
+---
+
+### TC-E4: charLength Below Min (49) and Above Max (50001)
+
+**Goal:** Verify per-query `charLength` is 50-50000 (min is 50, not 1).
+
+**Expected:**
+- [ ] Schema rejection for `charLength: 49`
+- [ ] Schema rejection for `charLength: 50001`
+
+---
+
+### TC-E5: matchString Over maxLength (2000)
+
+**Goal:** Verify `matchString` max 2000 characters.
+
+**Expected:**
+- [ ] Schema validation error when `matchString` length > 2000
+
+---
+
+### TC-E6: matchStringContextLines Boundary (0 and 51)
+
+**Goal:** Verify `matchStringContextLines` must be 1-50.
+
+**Expected:**
+- [ ] Schema rejection for `matchStringContextLines: 0` and `51`
+
+---
+
+### TC-E7: Empty path (schema-allowed)
+
+**Goal:** Verify empty string `path` if allowed by schema—document runtime behavior.
+
+```json
+{
+  "queries": [{
+    "id": "empty-path",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "",
+    "fullContent": true
+  }]
+}
+```
+
+**Expected:**
+- [ ] No schema error if schema allows empty `path`
+- [ ] Runtime: error, default to root, or explicit message per product behavior
+
+---
+
+### TC-E8: type directory + startLine/endLine
+
+**Goal:** With `type: "directory"`, line range params are ignored per docs—verify no crash and sensible behavior.
+
+```json
+{
+  "queries": [{
+    "id": "dir-lines",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "packages/octocode-mcp",
+    "type": "directory",
+    "startLine": 1,
+    "endLine": 10
+  }]
+}
+```
+
+**Expected:**
+- [ ] Directory listing behavior unchanged; line params ignored or validation message per docs
+- [ ] No uncaught error
+
+---
+
+### TC-E9: Response-Level Pagination
+
+**Goal:** Verify root `responseCharOffset` + `responseCharLength` paginate the full MCP response.
+
+```json
+{
+  "queries": [{
+    "id": "resp",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "packages/octocode-mcp/src/index.ts",
+    "charOffset": 0,
+    "charLength": 500
+  }],
+  "responseCharOffset": 0,
+  "responseCharLength": 3000
+}
+```
+
+**Expected:**
+- [ ] MCP response truncated to ~3000 chars
+- [ ] `responsePagination` metadata present
+
+---
+
+### TC-E10: Duplicate Query IDs
+
+**Goal:** Verify duplicate `id` values rejected in bulk.
+
+```json
+{
+  "queries": [
+    {"id": "dup", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "path": "README.md", "fullContent": true},
+    {"id": "dup", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "path": "package.json", "fullContent": true}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error: duplicate query ids
+
+---
+
+### TC-E11: Invalid ID Pattern
+
+**Goal:** Verify `id` with invalid characters rejected.
+
+```json
+{
+  "queries": [{
+    "id": "x y",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "README.md",
+    "fullContent": true
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: id pattern ^[A-Za-z0-9._:-]+$
+
+---
+
 ## Validation Checklist
 
 ### Core Requirements

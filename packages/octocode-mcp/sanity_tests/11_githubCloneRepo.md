@@ -603,6 +603,262 @@ Clones a GitHub repository (shallow, `--depth 1`) to a local cache directory (`~
 
 ---
 
+## Schema Edge Cases & Boundary Tests
+
+> Schema: `queries` 1–3; `owner` 1–200 chars (GitHub identifier regex); `repo` 1–150 chars; `branch` 1–255 (no `..`, no leading `-`); `sparse_path` 1–500 chars (relative, no `..`, no leading `-` or `/`).
+
+### TC-E1: Empty Queries Array
+
+**Goal:** Verify empty `queries` array is rejected.
+
+```json
+{"queries": []}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries minItems 1
+
+---
+
+### TC-E2: Queries Over Max (4 queries, max is 3)
+
+**Goal:** Verify exceeding `maxItems` on `queries` is rejected.
+
+```json
+{
+  "queries": [
+    {"mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "a", "repo": "b"},
+    {"mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "a", "repo": "b"},
+    {"mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "a", "repo": "b"},
+    {"mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "a", "repo": "b"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries maxItems is 3
+
+---
+
+### TC-E3: Owner Empty String
+
+**Goal:** Verify `owner` cannot be empty (min 1 char).
+
+```json
+{
+  "queries": [{
+    "id": "e-owner-empty",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "",
+    "repo": "octocode-mcp"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: owner minLength / pattern
+
+---
+
+### TC-E4: Owner Over 200 Characters
+
+**Goal:** Verify `owner` maxLength 200.
+
+**Expected:**
+- [ ] Schema validation error when `owner` is 201 characters (construct a valid-looking identifier repeated to exceed 200)
+
+---
+
+### TC-E5: Repo Empty String
+
+**Goal:** Verify `repo` cannot be empty (min 1 char).
+
+```json
+{
+  "queries": [{
+    "id": "e-repo-empty",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": ""
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: repo minLength / pattern
+
+---
+
+### TC-E6: Repo Over 150 Characters
+
+**Goal:** Verify `repo` maxLength 150.
+
+**Expected:**
+- [ ] Schema validation error when `repo` is 151 characters
+
+---
+
+### TC-E7: Branch With `..` (Traversal Attempt)
+
+**Goal:** Verify `branch` rejects path traversal segments.
+
+```json
+{
+  "queries": [{
+    "id": "e-branch-dots",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "branch": "main/../../etc"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error (no `..` in branch)
+
+---
+
+### TC-E8: Branch With Leading `-` (Flag Injection)
+
+**Goal:** Verify `branch` rejects leading dash.
+
+```json
+{
+  "queries": [{
+    "id": "e-branch-dash",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "branch": "--upload-pack=evil"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: branch must not start with `-`
+
+---
+
+### TC-E9: `sparse_path` With `..` (Traversal)
+
+**Goal:** Verify `sparse_path` rejects `..`.
+
+```json
+{
+  "queries": [{
+    "id": "e-sparse-dots",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "sparse_path": "../../etc/passwd"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: sparse_path must not contain `..`
+
+---
+
+### TC-E10: `sparse_path` With Leading `/` (Absolute Path)
+
+**Goal:** Verify `sparse_path` rejects absolute paths.
+
+```json
+{
+  "queries": [{
+    "id": "e-sparse-abs",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "sparse_path": "/etc/passwd"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: sparse_path must be relative (no leading `/`)
+
+---
+
+### TC-E11: Response-Level Pagination
+
+**Goal:** Verify root `responseCharOffset` + `responseCharLength` paginate the full MCP response for bulk clone.
+
+```json
+{
+  "queries": [{
+    "id": "resp",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp"
+  }],
+  "responseCharOffset": 0,
+  "responseCharLength": 3000
+}
+```
+
+**Expected:**
+- [ ] MCP response truncated per `responseCharLength`
+- [ ] `responsePagination` metadata present (if supported for this tool)
+
+---
+
+### TC-E12: Duplicate Query IDs
+
+**Goal:** Verify duplicate `id` values rejected in bulk.
+
+```json
+{
+  "queries": [
+    {"id": "dup", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp"},
+    {"id": "dup", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "lodash", "repo": "lodash"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error: duplicate query ids
+
+---
+
+### TC-E13: Invalid ID Pattern
+
+**Goal:** Verify `id` with invalid characters rejected.
+
+```json
+{
+  "queries": [{
+    "id": "bad id",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: id pattern `^[A-Za-z0-9._:-]+$` (or equivalent)
+
+---
+
 ## Validation Checklist
 
 ### Core Requirements

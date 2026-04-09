@@ -646,6 +646,265 @@ Fetches all files from a GitHub directory to local disk via the Contents API. Se
 
 ---
 
+## Schema Edge Cases & Boundary Tests
+
+> Directory mode: `queries` 1–3; `type` must be `"directory"`. File-mode parameters (`fullContent`, `startLine`, `endLine`, `matchString`, `charOffset`, `charLength`) are **rejected** when combined with `type: "directory"`.
+
+### TC-E1: Empty Queries Array
+
+**Goal:** Verify empty `queries` array is rejected.
+
+```json
+{"queries": []}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries minItems 1
+
+---
+
+### TC-E2: Queries Over Max (4 queries, max is 3)
+
+**Goal:** Verify exceeding `maxItems` on `queries` is rejected.
+
+```json
+{
+  "queries": [
+    {"id": "q1", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "path": "docs", "type": "directory"},
+    {"id": "q2", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "path": "packages/octocode-mcp", "type": "directory"},
+    {"id": "q3", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "path": "skills", "type": "directory"},
+    {"id": "q4", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "path": "docs", "type": "directory"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries maxItems is 3
+
+---
+
+### TC-E3: `type: "file"` Instead of `"directory"` (Wrong Mode for This Doc)
+
+**Goal:** Document that `type: "file"` follows file-mode rules (inline content), not directory fetch — wrong for directory-mode scenarios in this sanity doc.
+
+```json
+{
+  "queries": [{
+    "id": "wrong-mode",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "docs",
+    "type": "file",
+    "fullContent": true
+  }]
+}
+```
+
+**Expected:**
+- [ ] Request is valid as **file** mode (not a schema error)
+- [ ] No `localPath` / directory fetch semantics — behavior differs from directory mode
+
+---
+
+### TC-E4: `fullContent: true` + `type: "directory"` (Rejected)
+
+**Goal:** Verify `fullContent` is rejected in directory mode.
+
+```json
+{
+  "queries": [{
+    "id": "dir-full",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "docs",
+    "type": "directory",
+    "fullContent": true
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error: file-mode param not supported when `type` is directory
+
+---
+
+### TC-E5: `startLine` + `type: "directory"` (Rejected)
+
+**Goal:** Verify line-range params are rejected in directory mode.
+
+```json
+{
+  "queries": [{
+    "id": "dir-lines",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "docs",
+    "type": "directory",
+    "startLine": 1
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error: `startLine` not supported when `type` is directory
+
+---
+
+### TC-E6: `matchString` + `type: "directory"` (Rejected)
+
+**Goal:** Verify content match params are rejected in directory mode.
+
+```json
+{
+  "queries": [{
+    "id": "dir-match",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "docs",
+    "type": "directory",
+    "matchString": "export"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error: `matchString` not supported when `type` is directory
+
+---
+
+### TC-E7: `charOffset` + `type: "directory"` (Rejected)
+
+**Goal:** Verify partial-read params are rejected in directory mode.
+
+```json
+{
+  "queries": [{
+    "id": "dir-char",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "docs",
+    "type": "directory",
+    "charOffset": 0,
+    "charLength": 500
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error: `charOffset` / `charLength` not supported when `type` is directory
+
+---
+
+### TC-E8: Empty `owner` / `repo`
+
+**Goal:** Verify required repo coordinates reject empty strings.
+
+```json
+{
+  "queries": [{
+    "id": "e-empty-coords",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "",
+    "repo": "",
+    "path": "docs",
+    "type": "directory"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation errors for empty `owner` and/or `repo`
+
+---
+
+### TC-E9: Response-Level Pagination
+
+**Goal:** Verify root `responseCharOffset` + `responseCharLength` paginate the full MCP response.
+
+```json
+{
+  "queries": [{
+    "id": "resp",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "docs",
+    "type": "directory"
+  }],
+  "responseCharOffset": 0,
+  "responseCharLength": 3000
+}
+```
+
+**Expected:**
+- [ ] MCP response truncated per `responseCharLength`
+- [ ] `responsePagination` metadata present
+
+---
+
+### TC-E10: Duplicate Query IDs
+
+**Goal:** Verify duplicate `id` values rejected in bulk.
+
+```json
+{
+  "queries": [
+    {"id": "dup", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "path": "docs", "type": "directory"},
+    {"id": "dup", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "owner": "bgauryy", "repo": "octocode-mcp", "path": "skills", "type": "directory"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error: duplicate query ids
+
+---
+
+### TC-E11: `forceRefresh: true` (Valid, Special Behavior)
+
+**Goal:** Verify `forceRefresh: true` is accepted and bypasses cache for directory fetch.
+
+```json
+{
+  "queries": [{
+    "id": "refresh",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "path": "docs",
+    "type": "directory",
+    "forceRefresh": true
+  }]
+}
+```
+
+**Expected:**
+- [ ] No schema error
+- [ ] Second call with same coordinates re-fetches (or refreshes) rather than only returning `cached: true` from stale entry — behavior matches product docs
+
+---
+
 ## Validation Checklist
 
 | # | Test Case | Queries | Pagination | Hints | Core Requirements | Status |

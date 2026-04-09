@@ -672,6 +672,217 @@ Searches code across GitHub repositories. Supports two match modes (`file` for c
 
 ---
 
+## Schema Edge Cases & Boundary Tests
+
+### TC-E1: Empty Queries Array
+
+**Goal:** Verify empty `queries` array is rejected.
+
+```json
+{"queries": []}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries minItems: 1
+
+---
+
+### TC-E2: Queries Over Max (4 queries, max is 3)
+
+**Goal:** Verify exceeding maxItems is rejected.
+
+```json
+{
+  "queries": [
+    {"id": "q1", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "keywordsToSearch": ["a"]},
+    {"id": "q2", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "keywordsToSearch": ["b"]},
+    {"id": "q3", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "keywordsToSearch": ["c"]},
+    {"id": "q4", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "keywordsToSearch": ["d"]}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries maxItems is 3
+
+---
+
+### TC-E3: keywordsToSearch Empty (0 items)
+
+**Goal:** Verify `keywordsToSearch` minItems 1 is enforced.
+
+```json
+{
+  "queries": [{
+    "id": "no-kw",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "keywordsToSearch": []
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: keywordsToSearch minItems 1
+
+---
+
+### TC-E4: keywordsToSearch Over Max (6 items)
+
+**Goal:** Verify `keywordsToSearch` maxItems 5 is enforced.
+
+```json
+{
+  "queries": [{
+    "id": "six-kw",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "keywordsToSearch": ["a", "b", "c", "d", "e", "f"]
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: keywordsToSearch maxItems 5
+
+---
+
+### TC-E5: Invalid Match Enum
+
+**Goal:** Verify `match` must be `file` or `path`.
+
+```json
+{
+  "queries": [{
+    "id": "bad-match",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "keywordsToSearch": ["export"],
+    "match": "content"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: match must be file|path
+
+---
+
+### TC-E6: Limit Boundary (0 and 101)
+
+**Goal:** Verify `limit` must be 1-100.
+
+**Expected:**
+- [ ] Schema rejection for `limit: 0` and `limit: 101` (with otherwise valid query)
+
+---
+
+### TC-E7: Page Boundary (0 and 11)
+
+**Goal:** Verify `page` must be 1-10.
+
+**Expected:**
+- [ ] Schema rejection for `page: 0` and `page: 11`
+
+---
+
+### TC-E8: Response-Level Pagination
+
+**Goal:** Verify root `responseCharOffset` + `responseCharLength` paginate the full MCP response.
+
+```json
+{
+  "queries": [{
+    "id": "resp-paginate",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "keywordsToSearch": ["function"],
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "limit": 10
+  }],
+  "responseCharOffset": 0,
+  "responseCharLength": 3000
+}
+```
+
+**Expected:**
+- [ ] MCP response truncated to ~3000 chars
+- [ ] `responsePagination` metadata present
+
+---
+
+### TC-E9: Duplicate Query IDs
+
+**Goal:** Verify duplicate `id` values rejected in bulk.
+
+```json
+{
+  "queries": [
+    {"id": "dup", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "keywordsToSearch": ["a"]},
+    {"id": "dup", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "keywordsToSearch": ["b"]}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error: duplicate query ids
+
+---
+
+### TC-E10: Invalid ID Pattern
+
+**Goal:** Verify `id` with spaces/special chars rejected.
+
+```json
+{
+  "queries": [{
+    "id": "bad/id",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "keywordsToSearch": ["test"]
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: id pattern ^[A-Za-z0-9._:-]+$
+
+---
+
+### TC-E11: Extension + Filename + Path Combined
+
+**Goal:** Schema allows `extension`, `filename`, and `path` together; docs warn against combining all three—verify behavior or warning.
+
+```json
+{
+  "queries": [{
+    "id": "triple-filter",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "keywordsToSearch": ["export"],
+    "extension": "ts",
+    "filename": "index",
+    "path": "packages/octocode-mcp/src",
+    "owner": "bgauryy",
+    "repo": "octocode-mcp",
+    "limit": 5
+  }]
+}
+```
+
+**Expected:**
+- [ ] Request accepted by schema (no schema error)
+- [ ] Outcome documented: overly narrow results, empty set, or runtime hint/warning per product behavior
+
+---
+
 ## Validation Checklist
 
 ### Core Requirements

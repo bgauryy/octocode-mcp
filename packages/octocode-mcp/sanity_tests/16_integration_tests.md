@@ -551,6 +551,78 @@ All tools support bulk queries (1-5 queries per call for local/LSP tools, 1-3 fo
 
 ---
 
+## Cross-Tool Edge Cases & Boundary Tests
+
+> Integration-focused cases: behavior when chaining tools, bulk responses span categories, and hints must remain actionable across steps.
+
+### CE-1: Invalid `lineHint` From Step 1 Passed to Step 2 (LSP)
+
+**Goal:** Verify LSP tools handle a bad `lineHint` from an upstream search without crashing (clear error or fallback).
+
+**Scenario:**
+1. `localSearchCode` returns a match; deliberately call `lspGotoDefinition` / `lspFindReferences` with `lineHint` from a **different** line or file, or an out-of-range `lineHint` (e.g. `99999`).
+
+**Expected:**
+- [ ] No uncaught exception or MCP crash
+- [ ] `symbol_not_found` or equivalent with recovery hints (widen search, correct `uri`/`lineHint`)
+- [ ] Subsequent independent tool calls still succeed
+
+---
+
+### CE-2: Step 1 Returns Empty Results (Handoff)
+
+**Goal:** Verify flows do not assume non-empty step 1; empty search/structure should yield clear hints and a safe stop or alternate path.
+
+**Scenario:**
+1. `localSearchCode` with `pattern` that matches nothing (or `githubSearchCode` with keywords that return no items).
+2. Attempt the “natural” step 2 (e.g. LSP or `githubGetFileContent`) only if the doc implies it — otherwise confirm the agent stops.
+
+**Expected:**
+- [ ] Empty status with actionable hints (refine pattern, path, or keywords)
+- [ ] No invalid handoff (e.g. missing `uri` / `lineHint`) without explicit recovery guidance
+- [ ] Optional step 2: if run with missing data, schema or runtime error is clear, not silent wrong results
+
+---
+
+### CE-3: Response-Level Pagination on Multi-Tool Bulk Calls
+
+**Goal:** Verify `responseCharOffset` / `responseCharLength` (when used) behave consistently across **separate** bulk tool invocations (e.g. one `githubSearchCode` bulk + one `localSearchCode` bulk in the same session).
+
+**Expected:**
+- [ ] Each truncated response includes pagination metadata
+- [ ] Continuing pagination on tool A does not affect tool B’s state
+- [ ] Hints reference how to fetch the next response slice where applicable
+
+---
+
+### CE-4: Bulk Call Mixing Tool Categories (Local + GitHub)
+
+**Goal:** Clarify that **one** MCP tool call cannot mix unrelated tool names; “mixing” means **back-to-back** bulk calls from different categories (local 5-query + GitHub 3-query) in one workflow.
+
+**Scenario:**
+1. `localSearchCode` with multiple queries in one call.
+2. `githubSearchCode` with multiple queries in another call.
+
+**Expected:**
+- [ ] Each tool’s bulk limits enforced independently (max 5 local, max 3 GitHub)
+- [ ] No cross-contamination of `results` between the two responses
+- [ ] Errors in one query do not corrupt sibling queries inside the same bulk call
+
+---
+
+### CE-5: Hints Chain — Actionable Params for Step N+1
+
+**Goal:** Verify hints from step N name concrete parameters (paths, `owner`/`repo`, `uri`, `lineHint`, `localPath`) usable in step N+1.
+
+**Scenario:** Run any multi-step flow (e.g. Flow 1, 3, or 19); after each response, check hints against the **next** tool’s schema.
+
+**Expected:**
+- [ ] Hints reference fields that exist on the next tool’s input (no invented parameter names)
+- [ ] Where `lineHint` is required, prior step’s hints or structured results expose a copyable value
+- [ ] Bulk responses: hints distinguish per-query indices or ids so the next call is unambiguous
+
+---
+
 ## Validation Checklist
 
 | # | Flow | Queries | Hints Chain | Status |

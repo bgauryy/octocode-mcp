@@ -946,6 +946,238 @@ localSearchCode: {
 
 ---
 
+## Schema Edge Cases & Boundary Tests
+
+**Schema reference (input):** `queries` length **1–3**; `direction` enum **`incoming` | `outgoing`**; `depth` **1–3**; `contextLines` **0–10**; `callsPerPage` **1–30**; `page` **≥ 1**.
+
+**LSP tools (contract):** each query uses **`researchGoal`** and **`reasoning`** only — **do not** send **`mainResearchGoal`** (not in the LSP tool schema). Examples below follow that contract.
+
+### SE-1: Empty `queries` array
+
+**Goal:** Reject bulk payload with zero queries.
+
+```json
+{
+  "queries": []
+}
+```
+
+**Expected:**
+- [ ] Validation or tool error
+- [ ] **Response Validation:** bulk failure shape if applicable
+
+### SE-2: `queries` over maximum (4 entries, max 3)
+
+**Goal:** Enforce at most **3** queries per request.
+
+```json
+{
+  "queries": [
+    {"id": "1", "uri": "<file>", "symbolName": "a", "lineHint": 1, "direction": "incoming", "depth": 1, "researchGoal": "e1", "reasoning": "edge"},
+    {"id": "2", "uri": "<file>", "symbolName": "b", "lineHint": 1, "direction": "incoming", "depth": 1, "researchGoal": "e2", "reasoning": "edge"},
+    {"id": "3", "uri": "<file>", "symbolName": "c", "lineHint": 1, "direction": "incoming", "depth": 1, "researchGoal": "e3", "reasoning": "edge"},
+    {"id": "4", "uri": "<file>", "symbolName": "d", "lineHint": 1, "direction": "incoming", "depth": 1, "researchGoal": "e4", "reasoning": "edge"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error (too many queries)
+- [ ] Message or hints reference maximum **3**
+
+### SE-3: Invalid `direction` enum
+
+**Goal:** Reject values other than **`incoming`** / **`outgoing`**.
+
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "fetchWithRetries",
+    "lineHint": 1,
+    "direction": "both",
+    "depth": 1,
+    "researchGoal": "invalid direction",
+    "reasoning": "not in enum"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error on `direction`
+- [ ] No LSP call hierarchy execution
+
+### SE-4: `depth` 0 and 4 (outside 1–3)
+
+**Goal:** Enforce `depth` **1–3**.
+
+**Depth 0:**
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "x",
+    "lineHint": 1,
+    "direction": "incoming",
+    "depth": 0,
+    "researchGoal": "depth 0",
+    "reasoning": "below min"
+  }]
+}
+```
+
+**Depth 4:**
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "x",
+    "lineHint": 1,
+    "direction": "incoming",
+    "depth": 4,
+    "researchGoal": "depth 4",
+    "reasoning": "above max"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Both fail validation
+- [ ] Allowed range **1–3** in error or hints
+
+### SE-5: `contextLines` 11 (above maximum 10)
+
+**Goal:** Reject `contextLines` above **10**.
+
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "x",
+    "lineHint": 1,
+    "direction": "incoming",
+    "depth": 1,
+    "contextLines": 11,
+    "researchGoal": "contextLines over max",
+    "reasoning": "max 10"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error for `contextLines`
+
+### SE-6: `callsPerPage` 0 and 31 (outside 1–30)
+
+**Goal:** Enforce **1–30** calls per page.
+
+**Zero:**
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "x",
+    "lineHint": 1,
+    "direction": "incoming",
+    "depth": 1,
+    "callsPerPage": 0,
+    "page": 1,
+    "researchGoal": "callsPerPage 0",
+    "reasoning": "below min"
+  }]
+}
+```
+
+**Thirty-one:**
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "x",
+    "lineHint": 1,
+    "direction": "incoming",
+    "depth": 1,
+    "callsPerPage": 31,
+    "page": 1,
+    "researchGoal": "callsPerPage 31",
+    "reasoning": "above max"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Both fail validation
+- [ ] Range **1–30** reflected in error or hints
+
+### SE-7: `page` 0 (below minimum 1)
+
+**Goal:** Reject non-positive `page`.
+
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "x",
+    "lineHint": 1,
+    "direction": "incoming",
+    "depth": 1,
+    "callsPerPage": 5,
+    "page": 0,
+    "researchGoal": "page 0",
+    "reasoning": "min 1"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error for `page`
+
+### SE-8: Missing required `direction`
+
+**Goal:** `direction` is required for call hierarchy.
+
+```json
+{
+  "queries": [{
+    "uri": "<file>",
+    "symbolName": "fetchWithRetries",
+    "lineHint": 1,
+    "depth": 1,
+    "researchGoal": "missing direction",
+    "reasoning": "required enum"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error — missing or invalid `direction`
+- [ ] No LSP execution
+
+### SE-9: Response-level pagination
+
+**Goal:** Paginated call lists (`callsPerPage` / `page` / `charOffset` if used) stay consistent in metadata and hints.
+
+**Expected:**
+- [ ] **Response Validation:** `instructions`, page totals, and returned calls align
+- [ ] **Hints Validation:** continuation hints when more calls or content exist
+
+### SE-10: Duplicate query `id` values
+
+**Goal:** Duplicate `id` in one request is rejected or handled deterministically.
+
+```json
+{
+  "queries": [
+    {"id": "dup", "uri": "<file>", "symbolName": "a", "lineHint": 1, "direction": "incoming", "depth": 1, "researchGoal": "a", "reasoning": "edge"},
+    {"id": "dup", "uri": "<file>", "symbolName": "b", "lineHint": 1, "direction": "incoming", "depth": 1, "researchGoal": "b", "reasoning": "edge"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error **or** documented dedup behavior
+- [ ] **Response Validation:** `results[].id` matches accepted queries when duplicates rejected
+
 ---
 
 ## Validation Checklist

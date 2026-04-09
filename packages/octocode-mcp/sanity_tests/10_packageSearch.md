@@ -511,6 +511,189 @@ Searches npm and PyPI package registries. Returns package metadata including nam
 
 ---
 
+## Schema Edge Cases & Boundary Tests
+
+**Schema reference (input):** `queries` length **1–3**. Per query: `ecosystem` **`npm` | `python`** (discriminated union); `searchLimit` **1–10**; `name` **minLength 1**; optional response shaping: **`charLength` 1–50000** where the tool exposes it. Each query includes **`mainResearchGoal`**, **`researchGoal`**, and **`reasoning`**.
+
+### SE-1: Empty `queries` array
+
+**Goal:** Reject a bulk payload with zero queries.
+
+```json
+{
+  "queries": []
+}
+```
+
+**Expected:**
+- [ ] Validation or tool error — empty `queries` not allowed
+- [ ] **Response Validation:** if bulk error shape applies, `instructions` / `results` reflect the failure
+- [ ] No registry search executed
+
+### SE-2: `queries` over maximum (4 entries, max 3)
+
+**Goal:** Enforce at most **3** queries per request.
+
+```json
+{
+  "queries": [
+    {"mainResearchGoal": "A", "researchGoal": "q1", "reasoning": "edge", "name": "a", "ecosystem": "npm"},
+    {"mainResearchGoal": "B", "researchGoal": "q2", "reasoning": "edge", "name": "b", "ecosystem": "npm"},
+    {"mainResearchGoal": "C", "researchGoal": "q3", "reasoning": "edge", "name": "c", "ecosystem": "npm"},
+    {"mainResearchGoal": "D", "researchGoal": "q4", "reasoning": "edge", "name": "d", "ecosystem": "npm"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error (too many queries)
+- [ ] Message or hints reference maximum **3**
+
+### SE-3: Invalid `ecosystem` (not `npm` or `python`)
+
+**Goal:** Reject values outside the discriminated union.
+
+```json
+{
+  "queries": [{
+    "mainResearchGoal": "Test",
+    "researchGoal": "invalid ecosystem",
+    "reasoning": "Only npm|python allowed",
+    "name": "lodash",
+    "ecosystem": "rust"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error on `ecosystem`
+- [ ] No npm/PyPI call with invalid ecosystem
+
+### SE-4: `searchLimit` 0 and 11 (outside 1–10)
+
+**Goal:** Enforce `searchLimit` **1–10**.
+
+**Below minimum:**
+```json
+{
+  "queries": [{
+    "mainResearchGoal": "Test",
+    "researchGoal": "searchLimit 0",
+    "reasoning": "Below min",
+    "name": "react",
+    "ecosystem": "npm",
+    "searchLimit": 0
+  }]
+}
+```
+
+**Above maximum:**
+```json
+{
+  "queries": [{
+    "mainResearchGoal": "Test",
+    "researchGoal": "searchLimit 11",
+    "reasoning": "Above max",
+    "name": "react",
+    "ecosystem": "npm",
+    "searchLimit": 11
+  }]
+}
+```
+
+**Expected:**
+- [ ] Both payloads fail validation (or equivalent explicit error)
+- [ ] Error or hints mention allowed range **1–10**
+
+### SE-5: Empty `name` (`minLength` 1)
+
+**Goal:** Reject zero-length package name (schema edge; overlaps TC-11).
+
+```json
+{
+  "queries": [{
+    "mainResearchGoal": "Test",
+    "researchGoal": "empty name",
+    "reasoning": "minLength 1",
+    "name": "",
+    "ecosystem": "npm"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Validation error; no search executed
+- [ ] **Response Validation:** per-query `error` / validation path matches bulk conventions
+
+### SE-6: Wrong branch field — `npmFetchMetadata` on `python` query
+
+**Goal:** npm-only field must not validate on the python branch (discriminated union).
+
+```json
+{
+  "queries": [{
+    "mainResearchGoal": "Test",
+    "researchGoal": "npm field on python",
+    "reasoning": "Cross-branch field",
+    "name": "requests",
+    "ecosystem": "python",
+    "npmFetchMetadata": true
+  }]
+}
+```
+
+**Expected:**
+- [ ] Strict schema: validation error **or** document actual stripping/coercion if the server allows it
+- [ ] No npm metadata path run for a PyPI query
+
+### SE-7: Response-level pagination / truncation
+
+**Goal:** If the response is paginated, truncated, or chunked (`charLength` / continuation hints), behavior is consistent and documented.
+
+**Expected:**
+- [ ] **Response Validation:** `instructions` and any pagination metadata align with returned chunks
+- [ ] When more data exists, hints or fields point to the next page/chunk
+- [ ] If `charLength` applies, values stay within **1–50000**
+
+### SE-8: Duplicate query `id` values
+
+**Goal:** Duplicate `id` in one request is rejected or handled deterministically.
+
+```json
+{
+  "queries": [
+    {"id": "dup", "mainResearchGoal": "A", "researchGoal": "a", "reasoning": "edge", "name": "left-pad", "ecosystem": "npm"},
+    {"id": "dup", "mainResearchGoal": "B", "researchGoal": "b", "reasoning": "edge", "name": "lodash", "ecosystem": "npm"}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error **or** explicit dedup/merge rules (record observed behavior)
+- [ ] **Response Validation:** `results[].id` matches accepted queries 1:1 when duplicates are rejected
+
+### SE-9: Minimal query — only required fields
+
+**Goal:** Smallest valid query; optional fields use defaults.
+
+```json
+{
+  "queries": [{
+    "mainResearchGoal": "Minimal",
+    "researchGoal": "Required fields only",
+    "reasoning": "Optional omitted",
+    "name": "express",
+    "ecosystem": "npm"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Request accepted; defaults for `searchLimit` and other optionals are sane
+- [ ] **Response Validation:** standard bulk `instructions`, `results`, `data` for package search
+
+---
+
 ## Validation Checklist
 
 | # | Test Case | Status |

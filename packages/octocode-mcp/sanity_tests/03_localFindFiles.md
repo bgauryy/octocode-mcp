@@ -1381,6 +1381,174 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 
 ---
 
+---
+
+## Schema Edge Cases & Boundary Tests
+
+### TC-46: Empty Queries Array
+
+**Goal:** Verify empty `queries` array is rejected.
+
+```json
+{"queries": []}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries requires minItems: 1
+
+---
+
+### TC-47: Names Array Over Max (101 items)
+
+**Goal:** Verify `names` exceeding 100 items is rejected.
+
+**Expected:**
+- [ ] Schema validation error: names maxItems is 100
+
+---
+
+### TC-48: Invalid regexType Enum
+
+**Goal:** Verify invalid `regexType` value is rejected.
+
+```json
+{
+  "queries": [{
+    "id": "bad-regex-type",
+    "path": "<WORKSPACE_ROOT>",
+    "regex": ".*",
+    "regexType": "javascript",
+    "researchGoal": "Test regexType enum",
+    "reasoning": "regexType must be posix-egrep|posix-extended|posix-basic"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: invalid enum for regexType
+
+---
+
+### TC-49: Invalid type Enum
+
+**Goal:** Verify invalid file `type` value is rejected.
+
+```json
+{
+  "queries": [{
+    "id": "bad-type",
+    "path": "<WORKSPACE_ROOT>",
+    "type": "x",
+    "researchGoal": "Test type enum",
+    "reasoning": "type must be f|d|l|b|c|p|s"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: invalid enum for type
+
+---
+
+### TC-50: Invalid sortBy Enum
+
+**Goal:** Verify invalid `sortBy` value is rejected.
+
+**Expected:**
+- [ ] Schema validation error: sortBy must be modified|size|name|path
+
+---
+
+### TC-51: Limit Below Minimum (0)
+
+**Goal:** Verify `limit: 0` is rejected (minimum is 1).
+
+**Expected:**
+- [ ] Schema validation error: limit minimum is 1
+
+---
+
+### TC-52: Limit Above Maximum (10001)
+
+**Goal:** Verify `limit: 10001` is rejected (maximum is 10000).
+
+**Expected:**
+- [ ] Schema validation error: limit maximum is 10000
+
+---
+
+### TC-53: filesPerPage Below Minimum (0)
+
+**Goal:** Verify `filesPerPage: 0` is rejected.
+
+**Expected:**
+- [ ] Schema validation error: filesPerPage minimum is 1
+
+---
+
+### TC-54: filesPerPage Above Maximum (51)
+
+**Goal:** Verify `filesPerPage: 51` is rejected.
+
+**Expected:**
+- [ ] Schema validation error: filesPerPage maximum is 50
+
+---
+
+### TC-55: charLength Over Maximum (10001)
+
+**Goal:** Verify `charLength: 10001` is rejected (maximum is 10000).
+
+**Expected:**
+- [ ] Schema validation error: charLength maximum is 10000
+
+---
+
+### TC-56: Response-Level Pagination
+
+**Goal:** Verify `responseCharOffset` + `responseCharLength` paginate entire response.
+
+```json
+{
+  "queries": [{"id": "resp", "path": "<WORKSPACE_ROOT>", "name": "*.ts", "researchGoal": "t", "reasoning": "t"}],
+  "responseCharOffset": 0,
+  "responseCharLength": 3000
+}
+```
+
+**Expected:**
+- [ ] MCP response truncated to ~3000 chars
+- [ ] `responsePagination` metadata present
+
+---
+
+### TC-57: Duplicate Query IDs
+
+**Goal:** Verify duplicate `id` values rejected in bulk.
+
+**Expected:**
+- [ ] Validation error: duplicate query ids
+
+---
+
+### TC-58: Missing Required Path
+
+**Goal:** Verify missing `path` field is rejected.
+
+**Expected:**
+- [ ] Schema validation error: missing required field `path`
+
+---
+
+### TC-59: maxDepth Boundary (0 and 11)
+
+**Goal:** Verify `maxDepth` must be 1-10.
+
+**Expected:**
+- [ ] Schema rejection for 0 (below min) and 11 (above max)
+
+---
+
 ## Validation Checklist
 
 ### Core Requirements
@@ -1392,48 +1560,62 @@ Finds files by name, metadata (size, timestamps, permissions), and regex pattern
 
 | # | Test Case | Queries | Pagination | Hints | Status |
 |---|-----------|---------|------------|-------|--------|
-| 1 | Name glob | ✅ | - | ✅ | |
-| 2 | Max depth | - | - | - | |
-| 3 | Sort by modified | - | - | - | |
+| 1 | Name glob pattern | ✅ | ✅ | ✅ | |
+| 2 | Max depth | ✅ | - | ✅ | |
+| 3 | Sort by modified | ✅ | ✅ | ✅ | |
 | 4 | Files per page | ✅ | ✅ | ✅ | |
-| 5 | Case-insensitive name | - | - | - | |
-| 6 | File type filter | - | - | - | |
-| 7 | Regex posix-extended | - | - | - | |
-| 8 | Size greater than | - | - | - | |
-| 9 | Size less than | - | - | - | |
-| 10 | Size range combined | - | - | - | |
-| 11 | Multi-name search | - | - | - | |
-| 12 | Sort by name | - | - | - | |
+| 5 | Case-insensitive name | ✅ | - | ✅ | |
+| 6 | File type filter | ✅ | ✅ | ✅ | |
+| 7 | Regex posix-extended | ✅ | - | ✅ | |
+| 8 | Size greater than | ✅ | ✅ | ✅ | |
+| 9 | Size less than | ✅ | ✅ | ✅ | |
+| 10 | Size range combined | ✅ | - | ✅ | |
+| 11 | Multi-name search | ✅ | - | ✅ | |
+| 12 | Sort by name | ✅ | ✅ | ✅ | |
+| 13 | Sort by size | ✅ | ✅ | ✅ | |
+| 14 | Details output | ✅ | ✅ | ✅ | |
+| 15 | Min depth | ✅ | ✅ | ✅ | |
+| 16 | Path pattern | ✅ | ✅ | ✅ | |
+| 17 | Empty files | ✅ | ✅ | ✅ | |
+| 18 | Modified within | ✅ | ✅ | ✅ | |
+| 19 | Modified before | ✅ | ✅ | ✅ | |
+| 20 | Executable files | ✅ | ✅ | ✅ | |
+| 21 | Exclude directory | ✅ | ✅ | ✅ | |
+| 22 | Limit results | ✅ | - | ✅ | |
+| 23 | Non-existent path (error) | ✅ | - | ✅ | |
+| 24 | Invalid regex (error) | ✅ | - | ✅ | |
+| 25 | Accessed within | ✅ | ✅ | ✅ | |
+| 26 | Permissions filter | ✅ | ✅ | ✅ | |
+| 27 | Readable files | ✅ | ✅ | ✅ | |
+| 28 | Writable files | ✅ | ✅ | ✅ | |
+| 29 | CharOffset/CharLength pagination | ✅ | ✅ | ✅ | |
+| 30 | CharOffset page 2 | ✅ | ✅ | ✅ | |
+| 31 | Show file last modified | ✅ | ✅ | ✅ | |
+| 32 | Sort by path | ✅ | ✅ | ✅ | |
+| 33 | File page navigation (page 2) | ✅ | ✅ | ✅ | |
+| 34 | Find directories only | ✅ | ✅ | ✅ | |
+| 35 | Find symlinks only | ✅ | ✅ | ✅ | |
+| 36 | MinDepth > maxDepth (validation) | ✅ | - | ✅ | |
+| 37 | FilesPerPage max boundary | ✅ | ✅ | ✅ | |
+| 38 | Limit max boundary | ✅ | - | ✅ | |
+| 39 | Page beyond available (boundary) | ✅ | ✅ | ✅ | |
+| 40 | Empty results (valid path, no match) | ✅ | - | ✅ | |
+| 41 | Readable + writable combined | ✅ | ✅ | ✅ | |
+| 42 | Regex posix-basic | ✅ | - | ✅ | |
+| 43 | Regex posix-egrep | ✅ | - | ✅ | |
+| 44 | Bulk queries (error isolation) | ✅ | ✅ | ✅ | |
 | 45 | Comprehensive pagination | ✅ | ✅ | ✅ | |
-| 13 | Sort by size | |
-| 14 | Details output | |
-| 15 | Min depth | |
-| 16 | Path pattern | |
-| 17 | Empty files | |
-| 18 | Modified within | |
-| 19 | Modified before | |
-| 20 | Executable files | |
-| 21 | Exclude directory | |
-| 22 | Limit results | |
-| 23 | Non-existent path (error) | |
-| 24 | Invalid regex (error) | |
-| 25 | Accessed within | |
-| 26 | Permissions filter | |
-| 27 | Readable files | |
-| 28 | Writable files | |
-| 29 | CharOffset/CharLength pagination | |
-| 30 | CharOffset page 2 | |
-| 31 | Show file last modified | |
-| 32 | Sort by path | |
-| 33 | File page navigation (page 2) | |
-| 34 | Find directories only | |
-| 35 | Find symlinks only | |
-| 36 | MinDepth > maxDepth (validation) | |
-| 37 | FilesPerPage max boundary | |
-| 38 | Limit max boundary | |
-| 39 | Page beyond available (boundary) | |
-| 40 | Empty results (valid path, no match) | |
-| 41 | Readable + writable combined | |
-| 42 | Regex posix-basic | |
-| 43 | Regex posix-egrep | |
-| 44 | Bulk queries (error isolation) | |
+| 46 | Empty queries array (schema) | - | - | - | |
+| 47 | Names array over max (101) | - | - | - | |
+| 48 | Invalid regexType enum | - | - | - | |
+| 49 | Invalid type enum | - | - | - | |
+| 50 | Invalid sortBy enum | - | - | - | |
+| 51 | Limit below minimum (0) | - | - | - | |
+| 52 | Limit above maximum (10001) | - | - | - | |
+| 53 | filesPerPage below minimum (0) | - | - | - | |
+| 54 | filesPerPage above maximum (51) | - | - | - | |
+| 55 | charLength over maximum (10001) | - | ✅ | - | |
+| 56 | Response-level pagination | ✅ | ✅ | ✅ | |
+| 57 | Duplicate query IDs | - | - | - | |
+| 58 | Missing required path | - | - | - | |
+| 59 | maxDepth boundary (0 / 11) | - | - | - | |

@@ -676,6 +676,181 @@ Searches GitHub repositories by keywords, topics, stars, creation date, and owne
 
 ---
 
+## Schema Edge Cases & Boundary Tests
+
+### TC-E1: Empty Queries Array
+
+**Goal:** Verify empty `queries` array is rejected.
+
+```json
+{"queries": []}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries minItems: 1
+
+---
+
+### TC-E2: Queries Over Max (4 queries, max is 3)
+
+**Goal:** Verify exceeding maxItems is rejected.
+
+```json
+{
+  "queries": [
+    {"id": "q1", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "keywordsToSearch": ["a"]},
+    {"id": "q2", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "keywordsToSearch": ["b"]},
+    {"id": "q3", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "keywordsToSearch": ["c"]},
+    {"id": "q4", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "keywordsToSearch": ["d"]}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries maxItems is 3
+
+---
+
+### TC-E3: Limit Boundary (0 and 101)
+
+**Goal:** Verify `limit` must be 1-100.
+
+**Expected:**
+- [ ] Schema rejection for 0 (below min) and 101 (above max)
+
+---
+
+### TC-E4: Page Boundary (0 and 11)
+
+**Goal:** Verify `page` must be 1-10.
+
+**Expected:**
+- [ ] Schema rejection for 0 and 11
+
+---
+
+### TC-E5: Invalid Sort Enum
+
+**Goal:** Verify invalid `sort` value rejected.
+
+```json
+{
+  "queries": [{
+    "id": "bad-sort",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "sort": "newest"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: sort must be forks|stars|updated|best-match
+
+---
+
+### TC-E6: Invalid Match Enum Item
+
+**Goal:** Verify invalid `match` array item rejected.
+
+```json
+{
+  "queries": [{
+    "id": "bad-match-item",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "keywordsToSearch": ["test"],
+    "match": ["name", "readme", "invalid-field"]
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: match items must be name|description|readme
+
+---
+
+### TC-E7: Response-Level Pagination
+
+**Goal:** Verify `responseCharOffset` + `responseCharLength` paginate entire response.
+
+```json
+{
+  "queries": [{"id": "resp", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "keywordsToSearch": ["react"]}],
+  "responseCharOffset": 0,
+  "responseCharLength": 3000
+}
+```
+
+**Expected:**
+- [ ] MCP response truncated to ~3000 chars
+- [ ] `responsePagination` metadata present
+
+---
+
+### TC-E8: Duplicate Query IDs
+
+**Goal:** Verify duplicate `id` values rejected in bulk.
+
+```json
+{
+  "queries": [
+    {"id": "dup", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "keywordsToSearch": ["a"]},
+    {"id": "dup", "mainResearchGoal": "t", "researchGoal": "t", "reasoning": "t", "keywordsToSearch": ["b"]}
+  ]
+}
+```
+
+**Expected:**
+- [ ] Validation error: duplicate query ids
+
+---
+
+### TC-E9: Invalid ID Pattern
+
+**Goal:** Verify id with spaces/special chars rejected.
+
+```json
+{
+  "queries": [{
+    "id": "bad id!",
+    "mainResearchGoal": "t",
+    "researchGoal": "t",
+    "reasoning": "t",
+    "keywordsToSearch": ["test"]
+  }]
+}
+```
+
+**Expected:**
+- [ ] Schema validation error: id pattern ^[A-Za-z0-9._:-]+$
+
+---
+
+### TC-E10: Minimal Query (Only Required Fields)
+
+**Goal:** Verify query with ONLY the 4 required fields (id, mainResearchGoal, researchGoal, reasoning) works.
+
+```json
+{
+  "queries": [{
+    "id": "minimal",
+    "mainResearchGoal": "Test minimal query",
+    "researchGoal": "Verify minimal params accepted",
+    "reasoning": "Only required fields"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Query accepted (all optional params use defaults)
+- [ ] Results may be empty or broad (no keywords/topics specified)
+- [ ] No schema error
+
+---
+
 ## Validation Checklist
 
 ### Core Requirements

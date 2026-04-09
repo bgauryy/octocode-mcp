@@ -789,6 +789,139 @@ Reads file content from local filesystem with multiple extraction modes: line ra
 
 ---
 
+---
+
+## Schema Edge Cases & Boundary Tests
+
+### TC-26: Empty Queries Array
+
+**Goal:** Verify empty `queries` array is rejected.
+
+```json
+{"queries": []}
+```
+
+**Expected:**
+- [ ] Schema validation error: queries requires minItems: 1
+
+---
+
+### TC-27: matchStringContextLines Below Minimum (0)
+
+**Goal:** Verify `matchStringContextLines: 0` is rejected (minimum is 1).
+
+**Expected:**
+- [ ] Schema validation error: matchStringContextLines minimum is 1
+
+---
+
+### TC-28: matchStringContextLines Above Maximum (51)
+
+**Goal:** Verify `matchStringContextLines: 51` is rejected (maximum is 50).
+
+**Expected:**
+- [ ] Schema validation error: matchStringContextLines maximum is 50
+
+---
+
+### TC-29: charLength Over Maximum (10001)
+
+**Goal:** Verify `charLength: 10001` is rejected (maximum is 10000).
+
+**Expected:**
+- [ ] Schema validation error: charLength maximum is 10000
+
+---
+
+### TC-30: charLength Below Minimum (0)
+
+**Goal:** Verify `charLength: 0` is rejected (minimum is 1).
+
+**Expected:**
+- [ ] Schema validation error: charLength minimum is 1
+
+---
+
+### TC-31: matchString Over Max Length (2001 chars)
+
+**Goal:** Verify `matchString` exceeding 2000 chars is rejected.
+
+**Expected:**
+- [ ] Schema validation error: matchString maxLength is 2000
+
+---
+
+### TC-32: Path Over Max Length (4097 chars)
+
+**Goal:** Verify `path` exceeding 4096 chars is rejected.
+
+**Expected:**
+- [ ] Schema validation error: path maxLength is 4096
+
+---
+
+### TC-33: fullContent + startLine + matchString All Set
+
+**Goal:** Verify behavior when all three extraction modes are specified simultaneously. Schema allows it (no oneOf), but runtime may reject.
+
+```json
+{
+  "queries": [{
+    "id": "triple-mode",
+    "path": "<WORKSPACE_ROOT>/packages/octocode-mcp/src/index.ts",
+    "fullContent": true,
+    "startLine": 1,
+    "endLine": 10,
+    "matchString": "export",
+    "researchGoal": "Test triple mode conflict",
+    "reasoning": "Schema allows but runtime may reject"
+  }]
+}
+```
+
+**Expected:**
+- [ ] Either validation error or one mode takes precedence
+- [ ] No crash
+- [ ] Clear error message if rejected
+
+---
+
+### TC-34: Response-Level Pagination
+
+**Goal:** Verify `responseCharOffset` + `responseCharLength` paginate entire response.
+
+```json
+{
+  "queries": [{"id": "resp", "path": "<WORKSPACE_ROOT>/packages/octocode-mcp/src/index.ts", "startLine": 1, "endLine": 50, "researchGoal": "t", "reasoning": "t"}],
+  "responseCharOffset": 0,
+  "responseCharLength": 2000
+}
+```
+
+**Expected:**
+- [ ] MCP response truncated to ~2000 chars
+- [ ] `responsePagination` metadata present
+
+---
+
+### TC-35: Duplicate Query IDs
+
+**Goal:** Verify duplicate `id` values rejected in bulk.
+
+**Expected:**
+- [ ] Validation error: duplicate query ids
+
+---
+
+### TC-36: Missing Required Path
+
+**Goal:** Verify missing `path` field is rejected.
+
+**Expected:**
+- [ ] Schema validation error: missing required field `path`
+
+---
+
 ## Validation Checklist
 
 ### Core Requirements
