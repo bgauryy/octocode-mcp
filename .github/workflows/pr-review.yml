@@ -18,15 +18,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Job 1: Automatic review on PR open/sync (automation mode)
   review:
     name: Octocode PR Review
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: >
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'issue_comment' &&
-       github.event.issue.pull_request &&
-       contains(github.event.comment.body, '@octocode'))
+    if: github.event_name == 'pull_request'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -64,10 +61,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          trigger_phrase: "@octocode"
           prompt: |
             You are Octocode — an evidence-first expert code reviewer.
-            Review PR #${{ github.event.pull_request.number || github.event.issue.number }} in ${{ github.repository }}.
+            Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
 
             ## Step 1: Load Review Protocol (REQUIRED)
 
@@ -89,7 +85,7 @@ jobs:
             ### Phase 2 — Full Context Scan
             1. Fetch PR metadata: `githubSearchPullRequests(type="metadata")` with `owner="${{ github.repository_owner }}"` and `repo="${{ github.event.repository.name }}"`
             2. Fetch existing PR comments with `withComments=true` — note resolved vs open comments
-            3. Get the diff: `gh pr diff ${{ github.event.pull_request.number || github.event.issue.number }}`
+            3. Get the diff: `gh pr diff ${{ github.event.pull_request.number }}`
             4. Classify risk: HIGH (auth/API/data/schema) / MEDIUM / LOW (docs/config)
             5. Group changed files by functional area
             6. PR health: description quality, size (flag >500 lines), linked issues, test coverage
@@ -130,9 +126,9 @@ jobs:
 
             ### Phase 6 — Submit Review
             Write the review body to `/tmp/review-body.md`, then submit with exactly ONE of:
-            - `gh pr review ${{ github.event.pull_request.number || github.event.issue.number }} --approve -F /tmp/review-body.md`
-            - `gh pr review ${{ github.event.pull_request.number || github.event.issue.number }} --request-changes -F /tmp/review-body.md`
-            - `gh pr review ${{ github.event.pull_request.number || github.event.issue.number }} --comment -F /tmp/review-body.md`
+            - `gh pr review ${{ github.event.pull_request.number }} --approve -F /tmp/review-body.md`
+            - `gh pr review ${{ github.event.pull_request.number }} --request-changes -F /tmp/review-body.md`
+            - `gh pr review ${{ github.event.pull_request.number }} --comment -F /tmp/review-body.md`
 
             ## Review Body Structure
 
@@ -195,6 +191,62 @@ jobs:
           claude_args: |
             --max-turns 25
             --mcp-config /tmp/mcp-config.json
+            --allowedTools "mcp__octocode__localSearchCode,mcp__octocode__localGetFileContent,mcp__octocode__localViewStructure,mcp__octocode__localFindFiles,mcp__octocode__lspGotoDefinition,mcp__octocode__lspFindReferences,mcp__octocode__lspCallHierarchy,mcp__octocode__githubSearchPullRequests,mcp__octocode__githubGetFileContent,mcp__octocode__githubSearchCode,mcp__octocode__githubViewRepoStructure,mcp__octocode__packageSearch,Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Read,Write,Glob"
+        env:
+          MCP_TIMEOUT: "90000"
+          MCP_TOOL_TIMEOUT: "45000"
+
+  # Job 2: Interactive review on @octocode comment (interactive mode)
+  comment-review:
+    name: Octocode Comment Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: >
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@octocode')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Fetch Octocode review protocol
+        run: |
+          BASE="https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/skills/octocode-pull-request-reviewer"
+          FILES="SKILL.md references/flow-analysis-protocol.md references/review-guidelines.md references/domain-reviewers.md references/output-template.md references/verification-checklist.md"
+          > /tmp/review-protocol.md
+          for f in $FILES; do
+            printf '\n---\n# SOURCE: %s\n---\n' "$f" >> /tmp/review-protocol.md
+            curl -fsSL "$BASE/$f" >> /tmp/review-protocol.md 2>/dev/null || true
+          done
+
+      - name: Write MCP config
+        run: |
+          cat > /tmp/mcp-config.json << 'EOF'
+          {
+            "mcpServers": {
+              "octocode": {
+                "command": "npx",
+                "args": ["-y", "octocode-mcp@latest"],
+                "env": {
+                  "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
+                  "ENABLE_LOCAL": "true"
+                }
+              }
+            }
+          }
+          EOF
+
+      - name: Run Octocode Interactive Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          trigger_phrase: "@octocode"
+          claude_args: |
+            --max-turns 25
+            --mcp-config /tmp/mcp-config.json
+            --system-prompt "You are Octocode — an evidence-first expert code reviewer. Read /tmp/review-protocol.md for your full review protocol. Use Octocode MCP tools (localSearchCode, lspCallHierarchy, lspFindReferences, githubSearchPullRequests, etc.) for deep analysis. Always use localSearchCode before LSP tools to get lineHint. Submit reviews via gh pr review, not gh pr comment."
             --allowedTools "mcp__octocode__localSearchCode,mcp__octocode__localGetFileContent,mcp__octocode__localViewStructure,mcp__octocode__localFindFiles,mcp__octocode__lspGotoDefinition,mcp__octocode__lspFindReferences,mcp__octocode__lspCallHierarchy,mcp__octocode__githubSearchPullRequests,mcp__octocode__githubGetFileContent,mcp__octocode__githubSearchCode,mcp__octocode__githubViewRepoStructure,mcp__octocode__packageSearch,Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Read,Write,Glob"
         env:
           MCP_TIMEOUT: "90000"
