@@ -73,7 +73,7 @@ Octocode MCP provides **7 tools** across 2 categories for code research and expl
 
 ## Quick Start
 
-1. Enable local tools in configuration: set `ENABLE_LOCAL=true` (or `local.enabled=true`).
+1. Local tools are enabled (`ENABLE_LOCAL=true` / `local.enabled=true`).
 2. Find a symbol: `localSearchCode` (get `lineHint`).
 3. Use LSP: `lspGotoDefinition` / `lspFindReferences` / `lspCallHierarchy`.
 4. Read details last: `localGetFileContent`.

@@ -134,10 +134,14 @@ describe('Session Logging Control', () => {
       await initialize();
     });
 
-    it('should NOT send session init log when LOG=false', async () => {
+    it('should always send session init log even when LOG=false', async () => {
       initializeSession();
       await logSessionInit();
-      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+      const payload = JSON.parse(
+        (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+      );
+      expect(payload.intent).toBe('init');
     });
 
     it('should NOT send tool call log', async () => {
@@ -161,10 +165,17 @@ describe('Session Logging Control', () => {
       expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
 
-    it('should skip init, tool calls, and errors', async () => {
+    it('should send init but skip tool calls and errors when LOG=false', async () => {
       initializeSession();
 
       await logSessionInit();
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+      const payload = JSON.parse(
+        (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+      );
+      expect(payload.intent).toBe('init');
+
+      vi.mocked(fetch).mockClear();
       await logToolCall('test_tool', []);
       await logToolCall('test_tool', ['owner/repo']);
       await logSessionError('test', 'TEST_ERROR');
@@ -209,9 +220,12 @@ describe('Session Logging Control', () => {
       initializeSession();
 
       await logSessionInit();
+      // init always fires (even with LOG=false), but failure is swallowed
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+
+      vi.mocked(fetch).mockClear();
       await logToolCall('test', []);
       await logSessionError('test', 'TEST_ERROR');
-
       expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
   });
@@ -332,16 +346,14 @@ describe('Session Logging Control', () => {
         await initialize();
       });
 
-      it('should NOT send init with LOG=false', async () => {
+      it('should always send init even with LOG=false', async () => {
         initializeSession();
         await logSessionInit();
-        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
-      });
-
-      it('should NOT send init payload when LOG=false', async () => {
-        initializeSession();
-        await logSessionInit();
-        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+        const payload = JSON.parse(
+          (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+        );
+        expect(payload.intent).toBe('init');
       });
 
       it('should NOT send prompt_call when LOG=false', async () => {
@@ -363,7 +375,7 @@ describe('Session Logging Control', () => {
         expect(vi.mocked(fetch)).not.toHaveBeenCalled();
       });
 
-      it('should skip all intents when LOG=false', async () => {
+      it('should send init but skip other intents when LOG=false', async () => {
         initializeSession();
         const rateLimitData: RateLimitData = {
           limit_type: 'primary',
@@ -371,6 +383,9 @@ describe('Session Logging Control', () => {
         };
 
         await logSessionInit();
+        expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+
+        vi.mocked(fetch).mockClear();
         await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, ['owner/repo']);
         await logSessionError('github', 'API_ERROR');
         await logPromptCall('test-prompt');
@@ -379,12 +394,12 @@ describe('Session Logging Control', () => {
         expect(vi.mocked(fetch)).not.toHaveBeenCalled();
       });
 
-      it('should skip multiple init calls when LOG=false', async () => {
+      it('should send multiple init calls even when LOG=false', async () => {
         initializeSession();
 
         await logSessionInit();
         await logSessionInit();
-        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
       });
     });
 
@@ -396,10 +411,14 @@ describe('Session Logging Control', () => {
         await initialize();
       });
 
-      it('should NOT send init when LOG=0', async () => {
+      it('should always send init even when LOG=0', async () => {
         initializeSession();
         await logSessionInit();
-        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+        expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+        const payload = JSON.parse(
+          (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+        );
+        expect(payload.intent).toBe('init');
       });
 
       it('should NOT send tool_call when LOG=0', async () => {
@@ -450,7 +469,7 @@ describe('Session Logging Control', () => {
         await initialize();
       });
 
-      it('should not attempt network call for init when LOG=false', async () => {
+      it('should attempt network call for init even when LOG=false', async () => {
         vi.mocked(fetch).mockRejectedValue(new Error('Connection refused'));
 
         const stderrSpy = vi
@@ -459,13 +478,14 @@ describe('Session Logging Control', () => {
 
         initializeSession();
         await logSessionInit();
-        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+        // init always fires
+        expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
         expect(stderrSpy).not.toHaveBeenCalled();
 
         stderrSpy.mockRestore();
       });
 
-      it('should not attempt network call for non-Error rejection when LOG=false', async () => {
+      it('should handle non-Error rejection gracefully for init when LOG=false', async () => {
         vi.mocked(fetch).mockRejectedValue('timeout');
 
         const stderrSpy = vi
@@ -474,7 +494,8 @@ describe('Session Logging Control', () => {
 
         initializeSession();
         await logSessionInit();
-        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+        // init always fires
+        expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
         expect(stderrSpy).not.toHaveBeenCalled();
 
         stderrSpy.mockRestore();
@@ -488,7 +509,8 @@ describe('Session Logging Control', () => {
         await expect(logSessionInit()).resolves.not.toThrow();
         await expect(logToolCall('tool', [])).resolves.not.toThrow();
         await expect(logSessionError('test', 'ERR')).resolves.not.toThrow();
-        expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+        // init fires (1 call), tool_call and error are suppressed
+        expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
       });
     });
   });

@@ -182,7 +182,7 @@ export function getConfigSync(): ResolvedConfig {
  * ```typescript
  * const config = await getConfig();
  * console.log(config.github.apiUrl); // 'https://api.github.com'
- * console.log(config.local.enabled); // false (set ENABLE_LOCAL=true to enable)
+ * console.log(config.local.enabled); // true (default; set ENABLE_LOCAL=false to disable)
  * ```
  */
 export async function getConfig(): Promise<ResolvedConfig> {

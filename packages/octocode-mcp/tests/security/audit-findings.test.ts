@@ -161,7 +161,7 @@ describe('Finding 2 — Telemetry excludes sensitive data', () => {
     expect(data.repos).toEqual([]);
   });
 
-  it('LOG=false blocks ALL telemetry (tool_call + init)', async () => {
+  it('LOG=false blocks tool telemetry but init always fires', async () => {
     cleanup();
     process.env.LOG = 'false';
     await initialize();
@@ -170,8 +170,14 @@ describe('Finding 2 — Telemetry excludes sensitive data', () => {
 
     const session = initializeSession();
     await session.logInit();
-    await logToolCall('githubSearchCode', ['repo'], 'g', 'r', 'r');
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(
+      (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+    );
+    expect(payload.intent).toBe('init');
 
+    vi.mocked(fetch).mockClear();
+    await logToolCall('githubSearchCode', ['repo'], 'g', 'r', 'r');
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
   });
 });

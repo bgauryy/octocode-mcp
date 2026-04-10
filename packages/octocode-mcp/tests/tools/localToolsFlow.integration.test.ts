@@ -213,10 +213,8 @@ describe('Local Tools Flow Integration', () => {
     });
   });
 
-  describe('ENABLE_LOCAL default (false) flow', () => {
-    it('should NOT register local tools when ENABLE_LOCAL is not set (default is false)', async () => {
-      // Don't set ENABLE_LOCAL (defaults to false)
-
+  describe('ENABLE_LOCAL default (true) flow', () => {
+    it('should register local tools when ENABLE_LOCAL is not set (default is true)', async () => {
       const { initialize, isLocalEnabled, cleanup } =
         await import('../../src/serverConfig.js');
       cleanup();
@@ -224,21 +222,17 @@ describe('Local Tools Flow Integration', () => {
 
       await initialize();
 
-      // Verify isLocalEnabled returns false (default)
-      expect(isLocalEnabled()).toBe(false);
+      expect(isLocalEnabled()).toBe(true);
 
       const result = await registerTools(mockServer);
 
-      // Should register only 6 GitHub tools (local disabled by default)
-      expect(result.successCount).toBe(6);
+      // 13 tools: 6 GitHub + 4 local + 3 LSP (no clone without ENABLE_CLONE)
+      expect(result.successCount).toBe(13);
 
-      // Local tools should NOT be registered (default is now false)
-      expect(mockLocalRipgrepRegister).not.toHaveBeenCalled();
-      expect(mockLocalViewStructureRegister).not.toHaveBeenCalled();
-      expect(mockLocalFindFilesRegister).not.toHaveBeenCalled();
-      expect(mockLocalFetchContentRegister).not.toHaveBeenCalled();
-
-      // GitHub tools should still be registered
+      expect(mockLocalRipgrepRegister).toHaveBeenCalled();
+      expect(mockLocalViewStructureRegister).toHaveBeenCalled();
+      expect(mockLocalFindFilesRegister).toHaveBeenCalled();
+      expect(mockLocalFetchContentRegister).toHaveBeenCalled();
       expect(mockGitHubSearchCodeRegister).toHaveBeenCalled();
     });
   });
