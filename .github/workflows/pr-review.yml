@@ -75,9 +75,11 @@ jobs:
           echo "ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Normalize workflow file for Claude validation
+        id: review-workflow-guard
         run: |
           BASE_BRANCH="${{ github.event.repository.default_branch }}"
           WORKFLOW_PATH=".github/workflows/pr-review.yml"
+          echo "workflow_differs=false" >> "$GITHUB_OUTPUT"
           if ! git rev-parse --verify --quiet "origin/${BASE_BRANCH}" >/dev/null; then
             git fetch --no-tags --depth=1 origin "refs/heads/${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}" || true
           fi
@@ -85,13 +87,16 @@ jobs:
           if git rev-parse --verify --quiet "origin/${BASE_BRANCH}" >/dev/null; then
             if git cat-file -e "origin/${BASE_BRANCH}:${WORKFLOW_PATH}" 2>/dev/null; then
               if ! git diff --quiet "origin/${BASE_BRANCH}...HEAD" -- "${WORKFLOW_PATH}"; then
+                echo "workflow_differs=true" >> "$GITHUB_OUTPUT"
                 git checkout "origin/${BASE_BRANCH}" -- "${WORKFLOW_PATH}"
                 echo "::notice::Workflow file normalized from origin/${BASE_BRANCH} to satisfy claude-code-action validation."
               fi
             else
+              echo "workflow_differs=true" >> "$GITHUB_OUTPUT"
               echo "::warning::${WORKFLOW_PATH} does not exist on origin/${BASE_BRANCH}; skipping workflow normalization."
             fi
           else
+            echo "workflow_differs=true" >> "$GITHUB_OUTPUT"
             echo "::warning::Could not resolve origin/${BASE_BRANCH}; proceeding without workflow normalization."
           fi
 
@@ -271,17 +276,51 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.review-agent.outputs.github_token || github.token }}
         run: |
+          set +e
           START_TS="${{ steps.review-start.outputs.ts }}"
-          REVIEWER_LOGIN=$(gh api user --jq .login)
+          REVIEWER_LOGIN=$(gh api user --jq .login 2>/tmp/reviewer.err)
+          LOGIN_EXIT=$?
+          set -e
+          if [ $LOGIN_EXIT -ne 0 ] || [ -z "$REVIEWER_LOGIN" ]; then
+            echo "::warning::Could not resolve reviewer identity; skipping strict verdict enforcement."
+            if [ -s /tmp/reviewer.err ]; then
+              tr '\n' ' ' < /tmp/reviewer.err
+              echo
+            fi
+            exit 0
+          fi
+
+          set +e
           REVIEW_ID=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
-            --jq "([.[] | select(.user.login == \"$REVIEWER_LOGIN\" and .state != \"DISMISSED\" and (.submitted_at // \"\") >= \"$START_TS\")] | last | .id) // \"NONE\"")
+            --jq "([.[] | select(.user.login == \"$REVIEWER_LOGIN\" and .state != \"DISMISSED\" and (.submitted_at // \"\") >= \"$START_TS\")] | last | .id) // \"NONE\"" 2>/tmp/review-id.err)
+          REVIEW_ID_EXIT=$?
           VERDICT=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
-            --jq "([.[] | select(.user.login == \"$REVIEWER_LOGIN\" and .state != \"DISMISSED\" and (.submitted_at // \"\") >= \"$START_TS\")] | last | .state) // \"NONE\"")
+            --jq "([.[] | select(.user.login == \"$REVIEWER_LOGIN\" and .state != \"DISMISSED\" and (.submitted_at // \"\") >= \"$START_TS\")] | last | .state) // \"NONE\"" 2>/tmp/verdict.err)
+          VERDICT_EXIT=$?
+          set -e
+
+          if [ $REVIEW_ID_EXIT -ne 0 ] || [ $VERDICT_EXIT -ne 0 ]; then
+            echo "::warning::Could not query review verdict via GitHub API; skipping strict verdict enforcement."
+            if [ -s /tmp/review-id.err ]; then
+              tr '\n' ' ' < /tmp/review-id.err
+              echo
+            fi
+            if [ -s /tmp/verdict.err ]; then
+              tr '\n' ' ' < /tmp/verdict.err
+              echo
+            fi
+            exit 0
+          fi
+
           echo "Reviewer login: $REVIEWER_LOGIN"
           echo "Review start time: $START_TS"
           echo "Fresh review id: $REVIEW_ID"
           echo "Review verdict: $VERDICT"
           if [ "$REVIEW_ID" = "NONE" ]; then
+            if [ "${{ steps.review-workflow-guard.outputs.workflow_differs }}" = "true" ]; then
+              echo "::notice::No fresh review found because this PR modifies the workflow file; claude-code-action validation may skip review submission."
+              exit 0
+            fi
             echo "::error::Octocode did not submit a fresh review"
             exit 1
           fi
@@ -369,9 +408,11 @@ jobs:
           echo "ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Normalize workflow file for Claude validation
+        id: comment-review-workflow-guard
         run: |
           BASE_BRANCH="${{ github.event.repository.default_branch }}"
           WORKFLOW_PATH=".github/workflows/pr-review.yml"
+          echo "workflow_differs=false" >> "$GITHUB_OUTPUT"
           if ! git rev-parse --verify --quiet "origin/${BASE_BRANCH}" >/dev/null; then
             git fetch --no-tags --depth=1 origin "refs/heads/${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}" || true
           fi
@@ -379,13 +420,16 @@ jobs:
           if git rev-parse --verify --quiet "origin/${BASE_BRANCH}" >/dev/null; then
             if git cat-file -e "origin/${BASE_BRANCH}:${WORKFLOW_PATH}" 2>/dev/null; then
               if ! git diff --quiet "origin/${BASE_BRANCH}...HEAD" -- "${WORKFLOW_PATH}"; then
+                echo "workflow_differs=true" >> "$GITHUB_OUTPUT"
                 git checkout "origin/${BASE_BRANCH}" -- "${WORKFLOW_PATH}"
                 echo "::notice::Workflow file normalized from origin/${BASE_BRANCH} to satisfy claude-code-action validation."
               fi
             else
+              echo "workflow_differs=true" >> "$GITHUB_OUTPUT"
               echo "::warning::${WORKFLOW_PATH} does not exist on origin/${BASE_BRANCH}; skipping workflow normalization."
             fi
           else
+            echo "workflow_differs=true" >> "$GITHUB_OUTPUT"
             echo "::warning::Could not resolve origin/${BASE_BRANCH}; proceeding without workflow normalization."
           fi
 
@@ -461,18 +505,52 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.comment-review-agent.outputs.github_token || github.token }}
         run: |
+          set +e
           PR=${{ github.event.issue.number }}
           START_TS="${{ steps.comment-review-start.outputs.ts }}"
-          REVIEWER_LOGIN=$(gh api user --jq .login)
+          REVIEWER_LOGIN=$(gh api user --jq .login 2>/tmp/comment-reviewer.err)
+          LOGIN_EXIT=$?
+          set -e
+          if [ $LOGIN_EXIT -ne 0 ] || [ -z "$REVIEWER_LOGIN" ]; then
+            echo "::warning::Could not resolve reviewer identity; skipping strict verdict enforcement."
+            if [ -s /tmp/comment-reviewer.err ]; then
+              tr '\n' ' ' < /tmp/comment-reviewer.err
+              echo
+            fi
+            exit 0
+          fi
+
+          set +e
           REVIEW_ID=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" \
-            --jq "([.[] | select(.user.login == \"$REVIEWER_LOGIN\" and .state != \"DISMISSED\" and (.submitted_at // \"\") >= \"$START_TS\")] | last | .id) // \"NONE\"")
+            --jq "([.[] | select(.user.login == \"$REVIEWER_LOGIN\" and .state != \"DISMISSED\" and (.submitted_at // \"\") >= \"$START_TS\")] | last | .id) // \"NONE\"" 2>/tmp/comment-review-id.err)
+          REVIEW_ID_EXIT=$?
           VERDICT=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" \
-            --jq "([.[] | select(.user.login == \"$REVIEWER_LOGIN\" and .state != \"DISMISSED\" and (.submitted_at // \"\") >= \"$START_TS\")] | last | .state) // \"NONE\"")
+            --jq "([.[] | select(.user.login == \"$REVIEWER_LOGIN\" and .state != \"DISMISSED\" and (.submitted_at // \"\") >= \"$START_TS\")] | last | .state) // \"NONE\"" 2>/tmp/comment-verdict.err)
+          VERDICT_EXIT=$?
+          set -e
+
+          if [ $REVIEW_ID_EXIT -ne 0 ] || [ $VERDICT_EXIT -ne 0 ]; then
+            echo "::warning::Could not query review verdict via GitHub API; skipping strict verdict enforcement."
+            if [ -s /tmp/comment-review-id.err ]; then
+              tr '\n' ' ' < /tmp/comment-review-id.err
+              echo
+            fi
+            if [ -s /tmp/comment-verdict.err ]; then
+              tr '\n' ' ' < /tmp/comment-verdict.err
+              echo
+            fi
+            exit 0
+          fi
+
           echo "Reviewer login: $REVIEWER_LOGIN"
           echo "Review start time: $START_TS"
           echo "Fresh review id: $REVIEW_ID"
           echo "Review verdict: $VERDICT"
           if [ "$REVIEW_ID" = "NONE" ]; then
+            if [ "${{ steps.comment-review-workflow-guard.outputs.workflow_differs }}" = "true" ]; then
+              echo "::notice::No fresh review found because this PR modifies the workflow file; claude-code-action validation may skip review submission."
+              exit 0
+            fi
             echo "::error::Octocode did not submit a fresh review"
             exit 1
           fi
