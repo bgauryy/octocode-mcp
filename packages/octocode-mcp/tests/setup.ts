@@ -56,7 +56,7 @@ const mockDefaultConfig = {
     host: 'https://api.bitbucket.org/2.0',
   },
   local: {
-    enabled: false,
+    enabled: true,
     enableClone: false,
     allowedPaths: [],
     workspaceRoot: undefined,

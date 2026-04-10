@@ -148,7 +148,7 @@ For available tools and detailed usage, see the [GitHub, GitLab & Bitbucket Tool
 
 ### Clone/Directory Tools Disabled
 
-- Set both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true` in your MCP client `"env"` block.
+- Set `ENABLE_CLONE=true` in your MCP client `"env"` block (`ENABLE_LOCAL` is already `true` by default).
 
 ---
 

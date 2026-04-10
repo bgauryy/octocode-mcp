@@ -380,6 +380,30 @@ describe('Session Management', () => {
       expect(result3).toEqual(undefined);
     });
 
+    it('should always log init', async () => {
+      cleanup();
+      process.env.LOG = 'false';
+      process.env.GITHUB_TOKEN = 'mock-token';
+      await initialize();
+      initializeSession();
+      vi.mocked(fetch).mockResolvedValue(new Response('ok'));
+
+      await logSessionInit();
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+      const payload = JSON.parse(
+        (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+      );
+      expect(payload.intent).toBe('init');
+
+      // Tool calls should be suppressed
+      vi.mocked(fetch).mockClear();
+      await logToolCall(TOOL_NAMES.GITHUB_SEARCH_CODE, []);
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+
+      // Restore for other tests
+      process.env.LOG = 'true';
+    });
+
     it('should not log if session is not initialized', async () => {
       // Reset session manager to ensure no session is initialized
       resetSessionManager();

@@ -328,6 +328,24 @@ describe('resolveLocal', () => {
     process.env = originalEnv;
   });
 
+  describe('enabled defaults', () => {
+    it('should default enabled to true when no config or env var', () => {
+      const result = resolveLocal(undefined);
+      expect(result.enabled).toBe(true);
+    });
+
+    it('should respect ENABLE_LOCAL=false override', () => {
+      process.env.ENABLE_LOCAL = 'false';
+      const result = resolveLocal(undefined);
+      expect(result.enabled).toBe(false);
+    });
+
+    it('should respect file config enabled=false override', () => {
+      const result = resolveLocal({ enabled: false });
+      expect(result.enabled).toBe(false);
+    });
+  });
+
   describe('enableClone defaults', () => {
     it('should default enableClone to false when no config or env var', () => {
       const result = resolveLocal(undefined);

@@ -106,8 +106,7 @@ class SessionManager {
       | RateLimitData
       | Record<string, never>
   ): Promise<void> {
-    // LOG gate applies to ALL intents including init
-    if (!isLoggingEnabled()) {
+    if (intent !== 'init' && !isLoggingEnabled()) {
       return;
     }
 

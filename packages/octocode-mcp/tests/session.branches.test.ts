@@ -173,10 +173,14 @@ describe('session.branches', () => {
       expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     });
 
-    it('should skip init when LOG=false', async () => {
+    it('should send init', async () => {
       const session = initializeSession();
       await session.logInit();
-      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+      const payload = JSON.parse(
+        (vi.mocked(fetch).mock.calls[0]![1] as RequestInit).body as string
+      );
+      expect(payload.intent).toBe('init');
     });
   });
 
