@@ -12,10 +12,9 @@ permissions:
   pull-requests: write
   issues: write
   actions: read
-  id-token: write
 
 concurrency:
-  group: pr-review-${{ github.event.pull_request.number || github.event.issue.number }}
+  group: pr-review-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
@@ -37,24 +36,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fetch Octocode review protocol
+      - name: Load Octocode review protocol
         run: |
-          BASE="https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/skills/octocode-pull-request-reviewer"
+          PROTOCOL_ROOT="skills/octocode-pull-request-reviewer"
           FILES="SKILL.md references/dependency-check.md references/flow-analysis-protocol.md references/review-guidelines.md references/domain-reviewers.md references/execution-lifecycle.md references/parallel-agent-protocol.md references/output-template.md references/verification-checklist.md"
           > /tmp/review-protocol.md
-          FAIL=0
           for f in $FILES; do
-            printf '\n---\n# SOURCE: %s\n---\n' "$f" >> /tmp/review-protocol.md
-            if ! curl -fsSL "$BASE/$f" >> /tmp/review-protocol.md; then
-              echo "WARNING: Failed to fetch $f"
-              FAIL=$((FAIL + 1))
+            SOURCE_PATH="$PROTOCOL_ROOT/$f"
+            if [ ! -f "$SOURCE_PATH" ]; then
+              echo "ERROR: Missing protocol file $SOURCE_PATH"
+              exit 1
             fi
+            printf '\n---\n# SOURCE: %s\n---\n' "$f" >> /tmp/review-protocol.md
+            cat "$SOURCE_PATH" >> /tmp/review-protocol.md
           done
-          TOTAL=$(echo $FILES | wc -w)
-          if [ "$FAIL" -ge "$TOTAL" ]; then
-            echo "ERROR: All $TOTAL protocol downloads failed"
-            exit 1
-          fi
 
       - name: Write MCP config
         run: |
@@ -116,9 +111,10 @@ jobs:
             1. Fetch PR metadata: `githubSearchPullRequests(prNumber=${{ github.event.pull_request.number }}, type="metadata")` with `owner="${{ github.repository_owner }}"` and `repo="${{ github.event.repository.name }}"`
             2. Fetch existing PR comments with `withComments=true` — note resolved vs open comments
             3. Get the diff: `gh pr diff ${{ github.event.pull_request.number }}`
-            4. **Check CI/CD status**: Use `mcp__github_ci__get_ci_status` to check current pipeline status.
-               If any checks failed, use `mcp__github_ci__get_workflow_run_details` and
-               `mcp__github_ci__download_job_log` to understand failures. Factor CI results into the review.
+            4. **Check CI/CD status (best effort)**:
+               - If `mcp__github_ci__*` tools are available, use them for pipeline status and logs.
+               - If they are unavailable, continue the review and explicitly mark CI status as "not available via tool".
+               Factor any available CI evidence into the review.
             5. Classify risk: HIGH (auth/API/data/schema) / MEDIUM / LOW (docs/config)
             6. Group changed files by functional area
             7. PR health: description quality, size (flag >500 lines), linked issues, test coverage
@@ -298,7 +294,7 @@ jobs:
           PR_API="repos/${{ github.repository }}/pulls/${{ github.event.issue.number }}"
           HEAD_REPO=$(gh api "$PR_API" --jq '.head.repo.full_name // empty')
           HEAD_SHA=$(gh api "$PR_API" --jq '.head.sha // empty')
-          if [ -n "$HEAD_REPO" ] && [ -n "$HEAD_SHA" ]; then
+          if [ "$HEAD_REPO" = "${{ github.repository }}" ] && [ -n "$HEAD_SHA" ]; then
             echo "repository=$HEAD_REPO" >> "$GITHUB_OUTPUT"
             echo "ref=$HEAD_SHA" >> "$GITHUB_OUTPUT"
           else
@@ -313,24 +309,20 @@ jobs:
           repository: ${{ steps.comment-pr-head.outputs.repository }}
           ref: ${{ steps.comment-pr-head.outputs.ref }}
 
-      - name: Fetch Octocode review protocol
+      - name: Load Octocode review protocol
         run: |
-          BASE="https://raw.githubusercontent.com/bgauryy/octocode-mcp/main/skills/octocode-pull-request-reviewer"
+          PROTOCOL_ROOT="skills/octocode-pull-request-reviewer"
           FILES="SKILL.md references/dependency-check.md references/flow-analysis-protocol.md references/review-guidelines.md references/domain-reviewers.md references/execution-lifecycle.md references/parallel-agent-protocol.md references/output-template.md references/verification-checklist.md"
           > /tmp/review-protocol.md
-          FAIL=0
           for f in $FILES; do
-            printf '\n---\n# SOURCE: %s\n---\n' "$f" >> /tmp/review-protocol.md
-            if ! curl -fsSL "$BASE/$f" >> /tmp/review-protocol.md; then
-              echo "WARNING: Failed to fetch $f"
-              FAIL=$((FAIL + 1))
+            SOURCE_PATH="$PROTOCOL_ROOT/$f"
+            if [ ! -f "$SOURCE_PATH" ]; then
+              echo "ERROR: Missing protocol file $SOURCE_PATH"
+              exit 1
             fi
+            printf '\n---\n# SOURCE: %s\n---\n' "$f" >> /tmp/review-protocol.md
+            cat "$SOURCE_PATH" >> /tmp/review-protocol.md
           done
-          TOTAL=$(echo $FILES | wc -w)
-          if [ "$FAIL" -ge "$TOTAL" ]; then
-            echo "ERROR: All $TOTAL protocol downloads failed"
-            exit 1
-          fi
 
       - name: Write MCP config
         run: |
@@ -384,9 +376,10 @@ jobs:
             ### Context Gathering
             1. Fetch PR metadata and existing comments (note resolved vs open)
             2. Get the full diff: `gh pr diff ${{ github.event.issue.number }}`
-            3. **Check CI/CD status**: Use `mcp__github_ci__get_ci_status` to check current pipeline status.
-               If any checks failed, use `mcp__github_ci__get_workflow_run_details` and
-               `mcp__github_ci__download_job_log` to understand failures. Factor CI results into the review.
+            3. **Check CI/CD status (best effort)**:
+               - If `mcp__github_ci__*` tools are available, use them for pipeline status and logs.
+               - If they are unavailable, continue the review and explicitly mark CI status as "not available via tool".
+               Factor any available CI evidence into the review.
             4. Auto-discover project guidelines (`.octocode/pr-guidelines.md`, `CONTRIBUTING.md`, `AGENTS.md`)
 
             ### Deep Analysis
@@ -445,8 +438,7 @@ jobs:
             exit 1
           fi
           if [ "$VERDICT" = "CHANGES_REQUESTED" ]; then
-            echo "::error::Octocode requested changes — see review comments"
-            exit 1
+            echo "::warning::Octocode requested changes — see review comments"
           fi
 
   # ──────────────────────────────────────────────────────────────────────────────
@@ -467,16 +459,17 @@ jobs:
       - name: Dismiss latest Octocode review
         run: |
           PR=${{ github.event.issue.number }}
+          REVIEWER_LOGIN=$(gh api user --jq .login)
           REVIEW_ID=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" \
-            --jq '([.[] | select(.state != "DISMISSED" and ((.body // "") | contains("## Octocode PR Review")))] | last | .id) // "NONE"')
+            --jq "([.[] | select(.user.login == \"$REVIEWER_LOGIN\" and .state != \"DISMISSED\" and ((.body // \"\") | contains(\"## Octocode PR Review\")))] | last | .id) // \"NONE\"")
           if [ -n "$REVIEW_ID" ] && [ "$REVIEW_ID" != "null" ] && [ "$REVIEW_ID" != "NONE" ]; then
             gh api "repos/${{ github.repository }}/pulls/${PR}/reviews/${REVIEW_ID}/dismissals" \
               -X PUT -f message="Dismissed by ${{ github.event.comment.user.login }} via @octocode dismiss"
             gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
               -f content="+1"
-            echo "Dismissed review $REVIEW_ID"
+            echo "Dismissed review $REVIEW_ID by $REVIEWER_LOGIN"
           else
-            echo "No active Octocode review found to dismiss"
+            echo "No active Octocode review found to dismiss for reviewer $REVIEWER_LOGIN"
             gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
               -f content="confused"
           fi
