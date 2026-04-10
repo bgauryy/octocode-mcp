@@ -11,6 +11,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  actions: read
   id-token: write
 
 concurrency:
@@ -18,7 +19,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ──────────────────────────────────────────────────────────────────────────────
   # Job 1: Automatic review on PR open/sync (automation mode)
+  # ──────────────────────────────────────────────────────────────────────────────
   review:
     name: Octocode PR Review
     runs-on: ubuntu-latest
@@ -30,7 +33,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -55,12 +58,12 @@ jobs:
 
       - name: Write MCP config
         run: |
-          cat > /tmp/mcp-config.json << 'EOF'
+          cat > /tmp/mcp-config.json << 'MCPEOF'
           {
             "mcpServers": {
               "octocode": {
                 "command": "npx",
-                "args": ["-y", "octocode-mcp@14.0.1"],
+                "args": ["-y", "octocode-mcp@latest"],
                 "env": {
                   "GITHUB_TOKEN": "${{ github.token }}",
                   "ENABLE_LOCAL": "true"
@@ -68,7 +71,7 @@ jobs:
               }
             }
           }
-          EOF
+          MCPEOF
 
       - name: Record review start time
         id: review-start
@@ -77,12 +80,19 @@ jobs:
 
       - name: Run Octocode PR Review
         id: review-agent
-        uses: anthropics/claude-code-action@657fb7c9c986158a19624b357bcbc8c6deb83598  # v1
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          additional_permissions: "actions: read"
+          display_report: "true"
+          classify_inline_comments: "true"
+          include_fix_links: "true"
+          exclude_comments_by_actor: "*[bot]"
           prompt: |
             You are Octocode — an evidence-first expert code reviewer.
             Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
             The pull request merge ref is already checked out in the current working directory.
 
             ## Step 1: Load Review Protocol (REQUIRED)
@@ -106,9 +116,12 @@ jobs:
             1. Fetch PR metadata: `githubSearchPullRequests(prNumber=${{ github.event.pull_request.number }}, type="metadata")` with `owner="${{ github.repository_owner }}"` and `repo="${{ github.event.repository.name }}"`
             2. Fetch existing PR comments with `withComments=true` — note resolved vs open comments
             3. Get the diff: `gh pr diff ${{ github.event.pull_request.number }}`
-            4. Classify risk: HIGH (auth/API/data/schema) / MEDIUM / LOW (docs/config)
-            5. Group changed files by functional area
-            6. PR health: description quality, size (flag >500 lines), linked issues, test coverage
+            4. **Check CI/CD status**: Use `mcp__github_ci__get_ci_status` to check current pipeline status.
+               If any checks failed, use `mcp__github_ci__get_workflow_run_details` and
+               `mcp__github_ci__download_job_log` to understand failures. Factor CI results into the review.
+            5. Classify risk: HIGH (auth/API/data/schema) / MEDIUM / LOW (docs/config)
+            6. Group changed files by functional area
+            7. PR health: description quality, size (flag >500 lines), linked issues, test coverage
 
             ### Phase 3 — Skip (CI mode)
             Proceed with FULL review across ALL domains. No user interaction.
@@ -130,12 +143,14 @@ jobs:
             - **Data & Migration Safety**: schema drift, incompatible payloads, data loss
             - **Reliability & Ops**: missing timeouts, retry storms, unsafe rollouts
             - **Testing**: missing tests for changed contracts, untested error paths
+            - **CI Impact**: does the change break or skip existing CI checks?
 
             **Cross-cutting checks:**
             - `packageSearch` for new/updated external dependencies
             - `githubSearchCode` to check if changed exports are consumed elsewhere
             - Scan for TODO/FIXME in new code ('+' lines only)
             - Security: injection, XSS, secret exposure, auth bypass, unsafe defaults
+            - If CI failed: correlate failures with the PR's changes — are they caused by this PR?
 
             ### Phase 5 — Finalize
             - Cross-check findings against existing PR comments — do NOT duplicate
@@ -146,13 +161,17 @@ jobs:
               for the strongest line-specific findings
             - Each finding: `file:line`, confidence (HIGH/MED), problem, diff-format fix
 
-            ### Phase 6 — Submit Review
+            ### Phase 6 — Submit Review (READ-ONLY — comments only, no code changes)
             For line-specific issues, prefer inline review comments and avoid duplicating the same
             wording in the final summary.
-            Write the review body to `/tmp/review-body.md`, then submit with exactly ONE of:
-            - `gh pr review ${{ github.event.pull_request.number }} --approve -F /tmp/review-body.md`
-            - `gh pr review ${{ github.event.pull_request.number }} --request-changes -F /tmp/review-body.md`
-            - `gh pr review ${{ github.event.pull_request.number }} --comment -F /tmp/review-body.md`
+            Submit the review using `gh pr review` with `--body` and a heredoc. Example:
+            ```
+            gh pr review ${{ github.event.pull_request.number }} --approve --body "$(cat <<'REVIEWEOF'
+            <review body here>
+            REVIEWEOF
+            )"
+            ```
+            Use exactly ONE of `--approve`, `--request-changes`, or `--comment`.
 
             ## Review Body Structure
 
@@ -164,6 +183,7 @@ jobs:
             |--------|-------|
             | **Risk Level** | HIGH / MEDIUM / LOW — reasoning |
             | **Recommendation** | APPROVE / REQUEST_CHANGES / COMMENT |
+            | **CI Status** | ✅ Passing / ❌ Failing (details) / ⏳ Pending |
 
             ### Ratings
             | Aspect | Score |
@@ -178,6 +198,7 @@ jobs:
             - [ ] References ticket/issue
             - [ ] Appropriate size
             - [ ] Relevant tests
+            - [ ] CI passing
 
             ### Findings
 
@@ -192,13 +213,16 @@ jobs:
             ### Flow Impact
             Modified symbols and their affected callers/consumers.
 
+            ### CI Analysis
+            Summary of CI/CD status and any failures related to this PR.
+
             ### Previous Review Comments
             Status of prior comments (resolved / still open).
             ```
 
             ## Verdict Rules
-            - **APPROVE**: Default when no blocking issues found.
-            - **REQUEST_CHANGES**: Blocking bugs, security flaws, or breaking changes.
+            - **APPROVE**: Default when no blocking issues found and CI is green.
+            - **REQUEST_CHANGES**: Blocking bugs, security flaws, breaking changes, or CI failures caused by the PR.
             - **COMMENT**: Non-blocking suggestions and improvements.
 
             ## Hard Rules
@@ -210,14 +234,17 @@ jobs:
             - Every finding MUST cite a specific file:line.
             - ALWAYS use `localSearchCode` BEFORE any LSP tool to obtain lineHint.
             - Check existing PR comments FIRST — avoid duplicates, flag unresolved ones.
+            - Check CI status — include it in the executive summary.
             - For high-confidence line-specific issues, prefer
               `mcp__github_inline_comment__create_inline_comment` with `confirmed: true`.
             - Be concise. Evidence over opinion. No filler.
             - Submit exactly one `gh pr review` verdict. Do NOT use `gh pr comment`.
+            - You are READ-ONLY. Do NOT edit, write, or modify any repository files.
           claude_args: |
             --max-turns 25
             --mcp-config /tmp/mcp-config.json
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,mcp__octocode__localSearchCode,mcp__octocode__localGetFileContent,mcp__octocode__localViewStructure,mcp__octocode__localFindFiles,mcp__octocode__lspGotoDefinition,mcp__octocode__lspFindReferences,mcp__octocode__lspCallHierarchy,mcp__octocode__githubSearchPullRequests,mcp__octocode__githubGetFileContent,mcp__octocode__githubSearchCode,mcp__octocode__githubViewRepoStructure,mcp__octocode__packageSearch,Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Read,Write,Glob"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,mcp__octocode__localSearchCode,mcp__octocode__localGetFileContent,mcp__octocode__localViewStructure,mcp__octocode__localFindFiles,mcp__octocode__lspGotoDefinition,mcp__octocode__lspFindReferences,mcp__octocode__lspCallHierarchy,mcp__octocode__githubSearchPullRequests,mcp__octocode__githubGetFileContent,mcp__octocode__githubSearchCode,mcp__octocode__githubViewRepoStructure,mcp__octocode__packageSearch,Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Read,Glob"
+            --disallowedTools "Edit,Write,Replace,MultiEdit,NotebookEditCell,Bash(git push:*),Bash(git commit:*),Bash(git add:*),Bash(git checkout:*),Bash(git branch:*),Bash(git rebase:*),Bash(git merge:*),Bash(git cherry-pick:*),Bash(gh pr create:*),Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh pr edit:*),Bash(gh repo:*)"
         env:
           MCP_TIMEOUT: "90000"
           MCP_TOOL_TIMEOUT: "45000"
@@ -249,7 +276,9 @@ jobs:
             exit 1
           fi
 
+  # ──────────────────────────────────────────────────────────────────────────────
   # Job 2: Interactive review on @octocode comment (interactive mode)
+  # ──────────────────────────────────────────────────────────────────────────────
   comment-review:
     name: Octocode Comment Review
     runs-on: ubuntu-latest
@@ -278,7 +307,7 @@ jobs:
           fi
 
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           repository: ${{ steps.comment-pr-head.outputs.repository }}
@@ -305,12 +334,12 @@ jobs:
 
       - name: Write MCP config
         run: |
-          cat > /tmp/mcp-config.json << 'EOF'
+          cat > /tmp/mcp-config.json << 'MCPEOF'
           {
             "mcpServers": {
               "octocode": {
                 "command": "npx",
-                "args": ["-y", "octocode-mcp@14.0.1"],
+                "args": ["-y", "octocode-mcp@latest"],
                 "env": {
                   "GITHUB_TOKEN": "${{ github.token }}",
                   "ENABLE_LOCAL": "true"
@@ -318,7 +347,7 @@ jobs:
               }
             }
           }
-          EOF
+          MCPEOF
 
       - name: Record review start time
         id: comment-review-start
@@ -327,26 +356,67 @@ jobs:
 
       - name: Run Octocode Interactive Review
         id: comment-review-agent
-        uses: anthropics/claude-code-action@657fb7c9c986158a19624b357bcbc8c6deb83598  # v1
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           trigger_phrase: "@octocode"
+          additional_permissions: "actions: read"
+          display_report: "true"
+          classify_inline_comments: "true"
+          include_fix_links: "true"
+          track_progress: "true"
+          exclude_comments_by_actor: "*[bot]"
           prompt: |
             You are Octocode — an evidence-first expert code reviewer.
             Review PR #${{ github.event.issue.number }} in ${{ github.repository }}.
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.issue.number }}
             The pull request head revision is already checked out in the current working directory.
 
+            ## Instructions
+
             Read `/tmp/review-protocol.md` for the full review protocol and use Octocode MCP tools for deep analysis.
-            Treat an `@octocode` pull request comment as a request for a full re-review unless the comment explicitly asks for a narrower follow-up.
-            Analyze the current PR diff and changed code, avoid duplicating existing comments, and use
-            `mcp__github_inline_comment__create_inline_comment` with `confirmed: true` for the strongest
-            line-specific findings.
-            Submit exactly one final verdict with `gh pr review`, and do not use `gh pr comment` for the
-            final summary.
+
+            Treat an `@octocode` pull request comment as a request for a full re-review unless the
+            comment explicitly asks for a narrower follow-up. If the comment asks something specific,
+            focus on that scope while still checking surrounding context.
+
+            ### Context Gathering
+            1. Fetch PR metadata and existing comments (note resolved vs open)
+            2. Get the full diff: `gh pr diff ${{ github.event.issue.number }}`
+            3. **Check CI/CD status**: Use `mcp__github_ci__get_ci_status` to check current pipeline status.
+               If any checks failed, use `mcp__github_ci__get_workflow_run_details` and
+               `mcp__github_ci__download_job_log` to understand failures. Factor CI results into the review.
+            4. Auto-discover project guidelines (`.octocode/pr-guidelines.md`, `CONTRIBUTING.md`, `AGENTS.md`)
+
+            ### Deep Analysis
+            Use the protocol's full funnel: `localSearchCode → lineHint → LSP tools → localGetFileContent`
+            - Trace flow impact for every modified function/method/type
+            - Check callers with `lspCallHierarchy(direction="incoming")`
+            - Check all usages with `lspFindReferences`
+            - Verify type contracts with `lspGotoDefinition`
+            - Check new dependencies with `packageSearch`
+            - Correlate CI failures with PR changes
+
+            ### Output
+            - Avoid duplicating existing PR comments — flag unresolved ones
+            - Use `mcp__github_inline_comment__create_inline_comment` with `confirmed: true`
+              for the strongest line-specific findings
+            - Include CI status in the executive summary
+            - Submit exactly one final verdict with `gh pr review`, do NOT use `gh pr comment`
+            - Use `gh pr review` with `--body` and a heredoc (no file writing needed). Example:
+              ```
+              gh pr review ${{ github.event.issue.number }} --approve --body "$(cat <<'REVIEWEOF'
+              <review body here>
+              REVIEWEOF
+              )"
+              ```
+            - You are READ-ONLY. Do NOT edit, write, or modify any repository files.
           claude_args: |
             --max-turns 25
             --mcp-config /tmp/mcp-config.json
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,mcp__octocode__localSearchCode,mcp__octocode__localGetFileContent,mcp__octocode__localViewStructure,mcp__octocode__localFindFiles,mcp__octocode__lspGotoDefinition,mcp__octocode__lspFindReferences,mcp__octocode__lspCallHierarchy,mcp__octocode__githubSearchPullRequests,mcp__octocode__githubGetFileContent,mcp__octocode__githubSearchCode,mcp__octocode__githubViewRepoStructure,mcp__octocode__packageSearch,Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Read,Write,Glob"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log,mcp__octocode__localSearchCode,mcp__octocode__localGetFileContent,mcp__octocode__localViewStructure,mcp__octocode__localFindFiles,mcp__octocode__lspGotoDefinition,mcp__octocode__lspFindReferences,mcp__octocode__lspCallHierarchy,mcp__octocode__githubSearchPullRequests,mcp__octocode__githubGetFileContent,mcp__octocode__githubSearchCode,mcp__octocode__githubViewRepoStructure,mcp__octocode__packageSearch,Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Read,Glob"
+            --disallowedTools "Edit,Write,Replace,MultiEdit,NotebookEditCell,Bash(git push:*),Bash(git commit:*),Bash(git add:*),Bash(git checkout:*),Bash(git branch:*),Bash(git rebase:*),Bash(git merge:*),Bash(git cherry-pick:*),Bash(gh pr create:*),Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh pr edit:*),Bash(gh repo:*)"
         env:
           MCP_TIMEOUT: "90000"
           MCP_TOOL_TIMEOUT: "45000"
@@ -379,7 +449,9 @@ jobs:
             exit 1
           fi
 
+  # ──────────────────────────────────────────────────────────────────────────────
   # Job 3: Dismiss review on @octocode dismiss comment
+  # ──────────────────────────────────────────────────────────────────────────────
   dismiss-review:
     name: Dismiss Octocode Review
     runs-on: ubuntu-latest
