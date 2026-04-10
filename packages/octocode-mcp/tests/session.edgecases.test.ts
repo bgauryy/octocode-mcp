@@ -48,7 +48,9 @@ global.fetch = vi.fn();
 
 describe('session - Edge Cases', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.useRealTimers();
+    vi.resetAllMocks();
+    vi.mocked(global.fetch).mockResolvedValue(undefined as unknown as Response);
     resetSessionManager();
   });
 
@@ -236,17 +238,15 @@ describe('session - Edge Cases', () => {
     });
 
     it('should handle concurrent init logs', async () => {
-      vi.useFakeTimers();
+      vi.mocked(global.fetch).mockReset();
       vi.mocked(global.fetch).mockResolvedValue({
         ok: true,
         status: 200,
       } as Response);
 
       const promises = [logSessionInit(), logSessionInit(), logSessionInit()];
-      await vi.advanceTimersByTimeAsync(5000);
 
       await expect(Promise.all(promises)).resolves.not.toThrow();
-      vi.useRealTimers();
     });
 
     it('should handle concurrent error logs', async () => {
