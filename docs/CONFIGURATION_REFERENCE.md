@@ -96,7 +96,7 @@ New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.octocode"
   },
 
   "local": {
-    "enabled": false,                        // Enable local filesystem + LSP tools
+    "enabled": true,                         // Enable local filesystem + LSP tools
     "enableClone": false,                    // Enable repo cloning (requires enabled=true)
     "workspaceRoot": "/path/to/workspace",   // Root for local operations
     "allowedPaths": []                       // Restrict to these paths (empty = all)
@@ -196,7 +196,7 @@ When set, these paths move under the new root:
 | 2 | `GITLAB_HOST` | `gitlab.host` | string | `https://gitlab.com` | GitLab instance URL. Use env var for reliability. |
 | 3 | `BITBUCKET_HOST` | `bitbucket.host` | string | `https://api.bitbucket.org/2.0` | Bitbucket Cloud API endpoint. |
 | | **Local Tools** | | | | |
-| 4 | `ENABLE_LOCAL` | `local.enabled` | boolean | `false` | Enable local filesystem + LSP tools. **Off by default — you must opt in.** |
+| 4 | `ENABLE_LOCAL` | `local.enabled` | boolean | `true` | Enable local filesystem + LSP tools. |
 | 5 | `ENABLE_CLONE` | `local.enableClone` | boolean | `false` | Enable repo cloning (`githubCloneRepo`) and directory fetch. **Requires `ENABLE_LOCAL=true`.** |
 | 6 | `WORKSPACE_ROOT` | `local.workspaceRoot` | string | `process.cwd()` | Root directory for local tool operations. |
 | 7 | `ALLOWED_PATHS` | `local.allowedPaths` | list | `[]` (all) | Restrict local tools to these directory paths. Empty = unrestricted. |
@@ -472,7 +472,7 @@ The env values override `.octocoderc` where they overlap; `.octocoderc` fills in
 | Problem | Solution |
 |---------|----------|
 | Token not found | See your provider's setup guide: [GitHub](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_SETUP_GUIDE.md), [GitLab](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITLAB_SETUP_GUIDE.md), [Bitbucket](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/BITBUCKET_SETUP_GUIDE.md) |
-| Local tools not showing | Set `ENABLE_LOCAL=true` in MCP `"env"` |
+| Local tools not showing | Check `ENABLE_LOCAL` is not set to `false` in MCP `"env"` or `.octocoderc` |
 | Clone/directory tools disabled | Set both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true` |
 | Wrong provider active | Check which tokens are set — GitLab > Bitbucket > GitHub |
 | Timeout errors | Increase `REQUEST_TIMEOUT` (max `300000`) |
@@ -502,5 +502,5 @@ cat ~/.octocode/.octocoderc | python3 -c "import sys,json; json.load(sys.stdin)"
 - [GitLab Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITLAB_SETUP_GUIDE.md) — GitLab auth, self-hosted, tier limits
 - [Bitbucket Setup Guide](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/BITBUCKET_SETUP_GUIDE.md) — Bitbucket auth, app passwords, OAuth
 - [GitHub, GitLab & Bitbucket Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/GITHUB_GITLAB_TOOLS_REFERENCE.md) — Remote code research tools
-- [Local & LSP Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) — Local tools (requires `ENABLE_LOCAL=true`)
+- [Local & LSP Tools Reference](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-mcp/docs/LOCAL_TOOLS_REFERENCE.md) — Local tools (`ENABLE_LOCAL`)
 - [Troubleshooting](https://github.com/bgauryy/octocode-mcp/blob/main/docs/TROUBLESHOOTING.md) — Node.js, npm, and connection issues

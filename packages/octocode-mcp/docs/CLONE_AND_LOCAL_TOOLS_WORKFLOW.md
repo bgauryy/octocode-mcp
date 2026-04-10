@@ -2,7 +2,7 @@
 
 > How to use `githubCloneRepo` and `githubGetFileContent` (directory mode) to bridge GitHub repositories with local + LSP tools for deep code analysis.
 
-> **Prerequisites:** Requires both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true` to be set.
+> **Prerequisites:** Requires `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
 
 ---
 
@@ -225,7 +225,7 @@ Local tools validate all paths against allowed roots. Cloned repos are accessibl
 3. **Workspace root resolution**: Local tools validate paths against allowed roots, and LSP tools automatically choose project context from the target file path. If a cloned file is inside `WORKSPACE_ROOT`, Octocode keeps that root; otherwise it walks up from the file to the nearest project marker (`package.json`, `tsconfig.json`, `.git`, `Cargo.toml`, `go.mod`, `pyproject.toml`, etc.)
 4. **Result**: Any `localPath` returned by `githubCloneRepo` or `githubGetFileContent` (directory mode) is automatically valid for all local + LSP tools, even when the cloned repo lives outside your current shell workspace
 
-No extra configuration is needed beyond enabling both `ENABLE_LOCAL=true` and `ENABLE_CLONE=true`.
+No extra configuration is needed beyond `ENABLE_LOCAL=true` (the default) and `ENABLE_CLONE=true`.
 
 For TypeScript/JavaScript LSP:
 

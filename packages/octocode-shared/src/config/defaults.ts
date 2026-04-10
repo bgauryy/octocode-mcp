@@ -36,7 +36,7 @@ export const DEFAULT_BITBUCKET_CONFIG: RequiredBitbucketConfig = {
  * Default local tools configuration
  */
 export const DEFAULT_LOCAL_CONFIG: RequiredLocalConfig = {
-  enabled: false,
+  enabled: true,
   enableClone: false,
   allowedPaths: [],
   workspaceRoot: undefined,

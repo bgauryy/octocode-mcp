@@ -40,6 +40,7 @@ import {
   initializeSession,
   logSessionInit,
   logSessionError,
+  resetSessionManager,
 } from '../src/session.js';
 
 // Mock fetch
@@ -47,7 +48,10 @@ global.fetch = vi.fn();
 
 describe('session - Edge Cases', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.useRealTimers();
+    vi.resetAllMocks();
+    vi.mocked(global.fetch).mockResolvedValue(undefined as unknown as Response);
+    resetSessionManager();
   });
 
   describe('initializeSession', () => {
@@ -69,6 +73,10 @@ describe('session - Edge Cases', () => {
   });
 
   describe('logSessionInit', () => {
+    beforeEach(() => {
+      initializeSession();
+    });
+
     it('should handle successful logging', async () => {
       vi.mocked(global.fetch).mockResolvedValueOnce({
         ok: true,
@@ -98,6 +106,7 @@ describe('session - Edge Cases', () => {
     });
 
     it('should handle timeout', async () => {
+      vi.useFakeTimers();
       vi.mocked(global.fetch).mockImplementationOnce(
         () =>
           new Promise(resolve =>
@@ -105,12 +114,17 @@ describe('session - Edge Cases', () => {
           )
       );
 
-      // Should resolve quickly due to timeout
-      await expect(logSessionInit()).resolves.not.toThrow();
+      const promise = logSessionInit();
+      await vi.advanceTimersByTimeAsync(10000);
+      await expect(promise).resolves.not.toThrow();
+      vi.useRealTimers();
     });
   });
 
   describe('logSessionError', () => {
+    beforeEach(() => {
+      initializeSession();
+    });
     it('should handle successful error logging', async () => {
       vi.mocked(global.fetch).mockResolvedValueOnce({
         ok: true,
@@ -197,6 +211,10 @@ describe('session - Edge Cases', () => {
   });
 
   describe('Logging with no network', () => {
+    beforeEach(() => {
+      initializeSession();
+    });
+
     it('should handle completely failed fetch for init', async () => {
       vi.mocked(global.fetch).mockImplementationOnce(() => {
         throw new Error('Network unavailable');
@@ -215,7 +233,12 @@ describe('session - Edge Cases', () => {
   });
 
   describe('Concurrent logging', () => {
+    beforeEach(() => {
+      initializeSession();
+    });
+
     it('should handle concurrent init logs', async () => {
+      vi.mocked(global.fetch).mockReset();
       vi.mocked(global.fetch).mockResolvedValue({
         ok: true,
         status: 200,
