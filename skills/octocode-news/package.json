@@ -1,0 +1,35 @@
+{
+  "name": "whats-new-skill",
+  "private": true,
+  "type": "module",
+  "packageManager": "yarn@1.22.22",
+  "scripts": {
+    "build": "yarn build:scripts",
+    "build:scripts": "node esbuild.config.mjs",
+    "catalog-sources": "node src/catalog-sources.ts",
+    "build-report": "node src/build-report.ts",
+    "check-rss": "node src/check-rss.ts",
+    "fetch-rss": "node src/fetch-rss.ts",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@types/node": "^24.6.0",
+    "esbuild": "^0.25.9",
+    "eslint": "^9.35.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "globals": "^16.4.0",
+    "html-minifier-terser": "^7.2.0",
+    "prettier": "^3.6.2",
+    "typescript-eslint": "^8.44.1",
+    "typescript": "^5.9.3"
+  }
+}
