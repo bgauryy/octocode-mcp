@@ -69,6 +69,10 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
       return true;
     }
 
+    console.error(
+      "  warning: --tool is deprecated; use 'octocode-cli <subcommand>' (e.g. search-code, get-file). See 'octocode-cli --help'."
+    );
+
     const success = await executeToolCommand(args);
     if (!success) {
       process.exitCode = 1;

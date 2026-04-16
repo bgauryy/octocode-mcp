@@ -12,32 +12,54 @@ export function showHelp(): void {
   console.log(`  ${bold('USAGE')}`);
   console.log(`    ${c('magenta', 'octocode-cli')} [command] [options]`);
   console.log();
-  console.log(`  ${bold('COMMANDS')}`);
+  console.log(`  ${bold('AGENT TOOLS')}`);
   console.log(
-    `    ${c('magenta', 'install')}     Configure octocode-mcp for an IDE`
+    `    ${c('magenta', 'search-code')}      Search code in GitHub repositories`
   );
   console.log(
-    `    ${c('magenta', 'skills')}      Install Octocode skills across AI clients`
+    `    ${c('magenta', 'get-file')}         Fetch file content from a GitHub repo`
   );
   console.log(
-    `    ${c('magenta', 'cache')}       Inspect and clean Octocode cache directories`
+    `    ${c('magenta', 'view-structure')}   View directory structure of a GitHub repo`
   );
   console.log(
-    `    ${c('magenta', 'sync')}        Sync MCP configurations across all IDEs`
+    `    ${c('magenta', 'search-repos')}     Search GitHub repositories`
   );
   console.log(
-    `    ${c('magenta', 'mcp')}         Manage MCP marketplace non-interactively`
+    `    ${c('magenta', 'search-prs')}       Search GitHub pull requests`
   );
   console.log(
-    `    ${c('magenta', 'auth')}        Manage GitHub authentication`
+    `    ${c('magenta', 'package-search')}   Search npm or Python packages`
   );
-  console.log(`    ${c('magenta', 'login')}       Authenticate with GitHub`);
-  console.log(`    ${c('magenta', 'logout')}      Sign out from GitHub`);
+  console.log();
+  console.log(`  ${bold('SETUP & ADMIN')}`);
   console.log(
-    `    ${c('magenta', 'status')}      Show GitHub authentication status`
+    `    ${c('magenta', 'install')}          Configure octocode-mcp (alias: setup)`
   );
   console.log(
-    `    ${c('magenta', 'token')}       Print the stored GitHub OAuth token`
+    `    ${c('magenta', 'skills')}           Install Octocode skills across AI clients`
+  );
+  console.log(
+    `    ${c('magenta', 'cache')}            Inspect and clean Octocode cache directories`
+  );
+  console.log(
+    `    ${c('magenta', 'sync')}             Sync MCP configurations across all IDEs`
+  );
+  console.log(
+    `    ${c('magenta', 'mcp')}              Manage MCP marketplace non-interactively`
+  );
+  console.log(
+    `    ${c('magenta', 'auth')}             Manage GitHub authentication`
+  );
+  console.log(
+    `    ${c('magenta', 'login')}            Authenticate with GitHub`
+  );
+  console.log(`    ${c('magenta', 'logout')}           Sign out from GitHub`);
+  console.log(
+    `    ${c('magenta', 'status')}           Show GitHub authentication status`
+  );
+  console.log(
+    `    ${c('magenta', 'token')}            Print the stored GitHub OAuth token`
   );
   console.log();
   console.log(`  ${bold('OPTIONS')}`);
@@ -51,10 +73,27 @@ export function showHelp(): void {
   console.log(`    ${c('cyan', '-v, --version')}    Show version number`);
   console.log();
   console.log(`  ${bold('EXAMPLES')}`);
-  console.log(`    ${dim('# Interactive mode')}`);
-  console.log(`    ${c('yellow', 'octocode-cli')}`);
+  console.log(`    ${dim('# Search code in a GitHub repo')}`);
+  console.log(
+    `    ${c('yellow', "octocode-cli search-code --query 'useReducer dispatch' --owner facebook --repo react")}`
+  );
   console.log();
-  console.log(`    ${dim('# Install for Cursor using npx')}`);
+  console.log(`    ${dim('# Fetch a file around a matched string')}`);
+  console.log(
+    `    ${c('yellow', 'octocode-cli get-file --owner facebook --repo react --path packages/react/src/React.js --match-string useState')}`
+  );
+  console.log();
+  console.log(`    ${dim('# Bulk search via stdin')}`);
+  console.log(
+    `    ${c('yellow', `echo '{"queries":[...]}' | octocode-cli search-code`)}`
+  );
+  console.log();
+  console.log(`    ${dim('# Interactive installer')}`);
+  console.log(
+    `    ${c('yellow', 'octocode-cli install')}    ${dim('(alias: setup)')}`
+  );
+  console.log();
+  console.log(`    ${dim('# Non-interactive install for Cursor')}`);
   console.log(
     `    ${c('yellow', 'octocode-cli install --ide cursor --method npx')}`
   );
