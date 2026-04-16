@@ -83,6 +83,7 @@ Flag-driven, agent-friendly entry points. Each maps to one Octocode MCP tool and
 | `search-repos` | `githubSearchRepositories` | Search repositories by keywords/topics |
 | `search-prs` | `githubSearchPullRequests` | Search pull requests |
 | `package-search` | `packageSearch` | Search npm or Python packages |
+| `exec` | *code mode* | Run a JS script against the `oct.*` tool namespace |
 
 Examples:
 
@@ -103,6 +104,68 @@ echo '{"queries":[{"keywordsToSearch":["tool"],"owner":"bgauryy","repo":"octocod
 ```
 
 Add `--json` to any agent subcommand to print the raw tool envelope (useful for piping).
+
+### Exec (Code Mode)
+
+Run a JavaScript script that orchestrates multiple Octocode tools through a typed `oct.*` namespace. Useful when a task needs loops, batching with `Promise.all`, filtering, or multi-step research that would otherwise require several CLI calls.
+
+```bash
+octocode-cli exec '<script>' [--timeout <ms>] [--json]
+octocode-cli exec --file ./research.js
+echo 'return await oct.tools()' | octocode-cli exec
+```
+
+| Option | Meaning |
+|---|---|
+| `--file <path>` | Read the script from a file instead of a positional arg |
+| `--timeout <ms>` | Max execution time. Default: `60000` |
+| `--json` | Emit `{ returnValue, logs }` JSON instead of plain text |
+
+Script contract:
+
+- The script body runs inside an async IIFE — `await` and `return` work at the top level.
+- The `oct` namespace is the only bridge to Octocode tools. Input can be a single query object, an array of queries, or `{ queries: [...] }`. Shared research fields (`id`, `mainResearchGoal`, `researchGoal`, `reasoning`) are auto-filled.
+- `console.log` output is captured and printed before the return value.
+- The sandbox has no access to `require`, `import`, `process`, `fs`, or the network. Use `oct.*` exclusively.
+- Script errors (syntax, runtime, timeout, tool validation) set exit code `1`.
+
+`oct.*` surface:
+
+| Function | Tool |
+|---|---|
+| `oct.searchCode(q)` | `githubSearchCode` |
+| `oct.getFile(q)` | `githubGetFileContent` |
+| `oct.viewStructure(q)` | `githubViewRepoStructure` |
+| `oct.searchRepos(q)` | `githubSearchRepositories` |
+| `oct.searchPullRequests(q)` | `githubSearchPullRequests` |
+| `oct.packageSearch(q)` | `packageSearch` |
+| `oct.localSearchCode(q)` | `localSearchCode` |
+| `oct.localGetFile(q)` | `localGetFileContent` |
+| `oct.localFindFiles(q)` | `localFindFiles` |
+| `oct.localViewStructure(q)` | `localViewStructure` |
+| `oct.lspGotoDefinition(q)` | `lspGotoDefinition` |
+| `oct.lspFindReferences(q)` | `lspFindReferences` |
+| `oct.lspCallHierarchy(q)` | `lspCallHierarchy` |
+| `oct.tool(name, q)` | Invoke any tool by its canonical name |
+| `oct.tools()` | List all tool names |
+
+Example — fan out across several repos in parallel, filter, and summarize:
+
+```bash
+octocode-cli exec '
+  const repos = ["facebook/react", "vuejs/core", "sveltejs/svelte"];
+  const results = await Promise.all(
+    repos.map(slug => {
+      const [owner, repo] = slug.split("/");
+      return oct.searchCode({ owner, repo, keywordsToSearch: ["useState"] });
+    })
+  );
+  return results.map((r, i) => ({
+    repo: repos[i],
+    hits: r.structuredContent ?? r.content?.[0]?.text?.length ?? 0,
+  }));
+'
+```
 
 ## Install And Setup
 

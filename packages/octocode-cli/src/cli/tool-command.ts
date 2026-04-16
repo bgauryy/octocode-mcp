@@ -33,15 +33,15 @@ import {
   PackageSearchQuerySchema,
 } from 'octocode-mcp/public';
 
-type ToolResult = {
+export type ToolResult = {
   content?: Array<{ type?: string; text?: string }>;
   structuredContent?: unknown;
   isError?: boolean;
 };
 
-type ToolExecutor = (input: unknown) => Promise<ToolResult>;
+export type ToolExecutor = (input: unknown) => Promise<ToolResult>;
 
-interface ToolDefinition {
+export interface ToolDefinition {
   name: string;
   schema: z.ZodType;
   execute: ToolExecutor;
@@ -86,7 +86,7 @@ function wrapExecutor<TInput>(
   return async (input: unknown) => fn(input as TInput);
 }
 
-const TOOL_DEFINITIONS: ToolDefinition[] = [
+export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'githubSearchCode',
     schema: GitHubCodeSearchQuerySchema,
@@ -263,7 +263,7 @@ function buildDefaultGoal(toolName: string): string {
   return `Execute ${toolName} via octocode-cli`;
 }
 
-function applyDefaultQueryFields(
+export function applyDefaultQueryFields(
   toolName: string,
   index: number,
   query: Record<string, unknown>
@@ -298,7 +298,7 @@ function applyDefaultQueryFields(
   return nextQuery;
 }
 
-function normalizeQueryObject(query: unknown): Record<string, unknown> {
+export function normalizeQueryObject(query: unknown): Record<string, unknown> {
   if (!isRecord(query)) {
     throw new Error('Tool input must be a JSON object or an array of objects.');
   }
@@ -695,7 +695,7 @@ function formatValidationIssues(error: z.ZodError): string[] {
   });
 }
 
-async function ensureToolRuntimeReady(): Promise<void> {
+export async function ensureToolRuntimeReady(): Promise<void> {
   if (!toolRuntimeInitPromise) {
     toolRuntimeInitPromise = (async () => {
       await initializeMcp();

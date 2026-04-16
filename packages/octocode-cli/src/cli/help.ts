@@ -31,6 +31,9 @@ export function showHelp(): void {
   console.log(
     `    ${c('magenta', 'package-search')}   Search npm or Python packages`
   );
+  console.log(
+    `    ${c('magenta', 'exec')}             Run a JS script against the oct.* tool namespace`
+  );
   console.log();
   console.log(`  ${bold('SETUP & ADMIN')}`);
   console.log(
@@ -138,6 +141,12 @@ export function showHelp(): void {
   console.log(
     `    ${c('yellow', 'octocode-cli skills remove --skill octocode-researcher --targets claude-code,cursor')}`
   );
+  console.log();
+  console.log(`    ${dim('# Run a code-mode script (oct.* namespace)')}`);
+  console.log(
+    `    ${c('yellow', `octocode-cli exec 'const r = await oct.searchCode({owner:"facebook",repo:"react",keywordsToSearch:["useState"]}); console.log(r.content[0].text);'`)}`
+  );
+  console.log(`    ${c('yellow', 'octocode-cli exec --file ./research.js')}`);
   console.log();
   console.log(`    ${dim('# Run a tool directly')}`);
   console.log(

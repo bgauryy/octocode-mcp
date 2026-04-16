@@ -31,6 +31,8 @@ const OPTIONS_WITH_VALUES = new Set([
   'input',
   'responseCharLength',
   'responseCharOffset',
+  'file',
+  'timeout',
 ]);
 
 const BOOLEAN_OPTIONS = new Set([
@@ -77,6 +79,7 @@ const AGENT_SUBCOMMANDS = new Set([
   'search-repos',
   'search-prs',
   'package-search',
+  'exec',
 ]);
 
 function shouldConsumeNextValue(args: ParsedArgs, key: string): boolean {

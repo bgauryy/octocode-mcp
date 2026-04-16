@@ -26,6 +26,7 @@ import { IDE_INFO, CLIENT_INFO, INSTALL_METHOD_INFO } from '../ui/constants.js';
 import { Spinner } from '../utils/spinner.js';
 import { toolCommand } from './tool-command.js';
 import { agentCommands } from './agent-commands.js';
+import { execCommand } from './exec-command.js';
 import { runInteractiveMode } from '../interactive.js';
 
 function getIDEDisplayName(ide: string): string {
@@ -1987,6 +1988,7 @@ const commands: CLICommand[] = [
   tokenCommand,
   statusCommand,
   syncCommand,
+  execCommand,
   ...agentCommands,
 ];
 
