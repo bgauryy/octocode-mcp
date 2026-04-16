@@ -656,7 +656,11 @@ function printToolResult(
   outputMode: 'text' | 'json'
 ): void {
   if (outputMode === 'json') {
-    console.log(JSON.stringify(result, null, 2));
+    const payload =
+      result.structuredContent !== undefined
+        ? result.structuredContent
+        : result;
+    console.log(JSON.stringify(payload));
     return;
   }
 

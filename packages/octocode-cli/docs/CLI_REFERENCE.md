@@ -102,7 +102,7 @@ echo '{"queries":[{"keywordsToSearch":["tool"],"owner":"bgauryy","repo":"octocod
   | octocode-cli search-code
 ```
 
-Add `--json` to any agent subcommand to print the raw tool envelope (useful for piping).
+Add `--json` to any agent subcommand to print the compact `structuredContent` payload (single-line JSON, no text preamble). Omit `--json` for human-readable YAML output.
 
 ## Install And Setup
 

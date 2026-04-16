@@ -61,8 +61,8 @@ echo '{"queries":[
 
 ## Output modes
 
-- Default: human-readable text (the tool's text content blocks).
-- `--json`: raw tool envelope, including `content` and `structuredContent`. Pipe into `jq` when parsing.
+- Default: human-readable YAML (the tool's text content block).
+- `--json`: compact single-line JSON of `structuredContent` only (no text preamble, no envelope wrapper). Pipe into `jq` when parsing. Byte-equivalent to the raw MCP payload.
 
 ## Exit codes
 

@@ -343,19 +343,29 @@ describe('agent subcommands', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it('--json: prints JSON envelope to stdout', async () => {
+  it('--json: prints compact structuredContent only, dropping text block', async () => {
+    publicMocks.searchMultipleGitHubCode.mockResolvedValueOnce({
+      content: [{ type: 'text', text: 'human-readable yaml output' }],
+      structuredContent: {
+        results: [{ id: 'q1', status: 'hasResults', data: { hits: 42 } }],
+      },
+    });
+
     await runAgent('search-code', {
       query: 'foo',
       json: true,
     });
 
-    expect(publicMocks.searchMultipleGitHubCode).toHaveBeenCalledTimes(1);
     const printedJsonCall = consoleLogSpy.mock.calls.find(
       (call: unknown[]) =>
         typeof call[0] === 'string' && (call[0] as string).startsWith('{')
     );
     expect(printedJsonCall).toBeDefined();
-    expect(printedJsonCall?.[0]).toContain('"content"');
+    const printed = printedJsonCall?.[0] as string;
+    expect(printed).toContain('"results"');
+    expect(printed).toContain('"hits":42');
+    expect(printed).not.toContain('human-readable yaml output');
+    expect(printed).not.toContain('\n  ');
   });
 
   it('sets exit code 1 when tool result reports isError', async () => {
