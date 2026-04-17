@@ -34,6 +34,12 @@ async function loadAgentCommandSpecsModule(): Promise<{
   return import('./agent-command-specs.js');
 }
 
+async function loadStaticCommandHelpModule(): Promise<{
+  findStaticCommandHelp(name: string): CLICommand | undefined;
+}> {
+  return import('./command-help-specs.js');
+}
+
 async function loadToolCommandModule(): Promise<{
   executeToolCommand(args: ParsedArgs): Promise<boolean>;
   printToolsContext(): Promise<void>;

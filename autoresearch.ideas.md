@@ -1,3 +1,3 @@
 # Deferred autoresearch ideas
 
-- Split the remaining admin command registry (`commands.ts`) into lightweight command metadata plus per-command lazy handler modules, so `install --help` and other non-agent command help paths can avoid loading the ~280KB commands chunk.
+- If the lightweight static-help path works for `install --help`, extend it to other admin commands (`sync`, `skills`, `mcp`, `token`, `cache`) so more non-agent help paths avoid the heavy `commands.ts` chunk.
