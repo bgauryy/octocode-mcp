@@ -45,6 +45,7 @@ interface ToolDefinition {
   name: string;
   schema: z.ZodType;
   execute: ToolExecutor;
+  requiresProviders?: boolean;
 }
 
 interface JsonSchemaObject extends Record<string, unknown> {
@@ -91,26 +92,31 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'githubSearchCode',
     schema: GitHubCodeSearchQuerySchema,
     execute: wrapExecutor(searchMultipleGitHubCode),
+    requiresProviders: true,
   },
   {
     name: 'githubGetFileContent',
     schema: FileContentQuerySchema,
     execute: wrapExecutor(fetchMultipleGitHubFileContents),
+    requiresProviders: true,
   },
   {
     name: 'githubViewRepoStructure',
     schema: GitHubViewRepoStructureQuerySchema,
     execute: wrapExecutor(exploreMultipleRepositoryStructures),
+    requiresProviders: true,
   },
   {
     name: 'githubSearchRepositories',
     schema: GitHubReposSearchSingleQuerySchema,
     execute: wrapExecutor(searchMultipleGitHubRepos),
+    requiresProviders: true,
   },
   {
     name: 'githubSearchPullRequests',
     schema: GitHubPullRequestSearchQuerySchema,
     execute: wrapExecutor(searchMultipleGitHubPullRequests),
+    requiresProviders: true,
   },
   {
     name: 'packageSearch',
@@ -154,7 +160,8 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
 ];
 
-let toolRuntimeInitPromise: Promise<void> | null = null;
+let serverRuntimeInitPromise: Promise<void> | null = null;
+let providerRuntimeInitPromise: Promise<void> | null = null;
 let toolMetadataPromise: Promise<
   Awaited<ReturnType<typeof loadToolContent>>
 > | null = null;
@@ -696,15 +703,28 @@ function formatValidationIssues(error: z.ZodError): string[] {
   });
 }
 
-async function ensureToolRuntimeReady(): Promise<void> {
-  if (!toolRuntimeInitPromise) {
-    toolRuntimeInitPromise = (async () => {
-      await initializeMcp();
-      await initializeProviders();
-    })();
+async function ensureServerRuntimeReady(): Promise<void> {
+  if (!serverRuntimeInitPromise) {
+    serverRuntimeInitPromise = initializeMcp();
   }
 
-  await toolRuntimeInitPromise;
+  await serverRuntimeInitPromise;
+}
+
+async function ensureProvidersReady(): Promise<void> {
+  if (!providerRuntimeInitPromise) {
+    providerRuntimeInitPromise = initializeProviders().then(() => undefined);
+  }
+
+  await providerRuntimeInitPromise;
+}
+
+async function ensureToolRuntimeReady(tool: ToolDefinition): Promise<void> {
+  await ensureServerRuntimeReady();
+
+  if (tool.requiresProviders) {
+    await ensureProvidersReady();
+  }
 }
 
 export async function executeToolCommand(args: ParsedArgs): Promise<boolean> {
@@ -768,7 +788,7 @@ export async function executeToolCommand(args: ParsedArgs): Promise<boolean> {
     .map(result => result.data);
 
   try {
-    await ensureToolRuntimeReady();
+    await ensureToolRuntimeReady(tool);
     const result = await tool.execute({
       queries,
       responseCharLength: payload.responseCharLength,

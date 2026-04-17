@@ -8,10 +8,46 @@ const { spawnSync } = require('node:child_process');
 
 const RUNS = 5;
 const COMMANDS = [
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', '--tool', 'localSearchCode', '--help'], 'local_tool_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', '--tool', 'githubSearchCode', '--help'], 'github_tool_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', '--tool', 'packageSearch', '--help'], 'package_tool_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', '--tools-context'], 'tools_context'],
+  [
+    'node',
+    [
+      'packages/octocode-cli/out/octocode-cli.js',
+      '--tool',
+      'localSearchCode',
+      '{"path":"packages/octocode-cli/src/cli","pattern":"runCLI","smartCase":true,"matchContentLength":80,"filesPerPage":5,"filePageNumber":1,"matchesPerPage":5,"binaryFiles":"text","includeStats":false,"sort":"path","showFileLastModified":false}',
+    ],
+    'local_search',
+  ],
+  [
+    'node',
+    [
+      'packages/octocode-cli/out/octocode-cli.js',
+      '--tool',
+      'localGetFileContent',
+      '{"path":"packages/octocode-cli/src/cli/index.ts","fullContent":false,"matchStringContextLines":5,"matchStringIsRegex":false,"matchStringCaseSensitive":true,"matchString":"runCLI"}',
+    ],
+    'local_get_file',
+  ],
+  [
+    'node',
+    [
+      'packages/octocode-cli/out/octocode-cli.js',
+      '--tool',
+      'localFindFiles',
+      '{"path":"packages/octocode-cli/src/cli","sortBy":"name","details":false,"filesPerPage":10,"filePageNumber":1,"showFileLastModified":false,"name":"*.ts"}',
+    ],
+    'local_find_files',
+  ],
+  [
+    'node',
+    [
+      'packages/octocode-cli/out/octocode-cli.js',
+      '--tool',
+      'localViewStructure',
+      '{"path":"packages/octocode-cli/src/cli","details":false,"hidden":false,"humanReadable":true,"sortBy":"name","entriesPerPage":20,"entryPageNumber":1,"showFileLastModified":false,"depth":1}',
+    ],
+    'local_view_structure',
+  ],
 ];
 
 const timings = new Map(COMMANDS.map(([, , label]) => [label, []]));
@@ -38,23 +74,18 @@ for (let i = 0; i < RUNS; i++) {
     const stdout = result.stdout || '';
     stdoutBytes += Buffer.byteLength(stdout, 'utf8');
 
-    if (label === 'local_tool_help') {
-      if (!stdout.includes('localSearchCode')) passes = 0;
-      if (!stdout.includes('Required')) passes = 0;
-      if (!stdout.includes('Example')) passes = 0;
-    } else if (label === 'github_tool_help') {
-      if (!stdout.includes('githubSearchCode')) passes = 0;
-      if (!stdout.includes('Auto-filled')) passes = 0;
-      if (!stdout.includes('mainResearchGoal')) passes = 0;
-    } else if (label === 'package_tool_help') {
-      if (!stdout.includes('packageSearch')) passes = 0;
-      if (!stdout.includes('Auto-filled')) passes = 0;
-      if (!stdout.includes('Example')) passes = 0;
-    } else if (label === 'tools_context') {
-      if (!stdout.includes('CLI Contract:')) passes = 0;
-      if (!stdout.includes('Octocode MCP Instructions:')) passes = 0;
-      if (!stdout.includes('localSearchCode')) passes = 0;
-      if (!stdout.includes('githubSearchCode')) passes = 0;
+    if (label === 'local_search') {
+      if (!stdout.includes('runCLI')) passes = 0;
+      if (!stdout.includes('index.ts')) passes = 0;
+    } else if (label === 'local_get_file') {
+      if (!stdout.includes('runCLI')) passes = 0;
+      if (!stdout.includes('printToolsContext')) passes = 0;
+    } else if (label === 'local_find_files') {
+      if (!stdout.includes('index.ts')) passes = 0;
+      if (!stdout.includes('tool-command.ts')) passes = 0;
+    } else if (label === 'local_view_structure') {
+      if (!stdout.includes('index.ts')) passes = 0;
+      if (!stdout.includes('tool-command.ts')) passes = 0;
     }
   }
   if (passes === 0) break;
@@ -65,7 +96,9 @@ function median(values) {
   return sorted[Math.floor(sorted.length / 2)] || 0;
 }
 
-const metrics = Object.fromEntries([...timings.entries()].map(([label, values]) => [label, median(values)]));
+const metrics = Object.fromEntries(
+  [...timings.entries()].map(([label, values]) => [label, median(values)])
+);
 const totalMs = Object.values(metrics).reduce((sum, value) => sum + value, 0);
 
 console.log(`METRIC total_ms=${totalMs.toFixed(3)}`);
