@@ -1,9 +1,17 @@
 import { parseArgs, hasHelpFlag, hasVersionFlag } from './parser.js';
 import type { CLICommand } from './types.js';
 import type { ParsedArgs } from './types.js';
-import { AGENT_SUBCOMMAND_NAMES } from './agent-command-specs.js';
 
 declare const __APP_VERSION__: string;
+
+const AGENT_SUBCOMMAND_NAMES = new Set([
+  'search-code',
+  'get-file',
+  'view-structure',
+  'search-repos',
+  'search-prs',
+  'package-search',
+]);
 
 async function loadCommandsModule(): Promise<{
   findCommand(name: string): CLICommand | undefined;
