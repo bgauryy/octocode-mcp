@@ -212,10 +212,7 @@ async function loadToolMetadata(): Promise<
   Awaited<ReturnType<typeof loadToolContent>>
 > {
   if (!toolMetadataPromise) {
-    toolMetadataPromise = (async () => {
-      await initializeMcp();
-      return loadToolContent();
-    })();
+    toolMetadataPromise = loadToolContent();
   }
 
   return toolMetadataPromise;
