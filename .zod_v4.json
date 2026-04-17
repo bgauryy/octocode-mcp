@@ -1,0 +1,82 @@
+[
+  {
+    "name": "classic",
+    "path": "packages/zod/src/v4/classic",
+    "sha": "14ad3e46fc26d96dc6f29144ee4ada5cdbe44770",
+    "size": 0,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/tree/main/packages/zod/src/v4/classic",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/trees/14ad3e46fc26d96dc6f29144ee4ada5cdbe44770",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/trees/14ad3e46fc26d96dc6f29144ee4ada5cdbe44770",
+      "html": "https://github.com/colinhacks/zod/tree/main/packages/zod/src/v4/classic"
+    }
+  },
+  {
+    "name": "core",
+    "path": "packages/zod/src/v4/core",
+    "sha": "370c3eac12a8f6901855c13a09dd8f6304881b2c",
+    "size": 0,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/core?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/tree/main/packages/zod/src/v4/core",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/trees/370c3eac12a8f6901855c13a09dd8f6304881b2c",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/core?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/trees/370c3eac12a8f6901855c13a09dd8f6304881b2c",
+      "html": "https://github.com/colinhacks/zod/tree/main/packages/zod/src/v4/core"
+    }
+  },
+  {
+    "name": "index.ts",
+    "path": "packages/zod/src/v4/index.ts",
+    "sha": "31110e977d5b83532c6eb34ded964c364e452cf4",
+    "size": 93,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/index.ts?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/index.ts",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/blobs/31110e977d5b83532c6eb34ded964c364e452cf4",
+    "download_url": "https://raw.githubusercontent.com/colinhacks/zod/main/packages/zod/src/v4/index.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/index.ts?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/blobs/31110e977d5b83532c6eb34ded964c364e452cf4",
+      "html": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/index.ts"
+    }
+  },
+  {
+    "name": "locales",
+    "path": "packages/zod/src/v4/locales",
+    "sha": "e565051e0ed85b678c10db0fe5c185e3530834af",
+    "size": 0,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/locales?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/tree/main/packages/zod/src/v4/locales",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/trees/e565051e0ed85b678c10db0fe5c185e3530834af",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/locales?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/trees/e565051e0ed85b678c10db0fe5c185e3530834af",
+      "html": "https://github.com/colinhacks/zod/tree/main/packages/zod/src/v4/locales"
+    }
+  },
+  {
+    "name": "mini",
+    "path": "packages/zod/src/v4/mini",
+    "sha": "abbb5df478613dfd347089023d9617356b3c9e30",
+    "size": 0,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/mini?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/tree/main/packages/zod/src/v4/mini",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/trees/abbb5df478613dfd347089023d9617356b3c9e30",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/mini?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/trees/abbb5df478613dfd347089023d9617356b3c9e30",
+      "html": "https://github.com/colinhacks/zod/tree/main/packages/zod/src/v4/mini"
+    }
+  }
+]

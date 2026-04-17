@@ -1,0 +1,178 @@
+[
+  {
+    "name": "checks.ts",
+    "path": "packages/zod/src/v4/classic/checks.ts",
+    "sha": "cd78c0e450450b8240cfce4e4ae3b76c4b499e59",
+    "size": 761,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/checks.ts?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/checks.ts",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/blobs/cd78c0e450450b8240cfce4e4ae3b76c4b499e59",
+    "download_url": "https://raw.githubusercontent.com/colinhacks/zod/main/packages/zod/src/v4/classic/checks.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/checks.ts?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/blobs/cd78c0e450450b8240cfce4e4ae3b76c4b499e59",
+      "html": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/checks.ts"
+    }
+  },
+  {
+    "name": "coerce.ts",
+    "path": "packages/zod/src/v4/classic/coerce.ts",
+    "sha": "cc400e0d8ef0b0d07d20bcf2dc3db66e9655c3c2",
+    "size": 1503,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/coerce.ts?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/coerce.ts",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/blobs/cc400e0d8ef0b0d07d20bcf2dc3db66e9655c3c2",
+    "download_url": "https://raw.githubusercontent.com/colinhacks/zod/main/packages/zod/src/v4/classic/coerce.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/coerce.ts?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/blobs/cc400e0d8ef0b0d07d20bcf2dc3db66e9655c3c2",
+      "html": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/coerce.ts"
+    }
+  },
+  {
+    "name": "compat.ts",
+    "path": "packages/zod/src/v4/classic/compat.ts",
+    "sha": "86a5813a026faab58ecc9aefc9b53384d33432d1",
+    "size": 2183,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/compat.ts?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/compat.ts",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/blobs/86a5813a026faab58ecc9aefc9b53384d33432d1",
+    "download_url": "https://raw.githubusercontent.com/colinhacks/zod/main/packages/zod/src/v4/classic/compat.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/compat.ts?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/blobs/86a5813a026faab58ecc9aefc9b53384d33432d1",
+      "html": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/compat.ts"
+    }
+  },
+  {
+    "name": "errors.ts",
+    "path": "packages/zod/src/v4/classic/errors.ts",
+    "sha": "695a53433d8464ec53903d6cb5dfe2957990d723",
+    "size": 2909,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/errors.ts?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/errors.ts",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/blobs/695a53433d8464ec53903d6cb5dfe2957990d723",
+    "download_url": "https://raw.githubusercontent.com/colinhacks/zod/main/packages/zod/src/v4/classic/errors.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/errors.ts?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/blobs/695a53433d8464ec53903d6cb5dfe2957990d723",
+      "html": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/errors.ts"
+    }
+  },
+  {
+    "name": "external.ts",
+    "path": "packages/zod/src/v4/classic/external.ts",
+    "sha": "084deaa5bccb65fc53d80e0e94939126d755850d",
+    "size": 1168,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/external.ts?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/external.ts",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/blobs/084deaa5bccb65fc53d80e0e94939126d755850d",
+    "download_url": "https://raw.githubusercontent.com/colinhacks/zod/main/packages/zod/src/v4/classic/external.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/external.ts?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/blobs/084deaa5bccb65fc53d80e0e94939126d755850d",
+      "html": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/external.ts"
+    }
+  },
+  {
+    "name": "from-json-schema.ts",
+    "path": "packages/zod/src/v4/classic/from-json-schema.ts",
+    "sha": "b2c806ecf33c32d63d58891f0dc67dfb0551bd0f",
+    "size": 21708,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/from-json-schema.ts?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/from-json-schema.ts",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/blobs/b2c806ecf33c32d63d58891f0dc67dfb0551bd0f",
+    "download_url": "https://raw.githubusercontent.com/colinhacks/zod/main/packages/zod/src/v4/classic/from-json-schema.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/from-json-schema.ts?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/blobs/b2c806ecf33c32d63d58891f0dc67dfb0551bd0f",
+      "html": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/from-json-schema.ts"
+    }
+  },
+  {
+    "name": "index.ts",
+    "path": "packages/zod/src/v4/classic/index.ts",
+    "sha": "f0f7547ff0e82ca2fc646de0d7436486c82ec292",
+    "size": 100,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/index.ts?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/index.ts",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/blobs/f0f7547ff0e82ca2fc646de0d7436486c82ec292",
+    "download_url": "https://raw.githubusercontent.com/colinhacks/zod/main/packages/zod/src/v4/classic/index.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/index.ts?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/blobs/f0f7547ff0e82ca2fc646de0d7436486c82ec292",
+      "html": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/index.ts"
+    }
+  },
+  {
+    "name": "iso.ts",
+    "path": "packages/zod/src/v4/classic/iso.ts",
+    "sha": "b08696d6787c0f07eb6be04f4cbb46639e33d86c",
+    "size": 3182,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/iso.ts?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/iso.ts",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/blobs/b08696d6787c0f07eb6be04f4cbb46639e33d86c",
+    "download_url": "https://raw.githubusercontent.com/colinhacks/zod/main/packages/zod/src/v4/classic/iso.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/iso.ts?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/blobs/b08696d6787c0f07eb6be04f4cbb46639e33d86c",
+      "html": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/iso.ts"
+    }
+  },
+  {
+    "name": "parse.ts",
+    "path": "packages/zod/src/v4/classic/parse.ts",
+    "sha": "e9b88c07eec4db7f08cfd1b6ce374cc577783a90",
+    "size": 3262,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/parse.ts?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/parse.ts",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/blobs/e9b88c07eec4db7f08cfd1b6ce374cc577783a90",
+    "download_url": "https://raw.githubusercontent.com/colinhacks/zod/main/packages/zod/src/v4/classic/parse.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/parse.ts?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/blobs/e9b88c07eec4db7f08cfd1b6ce374cc577783a90",
+      "html": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/parse.ts"
+    }
+  },
+  {
+    "name": "schemas.ts",
+    "path": "packages/zod/src/v4/classic/schemas.ts",
+    "sha": "2f2dc93246291213d2edcab352035bf79fa5861b",
+    "size": 88629,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/schemas.ts?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/schemas.ts",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/blobs/2f2dc93246291213d2edcab352035bf79fa5861b",
+    "download_url": "https://raw.githubusercontent.com/colinhacks/zod/main/packages/zod/src/v4/classic/schemas.ts",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/schemas.ts?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/blobs/2f2dc93246291213d2edcab352035bf79fa5861b",
+      "html": "https://github.com/colinhacks/zod/blob/main/packages/zod/src/v4/classic/schemas.ts"
+    }
+  },
+  {
+    "name": "tests",
+    "path": "packages/zod/src/v4/classic/tests",
+    "sha": "7560d54cb6a9095f05594cf2da50fa3191052d6f",
+    "size": 0,
+    "url": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/tests?ref=main",
+    "html_url": "https://github.com/colinhacks/zod/tree/main/packages/zod/src/v4/classic/tests",
+    "git_url": "https://api.github.com/repos/colinhacks/zod/git/trees/7560d54cb6a9095f05594cf2da50fa3191052d6f",
+    "download_url": null,
+    "type": "dir",
+    "_links": {
+      "self": "https://api.github.com/repos/colinhacks/zod/contents/packages/zod/src/v4/classic/tests?ref=main",
+      "git": "https://api.github.com/repos/colinhacks/zod/git/trees/7560d54cb6a9095f05594cf2da50fa3191052d6f",
+      "html": "https://github.com/colinhacks/zod/tree/main/packages/zod/src/v4/classic/tests"
+    }
+  }
+]
