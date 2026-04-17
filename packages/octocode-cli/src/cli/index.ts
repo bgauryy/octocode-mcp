@@ -100,16 +100,6 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
       return true;
     }
 
-    if (args.command && AGENT_SUBCOMMAND_NAMES.has(args.command)) {
-      const [{ findAgentCommandSpec, toAgentHelpCommand }, { showCommandHelp }] =
-        await Promise.all([loadAgentCommandSpecsModule(), loadHelpModule()]);
-      const spec = findAgentCommandSpec(args.command);
-      if (spec) {
-        showCommandHelp(toAgentHelpCommand(spec));
-        return true;
-      }
-    }
-
     if (args.command) {
       const { findStaticCommandHelp, showStaticCommandHelp } =
         await loadStaticCommandHelpModule();
@@ -117,6 +107,16 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
       if (staticCommand) {
         showStaticCommandHelp(staticCommand);
         return true;
+      }
+
+      if (AGENT_SUBCOMMAND_NAMES.has(args.command)) {
+        const [{ findAgentCommandSpec, toAgentHelpCommand }, { showCommandHelp }] =
+          await Promise.all([loadAgentCommandSpecsModule(), loadHelpModule()]);
+        const spec = findAgentCommandSpec(args.command);
+        if (spec) {
+          showCommandHelp(toAgentHelpCommand(spec));
+          return true;
+        }
       }
 
       const [{ findCommand }, { showCommandHelp, showHelp }] = await Promise.all([
