@@ -14,6 +14,11 @@ Reduce the runtime and output size of lightweight built `octocode-cli` help/vers
 The harness rebuilds `packages/octocode-cli` in dev mode, then benchmarks:
 - `node packages/octocode-cli/out/octocode-cli.js --help`
 - `node packages/octocode-cli/out/octocode-cli.js search-code --help`
+- `node packages/octocode-cli/out/octocode-cli.js get-file --help`
+- `node packages/octocode-cli/out/octocode-cli.js view-structure --help`
+- `node packages/octocode-cli/out/octocode-cli.js search-repos --help`
+- `node packages/octocode-cli/out/octocode-cli.js search-prs --help`
+- `node packages/octocode-cli/out/octocode-cli.js package-search --help`
 - `node packages/octocode-cli/out/octocode-cli.js install --help`
 - `node packages/octocode-cli/out/octocode-cli.js skills --help`
 - `node packages/octocode-cli/out/octocode-cli.js sync --help`
@@ -49,14 +54,9 @@ The harness rebuilds `packages/octocode-cli` in dev mode, then benchmarks:
 - Keep help/version behavior equivalent.
 - Avoid optimizations that only help one command while regressing the others badly.
 - Prefer startup/import reductions over command-specific hacks.
-- Be careful not to overfit to one help path: include both agent and broad admin/auth help coverage.
+- Be careful not to overfit to one help path: include broad coverage across top-level, all benchmarked agent helps, and admin/auth help.
 
 ## What We Know So Far
-- Current best on the previous multi-admin workload (without auth/login/logout/status help) is 344.475ms after:
-  - code-splitting the CLI bundle
-  - lazy-loading commands/tool/help modules
-  - separating agent subcommand metadata from heavy handlers
-  - buffering help output into one stdout write per screen
-  - serving common admin help from a lightweight static help module that renders directly
+- Current best on the previous workload (one agent help + admin/auth help) is 850.190ms after routing all benchmarked command helps through one lightweight static direct-render module.
 - Many micro-optimizations regressed because they worsened the emitted chunk graph even when source size shrank.
-- The next honest step is broadening coverage to the remaining auth-related help commands and applying the same static-help path if it still wins under the wider workload.
+- The next honest step is widening coverage to the remaining agent help commands and then seeing whether top-level `--help` / `--version` remain the main residual cost.

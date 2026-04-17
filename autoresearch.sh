@@ -9,7 +9,12 @@ const { spawnSync } = require('node:child_process');
 const RUNS = 5;
 const COMMANDS = [
   ['node', ['packages/octocode-cli/out/octocode-cli.js', '--help'], 'help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'search-code', '--help'], 'agent_help'],
+  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'search-code', '--help'], 'search_code_help'],
+  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'get-file', '--help'], 'get_file_help'],
+  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'view-structure', '--help'], 'view_structure_help'],
+  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'search-repos', '--help'], 'search_repos_help'],
+  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'search-prs', '--help'], 'search_prs_help'],
+  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'package-search', '--help'], 'package_search_help'],
   ['node', ['packages/octocode-cli/out/octocode-cli.js', 'install', '--help'], 'install_help'],
   ['node', ['packages/octocode-cli/out/octocode-cli.js', 'skills', '--help'], 'skills_help'],
   ['node', ['packages/octocode-cli/out/octocode-cli.js', 'sync', '--help'], 'sync_help'],
@@ -50,9 +55,24 @@ for (let i = 0; i < RUNS; i++) {
     if (label === 'help') {
       if (!stdout.includes('AGENT TOOLS')) passes = 0;
       if (!stdout.includes('search-code')) passes = 0;
-    } else if (label === 'agent_help') {
+    } else if (label === 'search_code_help') {
       if (!stdout.includes('Search code in GitHub repositories')) passes = 0;
       if (!stdout.includes('--query')) passes = 0;
+    } else if (label === 'get_file_help') {
+      if (!stdout.includes('Fetch file content from a GitHub repository')) passes = 0;
+      if (!stdout.includes('--match-string')) passes = 0;
+    } else if (label === 'view_structure_help') {
+      if (!stdout.includes('View directory structure of a GitHub repository')) passes = 0;
+      if (!stdout.includes('--depth')) passes = 0;
+    } else if (label === 'search_repos_help') {
+      if (!stdout.includes('Search GitHub repositories')) passes = 0;
+      if (!stdout.includes('--topics')) passes = 0;
+    } else if (label === 'search_prs_help') {
+      if (!stdout.includes('Search GitHub pull requests')) passes = 0;
+      if (!stdout.includes('--with-comments')) passes = 0;
+    } else if (label === 'package_search_help') {
+      if (!stdout.includes('Search npm or Python packages')) passes = 0;
+      if (!stdout.includes('--ecosystem')) passes = 0;
     } else if (label === 'install_help') {
       if (!stdout.includes('Install octocode-mcp for an IDE')) passes = 0;
       if (!stdout.includes('--ide')) passes = 0;
