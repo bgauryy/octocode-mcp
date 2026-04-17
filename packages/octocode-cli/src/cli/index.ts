@@ -36,6 +36,7 @@ async function loadAgentCommandSpecsModule(): Promise<{
 
 async function loadStaticCommandHelpModule(): Promise<{
   findStaticCommandHelp(name: string): CLICommand | undefined;
+  showStaticCommandHelp(command: CLICommand): void;
 }> {
   return import('./command-help-specs.js');
 }
@@ -110,6 +111,14 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
     }
 
     if (args.command) {
+      const { findStaticCommandHelp, showStaticCommandHelp } =
+        await loadStaticCommandHelpModule();
+      const staticCommand = findStaticCommandHelp(args.command);
+      if (staticCommand) {
+        showStaticCommandHelp(staticCommand);
+        return true;
+      }
+
       const [{ findCommand }, { showCommandHelp, showHelp }] = await Promise.all([
         loadCommandsModule(),
         loadHelpModule(),
