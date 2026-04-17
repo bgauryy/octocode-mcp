@@ -2,7 +2,7 @@ import { dim } from './utils/colors.js';
 import { runCLI } from './cli/index.js';
 
 async function showTopLevelHelp(): Promise<void> {
-  const { showHelp } = await import('./cli/help.js');
+  const { showHelp } = await import('./cli/main-help.js');
   showHelp();
 }
 

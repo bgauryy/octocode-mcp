@@ -49,8 +49,13 @@ async function loadToolCommandModule(): Promise<{
   return import('./tool-command.js');
 }
 
-async function loadHelpModule(): Promise<{
+async function loadMainHelpModule(): Promise<{
   showHelp(): void;
+}> {
+  return import('./main-help.js');
+}
+
+async function loadHelpModule(): Promise<{
   showCommandHelp(command: CLICommand): void;
 }> {
   return import('./help.js');
@@ -132,7 +137,7 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
       return true;
     }
 
-    const { showHelp } = await loadHelpModule();
+    const { showHelp } = await loadMainHelpModule();
     showHelp();
     return true;
   }
