@@ -30,6 +30,48 @@ const STATIC_COMMAND_HELP: CLICommand[] = [
     handler: async () => {},
   },
   {
+    name: 'auth',
+    aliases: ['a', 'gh'],
+    description: 'Manage GitHub authentication',
+    usage: 'octocode auth [login|logout|status|token]',
+    handler: async () => {},
+  },
+  {
+    name: 'login',
+    aliases: ['l'],
+    description: 'Authenticate with GitHub',
+    usage: 'octocode login [--hostname <host>] [--git-protocol <ssh|https>]',
+    options: [
+      {
+        name: 'hostname',
+        short: 'H',
+        description: 'GitHub Enterprise hostname (default: github.com)',
+        hasValue: true,
+      },
+      {
+        name: 'git-protocol',
+        short: 'p',
+        description: 'Git protocol to use (ssh or https)',
+        hasValue: true,
+      },
+    ],
+    handler: async () => {},
+  },
+  {
+    name: 'logout',
+    description: 'Sign out from GitHub',
+    usage: 'octocode logout [--hostname <host>]',
+    options: [
+      {
+        name: 'hostname',
+        short: 'H',
+        description: 'GitHub Enterprise hostname',
+        hasValue: true,
+      },
+    ],
+    handler: async () => {},
+  },
+  {
     name: 'skills',
     aliases: ['sk'],
     description: 'Install Octocode skills across AI clients',
@@ -94,6 +136,21 @@ const STATIC_COMMAND_HELP: CLICommand[] = [
         name: 'json',
         short: 'j',
         description: 'Output as JSON: {"token": "...", "type": "..."}',
+      },
+    ],
+    handler: async () => {},
+  },
+  {
+    name: 'status',
+    aliases: ['s'],
+    description: 'Show GitHub authentication status',
+    usage: 'octocode status [--hostname <host>]',
+    options: [
+      {
+        name: 'hostname',
+        short: 'H',
+        description: 'GitHub Enterprise hostname (default: github.com)',
+        hasValue: true,
       },
     ],
     handler: async () => {},
