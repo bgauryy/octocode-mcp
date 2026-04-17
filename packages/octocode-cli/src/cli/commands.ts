@@ -1987,7 +1987,6 @@ const commands: CLICommand[] = [
   tokenCommand,
   statusCommand,
   syncCommand,
-  ...agentCommands,
 ];
 
 export function findCommand(name: string): CLICommand | undefined {

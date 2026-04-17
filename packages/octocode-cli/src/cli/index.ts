@@ -1,6 +1,7 @@
 import { parseArgs, hasHelpFlag, hasVersionFlag } from './parser.js';
 import type { CLICommand } from './types.js';
 import type { ParsedArgs } from './types.js';
+import { AGENT_SUBCOMMAND_NAMES } from './agent-command-specs.js';
 
 declare const __APP_VERSION__: string;
 
@@ -8,6 +9,21 @@ async function loadCommandsModule(): Promise<{
   findCommand(name: string): CLICommand | undefined;
 }> {
   return import('./commands.js');
+}
+
+async function loadAgentCommandsModule(): Promise<{
+  findAgentCommand(name: string): CLICommand | undefined;
+}> {
+  return import('./agent-commands.js');
+}
+
+async function loadAgentCommandSpecsModule(): Promise<{
+  findAgentCommandSpec(name: string):
+    | import('./agent-command-specs.js').AgentCommandSpec
+    | undefined;
+  toAgentHelpCommand(spec: import('./agent-command-specs.js').AgentCommandSpec): CLICommand;
+}> {
+  return import('./agent-command-specs.js');
 }
 
 async function loadToolCommandModule(): Promise<{
@@ -69,6 +85,16 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
       return true;
     }
 
+    if (args.command && AGENT_SUBCOMMAND_NAMES.has(args.command)) {
+      const [{ findAgentCommandSpec, toAgentHelpCommand }, { showCommandHelp }] =
+        await Promise.all([loadAgentCommandSpecsModule(), loadHelpModule()]);
+      const spec = findAgentCommandSpec(args.command);
+      if (spec) {
+        showCommandHelp(toAgentHelpCommand(spec));
+        return true;
+      }
+    }
+
     if (args.command) {
       const [{ findCommand }, { showCommandHelp, showHelp }] = await Promise.all([
         loadCommandsModule(),
@@ -114,6 +140,15 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
       process.exitCode = 1;
     }
     return true;
+  }
+
+  if (AGENT_SUBCOMMAND_NAMES.has(args.command)) {
+    const { findAgentCommand } = await loadAgentCommandsModule();
+    const agentCommand = findAgentCommand(args.command);
+    if (agentCommand) {
+      await agentCommand.handler(args);
+      return true;
+    }
   }
 
   const { findCommand } = await loadCommandsModule();
