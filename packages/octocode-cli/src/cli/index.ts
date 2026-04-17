@@ -49,6 +49,15 @@ async function loadToolCommandModule(): Promise<{
   return import('./tool-command.js');
 }
 
+async function loadStaticToolHelpModule(): Promise<{
+  findStaticToolHelp(name: string):
+    | import('./tool-help-specs.js').StaticToolHelpSpec
+    | undefined;
+  showStaticToolHelp(spec: import('./tool-help-specs.js').StaticToolHelpSpec): void;
+}> {
+  return import('./tool-help-specs.js');
+}
+
 async function loadMainHelpModule(): Promise<{
   showHelp(): void;
 }> {
@@ -93,8 +102,17 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
       typeof args.options.tool === 'string' &&
       typeof args.args[0] === 'string'
     ) {
+      const toolName = args.args[0];
+      const { findStaticToolHelp, showStaticToolHelp } =
+        await loadStaticToolHelpModule();
+      const staticToolHelp = findStaticToolHelp(toolName);
+      if (staticToolHelp) {
+        showStaticToolHelp(staticToolHelp);
+        return true;
+      }
+
       const { showToolHelp } = await loadToolCommandModule();
-      if (await showToolHelp(args.args[0])) {
+      if (await showToolHelp(toolName)) {
         return true;
       }
     }
