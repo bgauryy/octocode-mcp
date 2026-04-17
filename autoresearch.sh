@@ -8,24 +8,10 @@ const { spawnSync } = require('node:child_process');
 
 const RUNS = 5;
 const COMMANDS = [
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', '--help'], 'help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'search-code', '--help'], 'search_code_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'get-file', '--help'], 'get_file_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'view-structure', '--help'], 'view_structure_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'search-repos', '--help'], 'search_repos_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'search-prs', '--help'], 'search_prs_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'package-search', '--help'], 'package_search_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'install', '--help'], 'install_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'skills', '--help'], 'skills_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'sync', '--help'], 'sync_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'mcp', '--help'], 'mcp_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'token', '--help'], 'token_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'cache', '--help'], 'cache_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'auth', '--help'], 'auth_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'login', '--help'], 'login_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'logout', '--help'], 'logout_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'status', '--help'], 'status_help'],
-  ['node', ['packages/octocode-cli/out/octocode-cli.js', '--version'], 'version'],
+  ['node', ['packages/octocode-cli/out/octocode-cli.js', '--tool', 'localSearchCode', '--help'], 'local_tool_help'],
+  ['node', ['packages/octocode-cli/out/octocode-cli.js', '--tool', 'githubSearchCode', '--help'], 'github_tool_help'],
+  ['node', ['packages/octocode-cli/out/octocode-cli.js', '--tool', 'packageSearch', '--help'], 'package_tool_help'],
+  ['node', ['packages/octocode-cli/out/octocode-cli.js', '--tools-context'], 'tools_context'],
 ];
 
 const timings = new Map(COMMANDS.map(([, , label]) => [label, []]));
@@ -50,61 +36,25 @@ for (let i = 0; i < RUNS; i++) {
     }
 
     const stdout = result.stdout || '';
-    if (label !== 'version') stdoutBytes += Buffer.byteLength(stdout, 'utf8');
+    stdoutBytes += Buffer.byteLength(stdout, 'utf8');
 
-    if (label === 'help') {
-      if (!stdout.includes('AGENT TOOLS')) passes = 0;
-      if (!stdout.includes('search-code')) passes = 0;
-    } else if (label === 'search_code_help') {
-      if (!stdout.includes('Search code in GitHub repositories')) passes = 0;
-      if (!stdout.includes('--query')) passes = 0;
-    } else if (label === 'get_file_help') {
-      if (!stdout.includes('Fetch file content from a GitHub repository')) passes = 0;
-      if (!stdout.includes('--match-string')) passes = 0;
-    } else if (label === 'view_structure_help') {
-      if (!stdout.includes('View directory structure of a GitHub repository')) passes = 0;
-      if (!stdout.includes('--depth')) passes = 0;
-    } else if (label === 'search_repos_help') {
-      if (!stdout.includes('Search GitHub repositories')) passes = 0;
-      if (!stdout.includes('--topics')) passes = 0;
-    } else if (label === 'search_prs_help') {
-      if (!stdout.includes('Search GitHub pull requests')) passes = 0;
-      if (!stdout.includes('--with-comments')) passes = 0;
-    } else if (label === 'package_search_help') {
-      if (!stdout.includes('Search npm or Python packages')) passes = 0;
-      if (!stdout.includes('--ecosystem')) passes = 0;
-    } else if (label === 'install_help') {
-      if (!stdout.includes('Install octocode-mcp for an IDE')) passes = 0;
-      if (!stdout.includes('--ide')) passes = 0;
-    } else if (label === 'skills_help') {
-      if (!stdout.includes('Install Octocode skills across AI clients')) passes = 0;
-      if (!stdout.includes('--skill')) passes = 0;
-    } else if (label === 'sync_help') {
-      if (!stdout.includes('Sync MCP configurations across all IDE clients')) passes = 0;
-      if (!stdout.includes('--dry-run')) passes = 0;
-    } else if (label === 'mcp_help') {
-      if (!stdout.includes('Non-interactive MCP marketplace management')) passes = 0;
-      if (!stdout.includes('--client')) passes = 0;
-    } else if (label === 'token_help') {
-      if (!stdout.includes('Print the GitHub token')) passes = 0;
-      if (!stdout.includes('--type')) passes = 0;
-    } else if (label === 'cache_help') {
-      if (!stdout.includes('Inspect and clean Octocode cache and logs')) passes = 0;
-      if (!stdout.includes('--repos')) passes = 0;
-    } else if (label === 'auth_help') {
-      if (!stdout.includes('Manage GitHub authentication')) passes = 0;
-      if (!stdout.includes('octocode-cli auth [login|logout|status|token]')) passes = 0;
-    } else if (label === 'login_help') {
-      if (!stdout.includes('Authenticate with GitHub')) passes = 0;
-      if (!stdout.includes('--git-protocol')) passes = 0;
-    } else if (label === 'logout_help') {
-      if (!stdout.includes('Sign out from GitHub')) passes = 0;
-      if (!stdout.includes('--hostname')) passes = 0;
-    } else if (label === 'status_help') {
-      if (!stdout.includes('Show GitHub authentication status')) passes = 0;
-      if (!stdout.includes('--hostname')) passes = 0;
-    } else if (label === 'version') {
-      if (!stdout.includes('octocode-cli v')) passes = 0;
+    if (label === 'local_tool_help') {
+      if (!stdout.includes('localSearchCode')) passes = 0;
+      if (!stdout.includes('Required')) passes = 0;
+      if (!stdout.includes('Example')) passes = 0;
+    } else if (label === 'github_tool_help') {
+      if (!stdout.includes('githubSearchCode')) passes = 0;
+      if (!stdout.includes('Auto-filled')) passes = 0;
+      if (!stdout.includes('mainResearchGoal')) passes = 0;
+    } else if (label === 'package_tool_help') {
+      if (!stdout.includes('packageSearch')) passes = 0;
+      if (!stdout.includes('Auto-filled')) passes = 0;
+      if (!stdout.includes('Example')) passes = 0;
+    } else if (label === 'tools_context') {
+      if (!stdout.includes('CLI Contract:')) passes = 0;
+      if (!stdout.includes('Octocode MCP Instructions:')) passes = 0;
+      if (!stdout.includes('localSearchCode')) passes = 0;
+      if (!stdout.includes('githubSearchCode')) passes = 0;
     }
   }
   if (passes === 0) break;
