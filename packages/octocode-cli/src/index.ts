@@ -1,6 +1,10 @@
 import { dim } from './utils/colors.js';
 import { runCLI } from './cli/index.js';
-import { showHelp } from './cli/help.js';
+
+async function showTopLevelHelp(): Promise<void> {
+  const { showHelp } = await import('./cli/help.js');
+  showHelp();
+}
 
 async function main(): Promise<void> {
   const handled = await runCLI();
@@ -9,7 +13,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  showHelp();
+  await showTopLevelHelp();
 }
 
 function handleTermination(): void {
