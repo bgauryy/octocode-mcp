@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   findStaticToolHelp: vi.fn(),
   showStaticToolHelp: vi.fn(),
   executeToolCommand: vi.fn().mockResolvedValue(true),
+  executeLocalToolCommand: vi.fn().mockResolvedValue(true),
   printToolsContext: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -26,6 +27,10 @@ vi.mock('../../src/cli/tool-command.js', () => ({
   showToolHelp: mocks.showToolHelp,
   executeToolCommand: mocks.executeToolCommand,
   printToolsContext: mocks.printToolsContext,
+}));
+
+vi.mock('../../src/cli/local-tool-command.js', () => ({
+  executeLocalToolCommand: mocks.executeLocalToolCommand,
 }));
 
 vi.mock('../../src/cli/tool-help-specs.js', () => ({
@@ -61,7 +66,7 @@ describe('runCLI', () => {
     expect(mocks.findCommand).not.toHaveBeenCalled();
   });
 
-  it('routes top-level --tool usage through the shared tool executor', async () => {
+  it('routes top-level local --tool usage through the local tool executor', async () => {
     const { runCLI } = await import('../../src/cli/index.js');
 
     const handled = await runCLI([
@@ -71,14 +76,15 @@ describe('runCLI', () => {
     ]);
 
     expect(handled).toBe(true);
-    expect(mocks.executeToolCommand).toHaveBeenCalledTimes(1);
-    expect(mocks.executeToolCommand).toHaveBeenCalledWith({
+    expect(mocks.executeLocalToolCommand).toHaveBeenCalledTimes(1);
+    expect(mocks.executeLocalToolCommand).toHaveBeenCalledWith({
       command: 'tool',
       args: ['localSearchCode', '{"path":".","pattern":"runCLI"}'],
       options: {
         tool: 'localSearchCode',
       },
     });
+    expect(mocks.executeToolCommand).not.toHaveBeenCalled();
     expect(mocks.findCommand).not.toHaveBeenCalled();
   });
 

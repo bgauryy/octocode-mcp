@@ -45,6 +45,7 @@ interface ToolDefinition {
   name: string;
   schema: z.ZodType;
   execute: ToolExecutor;
+  requiresServerRuntime?: boolean;
   requiresProviders?: boolean;
 }
 
@@ -92,36 +93,42 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'githubSearchCode',
     schema: GitHubCodeSearchQuerySchema,
     execute: wrapExecutor(searchMultipleGitHubCode),
+    requiresServerRuntime: true,
     requiresProviders: true,
   },
   {
     name: 'githubGetFileContent',
     schema: FileContentQuerySchema,
     execute: wrapExecutor(fetchMultipleGitHubFileContents),
+    requiresServerRuntime: true,
     requiresProviders: true,
   },
   {
     name: 'githubViewRepoStructure',
     schema: GitHubViewRepoStructureQuerySchema,
     execute: wrapExecutor(exploreMultipleRepositoryStructures),
+    requiresServerRuntime: true,
     requiresProviders: true,
   },
   {
     name: 'githubSearchRepositories',
     schema: GitHubReposSearchSingleQuerySchema,
     execute: wrapExecutor(searchMultipleGitHubRepos),
+    requiresServerRuntime: true,
     requiresProviders: true,
   },
   {
     name: 'githubSearchPullRequests',
     schema: GitHubPullRequestSearchQuerySchema,
     execute: wrapExecutor(searchMultipleGitHubPullRequests),
+    requiresServerRuntime: true,
     requiresProviders: true,
   },
   {
     name: 'packageSearch',
     schema: PackageSearchQuerySchema,
     execute: wrapExecutor(searchPackages),
+    requiresServerRuntime: true,
   },
   {
     name: 'localSearchCode',
@@ -147,16 +154,19 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'lspGotoDefinition',
     schema: LSPGotoDefinitionQuerySchema,
     execute: wrapExecutor(executeGotoDefinition),
+    requiresServerRuntime: true,
   },
   {
     name: 'lspFindReferences',
     schema: LSPFindReferencesQuerySchema,
     execute: wrapExecutor(executeFindReferences),
+    requiresServerRuntime: true,
   },
   {
     name: 'lspCallHierarchy',
     schema: LSPCallHierarchyQuerySchema,
     execute: wrapExecutor(executeCallHierarchy),
+    requiresServerRuntime: true,
   },
 ];
 
@@ -720,7 +730,9 @@ async function ensureProvidersReady(): Promise<void> {
 }
 
 async function ensureToolRuntimeReady(tool: ToolDefinition): Promise<void> {
-  await ensureServerRuntimeReady();
+  if (tool.requiresServerRuntime) {
+    await ensureServerRuntimeReady();
+  }
 
   if (tool.requiresProviders) {
     await ensureProvidersReady();

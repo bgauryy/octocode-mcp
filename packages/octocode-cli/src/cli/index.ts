@@ -13,6 +13,13 @@ const AGENT_SUBCOMMAND_NAMES = new Set([
   'package-search',
 ]);
 
+const LOCAL_TOOL_NAMES = new Set([
+  'localSearchCode',
+  'localGetFileContent',
+  'localFindFiles',
+  'localViewStructure',
+]);
+
 async function loadCommandsModule(): Promise<{
   findCommand(name: string): CLICommand | undefined;
 }> {
@@ -47,6 +54,12 @@ async function loadToolCommandModule(): Promise<{
   showToolHelp(toolName: string): Promise<boolean>;
 }> {
   return import('./tool-command.js');
+}
+
+async function loadLocalToolCommandModule(): Promise<{
+  executeLocalToolCommand(args: ParsedArgs): Promise<boolean>;
+}> {
+  return import('./local-tool-command.js');
 }
 
 async function loadStaticToolHelpModule(): Promise<{
@@ -180,8 +193,9 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
       "  warning: --tool is deprecated; use 'octocode-cli <subcommand>' (e.g. search-code, get-file). See 'octocode-cli --help'."
     );
 
-    const { executeToolCommand } = await loadToolCommandModule();
-    const success = await executeToolCommand(args);
+    const success = LOCAL_TOOL_NAMES.has(args.options.tool)
+      ? await (await loadLocalToolCommandModule()).executeLocalToolCommand(args)
+      : await (await loadToolCommandModule()).executeToolCommand(args);
     if (!success) {
       process.exitCode = 1;
     }

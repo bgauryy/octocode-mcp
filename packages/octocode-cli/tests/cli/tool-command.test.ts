@@ -174,7 +174,7 @@ describe('toolCommand', () => {
       },
     });
 
-    expect(publicMocks.initialize).toHaveBeenCalledTimes(1);
+    expect(publicMocks.initialize).not.toHaveBeenCalled();
     expect(publicMocks.initializeProviders).not.toHaveBeenCalled();
     expect(publicMocks.localSearchCode).toHaveBeenCalledWith({
       queries: [
