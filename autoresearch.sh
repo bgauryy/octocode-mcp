@@ -6,7 +6,7 @@ YARN_ENABLE_SCRIPTS=0 yarn --cwd packages/octocode-cli build:dev >/dev/null
 node <<'NODE'
 const { spawnSync } = require('node:child_process');
 
-const RUNS = 7;
+const RUNS = 5;
 const COMMANDS = [
   ['node', ['packages/octocode-cli/out/octocode-cli.js', '--help'], 'help'],
   ['node', ['packages/octocode-cli/out/octocode-cli.js', 'search-code', '--help'], 'agent_help'],
@@ -16,6 +16,10 @@ const COMMANDS = [
   ['node', ['packages/octocode-cli/out/octocode-cli.js', 'mcp', '--help'], 'mcp_help'],
   ['node', ['packages/octocode-cli/out/octocode-cli.js', 'token', '--help'], 'token_help'],
   ['node', ['packages/octocode-cli/out/octocode-cli.js', 'cache', '--help'], 'cache_help'],
+  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'auth', '--help'], 'auth_help'],
+  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'login', '--help'], 'login_help'],
+  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'logout', '--help'], 'logout_help'],
+  ['node', ['packages/octocode-cli/out/octocode-cli.js', 'status', '--help'], 'status_help'],
   ['node', ['packages/octocode-cli/out/octocode-cli.js', '--version'], 'version'],
 ];
 
@@ -41,9 +45,7 @@ for (let i = 0; i < RUNS; i++) {
     }
 
     const stdout = result.stdout || '';
-    if (label !== 'version') {
-      stdoutBytes += Buffer.byteLength(stdout, 'utf8');
-    }
+    if (label !== 'version') stdoutBytes += Buffer.byteLength(stdout, 'utf8');
 
     if (label === 'help') {
       if (!stdout.includes('AGENT TOOLS')) passes = 0;
@@ -69,6 +71,18 @@ for (let i = 0; i < RUNS; i++) {
     } else if (label === 'cache_help') {
       if (!stdout.includes('Inspect and clean Octocode cache and logs')) passes = 0;
       if (!stdout.includes('--repos')) passes = 0;
+    } else if (label === 'auth_help') {
+      if (!stdout.includes('Manage GitHub authentication')) passes = 0;
+      if (!stdout.includes('octocode-cli auth [login|logout|status|token]')) passes = 0;
+    } else if (label === 'login_help') {
+      if (!stdout.includes('Authenticate with GitHub')) passes = 0;
+      if (!stdout.includes('--git-protocol')) passes = 0;
+    } else if (label === 'logout_help') {
+      if (!stdout.includes('Sign out from GitHub')) passes = 0;
+      if (!stdout.includes('--hostname')) passes = 0;
+    } else if (label === 'status_help') {
+      if (!stdout.includes('Show GitHub authentication status')) passes = 0;
+      if (!stdout.includes('--hostname')) passes = 0;
     } else if (label === 'version') {
       if (!stdout.includes('octocode-cli v')) passes = 0;
     }
