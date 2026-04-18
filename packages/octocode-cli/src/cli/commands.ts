@@ -678,10 +678,10 @@ const authCommand: CLICommand = {
       (args.options['hostname'] as string | undefined) || 'github.com';
 
     if (subcommand === 'login') {
-      return loginCommand.handler!(args);
+      return loginCommand.handler(args);
     }
     if (subcommand === 'logout') {
-      return logoutCommand.handler!(args);
+      return logoutCommand.handler(args);
     }
     if (subcommand === 'status') {
       return showAuthStatus();
@@ -744,7 +744,7 @@ const authCommand: CLICommand = {
     });
 
     if (action === 'login') {
-      await loginCommand.handler!({ command: 'login', args: [], options: {} });
+      await loginCommand.handler({ command: 'login', args: [], options: {} });
     } else if (action === 'logout') {
       await oauthLogout(hostname);
       console.log();
@@ -758,7 +758,7 @@ const authCommand: CLICommand = {
       console.log();
       console.log(`  ${dim('Starting new login...')}`);
 
-      await loginCommand.handler!({ command: 'login', args: [], options: {} });
+      await loginCommand.handler({ command: 'login', args: [], options: {} });
     }
   },
 };

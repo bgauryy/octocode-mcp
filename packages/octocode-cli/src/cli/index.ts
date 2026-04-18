@@ -1,12 +1,12 @@
 import { parseArgs, hasHelpFlag, hasVersionFlag } from './parser.js';
-import type { CLICommand } from './types.js';
-import type { ParsedArgs } from './types.js';
+import type { CLICommand, CLICommandSpec, ParsedArgs } from './types.js';
 import { AGENT_SUBCOMMAND_NAMES } from './agent-command-specs.js';
 
 declare const __APP_VERSION__: string;
 
-// Must stay in sync with TOOL_DEFINITIONS in local-tool-command.ts.
+// Must match LOCAL_TOOL_NAMES exported from local-tool-command.ts.
 // Duplicated here to avoid importing that module eagerly (code-splitting perf).
+// Verified by test: local-tool-command.test.ts → "LOCAL_TOOL_NAMES matches index.ts"
 const LOCAL_TOOL_NAMES = new Set([
   'localSearchCode',
   'localGetFileContent',
@@ -32,14 +32,14 @@ async function loadAgentCommandSpecsModule(): Promise<{
   ): import('./agent-command-specs.js').AgentCommandSpec | undefined;
   toAgentHelpCommand(
     spec: import('./agent-command-specs.js').AgentCommandSpec
-  ): CLICommand;
+  ): CLICommandSpec;
 }> {
   return import('./agent-command-specs.js');
 }
 
 async function loadStaticCommandHelpModule(): Promise<{
-  findStaticCommandHelp(name: string): CLICommand | undefined;
-  showStaticCommandHelp(command: CLICommand): void;
+  findStaticCommandHelp(name: string): CLICommandSpec | undefined;
+  showStaticCommandHelp(command: CLICommandSpec): void;
 }> {
   return import('./command-help-specs.js');
 }
@@ -76,7 +76,7 @@ async function loadMainHelpModule(): Promise<{
 }
 
 async function loadHelpModule(): Promise<{
-  showCommandHelp(command: CLICommand): void;
+  showCommandHelp(command: CLICommandSpec): void;
 }> {
   return import('./help.js');
 }
@@ -195,7 +195,7 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
     }
 
     console.error(
-      "  warning: --tool is deprecated; use 'octocode-cli <subcommand>' (e.g. search-code, get-file). See 'octocode-cli --help'."
+      "  warning: --tool is deprecated; use 'octocode-cli <subcommand>' (e.g. search-code, get-file). --json now emits compact structuredContent only. See 'octocode-cli --help'."
     );
 
     const success = LOCAL_TOOL_NAMES.has(args.options.tool)
@@ -210,7 +210,7 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
   if (AGENT_SUBCOMMAND_NAMES.has(args.command)) {
     const { findAgentCommand } = await loadAgentCommandsModule();
     const agentCommand = findAgentCommand(args.command);
-    if (agentCommand?.handler) {
+    if (agentCommand) {
       await agentCommand.handler(args);
       return true;
     }
@@ -228,8 +228,6 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
     return true;
   }
 
-  if (command.handler) {
-    await command.handler(args);
-  }
+  await command.handler(args);
   return true;
 }

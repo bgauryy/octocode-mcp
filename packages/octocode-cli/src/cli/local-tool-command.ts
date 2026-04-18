@@ -63,6 +63,10 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
 ];
 
+export const LOCAL_TOOL_NAMES = new Set(
+  TOOL_DEFINITIONS.map(tool => tool.name)
+);
+
 const TOOL_RUNTIME_OPTION_KEYS = new Set([
   'tool',
   'output',

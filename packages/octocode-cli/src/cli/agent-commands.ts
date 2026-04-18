@@ -93,6 +93,7 @@ async function readStdinJson(): Promise<string | null> {
     let data = '';
     const timer = setTimeout(() => {
       process.stdin.removeAllListeners();
+      process.stdin.pause();
       process.stdin.unref();
       resolve(data.trim().length > 0 ? data.trim() : null);
     }, STDIN_TIMEOUT_MS);

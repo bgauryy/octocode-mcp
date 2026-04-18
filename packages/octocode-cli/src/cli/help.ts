@@ -1,7 +1,7 @@
 import { c, bold, dim } from '../utils/colors.js';
-import type { CLICommand } from './types.js';
+import type { CLICommandSpec } from './types.js';
 
-export function showCommandHelp(command: CLICommand): void {
+export function showCommandHelp(command: CLICommandSpec): void {
   const lines = [
     '',
     `  ${c('magenta', bold('🔍🐙 octocode-cli ' + command.name))}`,

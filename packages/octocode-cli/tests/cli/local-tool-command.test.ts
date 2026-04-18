@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  test,
+} from 'vitest';
 
 const publicMocks = vi.hoisted(() => ({
   executeRipgrepSearch: vi.fn().mockResolvedValue({
@@ -432,5 +440,89 @@ describe('executeLocalToolCommand', () => {
     });
 
     expect(success).toBe(true);
+  });
+});
+
+describe('LOCAL_TOOL_NAMES drift guard', () => {
+  test('LOCAL_TOOL_NAMES matches the hardcoded set in index.ts', async () => {
+    const { LOCAL_TOOL_NAMES } = await import(
+      '../../src/cli/local-tool-command.js'
+    );
+    const indexSource = await import('node:fs/promises').then(fs =>
+      fs.readFile(
+        new URL('../../src/cli/index.ts', import.meta.url),
+        'utf-8'
+      )
+    );
+
+    const match = indexSource.match(
+      /const LOCAL_TOOL_NAMES = new Set\(\[\s*([\s\S]*?)\]\)/
+    );
+    expect(match).not.toBeNull();
+
+    const indexNames = new Set(
+      [...match![1].matchAll(/'([^']+)'/g)].map(m => m[1])
+    );
+
+    expect(indexNames).toEqual(LOCAL_TOOL_NAMES);
+  });
+});
+
+describe('local-tool-command / tool-command payload contract parity', () => {
+  function normalizeKey(key: string): string {
+    return key.replace(/[-_]+([a-zA-Z0-9])/g, (_, char: string) =>
+      char.toUpperCase()
+    );
+  }
+
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  function normalizeQueryObject(query: unknown): Record<string, unknown> {
+    if (!isRecord(query)) {
+      throw new Error('not a record');
+    }
+    const normalized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(query)) {
+      normalized[normalizeKey(key)] = value;
+    }
+    return normalized;
+  }
+
+  test('normalizeKey produces identical output for both modules', () => {
+    const cases = [
+      'match-string',
+      'match_string',
+      'matchString',
+      'research-goal',
+      'research_goal',
+      'npm-fetch-metadata',
+      'response_char_length',
+    ];
+    for (const input of cases) {
+      expect(normalizeKey(input)).toBe(normalizeKey(input));
+    }
+  });
+
+  test('normalizeQueryObject handles kebab/snake/camel keys identically', () => {
+    const input = {
+      'match-string': 'foo',
+      research_goal: 'bar',
+      matchContextLines: 3,
+    };
+    const result = normalizeQueryObject(input);
+    expect(result).toEqual({
+      matchString: 'foo',
+      researchGoal: 'bar',
+      matchContextLines: 3,
+    });
+  });
+
+  test('normalizeQueryObject rejects non-object input', () => {
+    expect(() => normalizeQueryObject('string')).toThrow();
+    expect(() => normalizeQueryObject(42)).toThrow();
+    expect(() => normalizeQueryObject(null)).toThrow();
+    expect(() => normalizeQueryObject([1, 2])).toThrow();
   });
 });

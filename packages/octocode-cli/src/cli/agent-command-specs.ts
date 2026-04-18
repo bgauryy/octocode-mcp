@@ -1,4 +1,4 @@
-import type { CLICommand } from './types.js';
+import type { CLICommandSpec } from './types.js';
 
 type FlagType = 'string' | 'number' | 'boolean' | 'array';
 
@@ -226,7 +226,7 @@ export function findAgentCommandSpec(
   return AGENT_COMMAND_SPECS.find(spec => spec.name === name);
 }
 
-export function toAgentHelpCommand(spec: AgentCommandSpec): CLICommand {
+export function toAgentHelpCommand(spec: AgentCommandSpec): CLICommandSpec {
   return {
     name: spec.name,
     description: spec.description,

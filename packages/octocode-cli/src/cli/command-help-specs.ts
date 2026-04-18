@@ -1,7 +1,7 @@
 import { c, bold, dim } from '../utils/colors.js';
-import type { CLICommand } from './types.js';
+import type { CLICommandSpec } from './types.js';
 
-const STATIC_COMMAND_HELP: CLICommand[] = [
+const STATIC_COMMAND_HELP: CLICommandSpec[] = [
   {
     name: 'install',
     aliases: ['i', 'setup'],
@@ -267,13 +267,15 @@ const STATIC_COMMAND_HELP: CLICommand[] = [
   },
 ];
 
-export function findStaticCommandHelp(name: string): CLICommand | undefined {
+export function findStaticCommandHelp(
+  name: string
+): CLICommandSpec | undefined {
   return STATIC_COMMAND_HELP.find(
     command => command.name === name || command.aliases?.includes(name)
   );
 }
 
-export function showStaticCommandHelp(command: CLICommand): void {
+export function showStaticCommandHelp(command: CLICommandSpec): void {
   const lines = [
     '',
     `  ${c('magenta', bold('🔍🐙 octocode-cli ' + command.name))}`,
