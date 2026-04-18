@@ -255,7 +255,7 @@ describe('toolCommand', () => {
       expect.stringContaining('localSearchCode')
     );
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Required')
+      expect.stringContaining('Input Schema')
     );
   });
 
@@ -306,7 +306,7 @@ describe('toolCommand', () => {
 
     expect(publicMocks.localSearchCode).not.toHaveBeenCalled();
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Pass one JSON object string')
+      expect.stringContaining('Unsupported tool flags')
     );
     expect(process.exitCode).toBe(1);
   });
@@ -338,7 +338,7 @@ describe('toolCommand', () => {
     expect(publicMocks.loadToolContent).toHaveBeenCalledTimes(1);
     expect(context).toContain('CLI Contract:');
     expect(context).toContain(
-      "octocode-cli --tool <toolName> '<json-stringified-input>'"
+      "octocode-cli --tool <toolName> --queries '<json-stringified-input>'"
     );
     expect(context).toContain('Use Octocode tools carefully.');
     expect(context).toContain('1. githubSearchCode');

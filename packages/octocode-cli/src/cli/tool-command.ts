@@ -41,7 +41,7 @@ type ToolResult = {
 
 type ToolExecutor = (input: unknown) => Promise<ToolResult>;
 
-interface ToolDefinition {
+export interface ToolDefinition {
   name: string;
   schema: z.ZodType;
   execute: ToolExecutor;
@@ -58,7 +58,7 @@ interface JsonSchemaObject extends Record<string, unknown> {
   items?: unknown;
 }
 
-const AUTO_FILLED_FIELDS = new Set([
+export const AUTO_FILLED_FIELDS = new Set([
   'id',
   'mainResearchGoal',
   'researchGoal',
@@ -67,6 +67,7 @@ const AUTO_FILLED_FIELDS = new Set([
 
 const TOOL_RUNTIME_OPTION_KEYS = new Set([
   'tool',
+  'queries',
   'output',
   'o',
   'json',
@@ -80,7 +81,7 @@ const TOOL_RUNTIME_OPTION_KEYS = new Set([
 ]);
 
 const CANONICAL_TOOL_USAGE =
-  "octocode-cli --tool <toolName> '<json-stringified-input>'";
+  "octocode-cli --tool <toolName> --queries '<json-stringified-input>'";
 
 function wrapExecutor<TInput>(
   fn: (input: TInput) => Promise<ToolResult>
@@ -88,7 +89,7 @@ function wrapExecutor<TInput>(
   return async (input: unknown) => fn(input as TInput);
 }
 
-const TOOL_DEFINITIONS: ToolDefinition[] = [
+export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'githubSearchCode',
     schema: GitHubCodeSearchQuerySchema,
@@ -184,11 +185,11 @@ function isJsonSchemaObject(value: unknown): value is JsonSchemaObject {
   return isRecord(value);
 }
 
-function findToolDefinition(name: string): ToolDefinition | undefined {
+export function findToolDefinition(name: string): ToolDefinition | undefined {
   return TOOL_DEFINITIONS.find(tool => tool.name === name);
 }
 
-function getToolCategory(
+export function getToolCategory(
   toolName: string
 ): 'GitHub' | 'Local' | 'LSP' | 'Package' | 'Other' {
   if (toolName.startsWith('github')) {
@@ -334,7 +335,7 @@ function formatToolExampleCommand(toolName: string): string {
     ? JSON.stringify(buildExampleQuery(tool))
     : '{"path":".","pattern":"needle"}';
 
-  return `octocode-cli --tool ${toolName} '${exampleInput}'`;
+  return `octocode-cli --tool ${toolName} --queries '${exampleInput}'`;
 }
 
 function getUnexpectedToolOptionKeys(args: ParsedArgs): string[] {
@@ -364,7 +365,7 @@ function buildToolPayload(
       .join(', ');
 
     throw new Error(
-      `Pass one JSON object string after the tool name. Unsupported tool flags: ${formattedKeys}. Use ${formatToolExampleCommand(toolName)}.`
+      `Unsupported tool flags: ${formattedKeys}. Use ${formatToolExampleCommand(toolName)}.`
     );
   }
 
@@ -374,7 +375,10 @@ function buildToolPayload(
     );
   }
 
-  const inputText = args.args[1];
+  const inputText =
+    typeof args.options.queries === 'string'
+      ? args.options.queries
+      : args.args[1];
   if (typeof inputText !== 'string') {
     return null;
   }
@@ -424,7 +428,7 @@ function buildToolPayload(
   };
 }
 
-function getDisplayFields(tool: ToolDefinition): Array<{
+export function getDisplayFields(tool: ToolDefinition): Array<{
   name: string;
   required: boolean;
   type: string;
@@ -561,7 +565,7 @@ export async function showAvailableTools(): Promise<void> {
 
   console.log();
   console.log(
-    `  ${dim('Tip:')} ${c('yellow', 'octocode-cli --tool localSearchCode \'{"path":".","pattern":"runCLI"}\'')}`
+    `  ${dim('Tip:')} ${c('yellow', 'octocode-cli --tool localSearchCode --queries \'{"path":".","pattern":"runCLI"}\'')}`
   );
   console.log();
 }
@@ -574,32 +578,20 @@ export async function showToolHelp(toolName: string): Promise<boolean> {
 
   const metadata = await getOptionalToolMetadata();
   const fields = getDisplayFields(tool);
-  const requiredFields = fields.filter(field => field.required);
-  const optionalFields = fields.filter(field => !field.required);
 
   console.log();
   console.log(`  ${c('magenta', bold(tool.name))}`);
   console.log(`  ${getToolDescription(tool.name, metadata)}`);
   console.log();
 
-  if (requiredFields.length > 0) {
+  console.log(`  ${bold('Input Schema')}`);
+  for (const field of fields) {
+    const reqTag = field.required ? c('red', ' [required]') : '';
     console.log(
-      `  ${bold('Required')}: ${requiredFields
-        .map(field => `${field.name} (${field.type})`)
-        .join(', ')}`
-    );
-  } else {
-    console.log(`  ${bold('Required')}: none`);
-  }
-
-  if (optionalFields.length > 0) {
-    console.log(
-      `  ${bold('Optional')}: ${optionalFields
-        .slice(0, 10)
-        .map(field => `${field.name} (${field.type})`)
-        .join(', ')}`
+      `    ${c('cyan', field.name)} (${field.type})${reqTag}${field.description ? dim(` — ${field.description}`) : ''}`
     );
   }
+  console.log();
 
   console.log(
     `  ${dim('Auto-filled')}: id, researchGoal, reasoning${
@@ -611,10 +603,16 @@ export async function showToolHelp(toolName: string): Promise<boolean> {
   );
   console.log();
 
+  console.log(`  ${bold('Output Schema')}`);
+  console.log(`    ${dim('content')}: Array<{ type: string; text: string }>`);
+  console.log(`    ${dim('structuredContent')}: object (optional)`);
+  console.log(`    ${dim('isError')}: boolean (optional)`);
+  console.log();
+
   const exampleQuery = buildExampleQuery(tool);
   console.log(`  ${bold('Example')}`);
   console.log(
-    `    ${c('yellow', `octocode-cli --tool ${tool.name} '${JSON.stringify(exampleQuery)}'`)}`
+    `    ${c('yellow', `octocode-cli --tool ${tool.name} --queries '${JSON.stringify(exampleQuery)}'`)}`
   );
   console.log();
 
@@ -632,6 +630,17 @@ export async function getToolsContextString(): Promise<string> {
     '',
     'Octocode MCP Instructions:',
     metadata.instructions.trim(),
+    '',
+    'Output schema (all tools):',
+    JSON.stringify(
+      {
+        content: 'Array<{ type: string; text: string }>',
+        structuredContent: 'object (optional)',
+        isError: 'boolean (optional)',
+      },
+      null,
+      2
+    ),
     '',
     'Tools:',
   ];
@@ -821,12 +830,17 @@ export async function executeToolCommand(args: ParsedArgs): Promise<boolean> {
 
 export const toolCommand: CLICommand = {
   name: 'tool',
-  description: 'Internal handler for top-level --tool execution',
-  usage: `octocode-cli --tool <toolName> '<json-stringified-input>'`,
+  description: 'Run an Octocode tool directly',
+  usage: `octocode-cli --tool <toolName> --queries '<json-stringified-input>'`,
   options: [
     {
       name: 'tool',
-      description: 'Tool name for top-level tool execution.',
+      description: 'Tool name to execute.',
+      hasValue: true,
+    },
+    {
+      name: 'queries',
+      description: 'JSON-stringified tool input (query object or array).',
       hasValue: true,
     },
     {

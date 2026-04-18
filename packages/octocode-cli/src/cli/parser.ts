@@ -1,5 +1,4 @@
 import type { ParsedArgs } from './types.js';
-import { AGENT_SUBCOMMAND_NAMES } from './agent-command-specs.js';
 
 const OPTIONS_WITH_VALUES = new Set([
   'ide',
@@ -28,6 +27,7 @@ const OPTIONS_WITH_VALUES = new Set([
   'env',
   'config',
   'tool',
+  'queries',
   'input',
   'responseCharLength',
   'responseCharOffset',
@@ -55,13 +55,6 @@ const BOOLEAN_OPTIONS = new Set([
   'list',
   'schema',
   'tools-context',
-  'full-content',
-  'merged',
-  'draft',
-  'with-comments',
-  'with-commits',
-  'npm-fetch-metadata',
-  'python-fetch-metadata',
 ]);
 
 const SINGLE_DASH_LONG_OPTIONS = new Set([
@@ -70,18 +63,12 @@ const SINGLE_DASH_LONG_OPTIONS = new Set([
   'responseCharOffset',
 ]);
 
-const AGENT_SUBCOMMANDS = AGENT_SUBCOMMAND_NAMES;
-
 function shouldConsumeNextValue(args: ParsedArgs, key: string): boolean {
   if (BOOLEAN_OPTIONS.has(key)) {
     return false;
   }
 
   if (OPTIONS_WITH_VALUES.has(key)) {
-    return true;
-  }
-
-  if (args.command && AGENT_SUBCOMMANDS.has(args.command)) {
     return true;
   }
 

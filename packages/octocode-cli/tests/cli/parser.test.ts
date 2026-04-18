@@ -165,6 +165,22 @@ describe('CLI Parser', () => {
       });
     });
 
+    it('should parse --tool with --queries flag', () => {
+      const result = parseArgs([
+        '--tool',
+        'localSearchCode',
+        '--queries',
+        '{"path":".","pattern":"runCLI"}',
+      ]);
+
+      expect(result.command).toBe('tool');
+      expect(result.args).toEqual(['localSearchCode']);
+      expect(result.options).toEqual({
+        tool: 'localSearchCode',
+        queries: '{"path":".","pattern":"runCLI"}',
+      });
+    });
+
     it('should parse --tools-context as a top-level boolean flag', () => {
       const result = parseArgs(['--tools-context']);
 

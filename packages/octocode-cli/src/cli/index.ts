@@ -1,18 +1,7 @@
 import { parseArgs, hasHelpFlag, hasVersionFlag } from './parser.js';
 import type { CLICommand, CLICommandSpec, ParsedArgs } from './types.js';
-import { AGENT_SUBCOMMAND_NAMES } from './agent-command-specs.js';
 
 declare const __APP_VERSION__: string;
-
-// Must match LOCAL_TOOL_NAMES exported from local-tool-command.ts.
-// Duplicated here to avoid importing that module eagerly (code-splitting perf).
-// Verified by test: local-tool-command.test.ts → "LOCAL_TOOL_NAMES matches index.ts"
-const LOCAL_TOOL_NAMES = new Set([
-  'localSearchCode',
-  'localGetFileContent',
-  'localFindFiles',
-  'localViewStructure',
-]);
 
 async function loadCommandsModule(): Promise<{
   findCommand(name: string): CLICommand | undefined;
@@ -20,26 +9,8 @@ async function loadCommandsModule(): Promise<{
   return import('./commands.js');
 }
 
-async function loadAgentCommandsModule(): Promise<{
-  findAgentCommand(name: string): CLICommand | undefined;
-}> {
-  return import('./agent-commands.js');
-}
-
-async function loadAgentCommandSpecsModule(): Promise<{
-  findAgentCommandSpec(
-    name: string
-  ): import('./agent-command-specs.js').AgentCommandSpec | undefined;
-  toAgentHelpCommand(
-    spec: import('./agent-command-specs.js').AgentCommandSpec
-  ): CLICommandSpec;
-}> {
-  return import('./agent-command-specs.js');
-}
-
 async function loadStaticCommandHelpModule(): Promise<{
   findStaticCommandHelp(name: string): CLICommandSpec | undefined;
-  showStaticCommandHelp(command: CLICommandSpec): void;
 }> {
   return import('./command-help-specs.js');
 }
@@ -50,23 +21,6 @@ async function loadToolCommandModule(): Promise<{
   showToolHelp(toolName: string): Promise<boolean>;
 }> {
   return import('./tool-command.js');
-}
-
-async function loadLocalToolCommandModule(): Promise<{
-  executeLocalToolCommand(args: ParsedArgs): Promise<boolean>;
-}> {
-  return import('./local-tool-command.js');
-}
-
-async function loadStaticToolHelpModule(): Promise<{
-  findStaticToolHelp(
-    name: string
-  ): import('./tool-help-specs.js').StaticToolHelpSpec | undefined;
-  showStaticToolHelp(
-    spec: import('./tool-help-specs.js').StaticToolHelpSpec
-  ): void;
-}> {
-  return import('./tool-help-specs.js');
 }
 
 async function loadMainHelpModule(): Promise<{
@@ -84,10 +38,10 @@ async function loadHelpModule(): Promise<{
 function printLegacyToolCommandError(): void {
   console.log();
   console.log(
-    "  Use octocode-cli --tool <toolName> '<json-stringified-input>'."
+    "  Use octocode-cli --tool <toolName> --queries '<json-stringified-input>'."
   );
   console.log(
-    '  Example: octocode-cli --tool localSearchCode \'{"path":".","pattern":"runCLI"}\''
+    '  Example: octocode-cli --tool localSearchCode --queries \'{"path":".","pattern":"runCLI"}\''
   );
   console.log();
 }
@@ -113,17 +67,8 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
       typeof args.options.tool === 'string' &&
       typeof args.args[0] === 'string'
     ) {
-      const toolName = args.args[0];
-      const { findStaticToolHelp, showStaticToolHelp } =
-        await loadStaticToolHelpModule();
-      const staticToolHelp = findStaticToolHelp(toolName);
-      if (staticToolHelp) {
-        showStaticToolHelp(staticToolHelp);
-        return true;
-      }
-
       const { showToolHelp } = await loadToolCommandModule();
-      if (await showToolHelp(toolName)) {
+      if (await showToolHelp(args.args[0])) {
         return true;
       }
     }
@@ -135,35 +80,19 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
     }
 
     if (args.command) {
-      const { findStaticCommandHelp, showStaticCommandHelp } =
-        await loadStaticCommandHelpModule();
+      const [{ findStaticCommandHelp }, { showCommandHelp }] =
+        await Promise.all([loadStaticCommandHelpModule(), loadHelpModule()]);
+
       const staticCommand = findStaticCommandHelp(args.command);
       if (staticCommand) {
-        showStaticCommandHelp(staticCommand);
+        showCommandHelp(staticCommand);
         return true;
       }
 
-      if (AGENT_SUBCOMMAND_NAMES.has(args.command)) {
-        const [
-          { findAgentCommandSpec, toAgentHelpCommand },
-          { showCommandHelp },
-        ] = await Promise.all([
-          loadAgentCommandSpecsModule(),
-          loadHelpModule(),
-        ]);
-        const spec = findAgentCommandSpec(args.command);
-        if (spec) {
-          showCommandHelp(toAgentHelpCommand(spec));
-          return true;
-        }
-      }
-
-      const [{ findCommand }, { showCommandHelp }, { showHelp }] =
-        await Promise.all([
-          loadCommandsModule(),
-          loadHelpModule(),
-          loadMainHelpModule(),
-        ]);
+      const [{ findCommand }, { showHelp }] = await Promise.all([
+        loadCommandsModule(),
+        loadMainHelpModule(),
+      ]);
       const cmd = findCommand(args.command);
       if (cmd) {
         showCommandHelp(cmd);
@@ -194,26 +123,13 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
       return true;
     }
 
-    console.error(
-      "  warning: --tool is deprecated; use 'octocode-cli <subcommand>' (e.g. search-code, get-file). --json now emits compact structuredContent only. See 'octocode-cli --help'."
-    );
-
-    const success = LOCAL_TOOL_NAMES.has(args.options.tool)
-      ? await (await loadLocalToolCommandModule()).executeLocalToolCommand(args)
-      : await (await loadToolCommandModule()).executeToolCommand(args);
+    const success = await (
+      await loadToolCommandModule()
+    ).executeToolCommand(args);
     if (!success) {
       process.exitCode = 1;
     }
     return true;
-  }
-
-  if (AGENT_SUBCOMMAND_NAMES.has(args.command)) {
-    const { findAgentCommand } = await loadAgentCommandsModule();
-    const agentCommand = findAgentCommand(args.command);
-    if (agentCommand) {
-      await agentCommand.handler(args);
-      return true;
-    }
   }
 
   const { findCommand } = await loadCommandsModule();

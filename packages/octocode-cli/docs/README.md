@@ -1,40 +1,7 @@
 # Octocode CLI Docs
 
-Use the smallest doc that fits the task:
-
-| If you want to... | Read |
+| Topic | Doc |
 |---|---|
-| Understand what `octocode-cli` is, when to use interactive mode, and the main workflows | [README.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/README.md) |
-| Find exact syntax for install, auth, sync, MCP, cache, and the tool contract | [CLI_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md) |
-| Install or remove bundled skills and understand targets and modes | [SKILLS_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md) |
-| Reproduce the CLI+skill vs MCP agent benchmark | [BENCHMARK.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/BENCHMARK.md) |
-
-## Quick Paths
-
-Interactive:
-
-```bash
-npx octocode-cli
-```
-
-Direct CLI:
-
-```bash
-octocode-cli install --ide cursor
-octocode-cli sync --status
-```
-
-Agent subcommands:
-
-```bash
-octocode-cli search-code --query 'useReducer' --owner facebook --repo react
-octocode-cli get-file --owner bgauryy --repo octocode-mcp --path src/cli/index.ts
-echo '{"queries":[...]}' | octocode-cli search-code
-```
-
-Low-level tool mode:
-
-```bash
-octocode-cli --tools-context
-octocode-cli --tool localSearchCode '{"path":".","pattern":"runCLI"}'
-```
+| Full command + tool syntax | [CLI_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md) |
+| Bundled skills installation | [SKILLS_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md) |
+| CLI vs MCP benchmark | [BENCHMARK.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/BENCHMARK.md) |

@@ -13,40 +13,29 @@ describe('main-help', () => {
     stdoutSpy.mockRestore();
   });
 
-  it('renders top-level help with agent tools and admin sections', async () => {
+  it('renders top-level help with commands and tools sections', async () => {
     const { showHelp } = await import('../../src/cli/main-help.js');
     showHelp();
 
-    const output = stdoutSpy.mock.calls.map(c => String(c[0])).join('');
-    expect(output).toContain('search-code');
-    expect(output).toContain('get-file');
-    expect(output).toContain('view-structure');
-    expect(output).toContain('search-repos');
-    expect(output).toContain('search-prs');
-    expect(output).toContain('package-search');
+    const output = stdoutSpy.mock.calls
+      .map((c: unknown[]) => String(c[0]))
+      .join('');
+    expect(output).toContain('githubSearchCode');
+    expect(output).toContain('localSearchCode');
+    expect(output).toContain('lspGotoDefinition');
+    expect(output).toContain('packageSearch');
     expect(output).toContain('install');
-    expect(output).toContain('AGENT TOOLS');
-    expect(output).toContain('SETUP & ADMIN');
+    expect(output).toContain('COMMANDS');
+    expect(output).toContain('TOOLS');
     expect(output).toContain('OPTIONS');
     expect(output).toContain('EXAMPLES');
     expect(output).toContain('--tools-context');
     expect(output).toContain('--tool');
+    expect(output).toContain('--queries');
   });
 });
 
 describe('command-help-specs', () => {
-  let stdoutSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    stdoutSpy = vi
-      .spyOn(process.stdout, 'write')
-      .mockImplementation(() => true);
-  });
-
-  afterEach(() => {
-    stdoutSpy.mockRestore();
-  });
-
   it('finds install command by name', async () => {
     const { findStaticCommandHelp } =
       await import('../../src/cli/command-help-specs.js');
@@ -89,99 +78,28 @@ describe('command-help-specs', () => {
     expect(findStaticCommandHelp('nonexistent')).toBeUndefined();
   });
 
-  it('renders static command help with usage and options', async () => {
-    const { findStaticCommandHelp, showStaticCommandHelp } =
-      await import('../../src/cli/command-help-specs.js');
-    const cmd = findStaticCommandHelp('install')!;
-    showStaticCommandHelp(cmd);
+  it('renders static command help via shared showCommandHelp', async () => {
+    const stdoutSpy = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(() => true);
 
-    const output = stdoutSpy.mock.calls.map(c => String(c[0])).join('');
+    const { findStaticCommandHelp } =
+      await import('../../src/cli/command-help-specs.js');
+    const { showCommandHelp } = await import('../../src/cli/help.js');
+    const cmd = findStaticCommandHelp('install')!;
+    showCommandHelp(cmd);
+
+    const output = stdoutSpy.mock.calls
+      .map((c: unknown[]) => String(c[0]))
+      .join('');
     expect(output).toContain('install');
     expect(output).toContain('USAGE');
     expect(output).toContain('OPTIONS');
     expect(output).toContain('--ide');
     expect(output).toContain('--method');
     expect(output).toContain('--force');
-  });
 
-  it('renders command without options cleanly', async () => {
-    const { findStaticCommandHelp, showStaticCommandHelp } =
-      await import('../../src/cli/command-help-specs.js');
-    const cmd = findStaticCommandHelp('auth')!;
-    showStaticCommandHelp(cmd);
-
-    const output = stdoutSpy.mock.calls.map(c => String(c[0])).join('');
-    expect(output).toContain('auth');
-    expect(output).toContain('USAGE');
-    expect(output).not.toContain('OPTIONS');
-  });
-});
-
-describe('tool-help-specs', () => {
-  let stdoutSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    stdoutSpy = vi
-      .spyOn(process.stdout, 'write')
-      .mockImplementation(() => true);
-  });
-
-  afterEach(() => {
     stdoutSpy.mockRestore();
-  });
-
-  it('finds localSearchCode help', async () => {
-    const { findStaticToolHelp } =
-      await import('../../src/cli/tool-help-specs.js');
-    const spec = findStaticToolHelp('localSearchCode');
-    expect(spec).toBeDefined();
-    expect(spec!.name).toBe('localSearchCode');
-  });
-
-  it('finds githubSearchCode help', async () => {
-    const { findStaticToolHelp } =
-      await import('../../src/cli/tool-help-specs.js');
-    const spec = findStaticToolHelp('githubSearchCode');
-    expect(spec).toBeDefined();
-  });
-
-  it('finds packageSearch help', async () => {
-    const { findStaticToolHelp } =
-      await import('../../src/cli/tool-help-specs.js');
-    const spec = findStaticToolHelp('packageSearch');
-    expect(spec).toBeDefined();
-  });
-
-  it('returns undefined for unknown tool', async () => {
-    const { findStaticToolHelp } =
-      await import('../../src/cli/tool-help-specs.js');
-    expect(findStaticToolHelp('nonexistent')).toBeUndefined();
-  });
-
-  it('renders static tool help with required/optional/example', async () => {
-    const { findStaticToolHelp, showStaticToolHelp } =
-      await import('../../src/cli/tool-help-specs.js');
-    const spec = findStaticToolHelp('localSearchCode')!;
-    showStaticToolHelp(spec);
-
-    const output = stdoutSpy.mock.calls.map(c => String(c[0])).join('');
-    expect(output).toContain('localSearchCode');
-    expect(output).toContain('Required');
-    expect(output).toContain('Optional');
-    expect(output).toContain('Auto-filled');
-    expect(output).toContain('Example');
-    expect(output).toContain('--tool localSearchCode');
-  });
-
-  it('renders tool help without optional field when absent', async () => {
-    const { findStaticToolHelp, showStaticToolHelp } =
-      await import('../../src/cli/tool-help-specs.js');
-    const spec = findStaticToolHelp('packageSearch')!;
-    showStaticToolHelp(spec);
-
-    const output = stdoutSpy.mock.calls.map(c => String(c[0])).join('');
-    expect(output).toContain('packageSearch');
-    expect(output).not.toContain('Optional');
   });
 });
 
@@ -216,7 +134,9 @@ describe('help (dynamic fallback)', () => {
       ],
     });
 
-    const output = stdoutSpy.mock.calls.map(c => String(c[0])).join('');
+    const output = stdoutSpy.mock.calls
+      .map((c: unknown[]) => String(c[0]))
+      .join('');
     expect(output).toContain('test-cmd');
     expect(output).toContain('A test command');
     expect(output).toContain('USAGE');
