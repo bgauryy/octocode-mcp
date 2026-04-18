@@ -23,7 +23,7 @@
     "analyze:full": "node scripts/run.js --include-tests --findings-limit 500 --deep-link-topn 30 --out .octocode/scan/scan.json",
     "analyze:graph": "node scripts/run.js --graph --out .octocode/scan/scan.json",
     "analyze:json": "node scripts/run.js --json --out .octocode/scan/scan.json",
-    "build": "node build.mjs",
+    "build": "node build.mjs && node scripts/run.js --help >/dev/null && node scripts/ast/search.js --list-presets >/dev/null && node scripts/ast/tree-search.js --help >/dev/null",
     "build:watch": "tsc -p tsconfig.json --watch",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",

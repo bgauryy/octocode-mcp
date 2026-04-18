@@ -13,7 +13,7 @@ import {
   parseSearchArgs,
   runSearch,
   searchFile,
-} from './search.js';
+} from './search-main.js';
 
 describe('parseSearchArgs', () => {
   it('returns defaults when no args given', () => {

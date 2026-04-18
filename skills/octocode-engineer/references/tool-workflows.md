@@ -1,6 +1,6 @@
 # Tool Workflows — Research Methodology & Patterns
 
-Step-focused workflows for code analysis. For multi-angle investigation principles and tool descriptions, see [SKILL.md](../SKILL.md#how-to-investigate). For tool params and flags, see [CLI reference](./cli-reference.md).
+Step-focused workflows for code analysis. For the Clean Architecture principles, the six analytic dimensions, and Tool Families, see [SKILL.md](../SKILL.md). For tool params and flags, see [CLI reference](./cli-reference.md).
 
 ---
 

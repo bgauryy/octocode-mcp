@@ -562,6 +562,43 @@ type CachedResult = {
   treeEntry?: TreeEntry;
 };
 
+type NewCache = Parameters<typeof setCacheEntry>[0];
+
+function applyCachedResult(
+  raw: CachedResult,
+  state: ScanState,
+  packageStats: PackageFileSummary,
+  newCache: NewCache,
+  relPath: string,
+  statKey: { mtimeMs: number; size: number },
+  dependencyProfile: FileEntry['dependencyProfile'],
+): void {
+  const { flowMap, controlMap, trees, fileSummaries, summary } = state;
+  for (const [key, entries] of raw.flowMapEntries ?? []) {
+    for (const entry of entries) increment(flowMap, key, entry);
+  }
+  for (const [key, entries] of raw.controlMapEntries ?? []) {
+    for (const entry of entries) increment(controlMap, key, entry);
+  }
+  const fileSummary: FileEntry = { ...raw.fileEntry, dependencyProfile };
+  packageStats.fileCount += 1;
+  packageStats.nodeCount += fileSummary.nodeCount;
+  packageStats.functionCount += fileSummary.functions.length;
+  packageStats.flowCount += fileSummary.flows.length;
+  for (const [k, count] of Object.entries(fileSummary.kindCounts)) {
+    packageStats.kindCounts[k] = (packageStats.kindCounts[k] || 0) + count;
+  }
+  for (const fn of fileSummary.functions) packageStats.functions.push(fn);
+  if (raw.treeEntry) trees.push(raw.treeEntry);
+  summary.totalFiles += 1;
+  summary.totalNodes += fileSummary.nodeCount;
+  summary.totalFunctions += fileSummary.functions.length;
+  summary.totalFlows += fileSummary.flows.length;
+  fileSummaries.push(fileSummary);
+  setCacheEntry(newCache, relPath, statKey, raw);
+  state.cacheHits++;
+}
+
 function collectFileData(state: ScanState): void {
   const { options, packages, useTreeSitter, summary, flowMap, controlMap, trees, fileSummaries, parseErrors, dependencyState, packageFileStats } = state;
   bus.progress('cache-check', options.noCache ? 'Cache disabled' : 'Loading cache');
@@ -622,26 +659,8 @@ function collectFileData(state: ScanState): void {
         if (cache && isCacheHit(cache, relPath, statKey)) {
           const raw = getCachedResult(cache, relPath) as CachedResult | undefined;
           if (raw?.fileEntry) {
-            for (const [key, entries] of raw.flowMapEntries ?? [])
-              for (const entry of entries) increment(flowMap, key, entry);
-            for (const [key, entries] of raw.controlMapEntries ?? [])
-              for (const entry of entries) increment(controlMap, key, entry);
-            const fileSummary: FileEntry = { ...raw.fileEntry, dependencyProfile: raw.fileEntry.dependencyProfile ?? { ...EMPTY_DEPENDENCY_PROFILE } };
-            packageStats.fileCount += 1;
-            packageStats.nodeCount += fileSummary.nodeCount;
-            packageStats.functionCount += fileSummary.functions.length;
-            packageStats.flowCount += fileSummary.flows.length;
-            for (const [k, count] of Object.entries(fileSummary.kindCounts))
-              packageStats.kindCounts[k] = (packageStats.kindCounts[k] || 0) + count;
-            for (const fn of fileSummary.functions) packageStats.functions.push(fn);
-            if (raw.treeEntry) trees.push(raw.treeEntry);
-            summary.totalFiles += 1;
-            summary.totalNodes += fileSummary.nodeCount;
-            summary.totalFunctions += fileSummary.functions.length;
-            summary.totalFlows += fileSummary.flows.length;
-            fileSummaries.push(fileSummary);
-            setCacheEntry(newCache, relPath, statKey, raw);
-            state.cacheHits++;
+            const profile = raw.fileEntry.dependencyProfile ?? { ...EMPTY_DEPENDENCY_PROFILE };
+            applyCachedResult(raw, state, packageStats, newCache, relPath, statKey, profile);
             continue;
           }
         }
@@ -728,36 +747,7 @@ function collectFileData(state: ScanState): void {
             | CachedResult
             | undefined;
           if (raw?.fileEntry) {
-            for (const [key, entries] of raw.flowMapEntries ?? []) {
-              for (const entry of entries) increment(flowMap, key, entry);
-            }
-            for (const [key, entries] of raw.controlMapEntries ?? []) {
-              for (const entry of entries) increment(controlMap, key, entry);
-            }
-            const fileSummary: FileEntry = {
-              ...raw.fileEntry,
-              dependencyProfile,
-            };
-            packageStats.fileCount += 1;
-            packageStats.nodeCount += fileSummary.nodeCount;
-            packageStats.functionCount += fileSummary.functions.length;
-            packageStats.flowCount += fileSummary.flows.length;
-            for (const [k, count] of Object.entries(fileSummary.kindCounts)) {
-              packageStats.kindCounts[k] =
-                (packageStats.kindCounts[k] || 0) + count;
-            }
-            for (const fn of fileSummary.functions)
-              packageStats.functions.push(fn);
-            if (raw.treeEntry) trees.push(raw.treeEntry);
-
-            summary.totalFiles += 1;
-            summary.totalNodes += fileSummary.nodeCount;
-            summary.totalFunctions += fileSummary.functions.length;
-            summary.totalFlows += fileSummary.flows.length;
-            fileSummaries.push(fileSummary);
-
-            setCacheEntry(newCache, relPath, statKey, raw);
-            state.cacheHits++;
+            applyCachedResult(raw, state, packageStats, newCache, relPath, statKey, dependencyProfile);
             continue;
           }
         }
