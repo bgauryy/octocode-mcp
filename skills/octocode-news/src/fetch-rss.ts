@@ -3,8 +3,10 @@ import path from "node:path";
 
 import {
   WINDOW_OFFSETS,
+  analyzeFreshness,
   extractFeedTitle,
   extractItems,
+  looksLikeFeed,
   parseFeedCatalog,
   readResponseBody
 } from "./rss-core.ts";
@@ -17,6 +19,7 @@ function parseArgs(argv) {
     jsonOut: "",
     timeoutMs: 20000,
     concurrency: 8,
+    includeHealth: false,
     help: false
   };
   for (let i = 0; i < argv.length; i++) {
@@ -45,10 +48,14 @@ function parseArgs(argv) {
       args.concurrency = Number(argv[++i] || 8);
       continue;
     }
+    if (a === "--include-health") {
+      args.includeHealth = true;
+      continue;
+    }
     throw new Error(`Unknown argument: ${a}`);
   }
   if (!WINDOW_OFFSETS[args.window]) {
-    throw new Error(`Invalid --window: ${args.window}. Use 24h|7d|14d|30d.`);
+    throw new Error(`Invalid --window: ${args.window}. Use 24h|48h|7d|14d|30d.`);
   }
   if (!Number.isFinite(args.timeoutMs) || args.timeoutMs <= 0) {
     throw new Error("Expected --timeout-ms to be a positive number.");
@@ -72,8 +79,10 @@ async function fetchFeed(feed, opts) {
       signal: AbortSignal.timeout(opts.timeoutMs)
     });
 
+    const contentType = res.headers.get("content-type") || "";
+
     if (!res.ok) {
-      return {
+      const base = {
         ...feed,
         status: `http-${res.status}`,
         items: [],
@@ -81,6 +90,10 @@ async function fetchFeed(feed, opts) {
         finalUrl: res.url || feed.url,
         durationMs: Date.now() - start
       };
+      if (opts.includeHealth) {
+        base.health = { ok: false, reason: `HTTP ${res.status}`, contentType };
+      }
+      return base;
     }
 
     const xml = await readResponseBody(res, 1024 * 1024);
@@ -88,9 +101,35 @@ async function fetchFeed(feed, opts) {
     const finalUrl = res.url || feed.url;
     const items = extractItems(xml, finalUrl, feedTitle, feed.domain);
 
-    return { ...feed, status: "ok", items, feedTitle, finalUrl, durationMs: Date.now() - start };
+    const result = {
+      ...feed,
+      status: "ok",
+      items,
+      feedTitle,
+      finalUrl,
+      durationMs: Date.now() - start
+    };
+
+    if (opts.includeHealth) {
+      const validFeed = looksLikeFeed(contentType, xml);
+      const freshness = validFeed ? analyzeFreshness(xml, opts.window) : null;
+      const reason = !validFeed
+        ? "Not a valid feed"
+        : freshness && !freshness.fresh
+          ? `Stale (no entries in ${opts.window})`
+          : "ok";
+      result.health = {
+        ok: validFeed && (freshness ? freshness.fresh : true),
+        validFeed,
+        contentType,
+        reason,
+        ...(freshness || {})
+      };
+    }
+
+    return result;
   } catch (err) {
-    return {
+    const base = {
       ...feed,
       status: err.name === "TimeoutError" ? "timeout" : "error",
       items: [],
@@ -99,6 +138,10 @@ async function fetchFeed(feed, opts) {
       error: err.message,
       durationMs: Date.now() - start
     };
+    if (opts.includeHealth) {
+      base.health = { ok: false, reason: err.message };
+    }
+    return base;
   }
 }
 
@@ -106,9 +149,10 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     console.log(`Usage:
-  node fetch-rss.mjs --window <24h|7d|14d|30d> --json-out <output.json> [--sources <sources.md>] [--timeout-ms <ms>] [--concurrency <n>]
+  node fetch-rss.mjs --window <24h|7d|14d|30d> --json-out <output.json> [--sources <sources.md>] [--timeout-ms <ms>] [--concurrency <n>] [--include-health]
 
-Fetches ALL RSS feeds from sources.md, extracts items within the time window, and outputs structured JSON for the research agent.`);
+Fetches ALL RSS feeds from sources.md, extracts items within the time window, and outputs structured JSON for the research agent.
+With --include-health, each feed summary includes health-check data (valid feed, freshness, stale/broken status), making a separate check-rss run optional.`);
     return;
   }
 
@@ -153,7 +197,8 @@ Fetches ALL RSS feeds from sources.md, extracts items within the time window, an
       undatedItems,
       windowItems: windowItems.length,
       durationMs: r.durationMs,
-      error: r.error || undefined
+      error: r.error || undefined,
+      ...(r.health ? { health: r.health } : {})
     });
 
     for (const item of windowItems) {

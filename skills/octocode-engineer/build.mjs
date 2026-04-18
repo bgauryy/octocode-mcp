@@ -3,6 +3,22 @@ import { rm } from 'fs/promises';
 
 await rm('scripts', { recursive: true, force: true });
 
+const NATIVE_EXTERNALS = [
+  '@ast-grep/napi',
+  '@ast-grep/lang-python',
+  'tree-sitter',
+  'tree-sitter-typescript',
+  'tree-sitter-python',
+];
+
+const ESM_REQUIRE_SHIM =
+  "import{createRequire as __cjsCreateRequire}from'node:module';" +
+  "import{fileURLToPath as __esmFileURL}from'node:url';" +
+  "import __esmPath from'node:path';" +
+  "const require=__cjsCreateRequire(import.meta.url);" +
+  "const __filename=__esmFileURL(import.meta.url);" +
+  "const __dirname=__esmPath.dirname(__filename);";
+
 const sharedOptions = {
   bundle: true,
   splitting: false,
@@ -12,7 +28,8 @@ const sharedOptions = {
   outdir: 'scripts',
   minify: true,
   treeShaking: true,
-  packages: 'external',
+  external: NATIVE_EXTERNALS,
+  banner: { js: ESM_REQUIRE_SHIM },
   logLevel: 'info',
 };
 
@@ -20,7 +37,6 @@ await esbuild.build({
   ...sharedOptions,
   entryPoints: {
     run: 'src/run.ts',
-    index: 'src/index.ts',
     'ast/search': 'src/ast/search.ts',
     'ast/tree-search': 'src/ast/tree-search.ts',
   },

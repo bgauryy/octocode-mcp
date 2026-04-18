@@ -16,6 +16,7 @@
         <span class="site-name">Octocode News</span>
       </a>
       <a href="https://octocode.ai" class="site-link" target="_blank" rel="noreferrer noopener">octocode.ai</a>
+      <button class="dark-toggle" type="button" aria-label="Toggle dark mode" id="dark-toggle">◐</button>
     </nav>
     <main class="page">
       <div id="app"></div>
@@ -405,6 +406,7 @@
 
           app.append(
             renderHero(sections, stats, countsByDomain, order),
+            renderJumpStrip(sections),
             ...(highlightPanel ? [highlightPanel] : []),
             ...(sectionPanel ? [sectionPanel] : []),
             renderFooter()
@@ -423,7 +425,7 @@
           const eyebrow = create(
             "div",
             "eyebrow",
-            `${String(report.windowLabel || "custom").toUpperCase()} news deck`
+            `${String(report.windowLabel || "custom").toUpperCase()} news deck · ${formatGenerated(report.generated)}`
           );
           const title = create("h1", "", "What Changed. What Matters.");
           const summary = create("div", "hero-summary");
@@ -539,6 +541,21 @@
           return panel;
         }
 
+        function renderJumpStrip(sections) {
+          const strip = create("nav", "jump-strip");
+          strip.setAttribute("aria-label", "Jump to section");
+          sections.forEach((section) => {
+            const meta = domainMeta(section.id);
+            const btn = create("a", "domain-button", meta.label);
+            btn.href = `#${section.id}`;
+            btn.dataset.domain = section.id;
+            btn.style.setProperty("--btn-accent", meta.color);
+            if (section.quiet) btn.classList.add("is-quiet");
+            strip.append(btn);
+          });
+          return strip;
+        }
+
         function renderSections(sections) {
           if (!sections.length) {
             return null;
@@ -546,6 +563,23 @@
 
           const wrap = create("div", "stack");
           sections.forEach((section) => {
+            if (section.quiet) {
+              const meta = domainMeta(section.id);
+              const card = create("section", "section-card is-quiet");
+              card.id = section.id;
+              card.dataset.domain = section.id;
+              card.style.setProperty("--section-accent", meta.color);
+              const head = create("div", "section-head");
+              const badge = create("div", "section-badge", section.icon || meta.icon);
+              badge.style.color = meta.color;
+              const titleWrap = create("div");
+              titleWrap.append(create("h2", "section-title", section.name));
+              head.append(badge, titleWrap);
+              card.append(head);
+              card.append(create("p", "quiet-card", section.quietMsg));
+              wrap.append(card);
+              return;
+            }
             if (!section.items.length) return;
 
             const meta = domainMeta(section.id);
@@ -779,7 +813,9 @@
         }
 
         function heatPill(value) {
-          return create("div", "micro-pill item-heat", `Heat ${value}`);
+          const tier = value >= IMPORTANT_HEAT_THRESHOLD ? "heat-hot"
+            : value >= LOW_HEAT_THRESHOLD ? "heat-warm" : "heat-cool";
+          return create("div", `micro-pill item-heat ${tier}`, `Heat ${value}`);
         }
 
         function sourceCtaNode(item) {
@@ -917,8 +953,23 @@
           );
         }
 
+        function mountDarkToggle() {
+          const btn = document.getElementById("dark-toggle");
+          if (!btn) return;
+          const stored = localStorage.getItem("octonews-dark");
+          const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          if (stored === "true" || (!stored && prefersDark)) {
+            document.documentElement.classList.add("dark");
+          }
+          btn.addEventListener("click", () => {
+            const active = document.documentElement.classList.toggle("dark");
+            localStorage.setItem("octonews-dark", String(active));
+          });
+        }
+
         render();
         mountBackToTop();
+        mountDarkToggle();
       })();
     </script>
   </body>

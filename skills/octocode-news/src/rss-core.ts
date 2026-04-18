@@ -2,6 +2,7 @@ import { sectionToDomain } from "./shared.ts";
 
 export const WINDOW_OFFSETS = {
   "24h": 24 * 60 * 60 * 1000,
+  "48h": 48 * 60 * 60 * 1000,
   "7d": 7 * 24 * 60 * 60 * 1000,
   "14d": 14 * 24 * 60 * 60 * 1000,
   "30d": 30 * 24 * 60 * 60 * 1000

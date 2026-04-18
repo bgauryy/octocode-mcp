@@ -451,9 +451,9 @@ async function main() {
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await fs.writeFile(outPath, JSON.stringify(output, null, 2) + "\n", "utf8");
     console.log(`Catalog written: ${outPath}`);
+  } else {
+    console.log(JSON.stringify(output, null, 2));
   }
-
-  console.log(JSON.stringify(output, null, 2));
 }
 
 main().catch((error) => {

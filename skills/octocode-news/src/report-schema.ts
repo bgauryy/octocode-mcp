@@ -235,7 +235,7 @@ export const Section = z
 export const ReportData = z
   .object({
     window: z.string().min(1),
-    windowLabel: z.enum(["24h", "7d", "14d", "30d"]),
+    windowLabel: z.enum(["24h", "48h", "7d", "14d", "30d"]),
     generated: z.string().date(),
     tldr: z.string().min(120),
     topItems: z.array(Item).min(3).max(30),
@@ -307,7 +307,7 @@ export const SectionPayload = z
 export const ReportMeta = z
   .object({
     window: z.string().min(1),
-    windowLabel: z.enum(["24h", "7d", "14d", "30d"]),
+    windowLabel: z.enum(["24h", "48h", "7d", "14d", "30d"]),
     generated: z.string().date(),
     tldr: z.string().min(120),
     topItems: z.array(Item).min(3).max(30),

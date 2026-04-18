@@ -1,110 +1,212 @@
 ---
 name: octocode-engineer
-description: "Flexible system-engineering skill for technical code understanding, project/feature deep dives, bug investigation, quality and architecture analysis, and safe delivery from research and RFC/planning through implementation and verification."
+description: "Flexible system-engineering skill for technical code understanding, project/feature deep dives, bug investigation, quality and architecture analysis, and safe delivery from research and RFC/planning through implementation and verification. Enforces Clean Architecture (dependency rule, layer boundaries, stable abstractions) and Clean Code (small single-purpose functions, precise types, no silent failures, no duplication) with AST, LSP, and scanner evidence — produces a summary, flows, boundaries, and architecture-health artifact before recommending action."
 ---
 
 # Octocode Engineer
 
-This skill helps an agent investigate, change, and verify a codebase with system awareness.
+Understand, change, and verify a codebase with system awareness. Single-file reading misses root causes — they live in boundaries, flow ownership, contracts, data paths, and runtime assumptions. This skill makes those visible before you act, and keeps them verified after.
 
-Use this skill as the main engineering organizer when you need to understand a system deeply, make safe decisions, and execute with architecture awareness.
+## What you get (user view)
 
-Motivation: high-quality architectural investigation improves delivery velocity, project resilience, and long-term maintainability.
+A structured **understanding artifact**, grounded in evidence, with every claim cited by `file:line`:
 
-Suggested operating flow (adapt as needed):
-1. Start with local Octocode tools for discovery and scope.
-2. Use LSP to resolve semantics and blast radius.
-3. Use scanner output for architecture, critical paths, and risk concentration.
-4. Use AST to prove structural claims that matter.
-5. Summarize the system, flows, features, and constraints.
-6. Decide whether to ask, plan, explain, or edit.
+- **System summary** — what it does, who consumes it, invariants.
+- **Control flows** — numbered call paths for the critical features.
+- **Data flows** — writers, readers, transaction boundaries, caches per entity.
+- **Types & protocols** — authoritative DTOs, schemas, wire contracts, compatibility posture.
+- **Boundaries & ownership** — who owns what, where ports live, which tests prove contracts.
+- **Duplication inventory** — top near-clones and the missing abstraction.
+- **Execution profile** — hot paths, async/sync posture, retries/timeouts/lifecycles, runtime risks.
+- **Architecture health** — one line per Clean-Architecture principle and per analytic dimension, with `confirmed|likely|uncertain`.
+- **Clean-code hotspots** — top findings worth fixing.
+- **Next step** — one sentence.
 
-## What This Skill Does
+For a proposed change you also get: change flow, data-flow impact, contract impact, blast radius, risk vector.
 
-Use this skill to:
-- organize investigation and decision-making for almost any engineering task
-- map real behavior and ownership, not just file-level code snippets
-- trace call flow, blast radius, and critical paths before changes
-- validate contracts/protocols across APIs, events, storage, and shared DTOs
-- detect code and architecture smells with structural proof
-- assess modularity/layering, coupling, duplication, and change risk
-- check efficiency, build/config, reliability, observability, rollout safety, and data correctness
-- validate docs/RFC/design claims against real implementation behavior
-- guide safe implementation and verification with clear evidence and confidence
+**Safety built in.** Hard gates stop for your explicit decision before public-contract changes, cross-layer edits, destructive actions, or large blast radius.
 
-This is not only a code-editing skill.
-It is a structure, architecture, and flow-analysis skill that also supports coding.
-It aims to make systems easier to extend, safer to evolve, and smarter to work in over time.
-It applies to any system, and is especially effective for Node/TypeScript and Python applications where module boundaries, async flows, contracts, package dependencies, and runtime edges must stay clean.
+## How to invoke (user view)
+
+Ask in natural language. The skill activates on phrases like: *"understand this codebase"*, *"deep-dive this feature"*, *"review the architecture of X"*, *"why is this slow / flaky / coupled?"*, *"is this PR safe?"*, *"what breaks if I change Y?"*, *"prepare to refactor Z"*, *"validate this RFC against the code"*. See **When To Use It** below for the full trigger list.
+
+## Operating contract (agent view)
+
+Every non-trivial task MUST satisfy this contract:
+
+1. **Scope** — restate the goal and constraints in one line before touching tools.
+2. **Lenses** — apply both required lenses:
+   - **Clean Architecture principles** — dependency rule, layer boundaries, stable abstractions, boundary ownership, single responsibility.
+   - **Architect's six analytic dimensions** — flows, duplication, types, protocols & schemas, data flows, execution.
+3. **Evidence** — prove every architectural or code-quality claim with at least one of: Octocode local tools, LSP, AST, scanner. Mark confidence (`confirmed|likely|uncertain`) with source.
+4. **Artifact** — produce the understanding artifact before recommending action.
+5. **Gates** — stop at every hard gate in **User-Ask Gates**. Never fall back to native Claude Code search tools while Octocode MCP is registered; a warning inside a successful response is not a failure.
 
 ## When To Use It
 
+This is not only a code-editing skill — it is the structure, architecture, and flow-analysis skill that also supports coding. It fits any language; it fits Node/TypeScript and Python especially well, where module boundaries, async flows, contracts, dependencies, and runtime edges are the common failure surface.
+
 Use this skill when the user asks to:
-- understand a technical codebase, project area, or feature end-to-end
-- understand code before changing it
-- do a deep dive into behavior, flow, ownership, or architecture
-- fix a bug in shared or unclear code
-- refactor a module, package, or cross-file flow
-- review code quality, architecture, or technical debt
-- shape architecture decisions before implementation and prepare a strong RFC (https://skills.sh/bgauryy/octocode-mcp/octocode-rfc-generator)
-- research implementation options and produce planning artifacts or design notes
-- validate docs, planning docs, and RFCs against real implementation behavior
-- check docs before planning and re-check docs after implementation
-- investigate build, runtime, package, or configuration issues when they affect behavior or delivery
-- improve maintainability, modularity, contracts, or extensibility
-- check dead code, test gaps, security risks, or design problems
-- implement a change safely in a non-trivial area
-- prepare for planning by understanding the real system first
-- verify implementation quality and risk after changes land
+
+- **Understand** — a codebase, area, or feature end-to-end; code before changing it; behavior, flow, ownership, or architecture; the real system before planning.
+- **Change** — fix a bug in shared/unclear code; refactor a module, package, or cross-file flow; implement a change safely in a non-trivial area; verify quality and risk after changes land.
+- **Review** — code quality, architecture, technical debt; dead code, test gaps, security risks, design problems; build/runtime/packaging issues affecting delivery; maintainability, modularity, contracts, extensibility.
+- **Decide** — shape architecture decisions before implementation; research implementation options; validate and re-check docs, planning docs, and RFCs against real behavior.
+
+For formal architecture proposals with trade-offs and migration strategy, pair with [octocode-rfc-generator](https://skills.sh/bgauryy/octocode-mcp/octocode-rfc-generator).
 
 ## Core Mindset
 
 1. System first, file second.
 2. Prove behavior and blast radius before proposing changes.
-3. Prefer local Octocode discovery, then LSP/scanner, then AST proof.
-4. Validate important claims with at least 2 evidence sources.
-5. Prefer clean modular boundary/contract fixes over local patches.
-6. Use explicit confidence (`confirmed`, `likely`, `uncertain`) for conclusions.
-7. Treat prompt steps as practical checkpoints, not optional suggestions.
-8. Ask the user only at real decision checkpoints.
+3. Use local Octocode discovery first; then LSP/scanner; then AST for structural proof.
+4. Validate every architectural or code-quality claim with at least 2 evidence sources; single-source claims are marked `likely` at best.
+5. Choose the boundary/contract fix over a local patch when the issue is structural (see Smallest-fix vs. safest-fix gate).
+6. Apply the Clean Architecture and Clean Code lenses on every non-trivial task.
+7. Attach an explicit confidence marker (`confirmed` / `likely` / `uncertain`) to every conclusion that informs a decision.
+8. Treat the skill prompt as operational policy, not advice.
+9. Stop at every hard gate in **User-Ask Gates**; do not ask outside of gates.
 
-## The Main Problem This Skill Solves
+## Trivial vs. non-trivial — when the contract binds
 
-Single-file reading is often misleading. Root causes usually live in boundaries, flow ownership, contracts, architecture pressure, or rollout/runtime assumptions.
+The operating contract, both lenses, and the understanding artifact apply to **non-trivial** tasks. A task is **trivial** only when all of these hold:
 
-Use this skill to produce architecture-safe outcomes, not just passing patches:
-- verify real ownership, dependencies, and call flow
-- verify contracts/protocols, build/runtime assumptions, and migrations
-- verify quality dimensions (efficiency, reliability, observability, data correctness)
-- verify docs/RFC/design claims against implementation
+- Single file, no public API or exported symbol touched.
+- No consumers (0 references from `lspFindReferences`) or the change is behavior-preserving for every consumer.
+- No contract, schema, protocol, config, or migration touched.
+- ≤ ~20 lines changed.
+- No cross-layer or cross-package edit.
+
+If any of those is false, treat the task as non-trivial. For trivial tasks, produce only the final one-line next step and the verification you ran — skip the rest of the artifact. Default assumption when in doubt: non-trivial.
+
+## Clean Architecture & Clean Code (Required Lenses)
+
+Every non-trivial investigation MUST be read through these two lenses. They are not optional reviews — they shape how the system is understood, summarized, and changed. Use the tools listed to *prove* each claim; do not assert architectural or code-quality facts without evidence from at least one of them.
+
+### Clean Architecture — what to enforce, how to verify
+
+Principles (enforce, do not merely note):
+1. **Dependency rule** — source code dependencies point inward. Domain never imports infrastructure/UI; use cases never import frameworks.
+2. **Layer boundaries** — entities → use cases → interface adapters → frameworks & drivers. Concerns stay in their layer.
+3. **Stable abstractions** — volatile details depend on stable policy, never the reverse.
+4. **Boundary ownership** — every cross-boundary call goes through an explicit port (interface/DTO). Implementation types do not leak.
+5. **Single responsibility per module** — one reason to change; one axis of volatility.
+
+| Principle | Tool | Evidence to collect |
+|-----------|------|---------------------|
+| Dependency rule | `scripts/run.js --graph` + `lspFindReferences` | layer-violation / SDP findings; inward-pointing edges only |
+| Layer boundaries | `localSearchCode` on import lines + scanner layer output | UI→DB, domain→HTTP, adapter→framework leaks |
+| Stable abstractions | scanner `distance-from-main-sequence` | concrete high-fan-in modules, unstable abstractions |
+| Boundary ownership | `lspGotoDefinition` across package boundaries | types crossing boundaries without a port |
+| Single responsibility | scanner + `scripts/ast/search.js` (`--preset class-declaration`, `god-function`) | god modules, multi-purpose classes, wide exports |
+
+### Architect's analytic dimensions
+
+Six dimensions, each with its own failure modes, tools, and questions. For a full system review, cover all six. For a scoped task (bug fix, small feature, targeted refactor), cover the dimensions the change touches and mark the rest `N/A` with a one-line reason in the **Architecture health** section. Never silently skip a dimension — `N/A` is a claim, not an absence.
+
+#### 1. Flows — control flow end-to-end
+
+Trace entry → collaborators → side effects → return/emit.
+
+- **Verify:** `localSearchCode` (entry + `lineHint`) → `lspCallHierarchy(incoming)` → `lspCallHierarchy(outgoing)` → `scripts/run.js` flow/graph output for hot paths.
+- **Anti-patterns:** hidden jumps (events without a subscriber map), middleware chains nobody can enumerate, untested error branches.
+
+#### 2. Duplication — structural and behavioral repetition
+
+Same logic in two places drifts. Duplication encodes an unnamed abstraction.
+
+- **Verify:** scanner (`duplicate-function-body`, `duplicate-flow-structure`, `similar-function-body`) → `scripts/ast/search.js --pattern` on the suspect shape → `lspFindReferences` on the canonical version to check adoption.
+- **Anti-patterns:** two sources of truth, copies that drift, per-caller reinvention of a shared concern.
+
+#### 3. Types — in-process contracts
+
+- **Verify:** `lspGotoDefinition` on boundary parameters → `lspFindReferences` on the type → `scripts/ast/search.js` presets (`any-type`, `type-assertion`, `non-null-assertion`) → scanner `unsafe-any`, `type-assertion-escape`, `narrowable-type`.
+- **Anti-patterns:** `any`/`unknown` at a public boundary, casts to silence the compiler, optional fields the caller must always populate.
+
+#### 4. Protocols & schemas — wire-level contracts
+
+HTTP/gRPC/GraphQL shapes, event envelopes, message headers, SQL/Prisma/Mongo schemas, config files. Breaking a schema breaks consumers you cannot always see.
+
+- **Verify:** `localFindFiles` on `*.proto`, `*.graphql`, `*.sql`, `openapi*`, `schema*`, `migrations/*` → `localGetFileContent` on each authoritative schema → `lspFindReferences` on generated types → `githubSearchPullRequests` for recent schema changes (when external).
+- **Anti-patterns:** schema drift across services, implicit required fields, defaults set in code instead of schema, version bumps without compatibility windows, undefined null vs missing vs empty semantics.
+
+#### 5. Data flows — state, ownership, mutation
+
+Follow the data: where it lives, who writes it, who reads it, what the transaction boundaries are.
+
+- **Verify:** schema files + repository/DAO modules → `lspFindReferences` on write functions (`save`, `update`, `insert`, `publish`) → `scripts/run.js` graph/flow modes for modules on a write path → `scripts/ast/search.js --kind` on mutation patterns.
+- **Anti-patterns:** multiple writers to one field, read-your-writes across async boundaries, cache updates racing with writes, write paths skipping the canonical validator, projections read without consistency guarantees.
+
+#### 6. Execution — runtime behavior
+
+Sync vs async, serial vs concurrent, blocking I/O, retries, timeouts, startup/shutdown order, background loops, resource lifecycle.
+
+- **Verify:** `scripts/ast/search.js` presets (`async-function`, `await-in-loop`, `sync-io`, `promise-all`) → scanner (`await-in-loop`, `sync-io`, `uncleared-timer`, `unbounded-collection`, `startup-risk-hub`, `listener-leak-risk`) → `lspCallHierarchy` along the hot path → tests/benchmarks in the repo.
+- **Anti-patterns:** `await` inside a tight loop, sync I/O on a request path, timers/listeners without lifecycle, startup ordering that assumes initialization, retries without backoff or idempotency.
+
+---
+
+These dimensions compose the understanding artifact: **Flows + Data flows** feed the "Key flows" section; **Types + Protocols** feed "Boundaries & ownership"; **Duplication + Execution** surface in "Clean-code hotspots" and "Architecture health". On a change, state which dimensions the change stresses — that is your risk vector.
+
+### Clean Code — what to enforce, how to verify
+
+Rules (enforce, do not merely note):
+1. **Names reveal intent** — symbols describe what, not how.
+2. **Small, single-purpose functions** — one level of abstraction; short; ≤ ~3 params.
+3. **No dead or duplicated logic** — every branch reachable; each pattern lives in one place.
+4. **Fail loudly, never silently** — no empty catches, no swallowed errors, no bare `except`.
+5. **Types are precise at boundaries** — no `any` / no bare `except` / no unchecked casts at contracts.
+6. **Comments explain *why*, not *what*** — if the comment restates the code, delete one.
+
+| Rule | Tool | Preset / signal |
+|------|------|-----------------|
+| Small functions | `scripts/run.js` | `god-function`, `cognitive-complexity`, `halstead-effort`, `excessive-parameters` |
+| Duplication | `scripts/run.js` | `duplicate-function-body`, `duplicate-flow-structure`, `similar-function-body` |
+| Silent failures | `scripts/ast/search.js` | `--preset empty-catch`, `--preset py-bare-except`, `--preset py-pass-except`, `--preset catch-rethrow` |
+| Loose types | `scripts/ast/search.js` | `--preset any-type`, `--preset type-assertion`, `--preset non-null-assertion` |
+| Intent-revealing names | code read + `lspFindReferences` | widely-used cryptic symbols, abbreviations that spread |
+| Dead / unreachable | scanner + `knip` | `dead-export`, `dead-file`, `unused-import`, `unused-npm-dependency` |
+
+### Required output: understanding artifact
+
+Before concluding any non-trivial investigation, produce a compact artifact. Keep each section tight — a reviewer with no prior context should follow it in under two minutes. Each section maps to the six analytic dimensions. Sections tagged **required** always appear (write `N/A` with a one-line reason if not applicable); sections tagged **applicable** appear only when the task touches that surface.
+
+| # | Section | When | Source dimensions |
+|---|---------|------|-------------------|
+| 1 | **System summary** — what it does, who consumes it, invariants | required | — |
+| 2 | **Control flows** — numbered call paths, each step cited `file:line` | required | Flows |
+| 3 | **Data flows** — writers, readers, transaction boundaries, caches per entity | applicable (stateful tasks) | Data flows |
+| 4 | **Types & protocols** — boundary DTOs/schemas/wire contracts, compatibility posture | applicable (contract tasks) | Types, Protocols & schemas |
+| 5 | **Boundaries & ownership** — module ownership, ports, contract tests | required | — |
+| 6 | **Duplication inventory** — top near-clones and the missing abstraction | applicable (refactor / quality) | Duplication |
+| 7 | **Execution profile** — hot paths, async/sync posture, retry/timeout/lifecycle, runtime risks | applicable (perf / reliability) | Execution |
+| 8 | **Architecture health** — one line per principle and per dimension, with `confirmed|likely|uncertain` + source | required | all |
+| 9 | **Clean-code hotspots** — top AST/scanner findings worth fixing, cited `file:line` | applicable (quality work) | — |
+| 10 | **Next step** — one sentence | required | — |
+
+For trivial tasks (see "Trivial vs. non-trivial" above), produce only sections 10 and the verification you ran.
+
+If the task involves a change, also include:
+- **Change flow** — the specific call path the change traverses. *(required for any change)*
+- **Data-flow impact** — entities read/written and how transaction/cache semantics are preserved. *(required if section 3 applied)*
+- **Contract impact** — types/schemas/protocols touched and compatibility posture (backwards-compatible / breaking-with-migration / additive-only). *(required if section 4 applied)*
+- **Blast radius** — callers and consumers touched, from `lspFindReferences`, labeled by layer. *(required for any change with consumers)*
+- **Risk vector** — which clean-architecture principles and which analytic dimensions the change stresses, and how each is preserved. *(required for any change)*
 
 ## Investigation Lenses
 
-| Lens | Main question | Best tools |
-|------|---------------|------------|
-| Layout | Where does this behavior live? | `localViewStructure`, `localFindFiles`, `localSearchCode` |
-| Semantics | What symbol is this and who uses it? | `localSearchCode` -> LSP tools |
-| Critical path | Which execution paths dominate risk, latency, and business impact? | `lspCallHierarchy`, scanner flow output, targeted code read |
-| Contracts & protocols | Are type contracts, API/event schemas, and protocol rules explicit and stable? | `lspGotoDefinition`, `lspFindReferences`, schema/code read, tests |
-| Layering & modularity | Are dependency directions, boundaries, and module responsibilities clean? | scanner graph/architecture output, LSP references, AST checks |
-| Persistence | How is state stored and mutated? | schema files, SQL/Prisma/Mongoose definitions, migration files, repository/storage modules |
-| Efficiency | Is the implementation doing avoidable work or unnecessary complexity? | scanner complexity findings, code read, query/storage access paths, tests/benchmarks when available |
-| Reliability & resilience | Will this hold under failures, retries, partial outages, and retries of retries? | call flow + error handling read + tests + scanner risk signals |
-| Observability & operability | Can operators detect, explain, and recover from failures quickly? | logs/metrics/traces checks, runbook/docs checks, boundary instrumentation read |
-| Rollout & migration safety | Can this ship safely without breaking old producers/consumers? | migration docs, versioned contracts, compatibility checks, feature-flag/release-path review |
-| Data correctness | Are invariants and consistency rules preserved across writes and side effects? | schema + storage logic + transaction/idempotency read + contract tests |
-| Build & Config | Is runtime/build setup correct for this feature or environment? | package/module config, tsconfig, bundler config, scripts, import/export patterns, build errors |
-| Docs | Are critical behaviors, contracts, flows, and operational constraints documented? | docs/readmes, API docs, config docs, migration notes, code comments near boundaries |
-| Structure | Does this pattern really exist? | `scripts/ast/search.js`, `scripts/ast/tree-search.js` |
-| Architecture | Is this area hard or risky to change? | `scripts/run.js`, graph and flow modes |
-| Behavior | What does the code actually do? | `localGetFileContent`, tests |
+Investigations are structured by two stacked lenses, both defined above in the **Clean Architecture & Clean Code** section:
+
+- **Clean-Architecture principles** — dependency rule, layer boundaries, stable abstractions, boundary ownership, single responsibility.
+- **Architect's analytic dimensions** — flows, duplication, types, protocols & schemas, data flows, execution.
+
+Cross-cutting concerns (reliability, observability, rollout/migration, build & config, docs) surface as sub-questions inside those dimensions; do not treat them as a separate lens stack. Tool routing for each is listed in **Tool Families** below.
 
 ## Tool Families And Their Jobs
 
 ### 1. Local Octocode tools
 
-Use local tools first to map the workspace.
-These are the default first tools for this skill, not a fallback.
+Use local tools first to map the workspace. These are the default first tools, not a fallback.
 
 | Tool | Use it for |
 |------|------------|
@@ -113,7 +215,9 @@ These are the default first tools for this skill, not a fallback.
 | `localSearchCode` | Fast discovery, symbol search, text patterns, and `lineHint` for LSP |
 | `localGetFileContent` | Final code reading after you know what you are looking at |
 
-Rule: do not start with a random full-file read if discovery tools can narrow the target first.
+Rules:
+- Do not start with a full-file read when discovery tools can narrow the target first.
+- When `localSearchCode` returns zero matches: (1) widen the pattern (drop regex meta-chars, try a substring), (2) fall back to `localFindFiles` on likely filename patterns, (3) retry with the literal symbol name. Only after that may you broaden to `localViewStructure` for layout reconnaissance. **Never** guess a `lineHint` for LSP.
 
 ### 2. LSP tools
 
@@ -133,77 +237,64 @@ LSP is the main way to answer:
 - what will break if we change it?
 - what path does execution follow?
 
-### 3. AST tools
+### 3. AST tools — structural proof
 
-Use AST tools when text search is too weak and you need structural proof.
-AST is a primary checking tool in this skill, especially for validating smells, redundancy, and code-shape claims.
+Use AST when text search is too weak. AST is the authoritative proof layer for code-shape, redundancy, and smell claims.
 
-| Tool | Use it for |
-|------|------------|
-| `scripts/ast/search.js` | Live source analysis and structural pattern matching |
-| `scripts/ast/tree-search.js` | Fast triage over cached AST trees from a previous scan |
+| Script | Role | Example invocation |
+|--------|------|--------------------|
+| `scripts/ast/search.js` | Live ast-grep search on current source — authoritative | `node scripts/ast/search.js --preset empty-catch --root ./src` |
+| `scripts/ast/search.js` | Project-specific structural claim | `node scripts/ast/search.js --pattern 'if ($C) { return $V }' --json` |
+| `scripts/ast/tree-search.js` | Fast triage over cached AST trees from a prior scan | `node scripts/ast/tree-search.js -i .octocode/scan -k function_declaration --limit 25` |
 
-Use AST tools for things like:
-- empty catch blocks
-- `any` usage (TS) / bare except (Python)
-- nested ternaries (TS) / mutable defaults (Python)
-- broad exports / wildcard imports
-- repeated structural patterns
-- verifying whether a smell is real or just a text coincidence
+Conventions:
+- Presets cover the common clean-code rules; list them with `node scripts/ast/search.js --list-presets`.
+- Python presets are prefixed `py-` (e.g. `py-bare-except`, `py-mutable-default`).
+- Pair every match with its `file:line` in the summary.
 
-Python presets are prefixed with `py-` (e.g. `--preset py-bare-except`). Use `--list-presets` to see all available presets for both JS/TS and Python.
+Rules:
+- Use `tree-search.js` first to narrow, then `search.js` to confirm on live code.
+- If a structural claim matters to a decision, confirm it with AST before presenting it as fact.
+- For preset catalog, pattern syntax, and Python node kinds, see [AST reference](./references/ast-reference.md).
 
-Rule: `tree-search.js` is for fast narrowing. `search.js` is the authoritative proof on live code.
-Rule: if a structural claim matters, check it with AST before presenting it as fact.
+### 4. Scanner — architecture and flow
 
-### 4. Scanner
+Use `scripts/run.js` when the question is bigger than one symbol or one file. It surfaces dependency cycles, chokepoints, coupling pressure, layer violations, dead-code clusters, security sinks, test gaps, and hot paths — the issues local reading misses.
 
-Use `scripts/run.js` when the question is bigger than one symbol or one file.
+| Script | Role | Example invocation |
+|--------|------|--------------------|
+| `scripts/run.js` | Default scoped scan | `node scripts/run.js --scope=packages/my-pkg` |
+| `scripts/run.js --graph` | Architecture graph (cycles, SDP, coupling) | `node scripts/run.js --graph --out .octocode/scan/scan.json` |
+| `scripts/run.js --json` | Machine-readable findings | `node scripts/run.js --json --out .octocode/scan/scan.json` |
 
-The scanner is especially important for this skill because it surfaces the issues agents often miss when they focus too narrowly on code:
-- dependency cycles
-- chokepoints and broker modules
-- coupling and fan-in/fan-out pressure
-- layer violations
-- dead code clusters
-- security sinks and risky flows
-- test-quality gaps
-- hotspots and critical paths
+Use scanner output to reason about: where change risk concentrates, whether a module is structurally unhealthy, whether a local fix ignores a broader architectural problem, which area to refactor first. Flags, thresholds, and scope syntax: see [CLI reference](./references/cli-reference.md). Reading the scan artifacts: see [Output files](./references/output-files.md).
 
-Use scanner output to reason about:
-- where change risk is concentrated
-- whether a module is structurally unhealthy
-- whether a local fix ignores a broader architectural problem
-- which area should be refactored first
-- where duplication, weak contracts, or poor boundaries are slowing future velocity
-- where complexity, repeated work, or inefficient flows are wasting performance or developer time
+**First-run install.** The three scripts (`run.js`, `ast/search.js`, `ast/tree-search.js` — the last one needs no natives) verify their native deps on startup. If `node_modules/` is missing them, they detect the user's package manager (pnpm-lock.yaml → pnpm, yarn.lock → yarn, else npm) and install into the skill directory automatically, printing:
+
+```
+[octocode-scan] Missing runtime dependencies: …
+[octocode-scan] Skill directory: …
+[octocode-scan] Detected package manager: …
+[octocode-scan] Installing now: …
+```
+
+If auto-install fails (offline, wrong PM on PATH, etc.), the script exits non-zero with the exact manual command. Users can opt out of auto-install with `OCTOCODE_NO_AUTO_INSTALL=1`, in which case the script prints the command and exits without running it.
 
 ### 5. Quality and hygiene checks
 
-Use supporting quality checks when the task touches the relevant surface area.
+The Clean-Architecture principles and the six analytic dimensions already cover naming, cohesion, duplication, layering, contracts, types, data flow, and execution. Use this section only for cross-cutting concerns **not** directly named there:
 
-| Check | Use it for |
-|------|------------|
-| clean code review | naming, cohesion, responsibility split, readability |
-| code smell review | long methods, primitive obsession, shotgun surgery, feature envy, deep nesting, boolean flag clusters |
-| architecture smell review | god module, cycle-prone broker, unstable abstraction, boundary leakage, sink module, layering drift |
-| contract review | TypeScript types, interfaces, DTOs, schemas, return shapes |
-| type/protocol review | API/event versioning, backward compatibility, serialization safety, optional/null semantics, schema drift |
-| duplication review | repeated logic, near-clones, copy-pasted flows, repeated CSS patterns, general redundancy |
-| modularity/layer review | dependency direction, boundary ownership, cohesion vs coupling, module replaceability, cross-layer imports |
-| efficiency review | avoidable `O(n^2)` work, repeated scans, N+1 calls, wasteful transforms, unnecessary recomputation |
-| reliability/resilience review | retry policy, timeout handling, failure isolation, idempotency, fallback behavior |
-| observability/operability review | logging quality, metric/tracing coverage, diagnosability, alert/runbook readiness |
-| rollout/migration review | feature flags, backwards compatibility windows, rollback path, migration sequencing |
-| data correctness review | invariants, transaction boundaries, consistency model assumptions, duplicate-write safety |
-| rigidity review | brittle condition trees, hard-coded branching, patchy glue code, over-coupled modules, naive solutions |
-| build/config review | ESM/CJS mismatch, bad module resolution, wrong script wiring, incompatible runtime assumptions, broken package setup |
-| docs review | whether critical assumptions, contracts, flows, setup, migrations, and risks are documented where they should be |
-| clean CSS review | selector scope, token reuse, naming clarity, dead styles, layout consistency |
-| `knip` | unused exports, unused files, unused dependencies, dead integration edges |
+| Check | Focus |
+|------|------|
+| Reliability & resilience | retry policy, timeout handling, failure isolation, idempotency, fallback behavior |
+| Observability & operability | logging quality, metric/tracing coverage, diagnosability, alert/runbook readiness |
+| Rollout & migration | feature flags, backward-compatibility windows, rollback path, migration sequencing |
+| Build & config | ESM/CJS mismatch, module resolution, script wiring, runtime assumptions |
+| Docs | whether critical assumptions, contracts, flows, setup, migrations, and risks are documented |
+| CSS hygiene | selector scope, token reuse, naming clarity, dead styles (when frontend styling is touched) |
+| `knip` | unused exports, files, dependencies, dead integration edges (run on refactors) |
 
-These checks matter because quality and velocity support each other.
-Messy structure slows teams down. Clear structure speeds them up.
+Skip items that do not apply to the current task.
 
 ### 6. Task and user checkpoints
 
@@ -215,39 +306,29 @@ Track at least:
 - verification
 - docs follow-up when needed
 
-Ask the user when needed at a real checkpoint, especially if:
-- requirements are ambiguous
-- multiple reasonable architectures exist
-- a public contract or persistence model may change
-- the safest fix conflicts with the smallest fix
-- the work may have migration, rollout, or compatibility impact
-
-When asking, be concise and specific. Ask only what is needed to move forward safely.
+For when to stop and ask, see the **User-Ask Gates** section below. Hard gates are non-negotiable stops (ambiguous scope, public contract change, cross-layer edits, destructive actions, large blast radius). Soft gates are ask-if-material.
 
 Use task tracking whenever the work spans research -> planning -> implementation -> verification -> docs/RFC sync.
 
-### 7. Prompt execution contract
+### 7. Agent execution rules
 
-Treat the skill prompt as operational policy, not advice.
+Complements the Operating Contract at the top of this file with reliability rules for how the agent emits reasoning and updates.
 
-Use this minimum execution contract:
-- restate the concrete goal and constraints in one short line before doing deep work
-- declare the next tool step and why it is the cheapest proof step
-- separate facts from inference in every checkpoint
-- carry forward concrete identifiers from tools (`lineHint`, paths, symbols, artifact names)
-- run explicit verification after edits; do not assume success from static reading
-- if a gate cannot be satisfied (missing tests, missing schema, missing ownership), report it as a blocker, not a silent skip
+Per-step:
+- Declare the next tool step and why it is the cheapest proof available.
+- Separate facts from inference in every checkpoint.
+- Carry forward concrete identifiers from tools (`lineHint`, paths, symbols, artifact names).
+- Run explicit verification after edits; do not assume success from static reading.
 
-Prompt reliability checks:
-- avoid vague status updates; every update should include what was checked and what remains
-- avoid broad claims like "looks fine" without at least one concrete evidence source
-- avoid switching from investigation to edits without a short system/flow summary
-- if 2 refinement attempts fail, stop and ask the user for a decision
+Status updates:
+- Every update names what was checked and what remains. No vague progress.
+- No broad claims ("looks fine", "should be ok") without at least one concrete evidence source.
+- No switching from investigation to edits without a short system/flow summary.
 
-Keep this flexible:
-- skip irrelevant checks when they clearly do not apply
-- go deeper only where risk or uncertainty is meaningful
-- choose the lightest evidence path that can prove the conclusion
+Depth control:
+- Skip irrelevant checks when they clearly do not apply (mark `N/A` in the artifact).
+- Go deeper only where risk or uncertainty is meaningful.
+- Choose the lightest evidence path that proves the conclusion.
 
 ### 8. Token-efficient execution mode
 
@@ -269,14 +350,11 @@ Output compression rules:
 
 ### 9. Script usage policy (cost-aware)
 
-Use scripts as proof tools, not as default heavy steps.
+Tool-selection rules for scripts are in §3 (AST) and §4 (Scanner). Additional cost rules:
 
-- prefer local/LSP narrowing before broad scanner runs
-- run `scripts/run.js` broad scans for architecture/risk questions, not for single-symbol trivia
-- use scoped scan options when possible before full-repo scans
-- use `scripts/ast/tree-search.js` for fast triage, then `scripts/ast/search.js` only for authoritative confirmation
-- avoid repeating the same scan when the artifact already answers the current question
-- if scan output is stale relative to current edits, re-run only the minimal necessary scope
+- Scope scan runs (`--scope=...`) before full-repo scans.
+- Do not re-run a scan when the existing artifact already answers the current question.
+- When scan output is stale relative to current edits, re-run only the minimal necessary scope.
 
 ## Default Working Order
 
@@ -291,141 +369,45 @@ For non-trivial tasks, this order is recommended (not mandatory):
 7. Check architecture, layering/modularity, contracts/protocols, reliability/observability/rollout/data correctness, build/configuration, docs, and flow risk with the scanner and relevant project files.
 8. Read the actual code with context.
 9. If the task touches design docs or RFCs, validate them against current flows, contracts, and boundaries.
-10. Summarize the current system, flows, feature surface, and critical paths before deciding on action.
-11. Pause and ask the user if a real decision checkpoint appears.
-12. Decide whether to explain, plan, or edit.
+10. Apply the Clean Architecture and Clean Code lenses; record each principle as `confirmed|likely|uncertain` with evidence.
+11. Produce the understanding artifact (system summary, key flows, boundaries, architecture health, clean-code hotspots, next step).
+12. Pause and ask the user if a real decision checkpoint appears.
+13. Decide whether to explain, plan, or edit.
 
 Short form:
-`clarify -> track -> layout -> symbols -> structure -> architecture/build/docs -> code -> docs/RFC reality check -> summarize -> checkpoint -> action`
+`clarify -> track -> layout -> symbols -> structure -> architecture/build/docs -> code -> docs/RFC reality check -> clean-arch/clean-code lenses -> summarize (artifact) -> checkpoint -> action`
 
 ## How To Use This Skill
 
-Use these flows as templates, not rigid scripts.
+All tasks follow the **Default Working Order** above; these task-shaped adjustments say which steps carry the most weight and where to slot extra emphasis.
 
-### For code understanding
-
-1. Start with `localViewStructure` or `localFindFiles` to see the area.
-2. Use `localSearchCode` to find the symbol or flow.
-3. Use LSP to trace definitions, references, callers, and callees.
-4. Read the relevant code only after the surrounding context is clear.
-5. Summarize the key flows, feature surface, and boundaries in your own reasoning.
-6. Check whether important contracts or critical flows are documented.
-7. If build or runtime behavior is involved, inspect build/config assumptions.
-8. If the area is shared, central, or suspicious, run a scoped scanner pass.
-
-### For bug fixing
-
-1. Identify the failing behavior and likely entry point.
-2. Trace incoming callers and outgoing callees.
-3. Check adjacent risk areas: error handling, retries, side effects, tests, shared consumers, and contract mismatches.
-4. Use AST tools if the bug may involve a structural smell.
-5. Check build/configuration if module format, runtime wiring, or packaging may be involved.
-6. Use the scanner if the bug points to a hotspot, cycle, or orchestration problem.
-7. Fix the smallest layer that solves the root cause, not just the symptom.
-8. Prefer a clean boundary or contract fix over a narrow patch if the issue is systemic.
-9. Check whether the bug is caused by redundant work, inefficient flow, or rigid branching.
-10. Check whether the risky behavior and fix assumptions should be documented.
-
-### For refactors
-
-1. Measure blast radius with `lspFindReferences` and `lspCallHierarchy`.
-2. Check architecture health in the target area with `scripts/run.js --scope=...`.
-3. Look for similar patterns nearby with AST or local search.
-4. Check whether duplication, weak contracts, bad boundaries, or build/config friction are the real refactor driver.
-5. Plan the change if multiple files, packages, or shared symbols are involved.
-6. Prefer extracting modules, clarifying contracts, simplifying flows, and removing redundant work over cosmetic reshuffling.
-7. Implement incrementally.
-8. Re-run verification after each batch.
-9. Update or propose docs when the refactor changes important usage, contracts, or constraints.
-
-### For architecture review
-
-1. Start broad with the scanner, especially graph and flow output.
-2. Identify hotspots, cycles, chokepoints, and suspicious shared modules.
-3. Use local tools to understand the folder and package layout.
-4. Use LSP to verify the real dependency pressure around candidate modules.
-5. Read representative files to explain why the structure is problematic.
-6. Check whether contracts, duplication, module boundaries, and build/runtime setup support extensibility.
-7. Check whether critical architectural constraints are documented.
-8. Report both local code issues and system-level causes.
-
-### For design and RFC validation
-
-1. Identify the claims made by the design doc or RFC (scope, boundaries, contracts, rollout, invariants).
-2. Map each claim to real code ownership (modules, entry points, storage, events, APIs).
-3. Verify runtime flow alignment using LSP call flow + scanner flow/graph outputs.
-4. Verify contract alignment (types/schemas/protocol versions/nullability/error semantics).
-5. Verify architecture alignment (layer boundaries, dependency direction, shared module pressure).
-6. Mark each claim as `confirmed`, `likely`, or `uncertain` with evidence.
-7. Report mismatches clearly: missing implementation, divergence, undocumented behavior, risky assumptions.
-8. Propose minimal doc/RFC corrections or implementation follow-ups to restore alignment.
-
-### For implementation duty cycle
-
-1. Before coding: state root cause, blast radius, and target contract/boundary.
-2. During coding: keep changes in the smallest responsible layer; avoid cross-layer leakage.
-3. During coding: run narrow checks per batch (tests/types/lint or focused scanner slice).
-4. After coding: run full relevant verification and re-check affected critical paths.
-5. After coding: re-open docs/RFC sections touched by the change and sync them with reality.
-6. Close with residual risk, follow-ups, and confidence level.
-
-## Quick Tool Routing
-
-Use this compact routing table first; use detailed playbooks in [Tool workflows](./references/tool-workflows.md).
-
-| Question | Route |
-|----------|-------|
-| symbol/ownership | `localSearchCode` -> LSP (`gotoDefinition` / `findReferences`) |
-| callers/callees/critical path | `localSearchCode` -> `lspCallHierarchy` -> targeted read |
-| architecture risk/hotspots | `scripts/run.js` (scoped first, broad when needed) |
-| structural smells/claims | `scripts/ast/tree-search.js` -> `scripts/ast/search.js` |
-| RFC/design/docs alignment | claim-by-claim mapping -> flow/contract/architecture validation |
+- **Code understanding** — emphasize steps 3–8 (layout → LSP → AST → scoped scanner → read). The deliverable is the understanding artifact.
+- **Bug fixing** — start from the failing behavior, follow the Flows + Execution dimensions to the entry point, check adjacent error/retry/contract risk. Fix the smallest layer that solves the root cause; escalate to a boundary/contract fix when the bug is systemic (hit the **Smallest-fix vs. safest-fix** gate).
+- **Refactor** — steps 4–7 carry the weight: blast radius (`lspFindReferences`), scoped architecture scan, duplication inventory, then plan. Prefer extracting modules, clarifying contracts, simplifying flows over cosmetic reshuffling. Verify after each incremental batch.
+- **Architecture review** — start with the scanner (`--graph`), then use LSP to verify dependency pressure around candidate modules, then read representatives. Report both local and system-level causes.
+- **RFC / design validation** — map each claim to code ownership; verify flow, contract, and architecture alignment; mark each claim `confirmed|likely|uncertain` with evidence; report mismatches as concrete doc or code follow-ups.
+- **Implementation duty cycle** — before coding, state root cause + blast radius + target contract; during coding, keep edits in the smallest responsible layer and run narrow checks per batch; after coding, re-sync docs/RFCs and close with residual risk + confidence.
 
 ## Before / During / After A Change
 
+Investigation substance is covered by the Clean-Architecture principles, the six analytic dimensions, and the understanding artifact. This section lists only the **operational actions** unique to each phase.
+
 ### Before
-- understand current behavior and invariants
-- find consumers and callers
-- identify entry paths, error paths, and critical business/runtime paths
-- inspect tests and scanner signals for hotspot/cycle/shared-boundary risk
-- check contracts/protocols (types, schemas, compatibility, nullability, serialization)
-- check reliability/observability/rollout assumptions (retries, telemetry, migration, rollback)
-- check build/config assumptions that affect runtime behavior
-- check whether critical behavior, constraints, and migration notes are documented
-- if a design doc or RFC exists, map its claims to concrete code ownership before editing
-- check for duplication before adding another branch or helper
-- check for unnecessary complexity and nearby code/architecture smells, not only the target line
-- look for an existing local pattern before inventing a new one
+- Produce the understanding artifact (covers flows, data flows, types, protocols, duplication, execution, boundaries).
+- Map design-doc / RFC claims to concrete code ownership when one exists.
+- Look for an existing local pattern before inventing a new one.
 
 ### During
-- keep edits focused
-- preserve boundaries unless the plan intentionally changes them
-- prefer the smallest change that fixes the real issue
-- prefer the cleanest modular fix that keeps the system extendable
-- maintain clear contracts/protocol compatibility unless an explicit migration is in scope
-- preserve or improve reliability behavior under failure, retries, and partial success
-- keep build/configuration consistent with runtime expectations, especially around ESM/CJS boundaries
-- reduce redundancy and avoid layering new logic on rigid code when simplification is possible
-- avoid introducing new smells (deep nesting, flag-parameter branching, over-centralized modules)
-- improve inefficient flows when they are part of the real problem
-- keep CSS clean/scoped when frontend styling is touched
-- update or flag docs when behavior, contracts, setup, migration, or architecture understanding changed
-- if design/RFC assumptions were invalid, record the exact mismatch and corrective update
-- if the root cause is structural, say so instead of hiding it behind a cosmetic patch
+- Keep edits in the smallest responsible layer; preserve boundaries unless the plan intentionally changes them.
+- Maintain contract/protocol compatibility unless an explicit migration is in scope.
+- Flag any mid-task drift: if root cause turns out structural, hit the **Smallest-fix vs. safest-fix** gate instead of continuing with a cosmetic patch.
 
 ### After
-- run the relevant tests
-- run lint and build or type-check as appropriate
-- run CSS checks when styles changed; run `knip` when refactors may leave dead artifacts
-- verify build/config still match runtime/module expectations
-- re-check changed symbols with LSP after renames/moves
-- run a scoped scanner pass for non-trivial changes
-- re-check critical paths for regressions in behavior, cost, and failure handling
-- verify changed type/protocol contracts with consumers and boundary tests
-- verify reliability/observability/rollout assumptions still hold after the change
-- re-validate relevant design/RFC claims against final implementation behavior
-- verify important critical aspects are documented if the task changed them
-- mention any remaining architectural risk even if the code now works
+- Run tests, lint, and build/type-check.
+- Re-check changed symbols with LSP after renames/moves; run a scoped scanner pass for non-trivial changes.
+- Run `knip` when the refactor may leave dead artifacts; CSS checks when styles changed.
+- Re-validate the artifact's dimensions against the final implementation; note any remaining architectural risk even if the code now works.
+- Sync docs / RFC sections touched by the change.
 
 ## Confidence Rules
 
@@ -442,31 +424,115 @@ Examples:
 - `likely`: scanner reports a hotspot and code shape agrees, but blast radius is still unverified
 - `uncertain`: text search suggests dead code, but LSP is unavailable
 
+### Evidence conflict resolution
+
+When sources disagree on a claim that affects a decision, prefer the source whose domain it is, then re-verify the weaker source:
+
+| Claim type | Authoritative source | Corroborator |
+|-----------|----------------------|--------------|
+| Symbol identity, references, callers/callees | LSP (`lspGotoDefinition`, `lspFindReferences`, `lspCallHierarchy`) | AST + code read |
+| Structural shape (empty catch, `any` usage, nested ternary, preset match) | AST (`scripts/ast/search.js`) | scanner + code read |
+| Runtime behavior and side effects | targeted code read + tests | AST + scanner |
+| Architecture pressure (coupling, cycles, SDP, hot paths) | scanner (`scripts/run.js`) | LSP references + code read |
+| Contract/schema shape at a boundary | the schema/IDL file itself + `lspGotoDefinition` | references to generated types |
+
+If the authoritative source contradicts a weaker one, mark the weaker one as "re-verify" in the artifact and note the resolution. Never present conflicting evidence as resolved without a recorded tiebreak.
+
+## User-Ask Gates
+
+A gate is a **hard stop**: do not proceed past it without the user's explicit decision. Gates protect the user from silent drift, unsafe changes, and wasted work.
+
+### Hard gates (always stop and ask)
+
+Stop and ask before any of these. State the situation in ≤3 lines, list the viable options, name the tradeoff, and recommend one.
+
+1. **Ambiguous scope** — the task has more than one reasonable interpretation and the right one changes the plan.
+   _Ambiguous:_ "fix the login bug". _Unambiguous:_ "fix 500 on /api/login when password field is empty".
+2. **Public contract change** — a public API, exported symbol, event schema, DB schema, CLI flag, or wire protocol would change.
+   _Fires:_ renaming an exported function with external consumers. _Does not fire:_ renaming a private helper with no references.
+3. **Cross-layer/cross-package change** — the fix requires editing more than one layer (domain + adapter, package A + package B) or crosses a workspace boundary.
+   _Fires:_ bug fix needs changes in `packages/domain` AND `packages/http-adapter`. _Does not fire:_ edit contained in one package.
+4. **Dependency-rule violation required** — the cleanest fix would break the dependency rule (inner layer importing outer), break a boundary, or introduce a new cycle.
+   _Fires:_ domain module would need to import the HTTP adapter to access a helper. _Does not fire:_ adapter importing domain (that's the correct direction).
+5. **Destructive or irreversible action** — delete/rename shared files, drop tables, reset branches, force-push, publish packages, send messages/PRs on the user's behalf.
+   _Fires:_ `git reset --hard`, `rm -rf`, publishing an npm version. _Does not fire:_ local file edits on a feature branch.
+6. **Blast radius > ~5 consumers** — `lspFindReferences` returns many callers and the change alters their behavior.
+   _Fires:_ changing a utility called by 20 files. _Does not fire:_ changing a helper with 2 callers, both of which are co-edited.
+7. **Two refinement attempts failed** — same approach tried twice and the evidence still doesn't line up.
+   _Fires:_ two different search patterns both return empty for a symbol you expected. _Does not fire:_ one failed attempt with a clear next angle.
+8. **Missing gate prerequisite** — no tests exist for the area, no owner documented, no schema available, and the change needs one.
+   _Fires:_ user asks for a refactor of untested legacy code. _Does not fire:_ tests exist and cover the change surface.
+9. **Conflicting evidence** — authoritative and corroborating sources (see **Evidence conflict resolution**) disagree on a claim that matters to the decision.
+   _Fires:_ LSP says 0 references, AST shows an import of the symbol. _Does not fire:_ scanner is noisy but LSP is clear.
+10. **Smallest-fix vs. safest-fix conflict** — a narrow patch would work but the root cause is structural.
+    _Fires:_ bug can be fixed by adding a null check but the real cause is a missing contract between two layers. _Does not fire:_ the narrow patch IS the right layer.
+
+### Soft gates (ask if uncertainty is material)
+
+Ask when the decision materially changes the outcome; otherwise proceed and note the assumption.
+
+- Multiple reasonable architectures exist for a greenfield area.
+- Framework / library choice where the project has no established pattern.
+- Rollout strategy (feature flag vs direct deploy) for a behavior change.
+- Migration sequencing when old and new consumers coexist.
+- Whether to fix adjacent smells discovered mid-task or log them as follow-ups.
+
+### Ask template
+
+When you hit a gate, use this shape:
+
+> **Gate:** <what triggered it, 1 line>
+> **Options:**
+> 1. <option A> — tradeoff
+> 2. <option B> — tradeoff
+> **Recommendation:** <A or B, 1 line why>
+> **Blocking:** <what I will not do until you decide>
+
+Keep it short. The user should be able to respond in one sentence.
+
+If the user picks an option you did not recommend (including a riskier one), record the decision and the stated reason in the **Architecture health** / **Risk vector** sections of the artifact and proceed without re-asking. Do not argue against a decided option — raise residual risks once, then execute.
+
+### Gate discipline
+
+- Do not ask when the answer is obvious from the code, CLAUDE.md, or prior context. Gates exist to reduce irreversible mistakes, not to offload decisions.
+- Do not silently continue past a hard gate because "it seemed fine" — that is the failure mode gates prevent.
+- If a gate fires mid-implementation, stop at a clean checkpoint (commit if appropriate, revert if not) and ask.
+- After the user decides, record the decision in the understanding artifact so future steps carry it forward.
+- Gates bind regardless of fallback state. If an Octocode tool is unavailable and you are in **Fallback Mode**, gates still fire on the same conditions; lower confidence does not weaken the rule.
+
 ## Hard Rules
 
 Core guardrails:
 - Do not present raw detector output as unquestioned fact.
-- Do not guess `lineHint`; obtain it from `localSearchCode`.
+- Do not guess `lineHint` (see Tool Families §2).
 - Do not use `lspCallHierarchy` on non-function symbols.
 - Do not judge shared modules from one file read alone.
 - Do not claim design/RFC compliance without claim-by-claim evidence.
 - Do not ignore build/config evidence when runtime behavior may depend on it.
-- Avoid quick patches when the real issue is contracts, boundaries, duplication, or architecture.
+- Do not apply a quick patch when the real issue is contracts, boundaries, duplication, or architecture — hit the **Smallest-fix vs. safest-fix** gate.
 - Check blast radius before changing shared symbols.
 - Re-sync docs/RFCs when implementation changes architecture, contracts, rollout assumptions, or constraints.
-- Ask the user when a real ambiguity or decision checkpoint blocks safe progress.
+- Stop at every hard gate in the **User-Ask Gates** section; do not proceed without an explicit user decision.
+- Do not switch to native Claude Code search tools (`Grep`, `Glob`, `Read`) while Octocode MCP is registered (see **Fallback Mode** for the full rule).
 
 ## Fallback Mode
 
-If local Octocode tools or LSP are unavailable:
+Fallback applies only when an Octocode tool is truly **unavailable** (not registered, unreachable, or returning hard errors). A warning inside a successful response is not a failure.
+
+If Octocode tools or LSP are unavailable:
 - continue with AST tools and the scanner
-- rely more on local search and direct code reading
+- rely more on local search and direct code reading within this skill's tool universe
 - reduce confidence on semantic claims
 - say clearly which parts were proven and which parts were inferred
 
+If an Octocode tool returns a degradation notice but completed the call:
+- treat the response as valid and use its results
+- if the results are empty or clearly wrong, retry with a simpler input (drop regex meta-characters, switch to literal search, narrow the path)
+- do not switch to native Claude Code tools — that would leave the skill's evidence model
+
 ## Outcome Standard
 
-A good result from this skill should answer all of these:
+A good result answers all of these:
 - What is happening?
 - Where is the real ownership or boundary?
 - What is the blast radius?

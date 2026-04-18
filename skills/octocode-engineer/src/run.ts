@@ -1,68 +1,15 @@
 #!/usr/bin/env node
 /**
- * Bootstrap entry point for the octocode-code-engineer skill.
- * Ensures npm dependencies are installed before loading the scanner,
- * which requires native addons (tree-sitter, @ast-grep/napi) and
- * pure-JS packages (typescript) that cannot be bundled.
+ * Entry point for the octocode-engineer scanner. Verifies runtime
+ * dependencies (native addons that cannot be bundled + the TypeScript
+ * compiler) are installed before loading the pipeline. If missing, the
+ * bootstrap detects the user's package manager from lockfiles and installs
+ * into the skill's own node_modules, or prints an actionable manual command.
  */
-import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { ensureNativeDependencies } from './common/ensure-deps.js';
 
-const __filename = fileURLToPath(import.meta.url);
-// When compiled, this file lives at <skill>/scripts/run.js
-// Go up one level from scripts/ to reach the skill root
-const skillDir = dirname(dirname(__filename));
-const nodeModulesDir = join(skillDir, 'node_modules');
-const require = createRequire(import.meta.url);
+ensureNativeDependencies(import.meta.url, { tag: '[octocode-scan]' });
 
-const REQUIRED_PACKAGES = [
-  'typescript',
-  '@ast-grep/napi',
-  'tree-sitter',
-  'tree-sitter-typescript',
-];
-
-function isDependencyAvailable(pkgName: string): boolean {
-  if (existsSync(join(nodeModulesDir, pkgName))) {
-    return true;
-  }
-
-  try {
-    require.resolve(pkgName, { paths: [skillDir] });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const missingPackages = REQUIRED_PACKAGES.filter(pkg => !isDependencyAvailable(pkg));
-
-if (missingPackages.length > 0) {
-  process.stderr.write(
-    `[octocode-scan] Missing dependencies (${missingPackages.join(', ')}). Installing...\n`
-  );
-  const result = spawnSync(
-    'npm',
-    ['install', '--prefix', skillDir, '--no-audit', '--no-fund'],
-    {
-      stdio: 'inherit',
-      shell: false,
-    }
-  );
-  if (result.status !== 0) {
-    process.stderr.write(
-      `[octocode-scan] Failed to install dependencies.\n` +
-      `Run manually: cd ${skillDir} && npm install\n`
-    );
-    process.exit(1);
-  }
-  process.stderr.write('[octocode-scan] Dependencies installed.\n');
-}
-
-// Dependencies are now available — load and run the main scanner
 const { main, EXIT_ERROR } = await import('./pipeline/main.js');
 const { OptionsError } = await import('./pipeline/create-options.js');
 try {

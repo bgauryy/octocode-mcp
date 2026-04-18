@@ -17,7 +17,7 @@ Use defaults silently when the user did not provide a value. Only ask if the req
 
 ## Non-Negotiables
 
-1. Run all three discovery scripts before manual browsing.
+1. Run both discovery scripts before manual browsing.
 2. Treat `references/sources.md` as the baseline catalog, not a suggestion.
 3. Use official/product/project sources first; secondary sources validate or widen coverage.
 4. Read the full canonical page before writing a kept item summary. RSS snippets are discovery-only.
@@ -32,7 +32,7 @@ Use defaults silently when the user did not provide a value. Only ask if the req
 9. Keep original item fields in JSON; add concise display fields (`shortTitle`, `shortDescription`) rather than replacing `title` or `summary`.
 10. Low-heat stories still need useful editorial framing via `shortTitle` and `shortDescription`.
 11. Deduplicate across RSS, manual browsing, and GitHub — same story from multiple sources counts once. Keep the richest version.
-12. Finish only when all section JSONs exist, `meta.json` exists, repo verification (step 6) is done, HTML exists, and browser open was attempted.
+12. Finish only when all section JSONs exist, `meta.json` exists, repo verification (step 5) is done, HTML exists, and browser open was attempted.
 13. When more than one domain is in scope, research each selected section/domain with its own subagent.
 14. Run section subagents in parallel after discovery. Each subagent writes its own `{id}.json`. The coordinator owns dedupe, topItem selection, `meta.json`, and final HTML build.
 15. Every subagent writes its section JSON file (`~/tmp/{ts}-sections/{id}.json`) following the `SectionPayload` schema and returns `coverageSummary`, `dedupeHints`, and `blockedOrStale` to the coordinator.
@@ -44,17 +44,18 @@ Use defaults silently when the user did not provide a value. Only ask if the req
 
 Generate `{ts}` once as `YYYYMMDD-HHmmss` (e.g. `20260404-143000`) and reuse it for every output file path. Use defaults when missing: `domains=all`, `window=7d`, `depth=deep`.
 
-If dependencies are missing: `yarn --cwd skills/octocode-news install`
+If dependencies are missing: run `yarn install` from the monorepo root (this resolves all workspaces including skills).
 
 ### 2) Discovery (parallel)
 
-Run all three scripts in parallel — they are independent and all read `references/sources.md`:
+Run both scripts in parallel — they are independent and both read `references/sources.md`:
 
-**RSS fetch** — candidate pool and volume by domain:
+**RSS fetch + health** — candidate pool, volume by domain, and per-feed health status in one pass:
 
 ```bash
 yarn --cwd skills/octocode-news fetch-rss \
   --window {window} \
+  --include-health \
   --json-out ~/tmp/{ts}-whats-new-rss.json
 ```
 
@@ -65,73 +66,39 @@ yarn --cwd skills/octocode-news catalog-sources \
   --json-out ~/tmp/{ts}-whats-new-catalog.json
 ```
 
-**RSS health check** — flags broken, stale, or empty feeds so you skip them during research:
+After both finish, you have:
+
+- `rss.json` → `summary` shows volume by domain, `items` gives the candidate pool, and each `feeds[]` entry includes a `health` object (`ok`, `reason`, `validFeed`, freshness data) — broken/stale/empty feeds are flagged inline
+- `catalog.json` → every website, RSS feed, repo, and custom resource to track in `sourcesChecked`
+
+Note: `check-rss` still exists as a standalone script for targeted feed audits, but `--include-health` on `fetch-rss` covers the same ground in a single network pass.
+
+### 3) Research & Write Per-Section JSON (parallel by section)
+
+Create the output directory first:
 
 ```bash
-yarn --cwd skills/octocode-news check-rss \
-  --window-label {window} \
-  --json-out ~/tmp/{ts}-whats-new-rss-check.json
+mkdir -p ~/tmp/{ts}-sections/
 ```
 
-Note: `check-rss` exits with code 1 when any feeds fail. This is expected — paywalled, challenge-protected, and temporarily down feeds always fail. Read the JSON output for the actual results; do not treat a non-zero exit as a fatal error.
+**Resume protocol**: Before spawning subagents, check for existing section JSON files in `~/tmp/{ts}-sections/`. If a valid `{id}.json` already exists (has items or is a quiet stub), skip that domain — it was completed by a previous run. This allows recovery from coordinator crashes without re-doing finished domains.
 
-After all three finish, you have:
+Domains: `ai`, `devtools`, `web`, `security`, `repos`, optional `cross` (when a story clearly spans sections).
 
-- `rss.json` → `summary` shows volume by domain, `items` gives the candidate pool for top stories
-- `catalog.json` → every website, RSS feed, repo, and custom resource to track in `sourcesChecked`
-- `rss-check.json` → which feeds are broken/stale/empty — do not rely on those during research
+**Single-domain shortcut**: When only one domain is selected, skip subagent overhead — run the research pass inline as the coordinator. Write the section JSON file directly and proceed to Step 4.
 
-### 3) Research (parallel by section)
+**Quiet stubs for unrequested domains**: When `domains` is not `all`, write a quiet stub for each unselected primary domain so the HTML report renders every section:
 
-Create a worklist from the selected sections/domains, then spawn one subagent per selected section:
+```json
+{ "id": "web", "name": "Web Platform", "icon": "W", "iconClass": "si-web", "quiet": true, "quietMsg": "Web platform was not in scope for this run.", "items": [], "sourcesChecked": [] }
+```
 
-- `ai`
-- `devtools`
-- `web`
-- `security`
-- `repos`
-- optional `cross` when a story clearly spans sections
-
-Each subagent runs the same four-step pass for its own section only:
+When multiple domains are selected, spawn one subagent per domain. Each subagent runs the same four-step pass:
 
 1. **Triage RSS candidates** — scan the RSS candidate pool from step 2 and mark clear top stories for full-page reads.
 2. **Check non-RSS sources** — visit cataloged websites that do not expose RSS. Skip feeds flagged broken/stale by the health check.
 3. **Validate repo/release claims** — use Octocode GitHub tools for release notes, merged PRs, changelogs, and repo context.
 4. **Log everything** — record checked, blocked, stale, empty, and skipped sources. These become `sourcesChecked` entries.
-
-Each subagent writes its section JSON file directly: `~/tmp/{ts}-sections/{id}.json`
-
-The file follows the `SectionPayload` schema and includes:
-- `id` — the owned section/domain id
-- `name`, `icon`, `iconClass` — display metadata
-- `quiet` — `true` if no notable items; include `quietMsg`
-- `items[]` — normalized candidate stories for that domain only (including potential top-story candidates)
-- `sourcesChecked[]` — every checked, stale, blocked, empty, or skipped source with notes
-
-Each subagent also returns to the coordinator:
-- `coverageSummary` — what was covered, what was quiet, what needs follow-up
-- `dedupeHints[]` — URLs, repos, release pages, or products that may overlap another domain
-- `blockedOrStale[]` — sources or candidate stories that need coordinator review
-
-The coordinator waits for all selected subagents, then reads their JSON files for cross-domain dedup, topItem selection, and meta assembly.
-
-Prefer Octocode for GitHub data, local scripts for catalog/RSS work, and direct web fetching for non-GitHub sources.
-
-**Subagent stopping condition**: stop when the domain slice has met its depth floor or exhausted the cataloged sources for that domain, every checked/blocked/skipped source is logged, and the section JSON file is written.
-
-**Coordinator stopping condition**: stop only when every selected domain subagent has finished or explicitly reported blocked status, cross-domain duplicates are resolved, `meta.json` is written, section files are updated (topItems removed from sections), and the global depth floor is met (brief: 15+, deep: 30+, comprehensive: 50+).
-
-When changing the local tooling:
-
-- Edit TypeScript, HTML, and CSS in `src/`
-- Regenerate runnable artifacts with `yarn --cwd skills/octocode-news build:scripts`
-- Treat `scripts/` as built output, not the authoring source
-
-### 4) Write Per-Section JSON (parallel)
-
-Each subagent writes its own section JSON file independently. The coordinator does **not** assemble one large file — each domain subagent writes directly to the shared output directory.
-
-**Output directory**: `~/tmp/{ts}-sections/`
 
 Each subagent writes `~/tmp/{ts}-sections/{id}.json` following the `SectionPayload` schema:
 
@@ -147,16 +114,38 @@ Each subagent writes `~/tmp/{ts}-sections/{id}.json` following the `SectionPaylo
 }
 ```
 
-Required fields per section file: `id`, `name`, `icon`, `iconClass`, `quiet`, `items`, `sourcesChecked`.
+Required fields: `id`, `name`, `icon`, `iconClass`, `quiet`, `items`, `sourcesChecked`.
 Set `quiet: true` + `quietMsg` + empty `items` when a domain has no notable items.
 
-Each `items[]` entry follows the same `Item` schema as before (domain, type, title, summary, heat, references, contentEvidence, etc.).
+Each `items[]` entry follows the `Item` schema (domain, type, title, summary, heat, references, contentEvidence, etc.).
+Each `sourcesChecked[]` entry follows the `SourceCheck` schema.
 
-Each `sourcesChecked[]` entry follows the `SourceCheck` schema — every checked, blocked, stale, empty, or skipped source for that domain.
+Each subagent also returns to the coordinator:
+- `coverageSummary` — what was covered, what was quiet, what needs follow-up
+- `dedupeHints[]` — URLs, repos, release pages, or products that may overlap another domain
+- `blockedOrStale[]` — sources or candidate stories that need coordinator review
 
-This step is fully parallel: all selected domain subagents write their files at the same time.
+The coordinator waits for all selected subagents, then reads their JSON files for cross-domain dedup, topItem selection, and meta assembly.
 
-### 5) Coordinator: Merge, Rank, and Write Meta
+Prefer Octocode for GitHub data, local scripts for catalog/RSS work, and direct web fetching for non-GitHub sources.
+
+**Blocked-page fallback**: When a canonical URL cannot be fetched (challenge, paywall, timeout), use the RSS snippet + source metadata as `contentEvidence.method = "rss-snippet"` with `chars` set to actual snippet length. Log the reason in `sourcesChecked`. Do not silently drop the item — a well-sourced RSS summary with a clear `whyImportant` is better than nothing.
+
+**Source tiers at brief depth**: When `depth=brief`, focus on P1 sources from `sources.md` only. Skip P2 sources unless P1 coverage is clearly thin (<3 items for a domain).
+
+**Subagent stopping condition**: stop when the domain slice has met its depth floor or exhausted the cataloged sources for that domain, every checked/blocked/skipped source is logged, and the section JSON file is written.
+
+**Subagent context-limit recovery**: If a subagent is approaching its context limit before finishing all sources, it must immediately write its section JSON with whatever items it has collected, mark remaining sources as `status: "skipped"` with `notes: "context limit"`, and return to the coordinator. Partial coverage is acceptable — the coordinator can flag thin sections in the report `tldr`.
+
+**Coordinator stopping condition**: stop only when every selected domain subagent has finished or explicitly reported blocked status, cross-domain duplicates are resolved, `meta.json` is written, section files are updated (topItems removed from sections), and the global depth floor is met (brief: 15+, deep: 30+, comprehensive: 50+).
+
+When changing the local tooling:
+
+- Edit TypeScript, HTML, and CSS in `src/`
+- Regenerate runnable artifacts with `yarn --cwd skills/octocode-news build:scripts`
+- Treat `scripts/` as built output, not the authoring source
+
+### 4) Coordinator: Merge, Rank, and Write Meta
 
 After all subagents finish, the coordinator:
 
@@ -202,7 +191,9 @@ Presentation rules for every kept item:
 - Keep the HTML concise in prose but dense in signal: theme summaries, section stats, source counts, freshness, and verification cues should be scannable without opening raw JSON.
 - Normalization adds a `theme` metadata field (`ai`, `tech`, `security`, `repositories`, `others`) to each item. The HTML renders sections in canonical domain order (`ai`, `devtools`, `web`, `security`, `repos`, optional `cross`), not by theme grouping.
 
-### 6) Verify Repositories with Octocode MCP
+### 5) Verify Repositories with Octocode MCP
+
+**Skip at `brief` depth.** Brief reports prioritize speed over verification — proceed directly to Step 6.
 
 After merge and ranking, run a verification pass on every item that references a GitHub repository. Use Octocode MCP tools to ground-truth the report data against live GitHub state.
 
@@ -232,7 +223,7 @@ After merge and ranking, run a verification pass on every item that references a
 - Do not re-verify repos already checked by subagents in step 3 — carry forward their `sourcesChecked` entries. Only verify repos that subagents discovered via RSS or web sources without GitHub tool confirmation.
 - Update the section JSON files in-place after verification. The coordinator owns this step.
 
-### 7) Build, Validate, and Open
+### 6) Build, Validate, and Open
 
 ```bash
 yarn --cwd skills/octocode-news build-report \
@@ -269,8 +260,8 @@ Fallback only if the script itself is broken:
 | File | Purpose | Used in |
 |------|---------|---------|
 | `references/sources.md` | Source catalog — baseline for all research | Steps 2, 3 |
-| `references/dataStructure.md` | Schema guide + example JSON + constraints | Steps 4, 5 |
-| `src/report-schema.ts` | Zod schema — `SectionPayload`, `ReportMeta`, and full `ReportData` | Steps 4, 5, 7 |
+| `references/dataStructure.md` | Schema guide + example JSON + constraints | Steps 3, 4 |
+| `src/report-schema.ts` | Zod schema — `SectionPayload`, `ReportMeta`, and full `ReportData` | Steps 3, 4, 6 |
 | `src/` | Editable TypeScript, HTML, and CSS source | All steps (edit here, then `build:scripts`) |
-| `scripts/` | Bundled/minified runnable artifacts | Steps 2, 7 |
-| `scripts/report-template.html` | Self-contained UI template (per-section `<script>` blocks, CSS inlined at build) | Step 7 (fallback) |
+| `scripts/` | Bundled/minified runnable artifacts | Steps 2, 6 |
+| `scripts/report-template.html` | Self-contained UI template (per-section `<script>` blocks, CSS inlined at build) | Step 6 (fallback) |

@@ -1,5 +1,7 @@
 # Source Catalog
 
+> Last verified: Apr 2026
+
 ## Execution Protocol
 
 1. **User overrides** → apply first
@@ -14,6 +16,20 @@
 **Web-content rule:** For every kept website/RSS item, open the canonical article URL and read full page content before summarizing. RSS snippets are discovery-only.
 
 **Expansion:** Catalog is baseline, not ceiling. Use any relevant source (GitHub, vendor changelogs, trending).
+
+## Source Tiers
+
+**P1 (must-check at all depths):** Highest-signal sources per domain. Check these first, even at `brief` depth.
+**P2 (deep and comprehensive only):** Secondary and supplemental. Skip at `brief` depth unless P1 coverage is thin.
+
+| Domain | P1 Sources |
+|--------|------------|
+| AI | OpenAI News, Anthropic News, Google AI Blog, Google DeepMind, Hugging Face Blog, Meta AI Blog, Mistral, DeepSeek, Simon Willison, The Decoder, HF Trending Papers |
+| Devtools | Vercel Changelog, Node.js Blog, Bun Blog, Deno Blog, TypeScript Blog, GitHub Changelog, Cursor Changelog, Cloudflare Blog, AWS What's New |
+| Web | Chrome Dev Blog, web.dev, WebKit Blog, MDN Blog, JavaScript Weekly, TC39 Proposals |
+| Security | CISA KEV, GitHub Advisories, The Hacker News, BleepingComputer, Krebs on Security, Schneier on Security |
+| Repos | GitHub Trending, GitHub Explore, Best of JS, HF Trending Models, Good AI List API |
+| Cross | Hacker News, Techmeme, TechCrunch, The Verge, Ars Technica |
 
 ---
 
@@ -35,7 +51,7 @@ Model labs, API/platform changes, research, and open-model momentum.
 | Meta AI Blog         | https://ai.meta.com/blog/                             | —                                                    |
 | Mistral News         | https://mistral.ai/news/                              | —                                                    |
 | DeepSeek News        | https://github.com/deepseek-ai                        | —                                                    |
-| xAI Blog             | https://x.ai/blog                                     | —                                                    |
+| xAI Blog             | https://x.ai/blog                                     | — (challenge-protected)                              |
 | Perplexity Hub       | https://www.perplexity.ai/hub/                        | — (challenge-protected)                              |
 | ElevenLabs Blog      | https://elevenlabs.io/blog                            | —                                                    |
 | Runway Research      | https://runwayml.com/research/                        | —                                                    |
@@ -48,7 +64,7 @@ Model labs, API/platform changes, research, and open-model momentum.
 | EleutherAI Blog      | https://blog.eleuther.ai/                             | `blog.eleuther.ai/index.xml`                         |
 | Apple ML Research    | https://machinelearning.apple.com/                    | `machinelearning.apple.com/rss.xml`                  |
 | Amazon Science       | https://www.amazon.science/                           | `amazon.science/index.rss`                           |
-| Google Research Blog | https://research.google/blog/                         | `blog.research.google/feeds/posts/default?alt=rss`   |
+| Google Research Blog | https://research.google/blog/                         | — (RSS broken since Oct 2025, use website)           |
 
 ### News
 
@@ -66,10 +82,9 @@ Model labs, API/platform changes, research, and open-model momentum.
 | CNN AI                       | https://edition.cnn.com/business/tech/ai-news-artificial-intelligence-updates | —                                                             |
 | Economist AI                 | https://www.economist.com/topics/artificial-intelligence                  | — (challenge-protected)                                           |
 | FT AI                        | —                                                                         | `ft.com/artificial-intelligence?format=rss`                       |
-| MarkTechPost                 | https://www.marktechpost.com/                                             | `marktechpost.com/feed`                                           |
+| MarkTechPost                 | https://www.marktechpost.com/                                             | — (feed blocked, use website)                                     |
 | 404 Media                    | https://www.404media.co/                                                  | `404media.co/rss`                                                 |
 | ScienceDaily AI              | https://www.sciencedaily.com/news/computers_math/artificial_intelligence/ | `sciencedaily.com/rss/computers_math/artificial_intelligence.xml` |
-| Synced Review                | https://syncedreview.com/                                                 | `syncedreview.com/feed`                                           |
 | AI Business                  | https://aibusiness.com/                                                   | `aibusiness.com/rss.xml`                                          |
 ### Newsletters & Roundups
 
@@ -83,12 +98,11 @@ Model labs, API/platform changes, research, and open-model momentum.
 | The Batch               | https://www.deeplearning.ai/the-batch/ | —                                    |
 | TLDR AI                 | https://tldr.tech/ai                   | —                                    |
 | Last Week in AI         | https://lastweekin.ai/                 | `lastweekin.ai/feed`                 |
-| SemiAnalysis            | https://www.semianalysis.com/          | `semianalysis.com/feed`              |
+| SemiAnalysis            | https://www.semianalysis.com/          | `semianalysis.com/feed` (dormant since Sep 2025, check web) |
 | Normal Tech (AI Snake Oil) | https://www.normaltech.ai/          | `normaltech.ai/feed`                 |
 | The Gradient            | https://thegradient.pub/               | `thegradient.pub/rss/`               |
 | KDnuggets               | https://www.kdnuggets.com/             | `kdnuggets.com/feed`                 |
 | AIModels.fyi            | https://aimodels.substack.com/         | `aimodels.substack.com/feed`         |
-| Data Machina            | https://datamachina.substack.com/      | `datamachina.substack.com/feed`      |
 | Chain of Thought        | https://every.to/chain-of-thought/     | `every.to/chain-of-thought/feed.xml` |
 | Ben's Bites             | https://www.bensbites.com/             | `bensbites.com/feed`                 |
 | Import AI               | https://importai.substack.com/         | `importai.substack.com/feed`         |
@@ -101,12 +115,11 @@ Model labs, API/platform changes, research, and open-model momentum.
 
 | Source             | URL                                                 | RSS                                               |
 | ------------------ | --------------------------------------------------- | ------------------------------------------------- |
-| arXiv cs.AI        | https://arxiv.org/list/cs.AI/recent                 | `arxiv.org/rss/cs.AI`                             |
-| arXiv cs.CL        | https://arxiv.org/list/cs.CL/recent                 | `arxiv.org/rss/cs.CL`                             |
-| arXiv cs.LG        | https://arxiv.org/list/cs.LG/recent                 | `arxiv.org/rss/cs.LG`                             |
-| arXiv cs.CV        | https://arxiv.org/list/cs.CV/recent                 | `arxiv.org/rss/cs.CV`                             |
+| arXiv cs.AI        | https://arxiv.org/list/cs.AI/recent                 | — (web-only; RSS feed is undated, use listing page) |
+| arXiv cs.CL        | https://arxiv.org/list/cs.CL/recent                 | — (web-only; RSS feed is undated, use listing page) |
+| arXiv cs.LG        | https://arxiv.org/list/cs.LG/recent                 | — (web-only; RSS feed is undated, use listing page) |
+| arXiv cs.CV        | https://arxiv.org/list/cs.CV/recent                 | — (web-only; RSS feed is undated, use listing page) |
 | JMLR               | https://www.jmlr.org/                               | `jmlr.org/jmlr.xml`                               |
-| Stanford AI Blog   | https://ai.stanford.edu/blog/                       | `ai.stanford.edu/blog/feed.xml`                   |
 | MIT News AI        | https://news.mit.edu/topic/artificial-intelligence2 | `news.mit.edu/rss/topic/artificial-intelligence2` |
 | Berkeley BAIR Blog | https://bair.berkeley.edu/blog/                     | `bair.berkeley.edu/blog/feed.xml`                 |
 | ML@CMU Blog        | https://blog.ml.cmu.edu/                            | `blog.ml.cmu.edu/feed`                            |
@@ -116,9 +129,9 @@ Model labs, API/platform changes, research, and open-model momentum.
 | Source                   | URL                                    | RSS                                    |
 | ------------------------ | -------------------------------------- | -------------------------------------- |
 | Simon Willison           | https://simonwillison.net/             | `simonwillison.net/atom/everything/`   |
-| Chip Huyen               | https://huyenchip.com/                 | `huyenchip.com/feed`                   |
-| Lil'Log (Lilian Weng)    | https://lilianweng.github.io/          | `lilianweng.github.io/index.xml`       |
-| Eugene Yan               | https://eugeneyan.com/                 | `eugeneyan.com/rss/`                   |
+| Chip Huyen               | https://huyenchip.com/                 | — (dormant since Jan 2025)             |
+| Lil'Log (Lilian Weng)    | https://lilianweng.github.io/          | — (dormant since May 2025)             |
+| Eugene Yan               | https://eugeneyan.com/                 | — (dormant since Dec 2025, check web)  |
 | Sebastian Raschka        | https://magazine.sebastianraschka.com/ | `magazine.sebastianraschka.com/feed`   |
 | One Useful Thing (Ethan Mollick) | https://www.oneusefulthing.org/ | `oneusefulthing.substack.com/feed`     |
 | Marcus on AI (Gary Marcus)       | https://garymarcus.substack.com/ | `garymarcus.substack.com/feed`        |
@@ -244,7 +257,7 @@ Vulnerability databases, incident reporting, exploit activity, and supply-chain 
 | NVD                 | https://nvd.nist.gov/                                        | —                                                    |
 | OSV.dev             | https://osv.dev/                                             | —                                                    |
 | OpenCVE             | https://opencve.io/                                          | —                                                    |
-| Google Project Zero | https://googleprojectzero.blogspot.com/                      | `googleprojectzero.blogspot.com/feeds/posts/default` |
+| Google Project Zero | https://googleprojectzero.blogspot.com/                      | — (feed blocked, use website)                        |
 | Microsoft Security  | https://msrc.microsoft.com/blog                              | —                                                    |
 | Snyk Advisories     | https://security.snyk.io/                                    | —                                                    |
 | Cloudflare Security | https://blog.cloudflare.com/tag/security/                    | —                                                    |

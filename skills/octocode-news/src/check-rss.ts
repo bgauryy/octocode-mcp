@@ -14,6 +14,10 @@ function printUsage() {
   console.log(`Usage:
   node skills/whats-new/scripts/check-rss.mjs [--sources <sources.md>] [--json-out <report.json>] [--timeout-ms <ms>] [--concurrency <n>] [--failures-only] [--window-label <24h|7d|14d|30d>]
 
+NOTE: For standard discovery runs, prefer "fetch-rss --include-health" which combines
+item fetching and health checking in a single network pass. This standalone script
+remains useful for targeted feed audits and debugging.
+
 What it does:
   1. Reads RSS/Atom URLs from sources.md tables, fenced RSS blocks, and repo release-feed patterns.
   2. Fetches them concurrently.
