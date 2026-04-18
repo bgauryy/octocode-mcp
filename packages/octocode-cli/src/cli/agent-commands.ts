@@ -77,27 +77,39 @@ function validateRequiredFlags(
 
 function printAgentError(message: string, details: string[] = []): void {
   console.error();
-  console.error(`  ${c('red', 'X')} ${message}`);
+  console.error(`  ${c('red', '✗')} ${message}`);
   for (const detail of details) {
     console.error(`  ${dim('-')} ${detail}`);
   }
   console.error();
 }
 
+const STDIN_TIMEOUT_MS = 5_000;
+
 async function readStdinJson(): Promise<string | null> {
   if (process.stdin.isTTY) return null;
 
   return new Promise((resolve, reject) => {
     let data = '';
+    const timer = setTimeout(() => {
+      process.stdin.removeAllListeners();
+      process.stdin.unref();
+      resolve(data.trim().length > 0 ? data.trim() : null);
+    }, STDIN_TIMEOUT_MS);
+
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', chunk => {
       data += chunk;
     });
     process.stdin.on('end', () => {
+      clearTimeout(timer);
       const trimmed = data.trim();
       resolve(trimmed.length > 0 ? trimmed : null);
     });
-    process.stdin.on('error', reject);
+    process.stdin.on('error', err => {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 

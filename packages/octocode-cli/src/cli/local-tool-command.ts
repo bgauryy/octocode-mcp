@@ -1,3 +1,10 @@
+// Intentionally duplicates helpers from tool-command.ts (isRecord, normalizeKey,
+// buildToolPayload, printToolResult, etc.) to keep this module free of heavy
+// imports (MCP init, provider setup, colors). The esbuild code-splitting is
+// extremely sensitive to shared-chunk creation — benchmarks showed that even
+// extracting tiny pure-function modules can regress startup by 2-4x. Keep this
+// file self-contained; update both copies when the payload contract changes.
+
 import { z } from 'zod/v4';
 import type { ParsedArgs } from './types.js';
 import {

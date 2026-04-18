@@ -109,7 +109,7 @@ export const AGENT_COMMAND_SPECS: AgentCommandSpec[] = [
     tool: 'githubSearchRepositories',
     description: 'Search GitHub repositories',
     usage:
-      "octocode search-repos --query '<terms>' [--owner <org>] [--limit <n>] [--sort <stars|updated|forks|best-match>] [--json]",
+      "octocode search-repos [--query '<terms>'] [--topics <a,b>] [--owner <org>] [--limit <n>] [--sort <stars|updated|forks|best-match>] [--json]",
     flags: [
       {
         name: 'query',

@@ -1,5 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+describe('LOCAL_TOOL_NAMES sync with local-tool-command TOOL_DEFINITIONS', () => {
+  it('index.ts LOCAL_TOOL_NAMES matches the 4 local tools in local-tool-command.ts', async () => {
+    const indexSource = await import('node:fs/promises').then(fs =>
+      fs.readFile(new URL('../../src/cli/index.ts', import.meta.url), 'utf8')
+    );
+
+    const setMatch = indexSource.match(
+      /const LOCAL_TOOL_NAMES\s*=\s*new Set\(\[([\s\S]*?)\]\)/
+    );
+    expect(setMatch).not.toBeNull();
+
+    const names = [...setMatch![1].matchAll(/'([^']+)'/g)].map(m => m[1]);
+    expect(names.sort()).toEqual([
+      'localFindFiles',
+      'localGetFileContent',
+      'localSearchCode',
+      'localViewStructure',
+    ]);
+  });
+});
+
 const mocks = vi.hoisted(() => ({
   findCommand: vi.fn(),
   showHelp: vi.fn(),
@@ -14,6 +35,7 @@ const mocks = vi.hoisted(() => ({
   executeToolCommand: vi.fn().mockResolvedValue(true),
   executeLocalToolCommand: vi.fn().mockResolvedValue(true),
   printToolsContext: vi.fn().mockResolvedValue(undefined),
+  findAgentCommand: vi.fn(),
 }));
 
 vi.mock('../../src/cli/commands.js', () => ({
@@ -54,6 +76,11 @@ vi.mock('../../src/cli/tool-command.js', () => ({
 
 vi.mock('../../src/cli/local-tool-command.js', () => ({
   executeLocalToolCommand: mocks.executeLocalToolCommand,
+}));
+
+vi.mock('../../src/cli/agent-commands.js', () => ({
+  findAgentCommand: mocks.findAgentCommand,
+  agentCommands: [],
 }));
 
 vi.mock('../../src/cli/tool-help-specs.js', () => ({
@@ -237,5 +264,148 @@ describe('runCLI', () => {
 
     expect(handled).toBe(true);
     expect(mocks.showHelp).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows static command help for "install --help"', async () => {
+    const fakeCmd = { name: 'install', description: 'Configure octocode-mcp' };
+    mocks.findStaticCommandHelp.mockReturnValue(fakeCmd);
+
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    const handled = await runCLI(['install', '--help']);
+
+    expect(handled).toBe(true);
+    expect(mocks.findStaticCommandHelp).toHaveBeenCalledWith('install');
+    expect(mocks.showStaticCommandHelp).toHaveBeenCalledWith(fakeCmd);
+    expect(mocks.showCommandHelp).not.toHaveBeenCalled();
+    expect(mocks.findCommand).not.toHaveBeenCalled();
+  });
+
+  it('shows dynamic command help when static lookup misses but findCommand hits', async () => {
+    const fakeCmd = { name: 'cache', description: 'Manage cache' };
+    mocks.findStaticCommandHelp.mockReturnValue(undefined);
+    mocks.findCommand.mockReturnValue(fakeCmd);
+
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    const handled = await runCLI(['cache', '--help']);
+
+    expect(handled).toBe(true);
+    expect(mocks.showCommandHelp).toHaveBeenCalledWith(fakeCmd);
+    expect(mocks.showHelp).not.toHaveBeenCalled();
+  });
+
+  it('prints version for --version flag', async () => {
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    const handled = await runCLI(['--version']);
+
+    expect(handled).toBe(true);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('octocode-cli v')
+    );
+    expect(mocks.findCommand).not.toHaveBeenCalled();
+  });
+
+  it('prints version for -v flag', async () => {
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    const handled = await runCLI(['-v']);
+
+    expect(handled).toBe(true);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('octocode-cli v')
+    );
+  });
+
+  it('returns false when no command is given (triggers interactive mode)', async () => {
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    const handled = await runCLI([]);
+
+    expect(handled).toBe(false);
+    expect(mocks.findCommand).not.toHaveBeenCalled();
+    expect(mocks.showHelp).not.toHaveBeenCalled();
+  });
+
+  it('prints error for unknown command and sets exitCode 1', async () => {
+    mocks.findCommand.mockReturnValue(undefined);
+
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    const handled = await runCLI(['nonexistent']);
+
+    expect(handled).toBe(true);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Unknown command: nonexistent')
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('sets exitCode 1 when local --tool execution fails', async () => {
+    mocks.executeLocalToolCommand.mockResolvedValueOnce(false);
+
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    const handled = await runCLI([
+      '--tool',
+      'localSearchCode',
+      '{"bad":"input"}',
+    ]);
+
+    expect(handled).toBe(true);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('sets exitCode 1 when github --tool execution fails', async () => {
+    mocks.executeToolCommand.mockResolvedValueOnce(false);
+
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    const handled = await runCLI([
+      '--tool',
+      'githubSearchCode',
+      '{"bad":"input"}',
+    ]);
+
+    expect(handled).toBe(true);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('routes to agent subcommand handler for known agent commands', async () => {
+    const handlerMock = vi.fn().mockResolvedValue(undefined);
+    mocks.findAgentCommand.mockReturnValue({
+      name: 'search-code',
+      description: 'Search code',
+      handler: handlerMock,
+    });
+
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    const handled = await runCLI(['search-code', '--query', 'foo']);
+
+    expect(handled).toBe(true);
+    expect(mocks.findAgentCommand).toHaveBeenCalledWith('search-code');
+    expect(handlerMock).toHaveBeenCalledTimes(1);
+    expect(mocks.findCommand).not.toHaveBeenCalled();
+  });
+
+  it('prints deprecation warning when using --tool', async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    await runCLI([
+      '--tool',
+      'githubSearchCode',
+      '{"owner":"x","repo":"y","keywordsToSearch":["a"]}',
+    ]);
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('--tool is deprecated')
+    );
+    consoleErrorSpy.mockRestore();
   });
 });

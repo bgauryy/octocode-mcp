@@ -5,6 +5,8 @@ import { AGENT_SUBCOMMAND_NAMES } from './agent-command-specs.js';
 
 declare const __APP_VERSION__: string;
 
+// Must stay in sync with TOOL_DEFINITIONS in local-tool-command.ts.
+// Duplicated here to avoid importing that module eagerly (code-splitting perf).
 const LOCAL_TOOL_NAMES = new Set([
   'localSearchCode',
   'localGetFileContent',

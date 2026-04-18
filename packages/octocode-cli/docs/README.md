@@ -24,7 +24,15 @@ octocode-cli install --ide cursor
 octocode-cli sync --status
 ```
 
-Agents and tools:
+Agent subcommands:
+
+```bash
+octocode-cli search-code --query 'useReducer' --owner facebook --repo react
+octocode-cli get-file --owner bgauryy --repo octocode-mcp --path src/cli/index.ts
+echo '{"queries":[...]}' | octocode-cli search-code
+```
+
+Low-level tool mode:
 
 ```bash
 octocode-cli --tools-context

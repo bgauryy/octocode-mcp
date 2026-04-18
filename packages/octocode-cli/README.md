@@ -36,7 +36,18 @@ octocode-cli auth
 octocode-cli sync --status
 ```
 
-Agent and tool usage:
+Agent subcommands (flag-driven, no JSON needed):
+
+```bash
+octocode-cli search-code --query 'useReducer dispatch' --owner facebook --repo react
+octocode-cli get-file --owner facebook --repo react --path packages/react/src/React.js --match-string useState
+octocode-cli view-structure --owner bgauryy --repo octocode-mcp --depth 2
+octocode-cli search-repos --topics typescript,mcp --stars '>=100'
+octocode-cli search-prs --owner facebook --repo react --merged --limit 20
+octocode-cli package-search --name react --ecosystem npm
+```
+
+Low-level tool mode (JSON payloads):
 
 ```bash
 octocode-cli --tools-context
@@ -50,14 +61,21 @@ Use interactive mode when you want guided setup, auth, marketplace browsing, ski
 
 Use direct commands when you want repeatable install, auth, sync, cache, or MCP workflows.
 
-Use tool mode when you want only the Octocode tool layer. The public contract is:
+Use agent subcommands for flag-driven tool access — no JSON assembly required:
+
+```bash
+octocode-cli search-code --query 'hook' --owner facebook --repo react --json
+echo '{"queries":[{"keywordsToSearch":["tool"]}]}' | octocode-cli search-code
+```
+
+Use tool mode when you want the raw tool layer with full JSON payloads:
 
 ```bash
 octocode-cli --tools-context
 octocode-cli --tool <toolName> '<json-stringified-input>'
 ```
 
-The CLI validates the JSON input against the imported Octocode MCP tool schema and auto-fills shared research fields.
+Both modes validate input against the Octocode MCP tool schemas and auto-fill shared research fields (`id`, `researchGoal`, `reasoning`, `mainResearchGoal`).
 
 ## Common Workflows
 
@@ -92,11 +110,12 @@ octocode-cli skills install --targets claude-code,cursor,codex
 octocode-cli skills remove --skill octocode-researcher --targets claude-code,cursor
 ```
 
-Run one tool directly:
+Run tools directly (agent subcommands or raw tool mode):
 
 ```bash
+octocode-cli search-code --query 'useReducer' --owner facebook --repo react --json
+octocode-cli get-file --owner bgauryy --repo octocode-mcp --path packages/octocode-cli/src/cli/index.ts
 octocode-cli --tool localSearchCode '{"path":".","pattern":"runCLI"}'
-octocode-cli --tool localGetFileContent '{"path":"packages/octocode-cli/src/cli/index.ts"}'
 ```
 
 ## Docs Map

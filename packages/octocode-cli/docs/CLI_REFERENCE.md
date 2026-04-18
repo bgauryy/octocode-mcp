@@ -32,7 +32,9 @@ octocode-cli --tool <toolName> '<json-stringified-input>'
 | `--tools-context` | Print Octocode MCP instructions plus a numbered list of tool input schemas |
 | `--tool <name> <json>` | Run one Octocode tool with one JSON payload |
 
-## Tool Mode
+## Tool Mode (low-level)
+
+> **Prefer agent subcommands** (`search-code`, `get-file`, etc.) for flag-driven usage. The `--tool` flag is deprecated and prints a warning.
 
 Get the full tool context:
 
@@ -40,7 +42,7 @@ Get the full tool context:
 octocode-cli --tools-context
 ```
 
-Run one tool:
+Run one tool with a JSON payload:
 
 ```bash
 octocode-cli --tool localSearchCode '{"path":".","pattern":"runCLI"}'
@@ -52,9 +54,10 @@ Tool behavior:
 
 - The payload is one JSON string passed after the tool name.
 - The CLI validates that JSON against the imported Octocode MCP tool schema.
-- Shared research fields are auto-filled when missing.
+- Shared research fields (`id`, `researchGoal`, `reasoning`, `mainResearchGoal`) are auto-filled when missing.
 - `--schema` shows the selected tool schema summary without running it.
 - `--output json` returns the raw tool result.
+- Local tools (`localSearchCode`, `localGetFileContent`, `localFindFiles`, `localViewStructure`) use a lightweight code path that skips MCP server initialization.
 
 ## Command Index
 
@@ -95,14 +98,20 @@ octocode-cli search-prs --owner facebook --repo react --merged --limit 20
 octocode-cli package-search --name react --ecosystem npm
 ```
 
-Bulk queries: pipe `{"queries":[...]}` JSON on stdin to any subcommand. Flags are ignored when stdin is supplied.
+Bulk queries: pipe `{"queries":[...]}` JSON on stdin to any subcommand. Flags are ignored when stdin is supplied. A 5-second timeout prevents hanging if the pipe stalls.
 
 ```bash
 echo '{"queries":[{"keywordsToSearch":["tool"],"owner":"bgauryy","repo":"octocode-mcp"}]}' \
   | octocode-cli search-code
 ```
 
-Add `--json` to any agent subcommand to print the compact `structuredContent` payload (single-line JSON, no text preamble). Omit `--json` for human-readable YAML output.
+Output modes:
+
+| Flag | Effect |
+|---|---|
+| (default) | Human-readable text output |
+| `--json` | Compact `structuredContent` payload (single-line JSON) |
+| `--output json` | Same as `--json` |
 
 ## Install And Setup
 
