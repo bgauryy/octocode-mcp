@@ -90,6 +90,7 @@ Each package has specific guidelines that **override** this root file:
 - **Docs Index**: [packages/octocode-cli/docs/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/README.md)
 - **CLI Reference**: [packages/octocode-cli/docs/CLI_REFERENCE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/CLI_REFERENCE.md)
 - **Skills Guide**: [packages/octocode-cli/docs/SKILLS_GUIDE.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/SKILLS_GUIDE.md)
+- **CLI vs MCP Benchmark**: [packages/octocode-cli/docs/BENCHMARK.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-cli/docs/BENCHMARK.md)
 
 ### Octocode VS Code
 - **Package README**: [packages/octocode-vscode/README.md](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-vscode/README.md)
