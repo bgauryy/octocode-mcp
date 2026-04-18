@@ -1,12 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-  test,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, test } from 'vitest';
 
 const publicMocks = vi.hoisted(() => ({
   executeRipgrepSearch: vi.fn().mockResolvedValue({
@@ -445,14 +437,10 @@ describe('executeLocalToolCommand', () => {
 
 describe('LOCAL_TOOL_NAMES drift guard', () => {
   test('LOCAL_TOOL_NAMES matches the hardcoded set in index.ts', async () => {
-    const { LOCAL_TOOL_NAMES } = await import(
-      '../../src/cli/local-tool-command.js'
-    );
+    const { LOCAL_TOOL_NAMES } =
+      await import('../../src/cli/local-tool-command.js');
     const indexSource = await import('node:fs/promises').then(fs =>
-      fs.readFile(
-        new URL('../../src/cli/index.ts', import.meta.url),
-        'utf-8'
-      )
+      fs.readFile(new URL('../../src/cli/index.ts', import.meta.url), 'utf-8')
     );
 
     const match = indexSource.match(
