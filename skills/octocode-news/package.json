@@ -5,6 +5,7 @@
   "packageManager": "yarn@1.22.22",
   "scripts": {
     "build": "yarn build:scripts",
+    "test": "echo'0'",
     "build:scripts": "node esbuild.config.mjs",
     "catalog-sources": "node src/catalog-sources.ts",
     "build-report": "node src/build-report.ts",

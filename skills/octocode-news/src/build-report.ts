@@ -4,33 +4,50 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-import { normalizeReportData } from "./report-schema.ts";
+import {
+  normalizeReportData,
+  mergeFromSectionDir,
+  splitNormalizedReport,
+  PRIMARY_DOMAIN_ORDER,
+  OPTIONAL_DOMAIN_ORDER
+} from "./report-schema.ts";
 import { resolvePath } from "./shared.ts";
 
 const execFileAsync = promisify(execFile);
-const PLACEHOLDER = "__REPORT_DATA__";
+const META_PLACEHOLDER = "__REPORT_META__";
 const CSS_PLACEHOLDER = "__INLINE_CSS__";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_TEMPLATE = path.join(SCRIPT_DIR, "report-template.html");
+const ALL_DOMAIN_IDS = [...PRIMARY_DOMAIN_ORDER, ...OPTIONAL_DOMAIN_ORDER];
 
 function printUsage() {
   console.log(`Usage:
-  node scripts/build-report.mjs --input <report.json> --output <report.html> [--json-out <validated.json>] [--template <template.html>] [--open] [--require-full-content]
+  Single-file mode (backwards compatible):
+    node scripts/build-report.mjs --input <report.json> --output <report.html> [options]
 
-What it does:
-  1. Reads a research JSON file.
-  2. Validates and normalizes it with Zod.
-  3. Writes a canonical JSON output file.
-  4. Loads the HTML template once.
-  5. Replaces ${PLACEHOLDER} with the validated JSON string and writes the final HTML.
+  Section-dir mode (parallel workflow):
+    node scripts/build-report.mjs --section-dir <dir> --output <report.html> [options]
+
+    The directory must contain meta.json and one {domainId}.json per section:
+      meta.json, ai.json, devtools.json, web.json, security.json, repos.json [, cross.json]
+
+Options:
+  --json-out <path>            Write validated merged JSON (default: derived from --output)
+  --template <path>            Custom HTML template
+  --open                       Open the HTML in the default browser
+  --require-full-content       Enforce full-page content evidence on every item
 
 Examples:
-  node skills/whats-new/scripts/build-report.mjs \\
-    --input ~/tmp/20260401-120000-whats-new.raw.json \\
+  node scripts/build-report.mjs \\
+    --section-dir ~/tmp/20260401-120000-sections/ \\
     --json-out ~/tmp/20260401-120000-whats-new.json \\
     --output ~/tmp/20260401-120000-whats-new.html \\
-    --require-full-content \\
-    --open
+    --require-full-content --open
+
+  node scripts/build-report.mjs \\
+    --input ~/tmp/20260401-120000-whats-new.raw.json \\
+    --output ~/tmp/20260401-120000-whats-new.html \\
+    --require-full-content --open
 `);
 }
 
@@ -45,6 +62,7 @@ function defaultJsonPath(outputPath) {
 function parseArgs(argv) {
   const args = {
     input: "",
+    sectionDir: "",
     output: "",
     jsonOut: "",
     template: DEFAULT_TEMPLATE,
@@ -69,6 +87,11 @@ function parseArgs(argv) {
     }
     if (arg === "--input") {
       args.input = argv[index + 1] || "";
+      index += 1;
+      continue;
+    }
+    if (arg === "--section-dir") {
+      args.sectionDir = argv[index + 1] || "";
       index += 1;
       continue;
     }
@@ -157,6 +180,57 @@ async function openInDefaultBrowser(filePath) {
   await execFileAsync("xdg-open", [filePath]);
 }
 
+function safeJsonEmbed(value: unknown) {
+  return JSON.stringify(value, null, 2).trim().replace(/</g, "\\u003c");
+}
+
+function injectSections(html: string, normalized: ReturnType<typeof normalizeReportData>) {
+  const { meta, sectionMap } = splitNormalizedReport(normalized);
+
+  if (!html.includes(META_PLACEHOLDER)) {
+    throw new Error(`Template placeholder ${META_PLACEHOLDER} not found.`);
+  }
+
+  html = html.replace(META_PLACEHOLDER, () => safeJsonEmbed(meta));
+
+  for (const id of ALL_DOMAIN_IDS) {
+    const placeholder = `__SECTION_${id.toUpperCase()}__`;
+    const section = sectionMap.get(id);
+    html = html.replace(placeholder, () => (section ? safeJsonEmbed(section) : "null"));
+  }
+
+  return html;
+}
+
+async function readJsonFile(filePath: string) {
+  const raw = await fs.readFile(filePath, "utf8");
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Could not parse JSON at ${filePath}: ${error.message}`);
+  }
+}
+
+async function loadFromSectionDir(dirPath: string) {
+  const metaPath = path.join(dirPath, "meta.json");
+  const meta = await readJsonFile(metaPath);
+
+  const sectionFiles: Array<Record<string, unknown>> = [];
+  for (const id of ALL_DOMAIN_IDS) {
+    const filePath = path.join(dirPath, `${id}.json`);
+    try {
+      const data = await readJsonFile(filePath);
+      sectionFiles.push(data);
+    } catch {
+      if (PRIMARY_DOMAIN_ORDER.includes(id as (typeof PRIMARY_DOMAIN_ORDER)[number])) {
+        throw new Error(`Required section file missing: ${filePath}`);
+      }
+    }
+  }
+
+  return mergeFromSectionDir(meta, sectionFiles);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
@@ -164,33 +238,33 @@ async function main() {
     return;
   }
 
-  if (!args.input) {
-    throw new Error("Missing required --input path.");
+  if (!args.input && !args.sectionDir) {
+    throw new Error("Provide either --input <file> or --section-dir <dir>.");
+  }
+  if (args.input && args.sectionDir) {
+    throw new Error("Use --input or --section-dir, not both.");
   }
   if (!args.output) {
     throw new Error("Missing required --output path.");
   }
 
-  const inputPath = resolvePath(args.input);
   const outputPath = resolvePath(args.output);
   const templatePath = resolvePath(args.template || DEFAULT_TEMPLATE);
   const jsonOutPath = resolvePath(args.jsonOut || defaultJsonPath(outputPath));
 
-  const rawJson = await fs.readFile(inputPath, "utf8");
-  let parsed;
-  try {
-    parsed = JSON.parse(rawJson);
-  } catch (error) {
-    throw new Error(`Could not parse JSON input at ${inputPath}: ${error.message}`);
+  let merged: Record<string, unknown>;
+  if (args.sectionDir) {
+    merged = await loadFromSectionDir(resolvePath(args.sectionDir));
+  } else {
+    merged = await readJsonFile(resolvePath(args.input));
   }
 
-  const normalized = normalizeReportData(parsed);
+  const normalized = normalizeReportData(merged);
   if (args.requireFullContent) {
     validateFullContentEvidence(normalized);
   }
-  const prettyJson = JSON.stringify(normalized, null, 2) + "\n";
-  const embeddedJson = prettyJson.trim().replace(/</g, "\\u003c");
 
+  const prettyJson = JSON.stringify(normalized, null, 2) + "\n";
   await fs.mkdir(path.dirname(jsonOutPath), { recursive: true });
   await fs.writeFile(jsonOutPath, prettyJson, "utf8");
 
@@ -203,11 +277,7 @@ async function main() {
     html = html.replace(CSS_PLACEHOLDER, () => css);
   }
 
-  if (!html.includes(PLACEHOLDER)) {
-    throw new Error(`Template placeholder ${PLACEHOLDER} not found in ${templatePath}.`);
-  }
-
-  html = html.replace(PLACEHOLDER, () => embeddedJson);
+  html = injectSections(html, normalized);
   await fs.writeFile(outputPath, html, "utf8");
 
   if (args.open) {
@@ -217,7 +287,8 @@ async function main() {
   console.log(
     JSON.stringify(
       {
-        input: inputPath,
+        mode: args.sectionDir ? "section-dir" : "single-file",
+        input: args.sectionDir ? resolvePath(args.sectionDir) : resolvePath(args.input),
         json: jsonOutPath,
         html: outputPath,
         opened: args.open

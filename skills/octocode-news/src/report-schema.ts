@@ -291,6 +291,52 @@ export const ReportData = z
     }
   });
 
+export const SectionPayload = z
+  .object({
+    id: DomainId,
+    name: z.string().min(1),
+    icon: z.string().min(1),
+    iconClass: IconClass,
+    quiet: z.boolean(),
+    quietMsg: z.string().optional(),
+    items: z.array(Item).default([]),
+    sourcesChecked: z.array(SourceCheck).default([])
+  })
+  .passthrough();
+
+export const ReportMeta = z
+  .object({
+    window: z.string().min(1),
+    windowLabel: z.enum(["24h", "7d", "14d", "30d"]),
+    generated: z.string().date(),
+    tldr: z.string().min(120),
+    topItems: z.array(Item).min(3).max(30),
+    sourcesChecked: z.array(SourceCheck).default([])
+  })
+  .passthrough();
+
+export function mergeFromSectionDir(
+  meta: Record<string, unknown>,
+  sectionFiles: Array<Record<string, unknown>>
+) {
+  const parsedMeta = ReportMeta.parse(meta);
+  const parsedSections = sectionFiles.map((file) => SectionPayload.parse(file));
+
+  const allSourcesChecked = [
+    ...parsedMeta.sourcesChecked,
+    ...parsedSections.flatMap((s) => s.sourcesChecked)
+  ];
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const sections = parsedSections.map(({ sourcesChecked, ...rest }) => rest);
+
+  return {
+    ...parsedMeta,
+    sections,
+    sourcesChecked: allSourcesChecked
+  };
+}
+
 export function normalizeReportData(input) {
   const parsed = ReportData.parse(input);
   const topItems = parsed.topItems.map((item) => normalizeItemCopy(item));
@@ -322,4 +368,10 @@ export function normalizeReportData(input) {
     topItems,
     sections: orderedSections
   };
+}
+
+export function splitNormalizedReport(normalized: ReturnType<typeof normalizeReportData>) {
+  const { sections, ...meta } = normalized;
+  const sectionMap = new Map((sections as Array<{ id: string }>).map((s) => [s.id, s]));
+  return { meta, sectionMap };
 }

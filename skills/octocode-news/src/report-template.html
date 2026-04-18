@@ -21,9 +21,13 @@
       <div id="app"></div>
     </main>
 
-    <script id="report-data" type="application/json">
-      __REPORT_DATA__
-    </script>
+    <script id="report-meta" type="application/json">__REPORT_META__</script>
+    <script id="section-ai" type="application/json">__SECTION_AI__</script>
+    <script id="section-devtools" type="application/json">__SECTION_DEVTOOLS__</script>
+    <script id="section-web" type="application/json">__SECTION_WEB__</script>
+    <script id="section-security" type="application/json">__SECTION_SECURITY__</script>
+    <script id="section-repos" type="application/json">__SECTION_REPOS__</script>
+    <script id="section-cross" type="application/json">__SECTION_CROSS__</script>
     <script>
       (() => {
         const PRIMARY_ORDER = ["ai", "devtools", "web", "security", "repos"];
@@ -61,7 +65,6 @@
         };
 
         const app = document.getElementById("app");
-        const raw = document.getElementById("report-data").textContent.trim();
         const detailsMemory = {};
 
         function saveDetailsState() {
@@ -76,10 +79,24 @@
           }
         }
 
+        function loadJsonBlock(elementId) {
+          const el = document.getElementById(elementId);
+          if (!el) return null;
+          const text = el.textContent.trim();
+          if (!text || text === "null" || text.startsWith("__")) return null;
+          return JSON.parse(text);
+        }
+
         let report;
 
         try {
-          report = JSON.parse(raw);
+          const meta = loadJsonBlock("report-meta");
+          if (!meta) throw new Error("report-meta block is missing or empty");
+          const sectionIds = [...PRIMARY_ORDER, ...OPTIONAL_ORDER];
+          const sections = sectionIds
+            .map(function (id) { return loadJsonBlock("section-" + id); })
+            .filter(Boolean);
+          report = Object.assign({}, meta, { sections: sections });
         } catch (error) {
           renderFatal("Could not parse report data.", String(error));
           return;
@@ -388,7 +405,6 @@
 
           app.append(
             renderHero(sections, stats, countsByDomain, order),
-            renderToolbar(stats, countsByDomain, order),
             ...(highlightPanel ? [highlightPanel] : []),
             ...(sectionPanel ? [sectionPanel] : []),
             renderFooter()
@@ -499,33 +515,6 @@
           return card;
         }
 
-        function renderToolbar(stats, countsByDomain, order) {
-          const bar = create("section", "toolbar");
-          const intro = create("div", "toolbar-intro");
-          intro.append(
-            create("div", "eyebrow", "Full report"),
-            create("h2", "toolbar-title", "Browse by domain.")
-          );
-
-          const meta = create("div", "toolbar-meta");
-          meta.append(
-            create("div", "results-copy", `${stats.totalItems} total stories`),
-            create("div", "results-copy", `${stats.highlightItems} pinned highlights`)
-          );
-
-          const top = create("div", "toolbar-top");
-          top.append(intro, meta);
-
-          const jumps = create("div", "filter-strip jump-strip");
-          jumps.append(jumpLink("#top", "Top", stats.highlightItems));
-          order.forEach((id) => {
-            jumps.append(jumpLink(`#${id}`, domainMeta(id).label, countsByDomain[id] || 0));
-          });
-
-          bar.append(top, jumps);
-          return bar;
-        }
-
         function renderHighlights(items) {
           if (!items.length) {
             return null;
@@ -557,6 +546,8 @@
 
           const wrap = create("div", "stack");
           sections.forEach((section) => {
+            if (!section.items.length) return;
+
             const meta = domainMeta(section.id);
             const card = create("section", "section-card");
             card.id = section.id;
@@ -572,9 +563,7 @@
               create(
                 "div",
                 "section-kicker",
-                section.items.length
-                  ? `${section.items.length} stor${section.items.length === 1 ? "y" : "ies"} in full`
-                  : "Quiet window"
+                `${section.items.length} stor${section.items.length === 1 ? "y" : "ies"} in full`
               ),
               create("h2", "section-title", section.name)
             );
@@ -584,18 +573,14 @@
             pillRow.append(domainPill(section.id));
             pillRow.append(
               microPill(
-                section.items.length
-                  ? `${section.items.length} item${section.items.length === 1 ? "" : "s"}`
-                  : "No items"
+                `${section.items.length} item${section.items.length === 1 ? "" : "s"}`
               )
             );
-            if (section.items.length) {
-              pillRow.append(
-                microPill(
-                  `${metrics.uniqueSources} source${metrics.uniqueSources === 1 ? "" : "s"}`
-                )
-              );
-            }
+            pillRow.append(
+              microPill(
+                `${metrics.uniqueSources} source${metrics.uniqueSources === 1 ? "" : "s"}`
+              )
+            );
             head.append(badge, titleWrap, pillRow);
             card.append(head);
 
@@ -603,29 +588,15 @@
               create(
                 "p",
                 "section-summary",
-                section.items.length
-                  ? `${section.name} — ${section.items.length} ${section.items.length === 1 ? "story" : "stories"} from ${metrics.uniqueSources} ${metrics.uniqueSources === 1 ? "source" : "sources"}.`
-                  : section.quietMsg ||
-                      `No notable ${section.name.toLowerCase()} updates landed in this reporting window.`
+                `${section.name} — ${section.items.length} ${section.items.length === 1 ? "story" : "stories"} from ${metrics.uniqueSources} ${metrics.uniqueSources === 1 ? "source" : "sources"}.`
               )
             );
 
-            if (section.items.length) {
-              const items = create("div", "section-items");
-              section.items.forEach((item, index) => {
-                items.append(renderItemCard(item, false, index, false));
-              });
-              card.append(items);
-            } else {
-              card.append(
-                create(
-                  "div",
-                  "quiet-card",
-                  section.quietMsg ||
-                    `No notable ${section.name.toLowerCase()} updates landed in this reporting window.`
-                )
-              );
-            }
+            const items = create("div", "section-items");
+            section.items.forEach((item, index) => {
+              items.append(renderItemCard(item, false, index, false));
+            });
+            card.append(items);
             wrap.append(card);
           });
           return wrap;
@@ -809,13 +780,6 @@
 
         function heatPill(value) {
           return create("div", "micro-pill item-heat", `Heat ${value}`);
-        }
-
-        function jumpLink(target, label, count) {
-          const anchor = create("a", "domain-button jump-link");
-          anchor.href = target;
-          anchor.append(create("span", "", label), create("span", "micro-pill", String(count)));
-          return anchor;
         }
 
         function sourceCtaNode(item) {

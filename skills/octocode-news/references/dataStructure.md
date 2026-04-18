@@ -1,15 +1,27 @@
 # Report Data Schema
 
-Replace the `__REPORT_DATA__` placeholder in `scripts/report-template.html` with a JSON object matching this schema.
+The HTML template uses per-section `<script>` blocks (`__REPORT_META__`, `__SECTION_AI__`, `__SECTION_DEVTOOLS__`, etc.). The client JS assembles the full report from these pieces.
 
 ## Build Pipeline
 
+### Section-dir mode (parallel workflow — preferred)
+
 ```
-raw.json → build-report → validated.json + final.html
+sections/meta.json + sections/{id}.json → build-report --section-dir → validated.json + final.html
 ```
 
-1. Write a draft report object (`raw.json`).
-2. Run `build-report` — validates with Zod, normalizes, writes canonical JSON, inlines into HTML, opens browser.
+1. Each subagent writes `{id}.json` for its domain (follows `SectionPayload` schema).
+2. Coordinator writes `meta.json` (follows `ReportMeta` schema).
+3. Run `build-report --section-dir` — merges, validates, normalizes, injects per-section, opens browser.
+
+### Legacy single-file mode
+
+```
+raw.json → build-report --input → validated.json + final.html
+```
+
+1. Write a full report object (`raw.json`) with all sections inline.
+2. Run `build-report --input` — validates, normalizes, splits into per-section blocks, opens browser.
 
 Source lives in `src/`. Built artifacts live in `scripts/`. CSS is inlined at build time via `__INLINE_CSS__`.
 
@@ -89,6 +101,51 @@ const ReportData = z.object({
 }).passthrough();
 ```
 
+## Per-Section Schemas (source of truth: `src/report-schema.ts`)
+
+### SectionPayload (written by each subagent)
+
+```typescript
+const SectionPayload = z.object({
+  id: DomainId,
+  name: z.string().min(1),
+  icon: z.string().min(1),
+  iconClass: IconClass,
+  quiet: z.boolean(),
+  quietMsg: z.string().optional(),
+  items: z.array(Item).default([]),
+  sourcesChecked: z.array(SourceCheck).default([])
+}).passthrough();
+```
+
+### ReportMeta (written by coordinator)
+
+```typescript
+const ReportMeta = z.object({
+  window: z.string().min(1),
+  windowLabel: z.enum(["24h", "7d", "14d", "30d"]),
+  generated: z.string().date(),
+  tldr: z.string().min(120),
+  topItems: z.array(Item).min(3).max(30),
+  sourcesChecked: z.array(SourceCheck).default([])
+}).passthrough();
+```
+
+### Section directory structure
+
+```
+~/tmp/{ts}-sections/
+  meta.json          ← coordinator writes (ReportMeta)
+  ai.json            ← subagent writes (SectionPayload)
+  devtools.json      ← subagent writes (SectionPayload)
+  web.json           ← subagent writes (SectionPayload)
+  security.json      ← subagent writes (SectionPayload)
+  repos.json         ← subagent writes (SectionPayload)
+  cross.json         ← coordinator writes if needed (SectionPayload, optional)
+```
+
+`build-report --section-dir` merges all files, unions `sourcesChecked`, validates the merged report, then injects each section into its own `<script>` block in the HTML.
+
 ## Constraints
 
 | Rule | Detail |
@@ -154,4 +211,11 @@ Fields the agent must provide for good rendering:
 
 ## Serialization
 
-`JSON.stringify(data).replace(/</g, "\\u003c")`, then replace `__REPORT_DATA__` in the template.
+Each block: `JSON.stringify(data).replace(/</g, "\\u003c")`.
+
+The HTML template has per-section placeholders:
+- `__REPORT_META__` — meta block (window, tldr, topItems, reportMeta)
+- `__SECTION_AI__`, `__SECTION_DEVTOOLS__`, `__SECTION_WEB__`, `__SECTION_SECURITY__`, `__SECTION_REPOS__` — required sections
+- `__SECTION_CROSS__` — optional (inject `null` if absent)
+
+The client JS reads each `<script>` block by element ID, parses them, and assembles the full report object before rendering.
