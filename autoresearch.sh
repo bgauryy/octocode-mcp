@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "$0")" && pwd)
-BENCH=/tmp/bench-r245-autoresearch
+BENCH=/tmp/bench-r2-autoresearch
 RUNS="$BENCH/runs"
 PROMPTS=/tmp/bench-r1-r5/prompts.sh
 GT=/tmp/bench-r1-r5/ground-truth/ground-truth.json
@@ -17,11 +17,13 @@ fi
 
 YARN_ENABLE_SCRIPTS=0 yarn --cwd "$ROOT/packages/octocode-cli" build:dev >/dev/null
 
-cat > "$BENCH/bench-cli" <<EOF
+for name in bench-cli octocode-cli; do
+cat > "$BENCH/$name" <<EOF
 #!/usr/bin/env bash
 exec node "$ROOT/packages/octocode-cli/out/octocode-cli.js" "\$@"
 EOF
-chmod +x "$BENCH/bench-cli"
+chmod +x "$BENCH/$name"
+done
 
 SKILL=$(cat "$ROOT/skills/octocode-cli/SKILL.md")
 # shellcheck disable=SC1090
@@ -34,8 +36,6 @@ run_cli_trial() {
   case "$task" in
     R2) prompt="$R2_PROMPT" ;;
     R3) prompt="$R3_PROMPT" ;;
-    R4) prompt="$R4_PROMPT" ;;
-    R5) prompt="$R5_PROMPT" ;;
     *) echo "bad task: $task" >&2; return 2 ;;
   esac
 
@@ -43,19 +43,43 @@ run_cli_trial() {
   local start end rc wall
   start=$(date +%s)
   set +e
-  (
-    cd /tmp
-    PATH="$BENCH:$PATH" perl -e 'alarm 300; exec @ARGV' \
-      claude -p \
-      --model sonnet \
-      --permission-mode acceptEdits \
-      --allowedTools "Bash(octocode-cli:*)" "Bash(bench-cli:*)" \
-      --disallowedTools "mcp__octocode__*" "Agent" "Task" "WebFetch" "WebSearch" \
-      --output-format stream-json --verbose --include-partial-messages \
-      --append-system-prompt "$SKILL" \
-      "$prompt" \
-      > "$log.jsonl" 2> "$log.err"
-  )
+  PATH="$BENCH:$PATH" \
+  SKILL_CONTENT="$SKILL" \
+  PROMPT_CONTENT="$prompt" \
+  LOG_JSONL="$log.jsonl" \
+  LOG_ERR="$log.err" \
+  python3 - <<'PY'
+import os
+import subprocess
+import sys
+
+cmd = [
+    'claude',
+    '-p',
+    '--model', 'sonnet',
+    '--permission-mode', 'acceptEdits',
+    '--allowedTools', 'Bash(octocode-cli:*)', 'Bash(bench-cli:*)',
+    '--disallowedTools', 'mcp__octocode__*', 'Agent', 'Task', 'WebFetch', 'WebSearch',
+    '--output-format', 'stream-json',
+    '--verbose',
+    '--include-partial-messages',
+    '--append-system-prompt', os.environ['SKILL_CONTENT'],
+    os.environ['PROMPT_CONTENT'],
+]
+with open(os.environ['LOG_JSONL'], 'w') as out, open(os.environ['LOG_ERR'], 'w') as err:
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd='/tmp',
+            env=os.environ.copy(),
+            stdout=out,
+            stderr=err,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        sys.exit(124)
+sys.exit(completed.returncode)
+PY
   rc=$?
   set -e
   end=$(date +%s)
@@ -65,10 +89,8 @@ run_cli_trial() {
   echo "trial task=$task rep=$trial rc=$rc wall=${wall}s" >&2
 }
 
-# Keep each experiment comfortably below the per-run alarm. R3 is guardrail-only.
+# Cheap R2-focused micro-harness: one target run plus one guardrail run.
 run_cli_trial R2 1
-run_cli_trial R4 1
-run_cli_trial R5 1
 run_cli_trial R3 1
 
 python3 - <<'PY'
@@ -80,9 +102,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-RUNS = Path('/tmp/bench-r245-autoresearch/runs')
+RUNS = Path('/tmp/bench-r2-autoresearch/runs')
 GT = json.loads(Path('/tmp/bench-r1-r5/ground-truth/ground-truth.json').read_text())
-TASKS = ['R2', 'R4', 'R5']
+TASKS = ['R2']
 GUARD = 'R3'
 TEST_RE = re.compile(GT['R2']['test_path_regex'])
 
@@ -321,19 +343,13 @@ def total_passes() -> int:
 
 
 r2 = median_wall('R2')
-r4 = median_wall('R4')
-r5 = median_wall('R5')
 r3 = median_wall('R3')
 passes = total_passes()
 target_passes = sum(1 for r in records if r['task'] in TASKS and r['pass'])
 avg_turns = statistics.mean(r['turns'] for r in records) if records else 0.0
 eff = statistics.mean(r['eff_cost'] for r in records) if records else 0.0
-total = r2 + r4 + r5
 
-print(f'METRIC total_s={total:.3f}')
 print(f'METRIC r2_s={r2:.3f}')
-print(f'METRIC r4_s={r4:.3f}')
-print(f'METRIC r5_s={r5:.3f}')
 print(f'METRIC r3_s={r3:.3f}')
 print(f'METRIC passes={passes}')
 print(f'METRIC target_passes={target_passes}')
