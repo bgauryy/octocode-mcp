@@ -60,7 +60,7 @@ Tool behavior:
 
 | Command | Alias | Use it for |
 |---|---|---|
-| `install` | `i` | Configure `octocode-mcp` for a client |
+| `install` | `i`, `setup` | Configure `octocode-mcp` for a client |
 | `auth` | `a`, `gh` | Open auth menu or run auth subcommands |
 | `login` | `l` | Start GitHub OAuth login |
 | `logout` | - | Remove Octocode auth |
@@ -70,6 +70,39 @@ Tool behavior:
 | `mcp` | - | Manage marketplace MCPs non-interactively |
 | `skills` | `sk` | List, install, or remove bundled skills |
 | `cache` | - | Inspect or clean Octocode cache/logs |
+
+### Agent Subcommands
+
+Flag-driven, agent-friendly entry points. Each maps to one Octocode MCP tool and auto-fills `id`, `mainResearchGoal`, `researchGoal`, and `reasoning`.
+
+| Command | Tool | Use it for |
+|---|---|---|
+| `search-code` | `githubSearchCode` | Search code across GitHub repositories |
+| `get-file` | `githubGetFileContent` | Fetch a file (or a window around a match) |
+| `view-structure` | `githubViewRepoStructure` | List a repo directory tree |
+| `search-repos` | `githubSearchRepositories` | Search repositories by keywords/topics |
+| `search-prs` | `githubSearchPullRequests` | Search pull requests |
+| `package-search` | `packageSearch` | Search npm or Python packages |
+
+Examples:
+
+```bash
+octocode-cli search-code --query 'useReducer dispatch' --owner facebook --repo react
+octocode-cli get-file --owner facebook --repo react --path packages/react/src/React.js --match-string useState
+octocode-cli view-structure --owner bgauryy --repo octocode-mcp --depth 2
+octocode-cli search-repos --topics typescript,mcp --stars '>=100'
+octocode-cli search-prs --owner facebook --repo react --merged --limit 20
+octocode-cli package-search --name react --ecosystem npm
+```
+
+Bulk queries: pipe `{"queries":[...]}` JSON on stdin to any subcommand. Flags are ignored when stdin is supplied.
+
+```bash
+echo '{"queries":[{"keywordsToSearch":["tool"],"owner":"bgauryy","repo":"octocode-mcp"}]}' \
+  | octocode-cli search-code
+```
+
+Add `--json` to any agent subcommand to print the compact `structuredContent` payload (single-line JSON, no text preamble). Omit `--json` for human-readable YAML output.
 
 ## Install And Setup
 

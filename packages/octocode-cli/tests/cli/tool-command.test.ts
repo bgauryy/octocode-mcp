@@ -174,8 +174,8 @@ describe('toolCommand', () => {
       },
     });
 
-    expect(publicMocks.initialize).toHaveBeenCalledTimes(1);
-    expect(publicMocks.initializeProviders).toHaveBeenCalledTimes(1);
+    expect(publicMocks.initialize).not.toHaveBeenCalled();
+    expect(publicMocks.initializeProviders).not.toHaveBeenCalled();
     expect(publicMocks.localSearchCode).toHaveBeenCalledWith({
       queries: [
         expect.objectContaining({
@@ -205,6 +205,8 @@ describe('toolCommand', () => {
       options: { tool: 'githubSearchCode' },
     });
 
+    expect(publicMocks.initialize).toHaveBeenCalledTimes(1);
+    expect(publicMocks.initializeProviders).toHaveBeenCalledTimes(1);
     expect(publicMocks.githubSearchCode).toHaveBeenCalledWith({
       queries: [
         expect.objectContaining({

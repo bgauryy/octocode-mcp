@@ -6,7 +6,10 @@ const mocks = vi.hoisted(() => ({
   showCommandHelp: vi.fn(),
   showVersion: vi.fn(),
   showToolHelp: vi.fn(),
+  findStaticToolHelp: vi.fn(),
+  showStaticToolHelp: vi.fn(),
   executeToolCommand: vi.fn().mockResolvedValue(true),
+  executeLocalToolCommand: vi.fn().mockResolvedValue(true),
   printToolsContext: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -26,6 +29,15 @@ vi.mock('../../src/cli/tool-command.js', () => ({
   printToolsContext: mocks.printToolsContext,
 }));
 
+vi.mock('../../src/cli/local-tool-command.js', () => ({
+  executeLocalToolCommand: mocks.executeLocalToolCommand,
+}));
+
+vi.mock('../../src/cli/tool-help-specs.js', () => ({
+  findStaticToolHelp: mocks.findStaticToolHelp,
+  showStaticToolHelp: mocks.showStaticToolHelp,
+}));
+
 describe('runCLI', () => {
   let originalExitCode: typeof process.exitCode;
   let consoleSpy: ReturnType<typeof vi.spyOn>;
@@ -33,6 +45,7 @@ describe('runCLI', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    mocks.findStaticToolHelp.mockReturnValue(undefined);
     originalExitCode = process.exitCode;
     process.exitCode = undefined;
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -53,7 +66,7 @@ describe('runCLI', () => {
     expect(mocks.findCommand).not.toHaveBeenCalled();
   });
 
-  it('routes top-level --tool usage through the shared tool executor', async () => {
+  it('routes top-level local --tool usage through the local tool executor', async () => {
     const { runCLI } = await import('../../src/cli/index.js');
 
     const handled = await runCLI([
@@ -63,14 +76,15 @@ describe('runCLI', () => {
     ]);
 
     expect(handled).toBe(true);
-    expect(mocks.executeToolCommand).toHaveBeenCalledTimes(1);
-    expect(mocks.executeToolCommand).toHaveBeenCalledWith({
+    expect(mocks.executeLocalToolCommand).toHaveBeenCalledTimes(1);
+    expect(mocks.executeLocalToolCommand).toHaveBeenCalledWith({
       command: 'tool',
       args: ['localSearchCode', '{"path":".","pattern":"runCLI"}'],
       options: {
         tool: 'localSearchCode',
       },
     });
+    expect(mocks.executeToolCommand).not.toHaveBeenCalled();
     expect(mocks.findCommand).not.toHaveBeenCalled();
   });
 
@@ -101,16 +115,38 @@ describe('runCLI', () => {
     expect(mocks.findCommand).not.toHaveBeenCalled();
   });
 
-  it('shows tool help for top-level --tool --help usage', async () => {
+  it('shows static tool help for supported top-level --tool --help usage', async () => {
+    const spec = { name: 'localSearchCode' };
+    mocks.findStaticToolHelp.mockReturnValue(spec);
+
     const { runCLI } = await import('../../src/cli/index.js');
 
     const handled = await runCLI(['--tool', 'localSearchCode', '--help']);
 
     expect(handled).toBe(true);
-    expect(mocks.showToolHelp).toHaveBeenCalledTimes(1);
-    expect(mocks.showToolHelp).toHaveBeenCalledWith('localSearchCode');
+    expect(mocks.findStaticToolHelp).toHaveBeenCalledTimes(1);
+    expect(mocks.findStaticToolHelp).toHaveBeenCalledWith('localSearchCode');
+    expect(mocks.showStaticToolHelp).toHaveBeenCalledTimes(1);
+    expect(mocks.showStaticToolHelp).toHaveBeenCalledWith(spec);
+    expect(mocks.showToolHelp).not.toHaveBeenCalled();
     expect(mocks.executeToolCommand).not.toHaveBeenCalled();
     expect(mocks.findCommand).not.toHaveBeenCalled();
+  });
+
+  it('falls back to dynamic tool help for unsupported --tool --help usage', async () => {
+    mocks.showToolHelp.mockResolvedValue(true);
+
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    const handled = await runCLI(['--tool', 'lspGotoDefinition', '--help']);
+
+    expect(handled).toBe(true);
+    expect(mocks.findStaticToolHelp).toHaveBeenCalledTimes(1);
+    expect(mocks.findStaticToolHelp).toHaveBeenCalledWith('lspGotoDefinition');
+    expect(mocks.showStaticToolHelp).not.toHaveBeenCalled();
+    expect(mocks.showToolHelp).toHaveBeenCalledTimes(1);
+    expect(mocks.showToolHelp).toHaveBeenCalledWith('lspGotoDefinition');
+    expect(mocks.executeToolCommand).not.toHaveBeenCalled();
   });
 
   it('rejects the legacy tool command and points users to --tool', async () => {

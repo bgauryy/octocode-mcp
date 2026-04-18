@@ -6,11 +6,7 @@ import type {
   MCPServer,
 } from '../types/index.js';
 import { c, bold, dim } from '../utils/colors.js';
-import {
-  installOctocode,
-  detectAvailableIDEs,
-  getInstallPreview,
-} from '../features/install.js';
+import { installOctocode, getInstallPreview } from '../features/install.js';
 import {
   login as oauthLogin,
   logout as oauthLogout,
@@ -29,6 +25,8 @@ import { checkNodeInPath, checkNpmInPath } from '../features/node-check.js';
 import { IDE_INFO, CLIENT_INFO, INSTALL_METHOD_INFO } from '../ui/constants.js';
 import { Spinner } from '../utils/spinner.js';
 import { toolCommand } from './tool-command.js';
+import { agentCommands } from './agent-commands.js';
+import { runInteractiveMode } from '../interactive.js';
 
 function getIDEDisplayName(ide: string): string {
   if (ide in CLIENT_INFO) {
@@ -374,7 +372,7 @@ function formatTokenSource(source: TokenSource, envSource?: string): string {
 
 const installCommand: CLICommand = {
   name: 'install',
-  aliases: ['i'],
+  aliases: ['i', 'setup'],
   description: 'Install octocode-mcp for an IDE',
   usage: 'octocode install --ide <ide> [--method <npx|direct>] [--force]',
   options: [
@@ -401,6 +399,11 @@ const installCommand: CLICommand = {
     const ide = args.options['ide'] as IDE | undefined;
     const method = (args.options['method'] || 'npx') as InstallMethod;
     const force = Boolean(args.options['force'] || args.options['f']);
+
+    if (!ide) {
+      await runInteractiveMode();
+      return;
+    }
 
     if (method === 'npx') {
       const nodeCheck = checkNodeInPath();
@@ -431,32 +434,6 @@ const installCommand: CLICommand = {
         process.exitCode = 1;
         return;
       }
-    }
-
-    if (!ide) {
-      const available = detectAvailableIDEs();
-      console.log();
-      console.log(
-        `  ${c('red', '✗')} Missing required option: ${c('cyan', '--ide')}`
-      );
-      console.log();
-
-      if (available.length > 0) {
-        console.log(`  ${bold('Available IDEs:')}`);
-        for (const availableIde of available) {
-          console.log(`    ${c('cyan', '•')} ${availableIde}`);
-        }
-      } else {
-        console.log(`  ${c('yellow', '⚠')} No supported IDEs detected.`);
-        console.log(`  ${dim('Install Cursor or Claude Desktop first.')}`);
-      }
-      console.log();
-      console.log(
-        `  ${dim('Usage:')} octocode install --ide cursor --method npx`
-      );
-      console.log();
-      process.exitCode = 1;
-      return;
     }
 
     const supportedIDEs = [

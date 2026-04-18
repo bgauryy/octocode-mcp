@@ -55,6 +55,13 @@ const BOOLEAN_OPTIONS = new Set([
   'list',
   'schema',
   'tools-context',
+  'full-content',
+  'merged',
+  'draft',
+  'with-comments',
+  'with-commits',
+  'npm-fetch-metadata',
+  'python-fetch-metadata',
 ]);
 
 const SINGLE_DASH_LONG_OPTIONS = new Set([
@@ -63,12 +70,25 @@ const SINGLE_DASH_LONG_OPTIONS = new Set([
   'responseCharOffset',
 ]);
 
+const AGENT_SUBCOMMANDS = new Set([
+  'search-code',
+  'get-file',
+  'view-structure',
+  'search-repos',
+  'search-prs',
+  'package-search',
+]);
+
 function shouldConsumeNextValue(args: ParsedArgs, key: string): boolean {
   if (BOOLEAN_OPTIONS.has(key)) {
     return false;
   }
 
   if (OPTIONS_WITH_VALUES.has(key)) {
+    return true;
+  }
+
+  if (args.command && AGENT_SUBCOMMANDS.has(args.command)) {
     return true;
   }
 
