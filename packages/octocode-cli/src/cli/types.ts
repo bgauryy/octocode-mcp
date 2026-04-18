@@ -12,11 +12,14 @@ interface CLIOption {
   default?: string | boolean;
 }
 
-export interface CLICommand {
+export interface CLICommandSpec {
   name: string;
   aliases?: string[];
   description: string;
   usage?: string;
   options?: CLIOption[];
-  handler: (args: ParsedArgs) => Promise<void>;
+}
+
+export interface CLICommand extends CLICommandSpec {
+  handler: (args: ParsedArgs) => Promise<void> | void;
 }

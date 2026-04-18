@@ -1,6 +1,5 @@
 import type { ParsedArgs } from './types.js';
 
-// These options always consume the next argv token. `-h` is --help; use `-H` for --hostname.
 const OPTIONS_WITH_VALUES = new Set([
   'ide',
   'method',
@@ -28,6 +27,7 @@ const OPTIONS_WITH_VALUES = new Set([
   'env',
   'config',
   'tool',
+  'queries',
   'input',
   'responseCharLength',
   'responseCharOffset',
@@ -61,6 +61,8 @@ const SINGLE_DASH_LONG_OPTIONS = new Set([
   'output',
   'responseCharLength',
   'responseCharOffset',
+  'tool',
+  'queries',
 ]);
 
 function shouldConsumeNextValue(args: ParsedArgs, key: string): boolean {

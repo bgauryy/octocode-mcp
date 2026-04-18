@@ -163,7 +163,7 @@ describe('toolCommand', () => {
   it('executes a tool from a positional JSON payload', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: [
         'localSearchCode',
@@ -174,8 +174,8 @@ describe('toolCommand', () => {
       },
     });
 
-    expect(publicMocks.initialize).toHaveBeenCalledTimes(1);
-    expect(publicMocks.initializeProviders).toHaveBeenCalledTimes(1);
+    expect(publicMocks.initialize).not.toHaveBeenCalled();
+    expect(publicMocks.initializeProviders).not.toHaveBeenCalled();
     expect(publicMocks.localSearchCode).toHaveBeenCalledWith({
       queries: [
         expect.objectContaining({
@@ -196,7 +196,7 @@ describe('toolCommand', () => {
   it('accepts JSON bulk payloads from the positional input string', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: [
         'githubSearchCode',
@@ -205,6 +205,8 @@ describe('toolCommand', () => {
       options: { tool: 'githubSearchCode' },
     });
 
+    expect(publicMocks.initialize).toHaveBeenCalledTimes(1);
+    expect(publicMocks.initializeProviders).toHaveBeenCalledTimes(1);
     expect(publicMocks.githubSearchCode).toHaveBeenCalledWith({
       queries: [
         expect.objectContaining({
@@ -224,7 +226,7 @@ describe('toolCommand', () => {
   it('supports JSON output mode for canonical tool execution', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: ['localSearchCode', '{"path":".","pattern":"runCLI"}'],
       options: {
@@ -242,7 +244,7 @@ describe('toolCommand', () => {
   it('shows schema help when a tool is selected without input', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: ['localSearchCode'],
       options: { tool: 'localSearchCode' },
@@ -253,14 +255,14 @@ describe('toolCommand', () => {
       expect.stringContaining('localSearchCode')
     );
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Required')
+      expect.stringContaining('Input Schema')
     );
   });
 
   it('shows schema help when --schema is provided', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: ['localSearchCode'],
       options: { tool: 'localSearchCode', schema: true },
@@ -273,7 +275,7 @@ describe('toolCommand', () => {
   it('rejects legacy --input usage and points to the canonical contract', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: ['localSearchCode'],
       options: {
@@ -292,7 +294,7 @@ describe('toolCommand', () => {
   it('rejects legacy tool-specific flags and requires one JSON payload', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: ['localSearchCode'],
       options: {
@@ -304,7 +306,7 @@ describe('toolCommand', () => {
 
     expect(publicMocks.localSearchCode).not.toHaveBeenCalled();
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Pass one JSON object string')
+      expect.stringContaining('Unsupported tool flags')
     );
     expect(process.exitCode).toBe(1);
   });
@@ -312,7 +314,7 @@ describe('toolCommand', () => {
   it('rejects invalid JSON payloads for canonical tool usage', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: ['localSearchCode', '{"path":".","pattern":"runCLI"'],
       options: {
@@ -327,6 +329,70 @@ describe('toolCommand', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('schema validation failure should show error', async () => {
+    const { toolCommand } = await import('../../src/cli/tool-command.js');
+
+    await toolCommand.handler!({
+      command: 'tool',
+      args: ['localSearchCode', '{"path":".","pattern":999}'],
+      options: {
+        tool: 'localSearchCode',
+      },
+    });
+
+    expect(publicMocks.localSearchCode).not.toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Tool input does not match the expected schema.')
+    );
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('pattern:')
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('tool execution throwing should show error and return false', async () => {
+    const err = new Error('Ripgrep launcher failed.');
+    publicMocks.localSearchCode.mockRejectedValueOnce(err);
+
+    const { executeToolCommand, toolCommand } =
+      await import('../../src/cli/tool-command.js');
+
+    const ok = await executeToolCommand({
+      command: 'tool',
+      args: ['localSearchCode', '{"path":".","pattern":"runCLI"}'],
+      options: {
+        tool: 'localSearchCode',
+      },
+    });
+
+    expect(ok).toBe(false);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Ripgrep launcher failed.')
+    );
+
+    process.exitCode = undefined;
+    consoleSpy.mockClear();
+
+    publicMocks.localSearchCode.mockRejectedValueOnce(err);
+
+    await toolCommand.handler!({
+      command: 'tool',
+      args: ['localSearchCode', '{"path":".","pattern":"runCLI"}'],
+      options: {
+        tool: 'localSearchCode',
+      },
+    });
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Ripgrep launcher failed.')
+    );
+    expect(process.exitCode).toBe(1);
+
+    vi.mocked(publicMocks.localSearchCode).mockResolvedValue({
+      content: [{ type: 'text', text: 'tool output' }],
+    });
+  });
+
   it('builds tools context from MCP instructions and tool schemas', async () => {
     const { getToolsContextString } =
       await import('../../src/cli/tool-command.js');
@@ -336,7 +402,7 @@ describe('toolCommand', () => {
     expect(publicMocks.loadToolContent).toHaveBeenCalledTimes(1);
     expect(context).toContain('CLI Contract:');
     expect(context).toContain(
-      "octocode-cli --tool <toolName> '<json-stringified-input>'"
+      "octocode-cli --tool <toolName> --queries '<json-stringified-input>'"
     );
     expect(context).toContain('Use Octocode tools carefully.');
     expect(context).toContain('1. githubSearchCode');

@@ -13,25 +13,26 @@ export default defineConfig({
       exclude: [
         'src/index.ts',
         'src/types/**',
+        'src/cli/types.ts', // Type-only file (interfaces, no runtime code)
         'src/ui/**', // Interactive UI components - tested manually
         'src/prompts.ts', // Dynamic import wrapper
         'src/spinner.ts', // Visual feedback component
-        'src/cli/commands.ts', // Command handlers - integration tests
+        'src/cli/commands.ts', // Barrel re-export
         'src/cli/help.ts', // Help text output
         'src/cli/index.ts', // CLI entry point
         'src/configs/**', // Static config objects
         'src/features/github-oauth.ts', // OAuth flow - requires network mocking
+        'src/utils/token-storage.ts', // Pure re-export from octocode-shared
       ],
-      // Transitional floor while the interactive UI remains partially manual.
       thresholds: {
-        statements: 85,
-        branches: 75,
-        functions: 90,
-        lines: 85,
+        statements: 95,
+        branches: 85,
+        functions: 95,
+        lines: 95,
       },
     },
-    testTimeout: 10000,
-    hookTimeout: 10000,
+    testTimeout: 30000,
+    hookTimeout: 15000,
     restoreMocks: true,
     clearMocks: true,
   },

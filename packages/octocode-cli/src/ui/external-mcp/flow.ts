@@ -34,13 +34,26 @@ type InstallStep =
   | 'install'
   | 'done';
 
+type BrowseMode = 'search' | 'category' | 'tag' | 'popular' | 'all';
+
 interface FlowState {
   client: MCPClient | null;
   customPath?: string;
-  browseMode: 'search' | 'category' | 'tag' | 'popular' | 'all' | null;
+  browseMode: BrowseMode | null;
   selectedMCP: MCPRegistryEntry | null;
   envValues: Record<string, string>;
 }
+
+const BROWSE_DISPATCHERS: Record<
+  BrowseMode,
+  () => Promise<MCPRegistryEntry | 'back' | null>
+> = {
+  search: searchMCPs,
+  category: selectByCategory,
+  tag: selectByTag,
+  popular: selectPopular,
+  all: selectAll,
+};
 
 const ALLOWED_COMMANDS = [
   'npx',
@@ -351,34 +364,12 @@ export async function runExternalMCPFlow(): Promise<void> {
       }
 
       case 'selectMCP': {
-        let result: MCPRegistryEntry | 'back' | null = null;
+        const dispatcher = state.browseMode
+          ? BROWSE_DISPATCHERS[state.browseMode]
+          : null;
+        const result = dispatcher ? await dispatcher() : null;
 
-        switch (state.browseMode) {
-          case 'search':
-            result = await searchMCPs();
-            break;
-          case 'category':
-            result = await selectByCategory();
-            break;
-          case 'tag':
-            result = await selectByTag();
-            break;
-          case 'popular':
-            result = await selectPopular();
-            break;
-          case 'all':
-            result = await selectAll();
-            break;
-          default:
-            break;
-        }
-
-        if (result === 'back') {
-          currentStep = 'browse';
-          break;
-        }
-
-        if (result === null) {
+        if (!result || result === 'back') {
           currentStep = 'browse';
           break;
         }

@@ -41,10 +41,12 @@ type ToolResult = {
 
 type ToolExecutor = (input: unknown) => Promise<ToolResult>;
 
-interface ToolDefinition {
+export interface ToolDefinition {
   name: string;
   schema: z.ZodType;
   execute: ToolExecutor;
+  requiresServerRuntime?: boolean;
+  requiresProviders?: boolean;
 }
 
 interface JsonSchemaObject extends Record<string, unknown> {
@@ -56,7 +58,7 @@ interface JsonSchemaObject extends Record<string, unknown> {
   items?: unknown;
 }
 
-const AUTO_FILLED_FIELDS = new Set([
+export const AUTO_FILLED_FIELDS = new Set([
   'id',
   'mainResearchGoal',
   'researchGoal',
@@ -65,6 +67,7 @@ const AUTO_FILLED_FIELDS = new Set([
 
 const TOOL_RUNTIME_OPTION_KEYS = new Set([
   'tool',
+  'queries',
   'output',
   'o',
   'json',
@@ -78,44 +81,57 @@ const TOOL_RUNTIME_OPTION_KEYS = new Set([
 ]);
 
 const CANONICAL_TOOL_USAGE =
-  "octocode-cli --tool <toolName> '<json-stringified-input>'";
+  "octocode-cli --tool <toolName> --queries '<json-stringified-input>'";
 
+/** Wraps a typed executor into an untyped ToolExecutor.
+ * SAFETY: callers MUST validate via tool.schema.safeParse() before invoking. */
 function wrapExecutor<TInput>(
   fn: (input: TInput) => Promise<ToolResult>
 ): ToolExecutor {
   return async (input: unknown) => fn(input as TInput);
 }
 
-const TOOL_DEFINITIONS: ToolDefinition[] = [
+export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'githubSearchCode',
     schema: GitHubCodeSearchQuerySchema,
     execute: wrapExecutor(searchMultipleGitHubCode),
+    requiresServerRuntime: true,
+    requiresProviders: true,
   },
   {
     name: 'githubGetFileContent',
     schema: FileContentQuerySchema,
     execute: wrapExecutor(fetchMultipleGitHubFileContents),
+    requiresServerRuntime: true,
+    requiresProviders: true,
   },
   {
     name: 'githubViewRepoStructure',
     schema: GitHubViewRepoStructureQuerySchema,
     execute: wrapExecutor(exploreMultipleRepositoryStructures),
+    requiresServerRuntime: true,
+    requiresProviders: true,
   },
   {
     name: 'githubSearchRepositories',
     schema: GitHubReposSearchSingleQuerySchema,
     execute: wrapExecutor(searchMultipleGitHubRepos),
+    requiresServerRuntime: true,
+    requiresProviders: true,
   },
   {
     name: 'githubSearchPullRequests',
     schema: GitHubPullRequestSearchQuerySchema,
     execute: wrapExecutor(searchMultipleGitHubPullRequests),
+    requiresServerRuntime: true,
+    requiresProviders: true,
   },
   {
     name: 'packageSearch',
     schema: PackageSearchQuerySchema,
     execute: wrapExecutor(searchPackages),
+    requiresServerRuntime: true,
   },
   {
     name: 'localSearchCode',
@@ -141,20 +157,24 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'lspGotoDefinition',
     schema: LSPGotoDefinitionQuerySchema,
     execute: wrapExecutor(executeGotoDefinition),
+    requiresServerRuntime: true,
   },
   {
     name: 'lspFindReferences',
     schema: LSPFindReferencesQuerySchema,
     execute: wrapExecutor(executeFindReferences),
+    requiresServerRuntime: true,
   },
   {
     name: 'lspCallHierarchy',
     schema: LSPCallHierarchyQuerySchema,
     execute: wrapExecutor(executeCallHierarchy),
+    requiresServerRuntime: true,
   },
 ];
 
-let toolRuntimeInitPromise: Promise<void> | null = null;
+let serverRuntimeInitPromise: Promise<void> | null = null;
+let providerRuntimeInitPromise: Promise<void> | null = null;
 let toolMetadataPromise: Promise<
   Awaited<ReturnType<typeof loadToolContent>>
 > | null = null;
@@ -167,11 +187,11 @@ function isJsonSchemaObject(value: unknown): value is JsonSchemaObject {
   return isRecord(value);
 }
 
-function findToolDefinition(name: string): ToolDefinition | undefined {
+export function findToolDefinition(name: string): ToolDefinition | undefined {
   return TOOL_DEFINITIONS.find(tool => tool.name === name);
 }
 
-function getToolCategory(
+export function getToolCategory(
   toolName: string
 ): 'GitHub' | 'Local' | 'LSP' | 'Package' | 'Other' {
   if (toolName.startsWith('github')) {
@@ -212,10 +232,7 @@ async function loadToolMetadata(): Promise<
   Awaited<ReturnType<typeof loadToolContent>>
 > {
   if (!toolMetadataPromise) {
-    toolMetadataPromise = (async () => {
-      await initializeMcp();
-      return loadToolContent();
-    })();
+    toolMetadataPromise = loadToolContent();
   }
 
   return toolMetadataPromise;
@@ -269,16 +286,19 @@ function applyDefaultQueryFields(
   query: Record<string, unknown>
 ): Record<string, unknown> {
   const nextQuery = { ...query };
+  const category = getToolCategory(toolName);
 
   if (typeof nextQuery.id !== 'string' || nextQuery.id.trim().length === 0) {
     nextQuery.id = `${toolName}-${index + 1}`;
   }
 
-  if (
-    typeof nextQuery.mainResearchGoal !== 'string' ||
-    nextQuery.mainResearchGoal.trim().length === 0
-  ) {
-    nextQuery.mainResearchGoal = buildDefaultGoal(toolName);
+  if (category === 'GitHub' || category === 'Package') {
+    if (
+      typeof nextQuery.mainResearchGoal !== 'string' ||
+      nextQuery.mainResearchGoal.trim().length === 0
+    ) {
+      nextQuery.mainResearchGoal = buildDefaultGoal(toolName);
+    }
   }
 
   if (
@@ -317,7 +337,7 @@ function formatToolExampleCommand(toolName: string): string {
     ? JSON.stringify(buildExampleQuery(tool))
     : '{"path":".","pattern":"needle"}';
 
-  return `octocode-cli --tool ${toolName} '${exampleInput}'`;
+  return `octocode-cli --tool ${toolName} --queries '${exampleInput}'`;
 }
 
 function getUnexpectedToolOptionKeys(args: ParsedArgs): string[] {
@@ -347,7 +367,7 @@ function buildToolPayload(
       .join(', ');
 
     throw new Error(
-      `Pass one JSON object string after the tool name. Unsupported tool flags: ${formattedKeys}. Use ${formatToolExampleCommand(toolName)}.`
+      `Unsupported tool flags: ${formattedKeys}. Use ${formatToolExampleCommand(toolName)}.`
     );
   }
 
@@ -357,7 +377,10 @@ function buildToolPayload(
     );
   }
 
-  const inputText = args.args[1];
+  const inputText =
+    typeof args.options.queries === 'string'
+      ? args.options.queries
+      : args.args[1];
   if (typeof inputText !== 'string') {
     return null;
   }
@@ -407,7 +430,7 @@ function buildToolPayload(
   };
 }
 
-function getDisplayFields(tool: ToolDefinition): Array<{
+export function getDisplayFields(tool: ToolDefinition): Array<{
   name: string;
   required: boolean;
   type: string;
@@ -544,7 +567,7 @@ export async function showAvailableTools(): Promise<void> {
 
   console.log();
   console.log(
-    `  ${dim('Tip:')} ${c('yellow', 'octocode-cli --tool localSearchCode \'{"path":".","pattern":"runCLI"}\'')}`
+    `  ${dim('Tip:')} ${c('yellow', 'octocode-cli --tool localSearchCode --queries \'{"path":".","pattern":"runCLI"}\'')}`
   );
   console.log();
 }
@@ -557,32 +580,20 @@ export async function showToolHelp(toolName: string): Promise<boolean> {
 
   const metadata = await getOptionalToolMetadata();
   const fields = getDisplayFields(tool);
-  const requiredFields = fields.filter(field => field.required);
-  const optionalFields = fields.filter(field => !field.required);
 
   console.log();
   console.log(`  ${c('magenta', bold(tool.name))}`);
   console.log(`  ${getToolDescription(tool.name, metadata)}`);
   console.log();
 
-  if (requiredFields.length > 0) {
+  console.log(`  ${bold('Input Schema')}`);
+  for (const field of fields) {
+    const reqTag = field.required ? c('red', ' [required]') : '';
     console.log(
-      `  ${bold('Required')}: ${requiredFields
-        .map(field => `${field.name} (${field.type})`)
-        .join(', ')}`
-    );
-  } else {
-    console.log(`  ${bold('Required')}: none`);
-  }
-
-  if (optionalFields.length > 0) {
-    console.log(
-      `  ${bold('Optional')}: ${optionalFields
-        .slice(0, 10)
-        .map(field => `${field.name} (${field.type})`)
-        .join(', ')}`
+      `    ${c('cyan', field.name)} (${field.type})${reqTag}${field.description ? dim(` — ${field.description}`) : ''}`
     );
   }
+  console.log();
 
   console.log(
     `  ${dim('Auto-filled')}: id, researchGoal, reasoning${
@@ -594,10 +605,16 @@ export async function showToolHelp(toolName: string): Promise<boolean> {
   );
   console.log();
 
+  console.log(`  ${bold('Output Schema')}`);
+  console.log(`    ${dim('content')}: Array<{ type: string; text: string }>`);
+  console.log(`    ${dim('structuredContent')}: object (optional)`);
+  console.log(`    ${dim('isError')}: boolean (optional)`);
+  console.log();
+
   const exampleQuery = buildExampleQuery(tool);
   console.log(`  ${bold('Example')}`);
   console.log(
-    `    ${c('yellow', `octocode-cli --tool ${tool.name} '${JSON.stringify(exampleQuery)}'`)}`
+    `    ${c('yellow', `octocode-cli --tool ${tool.name} --queries '${JSON.stringify(exampleQuery)}'`)}`
   );
   console.log();
 
@@ -615,6 +632,17 @@ export async function getToolsContextString(): Promise<string> {
     '',
     'Octocode MCP Instructions:',
     metadata.instructions.trim(),
+    '',
+    'Output schema (all tools):',
+    JSON.stringify(
+      {
+        content: 'Array<{ type: string; text: string }>',
+        structuredContent: 'object (optional)',
+        isError: 'boolean (optional)',
+      },
+      null,
+      2
+    ),
     '',
     'Tools:',
   ];
@@ -656,7 +684,11 @@ function printToolResult(
   outputMode: 'text' | 'json'
 ): void {
   if (outputMode === 'json') {
-    console.log(JSON.stringify(result, null, 2));
+    const payload =
+      result.structuredContent !== undefined
+        ? result.structuredContent
+        : result;
+    console.log(JSON.stringify(payload));
     return;
   }
 
@@ -695,15 +727,30 @@ function formatValidationIssues(error: z.ZodError): string[] {
   });
 }
 
-async function ensureToolRuntimeReady(): Promise<void> {
-  if (!toolRuntimeInitPromise) {
-    toolRuntimeInitPromise = (async () => {
-      await initializeMcp();
-      await initializeProviders();
-    })();
+async function ensureServerRuntimeReady(): Promise<void> {
+  if (!serverRuntimeInitPromise) {
+    serverRuntimeInitPromise = initializeMcp();
   }
 
-  await toolRuntimeInitPromise;
+  await serverRuntimeInitPromise;
+}
+
+async function ensureProvidersReady(): Promise<void> {
+  if (!providerRuntimeInitPromise) {
+    providerRuntimeInitPromise = initializeProviders().then(() => undefined);
+  }
+
+  await providerRuntimeInitPromise;
+}
+
+async function ensureToolRuntimeReady(tool: ToolDefinition): Promise<void> {
+  if (tool.requiresServerRuntime) {
+    await ensureServerRuntimeReady();
+  }
+
+  if (tool.requiresProviders) {
+    await ensureProvidersReady();
+  }
 }
 
 export async function executeToolCommand(args: ParsedArgs): Promise<boolean> {
@@ -767,7 +814,7 @@ export async function executeToolCommand(args: ParsedArgs): Promise<boolean> {
     .map(result => result.data);
 
   try {
-    await ensureToolRuntimeReady();
+    await ensureToolRuntimeReady(tool);
     const result = await tool.execute({
       queries,
       responseCharLength: payload.responseCharLength,
@@ -785,12 +832,17 @@ export async function executeToolCommand(args: ParsedArgs): Promise<boolean> {
 
 export const toolCommand: CLICommand = {
   name: 'tool',
-  description: 'Internal handler for top-level --tool execution',
-  usage: `octocode-cli --tool <toolName> '<json-stringified-input>'`,
+  description: 'Run an Octocode tool directly',
+  usage: `octocode-cli --tool <toolName> --queries '<json-stringified-input>'`,
   options: [
     {
       name: 'tool',
-      description: 'Tool name for top-level tool execution.',
+      description: 'Tool name to execute.',
+      hasValue: true,
+    },
+    {
+      name: 'queries',
+      description: 'JSON-stringified tool input (query object or array).',
       hasValue: true,
     },
     {

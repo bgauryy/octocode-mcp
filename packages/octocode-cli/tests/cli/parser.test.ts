@@ -165,11 +165,92 @@ describe('CLI Parser', () => {
       });
     });
 
+    it('should parse --tool with --queries flag', () => {
+      const result = parseArgs([
+        '--tool',
+        'localSearchCode',
+        '--queries',
+        '{"path":".","pattern":"runCLI"}',
+      ]);
+
+      expect(result.command).toBe('tool');
+      expect(result.args).toEqual(['localSearchCode']);
+      expect(result.options).toEqual({
+        tool: 'localSearchCode',
+        queries: '{"path":".","pattern":"runCLI"}',
+      });
+    });
+
     it('should parse --tools-context as a top-level boolean flag', () => {
       const result = parseArgs(['--tools-context']);
 
       expect(result.command).toBeNull();
       expect(result.options).toEqual({ 'tools-context': true });
+    });
+
+    it('should parse single-dash long option -tool with = value', () => {
+      const result = parseArgs(['-tool=myTool']);
+      expect(result.command).toBe('tool');
+      expect(result.args).toEqual(['myTool']);
+      expect(result.options).toEqual({ tool: 'myTool' });
+    });
+
+    it('should parse single-dash long option -tool consuming next arg', () => {
+      const result = parseArgs(['-tool', 'myTool']);
+      expect(result.command).toBe('tool');
+      expect(result.args).toEqual(['myTool']);
+      expect(result.options).toEqual({ tool: 'myTool' });
+    });
+
+    it('should treat single-dash -tool as boolean when no value follows', () => {
+      const result = parseArgs(['-tool']);
+      expect(result.command).toBeNull();
+      expect(result.options).toEqual({ tool: true });
+    });
+
+    it('should parse single-dash long option -output with = value', () => {
+      const result = parseArgs(['--tool', 'localSearchCode', '-output=json']);
+      expect(result.command).toBe('tool');
+      expect(result.args).toEqual(['localSearchCode']);
+      expect(result.options).toEqual({
+        tool: 'localSearchCode',
+        output: 'json',
+      });
+    });
+
+    it('should parse single-dash long option -queries with = value', () => {
+      const result = parseArgs([
+        '-tool=localSearchCode',
+        '-queries={"path":".","pattern":"x"}',
+      ]);
+      expect(result.command).toBe('tool');
+      expect(result.args).toEqual(['localSearchCode']);
+      expect(result.options).toEqual({
+        tool: 'localSearchCode',
+        queries: '{"path":".","pattern":"x"}',
+      });
+    });
+
+    it('should parse single-dash long option -queries consuming next arg', () => {
+      const result = parseArgs([
+        '-tool',
+        'localSearchCode',
+        '-queries',
+        '{"path":".","pattern":"next"}',
+      ]);
+      expect(result.command).toBe('tool');
+      expect(result.args).toEqual(['localSearchCode']);
+      expect(result.options).toEqual({
+        tool: 'localSearchCode',
+        queries: '{"path":".","pattern":"next"}',
+      });
+    });
+
+    it('should consume values for unknown long flags after the tool command', () => {
+      const result = parseArgs(['tool', '--extra', 'payload']);
+      expect(result.command).toBe('tool');
+      expect(result.args).toEqual([]);
+      expect(result.options).toEqual({ extra: 'payload' });
     });
   });
 

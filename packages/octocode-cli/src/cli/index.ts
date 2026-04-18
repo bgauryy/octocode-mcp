@@ -1,27 +1,62 @@
 import { parseArgs, hasHelpFlag, hasVersionFlag } from './parser.js';
-import { findCommand } from './commands.js';
-import { showHelp, showCommandHelp, showVersion } from './help.js';
-import {
-  executeToolCommand,
-  printToolsContext,
-  showToolHelp,
-} from './tool-command.js';
+import type { CLICommand, CLICommandSpec, ParsedArgs } from './types.js';
+
+declare const __APP_VERSION__: string;
+
+async function loadCommandsModule(): Promise<{
+  findCommand(name: string): CLICommand | undefined;
+}> {
+  return import('./commands.js');
+}
+
+async function loadStaticCommandHelpModule(): Promise<{
+  findStaticCommandHelp(name: string): CLICommandSpec | undefined;
+}> {
+  return import('./command-help-specs.js');
+}
+
+async function loadToolCommandModule(): Promise<{
+  executeToolCommand(args: ParsedArgs): Promise<boolean>;
+  printToolsContext(): Promise<void>;
+  showToolHelp(toolName: string): Promise<boolean>;
+}> {
+  return import('./tool-command.js');
+}
+
+async function loadMainHelpModule(): Promise<{
+  showHelp(): void;
+}> {
+  return import('./main-help.js');
+}
+
+async function loadHelpModule(): Promise<{
+  showCommandHelp(command: CLICommandSpec): void;
+}> {
+  return import('./help.js');
+}
 
 function printLegacyToolCommandError(): void {
   console.log();
   console.log(
-    "  Use octocode-cli --tool <toolName> '<json-stringified-input>'."
+    "  Use octocode-cli --tool <toolName> --queries '<json-stringified-input>'."
   );
   console.log(
-    '  Example: octocode-cli --tool localSearchCode \'{"path":".","pattern":"runCLI"}\''
+    '  Example: octocode-cli --tool localSearchCode --queries \'{"path":".","pattern":"runCLI"}\''
   );
   console.log();
+}
+
+function showVersion(): void {
+  const version =
+    typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'unknown';
+  console.log(`octocode-cli v${version}`);
 }
 
 export async function runCLI(argv?: string[]): Promise<boolean> {
   const args = parseArgs(argv);
 
   if (args.options['tools-context'] === true) {
+    const { printToolsContext } = await loadToolCommandModule();
     await printToolsContext();
     return true;
   }
@@ -32,23 +67,42 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
       typeof args.options.tool === 'string' &&
       typeof args.args[0] === 'string'
     ) {
+      const { showToolHelp } = await loadToolCommandModule();
       if (await showToolHelp(args.args[0])) {
         return true;
       }
     }
 
     if (args.command === 'tool') {
+      const { showHelp } = await loadMainHelpModule();
       showHelp();
       return true;
     }
 
     if (args.command) {
+      const [{ findStaticCommandHelp }, { showCommandHelp }] =
+        await Promise.all([loadStaticCommandHelpModule(), loadHelpModule()]);
+
+      const staticCommand = findStaticCommandHelp(args.command);
+      if (staticCommand) {
+        showCommandHelp(staticCommand);
+        return true;
+      }
+
+      const [{ findCommand }, { showHelp }] = await Promise.all([
+        loadCommandsModule(),
+        loadMainHelpModule(),
+      ]);
       const cmd = findCommand(args.command);
       if (cmd) {
         showCommandHelp(cmd);
         return true;
       }
+      showHelp();
+      return true;
     }
+
+    const { showHelp } = await loadMainHelpModule();
     showHelp();
     return true;
   }
@@ -69,13 +123,16 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
       return true;
     }
 
-    const success = await executeToolCommand(args);
+    const success = await (
+      await loadToolCommandModule()
+    ).executeToolCommand(args);
     if (!success) {
       process.exitCode = 1;
     }
     return true;
   }
 
+  const { findCommand } = await loadCommandsModule();
   const command = findCommand(args.command);
 
   if (!command) {
