@@ -128,7 +128,7 @@ describe('CLI Commands', () => {
       const tokenCmd = findCommand('token');
       expect(tokenCmd).toBeDefined();
 
-      await tokenCmd!.handler({
+      await tokenCmd!.handler!({
         command: 'token',
         args: [],
         options: {},
@@ -149,7 +149,7 @@ describe('CLI Commands', () => {
       const { findCommand } = await import('../../src/cli/commands.js');
       const tokenCmd = findCommand('token');
 
-      await tokenCmd!.handler({
+      await tokenCmd!.handler!({
         command: 'token',
         args: [],
         options: {},
@@ -170,7 +170,7 @@ describe('CLI Commands', () => {
       const tokenCmd = findCommand('token');
       expect(tokenCmd).toBeDefined();
 
-      await tokenCmd!.handler({
+      await tokenCmd!.handler!({
         command: 'token',
         args: [],
         options: {},
@@ -198,7 +198,7 @@ describe('CLI Commands', () => {
       const { findCommand } = await import('../../src/cli/commands.js');
       const tokenCmd = findCommand('token');
 
-      await tokenCmd!.handler({
+      await tokenCmd!.handler!({
         command: 'token',
         args: [],
         options: { hostname: 'github.enterprise.com' },
@@ -220,7 +220,7 @@ describe('CLI Commands', () => {
       const { findCommand } = await import('../../src/cli/commands.js');
       const tokenCmd = findCommand('token');
 
-      await tokenCmd!.handler({
+      await tokenCmd!.handler!({
         command: 'token',
         args: [],
         options: { source: true },
@@ -252,7 +252,7 @@ describe('CLI Commands', () => {
       const { findCommand } = await import('../../src/cli/commands.js');
       const tokenCmd = findCommand('token');
 
-      await tokenCmd!.handler({
+      await tokenCmd!.handler!({
         command: 'token',
         args: [],
         options: { type: 'gh' },
@@ -273,7 +273,7 @@ describe('CLI Commands', () => {
       const { findCommand } = await import('../../src/cli/commands.js');
       const tokenCmd = findCommand('token');
 
-      await tokenCmd!.handler({
+      await tokenCmd!.handler!({
         command: 'token',
         args: [],
         options: { type: 'auto' },
@@ -287,7 +287,7 @@ describe('CLI Commands', () => {
       const { findCommand } = await import('../../src/cli/commands.js');
       const tokenCmd = findCommand('token');
 
-      await tokenCmd!.handler({
+      await tokenCmd!.handler!({
         command: 'token',
         args: [],
         options: { type: 'invalid' },
@@ -311,7 +311,7 @@ describe('CLI Commands', () => {
         const { findCommand } = await import('../../src/cli/commands.js');
         const tokenCmd = findCommand('token');
 
-        await tokenCmd!.handler({
+        await tokenCmd!.handler!({
           command: 'token',
           args: [],
           options: { json: true },
@@ -340,7 +340,7 @@ describe('CLI Commands', () => {
         const { findCommand } = await import('../../src/cli/commands.js');
         const tokenCmd = findCommand('token');
 
-        await tokenCmd!.handler({
+        await tokenCmd!.handler!({
           command: 'token',
           args: [],
           options: { json: true },
@@ -367,7 +367,7 @@ describe('CLI Commands', () => {
         const { findCommand } = await import('../../src/cli/commands.js');
         const tokenCmd = findCommand('token');
 
-        await tokenCmd!.handler({
+        await tokenCmd!.handler!({
           command: 'token',
           args: [],
           options: { json: true },
@@ -393,7 +393,7 @@ describe('CLI Commands', () => {
         const { findCommand } = await import('../../src/cli/commands.js');
         const tokenCmd = findCommand('token');
 
-        await tokenCmd!.handler({
+        await tokenCmd!.handler!({
           command: 'token',
           args: [],
           options: { json: true },
@@ -420,7 +420,7 @@ describe('CLI Commands', () => {
         const { findCommand } = await import('../../src/cli/commands.js');
         const tokenCmd = findCommand('token');
 
-        await tokenCmd!.handler({
+        await tokenCmd!.handler!({
           command: 'token',
           args: [],
           options: { j: true },
@@ -440,7 +440,7 @@ describe('CLI Commands', () => {
         const { findCommand } = await import('../../src/cli/commands.js');
         const tokenCmd = findCommand('token');
 
-        await tokenCmd!.handler({
+        await tokenCmd!.handler!({
           command: 'token',
           args: [],
           options: { json: true, type: 'invalid' },
@@ -474,7 +474,7 @@ describe('CLI Commands', () => {
       const statusCmd = findCommand('status');
       expect(statusCmd).toBeDefined();
 
-      await statusCmd!.handler({
+      await statusCmd!.handler!({
         command: 'status',
         args: [],
         options: {},
@@ -500,7 +500,7 @@ describe('CLI Commands', () => {
       const { findCommand } = await import('../../src/cli/commands.js');
       const statusCmd = findCommand('status');
 
-      await statusCmd!.handler({
+      await statusCmd!.handler!({
         command: 'status',
         args: [],
         options: {},
@@ -524,7 +524,7 @@ describe('CLI Commands', () => {
       const { findCommand } = await import('../../src/cli/commands.js');
       const statusCmd = findCommand('status');
 
-      await statusCmd!.handler({
+      await statusCmd!.handler!({
         command: 'status',
         args: [],
         options: {},
@@ -547,7 +547,7 @@ describe('CLI Commands', () => {
       const { findCommand } = await import('../../src/cli/commands.js');
       const statusCmd = findCommand('status');
 
-      await statusCmd!.handler({
+      await statusCmd!.handler!({
         command: 'status',
         args: [],
         options: { hostname: 'github.enterprise.com' },
@@ -581,7 +581,7 @@ describe('CLI Commands', () => {
       const cacheCmd = findCommand('cache');
       expect(cacheCmd).toBeDefined();
 
-      await cacheCmd!.handler({
+      await cacheCmd!.handler!({
         command: 'cache',
         args: ['clean'],
         options: { tools: true },
@@ -598,7 +598,7 @@ describe('CLI Commands', () => {
       const cacheCmd = findCommand('cache');
       expect(cacheCmd).toBeDefined();
 
-      await cacheCmd!.handler({
+      await cacheCmd!.handler!({
         command: 'cache',
         args: ['clean'],
         options: {},

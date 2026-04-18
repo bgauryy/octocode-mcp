@@ -176,9 +176,8 @@ function withAgentHandler(spec: AgentCommandSpec): CLICommand {
   };
 }
 
-export const agentCommands: CLICommand[] = AGENT_COMMAND_SPECS.map(
-  withAgentHandler
-);
+export const agentCommands: CLICommand[] =
+  AGENT_COMMAND_SPECS.map(withAgentHandler);
 
 export function findAgentCommand(name: string): CLICommand | undefined {
   const spec = findAgentCommandSpec(name);

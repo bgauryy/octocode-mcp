@@ -1,17 +1,9 @@
 import { parseArgs, hasHelpFlag, hasVersionFlag } from './parser.js';
 import type { CLICommand } from './types.js';
 import type { ParsedArgs } from './types.js';
+import { AGENT_SUBCOMMAND_NAMES } from './agent-command-specs.js';
 
 declare const __APP_VERSION__: string;
-
-const AGENT_SUBCOMMAND_NAMES = new Set([
-  'search-code',
-  'get-file',
-  'view-structure',
-  'search-repos',
-  'search-prs',
-  'package-search',
-]);
 
 const LOCAL_TOOL_NAMES = new Set([
   'localSearchCode',
@@ -33,10 +25,12 @@ async function loadAgentCommandsModule(): Promise<{
 }
 
 async function loadAgentCommandSpecsModule(): Promise<{
-  findAgentCommandSpec(name: string):
-    | import('./agent-command-specs.js').AgentCommandSpec
-    | undefined;
-  toAgentHelpCommand(spec: import('./agent-command-specs.js').AgentCommandSpec): CLICommand;
+  findAgentCommandSpec(
+    name: string
+  ): import('./agent-command-specs.js').AgentCommandSpec | undefined;
+  toAgentHelpCommand(
+    spec: import('./agent-command-specs.js').AgentCommandSpec
+  ): CLICommand;
 }> {
   return import('./agent-command-specs.js');
 }
@@ -63,10 +57,12 @@ async function loadLocalToolCommandModule(): Promise<{
 }
 
 async function loadStaticToolHelpModule(): Promise<{
-  findStaticToolHelp(name: string):
-    | import('./tool-help-specs.js').StaticToolHelpSpec
-    | undefined;
-  showStaticToolHelp(spec: import('./tool-help-specs.js').StaticToolHelpSpec): void;
+  findStaticToolHelp(
+    name: string
+  ): import('./tool-help-specs.js').StaticToolHelpSpec | undefined;
+  showStaticToolHelp(
+    spec: import('./tool-help-specs.js').StaticToolHelpSpec
+  ): void;
 }> {
   return import('./tool-help-specs.js');
 }
@@ -131,7 +127,7 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
     }
 
     if (args.command === 'tool') {
-      const { showHelp } = await loadHelpModule();
+      const { showHelp } = await loadMainHelpModule();
       showHelp();
       return true;
     }
@@ -146,8 +142,13 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
       }
 
       if (AGENT_SUBCOMMAND_NAMES.has(args.command)) {
-        const [{ findAgentCommandSpec, toAgentHelpCommand }, { showCommandHelp }] =
-          await Promise.all([loadAgentCommandSpecsModule(), loadHelpModule()]);
+        const [
+          { findAgentCommandSpec, toAgentHelpCommand },
+          { showCommandHelp },
+        ] = await Promise.all([
+          loadAgentCommandSpecsModule(),
+          loadHelpModule(),
+        ]);
         const spec = findAgentCommandSpec(args.command);
         if (spec) {
           showCommandHelp(toAgentHelpCommand(spec));
@@ -155,10 +156,12 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
         }
       }
 
-      const [{ findCommand }, { showCommandHelp, showHelp }] = await Promise.all([
-        loadCommandsModule(),
-        loadHelpModule(),
-      ]);
+      const [{ findCommand }, { showCommandHelp }, { showHelp }] =
+        await Promise.all([
+          loadCommandsModule(),
+          loadHelpModule(),
+          loadMainHelpModule(),
+        ]);
       const cmd = findCommand(args.command);
       if (cmd) {
         showCommandHelp(cmd);
@@ -205,7 +208,7 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
   if (AGENT_SUBCOMMAND_NAMES.has(args.command)) {
     const { findAgentCommand } = await loadAgentCommandsModule();
     const agentCommand = findAgentCommand(args.command);
-    if (agentCommand) {
+    if (agentCommand?.handler) {
       await agentCommand.handler(args);
       return true;
     }
@@ -223,6 +226,8 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
     return true;
   }
 
-  await command.handler(args);
+  if (command.handler) {
+    await command.handler(args);
+  }
   return true;
 }

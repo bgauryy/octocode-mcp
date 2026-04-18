@@ -163,7 +163,7 @@ describe('toolCommand', () => {
   it('executes a tool from a positional JSON payload', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: [
         'localSearchCode',
@@ -196,7 +196,7 @@ describe('toolCommand', () => {
   it('accepts JSON bulk payloads from the positional input string', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: [
         'githubSearchCode',
@@ -226,7 +226,7 @@ describe('toolCommand', () => {
   it('supports JSON output mode for canonical tool execution', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: ['localSearchCode', '{"path":".","pattern":"runCLI"}'],
       options: {
@@ -244,7 +244,7 @@ describe('toolCommand', () => {
   it('shows schema help when a tool is selected without input', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: ['localSearchCode'],
       options: { tool: 'localSearchCode' },
@@ -262,7 +262,7 @@ describe('toolCommand', () => {
   it('shows schema help when --schema is provided', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: ['localSearchCode'],
       options: { tool: 'localSearchCode', schema: true },
@@ -275,7 +275,7 @@ describe('toolCommand', () => {
   it('rejects legacy --input usage and points to the canonical contract', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: ['localSearchCode'],
       options: {
@@ -294,7 +294,7 @@ describe('toolCommand', () => {
   it('rejects legacy tool-specific flags and requires one JSON payload', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: ['localSearchCode'],
       options: {
@@ -314,7 +314,7 @@ describe('toolCommand', () => {
   it('rejects invalid JSON payloads for canonical tool usage', async () => {
     const { toolCommand } = await import('../../src/cli/tool-command.js');
 
-    await toolCommand.handler({
+    await toolCommand.handler!({
       command: 'tool',
       args: ['localSearchCode', '{"path":".","pattern":"runCLI"'],
       options: {

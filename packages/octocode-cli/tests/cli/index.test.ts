@@ -4,10 +4,13 @@ const mocks = vi.hoisted(() => ({
   findCommand: vi.fn(),
   showHelp: vi.fn(),
   showCommandHelp: vi.fn(),
-  showVersion: vi.fn(),
   showToolHelp: vi.fn(),
   findStaticToolHelp: vi.fn(),
   showStaticToolHelp: vi.fn(),
+  findStaticCommandHelp: vi.fn(),
+  showStaticCommandHelp: vi.fn(),
+  findAgentCommandSpec: vi.fn(),
+  toAgentHelpCommand: vi.fn(),
   executeToolCommand: vi.fn().mockResolvedValue(true),
   executeLocalToolCommand: vi.fn().mockResolvedValue(true),
   printToolsContext: vi.fn().mockResolvedValue(undefined),
@@ -18,9 +21,29 @@ vi.mock('../../src/cli/commands.js', () => ({
 }));
 
 vi.mock('../../src/cli/help.js', () => ({
-  showHelp: mocks.showHelp,
   showCommandHelp: mocks.showCommandHelp,
-  showVersion: mocks.showVersion,
+}));
+
+vi.mock('../../src/cli/main-help.js', () => ({
+  showHelp: mocks.showHelp,
+}));
+
+vi.mock('../../src/cli/command-help-specs.js', () => ({
+  findStaticCommandHelp: mocks.findStaticCommandHelp,
+  showStaticCommandHelp: mocks.showStaticCommandHelp,
+}));
+
+vi.mock('../../src/cli/agent-command-specs.js', () => ({
+  AGENT_SUBCOMMAND_NAMES: new Set([
+    'search-code',
+    'get-file',
+    'view-structure',
+    'search-repos',
+    'search-prs',
+    'package-search',
+  ]),
+  findAgentCommandSpec: mocks.findAgentCommandSpec,
+  toAgentHelpCommand: mocks.toAgentHelpCommand,
 }));
 
 vi.mock('../../src/cli/tool-command.js', () => ({
@@ -165,5 +188,54 @@ describe('runCLI', () => {
       expect.stringContaining('Use octocode-cli --tool')
     );
     expect(process.exitCode).toBe(1);
+  });
+
+  it('shows main help when --help is passed without a command', async () => {
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    const handled = await runCLI(['--help']);
+
+    expect(handled).toBe(true);
+    expect(mocks.showHelp).toHaveBeenCalledTimes(1);
+    expect(mocks.showCommandHelp).not.toHaveBeenCalled();
+  });
+
+  it('shows main help for "tool --help" (from main-help, not help module)', async () => {
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    const handled = await runCLI(['tool', '--help']);
+
+    expect(handled).toBe(true);
+    expect(mocks.showHelp).toHaveBeenCalledTimes(1);
+    expect(mocks.showCommandHelp).not.toHaveBeenCalled();
+  });
+
+  it('shows agent command help for "search-code --help"', async () => {
+    const fakeSpec = { name: 'search-code', tool: 'githubSearchCode' };
+    const fakeHelpCmd = { name: 'search-code', description: 'Search code' };
+    mocks.findStaticCommandHelp.mockReturnValue(undefined);
+    mocks.findAgentCommandSpec.mockReturnValue(fakeSpec);
+    mocks.toAgentHelpCommand.mockReturnValue(fakeHelpCmd);
+
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    const handled = await runCLI(['search-code', '--help']);
+
+    expect(handled).toBe(true);
+    expect(mocks.findAgentCommandSpec).toHaveBeenCalledWith('search-code');
+    expect(mocks.toAgentHelpCommand).toHaveBeenCalledWith(fakeSpec);
+    expect(mocks.showCommandHelp).toHaveBeenCalledWith(fakeHelpCmd);
+  });
+
+  it('falls through to main help for unknown command --help', async () => {
+    mocks.findStaticCommandHelp.mockReturnValue(undefined);
+    mocks.findCommand.mockReturnValue(undefined);
+
+    const { runCLI } = await import('../../src/cli/index.js');
+
+    const handled = await runCLI(['nonexistent', '--help']);
+
+    expect(handled).toBe(true);
+    expect(mocks.showHelp).toHaveBeenCalledTimes(1);
   });
 });

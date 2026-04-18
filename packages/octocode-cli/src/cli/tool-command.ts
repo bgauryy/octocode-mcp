@@ -283,16 +283,19 @@ function applyDefaultQueryFields(
   query: Record<string, unknown>
 ): Record<string, unknown> {
   const nextQuery = { ...query };
+  const category = getToolCategory(toolName);
 
   if (typeof nextQuery.id !== 'string' || nextQuery.id.trim().length === 0) {
     nextQuery.id = `${toolName}-${index + 1}`;
   }
 
-  if (
-    typeof nextQuery.mainResearchGoal !== 'string' ||
-    nextQuery.mainResearchGoal.trim().length === 0
-  ) {
-    nextQuery.mainResearchGoal = buildDefaultGoal(toolName);
+  if (category === 'GitHub' || category === 'Package') {
+    if (
+      typeof nextQuery.mainResearchGoal !== 'string' ||
+      nextQuery.mainResearchGoal.trim().length === 0
+    ) {
+      nextQuery.mainResearchGoal = buildDefaultGoal(toolName);
+    }
   }
 
   if (

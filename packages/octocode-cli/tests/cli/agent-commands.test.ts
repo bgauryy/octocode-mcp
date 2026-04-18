@@ -194,7 +194,7 @@ describe('agent subcommands', () => {
     const { agentCommands } = await import('../../src/cli/agent-commands.js');
     const cmd = agentCommands.find(c => c.name === name);
     if (!cmd) throw new Error(`agent subcommand not found: ${name}`);
-    await cmd.handler({ command: name, args: [], options });
+    await cmd.handler!({ command: name, args: [], options });
   }
 
   it('search-code: maps --query to keywordsToSearch array and autofills goals', async () => {

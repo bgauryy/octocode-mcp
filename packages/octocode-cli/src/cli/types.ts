@@ -18,5 +18,5 @@ export interface CLICommand {
   description: string;
   usage?: string;
   options?: CLIOption[];
-  handler: (args: ParsedArgs) => Promise<void>;
+  handler?: (args: ParsedArgs) => Promise<void>;
 }

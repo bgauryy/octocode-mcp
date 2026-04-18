@@ -49,8 +49,7 @@ const STATIC_TOOL_HELP_SPECS: StaticToolHelpSpec[] = [
     optional:
       'mode (enum(discovery, paginated, detailed)), fixedString (boolean), perlRegex (boolean), caseInsensitive (boolean), caseSensitive (boolean), wholeWord (boolean), invertMatch (boolean), type (string), include (array<string>), exclude (array<string>)',
     autoFilled: 'id, researchGoal, reasoning',
-    example:
-      `octocode-cli --tool localSearchCode '{"pattern":"pattern","path":".","smartCase":true,"matchContentLength":1,"filesPerPage":1,"filePageNumber":1,"matchesPerPage":1,"binaryFiles":"text","includeStats":true,"sort":"path","showFileLastModified":true}'`,
+    example: `octocode-cli --tool localSearchCode '{"pattern":"pattern","path":".","smartCase":true,"matchContentLength":1,"filesPerPage":1,"filePageNumber":1,"matchesPerPage":1,"binaryFiles":"text","includeStats":true,"sort":"path","showFileLastModified":true}'`,
   },
   {
     name: 'githubSearchCode',
@@ -83,12 +82,12 @@ const STATIC_TOOL_HELP_SPECS: StaticToolHelpSpec[] = [
   - keywordsToSearch=["useState"], match="file"
   - path="src/api", extension="ts", keywordsToSearch=["export"]
   </examples>`,
-    required: 'keywordsToSearch (array<string>), limit (integer), page (integer)',
+    required:
+      'keywordsToSearch (array<string>), limit (integer), page (integer)',
     optional:
       'owner (string), repo (string), extension (string), filename (string), path (string), match (enum(file, path)), charOffset (integer), charLength (integer)',
     autoFilled: 'id, researchGoal, reasoning, mainResearchGoal',
-    example:
-      `octocode-cli --tool githubSearchCode '{"keywordsToSearch":["keywordsToSearch"],"limit":1,"page":1}'`,
+    example: `octocode-cli --tool githubSearchCode '{"keywordsToSearch":["keywordsToSearch"],"limit":1,"page":1}'`,
   },
   {
     name: 'packageSearch',

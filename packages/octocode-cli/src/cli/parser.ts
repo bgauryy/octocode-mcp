@@ -1,6 +1,6 @@
 import type { ParsedArgs } from './types.js';
+import { AGENT_SUBCOMMAND_NAMES } from './agent-command-specs.js';
 
-// These options always consume the next argv token. `-h` is --help; use `-H` for --hostname.
 const OPTIONS_WITH_VALUES = new Set([
   'ide',
   'method',
@@ -70,14 +70,7 @@ const SINGLE_DASH_LONG_OPTIONS = new Set([
   'responseCharOffset',
 ]);
 
-const AGENT_SUBCOMMANDS = new Set([
-  'search-code',
-  'get-file',
-  'view-structure',
-  'search-repos',
-  'search-prs',
-  'package-search',
-]);
+const AGENT_SUBCOMMANDS = AGENT_SUBCOMMAND_NAMES;
 
 function shouldConsumeNextValue(args: ParsedArgs, key: string): boolean {
   if (BOOLEAN_OPTIONS.has(key)) {

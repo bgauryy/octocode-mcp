@@ -24,7 +24,9 @@ export function showCommandHelp(command: CLICommand): void {
       const valueHint = opt.hasValue ? ` <value>` : '';
       const defaultHint =
         opt.default !== undefined ? dim(` (default: ${opt.default})`) : '';
-      lines.push(`    ${c('cyan', shortFlag + longFlag + valueHint)}${defaultHint}`);
+      lines.push(
+        `    ${c('cyan', shortFlag + longFlag + valueHint)}${defaultHint}`
+      );
       lines.push(`        ${opt.description}`);
     }
     lines.push('');

@@ -5,15 +5,15 @@ import {
   FetchContentQuerySchema,
   type FindFilesQuery,
   FindFilesQuerySchema,
-  type RipgrepQuery,
+  type RipgrepSearchQuery,
   RipgrepQuerySchema,
   type ViewStructureQuery,
   ViewStructureQuerySchema,
-} from '@octocodeai/octocode-core';
-import { executeFetchContent } from '../../../octocode-mcp/src/tools/local_fetch_content/execution.js';
-import { executeFindFiles } from '../../../octocode-mcp/src/tools/local_find_files/execution.js';
-import { executeRipgrepSearch } from '../../../octocode-mcp/src/tools/local_ripgrep/execution.js';
-import { executeViewStructure } from '../../../octocode-mcp/src/tools/local_view_structure/execution.js';
+  executeFetchContent,
+  executeFindFiles,
+  executeRipgrepSearch,
+  executeViewStructure,
+} from 'octocode-mcp/public';
 
 type ToolResult = {
   content?: Array<{ type?: string; text?: string }>;
@@ -328,8 +328,13 @@ export async function executeLocalToolCommand(
 
   const queries = validationResults
     .filter(
-      (result): result is z.ZodSafeParseSuccess<
-        RipgrepQuery | FetchContentQuery | FindFilesQuery | ViewStructureQuery
+      (
+        result
+      ): result is z.ZodSafeParseSuccess<
+        | RipgrepSearchQuery
+        | FetchContentQuery
+        | FindFilesQuery
+        | ViewStructureQuery
       > => result.success
     )
     .map(result => result.data as Record<string, unknown>);

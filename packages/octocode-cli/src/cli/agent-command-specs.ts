@@ -243,6 +243,5 @@ export function toAgentHelpCommand(spec: AgentCommandSpec): CLICommand {
         description: 'Print raw JSON result envelope to stdout',
       },
     ],
-    handler: async () => {},
   };
 }
