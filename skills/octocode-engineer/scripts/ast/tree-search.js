@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import{createRequire as __cjsCreateRequire}from'node:module';import{fileURLToPath as __esmFileURL}from'node:url';import __esmPath from'node:path';const require=__cjsCreateRequire(import.meta.url);const __filename=__esmFileURL(import.meta.url);const __dirname=__esmPath.dirname(__filename);
 import a from"node:fs";import x from"node:path";import w from"node:path";import{fileURLToPath as F}from"node:url";function b(e,t=process.argv[1]){return t?F(e)===w.resolve(t):!1}function R(){console.log(`
 ast-tree-search \u2014 Search generated ast-trees.txt output
 
