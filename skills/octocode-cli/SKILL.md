@@ -30,6 +30,7 @@ These rules decide whether the CLI is fast or slow:
 4. **The `--json` envelope is stable. Learn it once; don't probe it.** Use these jq paths directly:
    - `search-code` → `.results[0].data.files[]`
    - `get-file` → `.results[0].data.content`, `.results[0].data.startLine`, `.results[0].data.endLine`
+   - `get-file --match-string` → `.results[0].data.matchLine` for the exact matched line
    - `view-structure` → `.results[0].data.structure`
    - `search-prs` → `.results[0].data.pull_requests[]`
    - `package-search` → `.results[0].data.packages[]`
@@ -91,7 +92,7 @@ octocode-cli search-code --query 'discriminatedUnion' --owner colinhacks --repo 
 octocode-cli get-file --owner colinhacks --repo zod \
   --path packages/zod/src/v4/classic/tests/discriminated-unions.test.ts \
   --match-string 'discriminatedUnion' --json \
-  | jq '{startLine: .results[0].data.startLine, content: .results[0].data.content}'
+  | jq '{matchLine: .results[0].data.matchLine, content: .results[0].data.content}'
 ```
 
 ### PR archaeology (R4 shape)

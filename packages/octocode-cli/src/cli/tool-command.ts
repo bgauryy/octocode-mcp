@@ -665,6 +665,82 @@ function getOutputMode(args: ParsedArgs): 'text' | 'json' {
   return 'text';
 }
 
+function augmentStructuredContent(
+  toolName: string,
+  queries: Array<Record<string, unknown>>,
+  result: ToolResult
+): ToolResult {
+  if (toolName !== 'githubGetFileContent') {
+    return result;
+  }
+
+  if (!isRecord(result.structuredContent)) {
+    return result;
+  }
+
+  const rawResults = result.structuredContent.results;
+  if (!Array.isArray(rawResults)) {
+    return result;
+  }
+
+  const augmentedResults = rawResults.map((item, index) => {
+    if (!isRecord(item) || !isRecord(item.data)) {
+      return item;
+    }
+
+    const query = queries[index];
+    if (!isRecord(query)) {
+      return item;
+    }
+
+    const path = typeof query.path === 'string' ? query.path : undefined;
+    const owner = typeof query.owner === 'string' ? query.owner : undefined;
+    const repo = typeof query.repo === 'string' ? query.repo : undefined;
+    const matchString =
+      typeof query.matchString === 'string' ? query.matchString : undefined;
+
+    let matchLine: number | undefined;
+    if (
+      matchString &&
+      typeof item.data.content === 'string' &&
+      typeof item.data.startLine === 'number'
+    ) {
+      const matchOffset = item.data.content
+        .split('\n')
+        .findIndex(line => line.includes(matchString));
+      if (matchOffset >= 0) {
+        matchLine = item.data.startLine + matchOffset;
+      }
+    }
+
+    if (!path && !owner && !repo && matchLine === undefined) {
+      return item;
+    }
+
+    return {
+      ...item,
+      data: {
+        ...item.data,
+        ...(path && item.data.path === undefined ? { path } : {}),
+        ...(path && item.data.filePath === undefined ? { filePath: path } : {}),
+        ...(owner && item.data.owner === undefined ? { owner } : {}),
+        ...(repo && item.data.repo === undefined ? { repo } : {}),
+        ...(matchLine !== undefined && item.data.matchLine === undefined
+          ? { matchLine }
+          : {}),
+      },
+    };
+  });
+
+  return {
+    ...result,
+    structuredContent: {
+      ...result.structuredContent,
+      results: augmentedResults,
+    },
+  };
+}
+
 function printToolResult(
   result: ToolResult,
   outputMode: 'text' | 'json'
@@ -806,8 +882,9 @@ export async function executeToolCommand(args: ParsedArgs): Promise<boolean> {
       responseCharLength: payload.responseCharLength,
       responseCharOffset: payload.responseCharOffset,
     });
-    printToolResult(result, getOutputMode(args));
-    return !result.isError;
+    const augmentedResult = augmentStructuredContent(tool.name, queries, result);
+    printToolResult(augmentedResult, getOutputMode(args));
+    return !augmentedResult.isError;
   } catch (error) {
     printToolError(
       error instanceof Error ? error.message : 'Tool execution failed.'
