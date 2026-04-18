@@ -61,6 +61,8 @@ const SINGLE_DASH_LONG_OPTIONS = new Set([
   'output',
   'responseCharLength',
   'responseCharOffset',
+  'tool',
+  'queries',
 ]);
 
 function shouldConsumeNextValue(args: ParsedArgs, key: string): boolean {

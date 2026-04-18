@@ -117,6 +117,5 @@ export function isInquirerLoaded(): boolean {
 }
 
 export async function selectWithCancel<T>(config: SelectConfig<T>): Promise<T> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (await select(config as any)) as T;
+  return (await (_select as (cfg: SelectConfig<T>) => Promise<T>))(config);
 }

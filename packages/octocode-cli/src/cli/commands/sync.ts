@@ -1,0 +1,143 @@
+import type { CLICommand, ParsedArgs } from '../types.js';
+import { c, bold, dim } from '../../utils/colors.js';
+import { Spinner } from '../../utils/spinner.js';
+import { quickSync } from '../../ui/sync/index.js';
+import {
+  readAllClientConfigs,
+  analyzeSyncState,
+  getClientDisplayName,
+} from '../../features/sync.js';
+
+export const syncCommand: CLICommand = {
+  name: 'sync',
+  aliases: ['sy'],
+  description: 'Sync MCP configurations across all IDE clients',
+  usage: 'octocode sync [--force] [--dry-run] [--status]',
+  options: [
+    {
+      name: 'force',
+      short: 'f',
+      description: 'Auto-resolve conflicts (use first variant)',
+    },
+    {
+      name: 'dry-run',
+      short: 'n',
+      description: 'Show what would be synced without making changes',
+    },
+    {
+      name: 'status',
+      short: 's',
+      description: 'Show sync status without syncing',
+    },
+  ],
+  handler: async (args: ParsedArgs) => {
+    const force = Boolean(args.options['force'] || args.options['f']);
+    const dryRun = Boolean(args.options['dry-run'] || args.options['n']);
+    const statusOnly = Boolean(args.options['status'] || args.options['s']);
+
+    if (statusOnly) {
+      console.log();
+      console.log(`  ${bold('🔄 MCP Sync Status')}`);
+      console.log();
+
+      const spinner = new Spinner('Scanning configurations...').start();
+      const snapshots = readAllClientConfigs();
+      const analysis = analyzeSyncState(snapshots);
+      spinner.stop();
+
+      console.log(
+        `  ${bold('Clients:')} ${analysis.summary.clientsWithConfig} with MCP configs`
+      );
+      console.log();
+
+      for (const snapshot of analysis.clients) {
+        const name = getClientDisplayName(snapshot.client);
+        const icon = snapshot.exists ? c('green', '●') : c('dim', '○');
+        const mcpInfo = snapshot.exists
+          ? `${snapshot.mcpCount} MCPs`
+          : dim('no config');
+        console.log(`    ${icon} ${name}: ${mcpInfo}`);
+      }
+
+      console.log();
+      console.log(`  ${bold('MCPs:')}`);
+      console.log(
+        `    ${c('cyan', '•')} ${analysis.summary.totalUniqueMCPs} unique MCPs`
+      );
+
+      if (analysis.summary.consistentMCPs > 0) {
+        console.log(
+          `    ${c('green', '✓')} ${analysis.summary.consistentMCPs} fully synced`
+        );
+      }
+      if (analysis.summary.needsSyncCount > 0) {
+        console.log(
+          `    ${c('yellow', '○')} ${analysis.summary.needsSyncCount} can be auto-synced`
+        );
+      }
+      if (analysis.summary.conflictCount > 0) {
+        console.log(
+          `    ${c('red', '!')} ${analysis.summary.conflictCount} have conflicts`
+        );
+      }
+
+      console.log();
+
+      if (
+        analysis.summary.needsSyncCount > 0 ||
+        analysis.summary.conflictCount > 0
+      ) {
+        console.log(
+          `  ${dim('Run')} ${c('cyan', 'octocode sync')} ${dim('to synchronize.')}`
+        );
+        if (analysis.summary.conflictCount > 0) {
+          console.log(
+            `  ${dim('Use')} ${c('cyan', '--force')} ${dim('to auto-resolve conflicts.')}`
+          );
+        }
+        console.log();
+      }
+
+      return;
+    }
+
+    console.log();
+    console.log(`  ${bold('🔄 MCP Sync')}`);
+    console.log();
+
+    const spinner = new Spinner('Analyzing configurations...').start();
+
+    const result = await quickSync({ force, dryRun });
+
+    if (result.syncPerformed) {
+      if (result.success) {
+        spinner.succeed(result.message);
+        console.log();
+        console.log(`  ${bold('Next:')} Restart your IDEs to apply changes.`);
+      } else {
+        spinner.fail(result.message);
+        process.exitCode = 1;
+      }
+    } else {
+      spinner.stop();
+      if (result.success) {
+        console.log(`  ${c('green', '✓')} ${result.message}`);
+      } else {
+        console.log(`  ${c('yellow', '⚠')} ${result.message}`);
+        if (!force && result.message.includes('conflict')) {
+          console.log();
+          console.log(`  ${dim('Options:')}`);
+          console.log(
+            `    ${c('cyan', '•')} Run ${c('cyan', 'octocode')} for interactive mode`
+          );
+          console.log(
+            `    ${c('cyan', '•')} Use ${c('cyan', '--force')} to auto-resolve`
+          );
+        }
+        process.exitCode = 1;
+      }
+    }
+
+    console.log();
+  },
+};

@@ -1,65 +1,60 @@
-export type MCPCategory =
-  | 'browser-automation'
-  | 'database'
-  | 'cloud-platform'
-  | 'developer-tools'
-  | 'file-system'
-  | 'communication'
-  | 'search-web'
-  | 'ai-services'
-  | 'workflow-automation'
-  | 'version-control'
-  | 'data-visualization'
-  | 'coding-agents'
-  | 'security'
-  | 'productivity'
-  | 'monitoring'
-  | 'finance'
-  | 'social-media'
-  | 'aggregator'
-  | 'other';
+import { z } from 'zod/v4';
 
-type InstallationType = 'npm' | 'npx' | 'pip' | 'docker' | 'source';
+const MCPCategorySchema = z.enum([
+  'browser-automation',
+  'database',
+  'cloud-platform',
+  'developer-tools',
+  'file-system',
+  'communication',
+  'search-web',
+  'ai-services',
+  'workflow-automation',
+  'version-control',
+  'data-visualization',
+  'coding-agents',
+  'security',
+  'productivity',
+  'monitoring',
+  'finance',
+  'social-media',
+  'aggregator',
+  'other',
+]);
 
-export interface MCPRegistryEntry {
-  id: string;
+export type MCPCategory = z.infer<typeof MCPCategorySchema>;
 
-  name: string;
+const MCPRegistryEntrySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().min(1),
+  category: MCPCategorySchema,
+  repository: z.string(),
+  website: z.string().optional(),
+  stars: z.number().optional(),
+  installationType: z.enum(['npm', 'npx', 'pip', 'docker', 'source']),
+  npmPackage: z.string().optional(),
+  pipPackage: z.string().optional(),
+  dockerImage: z.string().optional(),
+  installConfig: z.object({
+    command: z.string().min(1),
+    args: z.array(z.string()),
+    env: z.record(z.string(), z.string()).optional(),
+  }),
+  requiredEnvVars: z
+    .array(
+      z.object({
+        name: z.string(),
+        description: z.string(),
+        example: z.string().optional(),
+      })
+    )
+    .optional(),
+  official: z.boolean().optional(),
+  tags: z.array(z.string()).optional(),
+});
 
-  description: string;
-
-  category: MCPCategory;
-
-  repository: string;
-
-  website?: string;
-
-  stars?: number;
-
-  installationType: InstallationType;
-
-  npmPackage?: string;
-
-  pipPackage?: string;
-
-  dockerImage?: string;
-
-  installConfig: {
-    command: string;
-    args: string[];
-    env?: Record<string, string>;
-  };
-
-  requiredEnvVars?: Array<{
-    name: string;
-    description: string;
-    example?: string;
-  }>;
-
-  official?: boolean;
-
-  tags?: string[];
-}
+export type MCPRegistryEntry = z.infer<typeof MCPRegistryEntrySchema>;
 
 export const MCP_REGISTRY: MCPRegistryEntry[] = [
   {
@@ -2265,4 +2260,14 @@ export function getMCPsByTag(tag: string): MCPRegistryEntry[] {
 
 export function getTagCount(tag: string): number {
   return MCP_REGISTRY.filter(mcp => mcp.tags?.includes(tag)).length;
+}
+
+if (process.env.OCTOCODE_DEBUG === '1') {
+  const result = z.array(MCPRegistryEntrySchema).safeParse(MCP_REGISTRY);
+  if (!result.success) {
+    console.error(
+      '[mcp-registry] Schema validation failed:',
+      result.error.message
+    );
+  }
 }

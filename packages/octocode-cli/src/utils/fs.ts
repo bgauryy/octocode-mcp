@@ -1,97 +1,78 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { trySafe } from './try-safe.js';
 
 export function dirExists(dirPath: string): boolean {
-  try {
-    return fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory();
-  } catch {
-    return false;
-  }
+  return trySafe(
+    () => fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory(),
+    false
+  );
 }
 
 export function fileExists(filePath: string): boolean {
-  try {
-    return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
+  return trySafe(
+    () => fs.existsSync(filePath) && fs.statSync(filePath).isFile(),
+    false
+  );
 }
 
 export function readFileContent(filePath: string): string | null {
-  try {
+  return trySafe(() => {
     if (fileExists(filePath)) {
       return fs.readFileSync(filePath, 'utf8');
     }
-  } catch {
-    void 0;
-  }
-  return null;
+    return null;
+  }, null);
 }
 
 export function writeFileContent(filePath: string, content: string): boolean {
-  try {
+  return trySafe(() => {
     const dir = path.dirname(filePath);
     if (!dirExists(dir)) {
       fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
     fs.writeFileSync(filePath, content, { encoding: 'utf8', mode: 0o600 });
     return true;
-  } catch {
-    return false;
-  }
+  }, false);
 }
 
 export function backupFile(filePath: string): string | null {
   if (!fileExists(filePath)) {
     return null;
   }
-
-  try {
+  return trySafe(() => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupPath = `${filePath}.backup-${timestamp}`;
     fs.copyFileSync(filePath, backupPath);
     return backupPath;
-  } catch {
-    return null;
-  }
+  }, null);
 }
 
 export function readJsonFile<T>(filePath: string): T | null {
   const content = readFileContent(filePath);
   if (!content) return null;
-
-  try {
-    return JSON.parse(content) as T;
-  } catch {
-    return null;
-  }
+  return trySafe(() => JSON.parse(content) as T, null);
 }
 
 export function writeJsonFile(filePath: string, data: unknown): boolean {
-  try {
+  return trySafe(() => {
     const content = JSON.stringify(data, null, 2) + '\n';
     return writeFileContent(filePath, content);
-  } catch {
-    return false;
-  }
+  }, false);
 }
 
 export function copyDirectory(src: string, dest: string): boolean {
-  try {
+  return trySafe(() => {
     if (!dirExists(src)) {
       return false;
     }
-
     if (!dirExists(dest)) {
       fs.mkdirSync(dest, { recursive: true });
     }
-
     const entries = fs.readdirSync(src, { withFileTypes: true });
-
     for (const entry of entries) {
       const srcPath = path.join(src, entry.name);
       const destPath = path.join(dest, entry.name);
-
       if (entry.isDirectory()) {
         if (!copyDirectory(srcPath, destPath)) {
           return false;
@@ -100,15 +81,12 @@ export function copyDirectory(src: string, dest: string): boolean {
         fs.copyFileSync(srcPath, destPath);
       }
     }
-
     return true;
-  } catch {
-    return false;
-  }
+  }, false);
 }
 
 export function listSubdirectories(dirPath: string): string[] {
-  try {
+  return trySafe(() => {
     if (!dirExists(dirPath)) {
       return [];
     }
@@ -116,19 +94,15 @@ export function listSubdirectories(dirPath: string): string[] {
       .readdirSync(dirPath, { withFileTypes: true })
       .filter(entry => entry.isDirectory())
       .map(entry => entry.name);
-  } catch {
-    return [];
-  }
+  }, []);
 }
 
 export function removeDirectory(dirPath: string): boolean {
-  try {
+  return trySafe(() => {
     if (!dirExists(dirPath)) {
       return false;
     }
     fs.rmSync(dirPath, { recursive: true, force: true });
     return true;
-  } catch {
-    return false;
-  }
+  }, false);
 }

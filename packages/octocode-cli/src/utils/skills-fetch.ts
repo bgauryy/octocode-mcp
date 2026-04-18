@@ -13,15 +13,22 @@ import {
 import { join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { mkdirSync, statSync, readdirSync, unlinkSync, rmSync } from 'node:fs';
 import os from 'node:os';
+import { trySafe } from './try-safe.js';
 import { getSkillsSourcePath, getAvailableSkills } from './skills.js';
 import { parseSkillFrontmatter } from './parsers/frontmatter.js';
+import { z } from 'zod/v4';
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
-interface CachedSkillsData {
+const CachedSkillsDataSchema = z.object({
+  timestamp: z.number(),
+  skills: z.array(z.object({}).passthrough()),
+});
+
+type CachedSkillsData = {
   timestamp: number;
   skills: MarketplaceSkill[];
-}
+};
 
 function getCacheDir(): string {
   const home = os.homedir();
@@ -72,67 +79,58 @@ function getCacheFilePath(source: MarketplaceSource): string {
 }
 
 function isCacheValid(cacheFile: string): boolean {
-  try {
+  return trySafe(() => {
     if (!fileExists(cacheFile)) {
       return false;
     }
-
     const stats = statSync(cacheFile);
     const age = Date.now() - stats.mtimeMs;
     return age < CACHE_TTL_MS;
-  } catch {
-    return false;
-  }
+  }, false);
 }
 
 function readCachedSkills(
   source: MarketplaceSource
 ): MarketplaceSkill[] | null {
-  try {
+  return trySafe(() => {
     const cacheFile = getCacheFilePath(source);
-
     if (!isCacheValid(cacheFile)) {
       return null;
     }
-
     const content = readFileContent(cacheFile);
     if (!content) {
       return null;
     }
-
-    const data = JSON.parse(content) as CachedSkillsData;
-
+    const raw = JSON.parse(content);
+    const validated = CachedSkillsDataSchema.safeParse(raw);
+    if (!validated.success) {
+      return null;
+    }
+    const data = raw as CachedSkillsData;
     if (Date.now() - data.timestamp > CACHE_TTL_MS) {
       return null;
     }
-
     return data.skills.map(skill => ({
       ...skill,
       source,
     }));
-  } catch {
-    return null;
-  }
+  }, null);
 }
 
 function writeCachedSkills(
   source: MarketplaceSource,
   skills: MarketplaceSkill[]
 ): void {
-  try {
+  trySafe(() => {
     const cacheFile = getCacheFilePath(source);
-
     const skillsToCache = skills.map(({ source: _, ...rest }) => rest);
-
     const data: CachedSkillsData = {
       timestamp: Date.now(),
       skills: skillsToCache as MarketplaceSkill[],
     };
-
     writeFileContent(cacheFile, JSON.stringify(data, null, 2));
-  } catch {
-    void 0;
-  }
+    return true;
+  }, false);
 }
 
 interface GitHubTreeItem {
@@ -524,7 +522,7 @@ export function groupSkillsByCategory(
 }
 
 export function clearSkillsCache(): void {
-  try {
+  trySafe(() => {
     const cacheDir = getCacheDir();
     if (dirExists(cacheDir)) {
       const files = readdirSync(cacheDir);
@@ -534,20 +532,18 @@ export function clearSkillsCache(): void {
         }
       }
     }
-  } catch {
-    void 0;
-  }
+    return true;
+  }, false);
 }
 
 export function clearSourceCache(source: MarketplaceSource): void {
-  try {
+  trySafe(() => {
     const cacheFile = getCacheFilePath(source);
     if (fileExists(cacheFile)) {
       unlinkSync(cacheFile);
     }
-  } catch {
-    void 0;
-  }
+    return true;
+  }, false);
 }
 
 export function getCacheInfo(source: MarketplaceSource): {
@@ -555,25 +551,23 @@ export function getCacheInfo(source: MarketplaceSource): {
   age: number | null;
   expiresIn: number | null;
 } {
-  try {
-    const cacheFile = getCacheFilePath(source);
-
-    if (!fileExists(cacheFile)) {
-      return { isCached: false, age: null, expiresIn: null };
-    }
-
-    const stats = statSync(cacheFile);
-    const age = Date.now() - stats.mtimeMs;
-    const expiresIn = Math.max(0, CACHE_TTL_MS - age);
-
-    return {
-      isCached: age < CACHE_TTL_MS,
-      age,
-      expiresIn: age < CACHE_TTL_MS ? expiresIn : null,
-    };
-  } catch {
-    return { isCached: false, age: null, expiresIn: null };
-  }
+  return trySafe(
+    () => {
+      const cacheFile = getCacheFilePath(source);
+      if (!fileExists(cacheFile)) {
+        return { isCached: false, age: null, expiresIn: null };
+      }
+      const stats = statSync(cacheFile);
+      const age = Date.now() - stats.mtimeMs;
+      const expiresIn = Math.max(0, CACHE_TTL_MS - age);
+      return {
+        isCached: age < CACHE_TTL_MS,
+        age,
+        expiresIn: age < CACHE_TTL_MS ? expiresIn : null,
+      };
+    },
+    { isCached: false, age: null, expiresIn: null }
+  );
 }
 
 export function getSkillsCacheDir(): string {

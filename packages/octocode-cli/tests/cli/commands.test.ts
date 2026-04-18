@@ -43,6 +43,8 @@ vi.mock('../../src/features/github-oauth.js', () => ({
   logout: vi.fn(),
   getAuthStatus: vi.fn(),
   getToken: vi.fn(),
+  getOctocodeToken: vi.fn().mockResolvedValue({ token: null }),
+  getGhCliToken: vi.fn().mockReturnValue({ token: null }),
   getStoragePath: vi
     .fn()
     .mockReturnValue('/home/test/.octocode/credentials.json'),
@@ -207,31 +209,6 @@ describe('CLI Commands', () => {
       // getToken is now called with hostname and tokenSource ('auto' is the new default)
       expect(getToken).toHaveBeenCalledWith('github.enterprise.com', 'auto');
       expect(consoleSpy).toHaveBeenCalledWith('gho_enterprise_token');
-    });
-
-    it('should show source info when --source flag is used', async () => {
-      const { getToken } = await import('../../src/features/github-oauth.js');
-      vi.mocked(getToken).mockResolvedValue({
-        token: 'gho_test_token',
-        source: 'gh-cli',
-        username: 'testuser',
-      });
-
-      const { findCommand } = await import('../../src/cli/commands.js');
-      const tokenCmd = findCommand('token');
-
-      await tokenCmd!.handler!({
-        command: 'token',
-        args: [],
-        options: { source: true },
-      });
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Token found')
-      );
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Source:')
-      );
     });
 
     it('should be findable by alias "t"', async () => {
@@ -457,6 +434,89 @@ describe('CLI Commands', () => {
         expect(process.exitCode).toBe(1);
       });
     });
+
+    it('should show octocode-specific hint when --type=octocode and no token', async () => {
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: null,
+        source: 'none',
+      });
+
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const tokenCmd = findCommand('token');
+
+      await tokenCmd!.handler!({
+        command: 'token',
+        args: [],
+        options: { type: 'octocode' },
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('No Octocode token found')
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('octocode login')
+      );
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('should show gh-specific hint when --type=gh and no token', async () => {
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: null,
+        source: 'none',
+      });
+
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const tokenCmd = findCommand('token');
+
+      await tokenCmd!.handler!({
+        command: 'token',
+        args: [],
+        options: { type: 'gh' },
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('No gh CLI token found')
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('gh auth login')
+      );
+      expect(process.exitCode).toBe(1);
+    });
+
+    it('should show source info with --source flag', async () => {
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: 'ghp_show_source_flag_token',
+        source: 'octocode',
+        username: 'sourceuser',
+      });
+
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const tokenCmd = findCommand('token');
+
+      await tokenCmd!.handler!({
+        command: 'token',
+        args: [],
+        options: { source: true },
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Token found')
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Source:')
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('@sourceuser')
+      );
+      const allOutput = consoleSpy.mock.calls
+        .map((c: unknown[]) => c[0])
+        .join('\n');
+      expect(allOutput).toContain('Token:');
+      expect(allOutput).not.toContain('ghp_show_source_flag_token');
+    });
   });
 
   describe('statusCommand', () => {
@@ -633,6 +693,230 @@ describe('CLI Commands', () => {
       const { findCommand } = await import('../../src/cli/commands.js');
       const cmd = findCommand('unknown-command');
       expect(cmd).toBeUndefined();
+    });
+  });
+
+  describe('token masking (security)', () => {
+    let originalIsTTY: boolean | undefined;
+
+    beforeEach(() => {
+      originalIsTTY = process.stdout.isTTY;
+    });
+
+    afterEach(() => {
+      Object.defineProperty(process.stdout, 'isTTY', {
+        value: originalIsTTY,
+        writable: true,
+        configurable: true,
+      });
+    });
+
+    it('should mask token in TTY mode for tokenCommand', async () => {
+      Object.defineProperty(process.stdout, 'isTTY', {
+        value: true,
+        writable: true,
+        configurable: true,
+      });
+
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: 'ghp_abcdef1234567890xyz',
+        source: 'octocode',
+        username: 'testuser',
+      });
+
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const tokenCmd = findCommand('token');
+
+      await tokenCmd!.handler!({
+        command: 'token',
+        args: [],
+        options: {},
+      });
+
+      const allOutput = consoleSpy.mock.calls
+        .map((c: unknown[]) => c[0])
+        .join('\n');
+      expect(allOutput).not.toContain('ghp_abcdef1234567890xyz');
+      expect(consoleSpy).toHaveBeenCalledWith('ghp_****0xyz');
+    });
+
+    it('should output raw token when piped (non-TTY) for tokenCommand', async () => {
+      Object.defineProperty(process.stdout, 'isTTY', {
+        value: undefined,
+        writable: true,
+        configurable: true,
+      });
+
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: 'ghp_abcdef1234567890xyz',
+        source: 'octocode',
+        username: 'testuser',
+      });
+
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const tokenCmd = findCommand('token');
+
+      await tokenCmd!.handler!({
+        command: 'token',
+        args: [],
+        options: {},
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith('ghp_abcdef1234567890xyz');
+    });
+
+    it('should always mask token in --source display mode', async () => {
+      Object.defineProperty(process.stdout, 'isTTY', {
+        value: undefined,
+        writable: true,
+        configurable: true,
+      });
+
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: 'ghp_source_secret_token_99',
+        source: 'gh-cli',
+        username: 'testuser',
+      });
+
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const tokenCmd = findCommand('token');
+
+      await tokenCmd!.handler!({
+        command: 'token',
+        args: [],
+        options: { source: true },
+      });
+
+      const allOutput = consoleSpy.mock.calls
+        .map((c: unknown[]) => c[0])
+        .join('\n');
+      expect(allOutput).not.toContain('ghp_source_secret_token_99');
+      expect(allOutput).toContain('ghp_****n_99');
+    });
+
+    it('should never include raw token in JSON output regardless of TTY', async () => {
+      Object.defineProperty(process.stdout, 'isTTY', {
+        value: true,
+        writable: true,
+        configurable: true,
+      });
+
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: 'ghp_json_secret_abc123',
+        source: 'octocode',
+        username: 'testuser',
+      });
+
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const tokenCmd = findCommand('token');
+
+      await tokenCmd!.handler!({
+        command: 'token',
+        args: [],
+        options: { json: true },
+      });
+
+      const jsonCall = consoleSpy.mock.calls.find(
+        (call: unknown[]) =>
+          typeof call[0] === 'string' && call[0].includes('"token"')
+      );
+      expect(jsonCall).toBeDefined();
+      const parsed = JSON.parse(jsonCall![0]);
+      expect(parsed.token).toBe('ghp_json_secret_abc123');
+    });
+
+    it('should mask token in TTY mode for auth token subcommand', async () => {
+      Object.defineProperty(process.stdout, 'isTTY', {
+        value: true,
+        writable: true,
+        configurable: true,
+      });
+
+      const { getOctocodeToken } =
+        await import('../../src/features/github-oauth.js');
+      vi.mocked(getOctocodeToken).mockResolvedValue({
+        token: 'ghp_auth_secret_token_xyz',
+        source: 'octocode',
+      } as any);
+
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const authCmd = findCommand('auth');
+
+      await authCmd!.handler!({
+        command: 'auth',
+        args: ['token'],
+        options: {},
+      });
+
+      const allOutput = consoleSpy.mock.calls
+        .map((c: unknown[]) => c[0])
+        .join('\n');
+      expect(allOutput).not.toContain('ghp_auth_secret_token_xyz');
+      expect(consoleSpy).toHaveBeenCalledWith('ghp_****_xyz');
+    });
+
+    it('should mask gh-cli token in TTY mode for auth token subcommand', async () => {
+      Object.defineProperty(process.stdout, 'isTTY', {
+        value: true,
+        writable: true,
+        configurable: true,
+      });
+
+      const { getOctocodeToken, getGhCliToken } =
+        await import('../../src/features/github-oauth.js');
+      vi.mocked(getOctocodeToken).mockResolvedValue({
+        token: null,
+        source: 'none',
+      } as any);
+      vi.mocked(getGhCliToken).mockReturnValue({
+        token: 'ghp_fallback_cli_token_end',
+        source: 'gh-cli',
+      } as any);
+
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const authCmd = findCommand('auth');
+
+      await authCmd!.handler!({
+        command: 'auth',
+        args: ['token'],
+        options: {},
+      });
+
+      const allOutput = consoleSpy.mock.calls
+        .map((c: unknown[]) => c[0])
+        .join('\n');
+      expect(allOutput).not.toContain('ghp_fallback_cli_token_end');
+      expect(consoleSpy).toHaveBeenCalledWith('ghp_****_end');
+    });
+
+    it('should mask short tokens correctly', async () => {
+      Object.defineProperty(process.stdout, 'isTTY', {
+        value: true,
+        writable: true,
+        configurable: true,
+      });
+
+      const { getToken } = await import('../../src/features/github-oauth.js');
+      vi.mocked(getToken).mockResolvedValue({
+        token: 'short',
+        source: 'octocode',
+      });
+
+      const { findCommand } = await import('../../src/cli/commands.js');
+      const tokenCmd = findCommand('token');
+
+      await tokenCmd!.handler!({
+        command: 'token',
+        args: [],
+        options: {},
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith('****');
+      expect(consoleSpy).not.toHaveBeenCalledWith('short');
     });
   });
 });

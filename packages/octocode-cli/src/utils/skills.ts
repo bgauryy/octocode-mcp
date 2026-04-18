@@ -10,30 +10,35 @@ import {
 } from './fs.js';
 import { HOME, isWindows, getAppDataPath } from './platform.js';
 import { paths } from 'octocode-shared';
+import { trySafe } from './try-safe.js';
 import { parseSkillFrontmatter } from './parsers/frontmatter.js';
+import { z } from 'zod/v4';
 
 const OCTOCODE_DIR =
   paths.home || process.env.OCTOCODE_HOME || join(HOME, '.octocode');
 const CONFIG_FILE = paths.cliConfig || join(OCTOCODE_DIR, 'config.json');
 
-interface OctocodeConfig {
-  skillsDestDir?: string;
-}
+const OctocodeConfigSchema = z
+  .object({
+    skillsDestDir: z.string().optional(),
+  })
+  .passthrough();
+
+type OctocodeConfig = z.infer<typeof OctocodeConfigSchema>;
 
 function loadConfig(): OctocodeConfig {
-  try {
+  return trySafe(() => {
     if (existsSync(CONFIG_FILE)) {
       const content = readFileSync(CONFIG_FILE, 'utf-8');
-      return JSON.parse(content) as OctocodeConfig;
+      const parsed = OctocodeConfigSchema.safeParse(JSON.parse(content));
+      return parsed.success ? parsed.data : {};
     }
-  } catch {
-    void 0;
-  }
-  return {};
+    return {};
+  }, {});
 }
 
 function saveConfig(config: OctocodeConfig): void {
-  try {
+  trySafe(() => {
     if (!existsSync(OCTOCODE_DIR)) {
       mkdirSync(OCTOCODE_DIR, { recursive: true, mode: 0o700 });
     }
@@ -41,9 +46,8 @@ function saveConfig(config: OctocodeConfig): void {
       encoding: 'utf-8',
       mode: 0o600,
     });
-  } catch {
-    void 0;
-  }
+    return true;
+  }, false);
 }
 
 export function setCustomSkillsDestDir(path: string | null): void {

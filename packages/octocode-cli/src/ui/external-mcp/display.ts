@@ -53,7 +53,7 @@ export function printInstallPreview(
   console.log(c('blue', ' └' + '─'.repeat(60) + '┘'));
   console.log();
 
-  const mergedEnv = {
+  const mergedEnv: Record<string, string> = {
     ...(mcp.installConfig.env || {}),
     ...envValues,
   };

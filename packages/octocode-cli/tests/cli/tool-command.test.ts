@@ -329,6 +329,70 @@ describe('toolCommand', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('schema validation failure should show error', async () => {
+    const { toolCommand } = await import('../../src/cli/tool-command.js');
+
+    await toolCommand.handler!({
+      command: 'tool',
+      args: ['localSearchCode', '{"path":".","pattern":999}'],
+      options: {
+        tool: 'localSearchCode',
+      },
+    });
+
+    expect(publicMocks.localSearchCode).not.toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Tool input does not match the expected schema.')
+    );
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('pattern:')
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('tool execution throwing should show error and return false', async () => {
+    const err = new Error('Ripgrep launcher failed.');
+    publicMocks.localSearchCode.mockRejectedValueOnce(err);
+
+    const { executeToolCommand, toolCommand } =
+      await import('../../src/cli/tool-command.js');
+
+    const ok = await executeToolCommand({
+      command: 'tool',
+      args: ['localSearchCode', '{"path":".","pattern":"runCLI"}'],
+      options: {
+        tool: 'localSearchCode',
+      },
+    });
+
+    expect(ok).toBe(false);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Ripgrep launcher failed.')
+    );
+
+    process.exitCode = undefined;
+    consoleSpy.mockClear();
+
+    publicMocks.localSearchCode.mockRejectedValueOnce(err);
+
+    await toolCommand.handler!({
+      command: 'tool',
+      args: ['localSearchCode', '{"path":".","pattern":"runCLI"}'],
+      options: {
+        tool: 'localSearchCode',
+      },
+    });
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Ripgrep launcher failed.')
+    );
+    expect(process.exitCode).toBe(1);
+
+    vi.mocked(publicMocks.localSearchCode).mockResolvedValue({
+      content: [{ type: 'text', text: 'tool output' }],
+    });
+  });
+
   it('builds tools context from MCP instructions and tool schemas', async () => {
     const { getToolsContextString } =
       await import('../../src/cli/tool-command.js');

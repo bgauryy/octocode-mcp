@@ -83,6 +83,8 @@ const TOOL_RUNTIME_OPTION_KEYS = new Set([
 const CANONICAL_TOOL_USAGE =
   "octocode-cli --tool <toolName> --queries '<json-stringified-input>'";
 
+/** Wraps a typed executor into an untyped ToolExecutor.
+ * SAFETY: callers MUST validate via tool.schema.safeParse() before invoking. */
 function wrapExecutor<TInput>(
   fn: (input: TInput) => Promise<ToolResult>
 ): ToolExecutor {
