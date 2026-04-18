@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "$0")" && pwd)
-BENCH=/tmp/bench-r2-autoresearch
+BENCH=/tmp/bench-r245-autoresearch
 RUNS="$BENCH/runs"
 PROMPTS=/tmp/bench-r1-r5/prompts.sh
 GT=/tmp/bench-r1-r5/ground-truth/ground-truth.json
@@ -36,6 +36,8 @@ run_cli_trial() {
   case "$task" in
     R2) prompt="$R2_PROMPT" ;;
     R3) prompt="$R3_PROMPT" ;;
+    R4) prompt="$R4_PROMPT" ;;
+    R5) prompt="$R5_PROMPT" ;;
     *) echo "bad task: $task" >&2; return 2 ;;
   esac
 
@@ -89,8 +91,10 @@ PY
   echo "trial task=$task rep=$trial rc=$rc wall=${wall}s" >&2
 }
 
-# Cheap R2-focused micro-harness: one target run plus one guardrail run.
+# Broader subset revalidation: target tasks plus one guardrail run.
 run_cli_trial R2 1
+run_cli_trial R4 1
+run_cli_trial R5 1
 run_cli_trial R3 1
 
 python3 - <<'PY'
@@ -102,9 +106,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-RUNS = Path('/tmp/bench-r2-autoresearch/runs')
+RUNS = Path('/tmp/bench-r245-autoresearch/runs')
 GT = json.loads(Path('/tmp/bench-r1-r5/ground-truth/ground-truth.json').read_text())
-TASKS = ['R2']
+TASKS = ['R2', 'R4', 'R5']
 GUARD = 'R3'
 TEST_RE = re.compile(GT['R2']['test_path_regex'])
 
@@ -343,13 +347,19 @@ def total_passes() -> int:
 
 
 r2 = median_wall('R2')
+r4 = median_wall('R4')
+r5 = median_wall('R5')
 r3 = median_wall('R3')
 passes = total_passes()
 target_passes = sum(1 for r in records if r['task'] in TASKS and r['pass'])
 avg_turns = statistics.mean(r['turns'] for r in records) if records else 0.0
 eff = statistics.mean(r['eff_cost'] for r in records) if records else 0.0
+total = r2 + r4 + r5
 
+print(f'METRIC total_s={total:.3f}')
 print(f'METRIC r2_s={r2:.3f}')
+print(f'METRIC r4_s={r4:.3f}')
+print(f'METRIC r5_s={r5:.3f}')
 print(f'METRIC r3_s={r3:.3f}')
 print(f'METRIC passes={passes}')
 print(f'METRIC target_passes={target_passes}')

@@ -1,15 +1,16 @@
 # Autoresearch: reduce octocode-cli skill benchmark gaps on R2/R4/R5
 
 ## Objective
-Current segment: reduce end-to-end wall time for the CLI+skill variant on **R2 only** (library usage search), using a cheaper micro-harness for fast iteration.
+Current segment: revalidate promising R2-focused improvements against the broader CLI+skill subset benchmark covering R2 (library usage search), R4 (PR archaeology), and R5 (comparative research).
 
-We are optimizing the real `claude -p` benchmark shape, not a synthetic local microbenchmark. The likely bottleneck is excess agent turns caused by weak skill guidance and repeated shell/schema probing, not raw CLI execution speed alone. Once a promising R2 change is found, it must later be revalidated against the broader R2/R4/R5 subset before treating it as the new overall best.
+We are optimizing the real `claude -p` benchmark shape, not a synthetic local microbenchmark. The likely bottleneck is excess agent turns caused by weak skill guidance and repeated shell/schema probing, not raw CLI execution speed alone. The latest promising candidate came from the R2-only micro-harness and now needs broader confirmation.
 
 ## Metrics
-- **Primary**: `r2_s` (s, lower is better) — sampled wall time for the R2 task in the targeted CLI-only micro-harness.
+- **Primary**: `total_s` (s, lower is better) — sum of sampled wall times for R2 + R4 + R5 in the targeted CLI-only subset benchmark.
+- **Secondary**: `r2_s`, `r4_s`, `r5_s` — sampled per-task wall times for the three target tasks.
 - **Secondary**: `r3_s` — guardrail task where CLI already wins; should not regress badly.
 - **Secondary**: `passes` — total passing sampled runs.
-- **Secondary**: `target_passes` — passing R2 runs; must stay at full credit.
+- **Secondary**: `target_passes` — passing target-task runs; must stay at full credit.
 - **Secondary**: `avg_turns` — average `claude -p` turn count across the sampled runs.
 - **Secondary**: `eff_cost` — token-cost proxy from the benchmark result envelope.
 
@@ -18,8 +19,8 @@ We are optimizing the real `claude -p` benchmark shape, not a synthetic local mi
 
 The script:
 1. rebuilds `packages/octocode-cli` in dev mode,
-2. creates a fresh benchmark wrapper pointing at the current build,
-3. runs a targeted CLI-only micro-harness with one sampled `R2` run plus one sampled `R3` guardrail run using the current `skills/octocode-cli/SKILL.md`,
+2. creates fresh benchmark wrappers pointing at the current build,
+3. runs a targeted CLI-only subset with one sampled run each of `R2`, `R4`, `R5`, plus one sampled `R3` guardrail run using the current `skills/octocode-cli/SKILL.md`,
 4. scores each run against the pinned ground truth from `/tmp/bench-r1-r5/ground-truth/ground-truth.json`,
 5. prints `METRIC ...` lines.
 
