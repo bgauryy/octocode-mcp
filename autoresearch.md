@@ -51,4 +51,7 @@ The script:
 - Representative R2 loss: CLI used 18 CLI invocations in `cli-R2-t1.jsonl` (6 `search-code`, 11 `get-file`, 1 `view-structure`) while MCP solved the same task in 2 real octocode calls (`mcp-R2-t1.jsonl`).
 - Representative R3 win: CLI solved `R3-t1` in 2 CLI invocations (`view-structure`, `get-file`) while MCP used 3 real octocode calls plus tool discovery.
 - Strong hypothesis: the skill is not concrete enough about the JSON envelope, batching via stdin, and PR archaeology recipes, so the agent wastes turns probing `jq 'keys'`, re-reading the same file, and escaping to `gh`.
-- First experiments should target `skills/octocode-cli/SKILL.md` before changing CLI code.
+- Baseline targeted benchmark (1 sampled run each of R2/R4/R5 + R3 guardrail): `total_s=370` with target tasks passing.
+- **Current best (kept):** skill-only changes in `skills/octocode-cli/SKILL.md` that added explicit jq envelope paths, discouraged schema-probe reruns, discouraged `gh` fallback, and added concrete R2/R4/R5 recipes. Result: `total_s=253` (`r2=196`, `r4=26`, `r5=31`, avg turns `11.5`). Commit: `ee7aa07`.
+- Narrower follow-up edits aimed only at R2 (budget rules, line-number caveats, stronger anti-detour wording) either regressed the total metric or caused R2/R5 timeouts. Those variants are not worth reviving as-written.
+- Important failure mode from transcript inspection: once the model assumes `search-code` exposes line numbers, it abandons octocode-cli and spirals into `gh`/curl/helper-server detours. A future fix likely needs either a cleaner CLI affordance or a more robust but non-overconstraining skill recipe.

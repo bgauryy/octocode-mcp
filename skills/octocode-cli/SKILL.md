@@ -5,6 +5,8 @@ description: Use `octocode-cli` subcommands to execute Octocode MCP tools from a
 
 # Octocode CLI — Agent Playbook
 
+This skill is self-contained for Octocode GitHub/package research. Do not invoke `Skill(octocode-research)` or bootstrap its helper server unless `octocode-cli` itself has already failed.
+
 Six subcommands, one tool each. Pick by task shape. Always add `--json` and pipe to `jq`.
 
 ## Task → Command
