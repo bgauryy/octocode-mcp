@@ -1,16 +1,15 @@
 # Autoresearch: reduce octocode-cli skill benchmark gaps on R2/R4/R5
 
 ## Objective
-Current segment: revalidate promising R2-focused improvements against the broader CLI+skill subset benchmark covering R2 (library usage search), R4 (PR archaeology), and R5 (comparative research).
+Current segment: reduce variance and wall time on **R4 only** (PR archaeology) using a cheaper CLI-only micro-harness.
 
-We are optimizing the real `claude -p` benchmark shape, not a synthetic local microbenchmark. The likely bottleneck is excess agent turns caused by weak skill guidance and repeated shell/schema probing, not raw CLI execution speed alone. The latest promising candidate came from the R2-only micro-harness and now needs broader confirmation.
+We are optimizing the real `claude -p` benchmark shape, not a synthetic local microbenchmark. The largest confirmed bottleneck (R2 line-number confusion) is already fixed. The remaining instability is concentrated in R4, where the agent sometimes retries many alternate `search-prs` queries before answering. This segment should find an R4-specific improvement, then revalidate it later against the broader R2/R4/R5 subset.
 
 ## Metrics
-- **Primary**: `total_s` (s, lower is better) — sum of sampled wall times for R2 + R4 + R5 in the targeted CLI-only subset benchmark.
-- **Secondary**: `r2_s`, `r4_s`, `r5_s` — sampled per-task wall times for the three target tasks.
+- **Primary**: `r4_s` (s, lower is better) — sampled wall time for the R4 task in the targeted CLI-only micro-harness.
 - **Secondary**: `r3_s` — guardrail task where CLI already wins; should not regress badly.
 - **Secondary**: `passes` — total passing sampled runs.
-- **Secondary**: `target_passes` — passing target-task runs; must stay at full credit.
+- **Secondary**: `target_passes` — passing R4 runs; must stay at full credit.
 - **Secondary**: `avg_turns` — average `claude -p` turn count across the sampled runs.
 - **Secondary**: `eff_cost` — token-cost proxy from the benchmark result envelope.
 
@@ -20,7 +19,7 @@ We are optimizing the real `claude -p` benchmark shape, not a synthetic local mi
 The script:
 1. rebuilds `packages/octocode-cli` in dev mode,
 2. creates fresh benchmark wrappers pointing at the current build,
-3. runs a targeted CLI-only subset with one sampled run each of `R2`, `R4`, `R5`, plus one sampled `R3` guardrail run using the current `skills/octocode-cli/SKILL.md`,
+3. runs a targeted CLI-only micro-harness with one sampled `R4` run plus one sampled `R3` guardrail run using the current `skills/octocode-cli/SKILL.md`,
 4. scores each run against the pinned ground truth from `/tmp/bench-r1-r5/ground-truth/ground-truth.json`,
 5. prints `METRIC ...` lines.
 
@@ -58,5 +57,10 @@ The script:
 - A minimal top-level body note that the skill is self-contained and should not invoke `Skill(octocode-research)` unless `octocode-cli` already failed produced the best result so far: `total_s=156` (`r2=70`, `r4=47`, `r5=39`, `r3=66`, avg turns `10.25`). Commit: `b107070`.
 - Follow-up attempts to strengthen that instruction (numbered core rule, frontmatter-only placement) both regressed badly. The winning version is specifically the light body-level note.
 - Combining the self-contained note with extra line-number clarifications/path-only examples improved some bad samples but still did not beat the best retained branch.
-- A tiny CLI help/spec wording experiment in `agent-command-specs.ts` timed out on the full harness, so that path should only be revisited under a cheaper R2-specific micro-harness.
-- Important failure mode from transcript inspection: once the model assumes `search-code` exposes line numbers, it abandons octocode-cli and spirals into `gh`/curl/helper-server detours. A future fix likely needs either a cleaner CLI affordance or a more robust but non-overconstraining skill recipe.
+- A tiny CLI help/spec wording experiment in `agent-command-specs.ts` timed out on the full harness, so that path should only be revisited under a cheaper micro-harness.
+- R2-only micro-harness (plus R3 guardrail) was created to test targeted fixes cheaply. Its first valid baseline was very slow (`r2_s=464`) even on the then-best branch, confirming room for large R2-specific wins.
+- **Major win:** additive CLI ergonomics change in `packages/octocode-cli/src/cli/tool-command.ts` now augments `githubGetFileContent` JSON output with `path`, `filePath`, and exact `matchLine` when `matchString` is used. The skill recipe was updated to use `matchLine`.
+- That change collapsed the R2 micro-harness from `r2_s=464` to `r2_s=42`, then generalized on the broader subset to a new best sampled `total_s=82` (`r2=38`, `r4=21`, `r5=23`). Commit: `342dd98`.
+- A follow-up `search-prs --path-prefix` client-side filter looked directionally useful but did not beat the 82s full-subset best on a noisy sample; it is still the most concrete R4-specific idea and should be evaluated under an R4-only micro-harness first.
+- Important failure mode from transcript inspection: once the model assumes `search-code` or `get-file --match-string` lacks an exact line field, it spirals into retries and external fallbacks. The `matchLine` affordance appears to be the right general fix for that class of failure.
+- Latest retained best on the broader subset is commit `342dd98` with sampled `total_s=82` (`r2=38`, `r4=21`, `r5=23`). Any R4-specific win from this segment must eventually be revalidated against that broader subset before being considered the new overall best.

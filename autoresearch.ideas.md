@@ -1,5 +1,5 @@
 # Deferred autoresearch ideas
 
-- Build a dedicated **R2-only** micro-harness (new experiment target/config) so high-variance ideas can be tested cheaply before revalidating against the full R2/R4/R5 subset.
-- Add a tiny CLI affordance for research agents to get exact match line numbers directly from `search-code` results, so R2-style tasks do not have to infer line numbers from snippets and then fall back to `gh`/curl.
-- If revisiting CLI wording/help, do it only inside the R2 micro-harness first; the full subset is too expensive and noisy for blind help-text experiments.
+- Build a dedicated **R4-only** micro-harness if we want to keep working after the `matchLine` win; the remaining variance is now concentrated in PR archaeology rather than library-usage search.
+- Revisit a `search-prs --path-prefix` client-side filter only inside that R4 micro-harness. It seems directionally useful but was too noisy to justify on the full subset.
+- If more confidence is needed on the current best (`342dd98`), create an explicit rerun harness with a longer outer timeout rather than relying on ad-hoc full-subset reruns that can stall mid-batch.
