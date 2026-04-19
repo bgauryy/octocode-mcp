@@ -66,6 +66,29 @@ function buildQueryFromFlags(
   return query;
 }
 
+function applyAgentQueryDefaults(
+  spec: AgentCommandSpec,
+  options: Record<string, string | boolean>,
+  query: Record<string, unknown>
+): Record<string, unknown> {
+  if (
+    spec.name === 'get-file' &&
+    typeof query.matchString === 'string' &&
+    query.matchContextLines === undefined &&
+    query.startLine === undefined &&
+    query.endLine === undefined &&
+    query.fullContent !== true &&
+    options['match-context-lines'] === undefined
+  ) {
+    return {
+      ...query,
+      matchContextLines: 2,
+    };
+  }
+
+  return query;
+}
+
 function validateRequiredFlags(
   spec: AgentCommandSpec,
   options: Record<string, string | boolean>
@@ -143,7 +166,11 @@ async function runAgentSubcommand(
 
     let query: Record<string, unknown>;
     try {
-      query = buildQueryFromFlags(spec, args.options);
+      query = applyAgentQueryDefaults(
+        spec,
+        args.options,
+        buildQueryFromFlags(spec, args.options)
+      );
     } catch (err) {
       printAgentError(
         err instanceof Error ? err.message : 'Invalid flag value'
