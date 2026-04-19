@@ -106,7 +106,7 @@ octocode-cli search-prs --owner microsoft --repo TypeScript \
         | {prNumber: .number, title, mergedAt, changedFile: (.fileChanges[] | select(.path | startswith("src/compiler/")) | .path)}'
 ```
 
-If this returns usable PRs, answer from it. Do not pivot to `gh pr list` / `gh pr view` just to restate the same data.
+If this returns usable PRs, answer from it. For merged PR history, the filtered results are already newest-first by `mergedAt`, and `search-prs` only returns up to 10 per call — do not burn turns rerunning with bigger `--limit` values or `jq '.'` / `jq 'keys'` just to inspect shape. Do not pivot to `gh pr list` / `gh pr view` just to restate the same data.
 
 ### Comparative research (R5 shape)
 
