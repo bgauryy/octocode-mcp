@@ -1,14 +1,12 @@
 # Autoresearch: reduce octocode-cli skill benchmark gaps on R2/R4/R5
 
 ## Objective
-Current segment: reduce variance and wall time on **R4 only** (PR archaeology) using a cheaper CLI-only micro-harness.
+Current segment: revalidate the latest R4-focused improvement against the broader CLI+skill subset benchmark covering R2, R4, and R5.
 
-We are optimizing the real `claude -p` benchmark shape, not a synthetic local microbenchmark. The largest confirmed bottleneck (R2 line-number confusion) is already fixed. The remaining instability is concentrated in R4, where the agent sometimes retries many alternate `search-prs` queries before answering. This segment should find an R4-specific improvement, then revalidate it later against the broader R2/R4/R5 subset.
-
-Because single sampled R4 runs varied roughly from 35s to 74s on the same code, the micro-harness now uses **two R4 samples per experiment and reports their median**. This is not a benchmark change in behavior, just a more stable measurement of the same task.
+We are optimizing the real `claude -p` benchmark shape, not a synthetic local microbenchmark. The largest confirmed bottleneck (R2 line-number confusion) is already fixed, and a new R4-specific improvement now exists from the micro-harness: path-aware client-side PR filtering when the agent issues a path-like query such as `src/compiler`. This segment checks whether that targeted R4 win survives the broader workload without hurting R2/R5.
 
 ## Metrics
-- **Primary**: `r4_s` (s, lower is better) — median wall time of two sampled R4 runs in the targeted CLI-only micro-harness.
+- **Primary**: `total_s` (s, lower is better) — sum of sampled wall times for R2 + R4 + R5 in the targeted CLI-only subset benchmark.
 - **Secondary**: `r3_s` — guardrail task where CLI already wins; should not regress badly.
 - **Secondary**: `passes` — total passing sampled runs.
 - **Secondary**: `target_passes` — passing R4 runs; must stay at full credit.
@@ -21,7 +19,7 @@ Because single sampled R4 runs varied roughly from 35s to 74s on the same code, 
 The script:
 1. rebuilds `packages/octocode-cli` in dev mode,
 2. creates fresh benchmark wrappers pointing at the current build,
-3. runs a targeted CLI-only micro-harness with two sampled `R4` runs plus one sampled `R3` guardrail run using the current `skills/octocode-cli/SKILL.md`,
+3. runs a targeted CLI-only subset with one sampled run each of `R2`, `R4`, `R5`, plus one sampled `R3` guardrail run using the current `skills/octocode-cli/SKILL.md`,
 4. scores each run against the pinned ground truth from `/tmp/bench-r1-r5/ground-truth/ground-truth.json`,
 5. prints `METRIC ...` lines.
 
@@ -63,6 +61,8 @@ The script:
 - R2-only micro-harness (plus R3 guardrail) was created to test targeted fixes cheaply. Its first valid baseline was very slow (`r2_s=464`) even on the then-best branch, confirming room for large R2-specific wins.
 - **Major win:** additive CLI ergonomics change in `packages/octocode-cli/src/cli/tool-command.ts` now augments `githubGetFileContent` JSON output with `path`, `filePath`, and exact `matchLine` when `matchString` is used. The skill recipe was updated to use `matchLine`.
 - That change collapsed the R2 micro-harness from `r2_s=464` to `r2_s=42`, then generalized on the broader subset to a new best sampled `total_s=82` (`r2=38`, `r4=21`, `r5=23`). Commit: `342dd98`.
-- A follow-up `search-prs --path-prefix` client-side filter looked directionally useful but did not beat the 82s full-subset best on a noisy sample; it is still the most concrete R4-specific idea and should be evaluated under an R4-only micro-harness first.
+- A follow-up `search-prs --path-prefix` client-side filter looked directionally useful but did not beat the 82s full-subset best on a noisy sample; that exact flag-based idea is now stale.
 - Important failure mode from transcript inspection: once the model assumes `search-code` or `get-file --match-string` lacks an exact line field, it spirals into retries and external fallbacks. The `matchLine` affordance appears to be the right general fix for that class of failure.
-- Latest retained best on the broader subset is commit `342dd98` with sampled `total_s=82` (`r2=38`, `r4=21`, `r5=23`). Any R4-specific win from this segment must eventually be revalidated against that broader subset before being considered the new overall best.
+- Latest retained best on the broader subset before the current R4 experiment was commit `342dd98` with sampled `total_s=82` (`r2=38`, `r4=21`, `r5=23`).
+- R4-only micro-harness was upgraded to a 2-sample median because single-run R4 variance was too high. Under that harness, current-best branch baseline was `r4_s=77.5` and a new structural change in `search-prs` lowered it to `r4_s=67`.
+- The exact stale idea was a new `--path-prefix` flag; that did not win. The promising replacement is subtler: when `search-prs` receives a path-like `query` (for example `src/compiler`), the CLI now filters returned PRs down to those whose `fileChanges` actually match that path. This should now be revalidated on the broader subset.
