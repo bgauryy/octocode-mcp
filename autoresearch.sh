@@ -89,8 +89,9 @@ PY
   echo "trial task=$task rep=$trial rc=$rc wall=${wall}s" >&2
 }
 
-# Cheap R4-focused micro-harness: one target run plus one guardrail run.
+# Cheap but less noisy R4-focused micro-harness: two target runs plus one guardrail run.
 run_cli_trial R4 1
+run_cli_trial R4 2
 run_cli_trial R3 1
 
 python3 - <<'PY'

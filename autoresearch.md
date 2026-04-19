@@ -5,8 +5,10 @@ Current segment: reduce variance and wall time on **R4 only** (PR archaeology) u
 
 We are optimizing the real `claude -p` benchmark shape, not a synthetic local microbenchmark. The largest confirmed bottleneck (R2 line-number confusion) is already fixed. The remaining instability is concentrated in R4, where the agent sometimes retries many alternate `search-prs` queries before answering. This segment should find an R4-specific improvement, then revalidate it later against the broader R2/R4/R5 subset.
 
+Because single sampled R4 runs varied roughly from 35s to 74s on the same code, the micro-harness now uses **two R4 samples per experiment and reports their median**. This is not a benchmark change in behavior, just a more stable measurement of the same task.
+
 ## Metrics
-- **Primary**: `r4_s` (s, lower is better) — sampled wall time for the R4 task in the targeted CLI-only micro-harness.
+- **Primary**: `r4_s` (s, lower is better) — median wall time of two sampled R4 runs in the targeted CLI-only micro-harness.
 - **Secondary**: `r3_s` — guardrail task where CLI already wins; should not regress badly.
 - **Secondary**: `passes` — total passing sampled runs.
 - **Secondary**: `target_passes` — passing R4 runs; must stay at full credit.
@@ -19,7 +21,7 @@ We are optimizing the real `claude -p` benchmark shape, not a synthetic local mi
 The script:
 1. rebuilds `packages/octocode-cli` in dev mode,
 2. creates fresh benchmark wrappers pointing at the current build,
-3. runs a targeted CLI-only micro-harness with one sampled `R4` run plus one sampled `R3` guardrail run using the current `skills/octocode-cli/SKILL.md`,
+3. runs a targeted CLI-only micro-harness with two sampled `R4` runs plus one sampled `R3` guardrail run using the current `skills/octocode-cli/SKILL.md`,
 4. scores each run against the pinned ground truth from `/tmp/bench-r1-r5/ground-truth/ground-truth.json`,
 5. prints `METRIC ...` lines.
 
