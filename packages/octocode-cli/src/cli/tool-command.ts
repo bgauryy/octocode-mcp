@@ -670,10 +670,6 @@ function augmentStructuredContent(
   queries: Array<Record<string, unknown>>,
   result: ToolResult
 ): ToolResult {
-  if (toolName !== 'githubGetFileContent') {
-    return result;
-  }
-
   if (!isRecord(result.structuredContent)) {
     return result;
   }
@@ -693,43 +689,70 @@ function augmentStructuredContent(
       return item;
     }
 
-    const path = typeof query.path === 'string' ? query.path : undefined;
-    const owner = typeof query.owner === 'string' ? query.owner : undefined;
-    const repo = typeof query.repo === 'string' ? query.repo : undefined;
-    const matchString =
-      typeof query.matchString === 'string' ? query.matchString : undefined;
+    if (toolName === 'githubGetFileContent') {
+      const path = typeof query.path === 'string' ? query.path : undefined;
+      const owner = typeof query.owner === 'string' ? query.owner : undefined;
+      const repo = typeof query.repo === 'string' ? query.repo : undefined;
+      const matchString =
+        typeof query.matchString === 'string' ? query.matchString : undefined;
 
-    let matchLine: number | undefined;
-    if (
-      matchString &&
-      typeof item.data.content === 'string' &&
-      typeof item.data.startLine === 'number'
-    ) {
-      const matchOffset = item.data.content
-        .split('\n')
-        .findIndex(line => line.includes(matchString));
-      if (matchOffset >= 0) {
-        matchLine = item.data.startLine + matchOffset;
+      let matchLine: number | undefined;
+      if (
+        matchString &&
+        typeof item.data.content === 'string' &&
+        typeof item.data.startLine === 'number'
+      ) {
+        const matchOffset = item.data.content
+          .split('\n')
+          .findIndex(line => line.includes(matchString));
+        if (matchOffset >= 0) {
+          matchLine = item.data.startLine + matchOffset;
+        }
       }
+
+      if (!path && !owner && !repo && matchLine === undefined) {
+        return item;
+      }
+
+      return {
+        ...item,
+        data: {
+          ...item.data,
+          ...(path && item.data.path === undefined ? { path } : {}),
+          ...(path && item.data.filePath === undefined ? { filePath: path } : {}),
+          ...(owner && item.data.owner === undefined ? { owner } : {}),
+          ...(repo && item.data.repo === undefined ? { repo } : {}),
+          ...(matchLine !== undefined && item.data.matchLine === undefined
+            ? { matchLine }
+            : {}),
+        },
+      };
     }
 
-    if (!path && !owner && !repo && matchLine === undefined) {
-      return item;
+    if (
+      toolName === 'githubSearchPullRequests' &&
+      query.merged === true &&
+      Array.isArray(item.data.pull_requests)
+    ) {
+      const pullRequests = item.data.pull_requests
+        .filter(pr => isRecord(pr))
+        .slice()
+        .sort((a, b) => {
+          const aMergedAt = typeof a.mergedAt === 'string' ? a.mergedAt : '';
+          const bMergedAt = typeof b.mergedAt === 'string' ? b.mergedAt : '';
+          return bMergedAt.localeCompare(aMergedAt);
+        });
+
+      return {
+        ...item,
+        data: {
+          ...item.data,
+          pull_requests: pullRequests,
+        },
+      };
     }
 
-    return {
-      ...item,
-      data: {
-        ...item.data,
-        ...(path && item.data.path === undefined ? { path } : {}),
-        ...(path && item.data.filePath === undefined ? { filePath: path } : {}),
-        ...(owner && item.data.owner === undefined ? { owner } : {}),
-        ...(repo && item.data.repo === undefined ? { repo } : {}),
-        ...(matchLine !== undefined && item.data.matchLine === undefined
-          ? { matchLine }
-          : {}),
-      },
-    };
+    return item;
   });
 
   return {
