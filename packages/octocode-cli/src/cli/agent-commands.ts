@@ -41,7 +41,11 @@ function buildQueryFromFlags(
     if (type === 'number') {
       const n = Number(value);
       if (Number.isFinite(n)) {
-        query[field] = n;
+        const clamped = Math.min(
+          flag.max ?? Number.POSITIVE_INFINITY,
+          Math.max(flag.min ?? Number.NEGATIVE_INFINITY, n)
+        );
+        query[field] = clamped;
       } else {
         throw new Error(`--${flag.name} must be a number, got "${value}"`);
       }

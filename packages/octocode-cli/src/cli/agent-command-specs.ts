@@ -10,6 +10,8 @@ export interface FlagDef {
   type?: FlagType;
   field?: string;
   default?: string | number | boolean;
+  min?: number;
+  max?: number;
 }
 
 export interface AgentCommandSpec {
@@ -166,7 +168,12 @@ export const AGENT_COMMAND_SPECS: AgentCommandSpec[] = [
         description: 'Sort by: created | updated | best-match',
       },
       { name: 'order', description: 'Sort order: asc | desc' },
-      { name: 'limit', description: 'Max results', type: 'number' },
+      {
+        name: 'limit',
+        description: 'Max results (agent subcommand caps to 10)',
+        type: 'number',
+        max: 10,
+      },
       { name: 'page', description: 'Page number', type: 'number' },
       {
         name: 'with-comments',

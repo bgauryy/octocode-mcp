@@ -66,4 +66,7 @@ The script:
 - Latest retained broader-subset best is now commit `d7b94f8` with sampled `total_s=82` (`r2=29`, `r4=29`, `r5=24`). This is the `matchLine` branch with the failed R4 filter explicitly reverted.
 - R4-only micro-harness was upgraded to a 2-sample median because single-run R4 variance was too high. Under that harness, current-best branch baseline was `r4_s=77.5`.
 - Two R4-specific ideas were tested: a new `--path-prefix` flag and a subtler path-aware client-side filter when `search-prs` received a path-like query. Both looked directionally useful in micro-harnesses but failed broader revalidation, so they are now archived.
-- Latest insight: the broader subset is still noisy enough that single-run keep/discard decisions are brittle. The next change should be harness-only: sample R2/R4/R5 twice and use medians before resuming product changes.
+- Latest insight: the broader subset was noisy enough that single-run keep/discard decisions were brittle, so the harness was upgraded to sample `R2`, `R4`, and `R5` twice and use medians before judging further changes.
+- Under that less noisy 2-sample broad harness, branch baseline on `d7b94f8` was `total_s=149` (`r2=40`, `r4=85.5`, `r5=23.5`).
+- **New broad-harness win:** additive CLI ergonomics change in `packages/octocode-cli/src/cli/tool-command.ts` now sorts merged `githubSearchPullRequests` results by `mergedAt` descending before printing JSON. This makes the most recent merged PRs surface earlier and reduced broad-harness `total_s` to `139.5` on the first sample, then to `107` on a rerun of the same code. Kept commit: `909bd2c`.
+- Current best code state is therefore `909bd2c`, which combines the earlier `matchLine` fix with merged-PR ordering for `search-prs`.
