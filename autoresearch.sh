@@ -91,10 +91,13 @@ PY
   echo "trial task=$task rep=$trial rc=$rc wall=${wall}s" >&2
 }
 
-# Broader subset revalidation: target tasks plus one guardrail run.
+# Less noisy broader subset: two target samples plus one guardrail run.
 run_cli_trial R2 1
 run_cli_trial R4 1
 run_cli_trial R5 1
+run_cli_trial R2 2
+run_cli_trial R4 2
+run_cli_trial R5 2
 run_cli_trial R3 1
 
 python3 - <<'PY'
