@@ -11,7 +11,10 @@ import {
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { SymbolResolver, SymbolResolutionError } from '../../lsp/resolver.js';
-import { isLanguageServerAvailable } from '../../lsp/manager.js';
+import {
+  isLanguageServerAvailable,
+  LSP_UNAVAILABLE_HINT,
+} from '../../lsp/manager.js';
 import type { CallHierarchyResult } from '../../lsp/types.js';
 import type { LSPCallHierarchyQuery } from '@octocodeai/octocode-core';
 import { ToolErrors } from '../../errors/errorFactories.js';
@@ -81,8 +84,12 @@ export async function processCallHierarchy(
     }
 
     const workspaceRoot = await resolveWorkspaceRootForFile(absolutePath);
+    const lspAvailable = await isLanguageServerAvailable(
+      absolutePath,
+      workspaceRoot
+    );
 
-    if (await isLanguageServerAvailable(absolutePath, workspaceRoot)) {
+    if (lspAvailable) {
       try {
         const result = await callHierarchyWithLSP(
           absolutePath,
@@ -105,12 +112,31 @@ export async function processCallHierarchy(
       resolvedSymbol.foundAtLine,
       resolver
     );
-    return applyCallHierarchyOutputLimit(patternResult, query);
+    return applyCallHierarchyOutputLimit(
+      withLspUnavailableHint(patternResult, lspAvailable),
+      query
+    );
   } catch (error) {
     return createErrorResult(error, query, {
       toolName: TOOL_NAME,
     }) as CallHierarchyResult;
   }
+}
+
+/**
+ * Prepend the shared LSP-unavailable hint when the result came from the
+ * pattern-matching fallback rather than a real language server. Without
+ * this, agents mistake partial text-based matches for semantic call graphs.
+ */
+function withLspUnavailableHint(
+  result: CallHierarchyResult,
+  lspAvailable: boolean
+): CallHierarchyResult {
+  if (lspAvailable) return result;
+  return {
+    ...result,
+    hints: [LSP_UNAVAILABLE_HINT, ...(result.hints || [])],
+  };
 }
 
 /**

@@ -6,6 +6,19 @@ node <SKILL_DIR>/scripts/run.js [flags]
 
 Output goes to `.octocode/scan/<timestamp>/` by default. Results are cached — subsequent runs skip unchanged files (~4x faster).
 
+## Invocation forms
+
+This skill is private (no `bin` entry) — **do not use `npx`**. `npx` applies only to the external tools in `externals.md`.
+
+| Form | Example | When |
+|---|---|---|
+| Absolute path | `node <SKILL_DIR>/scripts/run.js --scope=packages/my-pkg` | From any cwd (default) |
+| `yarn` alias — scanner | `cd <SKILL_DIR> && yarn analyze` / `analyze:full` / `analyze:graph` / `analyze:json` | Idiomatic shortcut |
+| `yarn` alias — AST | `cd <SKILL_DIR> && yarn search` / `search:json` / `search:presets` / `search:trees` / `search:trees:json` | AST scripts |
+| Raw node (cwd-local) | `cd <SKILL_DIR> && node scripts/run.js [flags]` | When the alias doesn't cover the flag set |
+
+`yarn` can be swapped for `npm run` or `pnpm run` — the skill's `package.json` defines the same script names.
+
 ---
 
 ## CLI Presets
