@@ -20,10 +20,10 @@
 ### Recommended: Octocode CLI
 
 ```bash
-npx octocode-cli
+npx octocode-cli install
 ```
 
-Interactive setup wizard with GitHub OAuth, MCP server installation, and skills marketplace.
+Interactive setup wizard with GitHub OAuth, MCP server installation, and skills marketplace. Pass `--ide <ide>` for non-interactive install (e.g. `npx octocode-cli install --ide cursor`).
 
 ### Alternative Methods
 
