@@ -40,7 +40,11 @@ class ScanBus extends EventEmitter {
 
 export const bus = new ScanBus();
 
+let consoleFeedbackAttached = false;
+
 export function attachConsoleFeedback(): void {
+  if (consoleFeedbackAttached) return;
+  consoleFeedbackAttached = true;
   bus.on('progress', (event: ProgressEvent) => {
     if (event.detail) {
       process.stderr.write(`[${event.phase}] ${event.message}: ${event.detail}\n`);
