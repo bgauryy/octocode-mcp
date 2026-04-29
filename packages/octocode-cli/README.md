@@ -20,7 +20,7 @@
 ## Quick Start
 
 ```bash
-npx octocode-cli                   # Interactive setup
+npx octocode-cli install           # Interactive setup
 octocode-cli install --ide cursor  # Non-interactive install
 octocode-cli auth                  # GitHub authentication
 ```
