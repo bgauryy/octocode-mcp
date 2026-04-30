@@ -6,6 +6,9 @@ import type { DirectoryEntry } from './structureFilters.js';
 
 export interface WalkStats {
   skipped: number;
+  permissionDenied: number;
+  /** Set when the root path itself could not be read (e.g. ENOENT, ENOTDIR). */
+  rootError?: { code: string; message: string };
 }
 
 interface WalkDirectoryOptions {
@@ -97,11 +100,35 @@ export async function walkDirectory(
             showDetails,
           });
         }
-      } catch {
+      } catch (err) {
         stats.skipped++;
+        if (
+          err &&
+          typeof err === 'object' &&
+          'code' in err &&
+          err.code === 'EACCES'
+        ) {
+          stats.permissionDenied++;
+        }
       }
     }
-  } catch {
-    stats.skipped++;
+  } catch (err) {
+    const code =
+      err && typeof err === 'object' && 'code' in err
+        ? String(err.code)
+        : 'UNKNOWN';
+    const message =
+      err instanceof Error ? err.message : 'Unknown error reading directory';
+
+    // Record root-level failure separately so callers can surface a clear error
+    // (e.g. ENOENT → "directory not found") rather than a generic skip warning.
+    if (depth === 0) {
+      stats.rootError = { code, message };
+    } else {
+      stats.skipped++;
+      if (code === 'EACCES') {
+        stats.permissionDenied++;
+      }
+    }
   }
 }

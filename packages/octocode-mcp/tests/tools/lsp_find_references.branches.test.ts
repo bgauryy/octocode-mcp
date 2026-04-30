@@ -38,6 +38,7 @@ vi.mock('../../src/lsp/resolver.js', () => {
 });
 
 vi.mock('../../src/lsp/manager.js', () => ({
+  LSP_UNAVAILABLE_HINT: 'LSP unavailable test',
   isLanguageServerAvailable: vi.fn().mockResolvedValue(false),
   createClient: vi.fn().mockResolvedValue(null),
 }));

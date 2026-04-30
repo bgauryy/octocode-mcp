@@ -9,7 +9,11 @@ import { dirname, resolve as resolvePath } from 'path';
 
 import type { LSPGotoDefinitionQuery } from '@octocodeai/octocode-core';
 import { SymbolResolver, SymbolResolutionError } from '../../lsp/resolver.js';
-import { createClient, isLanguageServerAvailable } from '../../lsp/manager.js';
+import {
+  createClient,
+  isLanguageServerAvailable,
+  LSP_UNAVAILABLE_HINT,
+} from '../../lsp/manager.js';
 import type {
   GotoDefinitionResult,
   CodeSnippet,
@@ -126,8 +130,12 @@ async function gotoDefinition(
     }
 
     const workspaceRoot = await resolveWorkspaceRootForFile(absolutePath);
+    const lspAvailable = await isLanguageServerAvailable(
+      absolutePath,
+      workspaceRoot
+    );
 
-    if (await isLanguageServerAvailable(absolutePath, workspaceRoot)) {
+    if (lspAvailable) {
       try {
         const result = await gotoDefinitionWithLSP(
           absolutePath,
@@ -136,20 +144,28 @@ async function gotoDefinition(
           query,
           content
         );
-        if (result) return applyGotoDefinitionOutputLimit(result, query);
+        if (result)
+          return applyGotoDefinitionOutputLimit(
+            { ...result, lspMode: 'semantic' },
+            query
+          );
       } catch {
         // LSP goto-definition failed; fall back to heuristic resolver below.
       }
     }
 
     return applyGotoDefinitionOutputLimit(
-      createFallbackResult(
-        query,
-        absolutePath,
-        content,
-        resolver,
-        resolvedSymbol
-      ),
+      {
+        ...createFallbackResult(
+          query,
+          absolutePath,
+          content,
+          resolver,
+          resolvedSymbol,
+          { lspUnavailable: !lspAvailable }
+        ),
+        lspMode: 'fallback',
+      },
       query
     );
   } catch (error) {
@@ -475,7 +491,8 @@ function createFallbackResult(
   absolutePath: string,
   content: string,
   resolver: SymbolResolver,
-  resolvedSymbol: { position: ExactPosition; foundAtLine: number }
+  resolvedSymbol: { position: ExactPosition; foundAtLine: number },
+  options: { lspUnavailable?: boolean } = {}
 ): GotoDefinitionResult {
   const contextLines = query.contextLines ?? 5;
   const context = resolver.extractContext(
@@ -508,6 +525,7 @@ function createFallbackResult(
     resolvedPosition: resolvedSymbol.position,
     searchRadius: 5,
     hints: [
+      options.lspUnavailable ? LSP_UNAVAILABLE_HINT : undefined,
       ...getHints(TOOL_NAME, 'hasResults'),
       'Each location = a definition site; use range.start.line+1 as lineHint for follow-up LSP calls',
       resolvedSymbol.foundAtLine !== query.lineHint

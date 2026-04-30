@@ -197,6 +197,22 @@ type LSPErrorType =
   | 'unknown';
 
 /**
+ * Source of a result's locations/calls.
+ *
+ * - `'semantic'`: derived from a real Language Server (cross-file refs,
+ *   import chasing, type-aware results).
+ * - `'fallback'`: derived from text/pattern matching only — caller MUST
+ *   treat results as best-effort and verify renamed/aliased usages
+ *   another way.
+ *
+ * This is the structured equivalent of `LSP_UNAVAILABLE_HINT`. It is a
+ * top-level field (not buried inside `hints[]`) so it survives
+ * char-budget pagination and lets agents branch on it without parsing
+ * hint strings.
+ */
+export type LspMode = 'semantic' | 'fallback';
+
+/**
  * Base LSP tool result
  */
 interface LSPToolResultBase {
@@ -208,6 +224,12 @@ interface LSPToolResultBase {
   errorType?: LSPErrorType;
   /** Hints for next steps */
   hints?: string[];
+  /**
+   * Whether locations/calls came from semantic LSP analysis or from
+   * pattern-matching fallback. Absent on error/empty results that did
+   * not consult either source.
+   */
+  lspMode?: LspMode;
   /** Index signature for ProcessedBulkResult compatibility */
   [key: string]: unknown;
 }

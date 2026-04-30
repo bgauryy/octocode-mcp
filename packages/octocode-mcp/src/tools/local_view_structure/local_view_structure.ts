@@ -194,7 +194,7 @@ async function viewStructureRecursive(
 
   const maxEntries = query.limit ? query.limit * 2 : 10000;
 
-  const walkStats: WalkStats = { skipped: 0 };
+  const walkStats: WalkStats = { skipped: 0, permissionDenied: 0 };
 
   await walkDirectory({
     basePath,
@@ -208,6 +208,32 @@ async function viewStructureRecursive(
     stats: walkStats,
     showDetails: query.details ?? false,
   });
+
+  // Surface a clear error when the root path itself failed to open. This
+  // replaces the misleading "N entries skipped due to permission errors"
+  // warning that previously appeared for ENOENT or ENOTDIR failures.
+  if (walkStats.rootError) {
+    const { code } = walkStats.rootError;
+    const isNotFound = code === 'ENOENT' || code === 'ENOTDIR';
+    const toolError = ToolErrors.pathValidationFailed(
+      basePath,
+      isNotFound
+        ? `Directory not found: ${basePath}`
+        : code === 'EACCES'
+          ? `Permission denied: ${basePath}`
+          : `Cannot access path: ${basePath}`
+    );
+    return createErrorResult(toolError, query, {
+      toolName: TOOL_NAMES.LOCAL_VIEW_STRUCTURE,
+      customHints: isNotFound
+        ? [
+            'Path does not exist or is not a directory',
+            'Verify the path using localFindFiles',
+            'To read a file, use localGetFileContent instead',
+          ]
+        : ['Check file/directory permissions'],
+    }) as LocalViewStructureToolResult;
+  }
 
   let filteredEntries = applyEntryFilters(entries, query);
 
@@ -281,9 +307,20 @@ async function viewStructureRecursive(
   const warnings: string[] = [];
 
   if (walkStats.skipped > 0) {
-    warnings.push(
-      `${walkStats.skipped} entries skipped due to permission errors`
-    );
+    const otherSkipped = walkStats.skipped - walkStats.permissionDenied;
+    if (walkStats.permissionDenied > 0 && otherSkipped > 0) {
+      warnings.push(
+        `${walkStats.skipped} entries skipped (${walkStats.permissionDenied} permission denied, ${otherSkipped} other errors)`
+      );
+    } else if (walkStats.permissionDenied > 0) {
+      warnings.push(
+        `${walkStats.permissionDenied} ${walkStats.permissionDenied === 1 ? 'entry' : 'entries'} skipped due to permission denied`
+      );
+    } else {
+      warnings.push(
+        `${walkStats.skipped} ${walkStats.skipped === 1 ? 'entry' : 'entries'} skipped due to access errors`
+      );
+    }
   }
 
   const status = totalEntries > 0 ? 'hasResults' : 'empty';

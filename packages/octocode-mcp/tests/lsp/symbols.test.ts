@@ -56,8 +56,28 @@ describe('LSP Symbol Kind Conversion', () => {
       expect(convertSymbolKind(99 as LSPSymbolKind)).toBe('unknown');
     });
 
-    it('should return "unknown" for File kind', () => {
-      expect(convertSymbolKind(LSPSymbolKind.File)).toBe('unknown');
+    it('should map Constructor to "method"', () => {
+      expect(convertSymbolKind(LSPSymbolKind.Constructor)).toBe('method');
+    });
+
+    it('should map Struct to "class"', () => {
+      expect(convertSymbolKind(LSPSymbolKind.Struct)).toBe('class');
+    });
+
+    it('should map Field to "property"', () => {
+      expect(convertSymbolKind(LSPSymbolKind.Field)).toBe('property');
+    });
+
+    it('should map EnumMember to "constant"', () => {
+      expect(convertSymbolKind(LSPSymbolKind.EnumMember)).toBe('constant');
+    });
+
+    it('should map Package to "module"', () => {
+      expect(convertSymbolKind(LSPSymbolKind.Package)).toBe('module');
+    });
+
+    it('should map File to "module"', () => {
+      expect(convertSymbolKind(LSPSymbolKind.File)).toBe('module');
     });
   });
 

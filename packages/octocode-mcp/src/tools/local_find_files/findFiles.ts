@@ -60,10 +60,36 @@ export async function findFiles(
       'coverage',
       'build',
       '.next',
+      '.nuxt',
+      '.svelte-kit',
+      '.turbo',
+      '.cache',
+      '.parcel-cache',
+      'out',
+      'target',
+      '.octocode',
+      '.cursor',
+      '.vscode',
+      '.idea',
+      '.claude',
+      '.context',
     ];
+    // Filter out any excludeDir entries that appear as path components in the
+    // search path itself. Without this, a search inside e.g. `.context/` would
+    // have every result pruned by the `*/.context/*` prune pattern because
+    // the full path of each result contains `/.context/`.
+    const rawExcludeDirs =
+      queryWithSanitizedPath.excludeDir ?? DEFAULT_EXCLUDE_DIRS;
+    const searchPathParts = new Set(
+      queryWithSanitizedPath.path.split('/').filter(Boolean)
+    );
+    const effectiveExcludeDirs = rawExcludeDirs.filter(
+      dir => !searchPathParts.has(dir)
+    );
+
     const queryWithDefaults = {
       ...queryWithSanitizedPath,
-      excludeDir: queryWithSanitizedPath.excludeDir ?? DEFAULT_EXCLUDE_DIRS,
+      excludeDir: effectiveExcludeDirs,
     };
 
     const builder = new FindCommandBuilder();
@@ -93,6 +119,8 @@ export async function findFiles(
       .map(line => line.trim());
 
     const maxFiles = query.limit || 1000;
+    const discoveredFileCount = filePaths.length;
+    const wasFileCapped = discoveredFileCount > maxFiles;
     filePaths = filePaths.slice(0, maxFiles);
 
     const files: LocalFindFilesEntry[] = await getFileDetails(
@@ -170,6 +198,11 @@ export async function findFiles(
           ? `Next: filePageNumber=${filePageNumber + 1}`
           : 'Final page',
         `Sorted by ${sortBy}${sortBy === 'modified' ? ' (most recent first)' : sortBy === 'size' ? ' (largest first)' : ''}`,
+        ...(wasFileCapped
+          ? [
+              `Results capped at ${maxFiles} of ${discoveredFileCount}. Narrow with name/type/time filters or increase limit to inspect more.`,
+            ]
+          : []),
         ...getHints(TOOL_NAMES.LOCAL_FIND_FILES, status, {
           fileCount: totalFiles,
           hasConfigFiles,

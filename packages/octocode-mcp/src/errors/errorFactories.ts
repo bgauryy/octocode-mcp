@@ -68,6 +68,13 @@ export const ToolErrors = {
       { path: filePath, sizeKB, limitKB }
     ),
 
+  binaryFileUnsupported: (filePath: string) =>
+    new ToolError(
+      LOCAL_TOOL_ERROR_CODES.BINARY_FILE_UNSUPPORTED,
+      `Binary file unsupported: ${redactPath(filePath)}`,
+      { path: filePath }
+    ),
+
   outputTooLarge: (size: number, limit: number) =>
     new ToolError(
       LOCAL_TOOL_ERROR_CODES.OUTPUT_TOO_LARGE,

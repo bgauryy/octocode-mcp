@@ -11,7 +11,10 @@ import {
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
 import { SymbolResolver, SymbolResolutionError } from '../../lsp/resolver.js';
-import { isLanguageServerAvailable } from '../../lsp/manager.js';
+import {
+  isLanguageServerAvailable,
+  LSP_UNAVAILABLE_HINT,
+} from '../../lsp/manager.js';
 import type { CallHierarchyResult } from '../../lsp/types.js';
 import type { LSPCallHierarchyQuery } from '@octocodeai/octocode-core';
 import { ToolErrors } from '../../errors/errorFactories.js';
@@ -81,8 +84,12 @@ export async function processCallHierarchy(
     }
 
     const workspaceRoot = await resolveWorkspaceRootForFile(absolutePath);
+    const lspAvailable = await isLanguageServerAvailable(
+      absolutePath,
+      workspaceRoot
+    );
 
-    if (await isLanguageServerAvailable(absolutePath, workspaceRoot)) {
+    if (lspAvailable) {
       try {
         const result = await callHierarchyWithLSP(
           absolutePath,
@@ -91,7 +98,11 @@ export async function processCallHierarchy(
           query,
           content
         );
-        if (result) return applyCallHierarchyOutputLimit(result, query);
+        if (result)
+          return applyCallHierarchyOutputLimit(
+            { ...result, lspMode: 'semantic' },
+            query
+          );
       } catch {
         // LSP call hierarchy failed; pattern-matching fallback still produces a result.
       }
@@ -105,12 +116,34 @@ export async function processCallHierarchy(
       resolvedSymbol.foundAtLine,
       resolver
     );
-    return applyCallHierarchyOutputLimit(patternResult, query);
+    return applyCallHierarchyOutputLimit(
+      {
+        ...withLspUnavailableHint(patternResult, lspAvailable),
+        lspMode: 'fallback',
+      },
+      query
+    );
   } catch (error) {
     return createErrorResult(error, query, {
       toolName: TOOL_NAME,
     }) as CallHierarchyResult;
   }
+}
+
+/**
+ * Prepend the shared LSP-unavailable hint when the result came from the
+ * pattern-matching fallback rather than a real language server. Without
+ * this, agents mistake partial text-based matches for semantic call graphs.
+ */
+function withLspUnavailableHint(
+  result: CallHierarchyResult,
+  lspAvailable: boolean
+): CallHierarchyResult {
+  if (lspAvailable) return result;
+  return {
+    ...result,
+    hints: [LSP_UNAVAILABLE_HINT, ...(result.hints || [])],
+  };
 }
 
 /**
@@ -148,7 +181,14 @@ function applyCallHierarchyOutputLimit(
   const pagedData =
     pagedQueryResult.data as unknown as Partial<CallHierarchyResult>;
 
+  // Re-spread the original result.hints to make hint-preservation an explicit
+  // invariant. applyQueryOutputPagination today excludes 'hints' from
+  // structured pagination, so result.hints survives in pagedData.hints — but
+  // re-spreading guards against future paginator changes that might paginate
+  // hints, and aligns with applyGotoDefinitionOutputLimit's pattern. Set
+  // dedupes the outer hints with whatever pagedData.hints carries through.
   const combinedHints = [
+    ...(result.hints ?? []),
     ...((pagedData.hints as string[] | undefined) ?? []),
     ...sizeLimitResult.warnings,
     ...sizeLimitResult.paginationHints,
@@ -157,6 +197,10 @@ function applyCallHierarchyOutputLimit(
   return {
     ...result,
     ...pagedData,
+    // Pin lspMode from the pre-pagination result. pagedData may omit it
+    // if the JSON slice lands past the field, and a slice that explicitly
+    // serialised `lspMode` to undefined would otherwise erase the marker.
+    lspMode: result.lspMode ?? pagedData.lspMode,
     outputPagination: {
       charOffset: sizeLimitResult.pagination.charOffset!,
       charLength: sizeLimitResult.pagination.charLength!,

@@ -50,16 +50,39 @@ export function expectHasResults<TSchema extends BulkOutputSchema>(
 }
 
 export function expectHasResultsData<TSchema extends z.ZodType<object>>(
-  outputSchema: BulkOutputSchema,
+  _outputSchema: BulkOutputSchema,
   dataSchema: TSchema,
   result: CallToolResult
 ): z.infer<TSchema> {
-  const parsed = getSingleResult(outputSchema, result);
-  if (parsed.status !== 'hasResults') {
+  expect(result.structuredContent).toBeDefined();
+
+  // Skip strict validation of the outer envelope's `data` field. The
+  // upstream BulkToolOutputSchema embeds the (strict) tool-specific data
+  // schema directly, which would reject forward-compatible fields (e.g.
+  // lspMode) added on the result side ahead of an upstream
+  // @octocodeai/octocode-core schema release.
+  const envelope = result.structuredContent as {
+    results?: Array<{ id: string; status: BulkResultStatus; data: unknown }>;
+  };
+  expect(
+    envelope?.results,
+    'expected envelope.results to be present'
+  ).toBeDefined();
+  expect(envelope.results).toHaveLength(1);
+
+  const [singleResult] = envelope.results!;
+  expect(singleResult).toBeDefined();
+
+  if (singleResult!.status !== 'hasResults') {
     throw new Error(
-      `Expected hasResults but received:\n${JSON.stringify(parsed, null, 2)}`
+      `Expected hasResults but received:\n${JSON.stringify(singleResult, null, 2)}`
     );
   }
 
-  return dataSchema.parse(parsed.data);
+  // Loosen the data schema as well so unknown fields pass through.
+  const looseSchema =
+    typeof (dataSchema as { loose?: unknown }).loose === 'function'
+      ? (dataSchema as unknown as { loose: () => TSchema }).loose()
+      : dataSchema;
+  return looseSchema.parse(singleResult!.data);
 }

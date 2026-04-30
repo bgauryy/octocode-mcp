@@ -24,7 +24,11 @@ export function convertSymbolKind(kind: LSPSymbolKind): SymbolKind {
       return 'function';
     case LSPSymbolKind.Method:
       return 'method';
+    case LSPSymbolKind.Constructor:
+      return 'method';
     case LSPSymbolKind.Class:
+      return 'class';
+    case LSPSymbolKind.Struct:
       return 'class';
     case LSPSymbolKind.Interface:
       return 'interface';
@@ -33,10 +37,15 @@ export function convertSymbolKind(kind: LSPSymbolKind): SymbolKind {
     case LSPSymbolKind.Constant:
       return 'constant';
     case LSPSymbolKind.Property:
+    case LSPSymbolKind.Field:
       return 'property';
     case LSPSymbolKind.Enum:
       return 'enum';
+    case LSPSymbolKind.EnumMember:
+      return 'constant';
     case LSPSymbolKind.Module:
+    case LSPSymbolKind.Package:
+    case LSPSymbolKind.File:
       return 'module';
     case LSPSymbolKind.Namespace:
       return 'namespace';

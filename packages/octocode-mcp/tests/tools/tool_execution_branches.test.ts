@@ -13,6 +13,7 @@ vi.mock('fs/promises', () => ({
 
 // Mock LSP client creation
 vi.mock('../../src/lsp/manager.js', () => ({
+  LSP_UNAVAILABLE_HINT: 'LSP unavailable test',
   createClient: vi.fn(),
 }));
 

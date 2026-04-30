@@ -33,7 +33,7 @@ export async function executeFetchContent(
               .join('; ');
             return createErrorResult(`Validation error: ${messages}`, query);
           }
-          return fetchContent(query);
+          return fetchContent(validation.data);
         },
       }),
     {

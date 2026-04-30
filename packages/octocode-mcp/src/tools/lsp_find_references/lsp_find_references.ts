@@ -11,7 +11,10 @@ import { readFile, stat } from 'fs/promises';
 
 import { type LSPFindReferencesQuery } from '@octocodeai/octocode-core';
 import { SymbolResolver, SymbolResolutionError } from '../../lsp/resolver.js';
-import { isLanguageServerAvailable } from '../../lsp/manager.js';
+import {
+  isLanguageServerAvailable,
+  LSP_UNAVAILABLE_HINT,
+} from '../../lsp/manager.js';
 import type {
   FindReferencesResult,
   ExactPosition,
@@ -101,7 +104,11 @@ export async function findReferences(
     const globalMergeQuery = createGlobalMergeQuery(query);
 
     let lspResult: FindReferencesResult | null = null;
-    if (await isLanguageServerAvailable(absolutePath, workspaceRoot)) {
+    const lspAvailable = await isLanguageServerAvailable(
+      absolutePath,
+      workspaceRoot
+    );
+    if (lspAvailable) {
       try {
         lspResult = await findReferencesWithLSP(
           absolutePath,
@@ -129,14 +136,29 @@ export async function findReferences(
       !!patternResult.locations?.length;
 
     if (!lspHasLocations) {
-      return paginateGlobalBranchResult(patternResult, query);
+      // Pattern-only branch — locations did not come from semantic LSP,
+      // even when isLanguageServerAvailable=true (LSP returned empty or
+      // threw). Tag fallback so agents do not treat results as authoritative.
+      return paginateGlobalBranchResult(
+        {
+          ...withLspUnavailableHint(patternResult, lspAvailable),
+          lspMode: 'fallback',
+        },
+        query
+      );
     }
 
     if (!patternHasLocations) {
-      return paginateGlobalBranchResult(lspResult!, query);
+      return paginateGlobalBranchResult(
+        { ...lspResult!, lspMode: 'semantic' },
+        query
+      );
     }
 
-    return mergeReferenceResults(lspResult, patternResult, query);
+    return {
+      ...mergeReferenceResults(lspResult, patternResult, query),
+      lspMode: 'semantic',
+    };
   } catch (error) {
     return createErrorResult(error, query, {
       toolName: TOOL_NAME,
@@ -248,6 +270,23 @@ export function mergeReferenceResults(
     },
     hasMultipleFiles: uniqueFiles.size > 1,
     hints,
+  };
+}
+
+/**
+ * Prepend the shared LSP-unavailable hint to the result when no language
+ * server could be located. This is the only reliable signal for callers
+ * that the returned references come from text search, not semantic
+ * analysis, and will therefore miss renamed/aliased usages.
+ */
+function withLspUnavailableHint(
+  result: FindReferencesResult,
+  lspAvailable: boolean
+): FindReferencesResult {
+  if (lspAvailable) return result;
+  return {
+    ...result,
+    hints: [LSP_UNAVAILABLE_HINT, ...(result.hints || [])],
   };
 }
 

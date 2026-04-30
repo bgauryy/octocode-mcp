@@ -54,6 +54,7 @@ import { validateCommand } from '@octocode/security/commandValidator';
 import {
   buildGrepFilterArgsArray,
   buildGrepSearchArgs,
+  buildRipgrepSearchArgs,
   findWorkspaceRoot,
   isLikelyDefinition,
   findReferencesWithPatternMatching,
@@ -743,6 +744,55 @@ describe('lspReferencesPatterns - Branch Coverage', () => {
       expect(result.locations![0]!.isDefinition).toBe(true);
       expect(result.locations![1]!.uri).toBeDefined();
       expect(result.locations![2]!.uri).toBeDefined();
+    });
+  });
+
+  describe('Cross-language extension coverage (regression)', () => {
+    // Regression: ripgrep/grep fallbacks only matched ts/tsx/js/jsx/py/go/rs/java/c/cpp/h
+    // so Kotlin/Swift/Dart/Ruby/PHP/C#/Scala/Lua users got zero references.
+    it('buildRipgrepSearchArgs registers a code type covering Kotlin/Swift/Dart/Ruby/PHP/C#/Scala/Lua', () => {
+      const args = buildRipgrepSearchArgs('/ws', 'foo');
+      const typeAddIndex = args.indexOf('--type-add');
+      expect(typeAddIndex).toBeGreaterThanOrEqual(0);
+      const typeDef = args[typeAddIndex + 1]!;
+      for (const ext of [
+        'kt',
+        'kts',
+        'swift',
+        'dart',
+        'rb',
+        'php',
+        'cs',
+        'scala',
+        'lua',
+        'mjs',
+        'cjs',
+        'pyi',
+        'cc',
+        'cxx',
+        'hpp',
+      ]) {
+        expect(typeDef).toContain(ext);
+      }
+    });
+
+    it('buildGrepSearchArgs --include matches the same extension set when no patterns provided', () => {
+      const args = buildGrepSearchArgs('/ws', 'foo');
+      const includes = args.filter(a => a.startsWith('--include='));
+      const exts = includes.map(a => a.replace('--include=*.', ''));
+      for (const ext of [
+        'kt',
+        'kts',
+        'swift',
+        'dart',
+        'rb',
+        'php',
+        'cs',
+        'scala',
+        'lua',
+      ]) {
+        expect(exts).toContain(ext);
+      }
     });
   });
 

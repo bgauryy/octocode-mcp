@@ -16,7 +16,7 @@ import {
 } from './cache.js';
 import { parseArgs } from './cli.js';
 import { loadConfigFile, mergeConfigIntoDefaults } from './config-loader.js';
-import { createOptions, OptionsError } from './create-options.js';
+import { createOptions } from './create-options.js';
 import { attachConsoleFeedback, bus } from './progress.js';
 import { resolveAffectedFiles } from './affected.js';
 import { saveBaseline, filterKnownFindings } from './baseline.js';
@@ -46,7 +46,6 @@ import {
   analyzeSourceFile,
   buildDependencyCriticality,
 } from '../ast/ts-analyzer.js';
-import { isDirectRun } from '../common/is-direct-run.js';
 import { canonicalScriptKind, increment } from '../common/utils.js';
 import { computeHotFiles } from '../detectors/index.js';
 import { runSemanticDetectors } from '../detectors/semantic.js';
@@ -1249,18 +1248,3 @@ function buildFindingStats(
   return { overall, pillars };
 }
 
-if (isDirectRun(import.meta.url)) {
-  main()
-    .then(code => {
-      process.exitCode = code;
-    })
-    .catch((error: unknown) => {
-      if (error instanceof OptionsError) {
-        console.error(error.message);
-        process.exitCode = EXIT_ERROR;
-      } else {
-        console.error(error);
-        process.exitCode = EXIT_ERROR;
-      }
-    });
-}

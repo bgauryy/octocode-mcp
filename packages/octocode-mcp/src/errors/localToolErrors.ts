@@ -8,6 +8,7 @@ export const LOCAL_TOOL_ERROR_CODES = {
   FILE_ACCESS_FAILED: 'fileAccessFailed',
   FILE_READ_FAILED: 'fileReadFailed',
   FILE_TOO_LARGE: 'fileTooLarge',
+  BINARY_FILE_UNSUPPORTED: 'binaryFileUnsupported',
 
   // Search & Pattern Errors
   NO_MATCHES: 'noMatches',
@@ -83,6 +84,12 @@ export const LOCAL_TOOL_ERROR_REGISTRY: Record<
     code: LOCAL_TOOL_ERROR_CODES.FILE_TOO_LARGE,
     category: LocalToolErrorCategory.FILE_SYSTEM,
     description: 'File exceeds size limits for operation',
+    recoverability: 'user-action-required',
+  },
+  [LOCAL_TOOL_ERROR_CODES.BINARY_FILE_UNSUPPORTED]: {
+    code: LOCAL_TOOL_ERROR_CODES.BINARY_FILE_UNSUPPORTED,
+    category: LocalToolErrorCategory.FILE_SYSTEM,
+    description: 'Binary file is not supported by text content reader',
     recoverability: 'user-action-required',
   },
 
