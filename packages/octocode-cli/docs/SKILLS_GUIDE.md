@@ -63,7 +63,7 @@ Commit `.claude/skills/` (or your chosen target directory) to share skills with 
 
 ## Skills Marketplace
 
-Access via the interactive menu: `npx octocode-cli` → Manage System Skills → Browse Marketplace.
+Access via the interactive menu: `npx octocode-cli install` → Manage System Skills → Browse Marketplace.
 
 | Source | Description |
 |--------|-------------|

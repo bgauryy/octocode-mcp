@@ -8,8 +8,8 @@
 
 ```bash
 # Option A: Interactive login (recommended)
-npx octocode-cli
-# → Select "Login to GitHub" from the menu
+npx octocode-cli install
+# -> Choose "Manage Auth", then "Login to GitHub"
 
 # Option B: Set a token manually
 export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
@@ -31,8 +31,8 @@ Choose **one** of the following methods (listed from easiest to most manual):
 The easiest way — handles secure OAuth login for you:
 
 ```bash
-npx octocode-cli
-# → Select "Login to GitHub" from the menu
+npx octocode-cli install
+# -> Choose "Manage Auth", then "Login to GitHub"
 ```
 
 This opens a browser window to authorize Octocode safely. The token is stored securely in your system keychain.
@@ -82,7 +82,7 @@ When multiple tokens are available, Octocode uses the **first one found**:
 | 1 (highest) | `OCTOCODE_TOKEN` env var | Octocode-specific token. Set in MCP client `"env"` block. |
 | 2 | `GH_TOKEN` env var | Compatible with GitHub CLI. Set in MCP client `"env"` block. |
 | 3 | `GITHUB_TOKEN` env var | Compatible with GitHub Actions. Set in MCP client `"env"` block. |
-| 4 | `~/.octocode/credentials.json` | Stored by `npx octocode-cli` during interactive auth (OAuth device flow). |
+| 4 | `~/.octocode/credentials.json` | Stored by `npx octocode-cli install` during interactive auth (OAuth device flow). |
 | 5 | `gh auth token` | Reads from GitHub CLI if installed and authenticated. |
 
 **Minimum required scopes:** `repo`, `read:user`, `read:org`.
@@ -127,7 +127,7 @@ For available tools and detailed usage, see the [GitHub, GitLab & Bitbucket Tool
 
 ### "No GitHub token found"
 
-- Run `npx octocode-cli` and select **"Check GitHub Auth Status"**.
+- Run `npx octocode-cli install` and choose **Manage Auth** to check status, or run `npx octocode-cli status`.
 - Ensure you have run `gh auth login` if using the GitHub CLI.
 - Check if your environment variable is set: `echo $GITHUB_TOKEN`.
 
@@ -139,12 +139,12 @@ For available tools and detailed usage, see the [GitHub, GitLab & Bitbucket Tool
 
 ### Token Expired
 
-- Run `npx octocode-cli` and select **"Login to GitHub"** again to refresh it.
+- Run `npx octocode-cli install`, choose **Manage Auth**, then choose **Login to GitHub** again to refresh it.
 - Or run `gh auth refresh` if using the GitHub CLI.
 
 ### Switching Accounts
 
-- Run `npx octocode-cli` and login with the new account. Octocode picks up the change immediately (no restart needed).
+- Run `npx octocode-cli install`, choose **Manage Auth**, then switch accounts. Octocode picks up the change immediately (no restart needed).
 
 ### Clone/Directory Tools Disabled
 
