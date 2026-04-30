@@ -11,6 +11,7 @@ import * as fs from 'fs/promises';
 
 // Mock fs/promises
 vi.mock('fs/promises', () => ({
+  open: vi.fn(),
   readFile: vi.fn(),
   stat: vi.fn(),
 }));
@@ -23,6 +24,7 @@ vi.mock('@octocode/security/pathValidator', () => ({
 }));
 
 describe('localGetFileContent', () => {
+  const mockOpen = vi.mocked(fs.open);
   const mockReadFile = vi.mocked(fs.readFile);
   const mockStat = vi.mocked(fs.stat);
   const mockValidate = vi.mocked(pathValidator.pathValidator.validate);
@@ -34,6 +36,10 @@ describe('localGetFileContent', () => {
     mockStat.mockResolvedValue({ size: 1024 } as unknown as Awaited<
       ReturnType<typeof fs.stat>
     >);
+    mockOpen.mockResolvedValue({
+      read: vi.fn().mockResolvedValue({ bytesRead: 0 }),
+      close: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Awaited<ReturnType<typeof fs.open>>);
   });
 
   describe('Full content fetch', () => {
@@ -364,6 +370,31 @@ describe('localGetFileContent', () => {
       });
 
       expect(result.status).toBe('error');
+    });
+
+    it('should reject likely binary files before utf-8 decoding', async () => {
+      const read = vi.fn(async (buffer: Buffer) => {
+        buffer[0] = 0;
+        return { bytesRead: 1, buffer };
+      });
+      const close = vi.fn().mockResolvedValue(undefined);
+      mockOpen.mockResolvedValueOnce({
+        read,
+        close,
+      } as unknown as Awaited<ReturnType<typeof fs.open>>);
+
+      const result = await fetchContent({
+        path: 'artifact.bin',
+        fullContent: true,
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.errorCode).toBe(
+        LOCAL_TOOL_ERROR_CODES.BINARY_FILE_UNSUPPORTED
+      );
+      expect(mockReadFile).not.toHaveBeenCalled();
+      expect(close).toHaveBeenCalled();
+      expect(result.hints?.some(h => h.includes('localSearchCode'))).toBe(true);
     });
   });
 

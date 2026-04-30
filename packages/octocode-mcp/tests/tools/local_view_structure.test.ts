@@ -1279,8 +1279,9 @@ describe('localViewStructure', () => {
         depth: 1,
       });
 
-      // Should handle error gracefully and return empty
-      expect(result.status).toBe('empty');
+      // Root-level readdir failure → surface a clear error instead of silent empty
+      expect(result.status).toBe('error');
+      expect(result.error).toBeDefined();
     });
 
     it('should handle lstat errors gracefully in walkDirectory', async () => {
@@ -1294,6 +1295,57 @@ describe('localViewStructure', () => {
 
       // Should skip inaccessible items gracefully
       expect(result.status).toBe('empty');
+    });
+
+    it('should return error with clear message when root path does not exist (ENOENT)', async () => {
+      // BUG-FIX: Previously returned status "empty" with "1 entries skipped due
+      // to permission errors" — misleading because ENOENT is not a permissions error.
+      const enoentErr = Object.assign(new Error('ENOENT: no such file or directory'), {
+        code: 'ENOENT',
+      });
+      mockReaddir.mockRejectedValue(enoentErr);
+
+      const result = await viewStructure({
+        path: '/nonexistent/path',
+        depth: 1,
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.error).toMatch(/not found|ENOENT/i);
+      // Must NOT say "permission errors"
+      expect(result.error).not.toMatch(/permission/i);
+    });
+
+    it('should return error with clear message when root path is ENOTDIR (path is a file)', async () => {
+      // BUG-FIX: Providing a file path should give a clear "not a directory" error.
+      const enotdirErr = Object.assign(new Error('ENOTDIR: not a directory'), {
+        code: 'ENOTDIR',
+      });
+      mockReaddir.mockRejectedValue(enotdirErr);
+
+      const result = await viewStructure({
+        path: '/some/file.ts',
+        depth: 1,
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.error).toBeDefined();
+      expect(result.error).not.toMatch(/permission/i);
+    });
+
+    it('should correctly label EACCES as permission denied (not a generic skip)', async () => {
+      const eaccesErr = Object.assign(new Error('EACCES: permission denied'), {
+        code: 'EACCES',
+      });
+      mockReaddir.mockRejectedValue(eaccesErr);
+
+      const result = await viewStructure({
+        path: '/restricted/path',
+        depth: 1,
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.error).toBeDefined();
     });
   });
 

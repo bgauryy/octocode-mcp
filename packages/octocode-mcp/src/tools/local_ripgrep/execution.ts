@@ -35,7 +35,7 @@ export async function executeRipgrepSearch(
               .join('; ');
             return createErrorResult(`Validation error: ${messages}`, query);
           }
-          return searchContentRipgrep(query);
+          return searchContentRipgrep(validation.data);
         },
       }),
     {

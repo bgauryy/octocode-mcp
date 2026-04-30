@@ -144,21 +144,28 @@ async function gotoDefinition(
           query,
           content
         );
-        if (result) return applyGotoDefinitionOutputLimit(result, query);
+        if (result)
+          return applyGotoDefinitionOutputLimit(
+            { ...result, lspMode: 'semantic' },
+            query
+          );
       } catch {
         // LSP goto-definition failed; fall back to heuristic resolver below.
       }
     }
 
     return applyGotoDefinitionOutputLimit(
-      createFallbackResult(
-        query,
-        absolutePath,
-        content,
-        resolver,
-        resolvedSymbol,
-        { lspUnavailable: !lspAvailable }
-      ),
+      {
+        ...createFallbackResult(
+          query,
+          absolutePath,
+          content,
+          resolver,
+          resolvedSymbol,
+          { lspUnavailable: !lspAvailable }
+        ),
+        lspMode: 'fallback',
+      },
       query
     );
   } catch (error) {

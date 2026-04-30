@@ -98,7 +98,11 @@ export async function processCallHierarchy(
           query,
           content
         );
-        if (result) return applyCallHierarchyOutputLimit(result, query);
+        if (result)
+          return applyCallHierarchyOutputLimit(
+            { ...result, lspMode: 'semantic' },
+            query
+          );
       } catch {
         // LSP call hierarchy failed; pattern-matching fallback still produces a result.
       }
@@ -113,7 +117,10 @@ export async function processCallHierarchy(
       resolver
     );
     return applyCallHierarchyOutputLimit(
-      withLspUnavailableHint(patternResult, lspAvailable),
+      {
+        ...withLspUnavailableHint(patternResult, lspAvailable),
+        lspMode: 'fallback',
+      },
       query
     );
   } catch (error) {
@@ -190,6 +197,10 @@ function applyCallHierarchyOutputLimit(
   return {
     ...result,
     ...pagedData,
+    // Pin lspMode from the pre-pagination result. pagedData may omit it
+    // if the JSON slice lands past the field, and a slice that explicitly
+    // serialised `lspMode` to undefined would otherwise erase the marker.
+    lspMode: result.lspMode ?? pagedData.lspMode,
     outputPagination: {
       charOffset: sizeLimitResult.pagination.charOffset!,
       charLength: sizeLimitResult.pagination.charLength!,

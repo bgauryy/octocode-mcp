@@ -31,8 +31,22 @@ vi.mock('../../src/tools/local_view_structure/local_view_structure.js', () => ({
   viewStructure: vi.fn().mockResolvedValue({ status: 'success' }),
 }));
 
-// Mock schema modules so safeParse always succeeds in callback tests
-const mockSafeParse = () => ({ success: true, data: {} });
+// Mock schema modules so safeParse succeeds and visibly applies schema defaults.
+// Execution handlers must pass validation.data to implementations, not the raw
+// query, otherwise MCP clients that omit defaulted fields get inconsistent
+// behavior.
+const withParsedDefaults = <T extends object>(
+  query: T
+): T & {
+  __schemaDefaultsApplied: true;
+} => ({
+  ...query,
+  __schemaDefaultsApplied: true,
+});
+const mockSafeParse = (query: object) => ({
+  success: true,
+  data: withParsedDefaults(query),
+});
 vi.mock('@octocodeai/octocode-core', async importOriginal => ({
   ...(await importOriginal<object>()),
   FetchContentQuerySchema: { safeParse: mockSafeParse },
@@ -66,7 +80,7 @@ describe('Local Tools Execution', () => {
       expect(executeBulkOperation).toHaveBeenCalledWith(
         queries,
         expect.any(Function),
-        { toolName: 'localGetFileContent' }
+        expect.objectContaining({ toolName: 'localGetFileContent' })
       );
     });
 
@@ -101,7 +115,7 @@ describe('Local Tools Execution', () => {
       };
       await callback(query, 0);
 
-      expect(fetchContent).toHaveBeenCalledWith(query);
+      expect(fetchContent).toHaveBeenCalledWith(withParsedDefaults(query));
     });
 
     it('should handle empty queries array', async () => {
@@ -115,7 +129,7 @@ describe('Local Tools Execution', () => {
       expect(executeBulkOperation).toHaveBeenCalledWith(
         [],
         expect.any(Function),
-        { toolName: 'localGetFileContent' }
+        expect.objectContaining({ toolName: 'localGetFileContent' })
       );
     });
 
@@ -132,7 +146,7 @@ describe('Local Tools Execution', () => {
       expect(executeBulkOperation).toHaveBeenCalledWith(
         [],
         expect.any(Function),
-        { toolName: 'localGetFileContent' }
+        expect.objectContaining({ toolName: 'localGetFileContent' })
       );
     });
 
@@ -182,7 +196,7 @@ describe('Local Tools Execution', () => {
       expect(executeBulkOperation).toHaveBeenCalledWith(
         queries,
         expect.any(Function),
-        { toolName: 'localFindFiles' }
+        expect.objectContaining({ toolName: 'localFindFiles' })
       );
     });
 
@@ -215,7 +229,7 @@ describe('Local Tools Execution', () => {
       };
       await callback(query, 0);
 
-      expect(findFiles).toHaveBeenCalledWith(query);
+      expect(findFiles).toHaveBeenCalledWith(withParsedDefaults(query));
     });
 
     it('should handle undefined queries with fallback to empty array', async () => {
@@ -231,7 +245,7 @@ describe('Local Tools Execution', () => {
       expect(executeBulkOperation).toHaveBeenCalledWith(
         [],
         expect.any(Function),
-        { toolName: 'localFindFiles' }
+        expect.objectContaining({ toolName: 'localFindFiles' })
       );
     });
 
@@ -282,7 +296,7 @@ describe('Local Tools Execution', () => {
       expect(executeBulkOperation).toHaveBeenCalledWith(
         queries,
         expect.any(Function),
-        { toolName: 'localSearchCode' }
+        expect.objectContaining({ toolName: 'localSearchCode' })
       );
     });
 
@@ -316,7 +330,9 @@ describe('Local Tools Execution', () => {
       } as RipgrepQuery;
       await callback(query, 0);
 
-      expect(searchContentRipgrep).toHaveBeenCalledWith(query);
+      expect(searchContentRipgrep).toHaveBeenCalledWith(
+        withParsedDefaults(query)
+      );
     });
 
     it('should handle undefined queries with fallback to empty array', async () => {
@@ -332,7 +348,7 @@ describe('Local Tools Execution', () => {
       expect(executeBulkOperation).toHaveBeenCalledWith(
         [],
         expect.any(Function),
-        { toolName: 'localSearchCode' }
+        expect.objectContaining({ toolName: 'localSearchCode' })
       );
     });
   });
@@ -357,7 +373,7 @@ describe('Local Tools Execution', () => {
       expect(executeBulkOperation).toHaveBeenCalledWith(
         queries,
         expect.any(Function),
-        { toolName: 'localViewStructure' }
+        expect.objectContaining({ toolName: 'localViewStructure' })
       );
     });
 
@@ -390,7 +406,7 @@ describe('Local Tools Execution', () => {
       };
       await callback(query, 0);
 
-      expect(viewStructure).toHaveBeenCalledWith(query);
+      expect(viewStructure).toHaveBeenCalledWith(withParsedDefaults(query));
     });
 
     it('should handle undefined queries with fallback to empty array', async () => {
@@ -406,7 +422,7 @@ describe('Local Tools Execution', () => {
       expect(executeBulkOperation).toHaveBeenCalledWith(
         [],
         expect.any(Function),
-        { toolName: 'localViewStructure' }
+        expect.objectContaining({ toolName: 'localViewStructure' })
       );
     });
 

@@ -53,7 +53,7 @@ describe('walkDirectory - WalkStats error tracking', () => {
     vi.restoreAllMocks();
   });
 
-  it('should increment stats.skipped on readdir error', async () => {
+  it('should set stats.rootError on readdir error at depth 0', async () => {
     const originalReaddir = fs.promises.readdir;
     vi.spyOn(fs.promises, 'readdir').mockImplementation(
       async (p: fs.PathLike, ...args: unknown[]) => {
@@ -65,7 +65,7 @@ describe('walkDirectory - WalkStats error tracking', () => {
     );
 
     const entries: DirectoryEntry[] = [];
-    const stats: WalkStats = { skipped: 0 };
+    const stats: WalkStats = { skipped: 0, permissionDenied: 0 };
 
     await walkDirectory({
       basePath: tmpDir,
@@ -79,7 +79,9 @@ describe('walkDirectory - WalkStats error tracking', () => {
       stats,
     });
 
-    expect(stats.skipped).toBe(1);
+    // Root-level errors are captured in rootError, not counted as skipped entries
+    expect(stats.rootError).toBeDefined();
+    expect(stats.skipped).toBe(0);
     expect(entries.length).toBe(0);
 
     vi.restoreAllMocks();

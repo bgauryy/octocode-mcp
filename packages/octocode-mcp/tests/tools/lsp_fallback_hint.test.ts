@@ -130,13 +130,17 @@ describe('LSP fallback hint — surfaced when isLanguageServerAvailable=false', 
       mainResearchGoal: 'g',
       researchGoal: 'g',
       reasoning: 'r',
-    } as Parameters<typeof findReferences>[0]);
+    } as unknown as Parameters<typeof findReferences>[0]);
 
     const hints = (result.hints ?? []).filter(Boolean) as string[];
     expect(
       hints.some(h => LSP_UNAVAILABLE_RE.test(h)),
       `expected an LSP-unavailable hint, got: ${JSON.stringify(hints)}`
     ).toBe(true);
+    expect(
+      result.lspMode,
+      'lspFindReferences must mark fallback path with lspMode="fallback" so agents can branch programmatically without parsing hint strings'
+    ).toBe('fallback');
   });
 
   it('lspCallHierarchy emits an LSP-unavailable hint', async () => {
@@ -148,13 +152,17 @@ describe('LSP fallback hint — surfaced when isLanguageServerAvailable=false', 
       mainResearchGoal: 'g',
       researchGoal: 'g',
       reasoning: 'r',
-    } as Parameters<typeof processCallHierarchy>[0]);
+    } as unknown as Parameters<typeof processCallHierarchy>[0]);
 
     const hints = (result.hints ?? []).filter(Boolean) as string[];
     expect(
       hints.some(h => LSP_UNAVAILABLE_RE.test(h)),
       `expected an LSP-unavailable hint, got: ${JSON.stringify(hints)}`
     ).toBe(true);
+    expect(
+      result.lspMode,
+      'lspCallHierarchy must mark fallback path with lspMode="fallback"'
+    ).toBe('fallback');
   });
 
   // Regression: char-budget pagination must not drop the LSP-unavailable hint.
@@ -183,9 +191,8 @@ describe('LSP fallback hint — surfaced when isLanguageServerAvailable=false', 
       ],
     }));
 
-    const callHierarchyPatterns = await import(
-      '../../src/tools/lsp_call_hierarchy/callHierarchyPatterns.js'
-    );
+    const callHierarchyPatterns =
+      await import('../../src/tools/lsp_call_hierarchy/callHierarchyPatterns.js');
     vi.mocked(
       callHierarchyPatterns.callHierarchyWithPatternMatching
     ).mockResolvedValueOnce({
@@ -214,7 +221,7 @@ describe('LSP fallback hint — surfaced when isLanguageServerAvailable=false', 
       mainResearchGoal: 'g',
       researchGoal: 'g',
       reasoning: 'r',
-    } as Parameters<typeof processCallHierarchy>[0]);
+    } as unknown as Parameters<typeof processCallHierarchy>[0]);
 
     const totalChars = (
       pageOne as unknown as {
@@ -252,13 +259,19 @@ describe('LSP fallback hint — surfaced when isLanguageServerAvailable=false', 
       mainResearchGoal: 'g',
       researchGoal: 'g',
       reasoning: 'r',
-    } as Parameters<typeof processCallHierarchy>[0]);
+    } as unknown as Parameters<typeof processCallHierarchy>[0]);
 
     const pageTwoHints = (pageTwo.hints ?? []).filter(Boolean) as string[];
     expect(
       pageTwoHints.some(h => LSP_UNAVAILABLE_RE.test(h)),
       `page 2 must still carry the LSP-unavailable hint, got: ${JSON.stringify(pageTwoHints)}`
     ).toBe(true);
+    // lspMode is the structured signal that survives independently of hint
+    // string parsing; agents can route on it without regex matching.
+    expect(
+      pageTwo.lspMode,
+      'page 2 must still carry lspMode="fallback" — structured field survives char-budget pagination'
+    ).toBe('fallback');
   });
 });
 
@@ -311,5 +324,117 @@ describe('LSP goto-definition fallback hint', () => {
       LSP_UNAVAILABLE_RE.test(text),
       `expected LSP-unavailable hint in serialized output, got: ${text.slice(0, 400)}`
     ).toBe(true);
+    // Bulk responses serialise as YAML, so accept either YAML (lspMode: "fallback")
+    // or JSON ("lspMode": "fallback"). Quoting is optional in YAML.
+    expect(
+      /lspMode["']?\s*:\s*["']?fallback["']?/.test(text),
+      `expected lspMode="fallback" in serialized output, got: ${text.slice(0, 400)}`
+    ).toBe(true);
+  });
+});
+
+// Mirror tests for the LSP-success path — confirms lspMode is set both ways
+// (not just on fallback). Without this, a regression that hard-codes
+// lspMode='fallback' would still pass the fallback tests above.
+vi.mock('../../src/tools/lsp_find_references/lspReferencesCore.js', () => ({
+  findReferencesWithLSP: vi.fn(),
+}));
+vi.mock('../../src/tools/lsp_call_hierarchy/callHierarchyLsp.js', () => ({
+  callHierarchyWithLSP: vi.fn(),
+}));
+
+describe('LSP mode field — semantic when LSP returns results', () => {
+  const testPath = `${process.cwd()}/src/testfile.ts`;
+
+  beforeEach(() => {
+    process.env.WORKSPACE_ROOT = process.cwd();
+    vi.mocked(fs.readFile).mockResolvedValue(SAMPLE);
+    vi.mocked(fs.stat).mockResolvedValue({
+      isFile: () => true,
+    } as unknown as Awaited<ReturnType<typeof fs.stat>>);
+    vi.mocked(managerModule.isLanguageServerAvailable).mockResolvedValue(true);
+  });
+
+  afterEach(() => {
+    delete process.env.WORKSPACE_ROOT;
+    vi.clearAllMocks();
+  });
+
+  it('lspFindReferences tags result with lspMode="semantic" when LSP returns locations', async () => {
+    const lspCore =
+      await import('../../src/tools/lsp_find_references/lspReferencesCore.js');
+    vi.mocked(lspCore.findReferencesWithLSP).mockResolvedValueOnce({
+      status: 'hasResults',
+      locations: [
+        {
+          uri: testPath,
+          range: {
+            start: { line: 0, character: 7 },
+            end: { line: 0, character: 17 },
+          },
+          content: 'export function testSymbol(): void {',
+        },
+      ],
+      hints: [],
+    });
+
+    const result = await findReferences({
+      uri: testPath,
+      symbolName: 'testSymbol',
+      lineHint: 1,
+      mainResearchGoal: 'g',
+      researchGoal: 'g',
+      reasoning: 'r',
+    } as unknown as Parameters<typeof findReferences>[0]);
+
+    expect(
+      result.lspMode,
+      'LSP-only branch (pattern returned empty) must be tagged semantic'
+    ).toBe('semantic');
+    const hints = (result.hints ?? []).filter(Boolean) as string[];
+    expect(
+      hints.some(h => LSP_UNAVAILABLE_RE.test(h)),
+      'semantic results must NOT carry the LSP-unavailable hint'
+    ).toBe(false);
+  });
+
+  it('lspCallHierarchy tags result with lspMode="semantic" when LSP returns a call graph', async () => {
+    const callLsp =
+      await import('../../src/tools/lsp_call_hierarchy/callHierarchyLsp.js');
+    vi.mocked(callLsp.callHierarchyWithLSP).mockResolvedValueOnce({
+      status: 'hasResults',
+      item: {
+        name: 'testSymbol',
+        kind: 'function',
+        uri: testPath,
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 2, character: 1 },
+        },
+      },
+      incomingCalls: [],
+      direction: 'incoming',
+      depth: 1,
+      hints: [],
+    });
+
+    const result = await processCallHierarchy({
+      uri: testPath,
+      symbolName: 'testSymbol',
+      lineHint: 1,
+      direction: 'incoming',
+      mainResearchGoal: 'g',
+      researchGoal: 'g',
+      reasoning: 'r',
+    } as unknown as Parameters<typeof processCallHierarchy>[0]);
+
+    expect(result.lspMode, 'LSP success path must be tagged semantic').toBe(
+      'semantic'
+    );
+    const hints = (result.hints ?? []).filter(Boolean) as string[];
+    expect(
+      hints.some(h => LSP_UNAVAILABLE_RE.test(h)),
+      'semantic results must NOT carry the LSP-unavailable hint'
+    ).toBe(false);
   });
 });

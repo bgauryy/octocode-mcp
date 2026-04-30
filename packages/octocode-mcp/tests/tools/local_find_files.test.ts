@@ -154,6 +154,26 @@ describe('localFindFiles', () => {
 
       expect(result.status).toBe('empty');
     });
+
+    it('should tell callers when results were capped by limit', async () => {
+      const paths = Array.from(
+        { length: 1002 },
+        (_, index) => `/test/path/file-${index}.ts`
+      ).join('\0');
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: `${paths}\0`,
+        stderr: '',
+      });
+
+      const result = await findFiles({ path: '/test/path' });
+
+      expect(result.status).toBe('hasResults');
+      expect(result.pagination?.totalFiles).toBe(1000);
+      expect(result.hints?.some(h => /capped at 1000/i.test(h))).toBe(true);
+      expect(result.hints?.some(h => h.includes('1002'))).toBe(true);
+    });
   });
 
   describe('File type filtering', () => {
@@ -432,6 +452,79 @@ describe('localFindFiles', () => {
       ]) {
         expect(args).toContain(`*/${dir}`);
       }
+    });
+
+    it('should NOT prune directories that appear in the search path itself', async () => {
+      // BUG-FIX: Searching inside e.g. /work/.context/sub used to return empty
+      // because the default excludeDir included ".context", which generated the
+      // prune pattern `*/.context/*` that matched EVERY file under that path.
+      mockValidate.mockReturnValue({
+        isValid: true,
+        sanitizedPath: '/work/.context/sub',
+      });
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '/work/.context/sub/file.ts\0',
+        stderr: '',
+      });
+
+      const result = await findFiles({
+        path: '/work/.context/sub',
+        name: '*.ts',
+      });
+
+      expect(result.status).toBe('hasResults');
+
+      const args = mockSafeExec.mock.calls[0]![1] as string[];
+      // .context must NOT be in the prune list when the search path contains it
+      const idx = args.indexOf('*/.context');
+      expect(idx).toBe(-1);
+    });
+
+    it('should NOT prune node_modules when searching inside node_modules', async () => {
+      mockValidate.mockReturnValue({
+        isValid: true,
+        sanitizedPath: '/project/node_modules/lodash',
+      });
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '/project/node_modules/lodash/index.js\0',
+        stderr: '',
+      });
+
+      const result = await findFiles({
+        path: '/project/node_modules/lodash',
+        name: '*.js',
+      });
+
+      expect(result.status).toBe('hasResults');
+
+      const args = mockSafeExec.mock.calls[0]![1] as string[];
+      const idx = args.indexOf('*/node_modules');
+      expect(idx).toBe(-1);
+    });
+
+    it('should still exclude dirs that are NOT in the search path', async () => {
+      mockValidate.mockReturnValue({
+        isValid: true,
+        sanitizedPath: '/project/src',
+      });
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '/project/src/app.ts\0',
+        stderr: '',
+      });
+
+      await findFiles({ path: '/project/src', name: '*.ts' });
+
+      const args = mockSafeExec.mock.calls[0]![1] as string[];
+      // node_modules is NOT in '/project/src' → still pruned
+      expect(args).toContain('*/node_modules');
+      // .context is NOT in '/project/src' → still pruned
+      expect(args).toContain('*/.context');
     });
   });
 

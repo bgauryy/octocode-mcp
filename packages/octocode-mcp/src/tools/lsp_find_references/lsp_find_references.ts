@@ -136,17 +136,29 @@ export async function findReferences(
       !!patternResult.locations?.length;
 
     if (!lspHasLocations) {
+      // Pattern-only branch — locations did not come from semantic LSP,
+      // even when isLanguageServerAvailable=true (LSP returned empty or
+      // threw). Tag fallback so agents do not treat results as authoritative.
       return paginateGlobalBranchResult(
-        withLspUnavailableHint(patternResult, lspAvailable),
+        {
+          ...withLspUnavailableHint(patternResult, lspAvailable),
+          lspMode: 'fallback',
+        },
         query
       );
     }
 
     if (!patternHasLocations) {
-      return paginateGlobalBranchResult(lspResult!, query);
+      return paginateGlobalBranchResult(
+        { ...lspResult!, lspMode: 'semantic' },
+        query
+      );
     }
 
-    return mergeReferenceResults(lspResult, patternResult, query);
+    return {
+      ...mergeReferenceResults(lspResult, patternResult, query),
+      lspMode: 'semantic',
+    };
   } catch (error) {
     return createErrorResult(error, query, {
       toolName: TOOL_NAME,

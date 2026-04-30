@@ -33,7 +33,7 @@ export async function executeViewStructure(
               .join('; ');
             return createErrorResult(`Validation error: ${messages}`, query);
           }
-          return viewStructure(query);
+          return viewStructure(validation.data);
         },
       }),
     {

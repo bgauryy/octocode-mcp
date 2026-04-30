@@ -1,4 +1,4 @@
-import { readFile, stat } from 'fs/promises';
+import { open, readFile, stat } from 'fs/promises';
 import { getConfigSync } from 'octocode-shared';
 import { getHints } from '../../hints/index.js';
 import { applyMinification } from './contentMinifier.js';
@@ -139,6 +139,85 @@ function createLargeFileErrorResult(
       'Critical: fullContent without charLength will fail on large files - always specify a reading strategy',
     ],
   }) as LocalGetFileContentToolResult;
+}
+
+function createBinaryFileErrorResult(
+  query: FetchContentQuery,
+  absolutePath: string
+): LocalGetFileContentToolResult {
+  const toolError = ToolErrors.binaryFileUnsupported(query.path);
+
+  return createErrorResult(toolError, query, {
+    toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+    extra: { resolvedPath: absolutePath },
+    customHints: [
+      'This appears to be binary or non-UTF-8 content, not text.',
+      'Use localSearchCode with binaryFiles="text" only when you need to scan for specific ASCII strings.',
+      'Use localFindFiles for metadata discovery before choosing a text file to read.',
+      'localGetFileContent is intentionally limited to UTF-8 text to avoid garbled output.',
+    ],
+  }) as LocalGetFileContentToolResult;
+}
+
+async function isLikelyBinaryFile(filePath: string): Promise<boolean> {
+  const sampleSize = 8192;
+  const buffer = Buffer.alloc(sampleSize);
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+
+  try {
+    handle = await open(filePath, 'r');
+    const { bytesRead } = await handle.read(buffer, 0, sampleSize, 0);
+    if (bytesRead === 0) {
+      return false;
+    }
+
+    const sample = buffer.subarray(0, bytesRead);
+    if (sample.includes(0)) {
+      return true;
+    }
+
+    try {
+      new TextDecoder('utf-8', { fatal: true }).decode(sample);
+    } catch {
+      return true;
+    }
+
+    let strippedLength = 0;
+    let controlBytes = 0;
+    let index = 0;
+    while (index < sample.length) {
+      const byte = sample[index]!;
+
+      if (
+        byte === 0x1b &&
+        index + 1 < sample.length &&
+        sample[index + 1] === 0x5b
+      ) {
+        index += 2;
+        while (
+          index < sample.length &&
+          (sample[index]! < 0x40 || sample[index]! > 0x7e)
+        ) {
+          index += 1;
+        }
+        index += 1;
+        continue;
+      }
+
+      strippedLength += 1;
+      const allowedControl = byte === 0x09 || byte === 0x0a || byte === 0x0d;
+      if (byte < 0x20 && !allowedControl) {
+        controlBytes += 1;
+      }
+      index += 1;
+    }
+
+    return strippedLength > 0 && controlBytes / strippedLength > 0.05;
+  } catch {
+    return false;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
 }
 
 async function readFileContentOrError(
@@ -503,6 +582,10 @@ export async function fetchContent(
         ? Number(fileStats.size)
         : fileStats.size;
     const fileSizeKB = fileSizeBytes / 1024;
+    if (await isLikelyBinaryFile(absolutePath)) {
+      return createBinaryFileErrorResult(query, absolutePath);
+    }
+
     if (shouldFailForLargeFile(query, fileSizeKB)) {
       return createLargeFileErrorResult(query, absolutePath, fileSizeKB);
     }

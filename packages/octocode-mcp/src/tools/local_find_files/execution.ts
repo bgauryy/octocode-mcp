@@ -33,7 +33,7 @@ export async function executeFindFiles(
               .join('; ');
             return createErrorResult(`Validation error: ${messages}`, query);
           }
-          return findFiles(query);
+          return findFiles(validation.data);
         },
       }),
     {
