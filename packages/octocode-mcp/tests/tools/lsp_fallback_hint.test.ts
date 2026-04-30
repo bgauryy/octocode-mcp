@@ -156,6 +156,110 @@ describe('LSP fallback hint — surfaced when isLanguageServerAvailable=false', 
       `expected an LSP-unavailable hint, got: ${JSON.stringify(hints)}`
     ).toBe(true);
   });
+
+  // Regression: char-budget pagination must not drop the LSP-unavailable hint.
+  // applyCallHierarchyOutputLimit previously rebuilt hints from pagedData.hints
+  // (a JSON slice that may be empty on page 2+). Aligning with goto-definition's
+  // pattern — re-spreading result.hints into combinedHints — keeps the install
+  // hint visible on every page so agents never silently treat a fallback chain
+  // as a real semantic call graph.
+  it('lspCallHierarchy preserves the LSP-unavailable hint across char-budget pagination', async () => {
+    const longCalls = Array.from({ length: 12 }, (_, i) => ({
+      from: {
+        name: `caller_${i}`,
+        kind: 'function' as const,
+        uri: testPath,
+        range: {
+          start: { line: i, character: 0 },
+          end: { line: i, character: 50 },
+        },
+        content: `function caller_${i}() { testSymbol(); }`.repeat(8),
+      },
+      fromRanges: [
+        {
+          start: { line: i, character: 10 },
+          end: { line: i, character: 20 },
+        },
+      ],
+    }));
+
+    const callHierarchyPatterns = await import(
+      '../../src/tools/lsp_call_hierarchy/callHierarchyPatterns.js'
+    );
+    vi.mocked(
+      callHierarchyPatterns.callHierarchyWithPatternMatching
+    ).mockResolvedValueOnce({
+      status: 'hasResults',
+      item: {
+        name: 'testSymbol',
+        kind: 'function',
+        uri: testPath,
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 2, character: 1 },
+        },
+      },
+      incomingCalls: longCalls,
+      direction: 'incoming',
+      depth: 1,
+      hints: [],
+    });
+
+    const pageOne = await processCallHierarchy({
+      uri: testPath,
+      symbolName: 'testSymbol',
+      lineHint: 4,
+      direction: 'incoming',
+      charLength: 200,
+      mainResearchGoal: 'g',
+      researchGoal: 'g',
+      reasoning: 'r',
+    } as Parameters<typeof processCallHierarchy>[0]);
+
+    const totalChars = (
+      pageOne as unknown as {
+        outputPagination?: { totalChars?: number; charLength?: number };
+      }
+    ).outputPagination?.totalChars;
+    expect(totalChars, 'expected pagination to trigger').toBeGreaterThan(200);
+
+    vi.mocked(
+      callHierarchyPatterns.callHierarchyWithPatternMatching
+    ).mockResolvedValueOnce({
+      status: 'hasResults',
+      item: {
+        name: 'testSymbol',
+        kind: 'function',
+        uri: testPath,
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 2, character: 1 },
+        },
+      },
+      incomingCalls: longCalls,
+      direction: 'incoming',
+      depth: 1,
+      hints: [],
+    });
+
+    const pageTwo = await processCallHierarchy({
+      uri: testPath,
+      symbolName: 'testSymbol',
+      lineHint: 4,
+      direction: 'incoming',
+      charOffset: 200,
+      charLength: 200,
+      mainResearchGoal: 'g',
+      researchGoal: 'g',
+      reasoning: 'r',
+    } as Parameters<typeof processCallHierarchy>[0]);
+
+    const pageTwoHints = (pageTwo.hints ?? []).filter(Boolean) as string[];
+    expect(
+      pageTwoHints.some(h => LSP_UNAVAILABLE_RE.test(h)),
+      `page 2 must still carry the LSP-unavailable hint, got: ${JSON.stringify(pageTwoHints)}`
+    ).toBe(true);
+  });
 });
 
 describe('LSP goto-definition fallback hint', () => {

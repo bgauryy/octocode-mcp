@@ -174,7 +174,14 @@ function applyCallHierarchyOutputLimit(
   const pagedData =
     pagedQueryResult.data as unknown as Partial<CallHierarchyResult>;
 
+  // Re-spread the original result.hints to make hint-preservation an explicit
+  // invariant. applyQueryOutputPagination today excludes 'hints' from
+  // structured pagination, so result.hints survives in pagedData.hints — but
+  // re-spreading guards against future paginator changes that might paginate
+  // hints, and aligns with applyGotoDefinitionOutputLimit's pattern. Set
+  // dedupes the outer hints with whatever pagedData.hints carries through.
   const combinedHints = [
+    ...(result.hints ?? []),
     ...((pagedData.hints as string[] | undefined) ?? []),
     ...sizeLimitResult.warnings,
     ...sizeLimitResult.paginationHints,

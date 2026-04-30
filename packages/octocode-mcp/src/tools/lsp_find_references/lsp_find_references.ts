@@ -136,23 +136,17 @@ export async function findReferences(
       !!patternResult.locations?.length;
 
     if (!lspHasLocations) {
-      return withLspUnavailableHint(
-        paginateGlobalBranchResult(patternResult, query),
-        lspAvailable
+      return paginateGlobalBranchResult(
+        withLspUnavailableHint(patternResult, lspAvailable),
+        query
       );
     }
 
     if (!patternHasLocations) {
-      return withLspUnavailableHint(
-        paginateGlobalBranchResult(lspResult!, query),
-        lspAvailable
-      );
+      return paginateGlobalBranchResult(lspResult!, query);
     }
 
-    return withLspUnavailableHint(
-      mergeReferenceResults(lspResult, patternResult, query),
-      lspAvailable
-    );
+    return mergeReferenceResults(lspResult, patternResult, query);
   } catch (error) {
     return createErrorResult(error, query, {
       toolName: TOOL_NAME,

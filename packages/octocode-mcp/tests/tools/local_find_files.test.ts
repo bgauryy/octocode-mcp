@@ -400,6 +400,39 @@ describe('localFindFiles', () => {
         expect.arrayContaining(['-path', '*/node_modules', '-prune'])
       );
     });
+
+    it('should auto-exclude tool/IDE cache dirs by default', async () => {
+      mockSafeExec.mockResolvedValue({
+        success: true,
+        code: 0,
+        stdout: '/test/path/src/file.js\0',
+        stderr: '',
+      });
+
+      const result = await findFiles({ path: '/test/path' });
+      expect(result.status).toBe('hasResults');
+
+      const args = mockSafeExec.mock.calls[0]![1] as string[];
+      // Regression: localFindFiles was returning .octocode/scan/* artifacts
+      // because DEFAULT_EXCLUDE_DIRS only listed node_modules/dist/.git/coverage/build/.next.
+      for (const dir of [
+        '.octocode',
+        '.cursor',
+        '.vscode',
+        '.idea',
+        '.claude',
+        '.context',
+        '.turbo',
+        '.cache',
+        '.parcel-cache',
+        '.svelte-kit',
+        '.nuxt',
+        'out',
+        'target',
+      ]) {
+        expect(args).toContain(`*/${dir}`);
+      }
+    });
   });
 
   describe('Result limiting', () => {
