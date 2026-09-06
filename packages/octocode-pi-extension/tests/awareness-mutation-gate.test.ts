@@ -5,6 +5,28 @@ describe('awareness mutation gate', () => {
   const cwd = '/repo';
   const event = (toolName: string, input: Record<string, unknown>) => ({ toolName, input });
 
+  it.each(['write', 'edit', 'delete'])('blocks the registered file tool %s operation before presence', (type) => {
+    const startWork = vi.fn(() => 'run_file');
+    const queryTarget = vi.fn(() => ({ blocked: true, message: 'peer owns file' }));
+    const gate = createAwarenessMutationGate({ storeExists: () => true, queryTarget, startWork, endWork: vi.fn() });
+    expect(gate.preflight(event('file', { queries: [{ type, path: 'a.ts' }] }), cwd, 'me'))
+      .toEqual({ block: true, reason: 'peer owns file' });
+    expect(queryTarget).toHaveBeenCalledWith('/repo/a.ts', cwd, 'me');
+    expect(startWork).not.toHaveBeenCalled();
+  });
+
+  it('tracks successful registered file batches through completion', () => {
+    const startWork = vi.fn((target: string) => `run:${target}`);
+    const endWork = vi.fn();
+    const recordEdit = vi.fn();
+    const gate = createAwarenessMutationGate({ storeExists: () => false, queryTarget: vi.fn(), startWork, endWork, recordEdit });
+    const file = event('file', { queries: [{ type: 'write', path: 'a.ts' }, { type: 'delete', path: 'b.ts' }] });
+    gate.preflight(file, cwd, 'me');
+    gate.complete(file, cwd, 'me', true);
+    expect(recordEdit.mock.calls).toEqual([['/repo/a.ts', cwd, 'me'], ['/repo/b.ts', cwd, 'me']]);
+    expect(endWork).toHaveBeenCalledTimes(2);
+  });
+
   it('blocks structured queries before starting any presence', () => {
     const startWork = vi.fn(() => 'run_blocked');
     const gate = createAwarenessMutationGate({
@@ -58,11 +80,34 @@ describe('awareness mutation gate', () => {
     expect(gate.preflight(event('write', { path: 'a.ts' }), cwd, 'me')).toEqual({ block: true, reason: 'Awareness store query failed: corrupt' });
   });
 
-  it('warns and fails open on presence failure', () => {
+  it('blocks when presence admission fails after the initial lock check', () => {
     const warn = vi.fn();
     const gate = createAwarenessMutationGate({ storeExists: () => true, queryTarget: () => ({ blocked: false }), startWork: () => { throw new Error('busy'); }, endWork: vi.fn(), warn });
-    expect(gate.preflight(event('write', { path: 'a.ts' }), cwd, 'me')).toBeUndefined();
+    expect(gate.preflight(event('write', { path: 'a.ts' }), cwd, 'me')).toEqual({ block: true, reason: 'Awareness presence update failed: busy' });
     expect(warn).toHaveBeenCalledWith('Awareness presence update failed: busy');
+  });
+
+  it('rolls back only the failed batch participation when a peer acquires a later target', () => {
+    const endWork = vi.fn();
+    const gate = createAwarenessMutationGate({
+      storeExists: () => true, queryTarget: () => ({ blocked: false }),
+      startWork: (target) => { if (target.endsWith('b.ts')) throw new Error('peer lock arrived'); return 'run_a'; },
+      endWork,
+    });
+    const first = event('file', { queries: [{ type: 'write', path: 'a.ts' }] });
+    gate.preflight(first, cwd, 'me');
+    expect(gate.preflight(event('file', { queries: [{ type: 'write', path: 'a.ts' }, { type: 'write', path: 'b.ts' }] }), cwd, 'me'))
+      .toEqual({ block: true, reason: 'Awareness presence update failed: peer lock arrived' });
+    expect(endWork).not.toHaveBeenCalled();
+    gate.complete(first, cwd, 'me', true);
+    expect(endWork).toHaveBeenCalledOnce();
+  });
+
+  it('skips durable admission when the host disables persistence', () => {
+    const storeExists = vi.fn(); const startWork = vi.fn();
+    const gate = createAwarenessMutationGate({ enabled: () => false, storeExists, queryTarget: vi.fn(), startWork, endWork: vi.fn() });
+    expect(gate.preflight(event('file', { queries: [{ type: 'write', path: 'a.ts' }] }), cwd, 'me')).toBeUndefined();
+    expect(storeExists).not.toHaveBeenCalled(); expect(startWork).not.toHaveBeenCalled();
   });
 
   it('cleans only presence owned by this gate', () => {
@@ -75,6 +120,17 @@ describe('awareness mutation gate', () => {
       ['/repo/a.ts', '/repo', 'me', 'run:/repo/a.ts'],
       ['/repo/b.ts', '/repo', 'me', 'run:/repo/b.ts'],
     ]);
+  });
+
+  it('records edits without ending a pre-existing task or lock run', () => {
+    const endWork = vi.fn(); const recordEdit = vi.fn();
+    const gate = createAwarenessMutationGate({ storeExists: () => true, queryTarget: () => ({ blocked: false }), startWork: () => null, endWork, recordEdit });
+    const file = event('file', { queries: [{ type: 'write', path: 'a.ts' }] });
+    gate.preflight(file, cwd, 'me');
+    gate.complete(file, cwd, 'me', true);
+    gate.cleanup();
+    expect(recordEdit).toHaveBeenCalledOnce();
+    expect(endWork).not.toHaveBeenCalled();
   });
 
   it('records successful mutations and releases only presence owned by the completed call', () => {

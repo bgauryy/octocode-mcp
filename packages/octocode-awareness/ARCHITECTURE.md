@@ -21,14 +21,12 @@ reflection, and recovery for coding agents. It remains independent of
   low-level SQLite utilities, shared entity types, and cross-host protocol
   fragments. Shared types and utilities don't imply shared physical storage.
 
-During root development, the root `file:../octocode-agent/packages/octocode-agent-contracts`
-resolution supplies a snapshot of the sibling shared-contract build. After rebuilding
-that contract, refresh the snapshot with `yarn install`. The published package keeps
-its semver development dependency and has no npm runtime dependencies. The sibling
-native host imports the public `@octocodeai/octocode-awareness` API through a local
-Yarn portal. Pi uses the Awareness workspace resolution. The root development setup
-maintains these links; the prepublish guard requires removing local resolutions
-before release.
+During root development, `@octocodeai/agent-contracts` resolves to the local workspace
+`packages/octocode-agent-contracts`. Rebuild that owning workspace before building
+Awareness or Pi consumers; no sibling snapshot or dependency reinstall is needed
+for source changes. The published Awareness package has no npm runtime dependencies;
+its build bundles the required shared contracts. Native hosts consume Awareness's
+public package API, while Pi uses the local Awareness workspace during development.
 
 ## Storage and process boundaries
 

@@ -12,6 +12,7 @@ import { MANAGED_BLOCK_END, MANAGED_BLOCK_START, SYSTEM_PROMPT_MARKER, DISABLED_
 import { applyOctocodeUi, getThinkingStatus } from '../src/extension-ui.js';
 import { getAssetPaths, getAwarenessCLIPath, buildAwarenessCommand, getInstallSource, listBundledSkills, readTextIfExists, resolveAwarenessCoordinationScope } from '../src/assets.js';
 import { openAwarenessStore } from '@octocodeai/octocode-awareness';
+import { SUBAGENT_WORKER_CONTRACT, SUBAGENT_AWARENESS_GUIDANCE } from '@octocodeai/agent-contracts/prompts';
 import { getAppendSystemTarget, parseSetupScope, splitArgs, truncateUserVisibleToolOutput } from '../src/utils.js';
 import { mergeManagedAppendSystem } from '../src/prompt.js';
 import { cleanupSpawnedAgentsForShutdown, evaluateSpawnPolicy, formatAgentLedgerDetails, listWorkerLedgerEntries, setAgentProcessFactoryForTests, normalizeWorkerOutput, evaluateWorkerRecoveryRisk } from '../src/tools/agent-tools.js';
@@ -383,9 +384,8 @@ test('build composes the system prompt from the inlined prompt module', async ()
   );
   assert.equal(fs.readFileSync(paths.systemPrompt, 'utf8'), SYSTEM_PROMPT);
 
-  // Subagent prompts share ONE coordination block: the source .md carries the
-  // {{OCTOCODE_COORDINATION}} placeholder, expanded into dist at build. Assert the
-  // dist output is fully expanded and every subagent carries the identical block.
+  // Worker artifacts contain shared host constraints once. The runtime injects
+  // Awareness's canonical guide, so the artifact must omit its parallel recipe.
   const renderedCoordination: string[] = [];
   for (const agent of ['architect', 'browser-agent', 'planner', 'researcher']) {
     const source = fs.readFileSync(path.join(packageRoot, 'subagents', agent, 'SYSTEM_PROMPT.md'), 'utf8');
@@ -393,7 +393,8 @@ test('build composes the system prompt from the inlined prompt module', async ()
     const dist = fs.readFileSync(path.join(distDir, 'subagents', agent, 'SYSTEM_PROMPT.md'), 'utf8');
     assert.doesNotMatch(dist, /\{\{OCTOCODE_[A-Z_]+\}\}/, `dist subagent has no unexpanded placeholder: ${agent}`);
     assert.match(dist, /## Coordination/, `dist subagent has coordination: ${agent}`);
-    assert.match(dist, /auto-registered in the shared Awareness agent list/, `dist subagent has refreshed coordination: ${agent}`);
+    assert.equal(dist.split(SUBAGENT_WORKER_CONTRACT).length, 2, `dist subagent has one worker contract: ${agent}`);
+    assert.ok(!dist.includes(SUBAGENT_AWARENESS_GUIDANCE), `dist subagent omits duplicate Awareness guidance: ${agent}`);
     // Shared skills intro is present in every subagent.
     assert.match(dist, /You have access to bundled \*and\* user-installed Octocode skills\./, `dist subagent has shared skills intro: ${agent}`);
     const block = dist.slice(dist.indexOf('## Coordination'), dist.indexOf('Treat Awareness state'));
@@ -403,7 +404,7 @@ test('build composes the system prompt from the inlined prompt module', async ()
   // The Octocode-surface line is shared across the three research subagents (not browser-agent).
   const surfaceLines = ['architect', 'planner', 'researcher'].map((agent) => {
     const dist = fs.readFileSync(path.join(distDir, 'subagents', agent, 'SYSTEM_PROMPT.md'), 'utf8');
-    const i = dist.indexOf('Leverage the Octocode surface');
+    const i = dist.indexOf('Use the Octocode surface');
     assert.notEqual(i, -1, `research subagent has shared surface line: ${agent}`);
     return dist.slice(i, dist.indexOf('\n', i));
   });
@@ -478,7 +479,8 @@ test('build copies bundled Octocode skills without secret env files', () => {
   // redundant root skills/ dir and no pi.skills declaration — that duplicate
   // package-scanned copy caused [Skill conflicts].
   const skills = listBundledSkills(distDir);
-  assert.equal(skills.includes('octocode-awareness'), false, 'Awareness is prompt-owned and exposed as a CLI, not a loadable skill');
+  assert.equal(skills.includes('octocode-awareness'), true, 'Full Awareness is discoverable through the skill loader');
+  assert.equal(skills.some((skill) => skill.includes('awareness-lite')), false, 'Lite is not shipped');
   assert.equal(skills.includes('octocode-mannequin'), false, 'mannequin skill is intentionally excluded from the coding-agent bundle');
   for (const skill of skills) {
     assert.equal(
@@ -514,13 +516,13 @@ test('build copies bundled Octocode skills without secret env files', () => {
 
   assert.equal(
     skills.includes('octocode-awareness'),
-    false,
-    'Awareness is prompt-owned and must not duplicate into Pi skill discovery'
+    true,
+    'Awareness is available through the single resources_discover skill surface'
   );
   assert.equal(
     fs.existsSync(path.join(distDir, 'skills', 'octocode-awareness', 'SKILL.md')),
-    false,
-    'Awareness coordination is not shipped as a duplicate loadable skill'
+    true,
+    'Full Awareness operating guidance ships with its runtime integration'
   );
   const forbiddenEnv = path.join(
     distDir,
@@ -615,11 +617,12 @@ test('worker processes do not receive the main Octocode prompt addendum', async 
       },
     }, { cwd: packageRoot })) as { systemPrompt?: string } | undefined;
 
-    assert.equal(
-      result,
-      undefined,
-      'worker extension load must not layer the parent Octocode system prompt over a typed subagent prompt',
-    );
+    assert.ok(result?.systemPrompt?.startsWith('typed specialist prompt from --append-system-prompt'));
+    assert.match(result!.systemPrompt!, /<awareness>/);
+    assert.match(result!.systemPrompt!, /<awareness_cli_runtime>/);
+    assert.doesNotMatch(result!.systemPrompt!, /<octocode>/, 'workers preserve their typed prompt without the parent host addendum');
+    const repeated = await handlers.get('before_agent_start')!.at(-1)!({ systemPrompt: result!.systemPrompt! }, { cwd: packageRoot });
+    assert.deepEqual(repeated, result, 'worker turns reuse the trusted composed prompt without duplicating runtime guidance');
   } finally {
     if (previous === undefined) delete process.env['OCTOCODE_PI_SUBAGENT'];
     else process.env['OCTOCODE_PI_SUBAGENT'] = previous;
@@ -1103,10 +1106,10 @@ test('disable built-in read in favor of localGetFileContent (records read state 
   );
 });
 
-test('public direct palette is exactly 17 queries-only tools with bounded per-query reasoning', async () => {
+test('public direct palette is exactly 14 queries-only tools with bounded per-query reasoning', async () => {
   const { tools } = await captureExtensions();
   const expected = [...OCTOCODE_SUPPORT_TOOL_NAMES, 'bash'];
-  assert.equal(expected.length, 17);
+  assert.equal(expected.length, 14);
   assert.deepEqual([...tools.keys()].sort(), [...expected].sort());
 
   for (const name of expected) {
@@ -1314,7 +1317,7 @@ test('the removed unified-flow flag cannot restore retired tools', async () => {
   try {
     const { tools } = await captureExtensions();
     const expected = [...OCTOCODE_SUPPORT_TOOL_NAMES, 'bash'];
-    assert.equal(expected.length, 17);
+    assert.equal(expected.length, 14);
     assert.deepEqual([...tools.keys()].sort(), [...expected].sort());
     for (const retired of ['awarenessPlan', 'claim', 'task', 'handoff', 'verify', 'awarenessAgents']) {
       assert.equal(tools.has(retired), false, `${retired} cannot be restored by an obsolete environment variable`);
@@ -2453,7 +2456,7 @@ test('mcp initialization reads canonical project config before the agent calls t
     assert.match(cachedPrompt, /<runtime_capabilities>/);
     assert.match(cachedPrompt, /effective_inline_images: false/);
     assert.match(cachedPrompt, /<available_skills>/);
-    assert.doesNotMatch(cachedPrompt, /octocode-awareness:/);
+    assert.match(cachedPrompt, /octocode-awareness:/, 'the bundled Awareness skill remains discoverable and loadable');
     assert.match(cachedPrompt, /octocode-roast: Critical review and adversarial critique\. \[user\/global\]/);
     assert.doesNotMatch(cachedPrompt, /BEFORE acting/);
 
@@ -3575,7 +3578,7 @@ test('Awareness pre-edit gate blocks lock conflicts', async () => {
     } finally {
       awareness.close();
     }
-    const event = { toolName: 'write', input: { path: 'README.md' } };
+    const event = { toolName: 'file', input: { queries: [{ reasoning: 'Update documentation', type: 'write', path: 'README.md', content: '# updated' }] } };
     const ctx = { cwd: workspace, sessionManager: { getSessionId: () => 'session-a' } };
 
     await withAgentId('pi:session-a', async () => {
@@ -3587,8 +3590,21 @@ test('Awareness pre-edit gate blocks lock conflicts', async () => {
     });
 
     await withAgentId('agent-b', async () => {
-      const result = await handlers.get('tool_call')![0]!(event, { cwd: workspace, sessionManager: { getSessionId: () => 'b' } });
+      const ownerCtx = { cwd: workspace, sessionManager: { getSessionId: () => 'b' } };
+      const store = openAwarenessStore({ workspace, scope: resolveAwarenessCoordinationScope(workspace) });
+      const before = store.listWork({ filePath: 'README.md', agentId: 'agent-b' })[0]!;
+      const result = await handlers.get('tool_call')![0]!(event, ownerCtx);
       assert.equal(result, undefined, 'the lock owner edits without a block');
+      try {
+        for (const handler of handlers.get('tool_execution_start') ?? []) await handler({ toolCallId: 'owned-file', toolName: 'file', args: event.input }, ownerCtx);
+        for (const handler of handlers.get('tool_execution_end') ?? []) await handler({ toolCallId: 'owned-file', toolName: 'file', result: {}, isError: false }, ownerCtx);
+        const after = store.listWork({ filePath: 'README.md', agentId: 'agent-b' })[0];
+        assert.ok(after, 'native completion must preserve manually owned work');
+        assert.equal(after.runId, before.runId);
+        const command = buildAwarenessCommand(['--db', store.dbPath, 'work', 'show', '--workspace', workspace, '--file', 'README.md', '--full', '--compact']);
+        const shown = JSON.parse(execFileSync(command.cmd, command.args, { encoding: 'utf8' })) as { files: Array<{ run_id: string; test_plan: string }> };
+        assert.equal(shown.files.find((row) => row.run_id === before.runId)?.test_plan, 'yarn test', 'automatic presence must preserve the declared verification contract');
+      } finally { store.close(); }
     });
 
     fs.writeFileSync(path.join(workspace, 'GLOBAL.md'), '# global');
@@ -4273,12 +4289,12 @@ test('agentSpecialist starts researcher, planner, and architect with all Octocod
       researcherArgs![researcherArgs!.indexOf('--tools') + 1]!;
     assert.match(researcherTools, /MCPTool/);
     assert.doesNotMatch(researcherTools, /ghSearch/, 'ghSearch served via MCPTool, not natively');
-    assert.doesNotMatch(researcherTools, /bash/);
+    assert.match(researcherTools, /bash/, 'researcher can invoke the Awareness CLI');
 
     const plannerTools = plannerArgs![plannerArgs!.indexOf('--tools') + 1]!;
     assert.match(plannerTools, /MCPTool/);
     assert.doesNotMatch(plannerTools, /localGetFileContent/, 'localGetFileContent served via MCPTool, not natively');
-    assert.doesNotMatch(plannerTools, /bash/);
+    assert.match(plannerTools, /bash/, 'planner can invoke the Awareness CLI');
     assert.ok(plannerArgs!.includes('--model'));
     assert.ok(plannerArgs!.includes('sonnet:high'));
 
@@ -4286,6 +4302,10 @@ test('agentSpecialist starts researcher, planner, and architect with all Octocod
       architectArgs![architectArgs!.indexOf('--tools') + 1]!;
     assert.match(architectTools, /bash/);
     assert.match(architectTools, /MCPTool/);
+    for (const names of [researcherTools, plannerTools, architectTools]) {
+      assert.ok(names.split(',').includes('skill'), 'typed workers can load the Awareness skill');
+      assert.doesNotMatch(names, /(?:^|,)(?:memory|lock|message|write)(?:,|$)/, 'typed workers use current registered tools');
+    }
     assert.doesNotMatch(architectTools, /lspGetSemantics/, 'lspGetSemantics served via MCPTool, not natively');
   } finally {
     setAgentProcessFactoryForTests(null);

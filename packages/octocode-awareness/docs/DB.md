@@ -85,8 +85,8 @@ Awareness database. It rejects:
 - a drifted Awareness schema with unknown or incompatible relations; and
 - unexpected application tables, views, indexes, or triggers.
 
-Recognized historical Awareness relation subsets are upgraded additively in one
-transaction. Identity validation happens before schema writes. Initialization
+Recognized historical Awareness databases require explicit conversion into a new
+destination; normal opens never upgrade them. Identity validation happens before schema writes. Initialization
 assigns the Awareness identity only after DDL, indexes, optional FTS,
 fingerprint, integrity, and foreign-key checks succeed. It must never relabel a
 populated database to make it appear compatible.
@@ -143,7 +143,7 @@ migration procedure in [STORAGE_SCOPES.md](STORAGE_SCOPES.md).
 
 ## Explicit consolidation copy
 
-Use consolidation only to move a recognized historical Awareness ledger into a
+Use consolidation only to move a recognized historical or canonical Awareness ledger into a
 **new** canonical file. It opens the source read-only, writes a private
 temporary file beside the requested destination, validates it, then publishes
 the finished file atomically. It never upgrades, relabels, or deletes the
@@ -154,8 +154,16 @@ npx @octocodeai/octocode-awareness database consolidate \
   --source /absolute/path/old-awareness.sqlite3 \
   --destination /absolute/path/awareness-consolidated.sqlite3 \
   --unattributed-agent-id migration-reviewer \
+  --dry-run \
   --compact
 ```
+
+`--dry-run` validates a private temporary copy, then discards it. Inspect the
+reported counts, then omit `--dry-run` to publish the new destination. The exact
+prior canonical schema with three-host hook receipts is supported; its copy
+accepts Claude, Codex, Copilot, Cursor, Gemini, and OpenCode receipts. Unknown
+schema changes are rejected. Copying retains transport sequence high-water marks,
+including positions whose events were already pruned, so consumer cursors stay valid.
 
 `--unattributed-agent-id` is an explicit adoption choice for rows that lack an
 actor. It does not fill in missing plan goals, document directories, task

@@ -47,6 +47,18 @@ The default policy is warning-first. It warns when a worker packet omits recomme
 
 Workers inherit a child `OCTOCODE_AGENT_ID` shaped as `<parent>:worker:<short-id>`. The mapping is stored only in the in-session ledger. Durable Awareness writes for raw worker output are deferred until privacy/storage review accepts them. After collection, the parent may verify and distill a key session-relevant finding into `memory.md`; raw handbacks and unverified claims remain excluded.
 
+Typed researcher, planner and architect workers receive `web`, `MCPTool`, `file`,
+`skill` and `bash`. They load the bundled Awareness skill and use the installed CLI
+for scoped signals, memory and bookkeeping. Researcher/planner shell use is limited
+to Awareness; architect also allows bounded non-destructive test/build/debug checks.
+Code research remains on MCP, and `file` is limited by role policy to parent-assigned
+RFC or durable handback artifacts. Tool availability does not authorize product edits.
+
+Parent and workers must resolve the same physical database and normalized workspace,
+while keeping distinct stable IDs. The runtime supplies CLI/database/workspace
+bindings to guarded `bash`. Use the returned native run/task IDs and receipts;
+do not duplicate lifecycle records or turn unverified worker output into memory.
+
 ## Rollback
 
 The rollback path is extension-local: remove command/status/widget registration, bypass the hook composer by registering hooks directly, and keep the existing `spawnRpcAgent` worker path. No Pi fork or Pi core migration is required.

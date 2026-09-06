@@ -1,6 +1,6 @@
 ---
 name: octocode-research
-description: "Use when a code claim must be proven: trace callers, imports, runtime wiring, regressions, GitHub, or change impact."
+description: "Use when a code claim needs evidence before assertion: trace callers, imports, runtime wiring, regressions, GitHub, or change impact; also when asked to 'research this' or 'use octocode'. Skip when the fix is already known and needs no investigation. Not for open-ended ideation → octocode-brainstorming."
 ---
 
 # Octocode Research

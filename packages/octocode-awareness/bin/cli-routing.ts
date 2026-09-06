@@ -18,7 +18,7 @@ export const KNOWN_FLAGS: Record<string, string[]> = {
   'memory-restore': ['memory_id', 'workspace', 'artifact', 'repo', 'ref', 'dry_run'],
   'reflect': ['agent_id', 'task', 'outcome', 'lesson', 'worked', 'didnt_work', 'fix_repo', 'fix_file', 'fix_harness', 'fix_instructions', 'failure_signature', 'importance', 'judgment_note', 'duo', 'eval_failure_json', 'workspace', 'artifact', 'repo', 'ref', 'allow_similar'],
   'refine-set': ['agent_id', 'reasoning', 'remember', 'quality', 'state', 'workspace', 'artifact', 'repo', 'ref', 'file', 'files', 'refinement_id', 'check_receipt'],
-  'refine-get': ['workspace', 'artifact', 'repo', 'ref', 'quality', 'include_handoffs', 'state', 'states', 'limit', 'full', 'refinement_id'],
+  'refine-get': ['workspace', 'artifact', 'repo', 'ref', 'quality', 'include_handoffs', 'state', 'states', 'limit', 'offset', 'full', 'refinement_id'],
   'refine-delete': ['refinement_id', 'workspace', 'artifact', 'dry_run'],
   'pre-flight-intent': ['agent_id', 'workspace', 'artifact', 'run_id', 'rationale', 'test_plan', 'context_ref', 'target_file', 'ttl_minutes', 'ttl_seconds', 'wait_seconds', 'retry_interval', 'strict_agent_id'],
   'release-file-lock': ['agent_id', 'run_id', 'target_file', 'status', 'workspace', 'artifact'],
@@ -37,8 +37,8 @@ export const KNOWN_FLAGS: Record<string, string[]> = {
   'developer-review': ['workspace', 'artifact', 'repo', 'ref', 'state', 'limit', 'format', 'query'],
   'query': ['view', 'query', 'limit', 'format', 'out', 'workspace', 'artifact', 'repo', 'ref', 'agent_id', 'state', 'label', 'file', 'since', 'include_bodies'],
   'attend': ['agent_id', 'query', 'limit', 'workspace', 'artifact', 'repo', 'ref', 'file', 'include_bodies', 'explain_organ'],
-  'agent-registry': ['action', 'agent_id', 'agent_name', 'workspace', 'artifact', 'context', 'limit'],
-  'agent-signal': ['action', 'agent_id', 'workspace', 'artifact', 'repo', 'ref', 'kind', 'subject', 'body', 'to_agent', 'file', 'ref_id', 'importance', 'in_reply_to', 'thread_id', 'signal_id', 'all', 'unread_only', 'mark_read', 'limit', 'include_bodies', 'format'],
+  'agent-registry': ['action', 'agent_id', 'agent_name', 'agent_vendor', 'agent_host', 'workspace', 'artifact', 'context', 'limit', 'offset'],
+  'agent-signal': ['action', 'agent_id', 'workspace', 'artifact', 'repo', 'ref', 'kind', 'subject', 'body', 'to_agent', 'file', 'ref_id', 'importance', 'in_reply_to', 'thread_id', 'signal_id', 'all', 'unread_only', 'mark_read', 'limit', 'cursor', 'include_bodies', 'format'],
   'notify-prune': ['agent_id', 'signal_id', 'resolved', 'older_than_days', 'dry_run', 'workspace', 'artifact'],
   'session-capture': ['agent_id', 'workspace', 'artifact', 'repo', 'ref', 'reason', 'cwd'],
   'wait-for-lock': ['agent_id', 'target_file', 'workspace', 'artifact', 'wait_seconds', 'retry_interval'],
@@ -48,7 +48,7 @@ export const KNOWN_FLAGS: Record<string, string[]> = {
   'schema': ['examples', 'all'],
   'plan-command': ['action', 'plan_id', 'name', 'objective', 'lead_agent_id', 'agent_id', 'workspace', 'artifact', 'status', 'path', 'title', 'limit', 'full'],
   'task-command': ['action', 'task_id', 'plan_id', 'workspace', 'title', 'reasoning', 'acceptance', 'path', 'agent_id', 'priority', 'depends_on', 'run_id', 'lease_minutes', 'message', 'blocked_reason', 'test_plan', 'status', 'next', 'limit', 'full'],
-  'work-command': ['action', 'agent_id', 'session_id', 'workspace', 'artifact', 'run_id', 'rationale', 'test_plan', 'context_ref', 'file', 'exclusive', 'ttl_minutes', 'ttl_seconds', 'all', 'full', 'limit'],
+  'work-command': ['action', 'agent_id', 'session_id', 'workspace', 'artifact', 'run_id', 'rationale', 'test_plan', 'context_ref', 'file', 'exclusive', 'ttl_minutes', 'ttl_seconds', 'all', 'full', 'limit', 'offset'],
 };
 
 export function validateFlags(command: string, args: ParsedArgs): string[] {
@@ -69,6 +69,8 @@ export function validateFlagValues(args: ParsedArgs): void {
     const value = args[key];
     if (value === false && !BOOLEAN_FLAGS.has(key)) {
       die(`--no-${key.replace(/_/g, '-')} is invalid because --${key.replace(/_/g, '-')} expects a value`);
+    } else if (BOOLEAN_FLAGS.has(key) && typeof value !== 'boolean') {
+      die(`--${key.replace(/_/g, '-')} expects a boolean (true/false, yes/no, or 1/0)`, { got: String(value) });
     } else if (NUMERIC_FLAGS.has(key)) {
       const n = typeof value === 'string' ? Number(value) : NaN;
       if (value === true || !Number.isInteger(n)) {
@@ -285,6 +287,8 @@ export function flagBool(value: ArgValue | undefined, fallback?: boolean): boole
 export interface EmitOptions { compact?: boolean }
 
 function compactValue(value: unknown, key?: string): unknown {
+  // Unknown identity labels are meaningful even in compact peer discovery.
+  if (value === null && (key === 'agent_vendor' || key === 'agent_host')) return null;
   if (key === 'db_path' || value === null || value === undefined) return undefined;
   if (Array.isArray(value)) return value.map((item) => compactValue(item)).filter((item) => item !== undefined);
   if (typeof value !== 'object') return value;
@@ -357,10 +361,12 @@ export function die(message: string, extras: Record<string, unknown> = {}): neve
 /**
  * Resolve the acting agent id with a stable precedence: explicit --agent-id,
  * then the OCTOCODE_AGENT_ID env (exported by hosts such as the Pi extension so
- * hooks and CLI calls share one identity), then the literal 'agent' fallback.
+ * hooks and CLI calls share one identity). Missing identities are rejected.
  * This lets a harness declare work via hooks and later verify/reflect via the
  * CLI under the same id without passing --agent-id on every call.
  */
 export function resolveAgentId(args: ParsedArgs): string {
-  return String(args['agent_id'] ?? process.env.OCTOCODE_AGENT_ID ?? 'agent');
+  const value = args['agent_id'] ?? process.env.OCTOCODE_AGENT_ID;
+  if (typeof value !== 'string' || !value.trim()) die('--agent-id is required unless OCTOCODE_AGENT_ID is set to a stable unique session ID; reuse it for CLI calls and hooks.');
+  return value.trim();
 }

@@ -26,6 +26,8 @@ Ask before auth, hosted spend, crawl expansion, CAPTCHA/MFA, personal-data expor
 
 Every runnable script accepts `--help`. Before changing scripts or providers, read `scripts/README.md`; shared modules live in `scripts/lib/`, vendored env resolution in `scripts/octocode-config.mjs`, and JSON contracts in `scripts/schemas/`.
 
+After corpus-search changes, run `node --test scripts/tests/corpus-find.test.mjs`; after CDP client changes, run `node --test scripts/tests/cdp-client.test.mjs`. These finite local regressions need no browser or hosted provider; they do not replace a live browser check for CDP integration changes.
+
 ## References
 
 - When scope, policy, or route is unclear, load `references/user-inputs.md`, `references/scraping-policy.md`, or `references/route-selection.md`.

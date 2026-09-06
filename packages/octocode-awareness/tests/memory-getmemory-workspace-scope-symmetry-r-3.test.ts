@@ -5,7 +5,7 @@ import { rebuildFts } from '../src/db-maintenance.js';
 import { insertMemory } from '../src/memory-write.js';
 import { getMemory } from '../src/memory-recall.js';
 import { forgetMemory } from '../src/memory-lifecycle.js';
-import { findSimilarMemories } from '../src/memory-scoring.js';
+import { findSimilarMemories } from '../src/index.js';
 import * as awarenessApi from '../src/index.js';
 import { normalizeFilePath } from '../src/helpers.js';
 import { execSync } from 'node:child_process';

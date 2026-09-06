@@ -15,21 +15,21 @@ const CLI_ALLOWED: Record<string, string[]> = {
   'agent touch': ['workspace', 'agent_id', 'status'], 'agent leave': ['workspace', 'agent_id'],
   'plan create': ['name', 'objective', 'lead_agent_id', 'workspace', 'artifact'], 'plan list': ['workspace', 'artifact', 'status', 'limit', 'full'],
   'plan show': ['plan_id', 'full'], 'plan join': ['plan_id', 'agent_id'], 'plan doc': ['plan_id', 'agent_id', 'path', 'title'], 'plan status': ['plan_id', 'agent_id', 'status'],
-  'task create': ['plan_id', 'title', 'reasoning', 'acceptance', 'path', 'depends_on', 'agent_id', 'priority', 'lease_minutes', 'test_plan'],
+  'task create': ['plan_id', 'title', 'reasoning', 'acceptance', 'path', 'depends_on', 'agent_id', 'priority'],
   'task list': ['plan_id', 'workspace', 'status', 'limit', 'full'], 'task ready': ['plan_id', 'workspace', 'limit', 'full'], 'task show': ['task_id', 'full'],
-  'task claim': ['task_id', 'plan_id', 'agent_id', 'next', 'lease_minutes'], 'task heartbeat': ['task_id', 'run_id', 'agent_id', 'lease_minutes'],
+  'task claim': ['task_id', 'plan_id', 'agent_id', 'next', 'lease_minutes', 'test_plan'], 'task heartbeat': ['task_id', 'run_id', 'agent_id', 'lease_minutes'],
   'task submit': ['task_id', 'run_id', 'agent_id', 'message'], 'task release': ['task_id', 'run_id', 'agent_id', 'blocked_reason'],
   'task retry': ['task_id', 'agent_id', 'message'], 'task depend': ['task_id', 'depends_on', 'agent_id'],
   'work start': ['agent_id', 'session_id', 'workspace', 'artifact', 'run_id', 'rationale', 'test_plan', 'context_ref', 'file', 'exclusive', 'ttl_minutes', 'ttl_seconds'],
   'work touch': ['agent_id', 'run_id', 'file', 'ttl_minutes', 'ttl_seconds'], 'work end': ['agent_id', 'run_id', 'file'],
-  'work list': ['agent_id', 'workspace', 'artifact', 'run_id', 'all', 'full'], 'work show': ['workspace', 'artifact', 'file', 'all', 'full'],
+  'work list': ['agent_id', 'workspace', 'artifact', 'run_id', 'all', 'full', 'limit', 'offset'], 'work show': ['agent_id', 'workspace', 'artifact', 'run_id', 'file', 'all', 'full', 'limit', 'offset'],
   'memory recall': ['query', 'limit', 'min_importance', 'label', 'tag', 'smart', 'workspace', 'artifact', 'repo', 'ref', 'state', 'sort', 'global_only', 'strict_scope', 'all_workspaces', 'as_of', 'reference', 'regex', 'file_regex', 'file', 'explain', 'semantic', 'full'],
-  'refinement get': ['workspace', 'refinement_id', 'artifact', 'repo', 'ref', 'quality', 'include_handoffs', 'state', 'limit', 'full'],
+  'refinement get': ['workspace', 'refinement_id', 'artifact', 'repo', 'ref', 'quality', 'include_handoffs', 'state', 'limit', 'offset', 'full'],
   'lock prune': ['older_than_minutes', 'expired_only', 'agent_id', 'workspace', 'artifact', 'target_file', 'dry_run'],
   'reflect record': ['agent_id', 'task', 'outcome', 'lesson', 'worked', 'didnt_work', 'fix_repo', 'fix_file', 'fix_harness', 'fix_instructions', 'failure_signature', 'importance', 'judgment_note', 'duo', 'eval_failure_json', 'workspace', 'artifact', 'repo', 'ref', 'allow_similar'],
   'signal publish': ['agent_id', 'workspace', 'artifact', 'repo', 'ref', 'kind', 'subject', 'body', 'to_agent', 'file', 'ref_id', 'importance'],
-  'signal list': ['agent_id', 'workspace', 'artifact', 'repo', 'ref', 'all', 'unread_only', 'mark_read', 'limit', 'include_bodies', 'format'],
-  'signal reply': ['agent_id', 'in_reply_to', 'subject', 'body', 'to_agent', 'file', 'ref_id', 'importance'],
+  'signal list': ['agent_id', 'workspace', 'artifact', 'repo', 'ref', 'kind', 'thread_id', 'signal_id', 'all', 'unread_only', 'mark_read', 'limit', 'cursor', 'include_bodies', 'format'],
+  'signal reply': ['agent_id', 'workspace', 'artifact', 'repo', 'ref', 'in_reply_to', 'subject', 'body', 'to_agent', 'file', 'ref_id', 'importance'],
   'signal ack': ['agent_id', 'signal_id'], 'signal resolve': ['agent_id', 'signal_id', 'thread_id'],
 };
 
@@ -41,18 +41,26 @@ export function cliAllowedFlags(commandName: string): readonly string[] | undefi
 function aliasesFor(commandName: string): Record<string, string> {
   return {
     workspace_path: 'workspace', target_files: 'file', tags: 'tag', references: 'reference', labels: 'label', files: 'file', states: 'state',
-    eval_failures: 'eval_failure_json', ...(commandName.startsWith('lock ') ? { target_files: 'target_file' } : {}),
+    eval_failures: 'eval_failure_json', to_agents: 'to_agent', refs: 'ref_id',
+    ...(commandName.startsWith('lock ') ? { target_files: 'target_file' } : {}),
   };
 }
 
 export function projectCliProperties(properties: Record<string, unknown>, commandName: string): Record<string, string> {
   const aliases = aliasesFor(commandName);
+  if (commandName === 'signal list' && properties.kinds) {
+    properties.kind = properties.kinds;
+    properties.all = { type: 'boolean', description: 'Include read as well as unread signals.' };
+  }
   for (const [from, to] of Object.entries(aliases)) {
     if (properties[from] && !properties[to]) properties[to] = properties[from];
     delete properties[from];
   }
   const allowed = CLI_ALLOWED[commandName];
   if (allowed) {
+    // These are presentation options consumed by the root CLI, not domain inputs.
+    if (allowed.includes('full')) properties.full ??= { type: 'boolean', description: 'Include full row details.' };
+    if (allowed.includes('limit')) properties.limit ??= { type: 'integer', minimum: 1, maximum: 200, description: 'Maximum rows returned.' };
     for (const property of Object.keys(properties)) {
       if (!allowed.includes(property)) delete properties[property];
     }

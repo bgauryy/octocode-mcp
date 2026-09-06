@@ -34,10 +34,10 @@ test('README surface counts match the harness source', () => {
 });
 
 test('support tool inventory exposes only the consolidated coordination surface', () => {
-  for (const name of ['agent', 'callTool', 'skill', 'plan', 'localServer', 'lock', 'message']) {
+  for (const name of ['agent', 'callTool', 'skill', 'plan', 'localServer']) {
     assert.ok(OCTOCODE_SUPPORT_TOOL_NAMES.includes(name as never), `${name} missing from support inventory`);
   }
-  for (const name of ['awarenessStatus', 'awarenessPlan', 'claim', 'task', 'handoff', 'verify', 'awarenessAgents']) {
+  for (const name of ['memory', 'lock', 'message', 'awarenessStatus', 'awarenessPlan', 'claim', 'task', 'handoff', 'verify', 'awarenessAgents']) {
     assert.equal(OCTOCODE_SUPPORT_TOOL_NAMES.includes(name as never), false, `${name} must not have a public alias`);
   }
 });
@@ -145,7 +145,8 @@ test('README bundled-skill count and names match the canonical bundle inventory'
   for (const skill of skills) {
     assert.ok(readme.includes(`\`${skill}\``), `${skill} missing from README bundled-skill inventory`);
   }
-  assert.doesNotMatch(readme, /`octocode-awareness` is copied|^- `octocode-awareness`$/m);
+  assert.ok(skills.includes('octocode-awareness'), 'full Awareness guidance is included');
+  assert.equal(skills.some((skill) => skill.includes('awareness-lite')), false);
 });
 
 test('HARNESS summary counts match stable source contracts', () => {

@@ -10,21 +10,12 @@ export interface SkillCatalogEntry {
 
 // Dashboard caps: on-demand output, so it can afford the full picture.
 const MAX_SKILLS = 80;
-const MAX_DESCRIPTION_CHARS = 180;
+const MAX_DESCRIPTION_CHARS = 512;
 // The prompt is frozen after the complete initial discovery pass. Keep every
 // skill name so routing is correct; descriptions alone are tightly bounded.
-const MAX_PROMPT_DESCRIPTION_CHARS = 120;
-
-const PROMPT_OWNED_SKILLS = new Set([
-  // Pi owns Awareness through its prompt and tools; a user-installed copy must
-  // not create a second coordination surface.
-  'octocode-awareness',
-]);
-
-
-export function isPromptOwnedSkill(name: string): boolean {
-  return PROMPT_OWNED_SKILLS.has(clean(name).toLowerCase());
-}
+// Preserve complete routing triggers, including when-not-to-use clauses, while
+// retaining an explicit ellipsis for unusually long installed metadata.
+const MAX_PROMPT_DESCRIPTION_CHARS = 320;
 
 function clean(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
@@ -52,7 +43,7 @@ export function canonicalizeSkillCatalog(skills: SkillCatalogEntry[] | undefined
   const byName = new Map<string, SkillCatalogEntry>();
   for (const skill of skills ?? []) {
     const key = clean(skill.name).toLowerCase();
-    if (!key || isPromptOwnedSkill(skill.name) || byName.has(key)) continue;
+    if (!key || byName.has(key)) continue;
     byName.set(key, skill);
   }
   return [...byName.values()].sort((a, b) => skillSortKey(a).localeCompare(skillSortKey(b)));

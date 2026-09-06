@@ -1,3 +1,4 @@
+import { sectionDivider } from '../layout.js';
 import { c, bold, dim } from '../../utils/colors.js';
 import { select, input } from '../../utils/prompts.js';
 import { separatorChoice } from '../../utils/prompt-separator.js';
@@ -148,7 +149,7 @@ export function showConfigInfo(): void {
   ${dim('  }')}
   ${dim('}')}`);
   console.log();
-  console.log(c('blue', '━'.repeat(66)));
+  console.log(sectionDivider());
   console.log();
 
   for (const option of ALL_CONFIG_OPTIONS) {

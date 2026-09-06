@@ -1,19 +1,42 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path';
-import { readJson as readJsonFile, readJsonl as readJsonlFile, takeArg } from './lib/bridge.mjs';
+import { fileURLToPath } from 'node:url';
+import { readJson as readJsonFile, readJsonl as readJsonlFile } from './lib/bridge.mjs';
 
 function usage(code = 2) {
-  console.error('Usage: corpus-find.mjs --session-dir <dir> --query <text> [--limit <n>]');
+  console.error('Usage: corpus-find.mjs --session-dir <dir> --query <text> [--limit <positive integer>] [--offset <non-negative integer>]');
   process.exit(code);
 }
+function invalid(message) {
+  console.log(JSON.stringify({ ok: false, error: { code: 'invalidArguments', message } }));
+  process.exit(2);
+}
 const args = process.argv.slice(2);
-const take = (flag) => takeArg(args, flag);
 if (args.includes('--help') || args.includes('-h')) usage(0);
-const sessionDir = take('--session-dir');
-const query = take('--query').trim();
-if (!sessionDir || !query) usage();
+const options = new Map();
+const flags = new Set(['--session-dir', '--query', '--limit', '--offset']);
+for (let index = 0; index < args.length; index += 2) {
+  const flag = args[index];
+  if (!flags.has(flag)) invalid(`Unknown option: ${flag}`);
+  if (options.has(flag)) invalid(`Duplicate option: ${flag}`);
+  const value = args[index + 1];
+  if (value === undefined || value.startsWith('--')) invalid(`Missing value for ${flag}`);
+  options.set(flag, value);
+}
+function integerOption(flag, fallback, minimum) {
+  const raw = options.get(flag) ?? String(fallback);
+  const value = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < minimum) {
+    invalid(`${flag} must be a ${minimum === 0 ? 'non-negative' : 'positive'} safe integer`);
+  }
+  return value;
+}
+const sessionDir = options.get('--session-dir');
+const query = (options.get('--query') ?? '').trim();
+if (!sessionDir?.trim() || !query) invalid('--session-dir and a non-empty --query are required');
 const dir = resolve(sessionDir);
-const limit = Number(take('--limit') || 20);
+const limit = integerOption('--limit', 20, 1);
+const offset = integerOption('--offset', 0, 0);
 const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
 const readJson = (rel, fallback = null) => readJsonFile(dir, rel, fallback);
 const readJsonl = (rel) => readJsonlFile(dir, rel);
@@ -47,5 +70,23 @@ for (const e of automationGraph.edges || []) candidates.push({ type: `edge:${e.k
 for (const w of workflows.workflows || []) candidates.push({ type: 'workflow', score: scoreText(`${w.workflowType} ${w.label} ${w.entryUrl}`) + (w.confidence === 'high' ? 1 : 0), workflowType: w.workflowType, label: w.label, entryUrl: w.entryUrl, evidence: w.evidence });
 for (const e of elements) candidates.push({ type: 'element', score: scoreText(JSON.stringify(e)), pageId: e.pageId, kind: e.kind || e._file, workflowHint: e.workflowHint || null, preview: JSON.stringify(e).slice(0, 500) });
 for (const r of resources) candidates.push({ type: 'resource', score: scoreText(`${r.kind} ${r.src}`), pageId: r.pageId, kind: r.kind, src: r.src });
-const matches = candidates.filter((c) => c.score > 0).sort((a, b) => b.score - a.score).slice(0, limit);
-console.log(JSON.stringify({ ok: true, sessionDir: dir, query, matches, next: matches.slice(0, 5).map((m) => m.files?.textParts?.[0] || m.evidence?.[0]?.file || 'graph/site-graph.json') }, null, 2));
+const ranked = candidates.filter((c) => c.score > 0).sort((a, b) => b.score - a.score);
+const matches = ranked.slice(offset, offset + limit);
+const remainingMatches = Math.max(0, ranked.length - offset - matches.length);
+const hasMore = remainingMatches > 0;
+console.log(JSON.stringify({
+  ok: true,
+  sessionDir: dir,
+  query,
+  matches,
+  isPartial: hasMore,
+  completeness: hasMore ? 'partial' : 'complete',
+  pagination: { offset, limit, totalMatches: ranked.length, returnedMatches: matches.length, remainingMatches, hasMore },
+  next: hasMore ? {
+    page: {
+      command: process.execPath,
+      args: [fileURLToPath(import.meta.url), '--session-dir', dir, '--query', query, '--limit', String(limit), '--offset', String(offset + matches.length)],
+    },
+  } : null,
+  suggestedFiles: matches.slice(0, 5).map((m) => m.files?.textParts?.[0] || m.evidence?.[0]?.file || 'graph/site-graph.json'),
+}, null, 2));

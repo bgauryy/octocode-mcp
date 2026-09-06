@@ -3,6 +3,7 @@ import type { PlanTaskRecord, TaskClaimRecord, TaskRunRecord } from '@octocodeai
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { utcNow } from './helpers.js';
+import { beginWrite } from './db-transaction.js';
 import { ensureRunSession } from './sessions.js';
 import { DEFAULT_CLAIM_LEASE_MS, event, evictExpiredTaskClaims, getTask, MAX_CLAIM_LEASE_MS, required } from './tasks-catalog.js';
 
@@ -20,27 +21,27 @@ export function claimTask(
   const expiresAt = new Date(Date.parse(now) + leaseMs).toISOString().replace(/\.\d{3}Z$/, 'Z');
   const runId = `run_${randomUUID().replace(/-/g, '')}`;
 
-  db.exec('BEGIN IMMEDIATE');
+  const transaction = beginWrite(db);
   try {
     evictExpiredTaskClaims(db, now);
     const row = db.prepare(`SELECT t.*, p.workspace_path, p.artifact, p.status AS plan_status
       FROM awareness_tasks t JOIN awareness_plans p ON p.plan_id = t.plan_id WHERE t.task_id = ?`)
       .get(params.taskId) as Record<string, unknown> | undefined;
-    if (!row) { db.exec('ROLLBACK'); return { ok: false, error: `task not found: ${params.taskId}`, task_id: params.taskId }; }
+    if (!row) { transaction.rollback(); return { ok: false, error: `task not found: ${params.taskId}`, task_id: params.taskId }; }
     const existing = db.prepare('SELECT agent_id FROM task_claims WHERE task_id = ?').get(params.taskId) as { agent_id: string } | undefined;
-    if (existing) { db.exec('ROLLBACK'); return { ok: false, error: `task is already claimed by ${existing.agent_id}`, task_id: params.taskId }; }
+    if (existing) { transaction.rollback(); return { ok: false, error: `task is already claimed by ${existing.agent_id}`, task_id: params.taskId }; }
     if (row['plan_status'] !== 'ACTIVE') {
-      db.exec('ROLLBACK');
+      transaction.rollback();
       return { ok: false, error: `task plan is not ACTIVE: status=${String(row['plan_status'])}`, task_id: params.taskId };
     }
     if (row['status'] !== 'OPEN') {
-      db.exec('ROLLBACK');
+      transaction.rollback();
       return { ok: false, error: `task is not ready: status=${String(row['status'])}`, task_id: params.taskId };
     }
     const blocked = db.prepare(`SELECT 1 FROM task_dependencies td
       JOIN awareness_tasks dependency ON dependency.task_id = td.depends_on_task_id
       WHERE td.task_id = ? AND dependency.status <> 'DONE' LIMIT 1`).get(params.taskId);
-    if (blocked) { db.exec('ROLLBACK'); return { ok: false, error: 'task is blocked by unfinished dependencies', task_id: params.taskId }; }
+    if (blocked) { transaction.rollback(); return { ok: false, error: 'task is blocked by unfinished dependencies', task_id: params.taskId }; }
     const workspacePath = String(row['workspace_path']);
     const artifact = row['artifact'] == null ? null : String(row['artifact']);
     const reasoning = String(row['reasoning']);
@@ -69,9 +70,9 @@ export function claimTask(
       VALUES (?, ?, 'CONTRIBUTOR', ?) ON CONFLICT(plan_id, agent_id) DO NOTHING`)
       .run(planId, agentId, now);
     event(db, params.taskId, runId, agentId, 'CLAIMED', 'task claimed', now);
-    db.exec('COMMIT');
+    transaction.commit();
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch { /* transaction did not open */ }
+    try { transaction.rollback(); } catch { /* transaction did not open */ }
     throw error;
   }
 
@@ -176,7 +177,7 @@ export function releaseTaskClaim(
   return getTask(db, params.taskId)!;
 }
 
-/** Explicitly reopen a task after failed verification; ordinary release handles active runs. */
+/** The lead explicitly reopens failed or blocked work; dependency gates still apply to claims. */
 export function retryTask(
   db: DatabaseSync,
   params: { taskId: string; agentId: string; message?: string },
@@ -191,19 +192,19 @@ export function retryTask(
       .get(params.taskId) as { status: string; lead_agent_id: string; plan_status: string } | undefined;
     if (!task) throw new Error(`task not found: ${params.taskId}`);
     if (task.lead_agent_id !== agentId) {
-      throw new Error(`only lead agent ${task.lead_agent_id} can retry failed task ${params.taskId}`);
+      throw new Error(`only lead agent ${task.lead_agent_id} can retry task ${params.taskId}`);
     }
     if (task.plan_status !== 'ACTIVE') {
       throw new Error(`cannot retry task ${params.taskId} while plan status is ${task.plan_status}`);
     }
-    if (task.status !== 'FAILED') {
-      throw new Error(`task ${params.taskId} is not FAILED: status=${task.status}`);
+    if (task.status !== 'FAILED' && task.status !== 'BLOCKED') {
+      throw new Error(`task ${params.taskId} is not FAILED or BLOCKED: status=${task.status}`);
     }
     const claim = db.prepare('SELECT 1 FROM task_claims WHERE task_id = ?').get(params.taskId);
     if (claim) throw new Error(`task ${params.taskId} still has an active claim`);
     db.prepare("UPDATE awareness_tasks SET status = 'OPEN', updated_at = ?, completed_at = NULL WHERE task_id = ?")
       .run(now, params.taskId);
-    event(db, params.taskId, null, agentId, 'RELEASED', params.message?.trim() || 'failed task reopened', now);
+    event(db, params.taskId, null, agentId, 'RELEASED', params.message?.trim() || `${task.status.toLowerCase()} task reopened`, now);
     db.exec('COMMIT');
   } catch (error) {
     try { db.exec('ROLLBACK'); } catch { /* transaction did not open */ }

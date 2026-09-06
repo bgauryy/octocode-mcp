@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import { AWARENESS_COMMANDS } from './commands-spec.js';
 import { dispatchAwarenessCommand,type AwarenessCommandRequest } from './dispatch.js';
 import {
-  EXTERNAL_AGENT_AWARENESS_PROMPT,
   EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS,
   formatExternalAgentAwarenessInstructions,
   getExternalAgentAwarenessGuide,
@@ -15,6 +14,7 @@ import { COORDINATION_CLI_ONLY_ACTION_FLAGS, COORDINATION_GLOBAL_FLAGS, focusedC
 import { openAwarenessStore } from './open.js';
 import { parseStorageScope } from '../storage-scope.js';
 import { storageScopeForCommand } from '../workspace-policy.js';
+import { resolveHookAgentId } from '../hook-identity.js';
 
 interface ParsedArgs {
   command?: string;
@@ -124,10 +124,6 @@ function readJsonInput(flags: Map<string, string | true>): unknown {
   return JSON.parse(raw) as unknown;
 }
 
-function defaultHookAgentId(host: string): string {
-  return process.env.OCTOCODE_AGENT_ID || `${host || 'hook'}:${process.pid}`;
-}
-
 /**
  * Translate the CLI's parsed flags into the neutral, tool-facing `params` dict
  * that `dispatchAwarenessCommand` consumes. This is the CLI's ONLY awareness
@@ -199,7 +195,7 @@ function runCliInner(argv: string[], write: (chunk: string) => void): number {
   if (parsed.command === 'guide') {
     if (parsed.action) throw new Error('guide does not accept an action');
     if (parsed.flags.has('json')) print(getExternalAgentAwarenessGuide());
-    else write(`${EXTERNAL_AGENT_AWARENESS_PROMPT}\n`);
+    else write(`${EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS}\n`);
     return 0;
   }
 
@@ -223,6 +219,11 @@ function runCliInner(argv: string[], write: (chunk: string) => void): number {
       }
       case 'pre-edit': {
         const hookWorkspace = getFlag(parsed.flags, 'workspace') ?? process.cwd();
+        const event = readJsonInput(parsed.flags);
+        const payload = event && typeof event === 'object' ? event as Record<string, unknown> : {};
+        const hookAgentId = parsed.flags.has('agent-id')
+          ? requireFlag(parsed.flags, 'agent-id').trim()
+          : resolveHookAgentId(payload);
         const result = runPreEditLockGate({
           workspace: hookWorkspace,
           dbPath: getFlag(parsed.flags, 'db'),
@@ -231,9 +232,9 @@ function runCliInner(argv: string[], write: (chunk: string) => void): number {
             hookWorkspace,
             getFlag(parsed.flags, 'db-scope') ? parseStorageScope(getFlag(parsed.flags, 'db-scope')) : undefined,
           ),
-          agentId: getFlag(parsed.flags, 'agent-id') ?? defaultHookAgentId(getFlag(parsed.flags, 'host') ?? 'generic'),
+          agentId: hookAgentId,
           host: (getFlag(parsed.flags, 'host') ?? 'generic') as HookHost,
-          event: readJsonInput(parsed.flags),
+          event,
         });
         print(result);
         return result.blocked ? 2 : 0;

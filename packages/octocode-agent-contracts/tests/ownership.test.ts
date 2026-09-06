@@ -7,14 +7,16 @@ function source(relative: string): string {
 }
 
 describe('shared-definition ownership', () => {
-  it('keeps the native prompt module as an adapter instead of a policy copy', () => {
-    const nativePrompt = source('../../octocode-agent/src/native-prompt.ts');
-    expect(nativePrompt).not.toContain('const authority =');
-    expect(nativePrompt).toContain('@octocodeai/agent-contracts/prompts');
+  it('keeps shared plan bounds in the contract package for the current Pi consumer', () => {
+    const prompt = source('../../octocode-pi-extension/src/prompts/plan-prompt.ts');
+    expect(prompt).toContain('@octocodeai/agent-contracts/prompts');
+    expect(prompt).not.toMatch(/(?:const|let)\s+PLAN_PROMPT_(?:MAX_GOAL|TRUNCATION_MARKER)\s*=/);
   });
 
-  it('keeps prompt-mode policy out of the native host adapter', () => {
-    const nativePrompt = source('../../octocode-agent/src/native-prompt.ts');
-    expect(nativePrompt).not.toContain("OCTOCODE_PROMPT_MODE = 'octocode-first'");
+  it('keeps Awareness operating policy in its owner instead of copying it into Pi', () => {
+    const prompt = source('../../octocode-pi-extension/src/prompts/system-prompt.ts');
+    expect(prompt).toContain("import { EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS } from '@octocodeai/octocode-awareness'");
+    expect(prompt).not.toContain('signal publish');
+    expect(prompt).not.toContain('verify audit');
   });
 });

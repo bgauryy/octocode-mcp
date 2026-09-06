@@ -6,7 +6,13 @@
  * that choose to share or keep a local generated context folder.
  */
 import { AwarenessQueryResult, AwarenessQueryRow } from './repo-model.js';
-import { completenessText } from './repo-query.js';
+
+export function completenessText(result: AwarenessQueryResult): string {
+  const total = result.total == null ? 'unknown' : String(result.total);
+  const omitted = result.omitted_count == null ? 'unknown' : String(result.omitted_count);
+  const continuation = result.continuation ? `; next: ${result.continuation}` : '';
+  return `Completeness: ${result.is_partial ? 'partial' : 'complete'}; visible=${result.count}; total=${total}; omitted=${omitted}${continuation}`;
+}
 
 export function renderHtmlSection(name: string, rows: AwarenessQueryRow[]): string {
   return `<section data-section="${escapeHtml(name)}">
@@ -69,6 +75,11 @@ export function markdownRows(rows: AwarenessQueryRow[]): string {
   if (rows.length === 0) return '_No rows._';
   return rows
     .map((row) => {
+      if ('agent_id' in row && 'agent_name' in row) {
+        const name = escapeHtml(cellToString(row['agent_name']).replace(/\s+/g, ' ').trim() || 'Unnamed agent')
+          .replace(/([\\`*_{}\[\]()#+.!|~])/g, '\\$1');
+        return `- ${markdownCode(row['agent_id'])} ${name} (vendor=${markdownCode(row['agent_vendor'] || 'unknown')}; host=${markdownCode(row['agent_host'] || 'unknown')})`;
+      }
       const id = row['memory_id'] ?? row['plan_id'] ?? row['task_id'] ?? row['run_id'] ?? row['signal_id'] ?? row['refinement_id'] ?? row['file_path'] ?? row['metric'] ?? 'row';
       const label = row['label'] ? `[${cellToString(row['label'])}:${cellToString(row['importance'])}] ` : '';
       const title = row['task_context'] ?? row['subject'] ?? row['remember'] ?? row['name'] ?? row['title'] ?? row['rationale'] ?? row['metric'] ?? '';
@@ -81,6 +92,14 @@ export function markdownRows(rows: AwarenessQueryRow[]): string {
       return `- \`${cellToString(id)}\` ${label}${summarize(cellToString(title), 100)} - ${summarize(cellToString(text), 220)}${suffix}`;
     })
     .join('\n');
+}
+
+/** Use a longer delimiter than peer-supplied backticks so identity remains literal. */
+function markdownCode(value: unknown): string {
+  const text = cellToString(value).replace(/\s+/g, ' ');
+  const delimiter = '`'.repeat(Math.max(0, ...Array.from(text.matchAll(/`+/g), match => match[0].length)) + 1);
+  const padding = text.startsWith('`') || text.endsWith('`') ? ' ' : '';
+  return `${delimiter}${padding}${text}${padding}${delimiter}`;
 }
 
 export function csvCell(value: unknown): string {

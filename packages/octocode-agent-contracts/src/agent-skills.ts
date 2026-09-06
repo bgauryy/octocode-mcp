@@ -288,6 +288,7 @@ export function listAgentSkillFiles(skillDir: string, maxDepth = 2, maxFiles = 3
 export {
   discoverMcpConfigs,
   discoverMcpSystem,
+  readMcpConfigText,
   type DiscoverMcpConfigOptions,
   type DiscoveredMcpConfig,
   type DiscoveredMcpDefinition,

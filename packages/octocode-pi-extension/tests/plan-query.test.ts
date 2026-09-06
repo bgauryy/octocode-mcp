@@ -6,7 +6,7 @@
  * flat-call rejection, and renderCall envelope awareness.
  */
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -195,6 +195,36 @@ test('unified auto and explicit session scopes keep solo plans out of Awareness'
   } finally {
     clearPlan(workspace);
     rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('memory-only mode keeps auto plans local and rejects durable shared projection', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'plan-memory-only-'));
+  const previousHome = process.env['OCTOCODE_HOME'];
+  const previousMode = process.env['OCTOCODE_STORAGE_MODE'];
+  process.env['OCTOCODE_HOME'] = root;
+  process.env['OCTOCODE_STORAGE_MODE'] = 'memory';
+  const workspace = join(root, 'repo');
+  mkdirSync(workspace);
+  const localCtx = { cwd: workspace } as PiContext;
+  const tool = loadTool();
+  try {
+    const execute = (scope: string) => tool.execute('storage', { queries: [{
+      reasoning: 'check storage policy', action: 'set', scope,
+      steps: [{ text: `${scope} file review`, paths: ['a.ts'], acceptance: 'file reviewed', checkCommand: 'test' }],
+    }] }, undefined, undefined, localCtx);
+    const local = await execute('auto');
+    assert.equal(local.isError, undefined);
+    assert.equal(existsSync(join(root, 'awareness')), false, 'auto scope must not open a durable store');
+    const before = structuredClone({ plan: getPlan(workspace), coordination: getPlanCoordination(workspace), review: getPlanReviewState(workspace) });
+    await assert.rejects(execute('shared'), /Persistent storage is disabled/);
+    assert.deepEqual({ plan: getPlan(workspace), coordination: getPlanCoordination(workspace), review: getPlanReviewState(workspace) }, before, 'rejected shared request must preserve the existing local plan');
+    assert.equal(existsSync(join(root, 'awareness')), false, 'shared scope must not create a durable store');
+  } finally {
+    clearPlan(workspace);
+    if (previousHome === undefined) delete process.env['OCTOCODE_HOME']; else process.env['OCTOCODE_HOME'] = previousHome;
+    if (previousMode === undefined) delete process.env['OCTOCODE_STORAGE_MODE']; else process.env['OCTOCODE_STORAGE_MODE'] = previousMode;
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -539,7 +569,10 @@ test('failed shared Start consumes authority, restores acceptance, and retries w
     assert.equal(lite.listTasks().length, 1);
     assert.equal(lite.listPlans()[0]!.planId, stablePlanId);
     assert.equal(lite.listTasks()[0]!.taskId, stableTaskId);
-    lite.releaseTask({ taskId: stableTaskId, runId: peerClaim.runId!, agentId: 'peer-agent', blockedReason: 'allow authorized retry' });
+    // A normal handoff makes the task OPEN. A blocked release requires the
+    // plan lead's explicit retry and must not look executable in the host.
+    lite.releaseTask({ taskId: stableTaskId, runId: peerClaim.runId!, agentId: 'peer-agent' });
+    assert.equal(lite.getTask(stableTaskId).status, 'OPEN');
     lite.close();
 
     await handleOctocodePlanCommand(`start ${review.acceptedRevision!}`, localCtx, (_ctx, message) => notices.push(message));

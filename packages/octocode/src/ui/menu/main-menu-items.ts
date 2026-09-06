@@ -54,16 +54,16 @@ export function buildAuthMenuItem(auth: OctocodeAuthStatus): {
     const user = auth.username ? `@${auth.username}` : '';
     const userPart = user ? `${user} ` : '';
     return {
-      name: `- Manage Auth ${c('green', '✅')}`,
+      name: `GitHub account ${c('green', '✓')}`,
       value: 'auth',
       description: `${userPart}via ${source}`,
     };
   }
 
   return {
-    name: `- ${bold('Manage Auth')} ${c('red', '[Required]')}`,
+    name: bold('Sign in to GitHub'),
     value: 'auth',
-    description: `Sign in to access GitHub`,
+    description: 'Connect your account for GitHub research',
   };
 }
 
@@ -77,7 +77,7 @@ export function buildStatusLine(state: AppState): string {
       `${c('green', '●')} ${state.octocode.installedCount} ${clientLabel}`
     );
   } else {
-    parts.push(`${c('yellow', '○')} Not installed`);
+    parts.push(`${dim('○')} Setup needed`);
   }
 
   return parts.join(dim('  │  '));
@@ -89,27 +89,19 @@ export function buildOctocodeMenuItem(state: AppState): {
   description: string;
 } {
   if (state.octocode.isInstalled) {
-    const clientLabel = state.octocode.installedCount === 1 ? 'IDE' : 'IDEs';
-
-    if (state.githubAuth.authenticated) {
-      return {
-        name: `- Octocode MCP ${c('green', '✅')}`,
-        value: 'octocode',
-        description: `Configure Octocode MCP - ${state.octocode.installedCount} ${clientLabel} configured`,
-      };
-    }
-
+    const clientLabel =
+      state.octocode.installedCount === 1 ? 'client' : 'clients';
     return {
-      name: `- Octocode MCP ${c('red', '[X]')}`,
+      name: `Manage connections ${c('green', '✓')}`,
       value: 'octocode',
-      description: `Configure Octocode MCP - ${state.octocode.installedCount} ${clientLabel} configured`,
+      description: `${state.octocode.installedCount} ${clientLabel} configured · add or update Octocode MCP`,
     };
   }
 
   return {
-    name: `- ${bold('Octocode Configuration')}`,
+    name: bold('Set up Octocode'),
     value: 'octocode',
-    description: 'Configure Octocode MCP - 0 IDEs configured',
+    description: 'Connect Octocode MCP to your editor or coding agent',
   };
 }
 
@@ -117,7 +109,7 @@ export function printContextualHints(state: AppState): void {
   if (!state.githubAuth.authenticated) {
     console.log();
     console.log(
-      `  ${c('yellow', 'Warning:')} ${bold('Auth required!')} Run ${c('cyan', 'Manage Auth')} to access GitHub repos`
+      `  ${dim('Next:')} choose ${c('magenta', 'Sign in to GitHub')} for GitHub research.`
     );
   }
 }

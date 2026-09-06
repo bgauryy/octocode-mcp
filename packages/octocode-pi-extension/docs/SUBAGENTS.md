@@ -56,7 +56,7 @@ After `wait` or `inspect` returns a result, the parent owns this sequence:
 3. Update the user promptly when a finding changes the hypothesis, plan, risk, or next action. Do not interrupt them for routine progress or duplicate the full handback.
 4. Reconcile the finding with the active plan, then kill the worker unless another turn is intentional.
 
-Never copy raw handbacks or unverified claims into session memory. The `memory` tool is separate: use it only for verified reusable learning that should outlive this Pi session; use `memory.md` for bounded session continuity.
+Never copy raw handbacks or unverified claims into session memory. Awareness CLI `memory` commands are separate: use them only for verified reusable learning that should outlive this Pi session; use `memory.md` for bounded session continuity.
 
 Cancelling a `wait` call releases its timers, listeners, and liveness probes. It preserves the worker and other waits, including when the cancelled call requested `remove:true`. Use `type:"abort"` to interrupt the worker's turn or `type:"kill"` to terminate its process. Cancelling spawn preparation prevents subsequent process creation; a worker whose spawn already returned keeps running until explicitly stopped or the session shuts down.
 
@@ -66,16 +66,17 @@ The `/octocode-agents` command accepts `help`, `list`, `inspect <id> [full]`, `k
 
 ## Durable peer communication
 
-Awareness `message` and `handoff` are a separate, asynchronous plane shared by agents on any host. Directed messages use `--to`; broadcasts omit a target. Workspace scope isolates plans, tasks, locks, work presence, handoffs, and messages.
+Awareness `signal` and `handoff` persist cross-host coordination in the shared ledger. Cooperating agents need the same physical database, normalized workspace, and distinct stable agent IDs. Use the host-supplied CLI runner and store bindings; names and vendor labels are self-reported metadata, not routing IDs or authority.
 
 ```bash
-npx -p @octocodeai/octocode-awareness octocode-awareness message send \
-  --workspace "$PWD" --from A --to B --topic "<topic>" --text "<message>"
-npx -p @octocodeai/octocode-awareness octocode-awareness message inbox \
-  --workspace "$PWD" --agent-id B
+npx @octocodeai/octocode-awareness signal publish \
+  --db "$AWARENESS_DB" --workspace "$PWD" --agent-id "$OCTOCODE_AGENT_ID" \
+  --to-agent "$PEER_AGENT_ID" --kind question --subject "<summary>" --body "<request>"
+npx @octocodeai/octocode-awareness signal list \
+  --db "$AWARENESS_DB" --workspace "$PWD" --agent-id "$OCTOCODE_AGENT_ID" --include-bodies
 ```
 
-Peer messages are pull-based, not real-time. Use the `agent` facade for urgent parent-worker control and Awareness messages for coordination that must survive a worker turn or cross host boundaries.
+Use `signal reply --in-reply-to <signal-id>` for the existing thread, acknowledge handled rows, and resolve only when no response or work remains. Follow returned executable continuations. These commands inspect and record coordination; they do not start a peer turn. Use the `agent` facade for urgent parent-worker control. Reuse native lifecycle records and run the closing `verify audit` against your own identity in the same store.
 
 ## Isolation
 

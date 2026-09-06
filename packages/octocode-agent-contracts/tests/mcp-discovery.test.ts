@@ -133,3 +133,47 @@ describe('host-neutral MCP discovery', () => {
     expect(result.configs.find((config) => config.path === oversized)?.error).toMatch(/exceeds/);
   });
 });
+
+// The discovery owner accepts a host path policy without owning host storage.
+it('projects only the explicitly selected workspace root as active', () => {
+  const cwd = temporaryRoot('shared-mcp-host-cwd-');
+  const homeDir = temporaryRoot('shared-mcp-host-home-');
+  const octocodeHome = path.join(homeDir, '.custom');
+  const hostRoot = path.join(octocodeHome, 'extension-workspace');
+  const hostConfig = path.join(hostRoot, 'mcp', 'servers.json');
+  const agentConfig = path.join(workspaceAgentRoot(cwd, octocodeHome), 'mcp', 'servers.json');
+  write(hostConfig, JSON.stringify({ host: { command: 'host-mcp' } }));
+  write(agentConfig, JSON.stringify({ agent: { command: 'agent-mcp' } }));
+  const result = discoverMcpSystem(cwd, {
+    homeDir, octocodeHome,
+    workspaceRoot: (workspace, home) => {
+      expect(workspace).toBe(path.resolve(cwd));
+      expect(home).toBe(octocodeHome);
+      return hostRoot;
+    },
+  });
+  expect(result.configs.map(({ path: configPath }) => configPath)).toEqual([hostConfig]);
+  expect(result.configs[0]).toMatchObject({ active: true, servers: [{ name: 'host', command: 'host-mcp' }] });
+  expect(result.definitions).toEqual([]);
+});
+
+
+it('does not absorb unrelated TOML tables into the preceding MCP server', () => {
+  const cwd = temporaryRoot('shared-mcp-table-cwd-');
+  const homeDir = temporaryRoot('shared-mcp-table-home-');
+  write(path.join(cwd, '.codex', 'config.toml'), [
+    '[mcp_servers.docs]',
+    'command = "docs-mcp"',
+    '[profiles.unrelated]',
+    'command = "other-command"',
+    '[mcp_servers.docs.env]',
+    'DOCS_TOKEN = "expected"',
+    '[other]',
+    'OTHER_SECRET = "must-not-inherit"',
+    '[mcp_servers.second]',
+    'command = "second-mcp"',
+  ].join('\n'));
+  const result = discoverMcpSystem(cwd, { homeDir });
+  expect(result.definitions.map(({ config }) => config.command)).toEqual(['docs-mcp', 'second-mcp']);
+  expect(result.definitions[0]?.config.env).toEqual({ DOCS_TOKEN: 'expected' });
+});

@@ -173,7 +173,7 @@ Browser feedback goes to the agent as plain text, without command expansion.
 The runtime tool inventory remains:
 
 ```text
-✓ tools: 0 native Pi tools + 16 support tools
+✓ tools: 0 native Pi tools + 13 support tools
 ```
 
 ## Command inventory

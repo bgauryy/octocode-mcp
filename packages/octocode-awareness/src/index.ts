@@ -102,8 +102,8 @@ export type {
 // Memory operations
 export { insertMemory, insertMemoryWithSimilarityGate, bumpAccess } from './memory-write.js';
 export { getMemory } from './memory-recall.js';
-export { lexicalSearch } from './memory-search.js';
-export { decayScore, findSimilarMemories } from './memory-scoring.js';
+export { lexicalSearch, findSimilarMemories } from './memory-search.js';
+export { decayScore } from './memory-scoring.js';
 export { mineWeakness } from './memory-weakness.js';
 export { forgetMemory } from './memory-lifecycle.js';
 export { storeEmbedding, searchByEmbedding, loadMemoriesByIds } from './memory-embeddings.js';

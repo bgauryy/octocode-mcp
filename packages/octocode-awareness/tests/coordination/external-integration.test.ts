@@ -10,6 +10,7 @@ import { completeExternalPlanTask, finalizeExternalPlan, projectExternalPlan } f
 import { openAwarenessStore } from '../../src/coordination/open.js';
 import { readExternalAwarenessStatus } from '../../src/coordination/external-status.js';
 import { globalAwarenessDatabasePath } from '../../src/storage-scope.js';
+import { commandIndex } from '../../src/schema/command-catalog.js';
 
 let workspace: string;
 let previousOctocodeHome: string | undefined;
@@ -35,13 +36,29 @@ describe('external-agent integration boundary', () => {
 
   it('serves the same agent guidance through the CLI and advertises it in help', () => {
     const guide = execCli(['guide']);
-    expect(guide).toEqual({ code: 0, stdout: `${EXTERNAL_AGENT_AWARENESS_PROMPT}\n`, stderr: '' });
+    expect(guide).toEqual({ code: 0, stdout: `${EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS}\n`, stderr: '' });
     expect(execCli(['--help']).stdout).toContain('guide');
     const dynamic = getExternalAgentAwarenessGuide();
-    expect(dynamic.prompt).toBe(EXTERNAL_AGENT_AWARENESS_PROMPT);
+    expect(dynamic.prompt).toBe(EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS);
     expect(dynamic.commands).not.toHaveLength(0);
     expect(dynamic.commands.every((entry) => entry.cli.startsWith('npx @octocodeai/octocode-awareness '))).toBe(true);
     expect(JSON.parse(execCli(['guide', '--json']).stdout)).toEqual(dynamic);
+  });
+
+  it('bootstraps skill installation and exposes every catalog command in text and JSON', () => {
+    const guide = getExternalAgentAwarenessGuide();
+    expect(guide.prompt).toContain('skill install --platform shared --project-dir "$PWD" --dry-run');
+    expect(guide.prompt).toContain('skill install --help');
+    expect(guide.prompt).toContain('schema commands --all --compact');
+    expect(guide.prompt).toContain('schema command signal list --compact');
+    expect(guide.prompt).toContain('SKILL.md');
+    expect(guide.prompt).not.toContain('check mark');
+    expect(guide.prompt).not.toContain('--done-at');
+    expect(guide.commands.map(entry => entry.command)).toEqual(commandIndex.map(entry => entry.command));
+    expect(guide.commands.map(entry => entry.command)).toContain('schema command');
+    for (const entry of commandIndex) expect(guide.prompt).toContain(`- \`${entry.command}\` —`);
+    // Host injection remains bounded; full discovery belongs to the requested CLI guide.
+    expect(EXTERNAL_AGENT_AWARENESS_PROMPT).not.toContain('All CLI commands');
   });
 
   it('exports reusable prompt and AGENTS.md instruction blocks without touching files', () => {

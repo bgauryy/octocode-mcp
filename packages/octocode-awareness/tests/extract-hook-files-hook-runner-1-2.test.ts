@@ -71,21 +71,37 @@ it('allows two agents to declare ordinary work on the same file without locks', 
       rmSync(memoryHome, { recursive: true, force: true });
     }
   });
-it('uses a deterministic fallback identity without repeating setup guidance on stderr', () => {
+it('rejects anonymous hook participants without registry/work state and recovers with an explicit identity', () => {
     const memoryHome = mkdtempSync(join(tmpdir(), 'octocode-hook-fallback-id-'));
     const workspace = resolve(memoryHome, 'repo');
     mkdirSync(workspace, { recursive: true });
     try {
-      const result = runScript(HOOK_RUNNER, ['pre-edit'], {
+      const db = connectDb(join(workspace, '.octocode', 'awareness.sqlite3'));
+      const payload = {
         workspace,
         file_path: 'src/fallback.ts',
         hook_event_name: 'PreToolUse',
-      }, {
-        OCTOCODE_AGENT_DIR: memoryHome,
-        OCTOCODE_AGENT_ID: undefined,
-      });
-      expect(result.status).toBe(0);
-      expect(result.stderr).toBe('');
+      };
+      try {
+        for (const agent_name of ['Anonymous first', 'Anonymous second']) {
+          const result = runScript(HOOK_RUNNER, ['pre-edit'], { ...payload, agent_name }, {
+            OCTOCODE_AGENT_DIR: memoryHome,
+            OCTOCODE_AGENT_ID: undefined,
+          });
+          expect(result.status).toBe(1);
+          expect(result.stderr).toContain('hook identity error');
+          expect(result.stderr).toContain('stable agent_id/session_id or OCTOCODE_AGENT_ID');
+        }
+        expect((db.prepare('SELECT COUNT(*) AS count FROM awareness_agents').get() as { count: number }).count).toBe(0);
+        expect((db.prepare('SELECT COUNT(*) AS count FROM task_runs').get() as { count: number }).count).toBe(0);
+        const recovered = runScript(HOOK_RUNNER, ['pre-edit'], payload, {
+          OCTOCODE_AGENT_DIR: memoryHome,
+          OCTOCODE_AGENT_ID: 'explicit-hook-session',
+        });
+        expect(recovered.status, recovered.stderr).toBe(0);
+        expect(db.prepare('SELECT agent_id FROM awareness_agents').all()).toEqual([{ agent_id: 'explicit-hook-session' }]);
+        expect(db.prepare('SELECT agent_id FROM task_runs').all()).toEqual([{ agent_id: 'explicit-hook-session' }]);
+      } finally { db.close(); }
     } finally {
       rmSync(memoryHome, { recursive: true, force: true });
     }

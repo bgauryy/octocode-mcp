@@ -1,3 +1,4 @@
+import { sectionDivider } from '../layout.js';
 import { c, bold, dim } from '../../utils/colors.js';
 import { loadInquirer, select } from '../../utils/prompts.js';
 import { separatorChoice } from '../../utils/prompt-separator.js';
@@ -42,9 +43,9 @@ export async function runInstallFlow(): Promise<void> {
   await loadInquirer();
 
   console.log();
-  console.log(c('blue', '━'.repeat(66)));
+  console.log(sectionDivider());
   console.log(`  ${bold('Configure MCP server for your environment')}`);
-  console.log(c('blue', '━'.repeat(66)));
+  console.log(sectionDivider());
   console.log();
 
   const state: InstallFlowState = {

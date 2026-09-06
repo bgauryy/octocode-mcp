@@ -1,10 +1,10 @@
 /** Shared payload normalization for package-owned lifecycle hook adapters. */
-import { createHash } from 'node:crypto';
 import { basename, relative, resolve } from 'node:path';
 import { connectDb, resolveDbPath } from '../src/db-runtime.js';
 import { storageScopeForCommand } from '../src/workspace-policy.js';
 import { canonicalizePath } from '../src/git.js';
 import { extractWriteTargetPaths } from '../src/write-targets.js';
+import { resolveHookAgentId } from '../src/hook-identity.js';
 
 export type ShellHookHost = 'claude' | 'codex' | 'cursor' | 'copilot' | 'gemini' | 'opencode';
 
@@ -218,31 +218,7 @@ export function completeHookControl(outcome: HookControlOutcome): number {
 }
 
 export function agentId(payload: Record<string, unknown>): string {
-  const input = objectOrEmpty(payloadInput(payload));
-  const explicit = firstString(
-    payload.agent_id,
-    payload.agentId,
-    input.agent_id,
-    input.agentId,
-    process.env.OCTOCODE_AGENT_ID,
-    payload.session_id,
-    payload.sessionId,
-    input.session_id,
-    input.sessionId,
-  );
-  if (explicit) return explicit;
-
-  const host = firstString(
-    payload[INTERNAL_HOOK_HOST],
-    process.env.OCTOCODE_AGENT_HOST,
-    payload.host,
-    payload.client,
-    payload.source,
-    payload.context,
-  ) ?? 'shell';
-  const scope = `${host}\0${workspace(payload) ?? process.cwd()}`;
-  const suffix = createHash('sha1').update(scope).digest('hex').slice(0, 12);
-  return `hook:${host.replace(/[^a-zA-Z0-9_.:-]/g, '_')}:${suffix}`;
+  return resolveHookAgentId(payload, objectOrEmpty(payloadInput(payload)));
 }
 
 export function sessionId(payload: Record<string, unknown>): string | null {
@@ -318,13 +294,26 @@ export function fallbackVerificationPlan(files: string[], cwd: string): string {
 }
 
 export function agentName(payload: Record<string, unknown>): string {
-  const value =
-    process.env.OCTOCODE_AGENT_NAME
-    ?? payload.agent_name
-    ?? payload.agentName
-    ?? payload.agent_display_name
-    ?? payload.agentDisplayName;
-  return typeof value === 'string' && value.trim() ? value.trim() : '';
+  return firstString(
+    payload.agent_name, payload.agentName,
+    payload.agent_display_name, payload.agentDisplayName, process.env.OCTOCODE_AGENT_NAME,
+  ) ?? '';
+}
+
+/** Registry labels require explicit facts; shellHookHost's protocol fallback is not identity evidence. */
+export function agentHost(payload: Record<string, unknown>): string | null {
+  return firstString(
+    payload[INTERNAL_HOOK_HOST], payload.agent_host, payload.agentHost,
+    payload.host, payload.client, process.env.OCTOCODE_AGENT_HOST,
+  );
+}
+
+export function agentVendor(payload: Record<string, unknown>): string | null {
+  // A child hook's observed provider takes precedence over inherited parent environment.
+  return firstString(
+    payload.agent_vendor, payload.agentVendor,
+    objectOrEmpty(payload.model).provider, payload.provider, process.env.OCTOCODE_AGENT_VENDOR,
+  );
 }
 
 export function workspace(payload: Record<string, unknown>): string | null {

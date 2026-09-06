@@ -3,7 +3,7 @@ import { normalizeArtifact, utcNow } from './helpers.js';
 import { fillScope } from './git.js';
 import { SIGNALS_DELETE_BY_IDS, SIGNAL_READS_INSERT_IGNORE } from './sql/signals.js';
 import type { PruneNotificationsParams, PruneNotificationsResult, NotificationRecord, AgentSignalParams, AgentSignalResult, AgentSignalRecord } from './types/notifications-agents.js';
-import { appendSignalScope, inferReplyTargets, insertNotification, isThreadParticipant } from './notifications-core.js';
+import { appendSignalScope, assertSignalsExist, inferReplyTargets, insertNotification, isThreadParticipant } from './notifications-core.js';
 import { getNotifications, resolveNotification } from './notifications-inbox.js';
 
 // ─── pruneNotifications ────────────────────────────────────────────────────────
@@ -17,23 +17,6 @@ export function requireSignalText(value: string | null | undefined, field: strin
     throw new Error(`agent_signal ${field} is required`);
   }
   return value;
-}
-
-/**
- * Explicitly named ids must exist: a typo'd --signal-id otherwise ack/resolves
- * zero rows and reports ok, so the caller believes the signal was handled.
- */
-export function assertSignalsExist(db: DatabaseSync, signalIds: string[]): void {
-  if (signalIds.length === 0) return;
-  const unique = [...new Set(signalIds)];
-  const rows = db.prepare(
-    `SELECT signal_id FROM signals WHERE signal_id IN (${unique.map(() => '?').join(',')})`,
-  ).all(...unique) as unknown as Array<{ signal_id: string }>;
-  const found = new Set(rows.map((r) => r.signal_id));
-  const missing = unique.filter((id) => !found.has(id));
-  if (missing.length > 0) {
-    throw new Error(`signal(s) not found: ${missing.join(', ')}`);
-  }
 }
 
 /**
@@ -153,6 +136,7 @@ export function agentSignal(db: DatabaseSync, params: AgentSignalParams): AgentS
         unreadOnly: params.unreadOnly ?? true,
         markRead: params.markRead ?? false,
         limit: params.limit ?? 20,
+        cursor: params.cursor,
         cwd: params.cwd,
       });
       return {
@@ -160,6 +144,9 @@ export function agentSignal(db: DatabaseSync, params: AgentSignalParams): AgentS
         count: result.count,
         signals: result.signals.map(signalRecord),
         unread_only: result.unread_only,
+        partial: result.partial,
+        partialReasons: result.partialReasons,
+        ...(result.next ? { next: result.next } : {}),
       };
     }
     case 'resolve': {

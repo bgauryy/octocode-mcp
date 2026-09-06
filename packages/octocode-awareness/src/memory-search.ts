@@ -3,7 +3,31 @@ import { utcNow, normalizeReferences, normalizeFilePath, rowToMemory, parseJsonL
 import { hasFts } from './db-maintenance.js';
 import type { MemoryRow } from './types/work-maintenance.js';
 import type { MemoryRecord } from './types/identity-memory.js';
-import { applyScopeConditions, BM25_DEGENERATE_MAX, BM25_SQUASH_K, buildFtsQuery, decayScore, fallbackSearch, LexicalScopeOptions } from './memory-scoring.js';
+import { applyScopeConditions, BM25_DEGENERATE_MAX, BM25_SQUASH_K, buildFtsQuery, decayScore, fallbackSearch, jaccard, LexicalScopeOptions, SIMILARITY_PREFETCH, SIMILARITY_THRESHOLD, textTokens } from './memory-scoring.js';
+
+export function findSimilarMemories(
+  db: DatabaseSync,
+  text: string,
+  limit = 3,
+  excludeMemoryId: string | null = null,
+  scopeOptions: LexicalScopeOptions = {},
+): Array<{ memory_id: string; similarity: number }> {
+  const queryTokens = textTokens(text);
+  if (queryTokens.size === 0) return [];
+
+  const candidates = lexicalSearch(
+    db, text, SIMILARITY_PREFETCH, 1, [], [], ['ACTIVE'], scopeOptions,
+  ).filter(m => m.memory_id !== excludeMemoryId);
+
+  return candidates
+    .map(m => ({
+      memory_id: m.memory_id,
+      similarity: jaccard(queryTokens, textTokens(`${m.task_context} ${m.observation}`)),
+    }))
+    .filter(m => m.similarity >= SIMILARITY_THRESHOLD)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit);
+}
 
 export function lexicalSearch(
   db: DatabaseSync,

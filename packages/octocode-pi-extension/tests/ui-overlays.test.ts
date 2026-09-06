@@ -122,5 +122,7 @@ test('multi-select overlay paints every dialog row to its full width', async () 
   void runMultiSelectOverlay(ctx, { title: 'Delete stale files', items: [{ value: 'old', label: 'old' }] });
   const lines = component!.render(32);
   assert.ok(lines.length > 0);
+  assert.match(lines.join('\n'), /enter confirm/);
+  assert.match(lines.join('\n'), /esc cancel/);
   for (const line of lines) assert.equal(visibleWidth(line), 32, `overlay row must clear its full width: ${line}`);
 });

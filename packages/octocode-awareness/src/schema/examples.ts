@@ -240,8 +240,10 @@ export const examples = {
   },
   agent_registry: {
     action: "register",
-    agent_id: "agent",
-    agent_name: "Agent",
+    agent_id: "codex:session-7f49c2",
+    agent_name: "Parser reviewer",
+    agent_vendor: "openai",
+    agent_host: "codex",
     workspace: "/repo",
     artifact: "pkg",
     context: "codex",

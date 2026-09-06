@@ -3,6 +3,7 @@ import { parseJsonList } from './helpers.js';
 import { AwarenessQueryParams, AwarenessQueryRow, BindValue, limitOf, stringList } from './repo-model.js';
 import { addExactScope, addNullableScope, addStateFilter, addTextFilter, scopeFromParams, workspaceArtifactScope } from './repo-scope.js';
 import { summarize } from './repo-formats.js';
+import { AGENTS_LIST_SELECT, AGENTS_LIST_ORDER } from './sql/agents.js';
 
 export function countPendingStandaloneRuns(db: DatabaseSync, params: AwarenessQueryParams): number {
   const scope = scopeFromParams(params);
@@ -65,7 +66,7 @@ export function agentRows(db: DatabaseSync, params: AwarenessQueryParams): Aware
   const where: string[] = [];
   const binds: BindValue[] = [];
   if (scope.workspacePaths.length > 0) {
-    where.push(`(workspace_path IN (${scope.workspacePaths.map(() => '?').join(',')}) OR workspace_path IS NULL)`);
+    where.push(`(workspace_path IN (${scope.workspacePaths.map(() => '?').join(',')}) OR workspace_path = '')`);
     binds.push(...scope.workspacePaths);
   }
   if (scope.artifact) {
@@ -73,12 +74,15 @@ export function agentRows(db: DatabaseSync, params: AwarenessQueryParams): Aware
     binds.push(scope.artifact);
   }
   addTextFilter(where, binds, params.query, ['agent_id', 'agent_name', 'context']);
+  if (params.agentId) {
+    where.push('agent_id = ?');
+    binds.push(params.agentId);
+  }
   const sqlWhere = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   const rows = db.prepare(
-    `SELECT agent_id, agent_name, workspace_path, artifact, context, registered_at, last_seen_at
-       FROM awareness_agents
+    `${AGENTS_LIST_SELECT}
        ${sqlWhere}
-      ORDER BY datetime(last_seen_at) DESC
+       ${AGENTS_LIST_ORDER}
       LIMIT ?`
   ).all(...binds, limitOf(params.limit)) as unknown as AwarenessQueryRow[];
   return rows;

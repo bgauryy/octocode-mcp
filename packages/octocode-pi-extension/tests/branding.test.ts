@@ -150,6 +150,13 @@ describe('renderBannerLines', () => {
 });
 
 describe('renderBannerLines is static', () => {
+  it('respects a plain theme at every responsive width without raw ANSI escapes', () => {
+    const plain = { fg: (_: string, text: string) => text, bold: (text: string) => text };
+    for (const width of [36, 52, 80, 120, 160]) {
+      expect(renderBannerLines(plain, width).join('\n')).not.toContain('\x1b');
+    }
+  });
+
   it('is pure in (theme, width) — byte-identical across repaints, never bold', () => {
     // The banner is a transcript entry; time-varying bytes there would
     // invalidate pi-tui's line diff for the whole scrollback on each repaint.
@@ -199,4 +206,3 @@ describe('renderBannerWithTagline', () => {
     expect(joined).toContain('muted');
   });
 });
-

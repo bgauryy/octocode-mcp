@@ -14,7 +14,6 @@ import type { registerUniqueTool } from './octocode-tools.js';
 import { stringEnumSchema } from './schema-helpers.js';
 
 import { makeComponentRenderer } from './render-helpers.js';
-import { isPromptOwnedSkill } from './skill-catalog.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 import { orchestrate } from './call-skill.js';
 import { getSkillEnablement } from '@octocodeai/agent-contracts/mcp-state';
@@ -63,7 +62,7 @@ export function discoverAllSkills(cwd: string, piSkills?: SkillInfo[], home = os
   const piConcrete = new Set<string>();
   for (const skill of piSkills ?? []) {
     const name = skill.name?.trim();
-    if (!name || isPromptOwnedSkill(name)) continue;
+    if (!name) continue;
     const md = (skill as { path?: string; filePath?: string }).path
       ?? (skill as { path?: string; filePath?: string }).filePath ?? '';
     const key = skillKey(name);
@@ -122,7 +121,7 @@ export function discoverAllSkills(cwd: string, piSkills?: SkillInfo[], home = os
   }
   const inventory = discoverAgentSkillInventory(sources, () => true);
   for (const entry of [...inventory.entries].sort((left, right) => left.precedence - right.precedence)) {
-    if (!entry.enabled || entry.parseStatus !== 'valid' || !entry.skill || isPromptOwnedSkill(entry.skill.name)) continue;
+    if (!entry.enabled || entry.parseStatus !== 'valid' || !entry.skill) continue;
     const key = skillKey(entry.skill.name);
     const existing = found.get(key);
     if (piConcrete.has(key)) continue;

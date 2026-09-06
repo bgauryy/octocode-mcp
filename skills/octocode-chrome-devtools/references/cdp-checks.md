@@ -25,13 +25,13 @@ MEASURE_EXISTING=1 node …/storage-measure-check.mjs --port 9222 --keep-tab
 # query
 node …/measure-query.mjs --latest --view findings --code HTTP_FAILURES
 node …/har-pager.mjs <file.har> --filter failures --format json   # standalone HAR
-node …/corpus-run-local.mjs --artifact-dir <run> --regex 'offerId' --limit 20
+node …/corpus-run-local.mjs --scraping-skill-dir <octocode-scraping> --artifact-dir <run> --regex 'offerId' --limit 20
 ```
 
 | Data | Tool |
 |---|---|
 | perf/net/storage JSON | `measure-query` |
 | Standalone `.har` | `har-pager` (not measure-query unless same run dir + `--har`) |
-| Corpus / any artifact | `corpus-run-local` |
+| Corpus / any artifact | `corpus-run-local` (optional `octocode-scraping` dependency) |
 
 Chain: snapshot → DOM → measure → query → (optional) HAR → process. See `har-capture.md`, `intents-debug.md`.

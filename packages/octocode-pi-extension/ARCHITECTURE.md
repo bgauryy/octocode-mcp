@@ -8,11 +8,12 @@ This document describes the Octocode Pi Extension (`packages/octocode-pi-extensi
 
 | Area | Source contract |
 |---|---|
-| Main-agent policy | [`src/prompts/system-prompt.ts`](src/prompts/system-prompt.ts): concise host facts; the user determines workflow and response format |
+| Main-agent policy | [`src/prompts/system-prompt.ts`](src/prompts/system-prompt.ts): concise host facts plus canonical Awareness operating instructions; the user determines workflow and response format |
+| Awareness CLI bindings | [`src/tools/awareness-cli-context.ts`](src/tools/awareness-cli-context.ts): installed runner, shared database/workspace and stable agent identity |
 | Context assembly and lifecycle | [`src/index.ts`](src/index.ts) and [`src/tools/context-segments.ts`](src/tools/context-segments.ts) |
 | Direct tool names | [`src/constants.ts`](src/constants.ts); registration in `registerSupportToolPhase` |
 | MCP discovery and execution | [`src/tools/mcp-tool.ts`](src/tools/mcp-tool.ts) and [`src/tools/mcp-config.ts`](src/tools/mcp-config.ts) |
-| Skills | [`src/tools/skill-tool.ts`](src/tools/skill-tool.ts); bundled inventory in [README.md](README.md#bundled-skills-14) |
+| Skills | [`src/tools/skill-tool.ts`](src/tools/skill-tool.ts); bundled inventory in [README.md](README.md#bundled-skills-15) |
 | Plan projection | [`src/tools/plan-read-model.ts`](src/tools/plan-read-model.ts) |
 
 This reference does not assign quality grades or claim token savings without a measured baseline.
@@ -24,7 +25,9 @@ This reference does not assign quality grades or claim token savings without a m
 ### 2.1 Composition
 
 The extension adds a short `<octocode>` block describing host capabilities, the
-user’s ownership of workflow, trust boundaries, and `/configuration`. It does not
+user’s ownership of workflow, trust boundaries, and `/configuration`, followed by
+the full canonical `EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS` from Awareness, including
+skill setup, the command catalog, communication, bookkeeping and maintenance. It does not
 inject repository-state snapshots, regex-triggered instructions, or a mandatory
 engineering workflow. Tool catalogs and explicitly selected skills provide their
 own capability descriptions.
@@ -34,7 +37,7 @@ Bundled artifact: `dist/system/SYSTEM_PROMPT.md`.
 
 ### 2.2 Frozen policy and live turn context
 
-On the first main-agent turn, `before_agent_start` assembles six stable segments
+On the first main-agent turn, `before_agent_start` assembles seven stable segments
 and freezes the composed system prompt for the session. Later turns reuse those
 exact bytes; they do not rediscover the skill catalog or rebuild the system prompt.
 Session initialization resets the frozen prompt.
@@ -42,6 +45,7 @@ Session initialization resets the frozen prompt.
 | Segment key | Content | Budget |
 |---|---|---|
 | `octocode-product-policy` | Bundled `SYSTEM_PROMPT.md` | 20k tokens |
+| `awareness-cli-runtime` | Installed CLI runner and current host database/workspace/identity bindings | 2k tokens |
 | `mcp-tool-contracts` | `<mcp_catalog_index>` (compact, default) or `<mcp_catalog>` (full, `OCTOCODE_COMPACT_MCP=0`) | 30k tokens |
 | `runtime-tool-contracts` | `<runtime_capabilities>` — inline image flags | 10k tokens |
 | `dynamic-tool-contracts` | Dynamic skill addendum (excludes installed skill names already in catalog) | 20k tokens |
@@ -63,9 +67,9 @@ load or list call; the initial prompt inventory stays frozen.
 
 | File | Content |
 |---|---|
-| `src/prompts/system-prompt.ts` | `SYSTEM_PROMPT` constant (concise host facts) |
+| `src/prompts/system-prompt.ts` | `SYSTEM_PROMPT` constant (host facts plus canonical full Awareness guide) |
 | `src/prompts/plan-prompt.ts` | Describes current plan state using shared goal length and truncation constants |
-| `@octocodeai/agent-contracts/prompts` | Defines shared worker prompt fragments and expansion; build and tests import the owner directly |
+| `@octocodeai/agent-contracts/prompts` | Local owner: `packages/octocode-agent-contracts/src/prompts/`. Pi build selects `coordination:"worker-only"`; runtime injects the canonical Awareness guide once, preserving shared worker restrictions without parallel ledger instructions |
 
 ---
 
@@ -82,7 +86,7 @@ OVERRIDDEN_BUILTIN_TOOL_NAMES = ['bash']
 // Octocode owns the implementation (path guard, write-target guard)
 ```
 
-### 3.2 Direct Pi tools (17)
+### 3.2 Direct Pi tools (14)
 
 Registered in `registerSupportToolPhase` in [`src/index.ts`](src/index.ts):
 
@@ -101,10 +105,13 @@ Registered in `registerSupportToolPhase` in [`src/index.ts`](src/index.ts):
 | `plan` | `plan-tool.ts` | Compaction-safe task checklist |
 | `localServer` | `local-server-tool.ts` | Local static server |
 | `askUser` | `ask-user-tool.ts` | Interactive user input |
-| `memory` | `memory-tool.ts` | Durable Awareness learning |
-| `lock` | `awareness-coordination-tools.ts` | Exclusive file locks |
-| `message` | `awareness-coordination-tools.ts` | Cross-agent messages |
 | `MCPTool` | `mcp-tool.ts` | MCP 2026-07-28 client → all research tools |
+
+The 13 support tools and guarded `bash` override form the direct palette. Awareness
+signals, locks, durable memory and maintenance use its installed CLI through `bash`.
+Native Pi registry, event delivery/policy, mutation guards and plan UI remain active.
+External CLI agents can participate through the same physical SQLite file and
+normalized workspace, using distinct stable IDs. See [the agent flow](docs/AWARENESS_AGENT_FLOW.md).
 
 ### 3.3 MCP research tools (10 via MCPTool → octocode-mcp server)
 
@@ -143,7 +150,19 @@ buildDefaultOctocodeMcpServer():
 The fallback range is owned by `OCTOCODE_MCP_FALLBACK_VERSION` in
 [`src/tools/mcp-config.ts`](src/tools/mcp-config.ts); it is not `latest` or an exact version pin.
 
-### 3.5 Discovery timing
+### 3.5 Discovery ownership
+
+`@octocodeai/agent-contracts/agent-skills` owns vendor source discovery,
+JSON/TOML normalization, provenance, naming collisions, and configuration-file
+admission. Pi's `mcp-discovery.ts` only selects `extensionWorkspaceRoot`; its
+workspace configuration paths remain under the extension namespace. Both
+foreign discovery and active configuration loading reject nonregular files,
+symlinks, and files larger than 1 MiB through the shared admission helper.
+Foreign definitions, including `.pi/mcp.json` and `.pi/agent/mcp.json`, remain
+disabled by default. `mcp-config.ts` applies SQLite enablement and project trust;
+a project definition cannot enter the runtime catalog before the project is trusted.
+
+### 3.6 Discovery timing
 
 ```
 session_start
@@ -164,7 +183,7 @@ first main-agent before_agent_start
 ### 4.1 Bundled skills
 
 The build places bundled skills in `dist/skills/`. See the
-[README inventory](README.md#bundled-skills-14) for names. The inventory is checked
+[README inventory](README.md#bundled-skills-15) for names. The inventory is checked
 by `tests/docs-consistency.test.ts`; `tests/package.test.ts` checks bundled artifacts.
 
 ### 4.2 Discovery sources

@@ -109,10 +109,10 @@ test('untrusted projects skip every project alias but still load global aliases'
   assert.equal(loaded.warnings.filter((warning) => warning.includes('project is not trusted')).length, projectPaths.length);
 });
 
-test('foreign MCP definitions are discovered read-only and disabled by default', async () => {
+test.each(['cursor', 'pi'])('foreign MCP definitions are discovered read-only and disabled by default (%s)', async (host) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-mcp-config-import-cwd-'));
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-mcp-config-import-home-'));
-  const cursorPath = path.join(cwd, '.cursor', 'mcp.json');
+  const cursorPath = path.join(cwd, `.${host}`, 'mcp.json');
   writeServer(cursorPath, 'docs', 'docs-mcp');
 
   const loaded = await loadMcpConfig(
@@ -120,15 +120,15 @@ test('foreign MCP definitions are discovered read-only and disabled by default',
     { homeDir, octocodeHome: path.join(homeDir, '.octocode-custom') },
   );
 
-  assert.equal(loaded.configuredServers.get('cursor.docs')?.command, 'docs-mcp');
-  assert.equal(loaded.configuredServers.get('cursor.docs')?.disabled, true);
-  assert.equal(loaded.servers.has('cursor.docs'), false, 'discovery never starts a server without an explicit override');
-  assert.deepEqual(loaded.serverSources.get('cursor.docs'), {
-    scope: 'discovered-project', path: cursorPath, trusted: true, host: 'cursor', readOnly: true,
+  assert.equal(loaded.configuredServers.get(`${host}.docs`)?.command, 'docs-mcp');
+  assert.equal(loaded.configuredServers.get(`${host}.docs`)?.disabled, true);
+  assert.equal(loaded.servers.has(`${host}.docs`), false, 'discovery never starts a server without an explicit override');
+  assert.deepEqual(loaded.serverSources.get(`${host}.docs`), {
+    scope: 'discovered-project', path: cursorPath, trusted: true, host, readOnly: true,
   });
 });
 
-test('an explicit SQLite override enables a discovered definition without copying it', async () => {
+test.each(['cursor', 'pi'])('an explicit SQLite override enables a discovered definition without copying it (%s)', async (host) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-mcp-config-import-enable-'));
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-mcp-config-import-enable-home-'));
   const octocodeHome = path.join(homeDir, '.octocode');
@@ -137,15 +137,15 @@ test('an explicit SQLite override enables a discovered definition without copyin
   process.env['OCTOCODE_HOME'] = octocodeHome;
   process.env['OCTOCODE_STORAGE_MODE'] = 'persistent';
   try {
-    const cursorPath = path.join(cwd, '.cursor', 'mcp.json');
+    const cursorPath = path.join(cwd, `.${host}`, 'mcp.json');
     writeServer(cursorPath, 'docs', 'docs-mcp');
-    setMcpServerEnabled(openOctocodeDb(), path.resolve(cwd), 'cursor.docs', true);
+    setMcpServerEnabled(openOctocodeDb(), path.resolve(cwd), `${host}.docs`, true);
 
     const loaded = await loadMcpConfig(
       { cwd, isProjectTrusted: () => true } as unknown as PiContext,
       { homeDir, octocodeHome },
     );
-    assert.equal(loaded.servers.get('cursor.docs')?.command, 'docs-mcp');
+    assert.equal(loaded.servers.get(`${host}.docs`)?.command, 'docs-mcp');
     assert.equal(fs.existsSync(projectMcpPath(cwd, octocodeHome)), false, 'definition was not duplicated');
   } finally {
     if (previousHome === undefined) delete process.env['OCTOCODE_HOME'];
@@ -155,16 +155,43 @@ test('an explicit SQLite override enables a discovered definition without copyin
   }
 });
 
-test('untrusted projects inventory but never import foreign project definitions', async () => {
+test.each(['cursor', 'pi'])('untrusted projects inventory but never import foreign project definitions (%s)', async (host) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-mcp-config-import-untrusted-'));
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-mcp-config-import-untrusted-home-'));
-  const cursorPath = path.join(cwd, '.cursor', 'mcp.json');
+  const cursorPath = path.join(cwd, `.${host}`, 'mcp.json');
   writeServer(cursorPath, 'docs', 'docs-mcp');
 
   const loaded = await loadMcpConfig(
     { cwd, isProjectTrusted: () => false } as unknown as PiContext,
     { homeDir, octocodeHome: path.join(homeDir, '.octocode-custom') },
   );
-  assert.equal(loaded.configuredServers.has('cursor.docs'), false);
+  assert.equal(loaded.configuredServers.has(`${host}.docs`), false);
   assert.equal(loaded.sources.some((source) => source.path === cursorPath && !source.trusted), true);
+});
+
+
+test('active configuration rejects symlinked and oversized sources before parsing', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-mcp-active-admission-'));
+  const cwd = path.join(root, 'workspace');
+  const homeDir = path.join(root, 'home');
+  const octocodeHome = path.join(homeDir, '.octocode');
+  try {
+    const global = globalMcpConfigPaths({ homeDir, octocodeHome })[0]!;
+    const project = projectMcpConfigPaths(cwd, octocodeHome)[0]!;
+    const outside = path.join(root, 'outside.json');
+    writeServer(outside, 'escaped', 'must-not-run');
+    fs.mkdirSync(path.dirname(global), { recursive: true });
+    fs.symlinkSync(outside, global);
+    writeServer(project, 'oversized', 'x'.repeat(1024 * 1024));
+    const loaded = await loadMcpConfig(
+      { cwd, isProjectTrusted: () => true } as unknown as PiContext,
+      { homeDir, octocodeHome },
+    );
+    assert.equal(loaded.configuredServers.has('escaped'), false);
+    assert.equal(loaded.configuredServers.has('oversized'), false);
+    assert.ok(loaded.warnings.some((warning) => warning.includes(global) && warning.includes('non-symbolic-link')));
+    assert.ok(loaded.warnings.some((warning) => warning.includes(project) && warning.includes('exceeds')));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

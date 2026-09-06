@@ -12,6 +12,23 @@ import { insertOutboxEvent } from './event-outbox.js';
 import { SIGNALS_SELECT_PARENT, SIGNALS_INSERT } from './sql/signals.js';
 import type { InsertNotificationParams, InsertNotificationResult, NotificationRecord, NotificationKind, NotificationStatus } from './types/notifications-agents.js';
 
+/**
+ * Explicitly named ids must exist: a typo'd --signal-id otherwise ack/resolves
+ * zero rows and reports ok, so the caller believes the signal was handled.
+ */
+export function assertSignalsExist(db: DatabaseSync, signalIds: string[]): void {
+  if (signalIds.length === 0) return;
+  const unique = [...new Set(signalIds)];
+  const rows = db.prepare(
+    `SELECT signal_id FROM signals WHERE signal_id IN (${unique.map(() => '?').join(',')})`,
+  ).all(...unique) as unknown as Array<{ signal_id: string }>;
+  const found = new Set(rows.map((r) => r.signal_id));
+  const missing = unique.filter((id) => !found.has(id));
+  if (missing.length > 0) {
+    throw new Error(`signal(s) not found: ${missing.join(', ')}`);
+  }
+}
+
 // ─── Internal row type ────────────────────────────────────────────────────────
 
 export interface NotificationRow {

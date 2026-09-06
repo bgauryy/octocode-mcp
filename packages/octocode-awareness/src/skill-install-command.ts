@@ -131,6 +131,7 @@ export function runSkillInstall(argv: string[], options: SkillInstallOptions): S
     return fail(`bundled skill is missing: ${join(source, 'SKILL.md')}`);
   }
   const destination = join(root, relativeDir, SKILL_NAME);
+  const next = `Read ${join(destination, 'SKILL.md')}; restart or reload the agent host if needed. Run npx @octocodeai/octocode-awareness guide for agent instructions and npx @octocodeai/octocode-awareness schema commands --all --compact for every command.`;
   const identical = sameTree(source, destination);
   const exists = existsSync(destination);
   const dryRun = flag(argv, '--dry-run');
@@ -160,7 +161,7 @@ export function runSkillInstall(argv: string[], options: SkillInstallOptions): S
   if (identical) {
     return {
       exitCode: 0,
-      payload: { ok: true, action: 'install', skill: SKILL_NAME, platform, scope, source, destination, changed: false },
+      payload: { ok: true, action: 'install', skill: SKILL_NAME, platform, scope, source, destination, changed: false, next },
     };
   }
   if (exists && !force) {
@@ -186,7 +187,7 @@ export function runSkillInstall(argv: string[], options: SkillInstallOptions): S
         source,
         destination,
         changed: true,
-        next: 'Restart or reload the agent host, then use npx @octocodeai/octocode-awareness attend --compact.',
+        next,
       },
     };
   } catch (error) {

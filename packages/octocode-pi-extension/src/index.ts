@@ -118,10 +118,10 @@ import {
   clearInMemoryInteractionState,
   configureInteractionBrokerRoute,
 } from './tools/interaction-broker.js';
-import { registerMemoryTool } from './tools/memory-tool.js';
-import { registerAwarenessCoordinationTools } from './tools/awareness-coordination-tools.js';
+import { renderAwarenessCliContext } from './tools/awareness-cli-context.js';
+import { EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS } from '@octocodeai/octocode-awareness';
 import { awarenessEventStatusText, registerAwarenessEventConsumer } from './tools/awareness-event-consumer.js';
-import { getAwarenessAgentId } from './tools/awareness-shared.js';
+import { getAwarenessAgentId, getAwarenessAgentIdentity } from './tools/awareness-shared.js';
 import {
   activePlanScope,
   adoptPlanFromBranch,
@@ -208,10 +208,10 @@ import { createHookComposer } from './hook-composer.js';
 import { createOctocodeCronScheduler } from './scheduler.js';
 import type {BeforeAgentStartEvent, PiInstance, PiContext, OctocodePiExtensionOptions, SessionShutdownEvent, ThinkingLevelEvent, SkillInfo, NotifyFn} from './types.js';
 
-// getAwarenessAgentId is single-sourced in tools/awareness-shared.ts (shared
-// with the first-class coordination tools) and imported above.
+// Native events, guards and the CLI shell bridge share one stable identity.
 
 const awarenessMutationGate = createAwarenessMutationGate({
+  enabled: isPersistentStorageEnabled,
   storeExists: (workspace) => {
     if (!isPersistentStorageEnabled()) return false;
     const scope = resolveAwarenessCoordinationScope(workspace);
@@ -231,12 +231,15 @@ const awarenessMutationGate = createAwarenessMutationGate({
   startWork: (target, workspace, agentId) => {
     const aw = openPersistentAwareness({ workspace, scope: resolveAwarenessCoordinationScope(workspace) });
     try {
-      return aw.startWork({
+      const existing = aw.listWork({ filePath: target, agentId })[0];
+      const work = aw.startWork({
         filePath: target,
         agentId,
+        ...(existing ? { runId: existing.runId } : {}),
         reason: 'Automatic Pi mutation presence',
         testPlan: 'Inspect the resulting file and run applicable repository checks before marking this mutation verified',
-      }).runId;
+      });
+      return existing ? null : work.runId;
     } finally {
       aw.close();
     }
@@ -270,9 +273,8 @@ const awarenessMutationGate = createAwarenessMutationGate({
 
 /**
  * Fire-and-forget Awareness registry presence. Join at session_start with
- * the session-stable agent id — Lite generates a funny host-tagged name
- * (octo-* here, since the harness sets OCTOCODE_AGENT_HOST) so peers in other
- * runners (clawde-*, cursea-*) see WHO is active in the shared workspace.
+ * the session-stable agent id, readable name and actual model provider.
+ * Routing uses IDs; vendor and host metadata let peers identify the runtime.
  * Leave at shutdown so the registry doesn't accumulate stale ACTIVE rows.
  * Best-effort: never blocks the session and never throws.
  */
@@ -282,7 +284,7 @@ function updateAwarenessRegistry(action: 'join' | 'leave', _pi: PiInstance, ctx?
   try {
     aw = openPersistentAwareness({ workspace: cwd });
     const agentId = getAwarenessAgentId(cwdOverride === undefined ? ctx : undefined);
-    if (action === 'join') aw.joinAgent({ agentId, role: 'lead' });
+    if (action === 'join') aw.joinAgent({ ...getAwarenessAgentIdentity(ctx), role: 'lead' });
     else aw.leaveAgent({ agentId });
   } catch { /* Awareness unresolved — skip */ }
   finally { aw?.close(); }
@@ -730,8 +732,6 @@ function registerSupportToolPhase({ pi, Type, registeredToolNames, notify, getLa
   registerPlanTool(pi, Type, registeredToolNames, registerUniqueTool);
   registerLocalServerTool(pi, Type, registeredToolNames, registerUniqueTool);
   registerAskUserTool(pi, Type, registeredToolNames, registerUniqueTool);
-  registerMemoryTool(pi, Type, registeredToolNames, registerUniqueTool);
-  registerAwarenessCoordinationTools(pi, Type, registeredToolNames, registerUniqueTool);
   registerMcpTool(pi, Type, registeredToolNames, registerUniqueTool);
 }
 
@@ -1311,8 +1311,8 @@ async function wireOctocodePiExtension(
       }));
       cronScheduler.start(ctx);
       // Announce this session in the shared Awareness agent registry with
-      // its generated host-tagged name (fire-and-forget; peers see it via
-      // `agent list` and can `message send` to it).
+      // its name and provider (peers discover IDs via `agent list` and use
+      // `signal publish --to-agent` to communicate).
       updateAwarenessRegistry('join', pi, ctx);
       // Full MCP discovery at init: connect every enabled configured server and
       // cache only enabled tools with descriptions and exact input schemas.
@@ -1428,6 +1428,7 @@ async function wireOctocodePiExtension(
     });
 
     hooks.on('model_select', 'octocode-model-select', async (_event: unknown, ctx: PiContext | undefined) => {
+      updateAwarenessRegistry('join', pi, ctx);
       // thinking_level_select fires before model_select when the model change
       // clamps the thinking level, so pi.getThinkingLevel() is already updated.
       applyOctocodeUi(ctx, pi.getThinkingLevel?.());
@@ -1435,6 +1436,10 @@ async function wireOctocodePiExtension(
       // refresher), so calling updateOctocodeMetricsUi here built the footer
       // twice per model switch.
       refreshAgentLedgerUi(ctx);
+    });
+
+    hooks.on('session_info_changed', 'octocode-awareness-name-refresh', async (_event: unknown, ctx: PiContext | undefined) => {
+      updateAwarenessRegistry('join', pi, ctx);
     });
 
     hooks.on('thinking_level_select', 'octocode-thinking-select', async (event: ThinkingLevelEvent, ctx: PiContext | undefined) => {
@@ -1595,7 +1600,11 @@ async function wireOctocodePiExtension(
       // NOTE: subagents intentionally skip stripPiSkillsSection below — their prompt is
       // assembled from their own typed/append config, not the main-agent skill flow.
       if (isSubagentProcess()) {
-        return piPrompt !== event.systemPrompt ? { systemPrompt: piPrompt } : undefined;
+        if (frozenSystemPrompt === undefined) {
+          const awareness = piPrompt.includes(EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS) ? '' : EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS;
+          frozenSystemPrompt = [piPrompt, awareness, renderAwarenessCliContext(ctx)].filter(Boolean).join('\n\n');
+        }
+        return { systemPrompt: frozenSystemPrompt };
       }
 
       // Refresh shared Awareness state on every turn — previously skipped on frozen turns
@@ -1643,6 +1652,7 @@ async function wireOctocodePiExtension(
           'dynamic-tool-contracts': currentDynamic,
           'available-skills': currentSkills,
           'session-artifact-contract': sessionArtifactPathsContext,
+          'awareness-cli-runtime': renderAwarenessCliContext(ctx),
         };
         const currentAssembly = assembleContextSegments([
           { id: 'octocode-product-policy', content: currentContents['octocode-product-policy']!, kind: 'product-policy', origin: 'octocode-harness', authority: 'product', scope: 'session', visibility: 'hidden-policy', rehydrate: 'always', tokenBudget: 20_000 },
@@ -1651,6 +1661,7 @@ async function wireOctocodePiExtension(
           { id: 'dynamic-tool-contracts', content: currentDynamic, kind: 'tool-contract', origin: 'octocode-harness', authority: 'product', scope: 'session', visibility: 'inspectable', rehydrate: 'always', tokenBudget: 20_000 },
           { id: 'available-skills', content: currentSkills, kind: 'skill', origin: 'installed-skills', authority: 'project', scope: 'session', visibility: 'inspectable', rehydrate: 'on-trigger', tokenBudget: 20_000 },
           { id: 'session-artifact-contract', content: sessionArtifactPathsContext, kind: 'tool-contract', origin: 'octocode-harness', authority: 'product', scope: 'session', visibility: 'inspectable', rehydrate: 'always', tokenBudget: 1_000 },
+          { id: 'awareness-cli-runtime', content: currentContents['awareness-cli-runtime']!, kind: 'tool-contract', origin: 'octocode-harness', authority: 'product', scope: 'session', visibility: 'inspectable', rehydrate: 'always', tokenBudget: 2_000 },
         ], { totalTokenBudget: INITIAL_CONTEXT_TOKEN_BUDGET });
         frozenRehydration = consumeValidatedRehydration(
           ctx,
@@ -1726,6 +1737,7 @@ async function wireOctocodePiExtension(
         { id: 'dynamic-tool-contracts', content: dynamicCatalog, kind: 'tool-contract', origin: 'octocode-harness', authority: 'product', scope: 'session', visibility: 'inspectable', rehydrate: 'always', tokenBudget: 20_000 },
         { id: 'available-skills', content: availableSkills, kind: 'skill', origin: 'installed-skills', authority: 'project', scope: 'session', visibility: 'inspectable', rehydrate: 'on-trigger', tokenBudget: 20_000 },
         { id: 'session-artifact-contract', content: sessionArtifactPathsContext, kind: 'tool-contract', origin: 'octocode-harness', authority: 'product', scope: 'session', visibility: 'inspectable', rehydrate: 'always', tokenBudget: 1_000 },
+        { id: 'awareness-cli-runtime', content: renderAwarenessCliContext(ctx), kind: 'tool-contract', origin: 'octocode-harness', authority: 'product', scope: 'session', visibility: 'inspectable', rehydrate: 'always', tokenBudget: 2_000 },
       ], { totalTokenBudget: INITIAL_CONTEXT_TOKEN_BUDGET });
       const initialContents: Record<string, string> = {
         'octocode-product-policy': cachedSystemPromptText,
@@ -1734,6 +1746,7 @@ async function wireOctocodePiExtension(
         'dynamic-tool-contracts': dynamicCatalog,
         'available-skills': availableSkills,
         'session-artifact-contract': sessionArtifactPathsContext,
+        'awareness-cli-runtime': renderAwarenessCliContext(ctx),
       };
       const initialRehydration = ctx
         ? consumeValidatedRehydration(

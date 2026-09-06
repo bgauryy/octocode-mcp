@@ -165,6 +165,7 @@ export interface ListWorkParams {
   filePath?: string | null;
   activeOnly?: boolean;
   limit?: number | null;
+  offset?: number;
 }
 
 export interface ListWorkResult {
@@ -172,6 +173,9 @@ export interface ListWorkResult {
   total_count: number;
   omitted_count: number;
   files: WorkPresence[];
+  partial: boolean;
+  partialReasons: Array<'limit'>;
+  next?: { list: { method: 'listWork'; params: ListWorkParams } };
 }
 
 export interface TableInfoRow {

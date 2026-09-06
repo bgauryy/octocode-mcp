@@ -88,12 +88,12 @@ it('--help exits 0', () => {
     expect(r.stdout).toContain('DEFAULT POLICY');
     expect(r.stdout).toMatch(/database\s+→ \$OCTOCODE_HOME\/awareness\/awareness.sqlite3/);
     expect(r.stdout).toMatch(/repo override\s+→ <workspace>\/\.octocode\/awareness.sqlite3/);
-    expect(r.stdout).toContain('schema commands --compact');
+    expect(r.stdout).toContain('schema commands --all --compact');
+    expect(r.stdout).toContain('AGENT SETUP  guide');
     expect(r.stdout).toContain('Preview and ask immediately before a real install');
     expect(r.stdout).toContain('Pi uses native events');
     expect(r.stdout).not.toContain('octocode-skills');
     expect(r.stdout).toContain('out/skills');
-    expect(r.stdout).toContain('schema commands --compact');
     expect(Buffer.byteLength(r.stdout, 'utf8')).toBeLessThanOrEqual(3072);
     expect(r.stdout).not.toContain('tell-memory');
     expect(r.stdout).not.toContain('get-memory');
@@ -125,7 +125,8 @@ it('--help --compact returns a short agent guide', () => {
     expect(r.stdout).toContain('out/skills');
     expect(r.stdout).toContain('docs list --compact');
     expect(r.stdout).toContain('skill install --platform');
-    expect(r.stdout).toContain('schema commands --compact');
+    expect(r.stdout).toContain('schema commands --all --compact');
+    expect(r.stdout).toContain('setup: guide for skill installation');
     expect(r.stdout).toContain('attend -> work start -> work end -> verify mark -> verify audit');
     expect(r.stdout).toContain('policy: $OCTOCODE_HOME/awareness/awareness.sqlite3, workspace-scoped rows, hooks=coordination');
     expect(r.stdout).toContain('attend|plan|task|work|verify|signal|memory|refinement');

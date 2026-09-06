@@ -80,7 +80,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
         if (ARRAY_FLAGS.has(key)) {
           const cur = result[key];
           result[key] = Array.isArray(cur) ? [...cur, value] : [value];
-        } else result[key] = value || true;
+        } else result[key] = parseFlagValue(key, value || true);
         i++;
         continue;
       }
@@ -95,7 +95,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
         const cur = result[key];
         result[key] = Array.isArray(cur) ? [...cur, next] : [next];
       } else {
-        result[key] = next;
+        result[key] = parseFlagValue(key, next);
       }
       continue;
     }
@@ -103,6 +103,16 @@ export function parseArgs(argv: string[]): ParsedArgs {
     i++;
   }
   return result;
+}
+
+// Normalize at the CLI boundary: consumers may use Boolean(value), so a
+// recognized false token must never survive as a truthy string.
+function parseFlagValue(key: string, value: string | boolean): string | boolean {
+  if (!BOOLEAN_FLAGS.has(key) || typeof value !== 'string') return value;
+  const normalized = value.trim().toLowerCase();
+  if (['false', '0', 'no'].includes(normalized)) return false;
+  if (['true', '1', 'yes'].includes(normalized)) return true;
+  return value; // validateFlagValues rejects unknown Boolean tokens.
 }
 
 // Per-command flag allowlist. Documented flags that the runtime silently
@@ -124,6 +134,10 @@ export const BOOLEAN_FLAGS = new Set(['compact', 'help', 'smart', 'global_only',
 // which parseArgs would otherwise read as query=true (searching the literal
 // string "true"). Curated allowlist — unlisted flags are never falsely rejected.
 export const VALUE_REQUIRED_FLAGS = new Set([
+  'agent_name',
+  'agent_vendor',
+  'agent_host',
+  'offset',
   'query',
   'observation',
   'lesson',

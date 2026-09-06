@@ -37,9 +37,9 @@ async function showMainMenu(state: AppState): Promise<MenuChoice> {
   choices.push(buildAuthMenuItem(state.githubAuth));
 
   choices.push({
-    name: '- Tool Terminal',
+    name: 'Explore tools',
     value: 'terminal',
-    description: 'Run Octocode tools directly from an interactive terminal',
+    description: 'Search code and inspect tool results in the terminal',
   });
 
   choices.push(

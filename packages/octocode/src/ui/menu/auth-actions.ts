@@ -1,3 +1,4 @@
+import { sectionDivider } from '../layout.js';
 import { c, bold, dim } from '../../utils/colors.js';
 import { selectWithCancel } from '../../utils/prompts.js';
 import { separatorChoice } from '../../utils/prompt-separator.js';
@@ -17,9 +18,9 @@ import type { GhGuidanceChoice } from './types.js';
 
 export async function runLoginFlow(): Promise<boolean> {
   console.log();
-  console.log(c('blue', '━'.repeat(66)));
+  console.log(sectionDivider());
   console.log(`  ${bold('GitHub Authentication')}`);
-  console.log(c('blue', '━'.repeat(66)));
+  console.log(sectionDivider());
   console.log();
   console.log(
     `  ${dim('This will open your browser to authenticate with GitHub.')}`

@@ -108,6 +108,9 @@ export function cmdTask(db: DatabaseSync, args: ParsedArgs, dbPath: string, opts
   const action = requiredArg(args, 'action');
   const agentId = String(args['agent_id'] ?? process.env.OCTOCODE_AGENT_ID ?? '').trim();
   if (action === 'create') {
+    if (args['test_plan'] !== undefined || args['lease_minutes'] !== undefined) {
+      die('--test-plan and --lease-minutes belong to task claim, not task create; put task completion criteria in --acceptance.');
+    }
     const result = createTask(db, {
       planId: requiredArg(args, 'plan_id'),
       title: requiredArg(args, 'title'),

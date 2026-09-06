@@ -23,6 +23,7 @@ import type { PiContext } from '../types.js';
 import type { registerUniqueTool } from './octocode-tools.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 import { chunkReadHint, writeEphemeralToolOutput } from './ephemeral-tool-output.js';
+import { buildAwarenessCliEnvironment } from './awareness-cli-context.js';
 
 type TypeBoxBuilder = (typeof import('typebox'))['Type'];
 type RegisterFn = typeof registerUniqueTool;
@@ -68,6 +69,7 @@ export function bashLooksMutatingForPlanMode(command: string, cwd: string = proc
 
 export function extractBashWriteTargets(command: string, cwd: string): string[] {
   const targets: string[] = [];
+  const syntax = shellSyntaxView(command);
   const push = (raw: string) => {
     const cleaned = raw
       .trim()
@@ -92,22 +94,27 @@ export function extractBashWriteTargets(command: string, cwd: string): string[] 
   const redirectRe = /(?:^|[\s;|&])(?:\d*)?>>?\s*([^\s;|&<>)]+)/g;
   let match: RegExpExecArray | null;
   while ((match = redirectRe.exec(command)) !== null) {
+    if (syntax[match.index + match[0].indexOf('>')] !== '>') continue;
     push(match[1]!);
   }
 
   // tee [-a] file...
-  const teeRe = /\btee\b(?:\s+-a)?\s+([^\n;|&]+)/g;
+  const teeRe = /\btee\b["']?(?:\s+-a)?\s+([^\n;|&]+)/g;
   while ((match = teeRe.exec(command)) !== null) {
-    for (const part of match[1]!.trim().split(/\s+/)) {
+    teeRe.lastIndex = match.index + 1;
+    if (!isShellExecutable(command, syntax, match.index)) continue;
+    for (const part of tokenizeShellSegment(shellArguments(command, syntax, match.index + match[0].indexOf(match[1]!)))) {
       if (part.startsWith('-')) continue;
       push(part);
     }
   }
 
   // cp/mv ... dest (last non-flag arg) — only when dest looks like a path
-  const copyRe = /\b(?:cp|mv|install)\b(?:\s+-[a-zA-Z]+|\s+--[^\s]+)*\s+(.+)$/gm;
+  const copyRe = /\b(?:cp|mv|install)\b["']?(?:\s+-[a-zA-Z]+|\s+--[^\s]+)*\s+(.+)$/gm;
   while ((match = copyRe.exec(command)) !== null) {
-    const args = match[1]!.trim().split(/\s+/).filter((a) => !a.startsWith('-'));
+    copyRe.lastIndex = match.index + 1;
+    if (!isShellExecutable(command, syntax, match.index)) continue;
+    const args = tokenizeShellSegment(shellArguments(command, syntax, match.index + match[0].indexOf(match[1]!))).filter((a) => !a.startsWith('-'));
     const dest = args[args.length - 1];
     if (dest) push(dest);
   }
@@ -116,11 +123,80 @@ export function extractBashWriteTargets(command: string, cwd: string): string[] 
   // bypassing shell redirects. Extract those files so the guard sees them.
   // Opaque interpreters (node -e, python -c) can still write arbitrary paths and
   // are not statically parseable — the tool description documents that gap.
-  for (const seg of command.split(/[;|&\n]+/)) {
+  for (const seg of splitShellCommands(command, syntax)) {
     for (const file of extractInPlaceEditTargets(seg)) push(file);
   }
 
   return [...new Set(targets)];
+}
+
+/** Keep source offsets while hiding quoted data; command substitutions remain executable. */
+function shellSyntaxView(command: string): string {
+  const view = command.split('');
+  let quote: string | null = null;
+  const frames: Array<{ close: string; quote: string | null }> = [];
+  for (let i = 0; i < command.length; i++) {
+    const char = command[i]!;
+    if (char === '\\' && quote !== "'") { view[i] = ' '; if (++i < command.length) view[i] = ' '; continue; }
+    if (quote === "'") { view[i] = ' '; if (char === "'") quote = null; continue; }
+    if (char === '$' && command[i + 1] === '(') {
+      frames.push({ close: ')', quote }); quote = null; i++; continue;
+    }
+    if (char === '`') {
+      if (frames.at(-1)?.close === '`') quote = frames.pop()!.quote;
+      else { frames.push({ close: '`', quote }); quote = null; }
+      continue;
+    }
+    if (!quote && char === '(') frames.push({ close: ')', quote: null });
+    else if (!quote && char === ')' && frames.at(-1)?.close === ')') quote = frames.pop()!.quote;
+    else if (char === quote) { view[i] = ' '; quote = null; }
+    else if (!quote && (char === "'" || char === '"')) { quote = char; view[i] = ' '; }
+    else if (quote) view[i] = ' ';
+  }
+  return view.join('');
+}
+
+function splitShellCommands(command: string, syntax: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  for (const match of syntax.matchAll(/[;|&\n]+/g)) {
+    parts.push(command.slice(start, match.index));
+    start = match.index + match[0].length;
+  }
+  parts.push(command.slice(start));
+  return parts;
+}
+
+function shellArguments(command: string, syntax: string, start: number): string {
+  const end = syntax.slice(start).search(/[;|&\n)]/);
+  return command.slice(start, end < 0 ? undefined : start + end);
+}
+
+/** A noun such as `skill install` is an argument, not the system install executable. */
+function isShellExecutable(command: string, syntax: string, position: number): boolean {
+  if (syntax[position] !== command[position]) {
+    // Quoting the executable itself is different from mentioning it in a body.
+    const opening = command.slice(0, position).match(/(["'])([^\s"']*\/)?$/);
+    const word = command.slice(position).match(/^\w+/)?.[0];
+    if (!opening || !word || command[position + word.length] !== opening[1]) return false;
+    position -= opening[0].length;
+  }
+  const before = syntax.slice(0, position);
+  const boundary = Math.max(...[';', '|', '&', '\n', '(', '{', '}', '`'].map(char => before.lastIndexOf(char))) + 1;
+  const prefix = command.slice(boundary, position).replace(/(?:^|\s)\S*\/$/, '').trim();
+  const tokens = tokenizeShellSegment(prefix);
+  let i = 0;
+  while (i < tokens.length) {
+    if (/^[A-Za-z_]\w*=/.test(tokens[i]!)) { i++; continue; }
+    const wrapper = tokens[i++];
+    if (['then', 'do', 'else', 'elif', 'if', 'while', 'until', '!', 'time'].includes(wrapper!)) continue;
+    if (!['sudo', 'command', 'exec', 'env'].includes(wrapper!)) return false;
+    while (tokens[i]?.startsWith('-')) {
+      const option = tokens[i++];
+      if (['-u', '-g', '-h', '-p', '-C', '-T', '-a', '--user', '--group', '--host', '--prompt', '--unset'].includes(option!)) i++;
+    }
+  }
+  return true;
 }
 
 /**
@@ -217,6 +293,7 @@ function containsShellExpansion(token: string): boolean {
  * we hard-error with a clear diagnostic asking for a literal path.
  */
 function assertNoShellExpansionInWriteTargets(command: string): void {
+  const syntax = shellSyntaxView(command);
   const blocked = (raw: string, kind: string): never => {
     throw new Error(
       `bash blocked: ${kind} target "${raw}" contains a shell variable or command substitution — ` +
@@ -229,23 +306,28 @@ function assertNoShellExpansionInWriteTargets(command: string): void {
   const redirectRe = /(?:^|[\s;|&])(?:\d*)?>>?\s*([^\s;|&<>)]+)/g;
   let m: RegExpExecArray | null;
   while ((m = redirectRe.exec(command)) !== null) {
+    if (syntax[m.index + m[0].indexOf('>')] !== '>') continue;
     const raw = (m[1] ?? '').replace(/^['"]|['"]$/g, '').replace(/\)+$/, '');
     if (!raw || raw === '-' || raw.startsWith('&') || raw === '/dev/null' || raw.startsWith('/dev/fd/')) continue;
     if (containsShellExpansion(raw)) blocked(raw, 'redirect');
   }
 
-  const teeRe = /\btee\b(?:\s+-a)?\s+([^\n;|&]+)/g;
+  const teeRe = /\btee\b["']?(?:\s+-a)?\s+([^\n;|&]+)/g;
   while ((m = teeRe.exec(command)) !== null) {
-    for (const part of (m[1] ?? '').trim().split(/\s+/)) {
+    teeRe.lastIndex = m.index + 1;
+    if (!isShellExecutable(command, syntax, m.index)) continue;
+    for (const part of tokenizeShellSegment(shellArguments(command, syntax, m.index + m[0].indexOf(m[1]!)))) {
       if (!part || part.startsWith('-')) continue;
       const raw = part.replace(/^['"]|['"]$/g, '');
       if (containsShellExpansion(raw)) blocked(raw, 'tee');
     }
   }
 
-  const copyRe = /\b(?:cp|mv|install)\b(?:\s+-[a-zA-Z]+|\s+--[^\s]+)*\s+(.+)$/gm;
+  const copyRe = /\b(?:cp|mv|install)\b["']?(?:\s+-[a-zA-Z]+|\s+--[^\s]+)*\s+(.+)$/gm;
   while ((m = copyRe.exec(command)) !== null) {
-    const args = (m[1] ?? '').trim().split(/\s+/).filter((a) => !a.startsWith('-'));
+    copyRe.lastIndex = m.index + 1;
+    if (!isShellExecutable(command, syntax, m.index)) continue;
+    const args = tokenizeShellSegment(shellArguments(command, syntax, m.index + m[0].indexOf(m[1]!))).filter((a) => !a.startsWith('-'));
     const dest = args.at(-1);
     if (dest && containsShellExpansion(dest)) blocked(dest, 'copy/move destination');
   }
@@ -376,6 +458,7 @@ async function runBash(
   timeoutSec: number | undefined,
   outputPath: string,
   signal?: AbortSignal,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ stdout: string; stderr: string; recentTail: string; stdoutChars: number; stderrChars: number; code: number | null; signal: NodeJS.Signals | null; aborted: boolean; previewCapped: boolean; fileCapped: boolean }> {
   await access(cwd, constants.F_OK).catch(() => {
     throw new Error(`Working directory does not exist: ${cwd}\nCannot execute bash commands.`);
@@ -425,7 +508,7 @@ async function runBash(
     };
     const child = spawn(shell, ['-lc', command], {
       cwd,
-      env: process.env,
+      env,
       detached: process.platform !== 'win32',
     });
     let stdout = '';
@@ -623,7 +706,7 @@ export function registerBashTool(
             }
           }
           const outputPath = writeEphemeralToolOutput('', { toolName: 'bash', toolCallId: itemCallId, extension: 'log' });
-          const { stdout, stderr, recentTail, stdoutChars, stderrChars, code, signal: killedBy, aborted, previewCapped, fileCapped } = await runBash(command, cwd, timeout, outputPath, signal);
+          const { stdout, stderr, recentTail, stdoutChars, stderrChars, code, signal: killedBy, aborted, previewCapped, fileCapped } = await runBash(command, cwd, timeout, outputPath, signal, buildAwarenessCliEnvironment(ctx));
           let combined = [stdout, stderr].filter(Boolean).join('\n');
           if (previewCapped) {
             combined += `\n[Inline preview source capped at ${BASH_RAW_ACCUMULATION_MAX.toLocaleString()} chars; inspect the referenced log for later output]`;

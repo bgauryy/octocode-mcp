@@ -4,7 +4,7 @@
  *
  * Each subagent has:
  *   - A typed name (union literal)
- *   - Tool allowlist (no nested spawning; write tools stay out unless a role explicitly needs them)
+ *   - Tool allowlist (no nested spawning; role prompts bound repository edits and shell use)
  *   - Resource mode (always 'octocode' so the extension's own tools are available)
  *   - SYSTEM_PROMPT.md path loaded at runtime from dist/subagents/<name>/
  *   - All bundled Octocode skills, plus any subagent-local skill dirs
@@ -112,6 +112,7 @@ export function getExternalSkillDirs(): string[] {
 }
 
 export const OCTOCODE_SKILL_NAMES = [
+  'octocode-awareness',
   'octocode-brainstorming',
   'octocode-prompt-optimizer',
   'octocode-research',
@@ -204,7 +205,9 @@ export const SUBAGENT_REGISTRY = {
       'chromeDebug', // CDP execution — primary tool
       'web',         // CDP docs + web research
       'MCPTool',     // Octocode MCP server: localGetFileContent, localSearch, localAnalyzeGraph, etc.
-      'write',       // durable handback artifacts assigned by the parent
+      'file',        // only parent-assigned durable handback artifacts
+      'skill',       // load bundled/user workflows, including Awareness
+      'bash',        // harness-provided Awareness CLI; other shell use remains role-bound
     ],
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'low',
@@ -220,8 +223,9 @@ export const SUBAGENT_REGISTRY = {
     tools: [
       'web',
       'MCPTool', // octocode MCP server: all GitHub, local, LSP, npm research tools
-      'memory',  // record verified findings for the parent; recall prior learnings
-      'write',   // durable handback artifacts assigned by the parent
+      'file',   // only parent-assigned durable handback artifacts
+      'skill',  // load bundled/user workflows, including Awareness
+      'bash',   // harness-provided Awareness CLI; other shell use remains role-bound
     ],
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'low',
@@ -236,8 +240,9 @@ export const SUBAGENT_REGISTRY = {
     tools: [
       'web',
       'MCPTool', // octocode MCP server: all GitHub, local, LSP, npm research tools
-      'memory',  // record planning decisions; recall prior learnings
-      'write',   // durable handback artifacts assigned by the parent
+      'file',   // only parent-assigned durable handback artifacts
+      'skill',  // load bundled/user workflows, including Awareness
+      'bash',   // harness-provided Awareness CLI; other shell use remains role-bound
     ],
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'low',
@@ -253,8 +258,8 @@ export const SUBAGENT_REGISTRY = {
       'bash',
       'web',
       'MCPTool', // octocode MCP server: all GitHub, local, LSP, npm research tools
-      'memory',  // record root-cause findings and verified learnings
-      'write',   // durable handback artifacts assigned by the parent
+      'file',   // only parent-assigned durable handback artifacts
+      'skill',  // load bundled/user workflows, including Awareness
     ],
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'medium',

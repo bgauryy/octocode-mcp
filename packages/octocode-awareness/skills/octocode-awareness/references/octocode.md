@@ -18,8 +18,8 @@ npx octocode tools localSearch --queries '{"operation":"text","path":"/absolute/
 npx octocode tools localGetFileContent --queries '{"path":"/absolute/workspace/README.md","minify":"symbols"}'
 
 # Remote/package contracts
-npx octocode tools ghSearch ghGetFileContent ghSearchPullRequests ghSearchIssues ghSearchCommits ghListReleases ghSearchDiscussions ghCloneRepo npmSearch --scheme
-# Releases and Discussions appear only when their feature flags enable them.
+npx octocode tools ghSearch ghGetFileContent ghSearchHistory ghGetHistoryItem ghCloneRepo npmSearch --scheme
+# Use the catalog availability and history-operation schema for supported remote surfaces.
 ```
 
 Treat hits as leads. Cite paths/lines/IDs in locks, signals, memories, and refinements. Zero matches require one scope/mode/spelling adjustment before an absence claim. Install a dedicated research workflow skill separately for deeper evidence workflows.

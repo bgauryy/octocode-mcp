@@ -216,12 +216,32 @@ export function cmdRefineGet(db: DatabaseSync, args: ParsedArgs, dbPath: string,
     includeHandoffs: Boolean(args['include_handoffs']),
     refinementId,
     states,
-    limit: opts.compact && !full ? requestedLimit + 1 : requestedLimit,
+    limit: requestedLimit,
+    offset: args['offset'] === undefined ? 0 : Number(args['offset']),
   });
 
+  const continuation = result.next?.list.params;
+  const nextArgs = continuation ? ['--db', dbPath] : [];
+  if (continuation) {
+    for (const [flag, value] of [
+      ['workspace', continuation.workspacePath], ['artifact', continuation.artifact],
+      ['repo', continuation.repo], ['ref', continuation.ref], ['quality', continuation.quality],
+      ['limit', continuation.limit], ['offset', continuation.offset],
+    ] as const) if (value != null) nextArgs.push(`--${flag}`, String(value));
+    for (const state of continuation.states ?? []) nextArgs.push('--state', state);
+    if (continuation.includeHandoffs) nextArgs.push('--include-handoffs');
+    if (full) nextArgs.push('--full');
+    if (opts.compact) nextArgs.push('--compact');
+  }
+  const pagination = {
+    partial: result.partial,
+    partialReasons: result.partialReasons,
+    has_more: result.partial,
+    next: continuation ? { list: { command: { name: 'refinement get', args: nextArgs } } } : undefined,
+  };
+
   if (opts.compact && !full) {
-    const hasMore = result.refinements.length > requestedLimit;
-    const refinements = result.refinements.slice(0, requestedLimit).map((row) => {
+    const refinements = result.refinements.map((row) => {
       const files = row.files.slice(0, 3);
       return {
         refinement_id: row.refinement_id,
@@ -242,11 +262,10 @@ export function cmdRefineGet(db: DatabaseSync, args: ParsedArgs, dbPath: string,
       refinements,
       handoff_count: result.handoff_count,
       instructions_count: result.instructions_count,
-      has_more: hasMore,
-      next_limit: hasMore ? Math.min(50, requestedLimit * 2) : null,
+      ...pagination,
     }, 0, opts);
   }
-  return emit({ db_path: dbPath, ...result }, 0, opts);
+  return emit({ db_path: dbPath, ...result, ...pagination }, 0, opts);
 }
 
 export function cmdReflect(db: DatabaseSync, args: ParsedArgs, dbPath: string, opts: EmitOptions): number {

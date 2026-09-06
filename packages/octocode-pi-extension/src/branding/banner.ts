@@ -25,7 +25,7 @@ export interface BannerTheme {
 /**
  * Octocode banner art: the block-style OCTOCODE CODE wordmark
  * (figlet "ANSI Shadow" face) painted by renderWordmarkLines with a
- * vibrant purple→teal→purple gradient.
+ * theme-aware lavender and purple gradient.
  */
 const WORDMARK_ART: readonly string[] = [
   ' ██████╗  ██████╗████████╗ ██████╗  ██████╗ ██████╗ ██████╗ ███████╗   ██████╗ ██████╗ ██████╗ ███████╗',
@@ -56,81 +56,14 @@ const COMPACT_BRAND_RAMP: readonly SemanticToken[] = [
   'muted',
 ];
 
-// ─── True-colour wave gradient ────────────────────────────────────────────────
-//
-// Deliberately NOT animated: the banner is a transcript entry at the top of
-// the scrollback, and any time-varying bytes there invalidate pi-tui's line
-// diff for everything below it on every repaint — which surfaced as scroll
-// jumps while the model streamed.
-//
-// Formula (static snapshot, no time variable):
-//   wave = 0.28·A + 0.22·B + 0.20·C + 0.18·D + 0.12·E + 0.08·micro
-//   hue  = 278 + wave·42    →  250 … 320  (blue-violet → magenta)
-//   sat  = 88  + wave·9
-//   lig  = 56  + wave·20
-//
-// Every character gets its own value via `micro = sin(col·17.391 + row·31.719)`
-// so no two neighbours share the exact hex — true per-pixel colour variety.
-// Output uses ANSI 24-bit true-colour (ESC[38;2;R;G;Bm), which pi-tui's
-// AnsiCodeTracker already parses and preserves across line-wraps.
-
-/** HSL (degrees, %, %) → clamped [r, g, b] byte triple. */
-function hslToRgb(h: number, s: number, l: number): readonly [number, number, number] {
-  h = ((h % 360) + 360) % 360;
-  s /= 100; l /= 100;
-  const a = s * Math.min(l, 1 - l);
-  const f = (n: number): number => {
-    const k = (n + h / 30) % 12;
-    return Math.round(255 * Math.max(0, Math.min(1, l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1))));
-  };
-  return [f(0), f(8), f(4)] as const;
-}
-
-/** Wrap `ch` in an ANSI 24-bit foreground colour; reset immediately after. */
-function trueColorChar(r: number, g: number, b: number, ch: string): string {
-  return `\x1b[38;2;${r};${g};${b}m${ch}\x1b[0m`;
-}
-
-/**
- * Compute the wave-gradient RGB colour for a single banner character.
- *
- * @param col       Column index within the plain (pre-clip) art line.
- * @param row       Row index within WORDMARK_ART (0-based).
- * @param lineWidth Visible width of the clipped art line (for normalisation).
- */
-function waveCharColor(
-  col: number,
-  row: number,
-  lineWidth: number,
-): readonly [number, number, number] {
-  const nx = col / Math.max(1, lineWidth - 1);           // 0 → 1 horizontal
-  const ny = row / Math.max(1, WORDMARK_ART.length - 1); // 0 → 1 vertical
-
-  // Five overlapping sine waves produce an organic interference pattern.
-  const A = Math.sin(nx * Math.PI * 5.0  + 0.20);                       // horizontal roll
-  const B = Math.sin(ny * Math.PI * 3.5  + 0.80);                       // vertical roll
-  const C = Math.cos((nx + ny) * Math.PI * 4.5 + 0.50);                // diagonal sweep
-  const D = Math.sin(nx * Math.PI * 7.0  - ny * Math.PI * 2.5 + 0.30); // skewed wave
-  const E = Math.cos(nx * Math.PI * 2.0  + ny * Math.PI * 6.0 + 1.00); // cross-wave
-
-  // Deterministic per-character micro-noise — every glyph gets a unique hex.
-  const micro = Math.sin(col * 17.391 + row * 31.719) * 0.08;
-
-  // Weighted mix in [-1, 1]
-  const wave = A * 0.28 + B * 0.22 + C * 0.20 + D * 0.18 + E * 0.12 + micro;
-
-  // Purple spectrum: hue 250 (blue-violet) ↔ 320 (hot magenta)
-  const hue = 278 + wave * 42;
-  const sat = 88  + wave * 9;
-  const lig = 56  + wave * 20;
-
-  return hslToRgb(hue, sat, lig);
-}
+// The active theme owns every brand color, including plain/light themes.
+// Use broad, static bands so identity stays calm and repaints stay deterministic.
+const WORDMARK_RAMP: readonly SemanticToken[] = ['link', 'brand', 'title', 'brand'];
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
- * The banner art painted with the static brand gradient. Pure in (theme,
+ * The banner art painted with the static theme gradient. Pure in (theme,
  * width): identical input → byte-identical output, so repaints are free.
  * Width-safe: the PLAIN art is clipped first (truncatePlainToWidth injects no
  * SGR resets), then the surviving glyphs are painted.
@@ -157,22 +90,13 @@ export function renderWordmarkLines(theme: BannerTheme, width: number): string[]
     while (lines.length < WORDMARK_ART.length) lines.push('');
     return lines;
   }
-  return WORDMARK_ART.map((line, row) => {
+  return WORDMARK_ART.map((line) => {
     const clipped = truncatePlainToWidth(line, width);
-    let painted = '';
-    let col = 0;
-    // Code-point iteration keeps any future astral-plane glyph in the art
-    // from being split into lone surrogates by a code-unit index.
-    for (const ch of clipped) {
-      if (ch === ' ') {
-        painted += ch;
-      } else {
-        const [r, g, b] = waveCharColor(col, row, clipped.length);
-        painted += trueColorChar(r, g, b, ch);
-      }
-      col++;
-    }
-    return painted;
+    return [...clipped].map((ch, col) => {
+      const stop = Math.min(WORDMARK_RAMP.length - 1,
+        Math.floor(col * WORDMARK_RAMP.length / WORDMARK_WIDTH));
+      return ch === ' ' ? ch : paint(theme, WORDMARK_RAMP[stop] ?? 'brand', ch);
+    }).join('');
   });
 }
 

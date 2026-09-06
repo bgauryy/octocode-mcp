@@ -80,6 +80,7 @@ export const operationSchemas = {
         .default(["open", "ongoing"])
         .describe("States."),
       limit: z.number().int().min(1).max(200).default(20),
+      offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0).describe("Continuation offset from next.list."),
       include_env: z
         .boolean()
         .default(false)
@@ -122,6 +123,7 @@ export const operationSchemas = {
       mark_read: z.boolean().default(false),
       kinds: z.array(notificationKind).max(8).default([]),
       limit: z.number().int().min(1).max(200).default(20),
+      cursor: z.string().min(1).max(1024).optional().describe("Opaque signal-list continuation from the preceding page."),
       include_bodies: z
         .boolean()
         .default(false)
@@ -157,12 +159,15 @@ export const operationSchemas = {
   agent_registry: z
     .object({
       action: z.enum(["list", "register"]).default("list").describe("Action."),
-      agent_id: agentId.optional().describe("Agent id."),
-      agent_name: z.string().trim().max(256).optional().describe("Display name."),
-      workspace: workspacePath.optional().describe("Workspace scope."),
+      agent_id: agentId.optional().describe("Stable unique session ID. CLI defaults to OCTOCODE_AGENT_ID."),
+      agent_name: z.string().trim().max(256).optional().describe("Display name. CLI defaults to OCTOCODE_AGENT_NAME."),
+      agent_vendor: z.string().trim().min(1).max(128).optional().describe("Self-reported model/provider; not authentication. CLI defaults to OCTOCODE_AGENT_VENDOR."),
+      agent_host: z.string().trim().min(1).max(128).optional().describe("Self-reported host application. CLI defaults to OCTOCODE_AGENT_HOST."),
+      workspace: workspacePath.optional().describe("Shared repository scope; CLI registration defaults to cwd."),
       artifact: artifactScope.optional(),
       context: z.string().trim().min(1).max(64).optional().describe("Host context."),
       limit: z.number().int().min(1).max(200).default(50).describe("Row limit."),
+      offset: z.number().int().min(0).default(0).describe("Peer-list continuation offset."),
     })
     .strict()
     .refine((d) => d.action !== "register" || d.agent_id !== undefined, {

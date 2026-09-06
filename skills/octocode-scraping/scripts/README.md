@@ -14,3 +14,18 @@ Use this catalog to select an existing deterministic helper before writing a new
 | `schema-helper.mjs` | Extraction field hints |
 
 Schemas live in `schemas/graph.schema.json` and `schemas/provider.schema.json`. Libraries under `lib/` own provider registration, fetching, corpus analysis, extraction, argument parsing, and bridge readers. The vendored `octocode-config.mjs` keeps the skill standalone and loads `SCRAPING_ANT` through the standard Octocode environment flow.
+
+## Corpus search pagination
+
+`node scripts/corpus-find.mjs --session-dir <dir> --query <text> --limit 20` returns a ranked page. `--limit` is a positive safe integer (default 20); `--offset` is a non-negative safe integer (default 0). Partial output includes exact counts and `next.page` with an absolute executable `command` and raw `args`. Run that command with those arguments unchanged until `completeness` is `complete` and `next` is `null`. Evidence-file suggestions are separate in `suggestedFiles`. See `../references/session-corpus.md` for the output contract and corpus stability requirement.
+
+## Focused regressions
+
+Run from the skill directory:
+
+```sh
+node --test scripts/tests/corpus-find.test.mjs
+node --test scripts/tests/cdp-client.test.mjs
+```
+
+The corpus test executes limit-one continuations over seven fixed matches, checks their exact union, terminal states, and invalid arguments. The CDP test checks the generated default runner through navigation/body extraction and rejects failed stealth setup without starting a real browser. Live browser verification remains separate.

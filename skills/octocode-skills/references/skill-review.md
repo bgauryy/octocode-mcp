@@ -10,7 +10,7 @@ Review combines mechanical findings with judgment about density, ownership, navi
 2. **Quality rubric** — trigger, workflow, gates, evidence, UX, risk (`references/quality-rubric.md`).
 3. **Mechanical rules** — frontmatter, missing refs/scripts, length, routing, hooks, prose, description trigger quality (`description-concise` / `description-rigid` / `description-redundant`) (`references/skill-review-rules.md`).
 4. **Navigation** — lobby lists every reference and script with when/how plus the workflow, routes carry when/why, chunks declare entry, and next hop, flow phases are routed (`references/skill-anatomy.md`). <!-- style-lint: ignore-line passive-voice -->
-5. **Standalone** — every local file reference stays inside the folder (`link-outside-skill`).
+5. **Standalone** — static path checks (`link-outside-skill`) find literal references; constructed paths and optional integrations need isolated runtime checks.
 6. **Cleanup** — every shipped file is reachable and useful; no duplicate, development-only metadata, probe, or scratch artifacts (`unused-file`, `references/skill-cleanup.md`).
 
 ## Run
@@ -27,6 +27,8 @@ Exit `1` on any ERROR; WARN is advisory. Always run before reporting create/edit
 `scripts/skill-lint.mjs` is a compatibility alias for the same command.
 
 No-arg scan is relative to this skill copy: `.agents/skills/octocode-skills` scans `.agents/skills`; packaged `skills/octocode-skills` scans `skills`.
+
+For an authorized runtime review, copy the shipped skill alone into a temporary directory, use a separate working directory, and run its documented help and finite fixture checks. Keep sibling skills and developer-only files absent. Test optional integrations both without their dependency (clear setup guidance) and with the documented dependency supplied. Static review does not execute untrusted scripts or prove portability.
 
 ## Fix loop
 

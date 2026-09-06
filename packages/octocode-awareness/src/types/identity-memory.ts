@@ -9,6 +9,8 @@
 export interface AgentIdentity {
   agent_id: string;
   agent_name: string;            // human-readable display name; '' if unknown
+  agent_vendor: string | null;   // self-reported model/provider; not authentication
+  agent_host: string | null;     // self-reported host application
   workspace_path: string | null; // primary workspace this agent was last seen in
   artifact: string | null;       // optional package/service slice in that workspace
   context: string | null;        // tool context: 'pi' | 'cursor' | 'claude-code'
@@ -19,6 +21,8 @@ export interface AgentIdentity {
 export interface RegisterAgentParams {
   agentId: string;
   agentName?: string | null;     // '' or omit if unknown
+  agentVendor?: string | null;
+  agentHost?: string | null;
   workspacePath?: string | null;
   artifact?: string | null;
   context?: string | null;       // 'pi' | 'cursor' | 'claude-code' | etc
@@ -318,12 +322,16 @@ export interface GetRefinementsParams {
   includeHandoffs?: boolean;
   states?: string[];
   limit?: number;
+  offset?: number;
   cwd?: string;
 }
 
 export interface GetRefinementsResult {
   count: number;
   refinements: RefinementRecord[];
+  partial: boolean;
+  partialReasons: Array<'limit'>;
+  next?: { list: { method: 'getRefinements'; params: GetRefinementsParams } };
   /** Present when handoffs are excluded by default — use --include-handoffs to list them. */
   handoff_count?: number;
   /** Present when instructions-feedback refinements are excluded by default — see `reflect developer-review`. */

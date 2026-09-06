@@ -1,3 +1,4 @@
+import { sectionDivider } from '../layout.js';
 import { bold, c, dim } from '../../utils/colors.js';
 import { select, confirm, loadInquirer } from '../../utils/prompts.js';
 import { separatorChoice } from '../../utils/prompt-separator.js';
@@ -27,9 +28,9 @@ async function inspectMCPServer(
   serverConfig: MCPServer
 ): Promise<void> {
   console.log();
-  console.log(c('blue', '━'.repeat(66)));
+  console.log(sectionDivider());
   console.log(`  ${bold('MCP Server Details')}`);
-  console.log(c('blue', '━'.repeat(66)));
+  console.log(sectionDivider());
   console.log();
 
   console.log(`  ${dim('ID:')} ${c('cyan', serverId)}`);
@@ -193,9 +194,9 @@ export async function runInspectFlow(): Promise<void> {
     }
 
     console.log();
-    console.log(c('blue', '━'.repeat(66)));
+    console.log(sectionDivider());
     console.log(`  Info: ${bold('MCP Configuration Details')}`);
-    console.log(c('blue', '━'.repeat(66)));
+    console.log(sectionDivider());
     console.log();
 
     const choices: Array<{

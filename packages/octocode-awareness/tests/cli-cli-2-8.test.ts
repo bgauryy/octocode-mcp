@@ -128,9 +128,15 @@ it('lock acquire help omits rejected --lock-type flag', () => {
 
     const task = runSource(['task', 'create', '--help']);
     expect(task.status).toBe(0);
-    for (const token of ['usage: npx @octocodeai/octocode-awareness task create [options]', '--plan-id', '--reasoning', '--acceptance', '--test-plan', '--priority', '--lease-minutes']) {
+    for (const token of ['usage: npx @octocodeai/octocode-awareness task create [options]', '--plan-id', '--reasoning', '--acceptance', '--priority']) {
       expect(task.stdout).toContain(token);
     }
+    expect(task.stdout).not.toContain('--test-plan');
+    expect(task.stdout).not.toContain('--lease-minutes');
+    const claim = runSource(['task', 'claim', '--help']);
+    expect(claim.status).toBe(0);
+    expect(claim.stdout).toContain('--test-plan');
+    expect(claim.stdout).toContain('--lease-minutes');
     expect(task.stdout).not.toContain('show:');
 
     const query = runSource(['query', '--help']);
@@ -151,7 +157,7 @@ it('lock acquire help omits rejected --lock-type flag', () => {
     expect(retry.stdout).toContain('--task-id');
     expect(retry.stdout).toContain('--agent-id');
     expect(retry.stdout).toContain('--message');
-    expect(retry.stdout).toContain('task retry --task-id task_123 --agent-id agent');
+    expect(retry.stdout).toContain('task retry --task-id task_123 --agent-id lead');
     expect(retry.stdout).not.toContain('task ready --plan-id');
 
     const end = runSource(['work', 'end', '--help']);

@@ -14,7 +14,7 @@ import { CONTINUITY_SCHEMA_DDL } from './db-continuity-schema.js';
 export const HOOK_RECEIPTS_DDL = `
     CREATE TABLE IF NOT EXISTS hook_receipts (
       workspace_path TEXT NOT NULL,
-      host           TEXT NOT NULL CHECK(host IN ('claude','codex','cursor')),
+      host           TEXT NOT NULL CHECK(host IN ('claude','codex','copilot','cursor','gemini','opencode')),
       event          TEXT NOT NULL,
       status         TEXT NOT NULL CHECK(status IN ('success','failure')),
       last_seen_at   TEXT NOT NULL,

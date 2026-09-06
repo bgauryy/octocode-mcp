@@ -17,10 +17,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { PiContext } from '../types.js';
 import { getMcpDiscoverySnapshot, type McpDiscoverySnapshot } from './mcp-tool.js';
-import {
-  discoverMcpConfigs,
-  type DiscoveredMcpConfig,
-} from './mcp-discovery.js';
+import { discoverMcpConfigs } from './mcp-discovery.js';
+import type { DiscoveredMcpConfig } from '@octocodeai/agent-contracts/agent-skills';
 import type { DiscoveredSkillState } from './skill-tool.js';
 
 

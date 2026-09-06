@@ -23,7 +23,7 @@ export const SIGNALS_SELECT_BASE = 'SELECT n.* FROM signals n';
 export const SIGNALS_SELECT_LEFT_JOIN_READS = 'LEFT JOIN signal_reads nr ON nr.signal_id = n.signal_id AND nr.agent_id = ?';
 
 /** Appended to ORDER BY block for all inbox/thread queries. */
-export const SIGNALS_SELECT_ORDER_LIMIT = 'ORDER BY n.created_at DESC LIMIT ?';
+export const SIGNALS_SELECT_ORDER_LIMIT = 'ORDER BY n.created_at DESC, n.signal_id DESC LIMIT ?';
 
 // Note: signal resolve/ack updates (by-ids, by-thread, thread-open-for-agent)
 // are written inline in src/notifications-inbox.ts, not shared here — keep it that way

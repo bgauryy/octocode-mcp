@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSyn
 import { dirname, join } from 'node:path';
 import { resolveDbPath } from '../src/db-runtime.js';
 import { loadWorkspacePolicy } from '../src/workspace-policy.js';
-import { agentId, hookSessionCorrelation, workspace } from './hook-payload.js';
+import { agentId, artifact, hookSessionCorrelation, promptQuery, workspace } from './hook-payload.js';
 
 function fileToken(path: string): string {
   try {
@@ -22,6 +22,9 @@ export function hookChangeToken(payload: Record<string, unknown>): string {
     resolveDbPath(null, { scope: policy.storage.memory, workspace: cwd }),
   ])];
   return createHash('sha256')
+    // Briefing is query- and artifact-sensitive even when no durable row changed.
+    // Hash the same normalized host inputs consumed by runNotifyDeliver.
+    .update(JSON.stringify([promptQuery(payload), artifact(payload)]))
     .update(paths.flatMap((path) => [path, `${path}-wal`]).map((path) => `${path}:${fileToken(path)}`).join('\n'))
     .digest('hex');
 }

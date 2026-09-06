@@ -4,7 +4,7 @@ import path from 'node:path';
 import { test } from 'vitest';
 import { canonicalizeSkillCatalog, renderAvailableSkillsAddendum, renderSkillsDashboard } from '../src/tools/skill-catalog.js';
 
-test('available skills addendum lists loadable skills and filters prompt-owned Awareness aliases', () => {
+test('available skills addendum includes Awareness once using ordinary first-wins identity', () => {
   const addendum = renderAvailableSkillsAddendum([
     { name: 'octocode-roast', description: 'Critical review workflow.', source: 'user', scope: 'global' },
     { name: 'octocode-awareness', description: 'External-agent coordination workflow.' },
@@ -14,7 +14,9 @@ test('available skills addendum lists loadable skills and filters prompt-owned A
   assert.match(addendum, /<available_skills>/);
   assert.match(addendum, /Optional skills available by name/);
   assert.doesNotMatch(addendum, /BEFORE acting|must load/);
-  assert.doesNotMatch(addendum, /octocode-awareness/);
+  assert.equal(addendum.match(/- octocode-awareness:/g)?.length, 1);
+  assert.match(addendum, /External-agent coordination workflow/);
+  assert.doesNotMatch(addendum, /Lightweight external-agent/);
   assert.match(addendum, /- octocode-roast: Critical review workflow\. \[user\/global\]/);
 });
 
@@ -56,7 +58,7 @@ test('available skills addendum caps descriptions tighter than the dashboard', (
   const skills = [{ name: 'wordy', description: `${'x'.repeat(400)}TAIL` }];
   const addendumLine = renderAvailableSkillsAddendum(skills).split('\n').find((line) => line.startsWith('- wordy'))!;
   assert.doesNotMatch(addendumLine, /TAIL/);
-  assert.ok(addendumLine.length <= 140, `prompt description cap, got ${addendumLine.length}`);
+  assert.ok(addendumLine.length <= 340, `prompt description cap, got ${addendumLine.length}`);
   assert.match(addendumLine, /…/);
 
   const dashboardLine = renderSkillsDashboard(skills).split('\n').find((line) => line.startsWith('- wordy'))!;
@@ -84,7 +86,7 @@ test('every Octocode-owned bundled skill keeps its complete trigger description 
     const source = fs.readFileSync(path.join(skillsRoot, name, 'SKILL.md'), 'utf8');
     const description = /^description:\s*"([^"]+)"$/m.exec(source)?.[1];
     assert.ok(description, `${name} has a quoted frontmatter description`);
-    assert.ok(description.length <= 120, `${name} description is ${description.length} chars and would be truncated`);
+    assert.ok(description.length <= 320, `${name} description is ${description.length} chars and would be truncated`);
     assert.match(description, /^Use when\b/, `${name} starts with trigger-first routing language`);
     return { name, description };
   });
@@ -118,7 +120,7 @@ test('Awareness-owned orchestrator receives a complete trigger-first extension p
   assert.match(line, /…/);
 });
 
-test('skills dashboard lists loadable skills, filters Awareness aliases, and shows install guidance', () => {
+test('skills dashboard lists Awareness once and shows install guidance', () => {
   const dashboard = renderSkillsDashboard([
     { name: 'octocode-roast', description: 'Critical review workflow.', source: 'user', scope: 'global' },
     { name: 'octocode-awareness', description: 'External-agent coordination workflow.' },
@@ -127,7 +129,9 @@ test('skills dashboard lists loadable skills, filters Awareness aliases, and sho
 
   assert.match(dashboard, /^◆ Octocode skills/m);
   assert.match(dashboard, /Available now/);
-  assert.doesNotMatch(dashboard, /octocode-awareness/);
+  assert.equal(dashboard.match(/- octocode-awareness:/g)?.length, 1);
+  assert.match(dashboard, /External-agent coordination workflow/);
+  assert.doesNotMatch(dashboard, /Lightweight external-agent/);
   assert.match(dashboard, /- octocode-roast: Critical review workflow\. \[user\/global\]/);
   assert.match(dashboard, /skill\(\{queries:/, 'dashboard teaches the unified skill query envelope');
   assert.match(dashboard, /\/skill:<name>/);

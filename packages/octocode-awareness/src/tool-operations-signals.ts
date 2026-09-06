@@ -27,6 +27,7 @@ case 'agent_signal': {
         action: rawAction,
         agentId: (request['agent_id'] as string | undefined) ?? agentId,
         workspacePath: (request['workspace_path'] as string | undefined) ?? cwd,
+        artifact: request['artifact'] as string | undefined,
         repo: request['repo'] as string | undefined,
         ref: request['ref'] as string | undefined,
         kind: request['kind'] as NotificationKind | undefined,
@@ -38,11 +39,12 @@ case 'agent_signal': {
         importance: request['importance'] as number | undefined,
         inReplyTo: (request['in_reply_to'] as string | undefined) ?? null,
         threadId: (request['thread_id'] as string | undefined) ?? null,
-        signalIds: stringArray(request['signal_ids']),
+        signalIds: stringArray(request['signal_id'] ?? request['signal_ids']),
         unreadOnly: request['unread_only'] as boolean | undefined,
         markRead: request['mark_read'] as boolean | undefined,
         kinds,
         limit: request['limit'] as number | undefined,
+        cursor: request['cursor'] as string | undefined,
         cwd,
       }) as AgentSignalResult;
       return { payload: result, exitCode: 0 };

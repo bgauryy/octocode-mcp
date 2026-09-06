@@ -53,11 +53,15 @@ describe('skill install command', () => {
     const installed = runSkillInstall(argv, options);
     expect(installed.exitCode).toBe(0);
     expect(installed.payload).toMatchObject({ ok: true, action: 'install', changed: true, destination });
+    expect(installed.payload.next).toContain(join(destination, 'SKILL.md'));
+    expect(installed.payload.next).toContain('npx @octocodeai/octocode-awareness guide');
+    expect(installed.payload.next).toContain('schema commands --all --compact');
     expect(readFileSync(join(destination, 'SKILL.md'), 'utf8')).toBe(readFileSync(sourceSkill, 'utf8'));
 
     const unchanged = runSkillInstall(argv, options);
     expect(unchanged.exitCode).toBe(0);
     expect(unchanged.payload).toMatchObject({ ok: true, action: 'install', changed: false, destination });
+    expect(unchanged.payload.next).toBe(installed.payload.next);
 
     writeFileSync(join(destination, 'SKILL.md'), '# drift\n');
     const conflict = runSkillInstall(argv, options);

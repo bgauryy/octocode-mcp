@@ -44,12 +44,13 @@ native, Pi, and Awareness. It is not an agent runtime or a UI composition root.
   writing schema. Shared helpers must not relabel or migrate another owner's
   database.
 
-Pi still contains a compatibility MCP discovery implementation under
-`packages/octocode-pi-extension/src/tools/`. Treat it as convergence debt; new
-cross-host discovery contracts belong here, and host packages should project
-them rather than add another authority. Consumers use the published owning
-subpath, including the discovery surface exposed through `agent-skills`; don't
-invent an unexported subpath.
+MCP discovery and configuration-file admission are shared through the published
+`agent-skills` subpath. Pi's discovery adapter supplies `extensionWorkspaceRoot`
+through the explicit `workspaceRoot` policy; other hosts default to the Agent
+workspace root. Vendor source enumeration, JSON/TOML normalization, provenance,
+collision naming, and file admission remain canonical here. Foreign definitions
+stay disabled until a host applies explicit enablement and workspace trust.
+Active Pi configuration reads use the same regular-file, no-symlink, 1 MiB guard.
 
 Program-level completion gates are in
 [`DESIGN/LEFTOVERS.md`](../../DESIGN/LEFTOVERS.md).

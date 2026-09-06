@@ -31,6 +31,8 @@ const SQLITE_AUXILIARY = /^(?:sqlite_|memories_fts(?:_|$))/;
 type SqlScalar = Exclude<SQLInputValue, undefined>;
 
 export interface DatabaseConsolidationOptions {
+  /** Validate a private copy, then discard it without publishing destination. */
+  dryRun?: boolean;
   /** Explicit actor to use only where historical rows omitted a required actor. */
   unattributedAgentId?: string;
 }

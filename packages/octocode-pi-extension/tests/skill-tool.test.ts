@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { afterEach, test } from 'vitest';
+import { afterEach, test, vi } from 'vitest';
 import {
   discoverSkillStates,
   discoverSkills,
@@ -18,6 +18,7 @@ import { setSkillEnabled } from '@octocodeai/agent-contracts/mcp-state';
 import { openOctocodeDb } from '../src/tools/storage-policy.js';
 import { registerUniqueTool } from '../src/tools/octocode-tools.js';
 import { renderAvailableSkillsAddendum } from '../src/tools/skill-catalog.js';
+import * as assets from '../src/assets.js';
 import type { ToolDefinition, ToolCallResult, PiContext, SkillInfo } from '../src/types.js';
 
 afterEach(() => {
@@ -166,13 +167,47 @@ test('discoverSkills uses canonical containment, symlink, and size defenses', ()
   assert.ok(!names.includes('oversized-skill'));
 });
 
-test('discoverSkills filters both Awareness aliases because coordination is prompt- and tool-owned in Pi', () => {
+test('discoverSkills keeps Awareness loadable with normal Pi-over-disk precedence', () => {
   const cwd = tmpWorkspace();
-  const names = ['octocode-awareness', 'octocode-awareness'];
-  for (const name of names) makeSkillDir(path.join(cwd, '.agents', 'skills'), name, 'External-agent skill copy.');
-  const piSkills: SkillInfo[] = names.map((name) => ({ name, description: 'Pi copy.', path: `/pi/${name}/SKILL.md` }));
+  const name = 'octocode-awareness';
+  makeSkillDir(path.join(cwd, '.agents', 'skills'), name, 'External-agent skill copy.');
+  const piSkills: SkillInfo[] = [{ name, description: 'Pi copy.', path: `/pi/${name}/SKILL.md` }];
   const skills = discoverSkills(cwd, piSkills);
-  for (const name of names) assert.ok(!skills.some((skill) => skill.name === name), `${name} is not loadable in Pi`);
+  const awareness = skills.filter((skill) => skill.name === name);
+  assert.equal(awareness.length, 1);
+  assert.equal(awareness[0]!.description, 'Pi copy.');
+  assert.equal(awareness[0]!.path, '/pi/octocode-awareness/SKILL.md');
+});
+
+test('registered skill tool loads the bundled Awareness instructions when no user copy exists', async () => {
+  const cwd = tmpWorkspace();
+  const home = tmpWorkspace();
+  const homedir = vi.spyOn(os, 'homedir').mockReturnValue(home);
+  // Source imports live under src/, while packaged runtime assets live in dist/.
+  // Only redirect the asset root; discovery, parsing and tool execution stay real.
+  const builtAssets = assets.getAssetPaths(path.resolve(import.meta.dirname, '../dist'));
+  const assetPaths = vi.spyOn(assets, 'getAssetPaths').mockReturnValue(builtAssets);
+  vi.stubEnv('OCTOCODE_HOME', path.join(home, '.octocode'));
+  try {
+    const awareness = discoverSkills(cwd).find((skill) => skill.name === 'octocode-awareness');
+    assert.ok(awareness, 'bundled Awareness is discoverable');
+    assert.equal(awareness.source, 'bundled');
+    assert.ok(renderAvailableSkillsAddendum([awareness]).includes(awareness.description), 'Awareness keeps its complete trigger description in the prompt');
+    const def = await makeTool();
+    const loaded = await run(def, q([{ reasoning: 'Use canonical coordination instructions.', type: 'load', action: 'load', name: 'octocode-awareness', reason: 'Coordinate with an external CLI agent.' }]), cwd);
+    const text = loaded.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n');
+    assert.equal(loaded.isError ?? false, false, text);
+    assert.match(text, /skill: octocode-awareness \[bundled\]/);
+    assert.match(text, /# Octocode Awareness/);
+    assert.match(text, /verify audit/);
+    assert.equal(getSkillUsage().get('octocode-awareness')?.count, 1);
+  } finally {
+    assetPaths.mockRestore();
+    homedir.mockRestore();
+    vi.unstubAllEnvs();
+    fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 });
 
 // ─── usage ledger (observability) ──────────────────────────────────────────────────────────────

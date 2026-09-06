@@ -4,16 +4,18 @@ import { extractBashWriteTargets } from './bash-tool.js';
 export interface MutationToolEvent { toolName?: string; input?: Record<string, unknown> }
 export interface LockQueryResult { blocked: boolean; message?: string }
 export interface AwarenessMutationGateDependencies {
+  enabled?(): boolean;
   storeExists(workspace: string): boolean;
   queryTarget(target: string, workspace: string, agentId: string): LockQueryResult;
-  startWork(target: string, workspace: string, agentId: string): string;
+  /** Null means a pre-existing owned run was refreshed, not created by this gate. */
+  startWork(target: string, workspace: string, agentId: string): string | null;
   endWork(target: string, workspace: string, agentId: string, runId: string): void;
   recordEdit?(target: string, workspace: string, agentId: string): void;
   warn?(message: string): void;
 }
 
 const STRUCTURED_MUTATION_TOOLS = new Set([
-  'write', 'edit', 'multi_edit', 'multiedit', 'notebookedit', 'notebook_edit',
+  'file', 'write', 'edit', 'multi_edit', 'multiedit', 'notebookedit', 'notebook_edit',
   'strreplace', 'delete', 'apply_patch', 'applypatch',
 ]);
 
@@ -54,10 +56,11 @@ function errorMessage(error: unknown): string {
 }
 
 export function createAwarenessMutationGate(deps: AwarenessMutationGateDependencies) {
-  const owned = new Map<string, { target: string; workspace: string; agentId: string; runId: string; activeCalls: number }>();
+  const owned = new Map<string, { target: string; workspace: string; agentId: string; runId: string | null; activeCalls: number }>();
   const keyFor = (target: string, workspace: string, agentId: string) => `${workspace}\0${agentId}\0${target}`;
   return {
     preflight(event: MutationToolEvent, workspace: string, agentId: string): { block: true; reason: string } | undefined {
+      if (deps.enabled?.() === false) return undefined;
       const targets = extractMutationTargets(event, workspace);
       if (targets.length === 0) return undefined;
 
@@ -73,11 +76,13 @@ export function createAwarenessMutationGate(deps: AwarenessMutationGateDependenc
         return { block: true, reason: `Awareness store query failed: ${errorMessage(error)}` };
       }
 
+      const acquired: string[] = [];
       for (const target of targets) {
         const key = keyFor(target, workspace, agentId);
         const existing = owned.get(key);
         if (existing) {
           existing.activeCalls += 1;
+          acquired.push(key);
           continue;
         }
         try {
@@ -89,8 +94,23 @@ export function createAwarenessMutationGate(deps: AwarenessMutationGateDependenc
             runId,
             activeCalls: 1,
           });
+          acquired.push(key);
         } catch (error) {
-          deps.warn?.(`Awareness presence update failed: ${errorMessage(error)}`);
+          const reason = `Awareness presence update failed: ${errorMessage(error)}`;
+          deps.warn?.(reason);
+          // Admission can discover a lock acquired after the initial read pass.
+          // Undo only this batch's participation, preserving concurrent calls.
+          for (const acquiredKey of acquired) {
+            const item = owned.get(acquiredKey)!;
+            if (item.activeCalls > 1) { item.activeCalls -= 1; continue; }
+            try {
+              if (item.runId !== null) deps.endWork(item.target, item.workspace, item.agentId, item.runId);
+              owned.delete(acquiredKey);
+            } catch (cleanupError) {
+              deps.warn?.(`Awareness presence cleanup failed: ${errorMessage(cleanupError)}`);
+            }
+          }
+          return { block: true, reason };
         }
       }
       return undefined;
@@ -109,7 +129,7 @@ export function createAwarenessMutationGate(deps: AwarenessMutationGateDependenc
           continue;
         }
         try {
-          deps.endWork(target, workspace, agentId, item.runId);
+          if (item.runId !== null) deps.endWork(target, workspace, agentId, item.runId);
           owned.delete(key);
         } catch (error) {
           deps.warn?.(`Awareness presence cleanup failed: ${errorMessage(error)}`);
@@ -118,7 +138,7 @@ export function createAwarenessMutationGate(deps: AwarenessMutationGateDependenc
     },
     cleanup(): void {
       for (const item of owned.values()) {
-        try { deps.endWork(item.target, item.workspace, item.agentId, item.runId); }
+        try { if (item.runId !== null) deps.endWork(item.target, item.workspace, item.agentId, item.runId); }
         catch (error) { deps.warn?.(`Awareness presence cleanup failed: ${errorMessage(error)}`); }
       }
       owned.clear();

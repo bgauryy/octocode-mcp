@@ -113,52 +113,59 @@ export function projectExternalPlan(input: ExternalPlanProjectionInput): Externa
   const sourceKind = input.sourceKind?.trim() || 'external-agent';
   const aw = openAwarenessStore({ workspace: input.workspace });
   try {
-    if (input.awarenessPlanId && input.steps.length > 0 && input.steps.every((step) => step.awarenessTaskId)) {
-      const taskIdsByStepId: Record<string, string> = {};
-      for (const step of input.steps) {
-        const task = aw.getTask(step.awarenessTaskId!);
-        if (task.planId !== input.awarenessPlanId) throw new Error(`mapped task ${task.taskId} belongs to another plan`);
-        taskIdsByStepId[step.id] = task.taskId;
+    return aw.writeTransaction(() => {
+      if (input.awarenessPlanId && input.steps.length > 0 && input.steps.every((step) => step.awarenessTaskId)) {
+        const taskIdsByStepId: Record<string, string> = {};
+        for (const step of input.steps) {
+          const task = aw.getTask(step.awarenessTaskId!);
+          if (task.planId !== input.awarenessPlanId) throw new Error(`mapped task ${task.taskId} belongs to another plan`);
+          taskIdsByStepId[step.id] = task.taskId;
+        }
+        const plan = aw.getPlan(input.awarenessPlanId);
+        if (plan.sourceKind !== sourceKind || plan.sourceKey !== input.sourcePlanKey) {
+          return { scope: 'shared', adopted: true, awarenessPlanId: input.awarenessPlanId, taskIdsByStepId };
+        }
       }
-      const plan = aw.getPlan(input.awarenessPlanId);
-      if (plan.sourceKind !== sourceKind || plan.sourceKey !== input.sourcePlanKey) {
-        return { scope: 'shared', adopted: true, awarenessPlanId: input.awarenessPlanId, taskIdsByStepId };
+
+      // A known host graph keeps its identity even when it has no current claim.
+      // Only unmapped work may adopt another matching task.
+      const ownPlan = aw.getPlanBySourceKey({ sourceKind, sourceKey: input.sourcePlanKey });
+      const adoptable = !input.awarenessPlanId && !ownPlan
+        ? safelyAdoptableClaim(input.workspace, input.steps, aw.listTasks({ status: 'IN_PROGRESS', agentId: input.agentId }))
+        : undefined;
+      if (adoptable) return { scope: 'shared', adopted: true, awarenessPlanId: adoptable.planId, taskIdsByStepId: { [input.steps[0]!.id]: adoptable.taskId } };
+      if (input.requestedScope === 'auto' && !input.awarenessPlanId && !ownPlan) return { scope: 'session', adopted: false };
+      if (input.steps.length === 0) throw new Error('shared plan requires at least one execution step');
+
+      const graph = aw.materializePlanGraph({
+        sourceKind,
+        sourcePlanKey: input.sourcePlanKey,
+        title: input.title,
+        goal: input.goal,
+        rfcPath: input.rfcPath,
+        rfcRevision: input.rfcRevision,
+        agentId: input.agentId,
+        steps: input.steps.map((step, index) => ({
+          sourceStepKey: step.id,
+          title: step.text,
+          paths: step.paths,
+          reasoning: step.reasoning,
+          acceptance: step.acceptance,
+          checkCommand: step.checkCommand,
+          dependsOnStepKeys: step.dependsOnStepIds,
+          priority: input.steps.length - index,
+        })),
+      });
+      const taskIdsByStepId = Object.fromEntries([...graph.tasks].map(([stepId, task]) => [stepId, task.taskId]));
+      for (const active of input.steps.filter((step) => step.status === 'doing')) {
+        const task = graph.tasks.get(active.id);
+        if (!task) throw new Error(`missing materialized task for active step ${active.id}`);
+        if (task.status === 'OPEN') aw.claimTask({ taskId: task.taskId, agentId: input.agentId });
+        else if (task.status === 'IN_PROGRESS' && task.agentId !== input.agentId) throw new Error(`task ${task.taskId} belongs to ${task.agentId}`);
+        else if (task.status !== 'IN_PROGRESS') throw new Error(`task ${task.taskId} is ${task.status}; reconcile the host step before starting it`);
       }
-    }
-
-    const adoptable = safelyAdoptableClaim(input.workspace, input.steps, aw.listTasks({ status: 'IN_PROGRESS', agentId: input.agentId }));
-    if (adoptable) return { scope: 'shared', adopted: true, awarenessPlanId: adoptable.planId, taskIdsByStepId: { [input.steps[0]!.id]: adoptable.taskId } };
-    if (input.requestedScope === 'auto') return { scope: 'session', adopted: false };
-    if (input.steps.length === 0) throw new Error('shared plan requires at least one execution step');
-
-    const graph = aw.materializePlanGraph({
-      sourceKind,
-      sourcePlanKey: input.sourcePlanKey,
-      title: input.title,
-      goal: input.goal,
-      rfcPath: input.rfcPath,
-      rfcRevision: input.rfcRevision,
-      agentId: input.agentId,
-      steps: input.steps.map((step, index) => ({
-        sourceStepKey: step.id,
-        title: step.text,
-        paths: step.paths,
-        reasoning: step.reasoning,
-        acceptance: step.acceptance,
-        checkCommand: step.checkCommand,
-        dependsOnStepKeys: step.dependsOnStepIds,
-        priority: input.steps.length - index,
-      })),
+      return { scope: 'shared', adopted: false, awarenessPlanId: graph.plan.planId, taskIdsByStepId };
     });
-    const taskIdsByStepId = Object.fromEntries([...graph.tasks].map(([stepId, task]) => [stepId, task.taskId]));
-    const active = input.steps.find((step) => step.status === 'doing');
-    if (active) {
-      const task = graph.tasks.get(active.id);
-      if (!task) throw new Error(`missing materialized task for active step ${active.id}`);
-      if (task.status === 'OPEN') aw.claimTask({ taskId: task.taskId, agentId: input.agentId });
-      else if (task.status === 'IN_PROGRESS' && task.agentId !== input.agentId) throw new Error(`task ${task.taskId} belongs to ${task.agentId}`);
-    }
-    return { scope: 'shared', adopted: false, awarenessPlanId: graph.plan.planId, taskIdsByStepId };
   } finally {
     aw.close();
   }

@@ -62,6 +62,7 @@ export interface GetNotificationsParams {
   unreadOnly?: boolean;          // default true
   markRead?: boolean;            // advance read cursor
   limit?: number;
+  cursor?: string;
   cwd?: string;
 }
 
@@ -69,6 +70,9 @@ export interface GetNotificationsResult {
   count: number;
   signals: NotificationRecord[];
   unread_only: boolean;
+  partial?: boolean;
+  partialReasons?: Array<'limit'>;
+  next?: { list: { operation: 'agent_signal'; request: Record<string, unknown> } };
 }
 
 export interface ResolveNotificationParams {
@@ -126,6 +130,7 @@ export interface AgentSignalParams {
   markRead?: boolean;
   kinds?: NotificationKind[];
   limit?: number;
+  cursor?: string;
   cwd?: string;
 }
 
@@ -135,7 +140,7 @@ export interface AgentSignalRecord extends NotificationRecord {
 
 export type AgentSignalResult =
   | { action: 'publish' | 'reply'; signal_id: string; signal_ids: string[]; thread_id: string; workspace_path: string; artifact: string | null }
-  | { action: 'list'; count: number; signals: AgentSignalRecord[]; unread_only: boolean }
+  | ({ action: 'list'; count: number; signals: AgentSignalRecord[]; unread_only: boolean } & Pick<GetNotificationsResult, 'partial' | 'partialReasons' | 'next'>)
   | { action: 'resolve'; resolved: number; signal_ids: string[] }
   | { action: 'ack'; acknowledged: number; signal_ids: string[] };
 

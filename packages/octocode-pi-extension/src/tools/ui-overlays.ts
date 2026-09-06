@@ -53,6 +53,21 @@ function paintOverlayLine(line: string, width: number): string {
   return `${clipped}${' '.repeat(Math.max(0, width - visibleWidth(clipped)))}`;
 }
 
+/** Keep complete key/action pairs visible when an overlay becomes narrow. */
+function overlayHelpLines(theme: PiTheme | undefined, help: string, width: number): string[] {
+  const lines: string[] = [];
+  let row = '';
+  for (const action of help.split(' • ')) {
+    const next = row ? `${row} • ${action}` : action;
+    if (row && visibleWidth(next) > width) {
+      lines.push(fgTok(theme, 'dim', row));
+      row = action;
+    } else row = next;
+  }
+  if (row) lines.push(fgTok(theme, 'dim', row));
+  return lines;
+}
+
 /** pi-tui SelectList theme shape (5 colorizer fns). */
 export interface SelectListThemeFns {
   selectedPrefix: (t: string) => string;
@@ -190,7 +205,6 @@ export async function runSelectOverlay(
       let { list, empty } = makeList();
 
       const help = enableFilter ? OVERLAY_HELP_SELECT_FILTER : OVERLAY_HELP_SELECT;
-      const helpLine = fgTok(theme, "dim", help);
 
       return {
         render: (w: number) => {
@@ -203,7 +217,7 @@ export async function runSelectOverlay(
           } else {
             lines.push(...(list.render(w) as string[]).map((l: string) => ` ${l}`));
           }
-          lines.push(helpLine);
+          lines.push(...overlayHelpLines(theme, help, w));
           return lines.map((line) => paintOverlayLine(line, w));
         },
         invalidate: () => list?.invalidate?.(),
@@ -272,7 +286,6 @@ export async function runMultiSelectOverlay(
     ) => {
       const heading = overlayHeading(theme, opts.title);
       const help = OVERLAY_HELP_MULTI;
-      const helpLine = fgTok(theme, "dim", help);
 
       const list = new MultiSelectList(
         opts.items.map((o) => ({
@@ -286,7 +299,7 @@ export async function runMultiSelectOverlay(
 
       return {
         render: (w: number) =>
-          [heading, ...list.render(w, theme as unknown as MultiSelectTheme), helpLine].map(
+          [heading, ...list.render(w, theme as unknown as MultiSelectTheme), ...overlayHelpLines(theme, help, w)].map(
             (line) => paintOverlayLine(line, w),
           ),
         invalidate: () => {},

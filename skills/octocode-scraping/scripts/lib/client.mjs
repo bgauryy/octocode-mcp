@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir, unlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve, dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export async function fetchScrapingAnt({ url, pageId, config, apiKey }) {
   const apiUrl = new URL(`https://api.scrapingant.com/v2/${config.endpoint}`);
@@ -168,15 +168,14 @@ export async function fetchCdp({ url, pageId, config }) {
   await mkdir(runnerDir, { recursive: true });
   const runnerPath = join(runnerDir, `${pageId}-runner.mjs`);
   const waitMs = config.cdpWaitMs ?? 2000;
+  const stealthModuleUrl = pathToFileURL(resolve(CHROME_DEVTOOLS_DIR, 'scripts/undercover.mjs')).href;
   const stealthStep = config.cdpStealth === false ? '' : `
-  const { applyStealthPatches, verifyStealth } = await import(pathToFileURL(resolve(CDP_SPAWN_CWD, '.octocode', 'undercover.mjs')).href);
+  const { applyStealthPatches, verifyStealth } = await import(${JSON.stringify(stealthModuleUrl)});
   await applyStealthPatches(cdp);
   const stealthResult = await verifyStealth(cdp);
   console.log('[METRIC] stealth self-test: ' + stealthResult.passed + '/' + stealthResult.total + ' passed');
   if (stealthResult.failed > 0) throw new Error('[STEALTH_GATE] cdp provider fetch blocked: ' + stealthResult.failed + ' stealth checks failed');`;
-  await writeFile(runnerPath, `import { resolve } from 'path';
-import { pathToFileURL } from 'url';
-export async function run(cdp) {
+  await writeFile(runnerPath, `export async function run(cdp) {
   await cdp.send('Page.enable', {});
   await cdp.send('Network.enable', {});
   let status = 0;

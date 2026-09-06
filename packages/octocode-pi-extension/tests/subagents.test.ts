@@ -92,18 +92,22 @@ describe('SUBAGENT_REGISTRY', () => {
     expect(Array.isArray(ba.extraSkillPaths)).toBe(true);
   });
 
-  it('typed subagents include write for parent-assigned durable handback artifacts', () => {
-    expect(SUBAGENT_REGISTRY['browser-agent'].tools).toContain('write');
-    expect(SUBAGENT_REGISTRY.researcher.tools).toContain('write');
-    expect(SUBAGENT_REGISTRY.planner.tools).toContain('write');
-    expect(SUBAGENT_REGISTRY.architect.tools).toContain('write');
+  it('every typed profile can load skills and use the Awareness CLI and assigned artifact tool', () => {
+    for (const profile of Object.values(SUBAGENT_REGISTRY)) {
+      expect(profile.tools).toEqual(expect.arrayContaining(['file', 'skill', 'bash']));
+      expect(profile.tools).not.toContain('write');
+      expect(profile.tools).not.toContain('memory');
+      for (const recursiveTool of ['spawnAgent', 'spawnSubagent', 'AgentMessage']) {
+        expect(profile.tools).not.toContain(recursiveTool);
+      }
+    }
   });
 
-  it('researcher/planner prompts do not instruct unavailable bash tool use', () => {
-    for (const name of ['researcher', 'planner'] as const) {
-      expect(SUBAGENT_REGISTRY[name].tools).not.toContain('bash');
-      const prompt = fs.readFileSync(SUBAGENT_REGISTRY[name].systemPromptPath!, 'utf8');
-      expect(prompt).not.toMatch(/bash:\s*npx octocode skill/);
+  it('preserves specialist research tools without exposing browser control to other profiles', () => {
+    for (const [name, profile] of Object.entries(SUBAGENT_REGISTRY)) {
+      const expected = ['web', 'MCPTool', 'file', 'skill', 'bash'];
+      if (name === 'browser-agent') expected.push('chromeDebug');
+      expect([...profile.tools].sort()).toEqual(expected.sort());
     }
   });
 });
@@ -143,14 +147,17 @@ describe('resolveSubagentSkills', () => {
     expect(skills.some(s => s.includes('octocode-research'))).toBe(true);
   });
 
-  it('does not include octocode-awareness from an external skill root because coordination is prompt-owned', () => {
+  it('includes one usable Awareness skill for every typed profile', () => {
     const skillDir = path.join(tmpDir, '.agents', 'skills', 'octocode-awareness');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# octocode-awareness\n');
 
     process.chdir(tmpDir);
-    const skills = resolveSubagentSkills(SUBAGENT_REGISTRY['architect']);
-    expect(skills.some(s => path.basename(s) === 'octocode-awareness')).toBe(false);
+    for (const profile of Object.values(SUBAGENT_REGISTRY)) {
+      const skills = resolveSubagentSkills(profile).filter(s => path.basename(s) === 'octocode-awareness');
+      expect(skills).toHaveLength(1);
+      expect(fs.existsSync(path.join(skills[0]!, 'SKILL.md'))).toBe(true);
+    }
   });
 
   it('does not include skills from a dir that no longer exists at call time', () => {

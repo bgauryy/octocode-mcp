@@ -129,16 +129,18 @@ export function getRefinements(
     includeHandoffs = false,
     states: statesRaw,
     limit: limitRaw = 10,
+    offset = 0,
     cwd,
   } = params;
 
   if (refinementId) {
     const row = db.prepare('SELECT * FROM refinements WHERE refinement_id = ?').get(refinementId) as unknown as RefinementRow | undefined;
     const refinements = row ? [rowToRefinement(row)] : [];
-    return { count: refinements.length, refinements };
+    return { count: refinements.length, refinements, partial: false, partialReasons: [] };
   }
 
-  const limit = Math.min(50, Math.max(1, Number(limitRaw) || 10));
+  const limit = Math.min(200, Math.max(1, Math.floor(Number(limitRaw) || 10)));
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('offset must be a non-negative safe integer');
   const states = statesRaw ?? ['open', 'ongoing'];
 
   const scope = fillScope(
@@ -177,8 +179,8 @@ export function getRefinements(
     queryParams.push(scope.ref);
   }
 
-  sql += ` ORDER BY CASE state WHEN 'ongoing' THEN 0 ELSE 1 END, updated_at DESC LIMIT ?`;
-  queryParams.push(limit);
+  sql += ` ORDER BY CASE state WHEN 'ongoing' THEN 0 ELSE 1 END, updated_at DESC, refinement_id LIMIT ? OFFSET ?`;
+  queryParams.push(limit + 1, offset);
 
   // When the default queue hides handoff/instructions rows, report how many were
   // hidden so callers know to look via --include-handoffs / `reflect developer-review`.
@@ -202,11 +204,24 @@ export function getRefinements(
   }
 
   const rows = db.prepare(sql).all(...queryParams) as unknown as RefinementRow[];
-  const refinements = rows.map(rowToRefinement);
+  const partial = rows.length > limit;
+  const refinements = rows.slice(0, limit).map(rowToRefinement);
 
   return {
     count: refinements.length,
     refinements,
+    partial,
+    partialReasons: partial ? ['limit'] : [],
+    ...(partial ? { next: { list: { method: 'getRefinements' as const, params: {
+      ...params,
+      workspacePath: scope.workspace_path,
+      artifact: scope.artifact,
+      repo: scope.repo,
+      ref: scope.ref,
+      states,
+      limit,
+      offset: offset + refinements.length,
+    } } } } : {}),
     ...(handoffCount !== undefined ? { handoff_count: handoffCount } : {}),
     ...(instructionsCount !== undefined ? { instructions_count: instructionsCount } : {}),
   };

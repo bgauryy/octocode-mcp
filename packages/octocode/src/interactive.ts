@@ -1,3 +1,4 @@
+import { sectionDivider } from './ui/layout.js';
 import { c, bold, dim } from './utils/colors.js';
 import { clearScreen } from './utils/platform.js';
 import { loadInquirer } from './utils/prompts.js';
@@ -11,9 +12,9 @@ import {
 import { runMenuLoop } from './ui/menu/main-menu.js';
 
 function printEnvHeader(): void {
-  console.log(c('blue', '━'.repeat(66)));
+  console.log(sectionDivider());
   console.log(`  🔍 ${bold('Environment')}`);
-  console.log(c('blue', '━'.repeat(66)));
+  console.log(sectionDivider());
 }
 
 export async function runInteractiveMode(): Promise<void> {

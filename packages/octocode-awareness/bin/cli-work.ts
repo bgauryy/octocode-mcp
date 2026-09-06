@@ -13,14 +13,6 @@ import { EmitOptions, die, emit, firstValue, listLimit, parseBoundedSeconds, res
 import { requiredArg } from './cli-plans.js';
 
 export function cmdPreFlightIntent(db: DatabaseSync, args: ParsedArgs, dbPath: string, opts: EmitOptions): number {
-  const envAgentId = process.env.OCTOCODE_AGENT_ID?.trim() || '';
-  const argAgentId = args['agent_id'] ? String(args['agent_id']).trim() : '';
-  const strictAgentId = Boolean(args['strict_agent_id']) || process.env.OCTOCODE_STRICT_AGENT_ID === '1';
-  if (!argAgentId && !envAgentId) {
-    const msg = 'lock acquire: set --agent-id or OCTOCODE_AGENT_ID so CLI and hooks share one identity';
-    if (strictAgentId) die(msg);
-    console.error(`octocode-awareness: warning: ${msg}`);
-  }
   const rawTarget = args['target_file'];
   const targetFiles = Array.isArray(rawTarget) ? rawTarget : rawTarget ? [String(rawTarget)] : [];
   // Reject empty target — otherwise an ACTIVE run is created that locks
@@ -35,7 +27,7 @@ export function cmdPreFlightIntent(db: DatabaseSync, args: ParsedArgs, dbPath: s
   const ttlMs = ttlSeconds != null ? ttlSeconds * 1000 : ttlMinutes != null ? ttlMinutes * 60000 : null;
 
   const claimParams = {
-    agentId: argAgentId || envAgentId || 'agent',
+    agentId: resolveAgentId(args),
     workspacePath: args['workspace'] ? String(args['workspace']) : null,
     artifact: args['artifact'] ? String(args['artifact']) : null,
     runId: firstValue(args, 'run_id') ?? null,
@@ -274,11 +266,28 @@ export function cmdWork(db: DatabaseSync, args: ParsedArgs, dbPath: string, opts
       runId,
       activeOnly: !Boolean(args['all']),
       limit: listLimit(args, opts.compact ? 5 : 20),
+      offset: args['offset'] === undefined ? 0 : Number(args['offset']),
     };
     const result = action === 'show'
       ? showWork(db, { ...params, filePath: targetFiles[0] ?? '' })
       : listWork(db, params);
-    if (Boolean(args['full'])) return emit({ db_path: dbPath, ...result }, 0, opts);
+    const continuation = result.next?.list.params;
+    const nextArgs = continuation ? ['--db', dbPath] : [];
+    if (continuation) {
+      for (const [flag, value] of [
+        ['workspace', continuation.workspacePath], ['artifact', continuation.artifact],
+        ['agent-id', continuation.agentId], ['run-id', continuation.runId],
+        ['file', continuation.filePath], ['limit', continuation.limit], ['offset', continuation.offset],
+      ] as const) if (value != null) nextArgs.push(`--${flag}`, String(value));
+      if (continuation.activeOnly === false) nextArgs.push('--all');
+      if (args['full']) nextArgs.push('--full');
+      if (opts.compact) nextArgs.push('--compact');
+    }
+    const pagination = {
+      partial: result.partial, partialReasons: result.partialReasons,
+      next: continuation ? { list: { command: { name: `work ${action}`, args: nextArgs } } } : undefined,
+    };
+    if (Boolean(args['full'])) return emit({ db_path: dbPath, ...result, ...pagination }, 0, opts);
     const files = result.files.map((file) => ({
       run_id: file.run_id,
       task_id: file.task_id,
@@ -296,6 +305,7 @@ export function cmdWork(db: DatabaseSync, args: ParsedArgs, dbPath: string, opts
       total_count: result.total_count,
       omitted_count: result.omitted_count,
       files,
+      ...pagination,
     }, 0, opts);
   }
 

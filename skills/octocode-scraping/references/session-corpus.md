@@ -20,6 +20,14 @@ Load after fetch/crawl/extract or before searching saved output. Why: normalized
 4. `corpus-run` / local search on reports, text, extracts, cdp, indexes, graph, snippets, sources
 5. Exact file for citation; `raw/` only to audit extraction
 
+## Bounded search
+
+`corpus-find.mjs --session-dir <dir> --query <text> [--limit 20] [--offset 0]` returns one ranked page. Bounds must be safe integers: limit is positive and offset is non-negative. Missing values, duplicate or unknown options, and invalid bounds return exit 2 with `ok:false` and `error.code:"invalidArguments"`.
+
+Successful output keeps `matches` and adds `isPartial`, `completeness` (`partial` or `complete`), and `pagination` with `offset`, `limit`, `totalMatches`, `returnedMatches`, `remainingMatches`, and `hasMore`. While rows remain, `next.page` contains an absolute `command` and raw `args`; execute them unchanged to continue. The final page, an empty search, and an offset at or beyond the result count return `next:null` and `completeness:"complete"`. Suggested evidence paths are in `suggestedFiles`, separate from executable continuations.
+
+Pages preserve descending score order, including stable input order for ties. Keep the corpus unchanged while paging; after a fetch or corpus update, restart at offset 0. Each call reads the current corpus rather than persisting a snapshot.
+
 ## Bridge
 `har-ingest --from-cdp-dir` → `corpus-run --roots cdp,extracts --regex` — cite `cdp/body-*.txt`, skip re-browser. Reverse: `--export-packet` → chrome `graph-actionability-check`.
 

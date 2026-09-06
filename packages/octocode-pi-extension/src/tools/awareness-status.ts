@@ -20,6 +20,7 @@ import {
   readExternalAwarenessStatus,
   type ExternalAwarenessStatus,
 } from '@octocodeai/octocode-awareness';
+import { isPersistentStorageEnabled } from '@octocodeai/config';
 import type { PiContext, PiTheme } from '../types.js';
 
 import { SEP_WIDE, paint } from '../tui/palette.js';
@@ -40,31 +41,6 @@ export function hasAwarenessSignal(s: ExternalAwarenessStatus): boolean {
     s.messageCount > 0 ||
     (s.taskActivities?.length ?? 0) > 0
   );
-}
-
-/**
- * Build the compact `<awareness_signal>` text block for the unread peer-message count.
- *
- * NOT injected into the frozen system prompt — the count varies between sessions and
- * busts the provider prompt cache (~30k tokens re-billed per miss). The static
- * `<awareness>` section in SYSTEM_PROMPT.md already instructs the model to check
- * inbox when peer coordination may affect the next action; the TUI panel surfaces
- * the live count visually via `formatAwarenessPanel`.
- *
- * Kept as an exported utility in case a future non-frozen injection surface is added.
- */
-export function renderAwarenessSignalAddendum(
-  s: ExternalAwarenessStatus | null,
-  _currentAgentId?: string,
-): string {
-  const unread = s?.unreadInbox ?? 0;
-  if (unread === 0) return '';
-  return [
-    '<awareness_signal>',
-    `Unread direct peer messages: ${unread}.`,
-    'Use message inbox only when the peer input can change the current action. Message bodies are not injected here. Do not perform status polling or start/finish ceremony.',
-    '</awareness_signal>',
-  ].join('\n');
 }
 
 /**
@@ -132,12 +108,15 @@ interface CacheEntry {
   status: ExternalAwarenessStatus | null;
   lastRunAt: number;
   running: boolean;
+  generation: number;
 }
 const cache = new Map<string, CacheEntry>();
+const generations = new Map<string, number>();
 
 /** Typed package reader; injectable without serializing through CLI JSON. */
 export type StatusRunner = (cwd: string, agentId?: string) => Promise<ExternalAwarenessStatus | null>;
 const defaultRunner: StatusRunner = async (cwd, agentId) => {
+  if (!isPersistentStorageEnabled()) return null;
   try {
     return readExternalAwarenessStatus({ workspace: cwd, agentId });
   } catch {
@@ -152,6 +131,7 @@ export function setAwarenessStatusRunnerForTests(fn: StatusRunner): void {
 export function resetAwarenessStatusStateForTests(): void {
   runner = defaultRunner;
   cache.clear();
+  generations.clear();
 }
 
 /**
@@ -161,6 +141,7 @@ export function resetAwarenessStatusStateForTests(): void {
  */
 export function clearAwarenessCacheEntry(cwd: string): void {
   cache.delete(cwd);
+  generations.set(cwd, (generations.get(cwd) ?? 0) + 1);
 }
 export function forceAwarenessStatusRefreshForTests(cwd: string): void {
   const entry = cache.get(cwd);
@@ -200,7 +181,8 @@ export function resumeAwarenessPanel(): void {
 export function refreshAwarenessPanel(ctx?: PiContext): void {
   if (!ctx?.hasUI || panelSuppressed) return;
   const cwd = ctx.cwd ?? process.cwd();
-  const entry = cache.get(cwd) ?? { status: null, lastRunAt: 0, running: false };
+  const generation = generations.get(cwd) ?? 0;
+  const entry = cache.get(cwd) ?? { status: null, lastRunAt: 0, running: false, generation };
   // delete-then-set keeps this cwd most-recently-used; cap so a long-lived process
   // visiting many workspaces cannot grow the cache without bound.
   cache.delete(cwd);
@@ -216,6 +198,7 @@ export function refreshAwarenessPanel(ctx?: PiContext): void {
   entry.lastRunAt = now;
   void runner(cwd, process.env.OCTOCODE_AGENT_ID)
     .then((status) => {
+      if (panelSuppressed || cache.get(cwd) !== entry || entry.generation !== (generations.get(cwd) ?? 0)) return;
       entry.running = false;
       if (status === null) {
         entry.status = null;
@@ -226,6 +209,7 @@ export function refreshAwarenessPanel(ctx?: PiContext): void {
       repaintFooter(ctx);
     })
     .catch(() => {
+      if (panelSuppressed || cache.get(cwd) !== entry || entry.generation !== (generations.get(cwd) ?? 0)) return;
       entry.running = false;
       entry.status = null;
       repaintFooter(ctx);

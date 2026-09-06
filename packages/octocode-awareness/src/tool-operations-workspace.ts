@@ -3,6 +3,7 @@ import { getWorkspaceStatus } from './maintenance-workspace.js';
 import { getRefinements } from './refinements.js';
 import { queryAwareness } from './repo-query.js';
 import { auditUnverified } from './verify-audit.js';
+import type { RefinementQuality } from './types/identity-memory.js';
 import type { AwarenessToolOperation, AwarenessToolOperationContext, AwarenessToolOperationResult } from './tool-operations.js';
 
 export function runWorkspaceOperation(
@@ -70,22 +71,20 @@ case 'workspace_status': {
       return { payload, exitCode: 0 };
     }
 case 'refine_get': {
+      const rawStates = request['states'] ?? request['state'];
       const result = getRefinements(db, {
+        refinementId: request['refinement_id'] as string | undefined,
         workspacePath: (request['workspace_path'] as string | undefined) ?? cwd,
+        artifact: request['artifact'] as string | undefined,
         repo: request['repo'] as string | undefined,
-        states: request['state'] ? [(request['state'] as string)] : undefined,
+        ref: request['ref'] as string | undefined,
+        quality: request['quality'] as RefinementQuality | undefined,
+        states: Array.isArray(rawStates) ? rawStates as string[] : typeof rawStates === 'string' ? [rawStates] : undefined,
         includeHandoffs: Boolean(request['include_handoffs']),
         limit: (request['limit'] as number | undefined) ?? 5,
+        offset: request['offset'] as number | undefined,
         cwd,
-      }) as unknown as {
-        refinements: Array<{
-          refinement_id: string;
-          state: string;
-          remember: string;
-          files?: string[];
-          repo?: string;
-        }>;
-      };
+      });
       const refinements = result.refinements.map((r) => {
         const lean: Record<string, unknown> = {
           refinement_id: r.refinement_id,
@@ -96,7 +95,23 @@ case 'refine_get': {
         if (r.repo) lean['repo'] = r.repo;
         return lean;
       });
-      return { payload: { count: refinements.length, refinements }, exitCode: 0 };
+      const continuation = result.next?.list.params;
+      const nextRequest: Record<string, unknown> = {};
+      if (continuation) {
+        for (const [key, value] of [
+          ['workspace_path', continuation.workspacePath], ['artifact', continuation.artifact],
+          ['repo', continuation.repo], ['ref', continuation.ref], ['quality', continuation.quality],
+          ['states', continuation.states], ['include_handoffs', continuation.includeHandoffs],
+          ['limit', continuation.limit], ['offset', continuation.offset],
+        ] as const) if (value != null) nextRequest[key] = value;
+      }
+      return { payload: {
+        count: refinements.length, refinements,
+        handoff_count: result.handoff_count,
+        instructions_count: result.instructions_count,
+        partial: result.partial, partialReasons: result.partialReasons,
+        ...(continuation ? { next: { list: { operation: 'refine_get', request: nextRequest } } } : {}),
+      }, exitCode: 0 };
     }
 case 'verify_audit': {
       const result = auditUnverified(db, {

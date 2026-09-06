@@ -7,7 +7,9 @@ import { FTS_SCHEMA_DDL, SCHEMA_DDL, SCHEMA_INDEX_DDL } from './db-schema.js';
 import { hasFts, rebuildFts } from './db-maintenance.js';
 import { MEMORY_LABELS } from './schema/common.js';
 import { AWARENESS_APPLICATION_ID } from './storage-scope.js';
-import { WORKER_LIFECYCLE_DDL } from './worker-lifecycle-ledger.js';
+import { WORKER_LIFECYCLE_DDL } from './db-worker-schema.js';
+import { assertCanonicalCopySource, copySequenceHighWaterMarks } from './db-hook-schema-upgrade.js';
+import { assertCanonicalRelationContract, assertCanonicalSchemaFingerprint } from './db-introspection.js';
 import {
   actor,
   assertConvertibleSourceRows,
@@ -28,6 +30,7 @@ import {
 import type { DatabaseConsolidationOptions } from './db-consolidation-validation.js';
 
 export interface DatabaseConsolidationReport {
+  dryRun: boolean;
   sourcePath: string;
   destinationPath: string;
   copiedTables: Readonly<Record<string, number>>;
@@ -236,10 +239,16 @@ export function consolidateDatabase(sourcePath: string, destinationPath: string,
     source = new DatabaseSync(sourcePath, { readOnly: true });
     source.exec('BEGIN');
     assertValidSource(source);
-    assertExactLegacySchema(source);
-    assertSupportedSourceTables(source);
-    assertConvertibleSourceRows(source, options);
-    assertNoCrossLedgerCollisions(source);
+    const sourceNames = new Set(tableNames(source));
+    const canonicalSource = !sourceNames.has('plans');
+    if (canonicalSource) {
+      assertCanonicalCopySource(source);
+    } else {
+      assertExactLegacySchema(source);
+      assertSupportedSourceTables(source);
+      assertConvertibleSourceRows(source, options);
+      assertNoCrossLedgerCollisions(source);
+    }
     destination = new DatabaseSync(temporaryPath);
     destination.exec('PRAGMA foreign_keys = OFF');
     destination.exec('BEGIN IMMEDIATE');
@@ -247,18 +256,23 @@ export function consolidateDatabase(sourcePath: string, destinationPath: string,
     destination.exec(SCHEMA_INDEX_DDL);
     if (new Set(tableNames(source)).has('worker_lifecycle_events')) destination.exec(WORKER_LIFECYCLE_DDL);
     const copiedTables = copyCommonTables(source, destination);
-    copiedTables.messages = copyLegacyMessages(source, destination);
-    copiedTables.agents = copyLegacyAgents(source, destination);
-    copiedTables.memories = copyLegacyMemories(source, destination, options, adoptedAgentIds);
-    copiedTables.plans = copyLegacyPlans(source, destination, options, adoptedAgentIds);
-    copiedTables.tasks = copyLegacyTasks(source, destination, options, adoptedAgentIds).length;
-    const work = copyLegacyWorkAndLocks(source, destination);
-    copiedTables.work_presence = work.workPresence;
-    copiedTables.locks = work.locks;
+    copySequenceHighWaterMarks(source, destination);
+    if (!canonicalSource) {
+      copiedTables.messages = copyLegacyMessages(source, destination);
+      copiedTables.agents = copyLegacyAgents(source, destination);
+      copiedTables.memories = copyLegacyMemories(source, destination, options, adoptedAgentIds);
+      copiedTables.plans = copyLegacyPlans(source, destination, options, adoptedAgentIds);
+      copiedTables.tasks = copyLegacyTasks(source, destination, options, adoptedAgentIds).length;
+      const work = copyLegacyWorkAndLocks(source, destination);
+      copiedTables.work_presence = work.workPresence;
+      copiedTables.locks = work.locks;
+    }
     try { destination.exec(FTS_SCHEMA_DDL); } catch { /* FTS5 is optional in the embedded SQLite build. */ }
     if (hasFts(destination)) rebuildFts(destination);
     destination.exec(`PRAGMA application_id = ${AWARENESS_APPLICATION_ID}`);
     assertLogicalDestination(destination);
+    assertCanonicalRelationContract(destination);
+    assertCanonicalSchemaFingerprint(destination);
     const integrity = destination.prepare('PRAGMA integrity_check').get() as { integrity_check: string };
     if (integrity.integrity_check !== 'ok') throw new Error(`destination integrity check failed: ${integrity.integrity_check}`);
     const foreignKeys = destination.prepare('PRAGMA foreign_key_check').all();
@@ -269,6 +283,8 @@ export function consolidateDatabase(sourcePath: string, destinationPath: string,
     destination.exec('PRAGMA wal_checkpoint(TRUNCATE)');
     destination.close();
     destination = undefined;
+    const report = { sourcePath, destinationPath, copiedTables, adoptedAgentIds: [...adoptedAgentIds], dryRun: options.dryRun === true };
+    if (report.dryRun) return report;
     try {
       linkSync(temporaryPath, destinationPath);
     } catch (error) {
@@ -276,7 +292,7 @@ export function consolidateDatabase(sourcePath: string, destinationPath: string,
       if (detail.code === 'EEXIST') throw new Error(`destination already exists: ${destinationPath}`);
       throw error;
     }
-    return { sourcePath, destinationPath, copiedTables, adoptedAgentIds: [...adoptedAgentIds] };
+    return report;
   } catch (error) {
     try { destination?.exec('ROLLBACK'); } catch { /* no active destination transaction */ }
     try { source?.exec('ROLLBACK'); } catch { /* read snapshot ended */ }

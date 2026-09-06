@@ -19,5 +19,5 @@ export const integrationSchemas = {
   guide: z.object({ json: z.boolean().optional() }),
   instructions_export: z.object({ format: z.enum(['prompt', 'agents-md', 'json']).optional() }),
   pre_edit: z.object({ ...scope, host: text.optional(), agent_id: text.optional(), event_json: text.optional() }),
-  database_consolidate: z.object({ source: text, destination: text, unattributed_agent_id: text.optional() }),
+  database_consolidate: z.object({ source: text, destination: text, unattributed_agent_id: text.optional(), dry_run: z.boolean().optional() }),
 };

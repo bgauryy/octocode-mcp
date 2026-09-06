@@ -416,24 +416,25 @@ function stopMcpServer(): void {
 
 function updateStatusBar(running: boolean, authenticated?: boolean): void {
   try {
-    const authIcon = authenticated ? '$(verified)' : '';
     const authTooltip = authenticated
-      ? ' (GitHub authenticated)'
-      : ' (no GitHub auth)';
+      ? 'GitHub: signed in.'
+      : 'GitHub: not signed in. Sign in from the Octocode commands in the Command Palette.';
 
     if (running) {
-      statusBarItem.text = `$(zap) Octocode MCP: Running ${authIcon}`;
-      statusBarItem.tooltip = `Octocode MCP server is running${authTooltip}. Click to stop.`;
+      statusBarItem.text = '$(search) Octocode · Running';
+      statusBarItem.tooltip = `Octocode MCP server is running.\n${authTooltip}\nClick to stop the server.`;
       statusBarItem.command = 'octocode.stopServer';
       statusBarItem.backgroundColor = undefined;
     } else {
-      statusBarItem.text = `$(circle-slash) Octocode MCP: Off ${authIcon}`;
-      statusBarItem.tooltip = `Octocode MCP server is stopped${authTooltip}. Click to start.`;
+      statusBarItem.text = '$(search) Octocode · Stopped';
+      statusBarItem.tooltip = `Octocode MCP server is stopped.\n${authTooltip}\nClick to start the server.`;
       statusBarItem.command = 'octocode.startServer';
-      statusBarItem.backgroundColor = new vscode.ThemeColor(
-        'statusBarItem.warningBackground'
-      );
+      statusBarItem.backgroundColor = undefined;
     }
+    statusBarItem.name = 'Octocode';
+    statusBarItem.accessibilityInformation = {
+      label: `Octocode server ${running ? 'running' : 'stopped'}. ${authTooltip}`,
+    };
     statusBarItem.show();
   } catch (err) {
     outputChannel.appendLine(`Error updating status bar: ${err}`);

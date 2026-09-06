@@ -12,7 +12,7 @@ integrations may call the same package API in-process. Build before testing chan
 package code, then verify the public runner separately.
 
 ```bash
-export OCTOCODE_AGENT_ID="${OCTOCODE_AGENT_ID:-codex-awareness}"
+export OCTOCODE_AGENT_ID="${OCTOCODE_AGENT_ID:-awareness:$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')}"
 npx @octocodeai/octocode-awareness status --workspace "$PWD" --compact
 npx @octocodeai/octocode-awareness schema commands --all --compact
 npx @octocodeai/octocode-awareness schema entities --compact

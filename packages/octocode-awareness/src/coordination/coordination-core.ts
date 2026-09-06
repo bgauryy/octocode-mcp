@@ -6,9 +6,11 @@ import { defaultDbPath,type AwarenessOptions,type AwarenessSchema } from './coor
 import { type AgentEventEnvelopeV1 } from '../continuity-contracts.js';
 import { connectDb, resolveDbPath } from '../db-runtime.js';
 import { beginWrite } from '../db-transaction.js';
+import { storageScopeForCommand } from '../workspace-policy.js';
 import { insertOutboxEvent } from '../event-outbox.js';
 import type { MemoryEvaluationCorpusV1,MemoryEvaluationReportV1,MemoryRecallModeV1 } from '../memory-hardening.js';
 import type { VerifiedMemoryV1 } from './coordination-memory-agents.js';
+import type { MessageListParams, MessagePage } from './coordination-message-inbox.js';
 
 export abstract class CoordinationBase {
   readonly workspace: string;
@@ -18,7 +20,8 @@ export abstract class CoordinationBase {
   constructor(options: AwarenessOptions) {
     const workspace = resolve(options.workspace ?? process.cwd());
     this.workspace = normalizeWorkspacePath(workspace, workspace) ?? workspace;
-    this.dbPath = resolveDbPath(options.dbPath ?? defaultDbPath(this.workspace, options.scope));
+    this.dbPath = resolveDbPath(options.dbPath ?? defaultDbPath(this.workspace,
+      storageScopeForCommand('coordination', this.workspace, options.scope)));
     this.db = connectDb(this.dbPath);
   }
 
@@ -26,7 +29,8 @@ export abstract class CoordinationBase {
     this.db.close();
   }
 
-  protected writeTransaction<T>(operation: () => T): T {
+  /** Compose domain operations atomically; nested operations use savepoints. */
+  writeTransaction<T>(operation: () => T): T {
     const transaction = beginWrite(this.db);
     try {
       const result = operation();
@@ -95,6 +99,8 @@ export abstract class CoordinationBase {
   abstract listAgents(params: { includeLeft?: boolean; staleAfterMs?: number }): AgentRecord[];
   abstract sendMessage(params: { fromAgentId: string; toAgentId?: string | null; topic?: string | null; text: string; files?: string | string[] | null }): LiteMessage;
   abstract listMessages(params: { agentId?: string | null; includeRead?: boolean; topic?: string | null; limit?: number }): LiteMessage[];
+  abstract listMessagesPage(params?: MessageListParams): MessagePage;
+  abstract countMessages(params?: Omit<MessageListParams, 'cursor' | 'limit'>): number;
   abstract markMessageRead(params: { messageId: string; agentId: string }): LiteMessage;
   abstract pruneMessages(params: { olderThanMs: number; readOnly?: boolean; dryRun?: boolean }): PruneResult;
   abstract schema(): AwarenessSchema;

@@ -12,7 +12,7 @@ Hooks automate loop edges; they do not choose tasks or replace `attend`/verify. 
 | Cursor | `.cursor/hooks.json` | Local/cloud lifecycle coverage differs. |
 | Gemini CLI | `.gemini/settings.json` | Uses Gemini event names and timeout units. |
 | OpenCode | `.opencode/plugins/octocode-awareness.js` | Project plugin translates events into the shared runner. |
-| Pi | native extension events | Guard at `tool_call`; audit/release at `tool_execution_end`; never install shell hooks. |
+| Pi | native extension events | Guard at `tool_call`; record edits and end automatically created work at `tool_execution_end`; preserve manually owned work. Never install shell hooks. |
 
 Before installation, show the noncompact dry-run and obtain explicit approval. Then apply and strict-check the same host and scope:
 
@@ -25,6 +25,8 @@ Before installation, show the noncompact dry-run and obtain explicit approval. T
 For drift, preview removal, remove, reinstall, and strict-check. Configuration answers are not installation approval.
 
 ## Write path
+
+The following lifecycle describes the shared shell-hook runner. Pi uses its own native adapter: tool completion does not run checks or clear verification debt. Use observed receipts and `verify audit`; shared plan completion can consume its declared check receipt. Reflection and Awareness session capture remain explicit CLI workflows in Pi.
 
 1. Extract deduplicated paths; no path is a no-op.
 2. Evaluate the harness guard before DB presence.

@@ -21,6 +21,6 @@ node <skill>/scripts/cdp-checks/har-redact.mjs live-network.har --strip-bodies
 Token budget: summary <2KB; page 10–50 HAR rows; search `.octocode/tmp/chrome-devtools/` before re-browser; `prune-artifacts.mjs` for retention.
 
 ## Bridge
-Same scrape `sessionId` + one CDP port → `har-ingest-to-scrape` → `corpus-run-local --regex`. Thin pages: trust processed API bodies over clean markdown. Playbook: scraping skill `browser-scraping`.
+Same scrape `sessionId` + one CDP port → `har-ingest-to-scrape` → `corpus-run-local --regex`. These bridges require the optional `octocode-scraping` skill beside this folder or an explicit `--scraping-skill-dir <dir>`. Thin pages: trust processed API bodies over clean markdown. Playbook: scraping skill `browser-scraping`.
 
 Next: `cdp-checks.md`, `recovery.md`.

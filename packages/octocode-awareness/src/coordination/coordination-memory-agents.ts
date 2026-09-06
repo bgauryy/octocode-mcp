@@ -11,6 +11,7 @@ import { recallMemory as recallCanonicalMemory } from '../memory-semantic.js';
 import { insertNotification } from '../notifications-core.js';
 import { deletePrunableSignals } from '../notifications-signals.js';
 import { canonicalizePath } from '../git.js';
+import { countInboxMessages, listInboxMessagesPage, type MessageListParams, type MessagePage } from './coordination-message-inbox.js';
 import {
   containsSecretLikeText,
   MEMORY_EVALUATION_CORPUS_V1,
@@ -267,7 +268,10 @@ export abstract class CoordinationMemoryAgents extends CoordinationState {
     const stamp = now();
     const agentId = required(params.agentId, 'agent-id');
     const existing = this.db.prepare('SELECT agent_name, metadata_json FROM awareness_agents WHERE workspace_path = ? AND agent_id = ?').get(this.canonicalWorkspace, agentId) as { agent_name: string | null; metadata_json: string } | undefined;
-    const metadataJson = params.metadata === undefined && existing ? existing.metadata_json : JSON.stringify(parseMetadata(params.metadata));
+    const metadataJson = JSON.stringify({
+      ...(existing ? parseMetadata(existing.metadata_json) : {}),
+      ...parseMetadata(params.metadata),
+    });
     const name = params.name?.trim() || existing?.agent_name || generateAgentName();
     this.db.prepare(`INSERT INTO awareness_agents(agent_id, workspace_path, agent_name, role, status, metadata_json, registered_at, last_seen_at)
       VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
@@ -340,32 +344,17 @@ export abstract class CoordinationMemoryAgents extends CoordinationState {
     return this.getMessage(signalId);
   }
 
-  listMessages(params: { agentId?: string | null; includeRead?: boolean; topic?: string | null; limit?: number } = {}): LiteMessage[] {
-    const limit = Math.min(Math.max(params.limit ?? 20, 1), 100);
-    const agentId = params.agentId?.trim();
-    const topic = params.topic?.trim();
-    const clauses: string[] = ['s.workspace_path = ?'];
-    const values: string[] = [this.canonicalWorkspace];
-    let readAt = 'NULL AS read_at';
-    if (agentId) {
-      clauses.push('s.from_agent != ?');
-      values.push(agentId);
-      clauses.push('(s.to_agent IS NULL OR s.to_agent = ?)');
-      values.push(agentId);
-      readAt = '(SELECT r.read_at FROM signal_reads r WHERE r.signal_id = s.signal_id AND r.agent_id = ?) AS read_at';
-      values.unshift(agentId);
-      if (!params.includeRead) {
-        clauses.push('NOT EXISTS (SELECT 1 FROM signal_reads r WHERE r.signal_id = s.signal_id AND r.agent_id = ?)');
-        values.push(agentId);
-      }
-    }
-    if (topic) {
-      clauses.push('s.subject = ?');
-      values.push(topic);
-    }
-    const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
-    const rows = this.db.prepare(`SELECT s.*, ${readAt} FROM signals s${where} ORDER BY s.created_at DESC LIMIT ?`).all(...values, limit);
-    return (rows as unknown as CanonicalMessageRow[]).map(messageFromCanonicalSignalRow);
+  countMessages(params: Omit<MessageListParams, 'cursor' | 'limit'> = {}): number {
+    return countInboxMessages(this.db, this.canonicalWorkspace, params);
+  }
+
+  /** Bounded internal previews; public read surfaces use listMessagesPage. */
+  listMessages(params: MessageListParams = {}): LiteMessage[] {
+    return this.listMessagesPage(params).messages;
+  }
+
+  listMessagesPage(params: MessageListParams = {}): MessagePage {
+    return listInboxMessagesPage(this.db, this.canonicalWorkspace, params);
   }
 
   markMessageRead(params: { messageId: string; agentId: string }): LiteMessage {
@@ -375,10 +364,11 @@ export abstract class CoordinationMemoryAgents extends CoordinationState {
       throw new Error(`message ${message.messageId} is not addressed to ${agentId}`);
     }
     this.touchAgent({ agentId });
+    const readAt = now();
     this.db.prepare(`INSERT INTO signal_reads(signal_id, agent_id, read_at)
       VALUES (?, ?, ?)
-      ON CONFLICT(signal_id, agent_id) DO UPDATE SET read_at = excluded.read_at`).run(message.messageId, agentId, now());
-    return this.listMessages({ agentId, includeRead: true, limit: 100 }).find((item) => item.messageId === message.messageId) ?? this.getMessage(message.messageId);
+      ON CONFLICT(signal_id, agent_id) DO UPDATE SET read_at = excluded.read_at`).run(message.messageId, agentId, readAt);
+    return { ...message, readAt };
   }
 
   pruneMessages(params: { olderThanMs: number; readOnly?: boolean; dryRun?: boolean }): PruneResult {

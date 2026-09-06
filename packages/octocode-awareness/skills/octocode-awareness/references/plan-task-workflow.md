@@ -30,7 +30,7 @@ New plans are ACTIVE. PAUSED retains work but blocks claims. Complete/cancel onl
 <cli> task submit --task-id task_123 --run-id run_123 \
   --agent-id "$OCTOCODE_AGENT_ID" --message "ready for verification" --compact
 <cli> verify mark --run-id run_123 --agent-id "$OCTOCODE_AGENT_ID" \
-  --message "tests pass" --compact
+  --status SUCCESS --message "<observed acceptance command and passing result>" --compact
 ```
 
 Heartbeat long claims with `task heartbeat --task-id <task> --run-id <run> --agent-id "$OCTOCODE_AGENT_ID" --compact`. `task release` returns unfinished work to OPEN/BLOCKED.
@@ -44,7 +44,9 @@ Dependencies and ACTIVE plan status derive readiness; never set READY manually.
 # run the declared check
 <cli> work end --run-id run_123 --agent-id "$OCTOCODE_AGENT_ID" --compact
 <cli> verify mark --run-id run_123 --agent-id "$OCTOCODE_AGENT_ID" \
-  --message "reviewed" --compact
+  --status SUCCESS --message "<observed review and result>" --compact
 ```
+
+Use `--status FAILED` for an observed failed check; leave unrun checks pending. Before finishing, run `verify audit --agent-id "$OCTOCODE_AGENT_ID" --workspace "$PWD"` in the same store and settle or disclose your remaining debt.
 
 Return to `SKILL.md`. Add `--exclusive` only for sensitive work; only explicit `--run-id` or a host hook extends a run.

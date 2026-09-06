@@ -67,12 +67,34 @@ export function cmdAgentSignal(db: DatabaseSync, args: ParsedArgs, dbPath: strin
     unreadOnly: args['all'] ? false : args['unread_only'] as boolean | undefined,
     markRead: Boolean(args['mark_read']),
     kinds: kinds.length ? kinds.map((k) => normalizeNotificationKind(k)) : [],
-    limit: compactList && requestedLimit !== undefined ? requestedLimit + 1 : requestedLimit,
+    limit: requestedLimit,
+    cursor: args['cursor'] ? String(args['cursor']) : undefined,
   });
+  const continuation = result.action === 'list' ? result.next?.list.request : undefined;
+  const continuationArgs = ['--db', dbPath];
+  if (continuation) {
+    const flags: Record<string, string> = {
+      agent_id: 'agent-id', workspace_path: 'workspace', artifact: 'artifact', repo: 'repo', ref: 'ref',
+      kinds: 'kind', signal_id: 'signal-id', thread_id: 'thread-id', limit: 'limit', cursor: 'cursor',
+    };
+    for (const [key, flag] of Object.entries(flags)) {
+      const value = continuation[key];
+      for (const item of Array.isArray(value) ? value : value === undefined ? [] : [value]) {
+        continuationArgs.push(`--${flag}`, String(item));
+      }
+    }
+    if (continuation['unread_only'] === false) continuationArgs.push('--all');
+    if (continuation['mark_read']) continuationArgs.push('--mark-read');
+    if (args['include_bodies']) continuationArgs.push('--include-bodies');
+    if (opts.compact) continuationArgs.push('--compact');
+  }
+  const pagination = result.action === 'list' ? {
+    partial: result.partial ?? false,
+    partialReasons: result.partialReasons ?? [],
+    ...(continuation ? { next: { list: { command: { name: 'signal list', args: continuationArgs } } } } : {}),
+  } : {};
   if (compactList && result.action === 'list') {
-    const compactLimit = requestedLimit ?? 3;
-    const shown = result.signals.slice(0, compactLimit);
-    const signals = shown.map((signal) => {
+    const signals = result.signals.map((signal) => {
       const shownFiles = signal.files.slice(0, 3);
       return {
         signal_id: signal.signal_id,
@@ -98,14 +120,14 @@ export function cmdAgentSignal(db: DatabaseSync, args: ParsedArgs, dbPath: strin
       signals,
       unread_only: result.unread_only,
       bodies: 'omitted',
-      has_more: result.signals.length > compactLimit,
-      next_limit: result.signals.length > compactLimit ? Math.min(200, compactLimit * 2) : null,
+      ...pagination,
     }, 0, opts);
   }
   if (result.action === 'list' && !Boolean(args['include_bodies'])) {
     return emit({
       db_path: dbPath,
       ...result,
+      ...pagination,
       bodies: 'summarized',
       signals: result.signals.map((signal) => ({
         ...signal,
@@ -113,7 +135,7 @@ export function cmdAgentSignal(db: DatabaseSync, args: ParsedArgs, dbPath: strin
       })),
     }, 0, opts);
   }
-  return emit({ db_path: dbPath, ...result }, 0, opts);
+  return emit({ db_path: dbPath, ...result, ...pagination }, 0, opts);
 }
 
 export function cmdNotifyPrune(db: DatabaseSync, args: ParsedArgs, dbPath: string, opts: EmitOptions): number {
@@ -141,11 +163,18 @@ export function cmdAgentRegistry(db: DatabaseSync, args: ParsedArgs, dbPath: str
   const artifact = args['artifact'] ? String(args['artifact']) : null;
 
   if (action === 'register') {
-    if (!args['agent_id']) return emit({ error: '--agent-id is required for register' }, 1, opts);
+    const label = (flag: string, env: string, maxLength: number): string | undefined => {
+      const raw = args[flag] ?? process.env[env];
+      if (raw === undefined || raw === '') return undefined;
+      if (typeof raw !== 'string' || !raw.trim() || raw.trim().length > maxLength) die(`--${flag.replaceAll('_', '-')} must be a non-empty string of at most ${maxLength} characters`);
+      return raw.trim();
+    };
     const agent = registerAgent(db, {
-      agentId: String(args['agent_id']),
-      agentName: args['agent_name'] ? String(args['agent_name']) : '',
-      workspacePath,
+      agentId: resolveAgentId(args),
+      agentName: label('agent_name', 'OCTOCODE_AGENT_NAME', 256),
+      agentVendor: label('agent_vendor', 'OCTOCODE_AGENT_VENDOR', 128),
+      agentHost: label('agent_host', 'OCTOCODE_AGENT_HOST', 128),
+      workspacePath: workspacePath ?? process.cwd(),
       artifact,
       context: args['context'] ? String(args['context']) : null,
     });
@@ -153,15 +182,26 @@ export function cmdAgentRegistry(db: DatabaseSync, args: ParsedArgs, dbPath: str
   }
 
   const defaultLimit = opts.compact ? 5 : 50;
-  const limit = Math.min(200, Math.max(1, parseInt(String(args['limit'] ?? defaultLimit), 10) || defaultLimit));
+  const limit = Number(args['limit'] ?? defaultLimit);
+  const offset = Number(args['offset'] ?? 0);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) die('--limit must be an integer between 1 and 200');
+  if (!Number.isSafeInteger(offset) || offset < 0) die('--offset must be a non-negative integer');
   const result = listAgents(db, { workspacePath, artifact });
-  const rows = result.agents.slice(0, limit);
+  const rows = result.agents.slice(offset, offset + limit);
+  const omittedCount = Math.max(0, result.count - offset - rows.length);
+  const continuationArgs = ['--db', dbPath, '--limit', String(limit), '--offset', String(offset + rows.length)];
+  if (workspacePath) continuationArgs.push('--workspace', workspacePath);
+  if (artifact) continuationArgs.push('--artifact', artifact);
+  if (opts.compact) continuationArgs.push('--compact');
   const agents = opts.compact
     ? rows.map((agent) => ({
         agent_id: agent.agent_id,
         agent_name: agent.agent_name,
+        agent_vendor: agent.agent_vendor,
+        agent_host: agent.agent_host,
+        workspace_path: agent.workspace_path,
         last_seen_at: agent.last_seen_at,
-        context_summary: agent.context == null ? null : summarizeText(agent.context, 80),
+        context_summary: agent.context == null ? null : summarizeText(agent.context, 48),
       }))
     : rows;
   return emit({
@@ -169,7 +209,11 @@ export function cmdAgentRegistry(db: DatabaseSync, args: ParsedArgs, dbPath: str
     action: 'list',
     count: agents.length,
     total_count: result.count,
-    omitted_count: Math.max(0, result.count - agents.length),
+    omitted_count: omittedCount,
+    offset,
+    partial: omittedCount > 0,
+    partialReasons: omittedCount > 0 ? ['limit'] : [],
+    ...(omittedCount > 0 ? { next: { list: { command: { name: 'agent list', args: continuationArgs } } } } : {}),
     agents,
     workspace_path: workspacePath,
     artifact,

@@ -59,4 +59,41 @@ describe('shared prompts', () => {
     const expanded = expandSubagentPrompt(source);
     for (const placeholder of SUBAGENT_PLACEHOLDERS) expect(expanded).not.toContain(placeholder);
   });
+
+  it('selects worker-only constraints when the host supplies canonical Awareness guidance', () => {
+    const prompt = expandSubagentPrompt(SUBAGENT_PLACEHOLDERS.join('\n'), { coordination: 'worker-only' });
+    expect(prompt).toContain('The parent owns scope, synthesis, and dependent decisions');
+    expect(prompt).toContain('Edit only paths or symbols explicitly assigned in Ownership');
+    expect(prompt).toContain('wait for an explicit release or reassignment');
+    for (const marker of ['[DONE]', '[BLOCKED]', '[FAILED]', '[ARTIFACT]', '[EVIDENCE]', '[VERIFICATION]']) {
+      expect(prompt).toContain(marker);
+    }
+    expect(prompt).not.toContain('Send new signals with signal publish');
+    expect(prompt).not.toContain('signal ack --signal-id');
+    expect(prompt).not.toContain('You are auto-registered');
+    expect(prompt).toContain('Never run any Git command unless the user explicitly asks');
+    expect(expandSubagentPrompt('{{OCTOCODE_COORDINATION}}')).toContain('signal ack --signal-id');
+  });
+
+  it('permits the harness Awareness CLI without widening worker shell or Git authority', () => {
+    const prompt = expandSubagentPrompt('{{OCTOCODE_SURFACE}}');
+    expect(prompt).toMatch(/Use the harness-provided Awareness CLI through shell for shared coordination and bookkeeping/);
+    expect(prompt).toContain('using the supplied database, workspace, and your stable agent identity');
+    expect(prompt).toContain('For other shell commands, use shell only when your assigned role includes it');
+    expect(prompt).toContain('the task requires a test, build, or bounded debug command');
+    expect(prompt).toContain('Never run any Git command unless the user explicitly asks for Git in the current request');
+    expect(prompt).toContain('this includes read-only Git commands');
+  });
+
+  it('routes worker messages through canonical signal CLI fields and acknowledges after acting', () => {
+    const prompt = expandSubagentPrompt('{{OCTOCODE_COORDINATION}}');
+    expect(prompt).toContain('signal publish');
+    expect(prompt).toContain('signal reply');
+    expect(prompt).toContain('--kind');
+    expect(prompt).toContain('--subject');
+    expect(prompt).toContain('--to-agent');
+    expect(prompt).toContain('signal ack --signal-id');
+    expect(prompt).toContain('after acting');
+    expect(prompt).not.toContain('Use the topic field');
+  });
 });

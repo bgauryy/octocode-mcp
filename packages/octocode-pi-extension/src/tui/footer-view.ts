@@ -1,4 +1,4 @@
-import { truncateToWidth } from './width.js';
+import { truncateToWidth, visibleWidth } from './width.js';
 /** Pure footer view: state collection stays outside, layout stays testable here. */
 import type { PiTheme } from '../types.js';
 import { renderInlineRows, type InlineSegment, type TuiRenderContext } from './components.js';
@@ -28,9 +28,17 @@ export interface FooterViewProps {
 
 function agentRow(agent: FooterAgentView, context: TuiRenderContext): string[] {
   const stateToken = agent.token ?? (agent.state === 'failed' ? 'error' : agent.state === 'blocked' ? 'warning' : agent.state === 'done' ? 'success' : 'brand');
-  const required = `  ${paint(context.theme, 'muted', agent.label)}${SEP}${paint(context.theme, stateToken, agent.state)}`;
+  const labelWidth = Math.max(0, context.width - 2 - visibleWidth(SEP) - visibleWidth(agent.state));
+  const label = truncateToWidth(agent.label, labelWidth);
+  const state = paint(context.theme, stateToken, agent.state);
+  const emphasizedState = agent.attention && context.theme ? context.theme.bold(state) : state;
+  const required = labelWidth > 0
+    ? `  ${paint(context.theme, 'muted', label)}${SEP}${emphasizedState}`
+    : emphasizedState;
   const summary = [agent.elapsed, agent.task ? `task ${agent.task}` : ''].filter(Boolean).join(SEP);
-  const lines = [truncateToWidth(summary ? `${required}${SEP}${paint(context.theme, 'dim', summary)}` : required, context.width)];
+  const inlineSummary = summary && visibleWidth(required) + visibleWidth(SEP) + visibleWidth(summary) <= context.width;
+  const lines = [truncateToWidth(inlineSummary ? `${required}${SEP}${paint(context.theme, 'dim', summary)}` : required, context.width)];
+  if (summary && !inlineSummary) lines.push(truncateToWidth(`    ${paint(context.theme, 'dim', summary)}`, context.width));
   if (agent.doing) lines.push(truncateToWidth(`    ${paint(context.theme, 'muted', `doing ${agent.doing}`)}`, context.width));
   return lines;
 }

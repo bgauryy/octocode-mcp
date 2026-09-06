@@ -23,6 +23,8 @@ import { setManagedActivity } from './runtime-renderer.js';
 import { activePlanScope, setPlan, setPlanLifecycle, finishPlanVerification, activatePlan, proposePlanReview, acceptPlanReview, requestPlanChanges, startAcceptedPlan, rollbackAcceptedPlanStart, addStep, startStep, restorePlanSteps, completeStep, removeStep, clearPlan, getPlan, getPlanReviewState, getPlanCoordination, updatePlanCoordination, setPlanAwarenessMappings, MARK, stepLabel, displayStatus, depsMet, dependencyIndexes, resolveRfcPath, setPlanRfc, getPlanRfc, addPlanDecision, getPlanDecisions, type PlanStep, type DisplayStatus, type StepInput } from './active-plan.js';
 import { completeExternalPlanTask, finalizeExternalPlan, projectExternalPlan, type ObservedCheckReceipt, type ExternalPlanScope } from '@octocodeai/octocode-awareness';
 import { getAwarenessAgentId } from './awareness-shared.js';
+import { isPersistentStorageEnabled } from '@octocodeai/config';
+import { assertPersistentAwarenessEnabled } from './storage-policy.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch, type QueryRecord } from './query-envelope.js';
 import { appendSessionAuditForContext } from './session-audit.js';
 import { createSessionArtifactContext } from './session-artifacts.js';
@@ -181,6 +183,12 @@ function ensureUnifiedProjection(scope: string, explicit: ExternalPlanScope | un
   const steps = getPlan(scope);
   const coordination = getPlanCoordination(scope);
   const review = getPlanReviewState(scope);
+  if (!isPersistentStorageEnabled()) {
+    if (requestedPlanScope(scope, explicit) === 'shared' || coordination.awarenessPlanId) {
+      assertPersistentAwarenessEnabled();
+    }
+    return 'session';
+  }
   const projection = unifiedPlanProjector({
     sourceKind: 'pi',
     requestedScope: requestedPlanScope(scope, explicit),
@@ -710,6 +718,11 @@ function auditPlanEvent(
 async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Promise<ToolCallResult> {
   const scope = activePlanScope(ctx);
   let steps: PlanStep[];
+  // Reject unavailable shared writes before changing the local plan or its scope.
+  if (p.action !== 'show' && p.action !== 'clarify'
+    && (requestedPlanScope(scope, p.scope) === 'shared' || getPlanCoordination(scope).awarenessPlanId)) {
+    assertPersistentAwarenessEnabled();
+  }
 
   // ── Clarify phase (interview) ────────────────────────────────────────────
   if (p.action === 'clarify') {
@@ -1123,6 +1136,7 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
       if (p.action === 'complete' && target.awarenessTaskId) {
         const coordination = getPlanCoordination(scope);
         try {
+          assertPersistentAwarenessEnabled();
           const shared = completeExternalPlanTask({
             workspace: coordination.coordinationWorkspace || planWorkspace(scope),
             taskId: target.awarenessTaskId,
@@ -1153,6 +1167,7 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
         const coordination = getPlanCoordination(scope);
         let verified = true;
         if (coordination.awarenessPlanId) {
+          assertPersistentAwarenessEnabled();
           verified = finalizeExternalPlan({
             workspace: coordination.coordinationWorkspace || planWorkspace(scope),
             planId: coordination.awarenessPlanId,

@@ -1,18 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { awarenessDatabasePath, DEFAULT_AWARENESS_STORAGE_SCOPE, type AwarenessStorageScope } from '../storage-scope.js';
 
-// ─── Full public surface for in-process external hosts ────────────────────────
-// Hosts that embed Awareness as a library instead of spawning the `cli.js`
-// bin reach every capability from this package root: the embedding helpers, the
-// pre-edit lock gate, and the programmatic CLI/hook-install entrypoints.
 import type {
 AgentRecord,
 AgentStatus,
 HandoffNote,
 LiteMessage,
 MemoryItem,
-Plan,
-PlanStatus,
 } from '@octocodeai/agent-contracts/entities';
 
 export interface AwarenessOptions {
@@ -24,19 +18,6 @@ export interface AwarenessOptions {
 export interface AwarenessSchema {
   entities: Record<string, string[]>;
   commands: Record<string, string[]>;
-}
-
-export interface PlanRow {
-  plan_id: string;
-  title: string;
-  goal: string | null;
-  status: PlanStatus;
-  source_kind: string | null;
-  source_key: string | null;
-  rfc_path: string | null;
-  rfc_revision: string | null;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface HandoffRow {
@@ -93,13 +74,6 @@ export function cutoffIso(ageMs: number): string {
 }
 
 /**
- * Default presence window for counting "present" agents in status() when the
- * caller does not pass staleAfterMs. 30 min matches the lock/work default TTL,
- * so a crashed agent that never called leave ages out of the presence count.
- */
-export const DEFAULT_AGENT_PRESENCE_MS = 30 * 60_000;
-
-/**
  * Default cosine floor for semantic recall. 0 preserves the historical behavior
  * (keep any candidate with positive similarity) and matches the full
  * octocode-awareness search, which applies no hard floor and relies on ranking.
@@ -121,21 +95,6 @@ export function required(value: string | undefined | null, name: string): string
 /** Resolve shared coordination storage at repository or global level. */
 export function defaultDbPath(workspace: string, scope: AwarenessStorageScope = DEFAULT_AWARENESS_STORAGE_SCOPE): string {
   return awarenessDatabasePath(workspace, scope);
-}
-
-export function planFromRow(row: PlanRow): Plan {
-  return {
-    planId: row.plan_id,
-    title: row.title,
-    goal: row.goal,
-    status: row.status,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    sourceKind: row.source_kind ?? null,
-    sourceKey: row.source_key ?? null,
-    rfcPath: row.rfc_path ?? null,
-    rfcRevision: row.rfc_revision ?? null,
-  };
 }
 
 export function handoffFromRow(row: HandoffRow): HandoffNote {

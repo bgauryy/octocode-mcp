@@ -7,6 +7,7 @@ import {
   type AwarenessPeerDelivery,
 } from '@octocodeai/octocode-awareness';
 import type { PiContext, PiInstance } from '../types.js';
+import { openPersistentAwareness } from './storage-policy.js';
 
 /** Render only current-drain delivery pressure; lifetime totals are diagnostic history. */
 export function awarenessEventStatusText(stats: AwarenessEventObservability): string | undefined {
@@ -74,7 +75,10 @@ export function resolvePiEventConsumerId(ctx: PiContext): string | undefined {
 
 /** Register event-driven wake points only; there is deliberately no polling loop. */
 export function registerAwarenessEventConsumer(pi: PiInstance, options: RegisterAwarenessEventConsumerOptions = {}): void {
-  const consumers = new Map<string, ReturnType<typeof createAwarenessEventConsumer>>();
+  const consumers = new Map<string, {
+    consumer: ReturnType<typeof createAwarenessEventConsumer>;
+    binding: { ctx: PiContext };
+  }>();
   const drain = async (ctx: PiContext): Promise<void> => {
     const workspace = path.resolve(ctx.cwd ?? process.cwd());
     const consumerId = resolvePiEventConsumerId(ctx);
@@ -87,28 +91,30 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
       options.onObservability?.({ ...initialObservability(consumerId), errors: 1, drainErrors: 1 }, ctx);
       return;
     }
-    const key = `${workspace}\0${consumerId}`;
-    let consumer = consumers.get(key);
-    if (!consumer) {
-      consumer = createAwarenessEventConsumer({
+    const key = `${workspace}\0${consumerId}\0${expectedAgentId}`;
+    let scoped = consumers.get(key);
+    if (!scoped) {
+      const binding = { ctx };
+      const consumer = createAwarenessEventConsumer({
         workspace,
         consumerId,
         expectedAgentId,
-        ...(options.openStore ? { openStore: options.openStore } : {}),
+        openStore: options.openStore ?? ((targetWorkspace) => openPersistentAwareness({ workspace: targetWorkspace })),
         ...(options.now ? { now: options.now } : {}),
         ...(options.maxEventsPerDrain ? { maxEventsPerDrain: options.maxEventsPerDrain } : {}),
         deliver: async (message) => {
+          const currentCtx = binding.ctx;
           if (!pi.sendMessage) throw new Error('Pi custom message delivery is unavailable');
-          const readEntries = ctx.sessionManager?.getEntries ?? ctx.sessionManager?.getBranch;
+          const readEntries = currentCtx.sessionManager?.getEntries ?? currentCtx.sessionManager?.getBranch;
           if (!readEntries) {
             throw new Error('Pi session persistence receipts are unavailable; Awareness event remains unacknowledged');
           }
 
-          const persisted = () => readEntries.call(ctx.sessionManager)
+          const persisted = () => readEntries.call(currentCtx.sessionManager)
             .some((entry) => isPersistedPeerDelivery(entry, message));
 
           // Idempotency guard: already in the ledger from a previous drain cycle.
-          if (persisted()) { options.onDelivery?.(message, ctx); return; }
+          if (persisted()) { options.onDelivery?.(message, currentCtx); return; }
 
           /*
            * pi.sendMessage() wraps the async sendCustomMessage() in a fire-and-forget
@@ -127,18 +133,20 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
           await Promise.resolve(); // let sendCustomMessage start executing
           await Promise.resolve(); // let its first internal await settle
 
-          if (persisted()) { options.onDelivery?.(message, ctx); return; }
+          if (persisted()) { options.onDelivery?.(message, currentCtx); return; }
 
           throw new Error(
             `Pi custom message persistence was not confirmed for awareness event ` +
             `${message.details.eventId}; Awareness event remains unacknowledged`,
           );
         },
-        onObservability: (stats) => options.onObservability?.(stats, ctx),
+        onObservability: (stats) => options.onObservability?.(stats, binding.ctx),
       });
-      consumers.set(key, consumer);
+      scoped = { consumer, binding };
+      consumers.set(key, scoped);
     }
-    await consumer.drain();
+    scoped.binding.ctx = ctx;
+    await scoped.consumer.drain();
   };
 
   pi.on('session_start', async (_event, ctx) => { await drain(ctx); });

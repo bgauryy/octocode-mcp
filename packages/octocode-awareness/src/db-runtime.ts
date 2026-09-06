@@ -11,17 +11,13 @@ import { hardenSqliteFiles, preparePrivateSqlitePath } from '@octocodeai/agent-c
 import { utcNow } from './helpers.js';
 import { journalModeForSqliteVersion } from '@octocodeai/agent-contracts/sqlite-version';
 import {
-  AWARENESS_APPLICATION_ID,
   awarenessDatabasePath,
   type AwarenessStorageScope,
 } from './storage-scope.js';
 import {
-  assertCanonicalRelationContract,
-  assertCanonicalSchemaFingerprint,
-  canonicalColumns,
+  inspectSchemaState,
 } from './db-introspection.js';
 import { initDb } from './db-init.js';
-import { AGENT_APPLICATION_ID } from '@octocodeai/agent-contracts/schema';
 
 import {
   DatabaseSync,
@@ -87,71 +83,6 @@ export function getDatabasePath(db: DatabaseSync): string {
   const row = db.prepare("PRAGMA database_list").all()
     .find((entry) => (entry as { name?: string }).name === 'main') as { file?: string } | undefined;
   return row?.file ? resolve(row.file) : ':memory:';
-}
-
-export interface SchemaIdentity {
-  applicationId: number;
-  relations: Array<{ name: string; type: string }>;
-}
-
-export type SchemaState = 'fresh' | 'canonical';
-
-export function readSchemaIdentity(db: DatabaseSync): SchemaIdentity {
-  const application = db.prepare('PRAGMA application_id').get() as { application_id: number };
-  const relations = db.prepare(`
-    SELECT name, type
-    FROM sqlite_schema
-    WHERE type IN ('table', 'view')
-      AND name NOT LIKE 'sqlite_%'
-      AND name NOT GLOB 'memories_fts_*'
-      AND name NOT GLOB 'memory_fts_*'
-    ORDER BY name
-  `).all() as Array<{ name: string; type: string }>;
-  return {
-    applicationId: application.application_id ?? 0,
-    relations,
-  };
-}
-
-export function inspectSchemaState(db: DatabaseSync): SchemaState {
-  const identity = readSchemaIdentity(db);
-  const expected = new Set(canonicalColumns().keys());
-  const relationNames = new Set(identity.relations.map(({ name }) => name));
-  const canonicalCount = [...expected].filter((name) => relationNames.has(name)).length;
-  const knownAwarenessHost = identity.relations.every(({ name, type }) => (
-    type === 'table' && (expected.has(name) || name === 'memories_fts' || name === 'worker_lifecycle_events')
-  ));
-  if (identity.applicationId === AWARENESS_APPLICATION_ID || identity.applicationId === 0) {
-    if (identity.relations.length === 0) return 'fresh';
-    if (!knownAwarenessHost) {
-      const names = identity.relations.map(({ name }) => name).join(', ');
-      throw new Error(`refusing unrecognized or unrelated Awareness SQLite store; database consolidation may be required; relations: ${names}`);
-    }
-    if (canonicalCount !== expected.size) {
-      throw new Error('Awareness schema upgrade required; convert this database into a new destination with awareness database consolidate. The source database has not been changed.');
-    }
-    assertCanonicalRelationContract(db, identity.relations);
-    assertCanonicalSchemaFingerprint(db);
-    return 'canonical';
-  }
-  if (identity.applicationId === AGENT_APPLICATION_ID) {
-    throw new Error(`refusing Agent SQLite store; Awareness requires application_id ${AWARENESS_APPLICATION_ID}`);
-  }
-  throw new Error(
-    `refusing foreign Awareness application_id ${identity.applicationId}; expected ${AWARENESS_APPLICATION_ID}`,
-  );
-}
-
-export function assertDatabaseIntegrity(db: DatabaseSync): void {
-  const integrity = db.prepare('PRAGMA integrity_check').all() as Array<{ integrity_check: string }>;
-  const failures = integrity.filter(({ integrity_check }) => integrity_check !== 'ok');
-  if (failures.length > 0) {
-    throw new Error(`canonical integrity_check failed: ${failures.map((row) => row.integrity_check).join('; ')}`);
-  }
-  const foreignKeys = db.prepare('PRAGMA foreign_key_check').all();
-  if (foreignKeys.length > 0) {
-    throw new Error(`canonical foreign_key_check failed with ${foreignKeys.length} row(s)`);
-  }
 }
 
 /**

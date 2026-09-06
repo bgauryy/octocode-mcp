@@ -355,4 +355,7 @@ try {
   }, 1, opts);
 }
 
-process.exit(exitCode);
+// Let Node drain large JSON pages to piped stdout before terminating.
+// Keep emit() on stdout.write so in-process CLI consumers can capture it.
+db.close();
+process.exitCode = exitCode;

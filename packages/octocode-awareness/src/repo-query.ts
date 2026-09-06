@@ -8,7 +8,7 @@ import { agentRows, developerReviewRows, lockRows, refinementRows, signalRows } 
 import { workboardRows } from './repo-workboard.js';
 import { scopeFromParams, withScope } from './repo-scope.js';
 import { renderDeveloperReviewDoc } from './repo-docs.js';
-import { escapeHtml, renderHtmlSection, toCsv, toMarkdown, toTable } from './repo-formats.js';
+import { completenessText, escapeHtml, renderHtmlSection, toCsv, toMarkdown, toTable } from './repo-formats.js';
 import { atomicWriteText, resolveWorkspaceOutputPath } from './repo-projection.js';
 
 const DEVELOPER_REVIEW_EXPORT_MAX_LINES = 200;
@@ -162,13 +162,6 @@ export function formatAwarenessQueryResult(result: AwarenessQueryResult, format:
   if (normalized === 'table') return `${completenessText(result)}\n${toTable(result.rows)}`;
   if (normalized === 'html') return renderAwarenessHtml(result);
   return toMarkdown(result);
-}
-
-export function completenessText(result: AwarenessQueryResult): string {
-  const total = result.total == null ? 'unknown' : String(result.total);
-  const omitted = result.omitted_count == null ? 'unknown' : String(result.omitted_count);
-  const continuation = result.continuation ? `; next: ${result.continuation}` : '';
-  return `Completeness: ${result.is_partial ? 'partial' : 'complete'}; visible=${result.count}; total=${total}; omitted=${omitted}${continuation}`;
 }
 
 export function renderAwarenessHtml(result: AwarenessQueryResult): string {

@@ -3,8 +3,8 @@ import { normalizeArtifact, utcNow } from './helpers.js';
 import { fillScope } from './git.js';
 import { SIGNALS_SELECT_BASE, SIGNALS_SELECT_LEFT_JOIN_READS, SIGNALS_SELECT_ORDER_LIMIT, SIGNAL_READS_INSERT_IGNORE } from './sql/signals.js';
 import type { GetNotificationsParams, GetNotificationsResult, ResolveNotificationParams, ResolveNotificationResult } from './types/notifications-agents.js';
-import { appendSignalScope, canReadOrJoinThread, isThreadParticipant, NotificationRow, rowToNotification } from './notifications-core.js';
-import { assertSignalsExist } from './notifications-signals.js';
+import { appendSignalScope, assertSignalsExist, canReadOrJoinThread, isThreadParticipant, NotificationRow, rowToNotification } from './notifications-core.js';
+import { decodeSignalCursor, encodeSignalCursor } from './signal-pagination.js';
 
 // ─── getNotifications ──────────────────────────────────────────────────────────
 
@@ -22,6 +22,7 @@ export function getNotifications(
     limit = 20,
     cwd,
   } = params;
+  const cursor = decodeSignalCursor(params.cursor);
 
   const scope = fillScope(
     { workspace_path: params.workspacePath ?? null, artifact: normalizeArtifact(params.artifact), repo: params.repo ?? null, ref: params.ref ?? null },
@@ -76,6 +77,11 @@ export function getNotifications(
     binds.push(...signalIds);
   }
 
+  if (cursor) {
+    where.push('(n.created_at < ? OR (n.created_at = ? AND n.signal_id < ?))');
+    binds.push(cursor.createdAt, cursor.createdAt, cursor.signalId);
+  }
+
   const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   // NOTIF-1/NOTIF-2: LEFT JOIN signal_reads whenever unreadOnly is true,
   // regardless of whether threadId is set. The join is needed for the IS NULL check.
@@ -91,8 +97,11 @@ export function getNotifications(
     ${SIGNALS_SELECT_ORDER_LIMIT}
   `;
   const boundedLimit = Math.min(200, Math.max(1, Math.floor(Number.isFinite(limit) ? limit : 20)));
-  const rows = db.prepare(sql).all(...allBinds, boundedLimit) as unknown as NotificationRow[];
-  const signals = rows.map(rowToNotification);
+  const rows = db.prepare(sql).all(...allBinds, boundedLimit + 1) as unknown as NotificationRow[];
+  // Inspect the sentinel before marking reads; never consume an undisplayed row.
+  const signals = rows.slice(0, boundedLimit).map(rowToNotification);
+  const partial = rows.length > boundedLimit;
+  const last = signals.at(-1);
 
   if (markRead && signals.length > 0) {
     const now = utcNow();
@@ -102,7 +111,17 @@ export function getNotifications(
     }
   }
 
-  return { count: signals.length, signals, unread_only: unreadOnly };
+  return { count: signals.length, signals, unread_only: unreadOnly, partial, partialReasons: partial ? ['limit'] : [],
+    ...(partial && last ? { next: { list: { operation: 'agent_signal' as const, request: {
+      action: 'list', agent_id: agentId,
+      ...(scope.workspace_path ? { workspace_path: scope.workspace_path } : {}),
+      ...(scope.artifact ? { artifact: scope.artifact } : {}),
+      ...(scope.repo ? { repo: scope.repo } : {}), ...(scope.ref ? { ref: scope.ref } : {}),
+      ...(threadId ? { thread_id: threadId } : {}),
+      kinds, signal_id: signalIds, unread_only: unreadOnly, mark_read: markRead, limit: boundedLimit,
+      cursor: encodeSignalCursor(last.created_at, last.signal_id),
+    } } } } : {}),
+  };
 }
 
 // ─── resolveNotification ───────────────────────────────────────────────────────

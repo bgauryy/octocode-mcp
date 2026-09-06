@@ -34,7 +34,7 @@ Explicit WORK:
 ```bash
 # run declared check
 <cli> work end --run-id <run> --agent-id "$OCTOCODE_AGENT_ID" --compact
-<cli> verify mark --run-id <run> --agent-id "$OCTOCODE_AGENT_ID" --message "passed" --compact
+<cli> verify mark --run-id <run> --agent-id "$OCTOCODE_AGENT_ID" --status SUCCESS --message "<observed command and passing result>" --compact
 ```
 
 TASK work uses `task submit`/`task release`; terminal `work end` is rejected. Successful `verify mark` closes the run and linked task. Failure closes them as failed.
@@ -44,5 +44,7 @@ If deliberately using `verify mark --all-pending`, scope it by workspace.
 For proven abandonment, mark the exact run `FAILED`; `verify audit` remains read-only.
 
 Presence/lock expiry never moves a live TASK run to PENDING. Task claim expiry is a separate atomic lifecycle that fails its attempt and returns the task to OPEN.
+
+Use `--status FAILED` for an observed failed check; leave unrun checks pending. Before finishing, run `verify audit --agent-id "$OCTOCODE_AGENT_ID" --workspace "$PWD"` in the same store and settle or disclose your remaining debt.
 
 Return to `SKILL.md`. Exit codes: **2** = lock conflict or wait timeout; **1** = verify debt / validation.

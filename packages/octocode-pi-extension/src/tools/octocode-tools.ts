@@ -16,21 +16,18 @@ import type { ToolDefinition } from '../types.js';
 
 export const DIRECT_TOOL_DESCRIPTIONS: Readonly<Record<string, string>> = Object.freeze({
   file: 'Create, edit, or delete files through one guarded mutation boundary. Prefer file over bash for mutations. edit uses stale/lost-update checks and diffs; write is atomic; delete rejects directories and rechecks before unlinking.',
-  bash: 'Run builds, tests, Git, and mechanical shell tasks with guarded write targets and per-command reasoning. Prefer file for ordinary file mutations; never for code search or file reads.',
+  bash: 'Run the Awareness CLI, builds, tests, Git, and mechanical shell tasks with guarded write targets and per-command reasoning. Prefer file for ordinary file mutations; never for code search or file reads.',
   readMedia: 'Read local media. image->pixels; video->metadata/frame/contactSheet; audio->metadata/waveform/spectrogram. Read-only—use media to create or transform.',
   media: 'Create or transform media. Render image/PDF from SVG, HTML, Markdown, or images; make GIFs, trim clips, extract audio, or convert formats. Writes are path-guarded; use readMedia for inspection.',
   runFfmpeg: 'Run advanced ffmpeg or ffprobe argv directly with workspace path guards, timeout, cancellation, and progress. Prefer readMedia and media for standard operations. Use for filter_complex, loudnorm, or VMAF.',
   web: 'Fetch a URL or search the web for docs, releases, errors, and info outside the repository. Prefer repository/MCP tools for code evidence.',
   chromeDebug: 'Inspect/automate Chrome via CDP: DOM, console, network, screenshots, performance, storage, security, coverage, or raw Domain.method calls. Use agent profile:browser for multi-turn browser work.',
-  agent: 'Spawn/manage researcher, planner, architect, browser, or custom workers. Spawn first; use agentId later. Researcher/planner/architect use MCPTool for repository research; architect uses bash only for tests/debugging.',
+  agent: 'Spawn/manage researcher, planner, architect, browser, or custom workers. Spawn first; use agentId later. Workers use MCPTool for repository research and the harness Awareness CLI for coordination; other shell access follows their role.',
   callTool: 'Reuse a verified dynamic tool, or propose/create/fix/delete one after approval. Research existing tools first. Use only for small reusable deterministic capabilities—not trivial shell one-liners or multi-step workflows.',
   skill: 'Load an installed Agent Skill, or list/manage reusable dynamic workflow skills. Load a matching skill BEFORE acting. type:load for installed skills; type:call for dynamic lifecycle.',
   plan: 'Maintain a visible compaction-safe checklist. Use for multi-step/risky/shared work; skip obvious one-step tasks. Consequential RFCs need review then Start; shared completion needs a check receipt.',
   localServer: 'Serve inspected local static artifacts on a shared 127.0.0.1 server. Use for HTML plans/designs/reports; ask before opening a browser. Unmount when done.',
   askUser: 'Ask one genuine decision question using options, multi-select, free text, or fields. Mark the safe default recommended; ordinary conversation does not need this tool.',
-  memory: 'Recall, record, review, suggest, or forget durable Awareness learning. Record only verified reusable lessons, never secrets, routine status, or facts owned by code/docs.',
-  lock: 'Acquire, wait for, or release an exceptional file lock. Ordinary mergeable edits rely on automatic peer checks and do not need a lock.',
-  message: 'Send or read small cross-agent coordination messages for overlap, blockers, or decisions. Do not use as routine status ceremony.',
   MCPTool: 'Use automatically discovered MCP tools; prefer server:"octocode" over bash for code search/file reads. Describe unfamiliar tools before their first call. Supports stdio and Streamable HTTP.',
 });
 

@@ -74,7 +74,8 @@ function linkedPaths(text) {
   while ((m = rx.exec(text))) {
     const raw = (m[1] || m[3]).split('#')[0].trim();
     const cleaned = raw.split(/\s+/)[0].replace(/[.,;:]$/, '');
-    if (!cleaned.includes('*')) hits.push(cleaned);
+    // Explicit template placeholders describe a path the reader supplies, not a shipped route.
+    if (!cleaned.includes('*') && !/<[^>]+>/.test(cleaned)) hits.push(cleaned);
   }
   return [...new Set(hits.filter(Boolean))];
 }
@@ -396,6 +397,21 @@ Run the hook test and stop.
     rmSync(join(skillDir, 'unused-probe.txt'));
 
     mkdirSync(join(skillDir, 'references'));
+    const templateRef = join(skillDir, 'references', 'templates.md');
+    const lobby = readFileSync(join(skillDir, 'SKILL.md'), 'utf8');
+    writeFileSync(templateRef, '# Templates\n\nLoad when choosing a hook directory. Use `scripts/<hook-directory>/` as a schematic path.\n\nNext: return to `SKILL.md`.\n');
+    writeFileSync(join(skillDir, 'SKILL.md'), lobby + '\nWhen writing templates, read `references/templates.md`.\n');
+    const templateFindings = checkSkill(skillDir).findings;
+    if (templateFindings.some((finding) => finding.code === 'missing-route')) {
+      throw new Error(`schematic-route regression: ${JSON.stringify(templateFindings)}`);
+    }
+    writeFileSync(templateRef, '# Templates\n\nLoad when checking real routes. Run `scripts/missing-hook.sh`.\n\nNext: return to `SKILL.md`.\n');
+    const missingRouteFindings = checkSkill(skillDir).findings;
+    if (!missingRouteFindings.some((finding) => finding.code === 'missing-route')) {
+      throw new Error(`required-route regression: ${JSON.stringify(missingRouteFindings)}`);
+    }
+    rmSync(templateRef);
+    writeFileSync(join(skillDir, 'SKILL.md'), lobby);
     const outsidePath = '../' + '../shared.md';
     writeFileSync(join(skillDir, 'references', 'outside.md'), `# Outside\n\nLoad when testing. Why: regression.\n\nRead \`${outsidePath}\`.\n\nNext: return to \`SKILL.md\`.\n`);
     writeFileSync(join(skillDir, 'SKILL.md'), readFileSync(join(skillDir, 'SKILL.md'), 'utf8') + '\nWhen testing paths, load `references/outside.md`.\n');

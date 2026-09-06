@@ -13,7 +13,7 @@ import { registerAgent } from '../src/agents.js';
 import { resolveDbPath } from '../src/db-runtime.js';
 import { normalizeWorkspacePath } from '../src/git.js';
 import type { WorkPeer } from '../src/types/work-maintenance.js';
-import { INTERNAL_HOOK_HOST, agentId, agentName, artifact, resolveHookPath, workspace } from './hook-payload.js';
+import { INTERNAL_HOOK_HOST, agentHost, agentId, agentName, agentVendor, artifact, resolveHookPath, workspace } from './hook-payload.js';
 import { overlapChangeSignal } from './hook-signals.js';
 
 export function peerStateDir(workspacePath = process.cwd()): string {
@@ -79,6 +79,8 @@ export function registerHookAgent(database: DatabaseSync, payload: Record<string
     registerAgent(database, {
       agentId: agentId(payload),
       agentName: agentName(payload),
+      agentVendor: agentVendor(payload) ?? undefined,
+      agentHost: agentHost(payload) ?? undefined,
       workspacePath: workspace(payload),
       artifact: artifact(payload),
       context: hookAgentContext(payload, hookName),

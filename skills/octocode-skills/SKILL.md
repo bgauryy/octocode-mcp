@@ -14,7 +14,7 @@ Workspace output contract: chat-only recommendations stay in chat. New reviews, 
 - `SKILL.md` owns workflows and routes; each reference owns one concept. List every reference and runnable script in the lobby with its use condition.
 - Inspect the real skill before quoting, judging, or installing it. Identify candidates by path and require authority for writes.
 - Stop discovery when one fit is clear, further angles add no evidence, a winner needs user judgment, or approval is pending.
-- Ship a standalone folder: local file references stay inside it, and every shipped file is reachable from the lobby, README, or another used file. Remove duplicate, development-only metadata, probe, and scratch files; name optional sibling skills without depending on their files.
+- Ship a standalone folder: local file references stay inside it, and every shipped file is reachable from the lobby, README, or another used file. Remove duplicate, development-only metadata, probe, and scratch files. Core commands must work alone; optional sibling integrations must declare setup and pass isolated absent/present dependency checks.
 
 ## Smart routes — load only what the current step needs
 - At UNDERSTAND, identify the requested skill operation, scope, source, and write authority before choosing a route.

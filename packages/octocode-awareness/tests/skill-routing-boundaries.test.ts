@@ -48,21 +48,21 @@ describe('skill routing boundaries', () => {
     expect(text).toContain('NOTICE → SCOPE/IDENTITY → INSPECT → ACT → OBSERVE → SETTLE/VERIFY → LEARN');
     expect(text).toContain('@octocodeai/octocode-awareness');
     expect(text).toContain('npx @octocodeai/octocode-awareness');
-    expect(text).toMatch(/public runner[^.]*npx @octocodeai\/octocode-awareness/i);
-    expect(text).toContain('npx @octocodeai/octocode-awareness docs list --compact');
+    expect(text).toMatch(/runner[^.]*npx @octocodeai\/octocode-awareness/i);
+    expect(text).toContain('`guide` lists all commands');
     expect(text).toContain('npx @octocodeai/octocode-awareness skill install --platform shared --project-dir "$PWD" --dry-run');
     expect(text).toContain('skill install --help');
     expect(text).not.toContain('npx -p @octocodeai/octocode-awareness octocode-awareness');
     expect(text).not.toContain('node packages/octocode-awareness/out/octocode-awareness.js');
-    expect(text).toMatch(/default durable Awareness state is[\s\S]*\$OCTOCODE_HOME\/awareness\/awareness\.sqlite3/i);
-    expect(text).toMatch(/repository scope uses[\s\S]*\.octocode\/awareness\.sqlite3/);
+    expect(text).toMatch(/Default:[\s\S]*\$OCTOCODE_HOME\/awareness\/awareness\.sqlite3/i);
+    expect(text).toMatch(/repo scope:[\s\S]*\.octocode\/awareness\.sqlite3/);
     expect(text).toContain('$OCTOCODE_HOME/awareness/awareness.sqlite3');
-    expect(text).toMatch(/never uses the Agent control or runtime databases/i);
+    expect(text).toMatch(/Never use Agent runtime databases/i);
     expect(text).not.toMatch(/\.octocode\/(?:octocode|agent)\.sqlite3/);
     expect(text).not.toMatch(/octocode-awareness-lite|\/lite\b|Awareness Lite/);
-    expect(text).toMatch(/## Operational rules[\s\S]*meaningful shared-state signal/i);
-    expect(text).toContain('observed receipts');
-    expect(text).toMatch(/CLI[^.]*operational state[^.]*observed records/i);
+    expect(text).toMatch(/## Operational rules[\s\S]*Attend when shared state matters/i);
+    expect(text).toContain('Reuse native run/task IDs and receipts');
+    expect(awarenessSkillFile('references/agent-cheatsheet.md')).toMatch(/CLI[^.]*operational state[^.]*observed records/i);
     expect(text).toContain('npx @octocodeai/octocode-awareness attend');
     expect(text).toContain('scripts/install.mjs');
     expect(text).toMatch(/overlap is advisory/i);
@@ -77,18 +77,20 @@ describe('skill routing boundaries', () => {
 
   it('teaches the complete agent lifecycle without assigning judgment to hooks', () => {
     const text = skill('octocode-awareness');
-    for (const step of ['meaningful shared-state signal', 'Declare bounded work', 'Run the declared check', 'leave a handoff']) {
+    for (const step of ['Attend when shared state matters', 'Declare paths/check if the host has not', 'Run the check', 'leave a handoff']) {
       expect(text).toContain(step);
     }
-    expect(text).toMatch(/CLI[^.]*advice[^.]*observed records/i);
-    expect(text).toMatch(/Hooks[^.]*guard edits[^.]*changed pointers/i);
-    expect(text).toMatch(/host owns context[^.]*tools[^.]*budgets[^.]*workers/i);
-    expect(text).toMatch(/Unknown sensors stay unknown[^.]*never (?:invent|infer)/i);
-    expect(text).toMatch(/Advice neither authorizes action nor proves success/i);
-    expect(text).toMatch(/unchanged[^.]*continue authorized work[^.]*not recursive attending/i);
-    expect(text).toMatch(/exclusive lock only (?:for )?unsafe, non-mergeable state/i);
+    const detail = awarenessSkillFile('references/agent-cheatsheet.md');
+    expect(text).toContain('references/agent-cheatsheet.md');
+    expect(detail).toMatch(/CLI[^.]*advice[^.]*observed records/i);
+    expect(detail).toMatch(/Hooks[^.]*guard edits[^.]*changed pointers/i);
+    expect(detail).toMatch(/host owns context[^.]*tools[^.]*budgets[^.]*workers/i);
+    expect(detail).toMatch(/Unknown sensors stay unknown[^.]*never (?:invent|infer)/i);
+    expect(detail).toMatch(/Advice\s+neither authorizes action nor proves success/i);
+    expect(text).toMatch(/Unchanged state needs no repeated attending/i);
+    expect(text).toMatch(/reserve exclusivity for unsafe non-mergeable state/i);
     expect(awarenessSkillFile('references/hooks.md')).toMatch(/do not choose tasks or replace\s+`attend`\/verify/i);
-    expect(text).toMatch(/search hits, expiry, memories, and peer notes are leads, not proof/i);
+    expect(detail).toMatch(/Search hits, memories, messages, TTLs, and peer claims are leads, not proof/i);
   });
 
   it('shows a lean overview of every Awareness feature family', () => {

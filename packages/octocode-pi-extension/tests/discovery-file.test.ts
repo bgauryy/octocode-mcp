@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, test } from 'vitest';
-import { workspaceAgentRoot } from '@octocodeai/agent-contracts/paths';
+import { extensionWorkspaceRoot } from '../src/extension-paths.js';
 import { buildDiscoverySnapshot, getDiscoveryFilePath, writeDiscoveryFile } from '../src/tools/discovery-file.js';
 import { discoverMcpConfigs, discoverMcpSystem } from '../src/tools/mcp-discovery.js';
 import { __test__ as mcpTestHooks } from '../src/tools/mcp-tool.js';
@@ -111,7 +111,7 @@ test('discoverMcpConfigs inventories official and compatibility MCP locations wi
   const projectAgents = path.join(cwd, '.agents', 'mcp.json');
   const projectAntigravity = path.join(cwd, '.agents', 'mcp_config.json');
   const projectAgent = path.join(cwd, '.agent', 'mcp.json');
-  const projectOctocode = path.join(workspaceAgentRoot(cwd, octocodeHome), 'mcp', 'servers.json');
+  const projectOctocode = path.join(extensionWorkspaceRoot(cwd, octocodeHome), 'mcp', 'servers.json');
   const userClaude = path.join(homeDir, '.claude.json');
   const userClaudeCompat = path.join(homeDir, '.claude', 'mcp.json');
   const userCursor = path.join(homeDir, '.cursor', 'mcp.json');
@@ -166,6 +166,7 @@ test('discoverMcpConfigs inventories official and compatibility MCP locations wi
     projectOctocode,
     userOctocode,
   ]);
+  assert.deepEqual(new Set(configs.filter((config) => config.active).map((config) => config.path)), expectedActive);
   for (const config of configs) {
     assert.equal(config.active, expectedActive.has(config.path), `${config.path} active classification`);
   }
@@ -234,4 +235,28 @@ test('writeDiscoveryFile never writes into an invalid workspace path', async () 
   assert.ok(filePath);
   assert.equal(filePath.startsWith('/nonexistent-root-path'), false);
   assert.match(filePath, /\/extension\/workspaces\//);
+});
+
+
+test('Pi discovery uses canonical admission and keeps native Pi imports disabled', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-mcp-admission-'));
+  const cwd = path.join(root, 'workspace');
+  const homeDir = path.join(root, 'home');
+  try {
+    const nativePi = path.join(cwd, '.pi', 'mcp.json');
+    const linked = path.join(cwd, '.cursor', 'mcp.json');
+    const oversized = path.join(homeDir, '.agents', 'mcp.json');
+    write(nativePi, JSON.stringify({ mcpServers: { native: { command: 'native-mcp' } } }));
+    fs.mkdirSync(path.dirname(linked), { recursive: true });
+    fs.symlinkSync(nativePi, linked);
+    write(oversized, ' '.repeat(1024 * 1024 + 1));
+    const result = discoverMcpSystem(cwd, { homeDir });
+    assert.equal(result.definitions.length, 1);
+    assert.equal(result.definitions[0]?.name, 'pi.native');
+    assert.equal(result.definitions[0]?.config.disabled, true);
+    assert.match(result.configs.find((config) => config.path === linked)?.error ?? '', /non-symbolic-link/);
+    assert.match(result.configs.find((config) => config.path === oversized)?.error ?? '', /exceeds/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

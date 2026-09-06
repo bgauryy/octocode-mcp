@@ -11,7 +11,8 @@ import { normalizeArtifact, utcNow, normalizeTags, normalizeReferences, normaliz
 import { fillScope } from './git.js';
 import { hasFts, ftsTermsForRow, replaceMemoryReferences } from './db-maintenance.js';
 import type { InsertMemoryParams, InsertMemoryResult } from './types/identity-memory.js';
-import { canonicalMemoryInstant, findSimilarMemories, LABEL_HALF_LIFE_DAYS } from './memory-scoring.js';
+import { canonicalMemoryInstant, LABEL_HALF_LIFE_DAYS } from './memory-scoring.js';
+import { findSimilarMemories } from './memory-search.js';
 
 // ─── bumpAccess ───────────────────────────────────────────────────────────────
 

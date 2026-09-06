@@ -44,7 +44,7 @@ export function readExternalAwarenessStatus(input: { workspace: string; agentId?
       .filter((task) => !seen.has(task.taskId) && Boolean(seen.add(task.taskId)));
     const newest = aw.listMessages({ includeRead: true, limit: 1 })[0];
     const inbox = input.agentId
-      ? aw.listMessages({ agentId: input.agentId, includeRead: false, limit: 100 })
+      ? aw.listMessages({ agentId: input.agentId, includeRead: false, limit: 1 })
       : [];
     const inbound = inbox[0];
     return {
@@ -58,7 +58,7 @@ export function readExternalAwarenessStatus(input: { workspace: string; agentId?
       messageCount: status.messages,
       taskActivities,
       ...(newest ? { lastMessage: { from: newest.fromAgentId, to: newest.toAgentId ?? 'all', preview: preview(newest.text || newest.topic || '') } } : {}),
-      ...(input.agentId ? { unreadInbox: inbox.length } : {}),
+      ...(input.agentId ? { unreadInbox: aw.countMessages({ agentId: input.agentId, includeRead: false }) } : {}),
       ...(inbound ? { lastInbound: { from: inbound.fromAgentId, preview: preview(inbound.text || inbound.topic || '') } } : {}),
     };
   } finally {

@@ -1,9 +1,10 @@
+import { AGENT_APPLICATION_ID } from '@octocodeai/agent-contracts/schema';
+import { AWARENESS_APPLICATION_ID } from './storage-scope.js';
 import { createHash } from 'node:crypto';
 import type { TableInfoRow } from './types/work-maintenance.js';
-import { readSchemaIdentity } from './db-runtime.js';
 import { DatabaseSync } from '@octocodeai/agent-contracts/sqlite';
-import type { SchemaIdentity } from './db-runtime.js';
 import { FTS_SCHEMA_DDL, SCHEMA_DDL, SCHEMA_INDEX_DDL } from './db-schema.js';
+import { WORKER_LIFECYCLE_DDL } from './db-worker-schema.js';
 
 export function tableColumns(db: DatabaseSync, tableName: string): Set<string> {
   const rows = db.prepare(`PRAGMA table_info(${tableName})`).all() as unknown as TableInfoRow[];
@@ -17,7 +18,7 @@ export interface ColumnInfo {
   dflt_value: string | null;
 }
 
-export let _canonicalColumns: Map<string, ColumnInfo[]> | undefined;
+let _canonicalColumns: Map<string, ColumnInfo[]> | undefined;
 
 /** Desired columns per table, derived from the executable DDL. */
 export function canonicalColumns(): Map<string, ColumnInfo[]> {
@@ -73,38 +74,8 @@ export function readSchemaObjects(db: DatabaseSync): SchemaObject[] {
   }));
 }
 
-export function readCanonicalModuleSchemaObjects(db: DatabaseSync): SchemaObject[] {
-  const canonical = new DatabaseSync(':memory:');
-  try {
-    canonical.exec(SCHEMA_DDL);
-    canonical.exec(SCHEMA_INDEX_DDL);
-    const owned = new Set(readSchemaObjects(canonical).map(({ type, name }) => `${type}:${name}`));
-    return readSchemaObjects(db).filter(({ type, name }) => owned.has(`${type}:${name}`));
-  } finally {
-    canonical.close();
-  }
-}
-
 export function schemaObjectsFingerprint(objects: SchemaObject[]): string {
   return createHash('sha256').update(JSON.stringify(objects)).digest('hex');
-}
-
-export const _canonicalSchemaFingerprints = new Map<boolean, string>();
-
-export function canonicalSchemaFingerprint(includeFts: boolean): string {
-  const cached = _canonicalSchemaFingerprints.get(includeFts);
-  if (cached) return cached;
-  const canonical = new DatabaseSync(':memory:');
-  try {
-    canonical.exec(SCHEMA_DDL);
-    canonical.exec(SCHEMA_INDEX_DDL);
-    if (includeFts) canonical.exec(FTS_SCHEMA_DDL);
-    const fingerprint = schemaObjectsFingerprint(readSchemaObjects(canonical));
-    _canonicalSchemaFingerprints.set(includeFts, fingerprint);
-    return fingerprint;
-  } finally {
-    canonical.close();
-  }
 }
 
 export function assertCanonicalRelationContract(
@@ -127,25 +98,84 @@ export function assertCanonicalRelationContract(
 }
 
 export function assertCanonicalSchemaFingerprint(db: DatabaseSync): void {
+  const objects = readSchemaObjects(db);
   const canonical = new DatabaseSync(':memory:');
   try {
     canonical.exec(SCHEMA_DDL);
     canonical.exec(SCHEMA_INDEX_DDL);
-    const ownedKeys = new Set(readSchemaObjects(canonical).map(({ type, name }) => `${type}:${name}`));
-    const unexpectedTrigger = readSchemaObjects(db).find(({ type, name }) => type === 'trigger' && !ownedKeys.has(`${type}:${name}`));
-    if (unexpectedTrigger) {
-      throw new Error(`canonical schema fingerprint mismatch (unexpected trigger ${unexpectedTrigger.name})`);
+    if (objects.some(({ name }) => name === 'memories_fts')) canonical.exec(FTS_SCHEMA_DDL);
+    if (objects.some(({ name }) => name === 'worker_lifecycle_events')) canonical.exec(WORKER_LIFECYCLE_DDL);
+    const expectedFingerprint = schemaObjectsFingerprint(readSchemaObjects(canonical));
+    const actualFingerprint = schemaObjectsFingerprint(objects);
+    if (actualFingerprint !== expectedFingerprint) {
+      throw new Error(`canonical schema fingerprint mismatch (expected ${expectedFingerprint}, got ${actualFingerprint})`);
     }
   } finally {
     canonical.close();
   }
-  const objects = readCanonicalModuleSchemaObjects(db);
-  const includeFts = objects.some(({ type, name }) => type === 'table' && name === 'memories_fts');
-  const expectedFingerprint = canonicalSchemaFingerprint(includeFts);
-  const actualFingerprint = schemaObjectsFingerprint(objects);
-  if (actualFingerprint !== expectedFingerprint) {
-    throw new Error(
-      `canonical schema fingerprint mismatch (expected ${expectedFingerprint}, got ${actualFingerprint})`,
-    );
+}
+
+export interface SchemaIdentity {
+  applicationId: number;
+  relations: Array<{ name: string; type: string }>;
+}
+
+export type SchemaState = 'fresh' | 'canonical';
+
+export function readSchemaIdentity(db: DatabaseSync): SchemaIdentity {
+  const application = db.prepare('PRAGMA application_id').get() as { application_id: number };
+  const relations = db.prepare(`
+    SELECT name, type
+    FROM sqlite_schema
+    WHERE type IN ('table', 'view')
+      AND name NOT LIKE 'sqlite_%'
+      AND name NOT GLOB 'memories_fts_*'
+      AND name NOT GLOB 'memory_fts_*'
+    ORDER BY name
+  `).all() as Array<{ name: string; type: string }>;
+  return {
+    applicationId: application.application_id ?? 0,
+    relations,
+  };
+}
+
+export function inspectSchemaState(db: DatabaseSync): SchemaState {
+  const identity = readSchemaIdentity(db);
+  const expected = new Set(canonicalColumns().keys());
+  const relationNames = new Set(identity.relations.map(({ name }) => name));
+  const canonicalCount = [...expected].filter((name) => relationNames.has(name)).length;
+  const knownAwarenessHost = identity.relations.every(({ name, type }) => (
+    type === 'table' && (expected.has(name) || name === 'memories_fts' || name === 'worker_lifecycle_events')
+  ));
+  if (identity.applicationId === AWARENESS_APPLICATION_ID || identity.applicationId === 0) {
+    if (identity.relations.length === 0) return 'fresh';
+    if (!knownAwarenessHost) {
+      const names = identity.relations.map(({ name }) => name).join(', ');
+      throw new Error(`refusing unrecognized or unrelated Awareness SQLite store; database consolidation may be required; relations: ${names}`);
+    }
+    if (canonicalCount !== expected.size) {
+      throw new Error('Awareness schema upgrade required; convert this database into a new destination with awareness database consolidate. The source database has not been changed.');
+    }
+    assertCanonicalRelationContract(db, identity.relations);
+    assertCanonicalSchemaFingerprint(db);
+    return 'canonical';
+  }
+  if (identity.applicationId === AGENT_APPLICATION_ID) {
+    throw new Error(`refusing Agent SQLite store; Awareness requires application_id ${AWARENESS_APPLICATION_ID}`);
+  }
+  throw new Error(
+    `refusing foreign Awareness application_id ${identity.applicationId}; expected ${AWARENESS_APPLICATION_ID}`,
+  );
+}
+
+export function assertDatabaseIntegrity(db: DatabaseSync): void {
+  const integrity = db.prepare('PRAGMA integrity_check').all() as Array<{ integrity_check: string }>;
+  const failures = integrity.filter(({ integrity_check }) => integrity_check !== 'ok');
+  if (failures.length > 0) {
+    throw new Error(`canonical integrity_check failed: ${failures.map((row) => row.integrity_check).join('; ')}`);
+  }
+  const foreignKeys = db.prepare('PRAGMA foreign_key_check').all();
+  if (foreignKeys.length > 0) {
+    throw new Error(`canonical foreign_key_check failed with ${foreignKeys.length} row(s)`);
   }
 }

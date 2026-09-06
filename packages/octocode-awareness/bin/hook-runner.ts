@@ -4,9 +4,9 @@ export type { HookControlOutcome } from './hook-payload.js';
 export { hookContextEnvelope } from './hook-payload.js';
 export { hookBlockOutcome } from './hook-payload.js';
 export { hookCommandForHostEvent } from './hook-payload.js';
-import { HookRunOptions, INTERNAL_HOOK_HOST, INTERNAL_SKILL_ROOT, hookEventName, normalizeShellHookHost, parsePayload, readStdin, shellHookHost, workspace } from './hook-payload.js';
+import { HookRunOptions, INTERNAL_HOOK_HOST, INTERNAL_SKILL_ROOT, agentId, extractFiles, hookEventName, normalizeShellHookHost, parsePayload, readStdin, shellHookHost, workspace } from './hook-payload.js';
 import { runPostEdit, runPreEdit } from './hook-edit-events.js';
-import { runNotifyDeliver, runSessionCompact, runSessionEnd, runStopVerify } from './hook-lifecycle.js';
+import { isDigestPreviewDue, runNotifyDeliver, runSessionCompact, runSessionEnd, runStopVerify } from './hook-lifecycle.js';
 import { recordHookReceiptBestEffort } from '../src/hook-receipts.js';
 import { AwarenessFeatureConfig, DEFAULT_AWARENESS_CONFIG, loadAwarenessConfig } from '../src/awareness-config.js';
 import {
@@ -63,13 +63,21 @@ export async function runHookCommand(
   }
   const profile = configuredProfile as AwarenessHookProfile;
   if (!hookCommandEnabled(profile, command)) return 0;
+  // Non-write tool events need no participant identity or coordination state.
+  if ((command === 'pre-edit' || command === 'post-edit') && extractFiles(payload).length === 0) return 0;
+  try {
+    agentId(payload);
+  } catch (error) {
+    console.error(`octocode-awareness hook identity error: ${(error as Error).message}`);
+    return 1;
+  }
   const receipt = (status: 'success' | 'failure') => recordHookReceiptBestEffort({
     workspacePath: workspace(payload) ?? process.cwd(),
     host: shellHookHost(payload),
     event: hookEventName(payload) ?? command,
     status,
   });
-  if (command === 'notify-deliver' && hookStateUnchanged(payload)) {
+  if (command === 'notify-deliver' && hookStateUnchanged(payload) && !isDigestPreviewDue(payload, features)) {
     receipt('success');
     recordHookChangeState(payload);
     return 0;

@@ -52,13 +52,17 @@ describe('production guidance contract', () => {
     expect(helpData).toContain('DEFAULT POLICY');
     expect(helpData).toContain('attend -> work start -> work end -> verify mark -> verify audit');
     expect(read(resolve(SKILL_ROOT, 'SKILL.md'))).toContain('references/octocode.md');
-    expect(read(resolve(PACKAGE_ROOT, 'src/coordination/external-policy.ts'))).toContain('`npx octocode` for local, GitHub, and npm research');
+    const policy = read(resolve(PACKAGE_ROOT, 'src/coordination/external-policy.ts'));
+    expect(policy).toContain('local and external code research');
+    expect(policy).toContain('npx octocode');
+    expect(policy).toContain('octocode-mcp');
+    expect(policy).toContain('GitHub repositories and history, and npm packages');
     expect(read(resolve(SKILL_ROOT, 'SKILL.md'))).toContain('After verification, reflect reusable lessons');
     const octocodeReference = read(resolve(SKILL_ROOT, 'references/octocode.md'));
-    for (const tool of ['ghSearch', 'ghGetFileContent', 'ghSearchPullRequests', 'ghSearchIssues', 'ghSearchCommits', 'ghListReleases', 'ghSearchDiscussions', 'ghCloneRepo', 'npmSearch', 'localSearch', 'localAnalyzeGraph', 'localGetFileContent', 'lspGetSemantics']) {
+    for (const tool of ['ghSearch', 'ghGetFileContent', 'ghSearchHistory', 'ghGetHistoryItem', 'ghCloneRepo', 'npmSearch', 'localSearch', 'localAnalyzeGraph', 'localGetFileContent', 'lspGetSemantics']) {
       expect(octocodeReference, `missing canonical tool ${tool}`).toContain(tool);
     }
-    expect(octocodeReference).not.toMatch(/ghSearchCode|ghSearchRepos|ghViewRepoStructure|localSearchCode|localFindFiles|localViewStructure/);
+    expect(octocodeReference).not.toMatch(/ghSearchCode|ghSearchRepos|ghViewRepoStructure|localSearchCode|localFindFiles|localViewStructure|ghSearchPullRequests|ghSearchIssues|ghSearchCommits|ghListReleases|ghSearchDiscussions/);
   });
   it('routes every skill reference explicitly and removes mutating compatibility setup', () => {
     const skill = read(resolve(SKILL_ROOT, 'SKILL.md'));

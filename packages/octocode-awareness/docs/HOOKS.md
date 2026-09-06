@@ -105,9 +105,12 @@ that the exact hook runs, and that model-visible context or continuation arrives
 
 ## Identity And Run Resolution
 
-Identity order: host payload agent, `OCTOCODE_AGENT_ID`, payload session, then a
-silent deterministic host/workspace fallback. A host child ID prevents subagents collapsing into
-their parent; set one stable environment ID so main-agent CLI and hook work agree.
+Identity order: host payload agent, `OCTOCODE_AGENT_ID`, then payload session.
+Payload agent and session IDs also accept nested tool-input fields. A missing stable
+identity is rejected before agent registration or work presence; names, vendors,
+hosts, and workspace paths do not supply a fallback identity. A host child ID
+prevents subagents collapsing into their parent. Reuse one stable environment ID
+for each session so its CLI and hook work agree, and give every child a distinct ID.
 
 Pre-edit resolves the run in this order:
 

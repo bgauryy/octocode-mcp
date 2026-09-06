@@ -868,12 +868,9 @@ export function resolveRfcPath(workspace: string, input: string): RfcResolution 
   }
 }
 
-// Turns since the plan was last mutated, per workspace. Reset to 0 on every mutation;
-// bumped once per turn from before_agent_start. Powers the stale-plan nudge.
+// Runtime observation for the plan read model, reset on mutation and bumped
+// once per turn from before_agent_start. Idle turns do not trigger a nudge.
 const turnsSinceUpdate = new Map<string, number>();
-
-/** After this many turns with no plan update, the addendum nudges the agent to update or clear it. */
-export const STALE_PLAN_TURNS = 10;
 
 function markUpdated(cwd: string): void {
   turnsSinceUpdate.set(cwd, 0);

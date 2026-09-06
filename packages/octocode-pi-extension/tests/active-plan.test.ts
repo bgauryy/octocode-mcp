@@ -8,7 +8,7 @@ import { Type } from 'typebox';
 import type { ToolDefinition } from '../src/types.js';
 import {
   setPlan, addStep, startStep, completeStep, clearPlan, getPlan,
-  bumpPlanTurn, STALE_PLAN_TURNS, readPersistedPlanForTests, depsMet, displayStatus,
+  bumpPlanTurn, readPersistedPlanForTests, depsMet, displayStatus,
   activePlanScope, adoptPlanFromBranch, setPlanEntryAppender, PLAN_ENTRY_TYPE,
   getPlanRfc, setPlanRfc, resolveRfcPath, readPersistedRfcForTests,
   getPlanDecisions, addPlanDecision, setPlanDecisions, readPersistedDecisionsForTests,
@@ -330,7 +330,7 @@ test('idle turns do not inject workflow nudges', () => {
   const cwd = '/tmp/plan-stale-ws';
   setPlan(cwd, ['a', 'b']);
   const before = renderActivePlanAddendum(cwd);
-  for (let i = 0; i < STALE_PLAN_TURNS; i++) bumpPlanTurn(cwd);
+  for (let i = 0; i < 10; i++) bumpPlanTurn(cwd);
   assert.equal(renderActivePlanAddendum(cwd), before);
   // Any mutation resets the staleness counter.
   completeStep(cwd, 1);

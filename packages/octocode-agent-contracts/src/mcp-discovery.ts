@@ -50,6 +50,8 @@ export interface McpDiscoveryResult {
 export interface DiscoverMcpConfigOptions {
   homeDir?: string;
   octocodeHome?: string;
+  /** Host-owned workspace storage; defaults to the Agent workspace root. */
+  workspaceRoot?: (cwd: string, octocodeHome: string) => string;
 }
 
 interface Candidate {
@@ -185,6 +187,11 @@ function parseToml(text: string): JsonRecord {
       if (currentName && !isRecord(servers[currentName])) servers[currentName] = {};
       continue;
     }
+    if (line.startsWith('[')) {
+      currentName = undefined;
+      nested = undefined;
+      continue;
+    }
     if (!currentName) continue;
     const assignment = line.match(/^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/);
     if (!assignment) continue;
@@ -211,10 +218,11 @@ function roots(options: string | DiscoverMcpConfigOptions | undefined): { homeDi
 
 function candidates(cwd: string, options?: string | DiscoverMcpConfigOptions): Candidate[] {
   const { homeDir, octocodeHome } = roots(options);
+  const workspaceRoot = typeof options === 'object' ? options.workspaceRoot ?? workspaceAgentRoot : workspaceAgentRoot;
   const project = (relative: string, host: string, format: 'json' | 'toml' = 'json'): Candidate => ({ path: path.join(cwd, relative), host, scope: 'project', format, active: false });
   const user = (relative: string, host: string, format: 'json' | 'toml' = 'json'): Candidate => ({ path: path.join(homeDir, relative), host, scope: 'user', format, active: false });
   return [
-    { path: path.join(workspaceAgentRoot(cwd, octocodeHome), 'mcp', 'servers.json'), host: 'octocode', scope: 'project', format: 'json', active: true, allowRootServers: true },
+    { path: path.join(workspaceRoot(cwd, octocodeHome), 'mcp', 'servers.json'), host: 'octocode', scope: 'project', format: 'json', active: true, allowRootServers: true },
     project('.pi/mcp.json', 'pi'), project('.pi/agent/mcp.json', 'pi'),
     project('.mcp.json', 'claude'), project('.claude/mcp.json', 'claude'),
     project('.cursor/mcp.json', 'cursor'), project('.codex/config.toml', 'codex', 'toml'),
@@ -246,6 +254,14 @@ function importedName(host: string, scope: 'project' | 'user', name: string, use
   return `${scoped}.${suffix}`;
 }
 
+/** Shared admission for both discovery and active host configuration reads. */
+export function readMcpConfigText(filePath: string): string {
+  const stat = fs.lstatSync(filePath);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('MCP configuration must be a regular non-symbolic-link file');
+  if (stat.size > MAX_CONFIG_BYTES) throw new Error(`MCP configuration exceeds ${MAX_CONFIG_BYTES} bytes`);
+  return fs.readFileSync(filePath, 'utf8');
+}
+
 /** Discover common MCP configuration files and normalize foreign definitions without activating them. */
 export function discoverMcpSystem(cwd: string, options?: string | DiscoverMcpConfigOptions): McpDiscoveryResult {
   const configs: DiscoveredMcpConfig[] = [];
@@ -256,10 +272,7 @@ export function discoverMcpSystem(cwd: string, options?: string | DiscoverMcpCon
     if (seenPaths.has(candidate.path) || !fs.existsSync(candidate.path)) continue;
     seenPaths.add(candidate.path);
     try {
-      const stat = fs.lstatSync(candidate.path);
-      if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('MCP configuration must be a regular non-symbolic-link file');
-      if (stat.size > MAX_CONFIG_BYTES) throw new Error(`MCP configuration exceeds ${MAX_CONFIG_BYTES} bytes`);
-      const text = fs.readFileSync(candidate.path, 'utf8');
+      const text = readMcpConfigText(candidate.path);
       const containers = candidate.format === 'toml'
         ? [parseToml(text)]
         : jsonContainers(JSON.parse(text) as JsonRecord, candidate, cwd);

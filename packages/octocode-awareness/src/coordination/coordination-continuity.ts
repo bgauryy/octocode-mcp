@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import {
   effectiveCapabilityDecision,
   parseAgentEventEnvelopeV1,
@@ -314,9 +315,18 @@ export class AwarenessStore extends CoordinationPlanGraph {
     if (input.version !== 1 || !input.receiptId || !input.action || !input.resource || !input.createdAt) throw new Error('capability receipt is incomplete');
     const effective = effectiveCapabilityDecision(input.guards);
     if (effective !== input.effectiveDecision) throw new Error(`capability receipt decision must be ${effective}`);
-    this.db.prepare('INSERT INTO capability_receipts(receipt_id, workspace_path, receipt_json, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(receipt_id) DO NOTHING')
-      .run(input.receiptId, this.workspace, JSON.stringify(input), input.createdAt);
-    return input;
+    return this.writeTransaction(() => {
+      const result = this.db.prepare('INSERT INTO capability_receipts(receipt_id, workspace_path, receipt_json, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(receipt_id) DO NOTHING')
+        .run(input.receiptId, this.workspace, JSON.stringify(input), input.createdAt);
+      if (result.changes === 0) {
+        const existing = this.db.prepare('SELECT workspace_path, receipt_json FROM capability_receipts WHERE receipt_id = ?')
+          .get(input.receiptId) as { workspace_path: string; receipt_json: string } | undefined;
+        if (!existing || existing.workspace_path !== this.workspace || !isDeepStrictEqual(JSON.parse(existing.receipt_json), input)) {
+          throw new Error(`capability receipt ID conflict: ${input.receiptId}`);
+        }
+      }
+      return input;
+    });
   }
 
   createHarnessEvent<T>(params: { type: string; aggregateKind: string; aggregateId: string; aggregateRevision?: string; payload: T; sessionId?: string; correlationId?: string }): AgentEventEnvelopeV1<T> {

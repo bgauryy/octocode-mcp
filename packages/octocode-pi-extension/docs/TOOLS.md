@@ -5,7 +5,7 @@ parity oracle, `@octocodeai/pi-extension`. This is not the native `octocode-agen
 contract. The native product obtains live schemas and composes policy through its own
 runtime adapters.
 
-The 13 Octocode research tools are reached through the built-in `octocode` MCP server;
+The 10 Octocode research tools are reached through the built-in `octocode` MCP server;
 Pi-specific tools are implemented directly in `src/tools/`. Run
 `npx octocode tools <name> --scheme` before calling a research tool—the live schema is
 authoritative.
@@ -19,7 +19,7 @@ developer code map.
 
 ## Tool inventory
 
-The direct palette contains 17 extension-owned tools: 16 support tools and the guarded `bash` override. GitHub, local, LSP, and npm research tools are provided indirectly through the built-in `octocode` MCP server.
+The direct palette contains 14 extension-owned tools: 13 support tools and the guarded `bash` override. GitHub, local, LSP, and npm research tools are provided indirectly through the built-in `octocode` MCP server.
 
 | Family                   | Direct tools                             |
 | ------------------------ | ---------------------------------------- |
@@ -29,7 +29,6 @@ The direct palette contains 17 extension-owned tools: 16 support tools and the g
 | MCP                      | `MCPTool`                                |
 | Dynamic capabilities     | `callTool`, `skill`                      |
 | Planning and interaction | `plan`, `askUser`, `localServer`         |
-| Awareness                | `memory`, `lock`, `message`              |
 
 Every direct tool exposes a `queries` batch. Each query requires a non-empty `reasoning` string of at most 240 characters. A call accepts at most 100 queries and validates the full batch before side effects. Sequential mode executes in source order and stops on the first runtime failure. Tools that explicitly expose `queryRunType:"parallel"` overlap only their documented independent operations, run at most four queries concurrently by default, and still return results in source order. Successful batches return a compact receipt index followed by every child content block—including images—in source order; the receipt never replaces model-visible results. One-query calls preserve the underlying result details and rendering contract.
 
@@ -59,7 +58,7 @@ MCP call details likewise retain only block counts and status metadata; full tex
 structured content, and image bytes live solely in the bounded model content or
 its lossless spill artifact.
 
-The Awareness CLI remains the canonical backend diagnostics and recovery surface; it does not expand the Pi palette.
+The Awareness CLI is the model-facing coordination, learning and maintenance surface through `bash`; it does not add wrapper tools to the Pi palette.
 
 Session-scoped maintenance jobs are controlled by `/octocode-cron`; see [CRON.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/CRON.md). `OCTOCODE_SUPPORT_TOOL_NAMES` in `src/constants.ts` is the direct support-tool source of truth.
 
@@ -77,11 +76,8 @@ Session-scoped maintenance jobs are controlled by `/octocode-cron`; see [CRON.md
 | Read a file from GitHub                                 | `ghGetFileContent`                                             |
 | Browse a GitHub repo tree                               | `ghSearch` with `operation:"tree"`                            |
 | Discover GitHub repos                                   | `ghSearch` with `operation:"repositories"`                    |
-| Search pull requests                                    | `ghSearchPullRequests`                                         |
-| Search issues                                           | `ghSearchIssues`                                               |
-| Search commits                                          | `ghSearchCommits`                                              |
-| List releases                                           | `ghListReleases`                                               |
-| Search discussions                                      | `ghSearchDiscussions`                                          |
+| Discover remote history                                | `ghSearchHistory`; inspect its live operation schema          |
+| Read an exact remote history item                      | `ghGetHistoryItem`; use the returned repository and item ID   |
 | Clone repo for local reads                              | `ghCloneRepo`                                                  |
 | Search local files (text / AST)                         | `localSearch` with `operation:"text"` or `"structural"`      |
 | Browse local directory tree                             | `localSearch` with `operation:"tree"`                         |
@@ -115,12 +111,12 @@ Session-scoped maintenance jobs are controlled by `/octocode-cron`; see [CRON.md
 | Reuse/create/maintain a verified dynamic capability | `callTool` |
 | Load or manage a reusable multi-step workflow | `skill` with `type:"load"|"call"` |
 | Compact or reset context | Pi's native auto-compaction or user `/compact` / `/new`; configure Pi's reserve threshold for 80% |
-| Recall prior lessons that may change the approach | `memory` |
-| Record a verified reusable root cause / decision | `memory` |
+| Recall prior lessons that may change the approach | Awareness CLI `memory recall` through `bash` |
+| Record a verified reusable root cause / decision | Awareness CLI `memory record` through `bash` |
 | Inspect deeper shared-state diagnostics | Awareness skill / `$OCTOCODE_AWARENESS_CLI` |
-| Send / read needed peer messages | `message` |
-| Protect sensitive/non-mergeable files exceptionally | `lock` |
-| Diagnose task, handoff, verification, or presence state | `$OCTOCODE_AWARENESS_CLI` (recovery only) |
+| Send / read needed peer messages | Awareness CLI `signal publish` / `signal list` through `bash` |
+| Protect sensitive/non-mergeable files exceptionally | Awareness CLI `lock` through `bash` |
+| Diagnose task, handoff, verification, or presence state | Awareness CLI through `bash` |
 
 ---
 
@@ -146,16 +142,7 @@ Every query requires one concise `reasoning`. Mixed batches reject duplicate pat
 
 All use the live `queries` schema reported by `npx octocode tools <name> --scheme`. Do not reuse remembered fields across catalog versions.
 
-| Tool                   | Key params                                                                        | Notes                                                     |
-| ---------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `ghSearch` (`code`)    | `operation`, `keywords`, `owner`, `repo`, `match`, `extension`, `path`, `page`    | `match:"path"` for filenames; `match:"file"` for snippets |
-| `ghSearch` (`repositories`) | `operation`, `keywords`, `language`, `stars`, `sort`, `concise`             | Start `concise:true`; follow with `operation:"tree"`     |
-| `ghSearchPullRequests` | `keywordsToSearch`, `prNumber`, `owner`, `repo`, `state`                          | Search PRs or fetch one PR by number                      |
-| `ghSearchIssues`       | `keywordsToSearch`, `issueNumber`, `owner`, `repo`, `state`                       | Search issues or fetch one issue by number                |
-| `ghSearchCommits`      | `owner`, `repo`, `path`, `since`, `until`, `base`, `head`, `includeDiff`          | Search commit history or inspect a bounded comparison     |
-| `ghGetFileContent`     | `owner`, `repo`, `path`, `startLine`/`endLine`, `matchString`, `minify`, `branch` | `symbols` → anchor → `none` for edits                     |
-| `ghSearch` (`tree`)    | `operation`, `owner`, `repo`, `path`, `maxDepth`, `branch`                        | Orient before fetching files                              |
-| `ghCloneRepo`          | `owner`, `repo`, `branch`, `sparsePath`                                           | Needs `ENABLE_CLONE`; use `sparsePath` to bound checkout  |
+The live catalog owns research tool names, operations, fields, and availability. Use `ghSearch` for discovery and `ghGetFileContent` for source reads; use `ghSearchHistory` and `ghGetHistoryItem` for history discovery and exact items. `ghCloneRepo` is available only when the reported storage and clone policy permits it. Inspect the schema rather than translating retired tool names or copying fields between operations.
 
 ---
 
@@ -233,6 +220,13 @@ Spawn profiles:
 | `architect`  | Root-cause and architecture analysis with local tools and targeted shell checks.         |
 | `browser`    | Routed multi-turn Chrome DevTools work.                                                  |
 | `custom`     | A clean worker with explicit tools, system prompt, and resource mode.                    |
+
+Researcher, planner and architect all receive `web`, `MCPTool`, `file`, `skill`
+and `bash`. Role policy limits `file` to an assigned RFC or durable handback artifact,
+keeps product research read-only, and routes research through MCP. Researcher and
+planner use `bash` only for the supplied Awareness CLI; architect also permits
+bounded non-destructive test/build/debug checks. Each worker keeps its distinct
+Awareness identity while sharing the parent's database/workspace bindings.
 
 ```text
 agent({queries:[{
@@ -341,11 +335,11 @@ Pi-core/runtime banners that do not pass through extension hooks, such as a mode
 
 ## Memory and Awareness
 
-The unified default facades are `plan`, `memory`, `lock`, and `message`. `plan` owns session/shared projection and receipt-gated completion. There is no separate public `task` tool: plan steps become shared Awareness tasks when projection is needed, while `agent.task` is only the assignment text given to a spawned worker. Only unread direct-message counts enter agent context automatically; global state remains in the user dashboard. Advisory presence, peer registry lifecycle, and mutation-time lock checks are automatic. `lock` is only for exceptional non-mergeable exclusivity. Each facade calls the same in-process Awareness library as the CLI.
+`plan` owns session/shared projection and receipt-gated completion. There is no separate public `task` tool: plan steps become shared Awareness tasks when projection is needed, while `agent.task` is the assignment text given to a spawned worker. Signals, explicit locks, memory and maintenance use the canonical Awareness CLI through `bash`. Native advisory presence, peer registry, event delivery/policy and mutation-time lock checks remain active. Reuse native run/task IDs and observed receipts instead of duplicating bookkeeping.
 
-Use `node "$OCTOCODE_AWARENESS_CLI" <noun> <verb>` for diagnostics or recovery commands that aren't exposed directly and for contract inspection via `schema`. Agents on other hosts may continue using the published Awareness CLI.
+Use `"$OCTOCODE_NODE" "$OCTOCODE_AWARENESS_CLI" --db "$OCTOCODE_AWARENESS_DB" <command>` with `--workspace "$OCTOCODE_AWARENESS_WORKSPACE"` and `--agent-id "$OCTOCODE_AGENT_ID"` when required. Pi injects these shell bindings and includes the complete canonical Awareness guide in its system prompt. External agents use the same physical database and workspace with distinct stable identities; an identical path on a different machine is not a communication transport.
 
-See [`AWARENESS_AGENT_FLOW.md`](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/AWARENESS_AGENT_FLOW.md) for live coordination, [`REFLECT.md`](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/REFLECT.md) for Lite memory guidance, and [`CRON.md`](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/CRON.md) for session job controls.
+See [AWARENESS_AGENT_FLOW.md](AWARENESS_AGENT_FLOW.md) for communication and lifecycle ownership and [REFLECT.md](REFLECT.md) for learning and maintenance guidance. Load the bundled `octocode-awareness` skill for operating detail.
 
 ### Signal-driven pattern
 
@@ -353,9 +347,10 @@ See [`AWARENESS_AGENT_FLOW.md`](https://github.com/bgauryy/octocode/blob/main/pa
 [plan]     scope auto/session/shared → Start → execute declared check
 [complete] plan.complete + observed receipt → shared verification → next ready dependency
 [mutation] explicit targets → automatic peer-lock preflight → automatic advisory presence
-[signal]   unread direct-message count only → message inbox when relevant
-[rare]     lock for non-mergeable state · message for needed peer coordination
-[learn]    memory only for verified reusable outcomes that can change future work
+[signal]   native peer event → CLI signal list/reply/ack/resolve when relevant
+[rare]     CLI lock for non-mergeable state · CLI signal for peer coordination
+[learn]    CLI memory only for verified reusable outcomes
+[finish]   CLI verify audit for owned workspace debt before final response
 ```
 
 ### CLI quick-reference
@@ -363,14 +358,15 @@ See [`AWARENESS_AGENT_FLOW.md`](https://github.com/bgauryy/octocode/blob/main/pa
 | Command                                  | Purpose                                                                                                        |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `memory recall`                          | Retrieve durable lessons before risky/unfamiliar work; flags `judgment_required` when recall confidence is low |
-| `memory store`                           | Store verified root cause, decision, workaround, or gotcha                                                     |
-| `memory list\|forget\|delete\|prune`     | Inspect or explicitly remove stale memories                                                                    |
+| `memory record`                          | Store verified root cause, decision, workaround, or gotcha                                                     |
+| `memory forget`, `memory archive`        | Preview item-scoped cleanup with `--dry-run`                                                                    |
 | `status`                                 | Show plans, tasks, locks, work presence, agents, messages, handoffs, checks, and memory counts                 |
-| `message send\|inbox\|list\|read\|prune` | Tiny coordination inbox                                                                                        |
+| `signal publish`, `signal list`, `signal reply`, `signal ack`, `signal resolve` | Directed, scoped peer communication |
 | `handoff add\|list\|clear`               | Manual continuation notes for later agents                                                                     |
 | `lock acquire\|release\|list`            | Optional exclusive protection for sensitive paths                                                              |
-| `check audit`                            | List done tasks still needing check receipts                                                                   |
-| `check mark`                             | Mark one exact owned task verified after its declared check; never batch another agent's work.                 |
+| `verify audit`                           | Audit owned verification debt before finishing                                                                |
+| `verify mark`                            | Record observed SUCCESS or FAILED for an explicit owned run ID                                                 |
+| `maintenance digest`, `signal prune`     | Inspect scoped `--dry-run` candidates before authorized cleanup                                                |
 
 ## MCP Servers
 
@@ -574,7 +570,7 @@ Loaded via `@octocodeai/config`. Run `npx @octocodeai/config --keys` to inspect 
 # Exact active schema for any tool
 node $OCTOCODE_CLI tools <toolName> --scheme
 
-# List all 13 Octocode tools
+# List the current Octocode tool catalog
 node $OCTOCODE_CLI tools
 ```
 

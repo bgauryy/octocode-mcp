@@ -18,6 +18,19 @@ const FULL: FooterViewProps = {
   ],
 };
 
+test('long worker names never hide a blocked or failed state in narrow panes', () => {
+  for (const width of [28, 36, 52, 80, 120, 160]) {
+    for (const state of ['blocked', 'failed']) {
+      const lines = renderFooterView({ rows: [], agents: [{
+        label: 'agent researching-a-very-long-repository-name-with-many-packages',
+        state, elapsed: '14s', attention: true,
+      }] }, { width });
+      assert.match(lines[0]!, new RegExp(state));
+      for (const line of lines) assert.ok(visibleWidth(line) <= width);
+    }
+  }
+});
+
 test('footer retains each semantic state category at every supported width', () => {
   for (const width of [28, 40, 64, 96, 140]) {
     const lines = renderFooterView(FULL, { width });

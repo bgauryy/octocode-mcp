@@ -39,4 +39,6 @@ Find ready-made checks in `references/cdp-checks.md`.
 
 ## Maintainer verification
 
-Run the hermetic suite documented by `SKILL.md`, then run the `octocode-skills` review against this folder.
+Run `node skills/octocode-chrome-devtools/scripts/hermetic-suite.mjs`, then run `node skills/octocode-skills/scripts/skill-review.mjs skills/octocode-chrome-devtools --json`.
+
+HAR ingestion and corpus queries delegate to the optional `octocode-scraping` skill. Install it beside this folder or pass `--scraping-skill-dir <dir>` to either bridge script. `--help` and the hermetic suite work with this folder alone.

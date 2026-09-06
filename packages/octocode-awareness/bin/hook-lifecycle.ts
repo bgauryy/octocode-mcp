@@ -52,33 +52,42 @@ export async function runStopVerify(
   return 0;
 }
 
-export function maybePreviewDigest(
+function digestPreviewSchedule(
   payload: Record<string, unknown>,
-  features: AwarenessFeatureConfig = DEFAULT_AWARENESS_CONFIG.features,
-): string | null {
-  if (!features.maintenanceReminders) return null;
-  if (process.env.OCTOCODE_NO_DIGEST === '1') return null;
+  features: AwarenessFeatureConfig,
+): { markerPath: string; now: number; due: boolean } | null {
+  if (!features.maintenanceReminders || process.env.OCTOCODE_NO_DIGEST === '1') return null;
   const intervalHours = Number(process.env.OCTOCODE_DIGEST_INTERVAL_HOURS ?? 4);
   const intervalMs = Number.isFinite(intervalHours) && intervalHours > 0 ? intervalHours * 3600_000 : 4 * 3600_000;
   const memoryHome = dirname(resolveDbPath(null));
   const digestScope = workspace(payload) ?? 'global';
   const scopeHash = createHash('sha256').update(digestScope).digest('hex').slice(0, 12);
   const markerPath = join(memoryHome, `.last-digest-preview-${scopeHash}-epoch-ms`);
+  let last = 0;
+  try { last = Number(readFileSync(markerPath, 'utf8').trim() || 0); } catch { /* first preview */ }
+  const now = Date.now();
+  return { markerPath, now, due: !last || now < last || now - last >= intervalMs };
+}
+
+/** A cheap filesystem deadline check; unchanged SQLite bytes do not stop time. */
+export function isDigestPreviewDue(payload: Record<string, unknown>, features: AwarenessFeatureConfig): boolean {
+  return digestPreviewSchedule(payload, features)?.due ?? false;
+}
+
+export function maybePreviewDigest(
+  payload: Record<string, unknown>,
+  features: AwarenessFeatureConfig = DEFAULT_AWARENESS_CONFIG.features,
+): string | null {
   try {
-    const database = db(payload, 'digest');
-    let last = 0;
-    try {
-      last = Number(readFileSync(markerPath, 'utf8').trim() || 0);
-    } catch {
-      last = 0;
-    }
-    const now = Date.now();
-    if (!last || now - last >= intervalMs) {
+    const schedule = digestPreviewSchedule(payload, features);
+    if (schedule?.due) {
+      const { markerPath, now } = schedule;
+      const database = db(payload, 'digest');
       const preview = digest(database, {
         workspace_path: workspace(payload),
         dry_run: true,
       });
-      mkdirSync(memoryHome, { recursive: true });
+      mkdirSync(dirname(markerPath), { recursive: true });
       writeFileSync(markerPath, String(now), 'utf8');
       const pressure = {
         archive: preview.would_archive ?? 0,

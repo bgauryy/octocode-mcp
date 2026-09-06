@@ -34,7 +34,7 @@ Load when interpreting or fixing review findings — after running `scripts/skil
 | `reference-dead-end` | end with the next hop, or say the step ends here |
 | `flow-phase-unrouted` | name each flow phase in a route or gate, or drop it from the flow |
 
-Navigation codes treat the skill as a map. `SKILL.md` is the lobby: it lists every reference, runnable script, workflow, and usage condition. Each chunk declares its entry and points onward. Audit trails, templates, and fixtures are carried data and skip the entry/exit cues; a named directory (`scripts/hooks/`) stands in for the files under it. <!-- style-lint: ignore-line passive-voice -->
+Navigation codes treat the skill as a map. `SKILL.md` lists every reference, runnable script, workflow, and usage condition. Each chunk declares its entry and points onward. Audit trails, templates, and fixtures skip entry/exit cues. A concrete directory route includes its files; write schematic paths with a placeholder such as `scripts/<hook-directory>/` so the reviewer does not require that example to ship.
 
 ## Judgment checks the script cannot make
 
@@ -44,7 +44,7 @@ Navigation codes treat the skill as a map. `SKILL.md` is the lobby: it lists eve
 | Output and gates | real markdown table for tabular data; complete gate sections |
 | `description` quality | one `Use when`; intents, not internals; no MUST/NEVER/ONLY-skill, second `Triggers:`, or quote spam |
 | Scripts and hooks | `--help` and flags; extract deterministic prose; route hook + `timeout`; a declared scheme is really exposed |
-| Portability | runtime assumptions, deps, and secrets travel with the folder; link a sibling skill by name, never by path |
+| Portability | core commands run in a single-folder copy; optional integrations declare their dependency and setup, and pass documented tests with it absent/present |
 | Workspace artifacts | lobby routes generated files under `<workspace>/.octocode/`, distinguishes requested source mutations, and forbids user-level fallback |
 
 Key limits: references stay inside the skill; every shipped file is used; each `references/*.md` ≤50 lines with one short H1; every reference and runnable script is named in the lobby. Next: when re-running the loop load `references/skill-review.md`; for design rationale load `references/skill-anatomy.md`. <!-- style-lint: ignore-line passive-voice -->

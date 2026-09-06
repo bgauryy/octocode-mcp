@@ -9,7 +9,7 @@ import {
 export const workSchemas = {
 task: z
     .object({
-      action: z.enum(["create", "list", "ready", "show", "claim", "heartbeat", "submit", "release", "depend"]),
+      action: z.enum(["create", "list", "ready", "show", "claim", "heartbeat", "submit", "release", "depend", "retry"]),
       task_id: z.string().trim().min(1).max(128).optional(),
       plan_id: z.string().trim().min(1).max(128).optional(),
       workspace: z.string().trim().min(1).max(1024).optional().describe("Workspace filter for list/ready (matches the owning plan's workspace_path)."),
@@ -62,6 +62,8 @@ task: z
       ttl_seconds: z.number().int().min(1).max(3600).optional(),
       all: z.boolean().default(false),
       full: z.boolean().default(false),
+      limit: z.number().int().min(1).max(200).optional().describe("Maximum work rows per page; defaults to 5 compact or 20 otherwise."),
+      offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe("Continue from the offset in the preceding work page."),
     })
     .strict()
     .superRefine((value, ctx) => {

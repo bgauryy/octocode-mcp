@@ -112,8 +112,9 @@ describe('coordination dispatch and focused help contracts', () => {
     expect(guide.commands).not.toHaveLength(0);
     expect(guide.commands.map((entry) => entry.cli)).toEqual(expect.arrayContaining([
       'npx @octocodeai/octocode-awareness status',
-      'npx @octocodeai/octocode-awareness handoff',
-      'npx @octocodeai/octocode-awareness agent',
+      'npx @octocodeai/octocode-awareness handoff add',
+      'npx @octocodeai/octocode-awareness agent register',
+      'npx @octocodeai/octocode-awareness skill install',
     ]));
     expect(guide.commands.some((entry) => entry.cli.startsWith('coordination '))).toBe(false);
   });

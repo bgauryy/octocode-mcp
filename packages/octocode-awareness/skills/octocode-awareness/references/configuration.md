@@ -8,11 +8,41 @@ Global scope stores durable Awareness state in `$OCTOCODE_HOME/awareness/awarene
 
 Other files under `<workspace>/.octocode/`, including Octocode research databases and generated projections, retain their own owners. Do not merge, rename, delete, or infer Awareness state from them.
 
-For a recognized old mixed store, run the explicit `coordination maintenance migrate-legacy` procedure; it copies only recognized Awareness entities to the global store, refuses a nonempty target, and preserves the Agent source. Never migrate by opening the Agent database as Awareness. Ordinary scope changes do not migrate or merge existing databases.
+For an explicitly requested historical-store conversion, inspect `database consolidate --help`. The supported command is `database consolidate --source <existing-file> --destination <new-file>`: it reads the source without modifying it, creates a new canonical file, and rejects incomplete contracts or collisions. Never open an Agent runtime database as an ordinary Awareness store. Ordinary scope changes do not migrate or merge existing databases.
 
 ## Identity and trust
 
-Use one stable `OCTOCODE_AGENT_ID` per cooperating identity. Workspace paths must normalize to the same absolute root. Configuration proves preferences only; it does not prove host trust, hook execution, or model-visible delivery.
+Use one stable `OCTOCODE_AGENT_ID` per participant. Keep a host-provided ID; otherwise choose a unique session ID or UUID, optionally prefixed `<host>:`. Never reuse a generic ID such as `agent` across peers. Register once in the shared store:
+
+```bash
+<cli> agent register --db "$AWARENESS_DB" --workspace "$AWARENESS_WORKSPACE" \
+  --agent-id "$OCTOCODE_AGENT_ID" --agent-name "Parser reviewer" \
+  --agent-vendor "<model-provider>" --agent-host "<running-application>"
+<cli> agent list --db "$AWARENESS_DB" --workspace "$AWARENESS_WORKSPACE" --compact
+```
+
+`<cli>` is `npx @octocodeai/octocode-awareness` or the host's bundled runner.
+`OCTOCODE_AGENT_NAME`, `OCTOCODE_AGENT_VENDOR` and `OCTOCODE_AGENT_HOST` provide
+optional defaults alongside `OCTOCODE_AGENT_ID`. Vendor is the model provider
+(for example OpenAI or Anthropic); host is the running application (for example
+Codex, Claude Code or Pi). Pi can run different vendors. Supply only known labels;
+unknown labels remain null rather than guessed from a name or ID prefix.
+
+Names, vendor and host labels are self-reported, not authentication. Route by
+`agent_id`, not display name or vendor: names can repeat, and an ID remains stable
+when labels change. CLI and hooks for one participant must keep that same ID.
+`agent list` exposes `agent_id`, `agent_name`, `agent_vendor` and `agent_host`;
+follow returned executable pagination until the relevant peers are enumerated.
+Workspace paths must normalize to the same absolute root. Configuration and
+registration do not prove host trust, hook execution, or model-visible delivery.
+
+Each peer needs a distinct identity. CLI-only and native-host agents (including Pi)
+must resolve the same physical database path, not merely the same workspace name.
+Pass the host-provided `--db` and `--workspace` bindings to CLI calls, or verify that
+Octocode home and database scope resolve identically for every participant. Scope
+changes never connect existing separate stores. Exchange resolved store/workspace
+and participant IDs in handoffs; do not hand-edit or copy SQLite rows. See
+`references/coordination-protocol.md` for the directed signal/reply/ack lifecycle.
 
 ## Hook policy
 

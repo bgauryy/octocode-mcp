@@ -31,7 +31,7 @@ const SOURCE_PATHS = {
   // The system prompt is one inlined document (src/prompts/system-prompt.ts → dist/prompts/system-prompt.js);
   // there are no per-section fragment files to copy.
   promptSource: path.join(packageRoot, 'src', 'prompts', 'system-prompt.ts'),
-  // Awareness skill source comes from the published package; runtime invocation uses npx.
+  // Full Awareness guidance comes from the same package as its runtime.
   awarenessSkills: path.join(AWARENESS_PACKAGE_ROOT, 'skills'),
   octocodeSkills: path.join(OCTOCODE_PACKAGE_ROOT, 'skills'),
   // octocode CLI — bundled at build time so the pi-extension is self-contained.
@@ -73,10 +73,6 @@ const SKIPPED_FILES = new Set([
 ]);
 
 const EXCLUDED_BUNDLED_SKILLS = new Set([
-  // The full Awareness skill ships with the (now single) @octocodeai/octocode-awareness
-  // package for separate installs; the harness uses the inline <awareness> prompt, so it
-  // is not bundled as a loadable skill here (preserves the prior 0-awareness-skills bundle).
-  'octocode-awareness',
   // 3D mannequin/animation workflow is intentionally not part of the coding-agent bundle.
   'octocode-mannequin',
 ]);
@@ -237,8 +233,8 @@ function copySkillDirectories(sourceRoot, targetRoot) {
 function refreshPackageSkills(targetRoot = SOURCE_PATHS.skills) {
   fs.rmSync(targetRoot, { recursive: true, force: true });
   fs.mkdirSync(targetRoot, { recursive: true });
-  // Bundle workflow skills from dependencies, excluding prompt-owned flows such as
-  // Awareness. Remaining skills become discoverable on init via the
+  // Bundle workflow skills from dependencies, including full Awareness guidance.
+  // Skills become discoverable on init via the
   // resources_discover hook — no on-demand install step needed for a fresh checkout.
   // (If a user also installs the same skill globally with `octocode skill --add`,
   // Pi surfaces a [Skill conflicts] notice — expected with a self-contained bundle.)
@@ -372,8 +368,8 @@ async function build() {
   fs.rmSync(OUTPUT_PATHS.skills, { recursive: true, force: true });
   copyDirectory(stagedSkills, OUTPUT_PATHS.skills);
   // Copy subagents/ to dist/subagents/ (SYSTEM_PROMPT.md files loaded at runtime),
-  // then expand the shared {{OCTOCODE_COORDINATION}} placeholder so every typed
-  // subagent inherits one canonical Awareness coordination block (no drift).
+  // then expand shared worker constraints. The runtime injects the canonical
+  // Awareness guide once; do not bundle a second set of ledger instructions.
   // Copy docs/ to dist/docs/ so agents and tools can read them at runtime.
   if (fs.existsSync(SOURCE_PATHS.docs)) {
     copyDirectory(SOURCE_PATHS.docs, OUTPUT_PATHS.docs);
@@ -387,7 +383,7 @@ async function build() {
       if (!entry.isDirectory()) continue;
       const promptPath = path.join(OUTPUT_PATHS.subagents, entry.name, 'SYSTEM_PROMPT.md');
       if (!fs.existsSync(promptPath)) continue;
-      const expanded = expandSubagentPrompt(fs.readFileSync(promptPath, 'utf8'));
+      const expanded = expandSubagentPrompt(fs.readFileSync(promptPath, 'utf8'), { coordination: 'worker-only' });
       const leftover = SUBAGENT_PLACEHOLDERS.find((p) => expanded.includes(p));
       if (leftover) throw new Error(`subagent ${entry.name}: unexpanded ${leftover}`);
       fs.writeFileSync(promptPath, expanded, 'utf8');

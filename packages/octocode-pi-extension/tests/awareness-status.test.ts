@@ -7,7 +7,6 @@ import {
   getCachedAwarenessStatus,
   hasAwarenessSignal,
   refreshAwarenessPanel,
-  renderAwarenessSignalAddendum,
   resetAwarenessStatusStateForTests,
   setAwarenessMetricsRefreshForUi,
   setAwarenessStatusRunnerForTests,
@@ -49,14 +48,9 @@ afterEach(() => {
   setAwarenessMetricsRefreshForUi(undefined);
 });
 
-test('signal detection and bounded prompt addendum use typed status', () => {
+test('signal detection uses typed status', () => {
   assert.equal(hasAwarenessSignal(ZERO), false);
   assert.equal(hasAwarenessSignal(FULL), true);
-  assert.equal(renderAwarenessSignalAddendum(ZERO), '');
-  const addendum = renderAwarenessSignalAddendum(FULL);
-  assert.match(addendum, /unread/i);
-  assert.doesNotMatch(addendum, /take lane/);
-  assert.ok(addendum.length < 300);
 });
 
 test('panel composition preserves counts, debt, tasks, messages, and attention state', () => {

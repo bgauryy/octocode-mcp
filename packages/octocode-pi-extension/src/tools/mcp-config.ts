@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getDefaultEnvironment } from '@modelcontextprotocol/client/stdio';
 import { getMcpEnablement } from '@octocodeai/agent-contracts/mcp-state';
+import { readMcpConfigText } from '@octocodeai/agent-contracts/agent-skills';
 import { ensurePrivateDirectory, hardenPrivateFile, PRIVATE_FILE_MODE } from '@octocodeai/agent-contracts/permissions';
 import type { PiContext } from '../types.js';
 import { getOctocodeHome } from '@octocodeai/config';
@@ -287,7 +288,7 @@ function parseConfigText(text: string): Map<string, McpServerConfig> {
 
 function readConfigFile(filePath: string): Map<string, McpServerConfig> | null {
   if (!fs.existsSync(filePath)) return null;
-  return parseConfigText(fs.readFileSync(filePath, 'utf8'));
+  return parseConfigText(readMcpConfigText(filePath));
 }
 
 export function scopeTargetPath(scope: McpScope, ctx?: PiContext): string {

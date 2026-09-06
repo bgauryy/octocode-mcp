@@ -6,7 +6,7 @@ import {
   assertDatabaseIntegrity,
   inspectSchemaState,
   SchemaState,
-} from './db-runtime.js';
+} from './db-introspection.js';
 import type { DatabaseSync } from '@octocodeai/agent-contracts/sqlite';
 import { withSqliteBusyRetry } from '@octocodeai/agent-contracts/sqlite';
 import { AWARENESS_APPLICATION_ID } from './storage-scope.js';

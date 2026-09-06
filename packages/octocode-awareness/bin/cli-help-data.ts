@@ -4,6 +4,11 @@ import { BUNDLED_SKILLS, BUNDLED_SKILLS_DIR } from './cli-model.js';
 
 export const HELP = `  🐙 Octocode Awareness
 
+  AGENT SETUP  guide                          skill installation, workflow, and all commands
+    agent register --agent-id <stable-id>      add --agent-name, --agent-vendor, --agent-host
+    agent list --workspace <repo>              discover IDs/names/vendors/hosts; follow next continuations
+    Reuse your host ID or set OCTOCODE_AGENT_ID once to a unique session ID; labels are self-reported.
+
   ROUTINE LOOP
     attend [--query <text>]                     return the next useful action
     work start --agent-id <id> --file <path>    declare bounded advisory work
@@ -20,7 +25,7 @@ export const HELP = `  🐙 Octocode Awareness
 
   EXPERT COMMANDS
     attend · plan · task · work · verify · signal · memory record/recall · refinement · query · reflect
-    schema commands --compact                  compact command map
+    schema commands --all --compact            complete command catalog
     schema command <noun> [action]             exact fields
     <noun> [action] --help                     focused usage
 
@@ -37,9 +42,11 @@ export const HELP = `  🐙 Octocode Awareness
   SKILL DOCS  npx @octocodeai/octocode-awareness docs list --compact`;
 
 export const HELP_COMPACT = `octocode-awareness canonical noun/verb CLI: attend -> work start -> work end -> verify mark -> verify audit; use --compact for JSON.
+setup: guide for skill installation, agent instructions, and all commands
+identity: agent register --agent-id "$OCTOCODE_AGENT_ID" --agent-name <name> --agent-vendor <provider> --agent-host <app>; reuse a host ID or set a unique session ID once; agent list --workspace "$PWD" discovers peers
 bundled-skills(${BUNDLED_SKILLS.length}): ${BUNDLED_SKILLS.map(({ name }) => name).join(',')} @ ${BUNDLED_SKILLS_DIR}; install: skill install --platform shared --project-dir "$PWD" --dry-run; docs: docs list --compact
 policy: $OCTOCODE_HOME/awareness/awareness.sqlite3, workspace-scoped rows, hooks=coordination
-expert: attend|plan|task|work|verify|signal|memory|refinement|query|reflect; schema commands --compact for the full map
+expert: attend|plan|task|work|verify|signal|memory|refinement|query|reflect; schema commands --all --compact for the full map
 overrides: --db-scope repo|global changes one call; --db selects an explicit path
 hooks: install --host codex|claude|cursor --profile guard|coordination|full --dry-run; preview and ask before install
 exits: 0 ok / 1 validation|verification debt / 2 conflict|wait|strict hook health`;
@@ -134,7 +141,7 @@ export const COMMAND_EXAMPLE: Record<string, string> = {
   'refine-set': 'npx @octocodeai/octocode-awareness refinement set --agent-id agent --reasoning "handoff" --remember "next step" --workspace "$PWD" --compact',
   'refine-get': 'npx @octocodeai/octocode-awareness refinement get --workspace "$PWD" --state open --limit 3 --compact',
   'refine-delete': 'npx @octocodeai/octocode-awareness refinement delete --refinement-id ref_123 --dry-run --compact',
-  'agent-registry': 'npx @octocodeai/octocode-awareness agent register --agent-id agent --agent-name "Codex" --workspace "$PWD" --compact',
+  'agent-registry': 'npx @octocodeai/octocode-awareness agent register --agent-id "$OCTOCODE_AGENT_ID" --agent-name "Parser reviewer" --agent-vendor "openai" --agent-host "codex" --workspace "$PWD" --compact',
   'agent-signal': 'npx @octocodeai/octocode-awareness signal list --agent-id agent --workspace "$PWD" --limit 3 --compact',
   'notify-prune': 'npx @octocodeai/octocode-awareness signal prune --workspace "$PWD" --resolved --dry-run --compact',
   'status': 'npx @octocodeai/octocode-awareness workspace status --workspace "$PWD" --compact',
@@ -170,7 +177,7 @@ export const ROUTE_EXAMPLE: Record<string, string> = {
   'signal reply': 'npx @octocodeai/octocode-awareness signal reply --agent-id agent --in-reply-to ntf_123 --subject "Re: File locked" --body "done" --compact',
   'signal ack': 'npx @octocodeai/octocode-awareness signal ack --agent-id agent --signal-id ntf_123 --compact',
   'signal resolve': 'npx @octocodeai/octocode-awareness signal resolve --agent-id agent --thread-id ntf_123 --compact',
-  'agent register': 'npx @octocodeai/octocode-awareness agent register --agent-id agent --agent-name "Codex" --workspace "$PWD" --compact',
+  'agent register': 'npx @octocodeai/octocode-awareness agent register --agent-id "$OCTOCODE_AGENT_ID" --agent-name "Parser reviewer" --agent-vendor "openai" --agent-host "codex" --workspace "$PWD" --compact',
   'agent list': 'npx @octocodeai/octocode-awareness agent list --workspace "$PWD" --limit 5 --compact',
   'reflect developer-review': 'npx @octocodeai/octocode-awareness reflect developer-review --workspace "$PWD" --format markdown --compact',
   'docs list': 'npx @octocodeai/octocode-awareness docs list --compact',

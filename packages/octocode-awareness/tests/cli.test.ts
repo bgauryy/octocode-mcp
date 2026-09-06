@@ -101,13 +101,13 @@ describe('source CLI regressions', () => {
     try {
       runSource(['--db', db, 'maintenance', 'init', '--compact']);
       const routine = runSource([
-        '--db', db, 'reflect', 'record', '--task', 'routine status', '--outcome', 'worked', '--compact',
+        '--db', db, 'reflect', 'record', '--agent-id', 'reflect-test', '--task', 'routine status', '--outcome', 'worked', '--compact',
       ]);
       expect(routine.status).toBe(1);
       expect(String(routine.parsed?.['error'] ?? routine.stdout)).toMatch(/reusable lesson, failure, or fix/);
 
       const withLesson = runSource([
-        '--db', db, 'reflect', 'record', '--task', 'real', '--outcome', 'worked',
+        '--db', db, 'reflect', 'record', '--agent-id', 'reflect-test', '--task', 'real', '--outcome', 'worked',
         '--lesson', 'run build before tests', '--compact',
       ]);
       expect(withLesson.status, withLesson.stderr || withLesson.stdout).toBe(0);

@@ -21,7 +21,7 @@ Ask before real-profile access, cookie transfer, CAPTCHA/MFA, purchases, sends, 
 
 - Static map/bulk extract → `octocode-scraping`; DOM/action → `page-snapshot` then `dom-operations-check`; live graph → `graph-actionability-check` and diagnostics if empty.
 - Page health → performance/network/storage measure checks, then `measure-query`; standalone HAR → `har-pager`; deep bodies only after measure/query through `live-har-monitor` or `network-body-har-fetch-check`.
-- Prove captured API data without Chrome → `scripts/har-ingest-to-scrape.mjs`, then `scripts/corpus-run-local.mjs`.
+- Prove captured API data without Chrome → with optional `octocode-scraping` installed, run `scripts/har-ingest-to-scrape.mjs`, then `scripts/corpus-run-local.mjs`.
 
 ## Scripts
 
@@ -32,6 +32,7 @@ Ask before real-profile access, cookie transfer, CAPTCHA/MFA, purchases, sends, 
 - Retention/protocol: `scripts/prune-artifacts.mjs --max-age-days 3 --max-count 50 [--dry-run]`; `scripts/protocol-corpus.mjs --out .octocode/octocode-chrome-devtools/cdp-protocol --domains Network,Page`.
 - When a proxy/VPN launch is needed, copy `scripts/octocode-chrome-devtools.vpn.example.json`, and pass it to `open-browser.mjs --config <path>` or install it at `.octocode/chrome-devtools.json`. <!-- style-lint: ignore-line passive-voice -->
 - Imported libraries: `scripts/mandatory-stealth.mjs`, `scripts/undercover.mjs`, `scripts/human-input.mjs`, `scripts/dom-actionability.mjs`, `scripts/sourcemap-resolver.mjs`, and vendored `scripts/octocode-config.mjs`; do not run them as CLIs.
+- After changing the skill, run the browser-free `scripts/hermetic-suite.mjs`; it invokes `scripts/portability-self-test.mjs`, which copies this folder, exercises both optional scraping bridges with finite fixtures, and uses the real optional dependency when installed.
 
 ## References
 
@@ -40,4 +41,6 @@ Ask before real-profile access, cookie transfer, CAPTCHA/MFA, purchases, sends, 
 - Custom scripts: `references/script-patterns.md`, then one of `references/script-patterns-async.md`, `references/script-patterns-browser.md`, `references/script-patterns-observe.md`, or `references/script-patterns-special.md`.
 - When protocol/order/domains/launch is unclear, load `references/cdp-agent.md`, `references/cdp-domain-map.md`, or `references/chrome-flags.md`; after errors/empty/two failures, load `references/recovery.md`.
 
-After edits, run the hermetic suite. Redact secrets; report artifact paths and focused findings, not raw dumps.
+The scraping bridges have an optional runtime dependency on the separate `octocode-scraping` skill. Their help works with this folder alone. For real use, install that skill beside this one or pass `--scraping-skill-dir <dir>` before delegated arguments. A missing dependency returns `OPTIONAL_DEPENDENCY_MISSING` as JSON on stderr.
+
+After edits, run `node skills/octocode-chrome-devtools/scripts/hermetic-suite.mjs`. Redact secrets; report artifact paths and focused findings, not raw dumps.

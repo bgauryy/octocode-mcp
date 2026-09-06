@@ -1,7 +1,7 @@
 type TypeBoxBuilder = (typeof import('typebox'))['Type'];
 
 /**
- * Build a TypeBox string-enum schema. Shared by agent-tools and memory tool registration.
+ * Build a TypeBox string-enum schema for tool registration.
  */
 export function stringEnumSchema(
   Type: TypeBoxBuilder,

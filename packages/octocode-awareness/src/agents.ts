@@ -29,7 +29,7 @@ import type { AgentIdentity, RegisterAgentParams, ListAgentsResult } from './typ
 /**
  * Upsert an agent identity record.
  *
- * Safe to call repeatedly — uses INSERT OR REPLACE with conditional name update:
+ * Safe to call repeatedly — uses an upsert with conditional name update:
  * an empty name never overwrites a stored name, but a non-empty name always wins.
  *
  * Call this at session start or whenever the agent name becomes known
@@ -39,7 +39,8 @@ export function registerAgent(
   db: DatabaseSync,
   params: RegisterAgentParams,
 ): AgentIdentity {
-  const agentId = params.agentId;
+  const agentId = params.agentId.trim();
+  if (!agentId) throw new Error('agent-id must be a non-empty stable session identity');
   const agentName = params.agentName ?? '';  // null/undefined both become ''
   // Normalize to the same git-root + symlink-canonicalized scope key used by
   // memory/lock/signal so `workspace status`/`agent list` see the same rows.
@@ -48,9 +49,13 @@ export function registerAgent(
   const context = params.context ?? null;
   const now = utcNow();
 
-  db.prepare(AGENTS_UPSERT).run(agentId, agentName, workspacePath, artifact, context, now, now);
-
-  return { agent_id: agentId, agent_name: agentName, workspace_path: workspacePath || null, artifact, context, registered_at: now, last_seen_at: now };
+  const metadata = {
+    ...(params.agentVendor !== undefined ? { vendor: params.agentVendor?.trim() || null } : {}),
+    ...(params.agentHost !== undefined ? { host: params.agentHost?.trim() || null } : {}),
+  };
+  db.prepare(AGENTS_UPSERT).run(agentId, agentName, workspacePath, artifact, context, now, now, JSON.stringify(metadata));
+  const row = db.prepare(`${AGENTS_LIST_SELECT} WHERE workspace_path = ? AND agent_id = ?`).get(workspacePath, agentId) as unknown as AgentIdentity;
+  return { ...row, workspace_path: row.workspace_path || null };
 }
 
 /**
@@ -68,9 +73,9 @@ export function touchAgent(db: DatabaseSync, agentId: string, workspacePath: str
     // An agent can be present in more than one workspace. A touch in a new
     // scope creates that scope's canonical registry row from the most-recent
     // known identity instead of moving or overwriting the prior presence.
-    const prior = db.prepare(`SELECT agent_name, artifact, context
+    const prior = db.prepare(`SELECT agent_name, artifact, context, metadata_json
       FROM awareness_agents WHERE agent_id = ? ORDER BY last_seen_at DESC LIMIT 1`)
-      .get(agentId) as { agent_name: string; artifact: string | null; context: string | null } | undefined;
+      .get(agentId) as { agent_name: string; artifact: string | null; context: string | null; metadata_json: string } | undefined;
     if (!prior) return;
     db.prepare(AGENTS_UPSERT).run(
       agentId,
@@ -80,6 +85,7 @@ export function touchAgent(db: DatabaseSync, agentId: string, workspacePath: str
       prior.context,
       stamp,
       stamp,
+      prior.metadata_json,
     );
   } catch { /* non-critical registry touch */ }
 }

@@ -27,12 +27,10 @@ export default defineConfig({
         'src/types/**',
       ],
       thresholds: {
-        statements: 89,
-        // Branches are option-matrix heavy across CLI parsers and host adapters.
-        // Keep this as a ratchet while the primary 90% gate applies to code coverage.
-        branches: 75,
-        functions: 90,
-        lines: 90,
+        statements: 89.4,
+        branches: 81.4,
+        functions: 95.2,
+        lines: 93.5,
       },
     },
   },

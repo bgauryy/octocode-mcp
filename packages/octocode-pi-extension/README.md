@@ -16,16 +16,16 @@ The package registers its extension and themes through Pi's package manifest. Oc
 
 ## Runtime surface
 
-The live source inventory is authoritative. Use `/octocode-harness` inside Pi for the runtime view and see [HARNESS.md](HARNESS.md) for the detailed contract.
+The live source inventory is authoritative. Use `/configuration` inside Pi and see [HARNESS.md](HARNESS.md) for the detailed contract.
 
 | Surface | Count |
 |---|---:|
 | Native Octocode research tools | 0 (research is served through `MCPTool`) |
-| Pi support tools | 16 |
+| Pi support tools | 13 |
 | Guarded Pi builtin overrides | 1 (`bash`) |
 | Disabled Pi builtins | 6 |
 | Slash command entries | 1 |
-| Bundled main-agent skills | 14 |
+| Bundled main-agent skills | 15 |
 
 ### Support tools
 
@@ -41,14 +41,19 @@ The live source inventory is authoritative. Use `/octocode-harness` inside Pi fo
 | `localServer` | Serve an inspected local directory on loopback for review. |
 | `MCPTool` | Discover, describe, call, and manage MCP tools and servers. |
 | `askUser` | Request structured input through Pi's UI. |
-| `memory` | Recall and manage Awareness memory when persistent storage is enabled. |
-| `lock` | Coordinate exceptional exclusive file access. |
-| `message` | Exchange small cross-agent coordination messages. |
 | `readMedia` | Inspect images, video, and audio. |
 | `media` | Create or transform media and PDFs. |
 | `runFfmpeg` | Run guarded ffmpeg or ffprobe argument lists. |
 
 The extension overrides `bash` with command and path guards. It removes Pi's public `read`, `edit`, `write`, `grep`, `find`, and `ls` tools; use Octocode research tools for reads and discovery, and `file` for mutations.
+
+Awareness coordination uses the bundled skill and installed Awareness CLI through
+`bash`. The system prompt includes Awareness's complete operating guide and command
+catalog; Pi supplies the runner, database, workspace and agent identity. Signals,
+locks, memory, bookkeeping and maintenance share the same SQLite ledger as native
+Pi events and external CLI agents. Pi retains automatic registry/event delivery,
+mutation guards and plan UI. Peers must use the same physical database and workspace
+with distinct stable IDs. See [Awareness agent flow](docs/AWARENESS_AGENT_FLOW.md).
 
 ## Configuration and privacy
 
@@ -84,11 +89,12 @@ skills, permissions, theme, effort, and footer density, and opens the current pl
 for review. Host-provided and user-installed commands remain in the live inventory.
 The extension does not add workflow commands or rewrite input through regex triggers.
 
-## Bundled skills (14)
+## Bundled skills (15)
 
 The build copies these main-agent skills into `dist/skills/`:
 
 - `octocode-architect`
+- `octocode-awareness`
 - `octocode-brainstorming`
 - `octocode-chrome-devtools`
 - `octocode-clean-code`

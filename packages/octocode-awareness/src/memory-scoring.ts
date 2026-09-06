@@ -3,7 +3,6 @@ import { normalizeArtifact } from './helpers.js';
 import { fillScope } from './git.js';
 import type { MemoryRow } from './types/work-maintenance.js';
 import type { MemoryRecord } from './types/identity-memory.js';
-import { lexicalSearch } from './memory-search.js';
 
 // ─── Decay / salience scoring ─────────────────────────────────────────────────
 
@@ -83,30 +82,6 @@ export function jaccard(a: Set<string>, b: Set<string>): number {
   let intersection = 0;
   for (const token of a) if (b.has(token)) intersection++;
   return intersection / (a.size + b.size - intersection);
-}
-
-export function findSimilarMemories(
-  db: DatabaseSync,
-  text: string,
-  limit = 3,
-  excludeMemoryId: string | null = null,
-  scopeOptions: LexicalScopeOptions = {},
-): Array<{ memory_id: string; similarity: number }> {
-  const queryTokens = textTokens(text);
-  if (queryTokens.size === 0) return [];
-
-  const candidates = lexicalSearch(
-    db, text, SIMILARITY_PREFETCH, 1, [], [], ['ACTIVE'], scopeOptions,
-  ).filter(m => m.memory_id !== excludeMemoryId);
-
-  return candidates
-    .map(m => ({
-      memory_id: m.memory_id,
-      similarity: jaccard(queryTokens, textTokens(`${m.task_context} ${m.observation}`)),
-    }))
-    .filter(m => m.similarity >= SIMILARITY_THRESHOLD)
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, limit);
 }
 
 export function decayComponents(

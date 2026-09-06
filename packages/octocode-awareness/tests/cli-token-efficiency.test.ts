@@ -75,11 +75,17 @@ describe('CLI token efficiency', () => {
         'signal', 'list', '--agent-id', 'reader', '--workspace', workspace, '--compact',
       ]);
       expect(signals.status).toBe(0);
-      expect(signals.parsed).toMatchObject({ count: 3, has_more: true, bodies: 'omitted' });
+      expect(signals.parsed).toMatchObject({ count: 3, partial: true, partialReasons: ['limit'], bodies: 'omitted' });
       const signalRows = signals.parsed?.['signals'] as Array<Record<string, unknown>>;
       expect(signalRows).toHaveLength(3);
       expect(signalRows.every((row) => !Object.hasOwn(row, 'body'))).toBe(true);
       expect(Buffer.byteLength(signals.stdout, 'utf8')).toBeLessThanOrEqual(3 * 1024);
+      const continuation = signals.parsed?.['next'] as { list: { command: { name: string; args: string[] } } };
+      expect(continuation.list.command.name).toBe('signal list');
+      const nextSignals = ok(db, ['signal', 'list', ...continuation.list.command.args]);
+      const nextRows = nextSignals['signals'] as Array<Record<string, unknown>>;
+      expect(nextRows).toHaveLength(3);
+      expect(new Set([...signalRows, ...nextRows].map((row) => row['signal_id'])).size).toBe(6);
 
       const agents = run(db, ['agent', 'list', '--workspace', workspace, '--compact']);
       expect(agents.status).toBe(0);

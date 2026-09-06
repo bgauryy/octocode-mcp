@@ -347,8 +347,11 @@ export function listWork(db: DatabaseSync, params: ListWorkParams = {}): ListWor
     binds.push(normalizeFiles([params.filePath], params.workspacePath)[0]!);
   }
   const limit = params.limit == null ? null : Math.max(1, Math.floor(params.limit));
-  const limitSql = limit == null ? '' : 'LIMIT ?';
-  if (limit != null) binds.push(limit);
+  const offset = params.offset ?? 0;
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('work offset must be a non-negative safe integer');
+  const countBinds = binds.slice(1);
+  const limitSql = limit == null && offset === 0 ? '' : 'LIMIT ? OFFSET ?';
+  if (limitSql) binds.push(limit ?? -1, offset);
   const rows = db.prepare(`SELECT rf.*, tr.task_id, tr.origin, tr.agent_id, tr.session_id,
       tr.rationale, tr.test_plan, tr.status, tr.workspace_path, tr.artifact,
       EXISTS(SELECT 1 FROM awareness_locks l WHERE l.run_id = rf.run_id AND l.file_path = rf.file_path
@@ -358,13 +361,26 @@ export function listWork(db: DatabaseSync, params: ListWorkParams = {}): ListWor
     WHERE ${where.join(' AND ')}
     ORDER BY rf.file_path, rf.heartbeat_at DESC, rf.run_id ${limitSql}`)
     .all(...binds) as unknown as Array<WorkPresence & { exclusive: number | boolean; result_total: number }>;
-  const totalCount = rows[0]?.result_total ?? 0;
+  const totalCount = rows[0]?.result_total ?? (offset === 0 ? 0 : Number((db.prepare(`
+    SELECT COUNT(*) AS count FROM run_files rf JOIN task_runs tr ON tr.run_id = rf.run_id
+    WHERE ${where.join(' AND ')}`).get(...countBinds) as { count: number }).count));
   const files = rows.map(({ result_total: _total, ...row }) => ({ ...row, exclusive: Boolean(row.exclusive) }));
+  const omittedCount = Math.max(0, totalCount - offset - files.length);
+  const partial = omittedCount > 0;
   return {
     count: files.length,
     total_count: totalCount,
-    omitted_count: Math.max(0, totalCount - files.length),
+    omitted_count: omittedCount,
     files,
+    partial,
+    partialReasons: partial ? ['limit'] : [],
+    ...(partial ? { next: { list: { method: 'listWork' as const, params: {
+      ...params,
+      ...(params.workspacePath ? { workspacePath: workspaceRoot(params.workspacePath) } : {}),
+      ...(params.filePath ? { filePath: normalizeFiles([params.filePath], params.workspacePath)[0]! } : {}),
+      limit,
+      offset: offset + files.length,
+    } } } } : {}),
   };
 }
 
