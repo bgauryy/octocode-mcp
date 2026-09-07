@@ -1,3 +1,12 @@
+import { HISTORY_ROUTE_DESCRIPTORS } from './definitions-history.js';
+
+const HISTORY_REQUIRED = Object.fromEntries(
+  HISTORY_ROUTE_DESCRIPTORS.map(({ command, required }) => [command, [...required]]),
+);
+const HISTORY_ALLOWED = Object.fromEntries(
+  HISTORY_ROUTE_DESCRIPTORS.map(({ command, allowed }) => [command, [...allowed]]),
+);
+
 export const CLI_REQUIRED: Record<string, string[]> = {
   'plan create': ['name', 'objective', 'lead_agent_id', 'workspace'], 'plan show': ['plan_id'],
   'plan join': ['plan_id', 'agent_id'], 'plan doc': ['plan_id', 'agent_id', 'path', 'title'],
@@ -9,6 +18,7 @@ export const CLI_REQUIRED: Record<string, string[]> = {
   'work show': ['workspace', 'file'], 'memory record': ['agent_id', 'task_context', 'observation', 'importance'],
   'signal publish': ['agent_id', 'kind', 'subject'], 'signal reply': ['agent_id', 'in_reply_to', 'subject'],
   'signal ack': ['agent_id', 'signal_id'], 'signal resolve': ['agent_id'],
+  ...HISTORY_REQUIRED,
 };
 
 const CLI_ALLOWED: Record<string, string[]> = {
@@ -31,6 +41,7 @@ const CLI_ALLOWED: Record<string, string[]> = {
   'signal list': ['agent_id', 'workspace', 'artifact', 'repo', 'ref', 'kind', 'thread_id', 'signal_id', 'all', 'unread_only', 'mark_read', 'limit', 'cursor', 'include_bodies', 'format'],
   'signal reply': ['agent_id', 'workspace', 'artifact', 'repo', 'ref', 'in_reply_to', 'subject', 'body', 'to_agent', 'file', 'ref_id', 'importance'],
   'signal ack': ['agent_id', 'signal_id'], 'signal resolve': ['agent_id', 'signal_id', 'thread_id'],
+  ...HISTORY_ALLOWED,
 };
 
 /** Exact canonical root flags for a noun/action route, excluding global flags. */

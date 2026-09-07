@@ -7,7 +7,7 @@ import {
 } from './context-segments.js';
 import { promptLifecycleFor } from './prompt-lifecycle.js';
 import { resolveSessionIdentity } from './session-artifacts.js';
-import type { CurrentRehydrationSource } from './rehydration-orchestrator.js';
+import type { CurrentRehydrationSource } from './context-source-contracts.js';
 
 export type RegisteredContextKind = Extract<ContextSegmentV1['kind'],
   'user-request' | 'peer-event' | 'tool-result' | 'memory-lead' | 'skill' | 'tool-contract'>;

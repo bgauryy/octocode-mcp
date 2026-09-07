@@ -7,6 +7,10 @@ the current registry contract. For current tool names, use `src/constants.ts`; f
 current schemas and descriptions, inspect the built catalog. Exact character counts
 below are historical measurements, not current release criteria.
 
+For the later live model audit, native-ID coordination follow-up, feature ratings,
+and host activation gaps, see the [Awareness assessment](../../../docs/AWARENESS_ASSESSMENT.md).
+The scores below remain the dated palette decision, not cross-vendor readiness.
+
 ## Outcome
 
 The direct Pi palette contains **17 tools**: 16 support tools plus the guarded `bash` override.

@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { getSessionDir, getScreenshotDir } from '../src/chrome-debug.js';
 import { getInternalErrorLogPath } from '../src/index.js';
-import { checkpointStoreDir } from '../src/tools/checkpoints.js';
 import { getDiscoveryFilePath } from '../src/tools/discovery-file.js';
 import { getRegistryDir } from '../src/tools/dynamic-tools.js';
 import { projectMcpPath } from '../src/tools/mcp-config.js';
@@ -20,7 +19,7 @@ afterEach(() => {
 });
 
 describe('global-only extension-owned paths', () => {
-  it('keeps session, discovery, MCP, browser, checkpoint, dynamic-tool, and log artifacts under OCTOCODE_HOME/extension', () => {
+  it('keeps session, discovery, MCP, browser, dynamic-tool, and log artifacts under OCTOCODE_HOME/extension', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-global-paths-'));
     const workspace = path.join(root, 'workspace');
     const octocodeHome = path.join(root, 'octocode-home');
@@ -35,7 +34,6 @@ describe('global-only extension-owned paths', () => {
       projectMcpPath(workspace),
       getSessionDir(workspace, 9222, context.identity.sessionKey),
       getScreenshotDir(workspace, context.identity.sessionKey),
-      checkpointStoreDir(workspace, octocodeHome),
       getRegistryDir({ ...process.env, OCTOCODE_HOME: octocodeHome }),
       getInternalErrorLogPath(workspace, session),
     ];

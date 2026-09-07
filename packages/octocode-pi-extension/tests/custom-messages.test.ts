@@ -20,6 +20,8 @@ import {
   COMPACTION_CHECKPOINT_TYPE,
   buildCompactionCard,
   buildHandoffCard,
+  buildPeerEventCard,
+  buildRecoveryCard,
   emitAwarenessHandoff,
   emitCompactionCheckpoint,
   renderCompactionContextMarker,
@@ -196,7 +198,7 @@ test('card builders truncate every line to the given width', () => {
 
 // ─── Emitters ─────────────────────────────────────────────────────────────────
 
-test('emitCompactionCheckpoint: bounded marker carries recovery pointers and inline summary snapshot', () => {
+test('emitCompactionCheckpoint: bounded marker carries recovery pointers without duplicating the native summary', () => {
   const { pi, sent } = makePi();
   emitCompactionCheckpoint(pi, compactionDetails);
   assert.equal(sent.length, 1);
@@ -205,9 +207,9 @@ test('emitCompactionCheckpoint: bounded marker carries recovery pointers and inl
   assert.equal(msg.display, true);
   assert.equal(msg.details, compactionDetails);
   assert.match(msg.content, /^<octocode_compaction_context>/);
-  // Summary is now inlined (≤3500 chars, covers Next Steps) so the agent can resume without a file read.
   assert.match(msg.content, /"summaryAvailable":true/);
-  assert.match(msg.content, /"summary":"line one/);
+  assert.doesNotMatch(msg.content, /"summary":/);
+  assert.doesNotMatch(msg.content, /line one/);
   assert.match(msg.content, /"phase":"executing"/);
   assert.match(msg.content, /"activeStepIds":\["step-1"\]/);
   assert.match(msg.content, /<\/octocode_compaction_context>$/);
@@ -216,7 +218,7 @@ test('emitCompactionCheckpoint: bounded marker carries recovery pointers and inl
   assert.equal(extraArgs.length, 0, 'no options argument → no triggerTurn');
 });
 
-test('renderCompactionContextMarker caps provider summary text at 3500 chars', () => {
+test('renderCompactionContextMarker keeps large summary bodies out of model context', () => {
   const marker = renderCompactionContextMarker({
     label: 'bounded',
     summary: 'x'.repeat(10_000),
@@ -229,12 +231,10 @@ test('renderCompactionContextMarker caps provider summary text at 3500 chars', (
       },
     },
   });
-  // Summary is bounded at 3500 chars (covers Next Steps at ~2094 chars in typical summaries).
   assert.match(marker, /^<octocode_compaction_context>/);
   assert.match(marker, /"summaryAvailable":true/);
-  // 3500 x's must be in the marker; the full 10000 must not appear.
-  assert.match(marker, /"summary":"x{3500}"/);
-  assert.doesNotMatch(marker, /x{3501}/);
+  assert.doesNotMatch(marker, /"summary":/);
+  assert.doesNotMatch(marker, /x{20}/);
   // marker stays a single line (no newlines in JSON payload)
   assert.ok(!marker.includes('\n'));
 });
@@ -261,13 +261,46 @@ test('emitters are safe when the host lacks sendMessage', () => {
 
 // ─── Renderer registration ────────────────────────────────────────────────────
 
-test('registerOctocodeMessageRenderers registers both custom types', () => {
+test('registerOctocodeMessageRenderers registers lifecycle and peer types', () => {
   const { pi, renderers } = makePi();
   registerOctocodeMessageRenderers(pi);
   assert.deepEqual(
     [...renderers.keys()].sort(),
-    [AWARENESS_HANDOFF_TYPE, COMPACTION_CHECKPOINT_TYPE].sort(),
+    [AWARENESS_HANDOFF_TYPE, COMPACTION_CHECKPOINT_TYPE, 'octocode-peer-event'].sort(),
   );
+});
+
+test('peer cards show attribution and bounded previews, with complete expandable content', () => {
+  const message = {
+    content: '[peer:worker-1; class:blocking; authority:data]\nNeed the test result\n' + '界'.repeat(180),
+    details: { messageClass: 'blocking', eventId: 'event-1' },
+  };
+  const collapsed = buildPeerEventCard(message, false, undefined, 50);
+  assert.match(collapsed.join('\n'), /Awareness.*blocking/);
+  assert.match(collapsed.join('\n'), /worker-1/);
+  assert.match(collapsed.join('\n'), /Need the test result/);
+  assert.ok(collapsed.length <= 3);
+  const expanded = buildPeerEventCard(message, true, undefined, 50);
+  assert.match(expanded.join('\n'), /Peer data/);
+  assert.ok(expanded.every((line) => visibleWidth(line) <= 50));
+  assert.equal(expanded.join('').match(/界/g)?.length, 180, 'expansion wraps rather than drops long peer content');
+});
+
+test('recovery cards distinguish validated, restored, and omitted context without claiming full recovery', () => {
+  const receipt = { outcome: 'restored', reason: 'compaction', validated: ['plan', 'skill'], restored: ['plan'], stale: ['old-tool'], corrupt: [], overBudget: ['large-memory'], pendingInteractionIds: ['decision-1'] };
+  for (const width of [36, 52, 80, 120, 160]) {
+    const lines = buildRecoveryCard(receipt, false, undefined, width);
+    assert.ok(lines.every((line) => visibleWidth(line) <= width));
+    assert.match(lines.join('\n'), /1 pending decision/);
+  }
+  const full = buildRecoveryCard(receipt, true, undefined, 120).join('\n');
+  assert.match(full, /1 restored/);
+  assert.match(full, /2 validated/);
+  assert.match(full, /large-memory/);
+  assert.match(full, /1 pending decision/);
+  assert.match(full, /partial/);
+  assert.deepEqual(buildRecoveryCard({ outcome: 'pending-validation' }, false, undefined, 80), []);
+  assert.deepEqual(buildRecoveryCard({ outcome: 'missing' }, false, undefined, 80), []);
 });
 
 test('registered renderer components render the card lines from message.details', () => {

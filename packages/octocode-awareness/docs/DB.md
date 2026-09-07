@@ -4,14 +4,12 @@ Awareness owns coordination state in an Awareness-only SQLite database. The
 default is `$OCTOCODE_HOME/awareness/awareness.sqlite3`; an explicit workspace
 policy or `--db-scope repo` selects `<workspace>/.octocode/awareness.sqlite3`,
 while `--db` has highest precedence. [STORAGE_SCOPES.md](STORAGE_SCOPES.md) defines placement,
-overrides, artifacts, and legacy migration.
+overrides and artifacts.
 
 The normal Awareness store opener never opens
 `$OCTOCODE_HOME/agent/agent.sqlite3` or
 `$OCTOCODE_HOME/agent/core.sqlite3`. Those files belong to the Agent. The
-explicit legacy migration reader can open a recognized mixed `agent.sqlite3`
-read-only as a migration source; it never treats that file as an Awareness
-target. A database owned by the Octocode CLI, an MCP server, or another
+Awareness runtime rejects mixed `agent.sqlite3` files. A database owned by the Octocode CLI, an MCP server, or another
 `.octocode/` consumer is also outside this package's authority.
 
 ## Entity ownership
@@ -132,51 +130,40 @@ For an explicit file, use an Awareness-specific name:
 npx @octocodeai/octocode-awareness maintenance init --db /absolute/path/awareness.sqlite3 --compact
 ```
 
-For an old mixed Agent/Awareness database, use the explicit relocation command
-documented in [STORAGE_SCOPES.md](STORAGE_SCOPES.md); don't point an Awareness
-opener at the mixed source.
+An old mixed Agent/Awareness database is unsupported. Preserve it for inspection
+and select a fresh Awareness store; do not point an Awareness opener at the mixed
+source. See [storage admission and scope](STORAGE_SCOPES.md).
 
 If identity or fingerprint validation rejects a store, preserve it for
 inspection. Don't rerun initialization against an Agent, CLI, MCP, unknown, or
 mixed database, and don't change `PRAGMA application_id` manually. Follow the
-migration procedure in [STORAGE_SCOPES.md](STORAGE_SCOPES.md).
+store-selection guidance in [STORAGE_SCOPES.md](STORAGE_SCOPES.md).
 
 ## Explicit consolidation copy
 
-Use consolidation only to move a recognized historical or canonical Awareness ledger into a
-**new** canonical file. It opens the source read-only, writes a private
+Use consolidation only to copy an exact current canonical Awareness ledger into a
+**new** file. It opens the source read-only, writes a private
 temporary file beside the requested destination, validates it, then publishes
 the finished file atomically. It never upgrades, relabels, or deletes the
 source. The destination must not already exist.
 
 ```bash
 npx @octocodeai/octocode-awareness database consolidate \
-  --source /absolute/path/old-awareness.sqlite3 \
+  --source /absolute/path/current-awareness.sqlite3 \
   --destination /absolute/path/awareness-consolidated.sqlite3 \
-  --unattributed-agent-id migration-reviewer \
   --dry-run \
   --compact
 ```
 
 `--dry-run` validates a private temporary copy, then discards it. Inspect the
-reported counts, then omit `--dry-run` to publish the new destination. The exact
-prior canonical schema with three-host hook receipts is supported; its copy
-accepts Claude, Codex, Copilot, Cursor, Gemini, and OpenCode receipts. Unknown
-schema changes are rejected. Copying retains transport sequence high-water marks,
+reported counts, then omit `--dry-run` to publish the new destination. Any older,
+incomplete, mixed, or drifted schema is rejected. Copying retains transport sequence high-water marks,
 including positions whose events were already pruned, so consumer cursors stay valid.
 
-`--unattributed-agent-id` is an explicit adoption choice for rows that lack an
-actor. It does not fill in missing plan goals, document directories, task
-reasoning, acceptance criteria, leases, or verification evidence. Review the
-copy before selecting it as an Awareness database.
-
-The command prints JSON. A safe refusal has `ok: false`; incomplete historical
-data uses `error_code: "INCOMPLETE_SOURCE_CONTRACT"` and includes `issues`
-with each affected `table`, row `id`, and `missing` fields. Repair those fields
-in a separate reviewed copy of the old database, then run consolidation again
-from that copy. Do not repair the original merely to make an opener accept it.
+The command prints JSON. A safe refusal has `ok: false` and does not publish a
+destination. Unsupported stores are not migrated; select a fresh Awareness store.
 
 The programmatic API is
-`consolidateDatabase(sourcePath, destinationPath, { unattributedAgentId })`.
-On success it reports copied-table counts and adopted agent IDs. On failure it
+`consolidateDatabase(sourcePath, destinationPath, { dryRun })`.
+On success it reports copied-table counts. On failure it
 leaves the source unchanged and does not publish a destination.

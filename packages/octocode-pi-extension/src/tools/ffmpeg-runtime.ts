@@ -38,22 +38,21 @@ function findExecutable(name: string): string | undefined {
   return undefined;
 }
 
-/** Try to resolve a binary from the optional ffmpeg-static / ffprobe-static npm packages. */
+/**
+ * Resolve a binary from the bundled npm packages installed as hard dependencies.
+ * Both ffmpeg-static and @derhuerst/ffprobe-static export the binary path as a
+ * plain string (or null when the platform/arch is not supported).
+ * They are tiny coordinator packages (~48 KB tarball each) that download the
+ * correct platform binary via their install.js script at `npm install` time.
+ */
 function findStaticBinary(name: 'ffmpeg' | 'ffprobe'): string | undefined {
   try {
-    if (name === 'ffmpeg') {
-      // ffmpeg-static exports the binary path as its default export
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const p = require('ffmpeg-static') as string | null;
-      if (typeof p === 'string' && p) return p;
-    } else {
-      // ffprobe-static exports { path: string }
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const pkg = require('ffprobe-static') as { path?: string } | null;
-      if (pkg && typeof pkg.path === 'string' && pkg.path) return pkg.path;
-    }
+    const pkg = name === 'ffmpeg' ? 'ffmpeg-static' : '@derhuerst/ffprobe-static';
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const p = require(pkg) as string | null;
+    if (typeof p === 'string' && p) return p;
   } catch {
-    // optional dep not installed — silently ignore
+    // package not installed or binary not available for this platform
   }
   return undefined;
 }
@@ -70,9 +69,11 @@ export function detectFfmpeg(): FfmpegAvailability {
       ffmpeg,
       ffprobe,
       reason:
-        'ffmpeg/ffprobe not found on PATH or via ffmpeg-static. ' +
-        'Install with `brew install ffmpeg` (macOS), ' +
-        '`apt install ffmpeg` (Debian/Ubuntu), or see https://ffmpeg.org/download.html',
+'ffmpeg/ffprobe not found on PATH. ' +
+        'The extension bundles ffmpeg-static and @derhuerst/ffprobe-static which download ' +
+        'per-platform binaries at install time — re-run `npm install` (or `yarn install`) to trigger the download. ' +
+        'Alternatively install a system ffmpeg: `brew install ffmpeg` (macOS), ' +
+        '`apt install ffmpeg` (Debian/Ubuntu), or https://ffmpeg.org/download.html',
     };
   } else {
     cachedAvailability = { ok: true, ffmpeg, ffprobe };

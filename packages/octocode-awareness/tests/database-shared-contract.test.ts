@@ -11,7 +11,7 @@ const AWARENESS_TABLES = [
   'awareness_agents', 'awareness_locks', 'awareness_memories', 'awareness_plans', 'awareness_tasks', 'capability_receipts',
   'delivery_state', 'edit_log', 'event_acknowledgements', 'event_consumers',
   'event_outbox', 'handoffs', 'harness_log', 'hook_receipts',
-   'memory_refs',
+    'local_history_operations', 'local_history_restores', 'local_history_versions', 'memory_refs',
   'pending_interactions', 'plan_docs', 'plan_members',  'refinements',
   'run_files', 'run_log', 'sessions', 'signal_reads', 'signals',
   'task_claims', 'task_dependencies', 'task_events', 'task_paths', 'task_runs',
@@ -46,6 +46,7 @@ describe('Awareness database contract', () => {
         'idx_awareness_plans_scope', 'idx_awareness_tasks_plan_status', 'idx_run_files_path_active',
         'idx_signals_to_agent', 'idx_event_outbox_workspace_sequence',
         'idx_interactions_session_status', 'idx_authorization_plan_revision',
+        'idx_local_history_operations_workspace', 'idx_local_history_versions_file',
       ]));
     } finally {
       db.close();

@@ -58,7 +58,7 @@ These are delivery, interaction, and audit records, not additional work lifecycl
 
 Claims, run files, and exclusive locks carry expiry. Reads project expired state without deleting it. Reclaiming work creates a new run; heartbeat, release, submit, and verification must target the owned run. Host check receipts also bind the pending run's update timestamp. Expiry never proves success. A retry cannot reuse an old completion receipt.
 
-Signals own peer threads and read receipts. Their outbox event is inserted atomically with the signal. Consumer cursors describe transport progress; they do not replace participant read acknowledgements.
+Signals own peer threads and read receipts. Their outbox event is inserted atomically with the signal. Each consumer acknowledges the next event in sequence with `accept`, `hold`, or `refuse`; an acknowledgement with a different decision cannot overwrite an existing one. Cursors describe transport progress and fence pruning at the slowest consumer. They do not replace participant read acknowledgements: accepted peer messages are marked read for the receiving agent after successful host delivery, while held proposals remain unread.
 
 ## What an integrity check proves
 

@@ -17,6 +17,25 @@ Use compact recall for orientation. Expand only relevant IDs and verify every de
 
 Store only verified, reusable facts with narrow scope and references. Prefer a lesson that changes a future decision over status, raw dialogue, or a transcript. Reflect after the check so outcome and evidence remain joined.
 
+## Validate declared evidence
+
+For file-backed learning, `memory record --capture-fingerprint` captures current
+bytes and modes from every declared `--file` and `--reference file:<path>` source.
+Include dependencies explicitly. `memory recall --check-fingerprint` checks those
+sources in the same canonical workspace and retains `evidence.state` in lean output:
+`fresh`, `stale`, or `unknown`. Without the check, a captured fingerprint is unknown.
+
+Fresh means the declared sources match at observation time; it proves neither the
+claim, complete dependency coverage nor a successful check. Changed or missing
+sources are stale; unsupported, inaccessible, foreign, symlinked or over-budget
+sources cannot be fresh. Limits are 64 references, 1 MiB per file, 8 MiB per call
+and a cooperative 100 ms filesystem deadline, which cannot preempt a blocked kernel
+call. Partial captures fail. Existing memory references and fingerprint storage own
+this feature; there is no separate cache database.
+
+Discover exact fields with `schema command memory record --compact` and
+`schema command memory recall --compact`.
+
 ## Freshness and conflict
 
 - A stale file reference lowers confidence; it does not silently update itself.

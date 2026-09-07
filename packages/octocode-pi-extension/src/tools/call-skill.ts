@@ -16,6 +16,7 @@ import type { ToolDefinition, PiContext } from '../types.js';
 import { sliceBetween } from '../utils.js';
 import type { registerUniqueTool } from './octocode-tools.js';
 import { spawnRpcAgent, waitForAgentTurn, isSubagentProcess, killWorkerById } from './agent-tools.js';
+import { isAbortError, throwIfAborted } from './cancellation.js';
 import {
   resolveSkill,
   registerSkill,
@@ -52,6 +53,7 @@ export interface SkillGenerateArgs {
   mode: Mode;
   existing?: SkillManifestEntry;
   ctx?: PiContext;
+  signal?: AbortSignal;
 }
 
 export type SkillGenerator = (args: SkillGenerateArgs) => Promise<GeneratedSkill>;
@@ -94,7 +96,7 @@ function buildSkillSmithPrompt(a: SkillGenerateArgs): string {
     `Intent: ${a.intent || '(infer from the name and metadata)'}`,
     `Context metadata: ${JSON.stringify(a.metadata)}`,
     '',
-    'Before writing, briefly research/brainstorm: is there an existing skill, tool, or simple command that already covers this? A skill is justified only for a recurring MULTI-STEP workflow.',
+    'Before writing, reason about whether the requested workflow is recurring and genuinely multi-step. Keep it focused and avoid duplicating capabilities named in the supplied context.',
     '',
     'Requirements for the SKILL.md:',
     '- Valid Agent Skills frontmatter: `name` (1-64 lowercase a-z/0-9/hyphen) and a specific `description` (<=1024 chars, says what it does AND when to use it).',
@@ -151,7 +153,7 @@ const defaultGenerator: SkillGenerator = async (a) => {
     // Progress-aware: ride out long-but-active authoring turns (resets on every
     // event, probes on quiet gaps), with a generous absolute backstop so a truly
     // hung smith can't wedge the main process forever.
-    await waitForAgentTurn(record, { maxSilenceMs: 120_000, absoluteCapMs: 600_000 });
+    await waitForAgentTurn(record, { maxSilenceMs: 120_000, absoluteCapMs: 600_000, signal: a.signal });
     return parseGeneratedSkill(record.lastOutput || record.stderr || '', a.skillType);
   } finally {
     // On timeout/error the spawned smith worker is still alive — kill it so it
@@ -177,7 +179,8 @@ interface SkillOutcome {
   skills?: Array<{ name: string; description: string; version: number; uses: number }>;
 }
 
-export async function orchestrate(params: CallSkillParams, ctx?: PiContext): Promise<SkillOutcome> {
+export async function orchestrate(params: CallSkillParams, ctx?: PiContext, signal?: AbortSignal): Promise<SkillOutcome> {
+  throwIfAborted(signal);
   const metadata = params.metadata ?? {};
   const mode: Mode = params.mode ?? 'auto';
   const intent = typeof metadata['intent'] === 'string' ? (metadata['intent'] as string) : '';
@@ -233,15 +236,18 @@ export async function orchestrate(params: CallSkillParams, ctx?: PiContext): Pro
     }
     let generated: GeneratedSkill;
     try {
-      generated = await getGenerator()({ skillType: params.skillType, intent, metadata, mode, existing: entry, ctx });
+      generated = await getGenerator()({ skillType: params.skillType, intent, metadata, mode, existing: entry, ctx, signal });
     } catch (err) {
+      if (isAbortError(err) || signal?.aborted) throw err;
       return { status: 'error', pruned, message: `Skill generation failed: ${(err as Error).message}` };
     }
+    throwIfAborted(signal);
     const reg = registerSkill({ name: generated.name, description: generated.description, reason: generated.reason || reason, skillMd: generated.skillMd });
     if (!reg.ok) {
       return { status: 'error', skillName: generated.name, pruned, message: `Generated skill rejected by validation gate (${reg.reason}${reg.detail ? `: ${reg.detail}` : ''}).` };
     }
     entry = reg.entry;
+    throwIfAborted(signal);
     recordSkillUse(entry.name);
     return {
       status: 'created',
@@ -253,6 +259,7 @@ export async function orchestrate(params: CallSkillParams, ctx?: PiContext): Pro
   }
 
   if (!entry) return { status: 'error', hit: resolved.hit, pruned, message: 'No skill available.' };
+  throwIfAborted(signal);
   recordSkillUse(entry.name);
   return {
     status: 'reuse',

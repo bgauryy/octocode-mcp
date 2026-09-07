@@ -252,6 +252,23 @@ receipts, memory judgment, cleanup approval, or query-export requests.
 
 Host wiring details live in [HOOKS.md](HOOKS.md).
 
+## Peer event delivery
+
+Publishing a signal and its `peer.message` outbox event is one database transaction.
+An in-process host drains that outbox through `createAwarenessEventConsumer` with a
+stable workspace-scoped consumer ID and the receiving agent ID. Each drain is
+serialized and bounded. The consumer validates the event envelope, workspace,
+actor, aggregate, target, provenance, expiry, and body before delivery.
+
+The inbound policy accepts informational, blocker, and handoff messages as
+attributed peer data. Requests and decisions are proposals, so the consumer records
+`hold` and does not inject them as authority. Refused or malformed events are
+acknowledged as refused. Accepted messages are marked read for the recipient only
+after host delivery succeeds; the durable event acknowledgement then advances the
+consumer cursor in sequence. A delivery or acknowledgement error stops that drain
+at the failed event so a later drain can recover without skipping it. Transport
+acknowledgements and signal read receipts remain separate records.
+
 ## Context model
 
 Persist everything needed for coordination; prompt only actionable changes:

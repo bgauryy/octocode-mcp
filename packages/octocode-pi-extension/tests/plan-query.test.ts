@@ -843,6 +843,81 @@ test('durable noninteractive RFC approval resumes through a bound authorization 
   }
 });
 
+test('an accepted reviewed plan resumes with its exact revision after the interaction continuation is lost', async () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'plan-accepted-resume-'));
+  const rfcPath = join(workspace, '.octocode', 'rfc', 'demo', 'RFC.md');
+  mkdirSync(join(workspace, '.octocode', 'rfc', 'demo'), { recursive: true });
+  writeFileSync(rfcPath, '# Accepted reviewed design\n');
+  const localCtx = {
+    cwd: workspace,
+    mode: 'tui',
+    sessionManager: { getSessionId: () => 'accepted-plan-session' },
+  } as unknown as PiContext;
+  const scope = activePlanScope(localCtx);
+  setInteractionStoreFactoryForTests((storeWorkspace) => openAwarenessStore({ workspace: storeWorkspace }));
+  const tool = loadTool();
+  try {
+    setPlan(scope, [{ text: 'Implement accepted design' }], 'draft');
+    setPlanRfc(scope, rfcPath);
+    const proposed = proposePlanReview(scope);
+    assert.equal(proposed.ok, true);
+    const revision = getPlanReviewState(scope).revision!;
+    const accepted = acceptPlanReview(scope, revision, 'authorization_prior_start');
+    assert.equal(accepted.ok, true);
+    assert.equal(getPlanReviewState(scope).phase, 'accepted');
+
+    const started = await tool.execute('id', {
+      queries: [{
+        reasoning: 'resume the already authorized exact revision after host reload',
+        action: 'start',
+        revision,
+      }],
+    }, undefined, undefined, localCtx) as { isError?: boolean; details?: { error?: string } };
+
+    assert.notEqual(started.isError, true);
+    assert.equal(getPlanReviewState(scope).phase, 'executing');
+    assert.equal(getPlan(scope)[0]?.status, 'doing');
+  } finally {
+    setInteractionStoreFactoryForTests();
+    clearPlan(scope);
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('revision-only reviewed Start cannot bypass in-review or unreceipted accepted states', async () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'plan-start-boundary-'));
+  const rfcPath = join(workspace, '.octocode', 'rfc', 'demo', 'RFC.md');
+  mkdirSync(join(workspace, '.octocode', 'rfc', 'demo'), { recursive: true });
+  writeFileSync(rfcPath, '# Authorization boundary\n');
+  const localCtx = { cwd: workspace, mode: 'tui' } as unknown as PiContext;
+  const scope = activePlanScope(localCtx);
+  const tool = loadTool();
+  try {
+    setPlan(scope, [{ text: 'Protected implementation' }], 'draft');
+    setPlanRfc(scope, rfcPath);
+    assert.equal(proposePlanReview(scope).ok, true);
+    const revision = getPlanReviewState(scope).revision!;
+
+    const inReview = await tool.execute('id', {
+      queries: [{ reasoning: 'must not infer approval', action: 'start', revision }],
+    }, undefined, undefined, localCtx) as { isError?: boolean; details?: { error?: string } };
+    assert.equal(inReview.isError, true);
+    assert.equal(inReview.details?.error, 'authorization-required');
+    assert.equal(getPlanReviewState(scope).phase, 'in_review');
+
+    assert.equal(acceptPlanReview(scope, revision).ok, true);
+    const unreceipted = await tool.execute('id', {
+      queries: [{ reasoning: 'must require persisted authority', action: 'start', revision }],
+    }, undefined, undefined, localCtx) as { isError?: boolean; details?: { error?: string } };
+    assert.equal(unreceipted.isError, true);
+    assert.equal(unreceipted.details?.error, 'authorization-required');
+    assert.equal(getPlanReviewState(scope).phase, 'accepted');
+  } finally {
+    clearPlan(scope);
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test('review-phase and draft step actions fail instead of reporting a no-op success', async () => {
   const tool = loadTool();
   setPlan(CWD, ['A'], 'draft');

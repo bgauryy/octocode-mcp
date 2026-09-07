@@ -94,8 +94,7 @@ describe('full-loop host hook contracts', () => {
 
   it('uses Cursor-native permission, context, and follow-up responses', () => {
     expect(hookContextEnvelope('cursor', 'preToolUse', 'peer changed')).toEqual({
-      permission: 'allow',
-      agent_message: 'peer changed',
+      additional_context: 'peer changed',
     });
     expect(hookContextEnvelope('cursor', 'sessionStart', 'briefing changed')).toEqual({
       additional_context: 'briefing changed',

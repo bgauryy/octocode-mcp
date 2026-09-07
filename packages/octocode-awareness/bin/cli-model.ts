@@ -129,7 +129,7 @@ export const RETENTION_DAY_FLAGS = new Set(['retention_days', 'refinement_handof
 // Only these flags may use the `--no-*` spelling. Treating every `--no-*`
 // token as false let required scalar values such as `--agent-id` and
 // `--task-context` evade validation.
-export const BOOLEAN_FLAGS = new Set(['compact', 'help', 'smart', 'global_only', 'strict_scope', 'all_workspaces', 'explain', 'semantic', 'full', 'dry_run', 'include_handoffs', 'strict_agent_id', 'verified', 'expired_only', 'all_pending', 'propose', 'fail_stale_active_runs', 'include_bodies', 'explain_organ', 'check', 'include_view', 'all', 'unread_only', 'mark_read', 'resolved', 'global', 'strict', 'remove', 'exclusive', 'next', 'duo', 'examples', 'allow_similar', 'prune_orphans', 'adopt_verification', 'force']);
+export const BOOLEAN_FLAGS = new Set(['compact', 'help', 'smart', 'global_only', 'strict_scope', 'all_workspaces', 'explain', 'semantic', 'full', 'dry_run', 'include_handoffs', 'strict_agent_id', 'verified', 'expired_only', 'all_pending', 'propose', 'fail_stale_active_runs', 'include_bodies', 'explain_organ', 'check', 'include_view', 'all', 'unread_only', 'mark_read', 'resolved', 'global', 'strict', 'remove', 'exclusive', 'next', 'duo', 'examples', 'allow_similar', 'prune_orphans', 'adopt_verification', 'force', 'capture_fingerprint', 'check_fingerprint']);
 // Flags that must carry a value. Catches value-swallow like `--query --smart`,
 // which parseArgs would otherwise read as query=true (searching the literal
 // string "true"). Curated allowlist — unlisted flags are never falsely rejected.

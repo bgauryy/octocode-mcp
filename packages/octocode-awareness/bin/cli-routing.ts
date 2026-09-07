@@ -9,10 +9,12 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ArgValue, BOOLEAN_FLAGS, GLOBAL_FLAGS, NUMERIC_FLAGS, ParsedArgs, RETENTION_DAY_FLAGS, VALUE_REQUIRED_FLAGS } from './cli-model.js';
 import { COMMAND_DISPLAY, COMMAND_EXAMPLE, COMMAND_TO_SCHEMA } from './cli-help-data.js';
+import { HISTORY_ROUTE_DESCRIPTORS } from '../src/schema/definitions-history.js';
 
 export const KNOWN_FLAGS: Record<string, string[]> = {
-  'tell-memory': ['agent_id', 'task_context', 'observation', 'importance', 'label', 'tag', 'reference', 'supersedes', 'failure_signature', 'valid_from', 'valid_to', 'workspace', 'artifact', 'repo', 'ref', 'file', 'file_tree_fingerprint', 'allow_similar'],
-  'get-memory': ['query', 'limit', 'min_importance', 'label', 'tag', 'smart', 'workspace', 'artifact', 'repo', 'ref', 'state', 'sort', 'global_only', 'strict_scope', 'all_workspaces', 'as_of', 'reference', 'regex', 'file_regex', 'file', 'explain', 'semantic', 'full'],
+  ...Object.fromEntries(HISTORY_ROUTE_DESCRIPTORS.map(route => [route.schema, [...route.allowed]])),
+  'tell-memory': ['agent_id', 'task_context', 'observation', 'importance', 'label', 'tag', 'reference', 'supersedes', 'failure_signature', 'valid_from', 'valid_to', 'workspace', 'artifact', 'repo', 'ref', 'file', 'file_tree_fingerprint', 'capture_fingerprint', 'allow_similar'],
+  'get-memory': ['query', 'limit', 'min_importance', 'label', 'tag', 'smart', 'workspace', 'artifact', 'repo', 'ref', 'state', 'sort', 'global_only', 'strict_scope', 'all_workspaces', 'as_of', 'reference', 'regex', 'file_regex', 'file', 'explain', 'semantic', 'full', 'check_fingerprint'],
   'forget': ['memory_id', 'tag', 'tags', 'before', 'max_importance', 'workspace', 'artifact', 'repo', 'ref', 'dry_run'],
   'memory-archive': ['memory_id', 'workspace', 'artifact', 'repo', 'ref', 'dry_run'],
   'memory-restore': ['memory_id', 'workspace', 'artifact', 'repo', 'ref', 'dry_run'],
@@ -36,7 +38,7 @@ export const KNOWN_FLAGS: Record<string, string[]> = {
   'export-harness': ['limit', 'min_importance', 'workspace', 'artifact'],
   'developer-review': ['workspace', 'artifact', 'repo', 'ref', 'state', 'limit', 'format', 'query'],
   'query': ['view', 'query', 'limit', 'format', 'out', 'workspace', 'artifact', 'repo', 'ref', 'agent_id', 'state', 'label', 'file', 'since', 'include_bodies'],
-  'attend': ['agent_id', 'query', 'limit', 'workspace', 'artifact', 'repo', 'ref', 'file', 'include_bodies', 'explain_organ'],
+  'attend': ['agent_id', 'query', 'limit', 'workspace', 'artifact', 'repo', 'ref', 'file', 'include_bodies', 'explain_organ', 'revision'],
   'agent-registry': ['action', 'agent_id', 'agent_name', 'agent_vendor', 'agent_host', 'workspace', 'artifact', 'context', 'limit', 'offset'],
   'agent-signal': ['action', 'agent_id', 'workspace', 'artifact', 'repo', 'ref', 'kind', 'subject', 'body', 'to_agent', 'file', 'ref_id', 'importance', 'in_reply_to', 'thread_id', 'signal_id', 'all', 'unread_only', 'mark_read', 'limit', 'cursor', 'include_bodies', 'format'],
   'notify-prune': ['agent_id', 'signal_id', 'resolved', 'older_than_days', 'dry_run', 'workspace', 'artifact'],
@@ -133,6 +135,7 @@ export interface CommandRoute {
 }
 
 export const COMMAND_ROUTES: Record<string, CommandRoute> = {
+  ...Object.fromEntries(HISTORY_ROUTE_DESCRIPTORS.map(route => [route.command, { command: route.schema }])),
   'memory record': { command: 'tell-memory' },
   'memory recall': { command: 'get-memory' },
   'memory forget': { command: 'forget' },

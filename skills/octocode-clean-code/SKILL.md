@@ -1,6 +1,6 @@
 ---
 name: octocode-clean-code
-description: "Use when a codebase needs dead weight cut: shims, legacy stubs, re-exports, aliases, duplicate logic, patch regexes, verbose comments, junk docs, bloated config, god files, god folders, misplaced files, redundant schemas, duplicate type aliases, stale protocol stubs, unused dependencies, or version misalignment. Trigger phrases include clean up, remove legacy, remove shims, remove re-exports, dead code audit, god file, clean dependencies, unused deps, or dependency alignment. Not for feature work or behavioral refactors."
+description: "Use when a codebase needs dead weight cut: shims, legacy stubs, re-exports, aliases, duplicate logic, patch regexes, verbose comments, junk docs, bloated config, god files, god folders, misplaced files, redundant schemas, duplicate type aliases, stale protocol stubs, unused dependencies, version misalignment, redundant test stubs, bad rigid mocks, unused test configurations, or skipped/legacy tests. Trigger phrases include clean up, remove legacy, remove shims, remove re-exports, dead code audit, god file, clean dependencies, unused deps, dependency alignment, remove rigid mocks, remove skipped tests, test hygiene, legacy test cleanup, or iteration tests. Not for feature work or behavioral refactors."
 ---
 
 # Octocode Clean Code
@@ -30,6 +30,7 @@ Workspace output contract: chat-only findings stay in chat. Saved inventory repo
 | Junk prose | syntax-narration comments, dead comment blocks, god documentation, stale TODOs |
 | Schema / type redundancy | type aliases that just re-name, duplicate interfaces, stale protocol stubs, redundant enums |
 | Dependency junk | unused deps, duplicate declarations, version misalignment, phantom deps, workspace-protocol violations |
+| Test debt | numbered/dated iteration files, skipped tests with no ticket, rigid mocks coupling to private internals, redundant stubs with no expect reference, environment-coupled tests, unused beforeEach/afterEach setup |
 
 ## Smart routes — load only what the current step needs
 - When starting the cleanup run or choosing between phases (SCOPE, AUDIT, INVENTORY, TRIAGE, CONSENT, EXCISE, VERIFY), load `references/cleanup-playbook.md` — per-phase run with per-class audit queries, inventory table, and check contract.
@@ -39,6 +40,8 @@ Workspace output contract: chat-only findings stay in chat. Saved inventory repo
 - When inspecting config files for length, redundant keys, or misplaced settings, load `references/config-hygiene.md` — config hygiene rules, type-specific length limits, and consent gate.
 - When reviewing type definitions, interfaces, enums, schemas, or protocol shapes for redundancy or aliasing, load `references/schema-hygiene.md` — type-alias rules, duplicate interface detection, and protocol stub evidence bar.
 - When auditing package.json files for unused, duplicate, misaligned, or phantom dependencies across the repo, load `references/dependency-hygiene.md` — unused-dep checks, version alignment, workspace-protocol rules, and consent gate.
+- When the task involves removing numbered/dated iteration test files, skipped tests, rigid mocks, redundant stubs, or unused test setup, load `references/test-hygiene.md` — test smell catalog, detection queries, evidence bar, and excision protocol.
+- When writing replacement tests after removing legacy or rigid ones (to recover lost coverage), load `references/test-quality.md` — isolation patterns, naming conventions, and the coverage replacement rule.
 - When symbol proof, caller lists, import graphs, or structural search are needed, load `references/octocode.md` — tool routing for LSP, graph, and structural queries.
 
 ## Related routes

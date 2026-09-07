@@ -8,6 +8,7 @@ export const COMMAND_HELP: Record<string, string> = {
   'tell-memory': `usage: npx @octocodeai/octocode-awareness memory record --agent-id <id> --task-context <text> --observation <text> --importance <1-10> [--label <l>] [--tag <t>]... [--reference <r>]... [--file <p>]... [--supersedes <id>]... [--allow-similar]
 scope: [--workspace <p>] [--artifact <a>] [--repo <r>] [--ref <r>]
 lifecycle: [--valid-from <iso>] [--valid-to <iso>] [--failure-signature <key>]
+evidence: --capture-fingerprint captures every declared --file / file: reference, including dependencies; incompatible with --file-tree-fingerprint
 example: npx @octocodeai/octocode-awareness memory record --agent-id agent --task-context "build failure" --observation "Run yarn build before tests" --importance 7 --label GOTCHA --workspace "$PWD" --compact
 note: unknown --label values hard-error
 note: --supersedes atomically records a replacement and preserves the replaced row as history
@@ -17,6 +18,7 @@ filters: [--query <text>] [--limit <n>] [--min-importance <n>] [--label <l>]... 
 scope: [--workspace <p>] [--artifact <a>] [--repo <r>] [--ref <r>] [--strict-scope] [--global-only] [--all-workspaces]
 rank: [--smart] [--sort smart|score|importance|recent|accessed] [--state ACTIVE|SUPERSEDED]... [--as-of <iso>] [--semantic] [--explain]
 output: lean/truncated by default; --full restores full memory rows
+evidence: --check-fingerprint rechecks declared source content/modes; unchecked, missing or foreign evidence cannot be fresh; fresh is not verification
 scope: default = this-workspace + truly-global; --strict-scope = exactly this-workspace; --global-only = only truly-global (all-NULL provenance); --all-workspaces = search across all workspaces (skip workspace_path scoping)
 example: npx @octocodeai/octocode-awareness memory recall --query "current task" --workspace "$PWD" --smart --compact
 schema: npx @octocodeai/octocode-awareness schema json-schema memory_recall --compact`,

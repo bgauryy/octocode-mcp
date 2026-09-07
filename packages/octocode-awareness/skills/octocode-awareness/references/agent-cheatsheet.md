@@ -1,4 +1,4 @@
-# Awareness Agent Cheat Sheet
+# Awareness agent cheat sheet
 
 Load when the compact lobby is insufficient and an exact expert lifecycle is needed.
 
@@ -41,7 +41,13 @@ already projected by native integration; do not start or verify duplicate runs.
 
 Always run `verify audit` before finishing, including with host automation. Inspect
 your ID/workspace in the same store, settle actual debt or report unfinished checks,
-and leave peers' debt to its owner. Only when sensors show reusable learning or cleanup pressure:
+and leave peers' debt to its owner. A coordinator also audits each owned worker's
+native ID in that store/workspace. An empty parent audit does not settle worker
+debt. Ask the worker to verify its exact run, or disclose the outstanding check;
+do not impersonate it or clear unrelated peer debt. A handback and worker shutdown
+are not verification receipts.
+
+Only when sensors show reusable learning or cleanup pressure:
 ```bash
 <cli> reflect record --agent-id "$OCTOCODE_AGENT_ID" --workspace "$PWD" --task "<task>" --outcome worked --lesson "<verified>" --compact
 <cli> memory archive --memory-id <id> --workspace "$PWD" --dry-run

@@ -118,10 +118,16 @@ export abstract class CoordinationState extends CoordinationPlansTasks {
       return { runId: row.run_id, taskId: run.task_id, agentId: row.agent_id,
         testPlan: row.test_plan, rationale: row.rationale, createdAt: row.created_at };
     }).filter(row => !params.planId || (row.taskId && this.getTask(row.taskId).planId === params.planId));
+    const staleActive = audit.stale_active.map(row => {
+      const run = getRun(this.db, row.run_id);
+      return { runId: row.run_id, taskId: run.task_id, agentId: row.agent_id };
+    }).filter(row => !params.planId || (row.taskId && this.getTask(row.taskId).planId === params.planId));
     return {
-      ok: pending.length === 0,
+      ok: pending.length === 0 && staleActive.length === 0,
       pending,
       pendingCount: pending.length,
+      staleActive,
+      staleActiveCount: staleActive.length,
       filters: {
         agentId: params.agentId?.trim() || null,
         planId: params.planId?.trim() || null,

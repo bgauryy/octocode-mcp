@@ -23,12 +23,16 @@
  */
 
 import type { PiContext, PiInstance, WorkerLedgerEntry, WorkerLedgerEventType, NotifyFn } from '../types.js';
-import type { SelectOverlayItem, SelectOverlayOptions } from './ui-overlays.js';
+import { runSelectOverlay, type SelectOverlayItem, type SelectOverlayOptions } from './ui-overlays.js';
 import { truncatePlainToWidth } from './render-helpers.js';
 import { shortId } from './ids.js';
 import {
   formatElapsed,
+  getWorkerTranscript,
+  killWorkerById,
+  listWorkerLedgerEntries,
   registerWorkerLedgerListener,
+  steerWorkerById,
 } from './agent-tools.js';
 import {
   clearTitleFlashTimer,
@@ -40,7 +44,6 @@ import {
   resumeDesktopNotifications,
 } from './desktop-notify.js';
 
-export const OCTOCODE_INBOX_COMMAND = 'octocode-inbox';
 /** Completed workers that ran longer than this always notify, even mid-turn. */
 export const LONG_RUN_NOTIFY_MS = 30_000;
 const TRANSCRIPT_MAX_LINES = 40;
@@ -300,6 +303,22 @@ export function registerAgentInbox(
   const flashTitle = seams.flashTitle ?? ((ctx: PiContext | undefined, text: string) => flashTerminalTitle(ctx, text));
   const enabled = seams.notificationsEnabled ?? notificationsEnabled;
   const now = seams.now ?? Date.now;
+
+  pi.registerCommand?.('octocode-inbox', {
+    description: 'Inspect, steer, or stop spawned Octocode workers',
+    handler: async (_args, ctx) => {
+      await runAgentInboxOverlay({
+        ctx,
+        listEntries: seams.listEntries ?? listWorkerLedgerEntries,
+        runOverlay: seams.runOverlay ?? runSelectOverlay,
+        steer: seams.steer ?? steerWorkerById,
+        kill: seams.kill ?? killWorkerById,
+        transcript: seams.transcript ?? getWorkerTranscript,
+        notify: notifier,
+        now,
+      });
+    },
+  });
 
   // Registration-local state (closures, not module globals, so each session/test is isolated).
   let localSuppressed = false;

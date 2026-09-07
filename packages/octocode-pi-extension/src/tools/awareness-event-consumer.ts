@@ -1,13 +1,17 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { isPersistentStorageEnabled } from '@octocodeai/config';
 import {
   createAwarenessEventConsumer,
+  createAwarenessEventObservability,
   type AwarenessEventObservability,
   type AwarenessEventStore,
   type AwarenessPeerDelivery,
 } from '@octocodeai/octocode-awareness';
 import type { PiContext, PiInstance } from '../types.js';
 import { openPersistentAwareness } from './storage-policy.js';
+import { notifyDesktopAttention } from './desktop-notify.js';
 
 /** Render only current-drain delivery pressure; lifetime totals are diagnostic history. */
 export function awarenessEventStatusText(stats: AwarenessEventObservability): string | undefined {
@@ -31,6 +35,8 @@ interface RegisterAwarenessEventConsumerOptions {
   onObservability?(stats: AwarenessEventObservability, ctx: PiContext): void;
   now?: () => number;
   maxEventsPerDrain?: number;
+  /** Host authorization gate; unknown project trust fails closed by default. */
+  canWake?(ctx: PiContext): boolean;
   onDelivery?(message: AwarenessPeerDelivery, ctx: PiContext): void;
 }
 
@@ -49,21 +55,6 @@ function isPersistedPeerDelivery(entry: unknown, message: AwarenessPeerDelivery)
     && receipt['sequence'] === message.details.sequence;
 }
 
-const initialObservability = (consumerId: string): AwarenessEventObservability => ({
-  consumerId,
-  backlogDepth: 0,
-  backlogCapped: false,
-  lastAcknowledgedSequence: 0,
-  accepted: 0,
-  held: 0,
-  refused: 0,
-  errors: 0,
-  drainAccepted: 0,
-  drainHeld: 0,
-  drainRefused: 0,
-  drainErrors: 0,
-});
-
 export function resolvePiEventConsumerId(ctx: PiContext): string | undefined {
   const sessionId = nonEmptyString(ctx.sessionManager?.getSessionId?.());
   const sessionFile = nonEmptyString(ctx.sessionManager?.getSessionFile?.());
@@ -75,25 +66,62 @@ export function resolvePiEventConsumerId(ctx: PiContext): string | undefined {
 
 /** Register event-driven wake points only; there is deliberately no polling loop. */
 export function registerAwarenessEventConsumer(pi: PiInstance, options: RegisterAwarenessEventConsumerOptions = {}): void {
-  const consumers = new Map<string, {
+  const attentionByContext = new WeakMap<object, string>();
+  const observe = (stats: AwarenessEventObservability, ctx: PiContext): void => {
+    options.onObservability?.(stats, ctx);
+    // Queue churn is status, while held decisions and delivery failures need attention.
+    const attention = stats.drainErrors > 0 ? 'Peer message delivery is unavailable; messages may be delayed.'
+      : stats.drainHeld > 0 ? 'A peer proposal needs a human decision. Inspect the Awareness inbox.'
+        : undefined;
+    if (!attention) { attentionByContext.delete(ctx); return; }
+    if (attentionByContext.get(ctx) === attention) return;
+    attentionByContext.set(ctx, attention);
+    try { if (ctx.hasUI) ctx.ui?.notify?.(`Awareness: ${attention}`, 'warning'); } catch { /* stale UI cannot change delivery */ }
+  };
+  let generation = 0;
+  let shutdown = false;
+  let running = false;
+  let wakeAvailable = true;
+  let pendingActionable = 0;
+  const recordActionable = (message: AwarenessPeerDelivery, expectedAgentId: string): void => {
+    if (message.details.toAgentId === expectedAgentId && message.details.messageClass !== 'informational') {
+      pendingActionable = Math.min(pendingActionable + 1, 999);
+    }
+  };
+  let activeConsumer: {
+    key: string;
     consumer: ReturnType<typeof createAwarenessEventConsumer>;
     binding: { ctx: PiContext };
-  }>();
+  } | undefined;
   const drain = async (ctx: PiContext): Promise<void> => {
+    if (shutdown) return;
+    if (!options.openStore && !isPersistentStorageEnabled()) return;
     const workspace = path.resolve(ctx.cwd ?? process.cwd());
     const consumerId = resolvePiEventConsumerId(ctx);
     if (!consumerId) {
-      options.onObservability?.({ ...initialObservability('unavailable'), errors: 1, drainErrors: 1 }, ctx);
+      observe({ ...createAwarenessEventObservability('unavailable'), errors: 1, drainErrors: 1 }, ctx);
       return;
     }
+    // Pi defers creating a new session file until its first assistant message.
+    // getEntries() alone is only memory before that point (and in --no-session).
+    // Leave shared events unread for the next durable turn rather than consume
+    // messages that would disappear if the user closes the fresh session.
+    const sessionFile = ctx.sessionManager?.getSessionFile?.();
+    if (!sessionFile || !existsSync(sessionFile)) return;
     const expectedAgentId = options.resolveExpectedAgentId?.(ctx);
     if (!expectedAgentId?.trim()) {
-      options.onObservability?.({ ...initialObservability(consumerId), errors: 1, drainErrors: 1 }, ctx);
+      observe({ ...createAwarenessEventObservability(consumerId), errors: 1, drainErrors: 1 }, ctx);
       return;
     }
     const key = `${workspace}\0${consumerId}\0${expectedAgentId}`;
-    let scoped = consumers.get(key);
-    if (!scoped) {
+    let scoped = activeConsumer;
+    if (scoped?.key !== key) {
+      const consumerGeneration = ++generation;
+      const assertActive = (): void => {
+        if (shutdown || consumerGeneration !== generation) {
+          throw new Error('Awareness delivery interrupted by a session transition; event remains unacknowledged');
+        }
+      };
       const binding = { ctx };
       const consumer = createAwarenessEventConsumer({
         workspace,
@@ -103,6 +131,7 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
         ...(options.now ? { now: options.now } : {}),
         ...(options.maxEventsPerDrain ? { maxEventsPerDrain: options.maxEventsPerDrain } : {}),
         deliver: async (message) => {
+          assertActive();
           const currentCtx = binding.ctx;
           if (!pi.sendMessage) throw new Error('Pi custom message delivery is unavailable');
           const readEntries = currentCtx.sessionManager?.getEntries ?? currentCtx.sessionManager?.getBranch;
@@ -119,7 +148,7 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
           /*
            * pi.sendMessage() wraps the async sendCustomMessage() in a fire-and-forget
            * .catch(), returning void synchronously while the internal write is still in
-           * flight. deliverAs:'steer' is explicit: outside streaming (turn_end context)
+           * flight. deliverAs:'steer' is explicit: after the agent_end hooks return,
            * pi appends immediately to the session ledger rather than queuing for the
            * next user prompt ('nextTurn' is only an in-memory queue and does not survive
            * compaction or session reload).
@@ -129,26 +158,97 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
            * no-ops when the write is synchronous (test harness path) and necessary when
            * it is async (production sendCustomMessage implementation).
            */
-          pi.sendMessage(message, { triggerTurn: false, deliverAs: 'steer' });
+          pi.sendMessage({ ...message, display: true }, { triggerTurn: false, deliverAs: 'steer' });
           await Promise.resolve(); // let sendCustomMessage start executing
           await Promise.resolve(); // let its first internal await settle
 
-          if (persisted()) { options.onDelivery?.(message, currentCtx); return; }
+          assertActive();
+          if (persisted()) {
+            recordActionable(message, expectedAgentId);
+            options.onDelivery?.(message, currentCtx);
+            try {
+              if (currentCtx.hasUI && message.details.messageClass !== 'informational') {
+                const blocking = message.details.messageClass === 'blocking';
+                currentCtx.ui?.notify?.(
+                  `Awareness: ${blocking ? 'blocking message' : 'handoff'} received. See the peer card for details.`,
+                  blocking ? 'warning' : 'info',
+                );
+                notifyDesktopAttention(currentCtx, `Octocode Awareness: ${blocking ? 'blocking message' : 'handoff'} received.`);
+              }
+            } catch { /* a failed toast must never cause peer-message replay */ }
+            return;
+          }
 
           throw new Error(
             `Pi custom message persistence was not confirmed for awareness event ` +
             `${message.details.eventId}; Awareness event remains unacknowledged`,
           );
         },
-        onObservability: (stats) => options.onObservability?.(stats, binding.ctx),
+        onObservability: (stats) => {
+          if (!shutdown && consumerGeneration === generation) observe(stats, binding.ctx);
+        },
       });
-      scoped = { consumer, binding };
-      consumers.set(key, scoped);
+      scoped = { key, consumer, binding };
+      activeConsumer = scoped;
     }
     scoped.binding.ctx = ctx;
     await scoped.consumer.drain();
+    if (shutdown || running || activeConsumer !== scoped || pendingActionable === 0) return;
+    if (!wakeAvailable || !(options.canWake?.(ctx) ?? ctx.isProjectTrusted?.() === true)) {
+      try { if (ctx.hasUI) ctx.ui?.notify?.('Awareness: actionable peer messages are in context; automatic wake is held until the next authorized input.', 'warning'); } catch { /* UI is advisory */ }
+      return;
+    }
+    const count = pendingActionable;
+    pendingActionable = 0;
+    wakeAvailable = false;
+    // One host turn for the complete persisted batch, without duplicating peer bodies.
+    // Re-arm only on external input: peer ping-pong cannot recursively spend turns.
+    try {
+      pi.sendMessage?.({ customType: 'octocode-peer-wake', content: `Awareness: ${count} actionable peer messages were delivered. Inspect the attributed peer context and coordinate the next safe action.`, display: false }, { triggerTurn: true, deliverAs: 'followUp' });
+    } catch {
+      // The peer receipt remains durable. Do not loop retrying a failed host wake.
+      pendingActionable = count;
+      const stats = scoped.consumer.snapshot();
+      observe({ ...stats, errors: stats.errors + 1, drainErrors: stats.drainErrors + 1 }, ctx);
+    }
   };
 
-  pi.on('session_start', async (_event, ctx) => { await drain(ctx); });
-  pi.on('turn_end', async (_event, ctx) => { await drain(ctx); });
+  let pendingDrain: ReturnType<typeof setImmediate> | undefined;
+  const cancelPendingDrain = (): void => {
+    if (pendingDrain) clearImmediate(pendingDrain);
+    pendingDrain = undefined;
+  };
+  pi.on('session_start', async (_event, ctx) => {
+    cancelPendingDrain();
+    generation += 1;
+    activeConsumer = undefined;
+    shutdown = false;
+    running = false;
+    pendingActionable = 0;
+    wakeAvailable = true;
+    await drain(ctx);
+  });
+  // Pi remains streaming until its agent_end hooks return. Drain on the next
+  // event-loop turn so sendMessage persists immediately instead of queuing a
+  // steer that cannot be observed while this hook is still executing.
+  pi.on('agent_start', async () => { running = true; pendingActionable = 0; });
+  pi.on('input', async (event) => {
+    if (event.source === 'interactive' || event.source === 'rpc') wakeAvailable = true;
+  });
+  pi.on('agent_end', async (event, ctx) => {
+    cancelPendingDrain();
+    if (shutdown || event.willRetry) return;
+    running = false;
+    pendingDrain = setImmediate(() => {
+      pendingDrain = undefined;
+      void drain(ctx).catch(() => { /* observability callbacks must not crash the host */ });
+    });
+  });
+  pi.on('session_shutdown', async () => {
+    cancelPendingDrain();
+    shutdown = true;
+    generation += 1;
+    activeConsumer = undefined;
+    pendingActionable = 0;
+  });
 }

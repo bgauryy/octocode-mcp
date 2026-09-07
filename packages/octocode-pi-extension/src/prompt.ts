@@ -60,6 +60,20 @@ export function stripProjectContext(piSystemPrompt: string): string {
   return stripTaggedBlocks(piSystemPrompt, 'project_context', () => true, true).trim();
 }
 
+/** Adapt the supported host's native fallback, without rewriting project instructions. */
+export function adaptPiResearchGuidance(prompt: string): string {
+  const header = '\nGuidelines:\n';
+  const start = prompt.indexOf(header);
+  const projectStart = prompt.indexOf('<project_context>');
+  if (start < 0 || (projectStart >= 0 && projectStart < start)) return prompt;
+  const bodyStart = start + header.length;
+  const end = prompt.indexOf('\n\n', bodyStart);
+  const bodyEnd = end < 0 ? prompt.length : end;
+  const lines = prompt.slice(bodyStart, bodyEnd).split('\n');
+  const kept = lines.filter(line => line !== '- Use bash for file operations like ls, rg, find');
+  return `${prompt.slice(0, bodyStart)}${kept.join('\n')}${prompt.slice(bodyEnd)}`;
+}
+
 /**
  * Remove Pi's own skills section from an already-built Pi system prompt.
  * Octocode owns the model-facing skill flow (the `skill` tool + the

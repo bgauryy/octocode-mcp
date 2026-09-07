@@ -98,6 +98,7 @@ export interface MemoryRecord {
   valid_to: string | null;
   expired_at: string | null;
   file_tree_fingerprint: string | null;
+  evidence?: import('../memory-evidence.js').MemoryEvidence;
   created_at: string;
   updated_at: string | null;
   novelty_score: number | null;
@@ -179,6 +180,7 @@ export interface InsertMemoryParams {
   repo?: string | null;
   ref?: string | null;
   fileTreeFingerprint?: string | null;
+  captureFingerprint?: boolean;
   cwd?: string;
   /**
    * TOOL-2: Pre-computed similar memories from a prior findSimilarMemories call.
@@ -221,6 +223,7 @@ export interface InsertMemoryResult {
  * When both are absent, the query is global.
  */
 export interface GetMemoryParams {
+  checkFingerprint?: boolean;
   query?: string;
   limit?: number;
   minImportance?: number;

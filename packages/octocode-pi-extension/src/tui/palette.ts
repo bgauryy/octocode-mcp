@@ -41,8 +41,8 @@ export function sanitizeLine(str: string): string {
 export const TOKEN = {
   /** Brand accent (purple). */
   brand: 'accent',
-  /** Secondary brand glint (teal) used as a cool counterpoint to purple. */
-  brandAlt: 'syntaxOperator',
+  /** Secondary brand word and references (cyan/sky). */
+  brandAlt: 'mdCode',
   /** File / directory paths (sky — distinct from the purple brand/title). */
   path: 'mdCode',
   /** Clickable URLs / links (lavender, matches markdown links). */
@@ -59,7 +59,7 @@ export const TOKEN = {
   success: 'success',
   /** Error / failure. */
   error: 'error',
-  /** Warning / in-progress. */
+  /** Actionable warning; active work uses brand. */
   warning: 'warning',
   /** Secondary text. */
   muted: 'muted',

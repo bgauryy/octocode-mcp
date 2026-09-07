@@ -4,6 +4,7 @@ import { hasFts } from './db-maintenance.js';
 import type { GetMemoryParams, GetMemoryResult } from './types/identity-memory.js';
 import { anyReferenceCandidateIds, attachMemoryReferences, compileRecallRegex, exactReferenceCandidateIds, fileReferenceCandidates, fileReferenceMatchesToken, fileRegexCandidateIds, fileSuffixCandidateIds, fileSuffixTokens, intersectCandidateIds, lexicalSearch, regexCandidateIds } from './memory-search.js';
 import { bumpAccess } from './memory-write.js';
+import { checkMemoryEvidence, createMemoryEvidenceBudget } from './memory-evidence.js';
 import { canonicalMemoryInstant, decayComponents, JUDGMENT_RELEVANCE_FLOOR, LexicalScopeOptions, SCORING_PREFETCH_FACTOR } from './memory-scoring.js';
 
 // ─── getMemory ────────────────────────────────────────────────────────────────
@@ -192,6 +193,12 @@ export function getMemory(db: DatabaseSync, params: GetMemoryParams = {}): GetMe
   }
 
   memories = memories.slice(0, limit);
+  const evidenceBudget = createMemoryEvidenceBudget();
+  for (const memory of memories) {
+    if (params.checkFingerprint || memory.file_tree_fingerprint?.startsWith('awareness-evidence-v1:')) {
+      memory.evidence = checkMemoryEvidence(memory, effectiveCwd, params.checkFingerprint === true, evidenceBudget);
+    }
+  }
   if (explain) {
     for (const m of memories) {
       const components = decayComponents(m, m.lexical ?? 0);

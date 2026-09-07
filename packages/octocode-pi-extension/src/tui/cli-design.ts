@@ -34,13 +34,14 @@ export const CLI_STATUS_TEXT = {
 } as const;
 
 const ANSI_BY_TOKEN: Partial<Record<SemanticToken, string>> = {
-  brand: '\u001b[36m',
+  brand: '\u001b[35m',
+  brandAlt: '\u001b[36m',
   path: '\u001b[36m',
   link: '\u001b[35m',
   linkUrl: '\u001b[2m', // theme resolves mdLinkUrl → dim
   count: '\u001b[39m', // default fg (themed count is default-fg); 33m collided with warning
   symbol: '\u001b[36m',
-  title: '\u001b[36m',
+  title: '\u001b[35m',
   success: '\u001b[32m',
   error: '\u001b[31m',
   warning: '\u001b[33m', // yellow — tracks the themes' gold warning, not magenta

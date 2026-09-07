@@ -44,7 +44,6 @@ export type SessionArtifactProducer =
   | 'image'
   | 'browser'
   | 'log'
-  | 'checkpoint-ref'
   | 'session-index'
   | 'export';
 

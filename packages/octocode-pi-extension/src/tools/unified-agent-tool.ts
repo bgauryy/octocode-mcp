@@ -320,7 +320,11 @@ export async function executeSpawnQuery(
       task: context ? `## Context\n${context.trim()}\n\n## Task\n${spawnConfig.task}` : spawnConfig.task,
       name: name ?? `Browser Agent · ${getRandomAgentName()}`,
       cwd,
-      tools: spawnConfig.tools,
+      tools: [...new Set([...spawnConfig.tools, 'MCPTool', 'skill', 'bash'])],
+      skills: resolveSubagentSkills(
+        SUBAGENT_REGISTRY['browser-agent'],
+        cwd ?? ctx?.cwd ?? process.cwd(),
+      ),
       systemPrompt: spawnConfig.systemPrompt,
       resourceMode: 'octocode',
       thinking: thinking ?? 'low',
@@ -331,16 +335,21 @@ export async function executeSpawnQuery(
       includeUncommitted,
     };
   } else if (profile === 'custom') {
-    // Custom profile: explicit tools/systemPrompt, lean by default.
+    // Custom workers use the Octocode host path by default. Explicit empty
+    // tools and explicit lean mode remain available for isolated smith workers.
     const tools = query['tools'] as string[] | undefined;
     const systemPrompt = query['systemPrompt'] as string | undefined;
     const resourceMode =
-      (query['resourceMode'] as SpawnAgentParams['resourceMode']) ?? 'lean';
+      (query['resourceMode'] as SpawnAgentParams['resourceMode']) ?? 'octocode';
+    const workerCwd = cwd ?? ctx?.cwd ?? process.cwd();
     spawnParams = {
       task: fullTask,
       name: name ?? `Worker · ${getRandomAgentName()}`,
       cwd,
-      tools,
+      tools: tools ?? (resourceMode === 'lean' ? [] : ['MCPTool', 'skill', 'bash']),
+      skills: resourceMode === 'octocode'
+        ? resolveSubagentSkills({}, workerCwd)
+        : undefined,
       systemPrompt,
       resourceMode,
       thinking,
@@ -358,7 +367,7 @@ export async function executeSpawnQuery(
       provider?: string;
     };
     const systemPrompt = loadSystemPrompt(config);
-    const skills = resolveSubagentSkills(config);
+    const skills = resolveSubagentSkills(config, cwd ?? ctx?.cwd ?? process.cwd());
     spawnParams = {
       task: fullTask,
       name: name ?? `${config.label} · ${getRandomAgentName()}`,
@@ -453,7 +462,7 @@ export function registerUnifiedAgentTool(
   const resourceModeEnum = stringEnumSchema(
     Type,
     ['lean', 'octocode', 'default'],
-    'Resource mode for custom profile. lean disables extensions/skills; octocode loads this extension.',
+    'Resource mode for custom profile. octocode is the default; lean disables extensions and skills.',
   );
 
   // All lifecycle-specific fields are optional; type is the discriminator.
@@ -482,7 +491,7 @@ export function registerUnifiedAgentTool(
       durationMs: Type.Optional(Type.Integer({ description: 'Initial browser scheme observation window in milliseconds (default 5000).' })),
       workspaceCwd: Type.Optional(Type.String({ description: 'Workspace root for browser screenshots and session paths.' })),
       // custom profile
-      tools: Type.Optional(Type.Array(Type.String(), { description: 'Tool allowlist for custom profile (spawn).' })),
+      tools: Type.Optional(Type.Array(Type.String(), { description: 'Tool allowlist for custom profile. Defaults to MCPTool, skill, and bash; [] requests no tools.' })),
       systemPrompt: Type.Optional(Type.String({ description: 'Extra system prompt for custom profile (spawn).' })),
       resourceMode: Type.Optional(resourceModeEnum as ReturnType<TypeBoxBuilder['String']>),
       noSession: Type.Optional(Type.Boolean({ description: 'Pass --no-session to the spawned worker (default true).' })),
@@ -520,24 +529,23 @@ export function registerUnifiedAgentTool(
       '  planner    — implementation-planning specialist.',
       '  architect  — local-code / root-cause specialist.',
       '  browser    — Chrome DevTools Protocol specialist; routes task to CDP domains.',
-      '  custom     — clean worker with explicit tools/systemPrompt.',
+      '  custom     — Octocode-capable worker by default; accepts explicit tools/systemPrompt/resourceMode.',
       '',
       'Same-batch rule: spawn and lifecycle ops with explicit agentIds cannot coexist.',
       'Spawn first, then use the returned agentId in a subsequent call.',
     ].join('\n'),
 
     promptSnippet:
-      'Spawn typed/custom/browser workers and manage lifecycle via queries[].',
+      'Spawn/manage researcher, planner, architect, browser, or custom workers. Spawn first; use agentId later. Workers use MCPTool for repository research and the harness Awareness CLI for coordination; other shell access follows their role.',
     promptGuidelines: [
+      'Use agent when a task needs independent context, its own tools, or parallel execution. Do NOT use agent for tasks a direct tool call, bash, or skill workflow already handles — prefer the simplest surface.',
+      'Profile routing: researcher (web+GitHub+local research), planner (implementation planning), architect (root-cause/design), browser (CDP automation), custom (explicit tools/systemPrompt).',
       'Never mix spawn and agentId-bearing lifecycle queries in the same batch — spawn first, lifecycle next call.',
-      'Use profile:researcher/planner/architect for typed Octocode specialists; profile:browser for CDP work; profile:custom for lean workers.',
-      'Use type:inspect without agentId to list all agents; with agentId to check status.',
-      'Use type:wait to collect the current turn before trusting a worker is complete.',
-      'After wait or inspect, verify any key finding, distill it into session memory.md, and update the user when it changes the hypothesis, plan, risk, or next action; never persist or repeat a raw handback.',
+      'Provide a labelled task packet (Goal/Context/Scope/Acceptance/Return) in the task field to avoid vague handoffs.',
+      'Use type:wait to collect the current turn before trusting a worker is complete. After wait or inspect, verify any key finding, distill it into session memory.md, and update the user when it changes the hypothesis, plan, risk, or next action; never persist or repeat a raw handback.',
       'Use type:kill after collecting results to free resources.',
-      'Check /octocode-agents or the agent ledger for live worker status between calls.',
-      'Provide labelled task packets (Goal/Context/Scope/Ownership/Acceptance/Return) to avoid [POLICY] warnings.',
-      'For plan work, start a runnable step, then pass its stable task id as planStep. The worker receives its paths, acceptance, and check contract; reconcile the result before completing the parent task.',
+      'Use type:inspect without agentId to list all agents; with agentId to check status.',
+      'For plan work, start a runnable step first, then pass its stable task id as planStep so the worker receives paths, acceptance, and check contract.',
     ],
 
     parameters,

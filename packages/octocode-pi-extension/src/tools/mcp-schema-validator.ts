@@ -1,4 +1,6 @@
 import { Compile } from 'typebox/compile';
+import { ErrorContext, ErrorSchema, Stack } from 'typebox/schema';
+import { Locale } from 'typebox/system';
 
 const MAX_SCHEMA_CHARS = 256 * 1024;
 const MAX_ERRORS = 8;
@@ -67,6 +69,76 @@ function clip(value: unknown): string {
   return text.length <= MAX_ERROR_TEXT_CHARS ? text : `${text.slice(0, MAX_ERROR_TEXT_CHARS - 1)}…`;
 }
 
+/** Keep validation strict, but hide errors belonging to a different discriminated branch. */
+function irrelevantUnionBranches(schema: unknown, value: unknown): Array<{ schemaPath: string; instancePath: string }> {
+  const excluded: Array<{ schemaPath: string; instancePath: string }> = [];
+  const visit = (node: unknown, input: unknown, schemaPath: string, instancePath: string): void => {
+    if (!isRecord(node)) return;
+    for (const keyword of ['anyOf', 'oneOf', 'allOf']) {
+      const branches = node[keyword];
+      if (!Array.isArray(branches)) continue;
+      let selected = branches.map((_, index) => index);
+      if (keyword !== 'allOf' && isRecord(input) && branches.every(isRecord)) {
+        const firstProperties = branches[0]?.['properties'];
+        if (isRecord(firstProperties)) {
+          // A discriminator must be constrained in every branch and present in this input.
+          const keys = Object.keys(firstProperties).filter((key) => Object.hasOwn(input, key) && branches.every((branch) => {
+            const properties = branch['properties'];
+            const field = isRecord(properties) ? properties[key] : undefined;
+            return isRecord(field) && Object.hasOwn(field, 'const');
+          }));
+          if (keys.length > 0) {
+            const matches = selected.filter((index) => keys.every((key) => {
+              const properties = branches[index]!['properties'] as Record<string, Record<string, unknown>>;
+              return Object.is(properties[key]!['const'], input[key]);
+            }));
+            // Unknown discriminator values still need all branch diagnostics.
+            if (matches.length > 0) selected = matches;
+          }
+        }
+      }
+      branches.forEach((branch, index) => {
+        const branchPath = `${schemaPath}/${keyword}/${index}`;
+        if (selected.includes(index)) visit(branch, input, branchPath, instancePath);
+        else excluded.push({ schemaPath: branchPath, instancePath });
+      });
+    }
+    if (isRecord(node['properties']) && isRecord(input)) {
+      for (const [key, property] of Object.entries(node['properties'])) {
+        // Match TypeBox's diagnostic path spelling, including literal property names.
+        if (Object.hasOwn(input, key)) visit(property, input[key], `${schemaPath}/properties/${key}`, `${instancePath}/${key}`);
+      }
+    }
+    if (isRecord(node['items']) && Array.isArray(input)) {
+      input.forEach((item, index) => visit(node['items'], item, `${schemaPath}/items`, `${instancePath}/${index}`));
+    }
+  };
+  visit(schema, value, '#', '');
+  return excluded;
+}
+
+function withinPointer(pointer: string, prefix: string): boolean {
+  return pointer === prefix || pointer.startsWith(`${prefix}/`);
+}
+
+class BranchErrorContext extends ErrorContext {
+  private readonly excluded: ReturnType<typeof irrelevantUnionBranches>;
+
+  constructor(excluded: ReturnType<typeof irrelevantUnionBranches>) {
+    super();
+    this.excluded = excluded;
+  }
+
+  override AtCapacity(): boolean {
+    return this.GetErrors().length >= MAX_ERRORS;
+  }
+
+  override AddError(error: Parameters<ErrorContext['AddError']>[0]): false {
+    if (this.excluded.some((branch) => withinPointer(error.schemaPath, branch.schemaPath) && withinPointer(error.instancePath, branch.instancePath))) return false;
+    return super.AddError(error);
+  }
+}
+
 export function compileMcpSchemaValidator(schema: unknown): McpCompiledSchemaValidator {
   schemaText(schema);
   assertSupportedDialect(schema);
@@ -81,7 +153,13 @@ export function compileMcpSchemaValidator(schema: unknown): McpCompiledSchemaVal
   return {
     validate(value: unknown): McpSchemaValidationResult {
       if (validator.Check(value)) return { valid: true, errors: [] };
-      const rawErrors = validator.Errors(value).slice(0, MAX_ERRORS);
+      // TypeBox's default Errors() has its own eight-error cap. Filter while collecting,
+      // so earlier text/structural branches cannot displace the selected files/tree branch.
+      const context = new BranchErrorContext(irrelevantUnionBranches(schema, value));
+      const inputSchema = schema as Parameters<typeof ErrorSchema>[4];
+      ErrorSchema(new Stack({}, inputSchema), context, '#', '', inputSchema, value);
+      const localize = Locale.Get();
+      const rawErrors = context.GetErrors().map((error) => ({ ...error, message: localize(error) }));
       const errors = rawErrors.map((error) => ({
         keyword: clip(error.keyword),
         instancePath: clip(error.instancePath),

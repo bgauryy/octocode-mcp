@@ -8,12 +8,15 @@ This document describes the Octocode Pi Extension (`packages/octocode-pi-extensi
 
 | Area | Source contract |
 |---|---|
-| Main-agent policy | [`src/prompts/system-prompt.ts`](src/prompts/system-prompt.ts): concise host facts plus canonical Awareness operating instructions; the user determines workflow and response format |
+| Main-agent policy | [`src/prompts/system-prompt.ts`](src/prompts/system-prompt.ts): concise host facts plus canonical Awareness operating instructions; the requester determines workflow and response format |
 | Awareness CLI bindings | [`src/tools/awareness-cli-context.ts`](src/tools/awareness-cli-context.ts): installed runner, shared database/workspace and stable agent identity |
-| Context assembly and lifecycle | [`src/index.ts`](src/index.ts) and [`src/tools/context-segments.ts`](src/tools/context-segments.ts) |
+| Runtime physiology | [`src/adapters/pi-physiology.ts`](src/adapters/pi-physiology.ts): headless native measurements and session fences; [`src/adapters/pi-physiology-regulation.ts`](src/adapters/pi-physiology-regulation.ts): bounded projection of canonical Awareness advice |
+| Context assembly and lifecycle | [`src/index.ts`](src/index.ts), [`src/tools/session-prompt-context.ts`](src/tools/session-prompt-context.ts), and [`src/tools/context-segments.ts`](src/tools/context-segments.ts) |
 | Direct tool names | [`src/constants.ts`](src/constants.ts); registration in `registerSupportToolPhase` |
 | MCP discovery and execution | [`src/tools/mcp-tool.ts`](src/tools/mcp-tool.ts) and [`src/tools/mcp-config.ts`](src/tools/mcp-config.ts) |
-| Skills | [`src/tools/skill-tool.ts`](src/tools/skill-tool.ts); bundled inventory in [README.md](README.md#bundled-skills-15) |
+| Skill discovery | [`src/tools/skill-discovery.ts`](src/tools/skill-discovery.ts); the `skill` tool consumes that inventory from [`src/tools/skill-tool.ts`](src/tools/skill-tool.ts) |
+| Worker spawning and waits | [`src/tools/unified-agent-tool.ts`](src/tools/unified-agent-tool.ts) and [`src/tools/agent-tools.ts`](src/tools/agent-tools.ts) |
+| Pi retained-context evidence | [`src/adapters/pi-retained-context.ts`](src/adapters/pi-retained-context.ts) |
 | Plan projection | [`src/tools/plan-read-model.ts`](src/tools/plan-read-model.ts) |
 
 This reference does not assign quality grades or claim token savings without a measured baseline.
@@ -26,8 +29,9 @@ This reference does not assign quality grades or claim token savings without a m
 
 The extension adds a short `<octocode>` block describing host capabilities, the
 user’s ownership of workflow, trust boundaries, and `/configuration`, followed by
-the full canonical `EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS` from Awareness, including
-skill setup, the command catalog, communication, bookkeeping and maintenance. It does not
+the compact canonical `EXTERNAL_AGENT_AWARENESS_PROMPT` from Awareness, including
+cooperation, communication, verification and a generated capability summary. Full
+recipes and command details remain available through the skill, `guide` and schemas. It does not
 inject repository-state snapshots, regex-triggered instructions, or a mandatory
 engineering workflow. Tool catalogs and explicitly selected skills provide their
 own capability descriptions.
@@ -37,10 +41,11 @@ Bundled artifact: `dist/system/SYSTEM_PROMPT.md`.
 
 ### 2.2 Frozen policy and live turn context
 
-On the first main-agent turn, `before_agent_start` assembles seven stable segments
-and freezes the composed system prompt for the session. Later turns reuse those
-exact bytes; they do not rediscover the skill catalog or rebuild the system prompt.
-Session initialization resets the frozen prompt.
+On the first main-agent or worker turn, `before_agent_start` discovers only the
+capabilities allowed by that process, passes the same seven segment bodies through
+`assembleSessionPromptContext`, and freezes the composed system prompt for the
+session. Later turns reuse those exact bytes; they do not rediscover the skill
+catalog or rebuild the system prompt. Session initialization resets the frozen prompt.
 
 | Segment key | Content | Budget |
 |---|---|---|
@@ -52,11 +57,29 @@ Session initialization resets the frozen prompt.
 | `available-skills` | `<available_skills>` — discovered skill list | 20k tokens |
 | `session-artifact-contract` | Session memory and audit paths | 1k tokens |
 
+Workers receive only segments supported by their active tool allowlist. Their role
+prompt remains caller-owned, while MCP contracts, enabled skills, session artifacts,
+and Awareness CLI bindings use the same attribution and token-budget contract as the
+main session.
+
 The active plan is a separate attributed turn-context segment, budgeted at 15k
-tokens. The hook recomputes it every turn and delivers it when first available,
+tokens. Runtime physiology is another turn segment, limited to 128 estimated
+tokens and never rehydrated as current state. It carries changed advisory actions
+from fresh host receipts; unavailable sensors do not establish recovery. The
+shared Zod observation contract belongs to `agent-contracts`, thresholds belong to
+Awareness, and actual compaction/retry control remains with Pi. The observer uses
+the same hook composer as output-budget and prompt middleware, retains only a
+bounded numeric tool-outcome window, and exposes `readPiPhysiology(ctx)` to trusted
+integrations. It adds no model-facing tool or shared SQLite state.
+
+The plan hook recomputes its projection every turn and delivers it when first available,
 changed, or cleared. Session memory is delivered initially and registered as a
 current recovery source. Compaction recovery validates current sources; it does
-not copy the frozen policy segments into the recovery ledger.
+not copy the frozen policy segments into the recovery ledger. During recovery,
+`collectPiRetainedContentDigests` delegates branch and compaction interpretation to
+Pi's public `buildSessionContext` adapter. Reprojection is skipped only for exact
+content that Pi retained, including validated Octocode segment entries; full session
+history is never treated as retained model context.
 
 MCP execution can refresh independently of the frozen routing prompt. When its
 catalog changes, the runtime marks context stale and announces that `/new`
@@ -173,8 +196,60 @@ first main-agent before_agent_start
   └── await mcpCatalogReady(ctx)  ← bounded wait for startup discovery
   └── getCachedMcpCatalogAddendum(ctx)  ← compact or full catalog text
   └── discoverSkills(cwd, latestPiSkills)  ← effective enabled inventory
-  └── assembleContextSegments(...)  ← freeze stable segments; deliver live context separately
+  └── assembleSessionPromptContext(...)  ← freeze stable session segments
+
+first worker before_agent_start
+  └── inspect the worker's active allowlist
+  └── await MCP discovery only when MCPTool is active
+  └── discover skills only when skill is active
+  └── assembleSessionPromptContext(...)  ← same segment ownership and budgets as main
 ```
+
+### 3.7 Worker capability and cancellation boundary
+
+Typed research, planning, architecture, and browser workers load the Octocode
+extension with explicit tool allowlists. Browser workers retain `chromeDebug`; all
+four profiles also receive `MCPTool`, `skill`, and `bash`, so Octocode research and
+the harness-provided Awareness CLI are reachable. Custom workers default to the same
+research-capable host path. An explicit `tools: []` keeps the allowlist empty, and an
+explicit `resourceMode: "lean"` disables extension and skill loading for isolated
+smith workers. `agent-tools.ts` serializes an explicit empty allowlist as Pi's
+`--no-tools` flag and always denies the recursive `agent` tool. Worker-process
+registration also omits the tool and skill smith surfaces.
+
+`waitForAgent` owns abort listeners, silence timers, absolute timers, liveness
+probes, and cleanup. `waitForAgentTurn` carries the caller's `AbortSignal` through every
+progress-aware wait iteration. Tool and skill generation pass their execution signal
+through this boundary and terminate the spawned smith in `finally`.
+
+### 3.8 Session, Awareness, and recovery flow
+
+```mermaid
+flowchart TD
+  Init[Extension initialization] --> Assemble[session-prompt-context.ts<br/>assemble shared main/worker segments]
+  Assemble --> Frozen[Frozen session prompt]
+  Frozen --> Provider[Prompt provider]
+  Turn[Each agent turn] --> Live[Live turn context]
+  Live --> Provider
+  Bash[Bash execution] --> Cli[awareness-cli-context.ts<br/>bind CLI identity and store]
+  Events[Native Pi events] --> Consumer[awareness-event-consumer.ts<br/>single registered consumer]
+  ToolCall[Tool call] --> Mutation[Mutation gate]
+  Cli --> Store[(Awareness store)]
+  Consumer --> Store
+  Mutation --> Store
+  Compact[Compaction] --> PiAdapter[pi-retained-context.ts<br/>interpret Pi retained context]
+  PiAdapter --> Rehydrate[rehydration-orchestrator.ts<br/>validate current sources]
+  Rehydrate --> Live
+```
+
+The shell environment and native event consumer resolve the same Awareness identity
+and durable store through [`awareness-cli-context.ts`](src/tools/awareness-cli-context.ts),
+[`awareness-event-consumer.ts`](src/tools/awareness-event-consumer.ts), and
+[`storage-policy.ts`](src/tools/storage-policy.ts). The adapter in
+[`pi-retained-context.ts`](src/adapters/pi-retained-context.ts) is the sole boundary
+that interprets Pi's retained branch context before
+[`rehydration-orchestrator.ts`](src/tools/rehydration-orchestrator.ts) validates and
+reprojects current sources.
 
 ---
 
@@ -189,7 +264,7 @@ by `tests/docs-consistency.test.ts`; `tests/package.test.ts` checks bundled arti
 ### 4.2 Discovery sources
 
 ```
-discoverAllSkills(cwd, piSkills, home)  ← src/tools/skill-tool.ts
+discoverAllSkills(cwd, piSkills, home)  ← src/tools/skill-discovery.ts
 
 1. piSkills concrete (path provided)    ← never overwritten; piConcrete guard
 2. defaultAgentSkillSources(cwd, home)  ← shared platform roots
@@ -198,6 +273,11 @@ discoverAllSkills(cwd, piSkills, home)  ← src/tools/skill-tool.ts
 5. dist/skills (getAssetPaths())        ← warns if asset path resolution fails
 6. piSkills SKILL.md runtime paths      ← unique roots not already in sources
 ```
+
+`skill-discovery.ts` is the sole Pi-extension owner of skill source assembly,
+precedence, enablement, and the effective inventory. Main prompts, worker spawn
+arguments, autocomplete, discovery artifacts, configuration UI, and `skill` loading
+consume this owner rather than maintaining named-skill lists or compatibility exports.
 
 ### 4.3 Skill tool schema
 
@@ -237,7 +317,6 @@ $OCTOCODE_HOME/extension/
       session.json               ← sessionId/backlogId + artifact links
       memory.md                  ← bounded agent-maintained session notes
       audit.md                   ← system-written lifecycle history
-      checkpoint-ref.json        ← optional compaction checkpoint pointer
       plan/
         index.json               ← current planId + task IDs
         plan.html                ← live plan page when a plan exists
@@ -255,6 +334,8 @@ $OCTOCODE_HOME/extension/
     plan/{scope-hash}/           ← fallback when session is not initialized
     tool-results/                ← ephemeral heavy tool output artifacts
 ```
+
+Local file history belongs to the shared Awareness store, outside the session artifact tree. The native `file` boundary captures explicit targets before and after mutation. Awareness packages its private Git object implementation and exposes bounded timeline, read, preview, and apply operations through the same CLI and skill used by other hosts. Pi's `/octocode-rewind` command previews file changes and applies only the reviewed preview; session input and conversation navigation do not create or restore file history.
 
 ### 5.2 Identity and authority
 
@@ -374,12 +455,17 @@ session_start
 first main-agent before_agent_start
   → await mcpCatalogReady(ctx)               (bounded wait)
   → discoverSkills(cwd, piSkills)
-  → assembleContextSegments(...)            (stable system segments and live turn context)
+  → assembleSessionPromptContext(...)       (stable session segments)
   → cache composed systemPrompt and return it from the hook
 
 later main-agent before_agent_start
   → recompute live plan; validate pending recovery
   → return frozen systemPrompt plus changed turn context
+
+first worker before_agent_start
+  → inspect active worker tools
+  → discover only reachable MCP and skill capabilities
+  → assembleSessionPromptContext(...) and freeze the worker prompt
 ```
 
 ### 7.2 Config loading

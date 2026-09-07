@@ -13,6 +13,7 @@ import { hasFts, ftsTermsForRow, replaceMemoryReferences } from './db-maintenanc
 import type { InsertMemoryParams, InsertMemoryResult } from './types/identity-memory.js';
 import { canonicalMemoryInstant, LABEL_HALF_LIFE_DAYS } from './memory-scoring.js';
 import { findSimilarMemories } from './memory-search.js';
+import { prepareMemoryEvidence } from './memory-evidence.js';
 
 // ─── bumpAccess ───────────────────────────────────────────────────────────────
 
@@ -51,7 +52,6 @@ export function insertMemory(db: DatabaseSync, params: InsertMemoryParams): Inse
     artifact,
     repo: repoArg,
     ref: refArg,
-    fileTreeFingerprint = null,
     cwd,
   } = params;
 
@@ -64,7 +64,6 @@ export function insertMemory(db: DatabaseSync, params: InsertMemoryParams): Inse
   const normalizedValidTo = canonicalMemoryInstant(vt, 'valid_to');
   const memoryId = 'mem_' + randomUUID().replace(/-/g, '');
   const tagList = normalizeTags(tags, tagsCsv);
-  const refList = normalizeReferences(references);
   const normalizedLabel = normalizeLabel(Array.isArray(label) ? label[0] : label);
   const createdAt = utcNow();
   const validFromVal = normalizedValidFrom ?? createdAt;
@@ -76,6 +75,9 @@ export function insertMemory(db: DatabaseSync, params: InsertMemoryParams): Inse
     { workspace_path: workspacePath ?? null, artifact: normalizeArtifact(artifact), repo: repoArg ?? null, ref: refArg ?? null },
     cwd ?? process.cwd()
   );
+  const preparedEvidence = prepareMemoryEvidence({ ...params, references }, scope.workspace_path ?? undefined);
+  const refList = normalizeReferences(preparedEvidence.references ?? []);
+  const fileTreeFingerprint = preparedEvidence.fileTreeFingerprint ?? null;
   const supersedeIds = [...new Set(supersedes.filter(Boolean))];
 
   const halfLifeDefault = LABEL_HALF_LIFE_DAYS[normalizedLabel] ?? null;
@@ -224,10 +226,7 @@ export function insertMemoryWithSimilarityGate(
   // invalid input must never appear successful merely because it resembles an
   // existing row.
   normalizeLabel(Array.isArray(params.label) ? params.label[0] : params.label);
-  const ownsTransaction = !db.isTransaction;
-  if (ownsTransaction) db.exec('BEGIN IMMEDIATE');
-  try {
-    const scope = fillScope(
+  const scope = fillScope(
       {
         workspace_path: params.workspacePath ?? null,
         artifact: normalizeArtifact(params.artifact),
@@ -236,6 +235,10 @@ export function insertMemoryWithSimilarityGate(
       },
       params.cwd ?? process.cwd(),
     );
+  params = prepareMemoryEvidence(params, scope.workspace_path ?? undefined);
+  const ownsTransaction = !db.isTransaction;
+  if (ownsTransaction) db.exec('BEGIN IMMEDIATE');
+  try {
     const supersedes = params.supersedes ?? [];
     const similar = findSimilarMemories(
       db,

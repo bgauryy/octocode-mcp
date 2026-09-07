@@ -4,6 +4,7 @@ import { afterEach, test } from 'vitest';
 import {
   forceAwarenessStatusRefreshForTests,
   formatAwarenessPanel,
+  buildAwarenessFooterSegments,
   getCachedAwarenessStatus,
   hasAwarenessSignal,
   refreshAwarenessPanel,
@@ -51,6 +52,16 @@ afterEach(() => {
 test('signal detection uses typed status', () => {
   assert.equal(hasAwarenessSignal(ZERO), false);
   assert.equal(hasAwarenessSignal(FULL), true);
+});
+
+test('footer promotes unread messages, verification debt, and delivery failures without peer bodies', () => {
+  const segments = buildAwarenessFooterSegments(FULL, 'peer events · 1 err');
+  assert.ok(segments.some((segment) => segment.text.includes('4 checks pending') && segment.attention));
+  assert.ok(segments.some((segment) => segment.text.includes('1 unread') && segment.attention));
+  assert.ok(segments.some((segment) => segment.text.includes('1 err') && segment.attention));
+  assert.doesNotMatch(JSON.stringify(segments), /take lane/);
+  assert.deepEqual(buildAwarenessFooterSegments(ZERO), []);
+  assert.equal(buildAwarenessFooterSegments(null, 'peer events · 1 err').length, 1);
 });
 
 test('panel composition preserves counts, debt, tasks, messages, and attention state', () => {

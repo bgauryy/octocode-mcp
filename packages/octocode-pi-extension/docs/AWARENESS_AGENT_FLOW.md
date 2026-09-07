@@ -8,6 +8,22 @@ Awareness remains the cross-host SQLite backend. Other agents use its canonical
 CLI and library operations. Pi retains its plan UI and uses the same canonical CLI
 for model-facing signals, locks, memory, bookkeeping and maintenance.
 
+## Read claims by evidence level
+
+Keep four levels separate when diagnosing or documenting the integration:
+
+1. **Implemented contract** means code or schema defines a capability.
+2. **Configured surface** means the current host exposes or binds that capability.
+3. **Activated behavior** means the effective session policy enables it.
+4. **Observed receipt** means a specific run produced persisted, inspectable evidence.
+
+A configured tool is not proof that policy activated it, and activation is not proof
+that a peer received a signal or a check passed. Native event delivery acknowledges a
+message only after persistence; `signal ack` records handling, while `signal resolve`
+closes a thread only when no response or work remains. Verification debt stays with the
+agent and run that own it. See [Architecture](../ARCHITECTURE.md) for runtime boundaries
+and [session artifacts](SESSION_ARTIFACTS.md) for Pi-local projections.
+
 ## Pi surface
 
 | Concern | Owner |
@@ -26,8 +42,8 @@ diagnostics when an existing store is rejected.
 
 ## Identity and automatic lifecycle
 
-The system prompt includes Awareness's full canonical operating guide and command
-catalog. A separate `awareness-cli-runtime` segment supplies host facts from
+The system prompt includes Awareness's compact canonical cooperation policy and
+generated capability summary; `guide` and schemas provide full detail on demand. A separate `awareness-cli-runtime` segment supplies host facts from
 `src/tools/awareness-cli-context.ts`. Guarded `bash` inherits the installed runner,
 current database/workspace and participant identity:
 
@@ -55,9 +71,36 @@ solo task.
 ## Signals, not ceremony
 
 The TUI shows passive shared state, including unread peer messages and verification
-debt. The event consumer drains at session start and turn end, applies inbound
+debt. The event consumer drains at session start and when the agent finishes, applies inbound
 policy, and acknowledges delivery only after the message appears in Pi's session
-ledger. Status counts are not injected into the frozen system prompt.
+ledger. A new session must first create its persistent session file; ephemeral sessions
+leave shared events unread. Waiting until the agent finishes avoids queuing a steer
+message while streaming and mistaking the delayed receipt for a delivery failure.
+Status counts are not injected into the frozen system prompt.
+
+The extension retains one active event consumer. Session transitions invalidate
+in-flight deliveries and shutdown cancels scheduled drains. An interrupted event
+stays unacknowledged; a later durable session can replay it, reusing an existing
+persisted receipt without sending the same message twice. Stale callbacks cannot
+publish delivery status into the next session. There is no background polling or message-arrival watcher. At lifecycle drain
+opportunities, a persisted, actionable directed message can trigger one coalesced
+follow-up turn per external interactive/RPC input. Broadcasts and informational
+messages do not spend that budget. Retry, shutdown, active execution and untrusted
+contexts suppress wake-ups. Queued pressure remains visible when the budget is
+spent; another external input rearms it. A signal arriving after the last drain
+still needs an explicit host wake or inbox read.
+
+When a coordinator needs an idle Pi worker to act, publish the directed signal
+first, then wake that worker through `agent` with `type: message` and
+`delivery: send`. Keep the payload in Awareness and put only the inbox instruction
+in the wake. Waiting for an idle worker does not start another turn. After handling
+the reply, `signal resolve --thread-id <id>` settles the completed conversation;
+resolving only the parent signal leaves its replies open.
+
+Prompt source text and the composed system prompt are cached within a session.
+Session initialization clears both caches so `/new`, `/resume` and forks can pick
+up refreshed instructions. Subsequent turns retain byte-identical system content;
+mutable peer, plan and memory state uses attributed context instead.
 
 Peer-authored message bodies and task titles are not injected into the system prompt.
 Use CLI `signal list` with your identity, workspace and `--include-bodies` to inspect
@@ -172,9 +215,12 @@ The same package is available as `npx @octocodeai/octocode-awareness`.
 | Maintenance and configuration | `maintenance`, `database`, `config`, `hooks`, `hook run` | Explicit CLI; Pi mutation and lifecycle hooks run natively |
 
 Full-package availability does not mean Pi automatically captures Awareness
-sessions, runs reflection, or supplies native-runtime sensors to `attend`. Follow
-typed continuations and treat unavailable sensors as unknown. See
-[learning in Pi](REFLECT.md) for reflection and memory examples.
+sessions, runs reflection, or supplies native-runtime sensors to `attend`. Operational
+physiology is bounded to observed inputs: unavailable time, RSS, context, repetition,
+uncertainty, reversibility, or divergence sensors remain unknown rather than becoming
+healthy defaults. Forecasts and adaptive controllers are deferred until measured inputs
+and evaluation gates exist. Follow typed continuations, and see [learning in Pi](REFLECT.md)
+for reflection and memory examples.
 
 Never hand-edit the SQLite database or generated Awareness state. Recovery records
 evidence; it does not execute a check, authorize taking over another agent's task, or
@@ -184,3 +230,29 @@ Maintenance is conditional on observed pressure. Preview scoped `maintenance dig
 --dry-run` or `signal prune --resolved --older-than-days 7 --dry-run`, inspect candidate
 IDs/counts, apply only authorized cleanup, then recheck. Digest does not prune
 signals. Unresolved threads, pending verification and live peer work are not clutter.
+
+## Final worker audits and context estimates
+
+Terminal handling audits the facade-owned native worker set after the last
+`agent_end` artifact and again after process close. Explicit inspect/wait refreshes
+this observation. Results expose native identities, pending and stale-active counts,
+at most 20 IDs per category, observation time and an executable `verify audit`
+continuation. This is the current facade's owned worker set, not an inferred ancestry
+graph across other hosts. Exit, a handback or an acknowledgement never marks success.
+The parent still audits after final artifacts and settles only observed checks.
+
+Context assembly exposes payload-free `estimates` by canonical segment kind,
+including embedded Awareness instructions and host bindings. The initial assembly
+is visible in runtime context and discovery `contextAwarenessEstimates`; per-turn
+context-message details carry their own assembly estimates. Runtime context retains
+only the latest peer delivery estimate and sequence; replay replaces it without
+accumulating duplicate cost. The method is
+`ceil-utf16-chars/4`, not a provider tokenizer. These scoped estimates exclude
+provider framing, cached usage, retained history outside the assembly and direct
+tool contracts. Existing provider subtotals and actual usage remain separate.
+
+The shared policy asks every participant to organize ownership, help blocked peers,
+share verified evidence and coordinate scarce resources fairly. Smaller context
+must preserve uncertainty, useful communication and checks. See Awareness's
+[revision contract](../../octocode-awareness/docs/MEMORY_NAVIGATION.md#scoped-attend-revisions)
+and [evidence reuse](../../octocode-awareness/skills/octocode-awareness/references/memory-recall.md#validate-declared-evidence).

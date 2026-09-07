@@ -4,9 +4,11 @@ export type { HookControlOutcome } from './hook-payload.js';
 export { hookContextEnvelope } from './hook-payload.js';
 export { hookBlockOutcome } from './hook-payload.js';
 export { hookCommandForHostEvent } from './hook-payload.js';
-import { HookRunOptions, INTERNAL_HOOK_HOST, INTERNAL_SKILL_ROOT, agentId, extractFiles, hookEventName, normalizeShellHookHost, parsePayload, readStdin, shellHookHost, workspace } from './hook-payload.js';
+import { HookRunOptions, INTERNAL_HOOK_HOST, INTERNAL_SKILL_ROOT, agentId, hookEventName, normalizeShellHookHost, parsePayload, readStdin, shellHookHost, workspace } from './hook-payload.js';
 import { runPostEdit, runPreEdit } from './hook-edit-events.js';
-import { isDigestPreviewDue, runNotifyDeliver, runSessionCompact, runSessionEnd, runStopVerify } from './hook-lifecycle.js';
+import { isDigestPreviewDue, runNotifyDeliver, runSessionCompact, runSessionEnd, runStopVerify, runToolCommunication } from './hook-lifecycle.js';
+import { normalizeToolHookPayload } from './hook-tool-protocol.js';
+import { captureHookHistory } from './hook-history-capture.js';
 import { recordHookReceiptBestEffort } from '../src/hook-receipts.js';
 import { AwarenessFeatureConfig, DEFAULT_AWARENESS_CONFIG, loadAwarenessConfig } from '../src/awareness-config.js';
 import {
@@ -50,7 +52,7 @@ export async function runHookCommand(
   const features = hookFeatures();
   if (!features.hooks) return 0;
 
-  const payload = {
+  let payload: Record<string, unknown> = {
     ...parsePayload(rawPayload ?? await readStdin()),
     ...(options.host ? { [INTERNAL_HOOK_HOST]: options.host } : {}),
     ...(options.skillRoot ? { [INTERNAL_SKILL_ROOT]: options.skillRoot } : {}),
@@ -63,11 +65,34 @@ export async function runHookCommand(
   }
   const profile = configuredProfile as AwarenessHookProfile;
   if (!hookCommandEnabled(profile, command)) return 0;
-  // Non-write tool events need no participant identity or coordination state.
-  if ((command === 'pre-edit' || command === 'post-edit') && extractFiles(payload).length === 0) return 0;
+  let normalizedTool: ReturnType<typeof normalizeToolHookPayload> | null = null;
+  if (command === 'pre-edit' || command === 'post-edit') {
+    if (!hookEventName(payload)) {
+      const host = shellHookHost(payload);
+      const inferredEvent = host === 'cursor'
+        ? command === 'pre-edit' ? 'preToolUse' : 'postToolUse'
+        : host === 'gemini'
+          ? command === 'pre-edit' ? 'BeforeTool' : 'AfterTool'
+          : host === 'opencode'
+            ? command === 'pre-edit' ? 'tool.execute.before' : 'tool.execute.after'
+            : command === 'pre-edit' ? 'PreToolUse' : 'PostToolUse';
+      payload = { ...payload, hook_event_name: inferredEvent };
+    }
+    try {
+      normalizedTool = normalizeToolHookPayload(payload, shellHookHost(payload));
+    } catch (error) {
+      console.error(`octocode-awareness hook payload warning (continuing): ${(error as Error).message}`);
+      return 0;
+    }
+    if (normalizedTool.phase !== (command === 'pre-edit' ? 'pre' : 'post')) {
+      console.error(`octocode-awareness hook payload warning (continuing): ${command} received ${normalizedTool.phase} event`);
+      return 0;
+    }
+  }
   try {
     agentId(payload);
   } catch (error) {
+    if (normalizedTool && normalizedTool.tool.effect !== 'workspace-write') return 0;
     console.error(`octocode-awareness hook identity error: ${(error as Error).message}`);
     return 1;
   }
@@ -85,8 +110,24 @@ export async function runHookCommand(
   try {
     let exitCode: number;
     switch (command) {
-      case 'pre-edit': exitCode = await runPreEdit(payload, { emitPeerSignal: profile !== 'guard' }); break;
-      case 'post-edit': exitCode = await runPostEdit(payload); break;
+      case 'pre-edit': {
+        if (normalizedTool?.tool.effect !== 'workspace-write') {
+          exitCode = profile === 'guard' ? 0 : await runToolCommunication(payload, features);
+        } else {
+          exitCode = await runPreEdit(payload, { emitPeerSignal: profile !== 'guard' });
+          if (exitCode === 0) await captureHookHistory(payload, normalizedTool);
+        }
+        break;
+      }
+      case 'post-edit': {
+        if (normalizedTool?.tool.effect === 'workspace-write' && normalizedTool.outcome.terminal) {
+          exitCode = await runPostEdit(payload);
+          await captureHookHistory(payload, normalizedTool);
+        }
+        else exitCode = 0;
+        if (exitCode === 0 && profile !== 'guard') exitCode = await runToolCommunication(payload, features);
+        break;
+      }
       case 'stop-verify': exitCode = await runStopVerify(payload, features); break;
       case 'notify-deliver': exitCode = await runNotifyDeliver(payload, features); break;
       case 'session-compact': exitCode = await runSessionCompact(payload, features); break;

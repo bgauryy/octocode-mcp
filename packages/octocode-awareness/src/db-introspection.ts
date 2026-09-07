@@ -154,7 +154,7 @@ export function inspectSchemaState(db: DatabaseSync): SchemaState {
       throw new Error(`refusing unrecognized or unrelated Awareness SQLite store; database consolidation may be required; relations: ${names}`);
     }
     if (canonicalCount !== expected.size) {
-      throw new Error('Awareness schema upgrade required; convert this database into a new destination with awareness database consolidate. The source database has not been changed.');
+      throw new Error('Awareness requires the exact current canonical schema; this database is not supported and has not been changed. Select a fresh Awareness store.');
     }
     assertCanonicalRelationContract(db, identity.relations);
     assertCanonicalSchemaFingerprint(db);

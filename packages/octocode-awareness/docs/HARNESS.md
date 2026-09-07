@@ -84,7 +84,7 @@ yarn workspace @octocodeai/octocode-awareness build
 yarn workspace @octocodeai/octocode-awareness test:smoke
 ```
 
-Migration tests must cover legacy execution tables, normalized run files and
-exclusive locks, mixed Agent/Awareness stores, and the distinct current
-Awareness identity. Hook tests must replay equivalent shell/in-process events.
+Database tests must reject incomplete, drifted, and mixed Agent/Awareness stores,
+while accepting only the exact current Awareness identity. Hook tests must replay
+equivalent shell/in-process events.
 Output tests must enforce byte/detail caps, not only row counts.

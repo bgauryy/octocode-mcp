@@ -43,6 +43,15 @@ export function hasAwarenessSignal(s: ExternalAwarenessStatus): boolean {
   );
 }
 
+/** Persistent shared attention belongs in the custom footer, not a hidden host status slot. */
+export function buildAwarenessFooterSegments(status: ExternalAwarenessStatus | null, deliveryStatus?: string): InlineSegment[] {
+  const segments: InlineSegment[] = [];
+  if (deliveryStatus) segments.push({ text: deliveryStatus, token: 'warning', attention: true });
+  if (status?.unreadInbox) segments.push({ text: `Awareness · ${status.unreadInbox} unread`, token: 'warning', attention: true });
+  if (status?.verifyTasks) segments.push({ text: `Awareness · ${status.verifyTasks} checks pending`, token: 'warning', attention: true });
+  return segments;
+}
+
 /**
  * Build explicit Awareness detail lines. Empty array when there is
  * nothing to show; lines clipped at the source when `width` is given.

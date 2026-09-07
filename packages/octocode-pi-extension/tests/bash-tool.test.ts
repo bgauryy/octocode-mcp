@@ -15,9 +15,9 @@ import {
   registerBashTool,
 } from '../src/tools/bash-tool.js';
 import { registerUniqueTool } from '../src/tools/octocode-tools.js';
-import { resetApprovalStore } from '../src/tools/approval.js';
+import { isAlwaysAllowed, resetApprovalStore } from '../src/tools/approval.js';
 import { enterPlanMode, exitPlanMode } from '../src/tools/plan-mode.js';
-import type { ToolCallResult, ToolDefinition } from '../src/types.js';
+import type { PiContext, ToolCallResult, ToolDefinition } from '../src/types.js';
 
 let restoreProcessGuard: () => void;
 beforeAll(() => {
@@ -301,7 +301,7 @@ test('bash head+tail truncation never splits a Unicode surrogate pair at slice b
 });
 
 test('bash execution requires approval for obvious environment exfiltration and fails closed without UI', async () => {
-  resetApprovalStore();
+  resetApprovalStore(undefined);
   const tool = loadBashTool();
   await assert.rejects(
     () => executeBash(tool, 'env-dump', { command: 'env', reasoning: 'verify env exfil approval' }, undefined, { cwd: os.tmpdir() }),
@@ -310,7 +310,7 @@ test('bash execution requires approval for obvious environment exfiltration and 
 });
 
 test('bash execution runs obvious environment exfiltration after explicit approval', async () => {
-  resetApprovalStore();
+  resetApprovalStore(undefined);
   const tool = loadBashTool();
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-bash-env-'));
   const prev = process.env['OCTOCODE_BASH_ENV_TEST_TOKEN'];
@@ -333,6 +333,48 @@ test('bash execution runs obvious environment exfiltration after explicit approv
   } finally {
     if (prev === undefined) delete process.env['OCTOCODE_BASH_ENV_TEST_TOKEN'];
     else process.env['OCTOCODE_BASH_ENV_TEST_TOKEN'] = prev;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('bash abort during approval cannot execute or persist a late grant', async () => {
+  resetApprovalStore(undefined);
+  const tool = loadBashTool();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-bash-approval-abort-'));
+  const marker = path.join(tmp, 'ran.txt');
+  const controller = new AbortController();
+  let resolvePrompt!: (choice: string) => void;
+  let promptStarted!: () => void;
+  const started = new Promise<void>((resolve) => { promptStarted = resolve; });
+  let promptSignal: AbortSignal | undefined;
+  const ctx = {
+    cwd: tmp,
+    hasUI: true,
+    ui: {
+      select: async (_prompt: string, _choices: string[], opts?: { signal?: AbortSignal }) => {
+        promptSignal = opts?.signal;
+        promptStarted();
+        return await new Promise<string>((resolve) => { resolvePrompt = resolve; });
+      },
+    },
+  } as unknown as PiContext;
+  try {
+    const pending = executeBash(
+      tool,
+      'approval-abort',
+      { command: `printf ran > ${JSON.stringify(marker)} && env`, reasoning: 'verify cancellation stops approved shell execution' },
+      controller.signal,
+      ctx,
+    );
+    await started;
+    controller.abort();
+    resolvePrompt('Always allow this session');
+    await assert.rejects(pending, /aborted/i);
+    assert.equal(promptSignal, controller.signal);
+    assert.equal(fs.existsSync(marker), false);
+    assert.equal(isAlwaysAllowed(ctx, 'system'), false);
+  } finally {
+    controller.abort();
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });

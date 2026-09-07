@@ -6,6 +6,11 @@
  */
 
 // DB layer
+export { runAwarenessHistoryOperation } from './history.js';
+export { HistoryError } from './history-store.js';
+export { execHistoryCli } from '../bin/cli-history.js';
+export { historyToolEffect } from './history-tool-effects.js';
+export { historyRequestSchemas, historyEntitySchemas, HISTORY_ROUTE_DESCRIPTORS } from './schema/definitions-history.js';
 export {
   connectDb, connectCachedDb, resolveDbPath, getDeliveryFingerprint, setDeliveryFingerprint,
 } from './db-runtime.js';
@@ -61,6 +66,7 @@ export type {
 export {
   AWARENESS_PEER_EVENT_MESSAGE_TYPE,
   createAwarenessEventConsumer,
+  createAwarenessEventObservability,
 } from './event-consumer.js';
 export type {
   AwarenessEventConsumerOptions,
@@ -152,7 +158,7 @@ export type { AwarenessQueryFormat, AwarenessQueryParams, AwarenessQueryResult, 
 // Agent-native start packet
 export { attendAwareness } from './attend-query.js';
 export type { AttendNext } from './attend-flow.js';
-export type { AttendEvidence, AttendParams, AttendResult } from './attend-model.js';
+export type { AttendEvidence, AttendParams, AttendResult, AttendUnchangedResult } from './attend-model.js';
 
 // Notifications
 export { insertNotification } from './notifications-core.js';
@@ -244,7 +250,7 @@ export type {
   OpenCodeAwarenessPluginOptions,
 } from './opencode-plugin-adapter.js';
 
-export type { RuntimeObservation } from './attend-physiology.js';
+export type { RuntimeObservation } from '@octocodeai/agent-contracts/physiology';
+export { assessRuntimeRegulation } from './attend-physiology.js';
 
 export { consolidateDatabase } from './db-consolidation.js';
-export { ConsolidationContractError } from './db-consolidation-validation.js';

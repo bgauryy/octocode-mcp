@@ -280,11 +280,16 @@ const BLOCKING_TOPICS = new Set(['BLOCKED', 'OVERLAP', 'CONFLICT']);
 const HANDOFF_TOPICS = new Set(['HANDOFF']);
 
 /**
- * Classify peer input without interpreting its body as host policy. Topic is the
- * stable routing field; text heuristics only provide a conservative fallback for
- * older senders that omitted it.
+ * Classify peer input without interpreting its body as host policy. Canonical
+ * signal kinds preserve routing independently of human-written subjects. Direct
+ * peer messages use their topic, with conservative body heuristics as a fallback.
  */
-export function classifyPeerMessage(topic: string | null | undefined, body: string): PeerMessageClass {
+export function classifyPeerMessage(topic: string | null | undefined, body: string, signalKind?: string): PeerMessageClass {
+  // Canonical signals carry a kind independently of their human-written subject.
+  // Never require magic subject words to surface blockers or hold decisions.
+  if (signalKind === 'request' || signalKind === 'decision') return 'proposal';
+  if (signalKind === 'blocker') return 'blocking';
+  if (signalKind === 'handoff') return 'handoff';
   const normalizedTopic = topic?.trim().toUpperCase() ?? '';
   if (PROPOSAL_TOPICS.has(normalizedTopic)) return 'proposal';
   if (BLOCKING_TOPICS.has(normalizedTopic)) return 'blocking';
@@ -302,6 +307,7 @@ export function evaluatePeerInbound(input: {
   toAgentId?: string | null;
   expectedAgentId: string;
   topic?: string | null;
+  signalKind?: string;
   text: string;
   maxBytes?: number;
 }): PeerInboundPolicyResultV1 {
@@ -309,7 +315,7 @@ export function evaluatePeerInbound(input: {
   const expected = input.expectedAgentId.trim();
   const to = input.toAgentId?.trim() || null;
   const body = input.text.trim();
-  const messageClass = classifyPeerMessage(input.topic, body);
+  const messageClass = classifyPeerMessage(input.topic, body, input.signalKind);
   if (!from || !expected || !body) return { version: 1, decision: 'refuse', messageClass, reason: 'missing peer identity, target, or body' };
   if (from === expected) return { version: 1, decision: 'refuse', messageClass, reason: 'self-authored messages are not inbound peer events' };
   if (to !== null && to !== expected) return { version: 1, decision: 'refuse', messageClass, reason: 'message target does not match this agent' };

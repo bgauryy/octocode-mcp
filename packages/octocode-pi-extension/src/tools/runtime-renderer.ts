@@ -1,6 +1,7 @@
 import type { ReadonlyFooterDataProvider, WorkingIndicatorOptions } from '@earendil-works/pi-coding-agent';
 import type { PiContext, PiTheme } from '../types.js';
 import { WORKING_WORD } from '../tui/content.js';
+import type { SemanticToken } from '../tui/palette.js';
 import { createRuntimeStore, type ForegroundActivity, type ForegroundActivityInput, type RuntimeMcpState, type RuntimeState, type RuntimeStore } from './runtime-store.js';
 
 interface RuntimeBinding {
@@ -39,11 +40,11 @@ export function activityPresentation(activity: ForegroundActivity): { visible: b
     case 'idle': return { visible: false };
     case 'thinking': return { visible: true, message: `${WORKING_WORD}…`, status: `${WORKING_WORD}…` };
     case 'researching': return { visible: true, message: `Researching…${activity.detail ? ` ${activity.detail}` : ''}`, status: 'Researching…' };
-    case 'awaiting_input': return { visible: false, status: 'Input needed' };
+    case 'awaiting_input': return { visible: false, status: '⏳ Input needed' };
     case 'planning': return { visible: true, message: `Planning…${activity.detail ? ` ${activity.detail}` : ''}`, status: 'Planning…' };
-    case 'reviewing': return { visible: false, status: 'RFC ready for review' };
-    case 'awaiting_start': return { visible: false, status: 'Ready to start' };
-    case 'ready_to_work': return { visible: false, status: `Ready · ${activity.label}` };
+    case 'reviewing': return { visible: false, status: '⏳ Review RFC — approve Start or Request changes' };
+    case 'awaiting_start': return { visible: false, status: '⏳ Plan approved — run /octocode-plan start <revision>' };
+    case 'ready_to_work': return { visible: false, status: `▶ Ready · ${activity.label}` };
     case 'working': return { visible: true, message: `Working… ${activity.label}`, status: 'Working…' };
     case 'verifying': return { visible: true, message: `Verifying…${activity.label ? ` ${activity.label}` : ''}`, status: 'Verifying…' };
     case 'blocked': return { visible: false, status: `Blocked · ${activity.label}` };
@@ -52,12 +53,33 @@ export function activityPresentation(activity: ForegroundActivity): { visible: b
   }
 }
 
+/** The footer and motion indicator share execution priority without changing plan state. */
+export function runtimeActivityPresentation(state: RuntimeState): { visible: boolean; status?: string; token: SemanticToken; attention?: boolean } {
+  if (state.footer.compacting) return { visible: true, status: 'Compacting context…', token: 'brand' };
+  const calls = state.footer.toolCalls ?? [];
+  if (calls.some((call) => call.name === 'askUser')) {
+    return { visible: false, status: 'Input needed', token: 'warning', attention: true };
+  }
+  const kind = state.activity.kind;
+  const waiting = kind === 'awaiting_input' || kind === 'reviewing' || kind === 'awaiting_start';
+  const latest = calls.at(-1);
+  if (latest && !waiting) {
+    return { visible: true, status: `Running ${latest.name}${calls.length > 1 ? ` · ${calls.length} tools` : ''}`, token: 'brand' };
+  }
+  const attention = kind === 'failed' || kind === 'blocked' || kind === 'awaiting_input';
+  return {
+    ...activityPresentation(state.activity),
+    token: kind === 'failed' ? 'error' : attention ? 'warning' : kind === 'complete' ? 'success' : 'brand',
+    attention,
+  };
+}
+
 function renderRuntime(ctx: PiContext, state: RuntimeState, rendered: RenderedRuntimeState): void {
   if (!ctx.hasUI || !ctx.ui) return;
   const statuses = { ...state.statuses };
   statuses['octocode-init'] = isLoading(state) ? `Octocode · ${state.stage}` : undefined;
   statuses['octocode-mcp-init'] = mcpStageText(state.mcp);
-  const activity = activityPresentation(state.activity);
+  const activity = runtimeActivityPresentation(state);
   // Foreground activity text has one persistent owner: the custom footer.
   // Keep Pi's motion indicator here, but do not repeat the same lifecycle label
   // in the status row or working-message row.
@@ -71,7 +93,11 @@ function renderRuntime(ctx: PiContext, state: RuntimeState, rendered: RenderedRu
     else rendered.statuses.set(key, next);
   }
   const loading = isLoading(state);
-  const workingVisible = loading || activity.visible;
+  // Show the motion indicator whenever the agent is in an active turn — even when plan
+  // lifecycle has moved past 'idle' (ready_to_work, reviewing, awaiting_start, etc.).
+  // activeTurnStartedAt is set on turn_start and cleared on turn_end.
+  const inActiveTurn = !!state.footer.activeTurnStartedAt;
+  const workingVisible = loading || activity.visible || inActiveTurn;
   if (rendered.workingVisible !== workingVisible) {
     ctx.ui.setWorkingVisible?.(workingVisible);
     rendered.workingVisible = workingVisible;
@@ -92,7 +118,7 @@ export function bindRuntimeRenderer(ctx: PiContext | undefined, store: RuntimeSt
   const paint = (state: RuntimeState): void => {
     try {
       renderRuntime(ctx, state, rendered);
-      if (state.notice && state.notice.id !== noticeId) {
+      if (ctx.hasUI && state.notice && state.notice.id !== noticeId) {
         noticeId = state.notice.id;
         ctx.ui?.notify?.(state.notice.message, state.notice.level);
       }

@@ -5,9 +5,11 @@ import type { AttendNext } from './attend-flow.js';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { AwarenessQueryRow } from './repo-model.js';
-import type { OperationalState, Regulation, RuntimeObservation } from './attend-physiology.js';
+import type { OperationalState, Regulation } from './attend-physiology.js';
+import type { RuntimeObservation } from '@octocodeai/agent-contracts/physiology';
 
 export interface AttendParams {
+  revision?: string;
   runtimeObservation?: RuntimeObservation;
   agentId?: string | null;
   workspacePath?: string | null;
@@ -39,6 +41,9 @@ export interface AttendEvidence {
 
 export interface AttendResult {
   ok: true;
+  unchanged: false;
+  revision: string;
+  reset_reason?: 'invalid_revision' | 'scope_changed' | 'partial_snapshot' | 'unstable_snapshot';
   generated_at: string;
   workspace_path: string;
   artifact?: string | null;
@@ -58,6 +63,18 @@ export interface AttendResult {
   trace?: Array<{ step: string; count?: number; note?: string }>;
   organ_reference?: Array<{ organ: string; role: string; commands: string[]; guardrail: string }>;
   next: AttendNext;
+}
+
+export interface AttendUnchangedResult {
+  ok: true;
+  unchanged: true;
+  revision: string;
+  generated_at: string;
+  workspace_path: string;
+  advisory: true;
+  unavailable: readonly string[];
+  next: AttendNext;
+  note: string;
 }
 
 export const TEAM_NORMS = [

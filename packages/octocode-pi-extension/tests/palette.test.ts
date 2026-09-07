@@ -15,7 +15,7 @@ const theme = { fg: (c: string, t: string) => `<${c}>${t}</${c}>`, bold: (t: str
 
 test('semantic tokens map to shipped theme color keys', () => {
   assert.equal(TOKEN.brand, 'accent');
-  assert.equal(TOKEN.brandAlt, 'syntaxOperator');
+  assert.equal(TOKEN.brandAlt, 'mdCode');
   assert.equal(TOKEN.path, 'mdCode');
   assert.equal(TOKEN.link, 'mdLink');
   assert.equal(TOKEN.count, 'text');

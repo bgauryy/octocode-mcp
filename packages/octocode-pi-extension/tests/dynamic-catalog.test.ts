@@ -51,6 +51,15 @@ test('empty registries produce an empty addendum (zero token cost)', () => {
   assert.equal(getDynamicCapabilitiesAddendum(), '');
 });
 
+test('worker catalogs advertise only their enabled capability facades', () => {
+  addTool('worker-helper');
+  addSkill('worker-workflow');
+  const skillOnly = getDynamicCapabilitiesAddendum([], { tools: false, skills: true });
+  assert.match(skillOnly, /worker-workflow/);
+  assert.doesNotMatch(skillOnly, /worker-helper|callTool/);
+  assert.equal(getDynamicCapabilitiesAddendum([], { tools: false, skills: false }), '');
+});
+
 test('populated registries produce a wrapped, labelled block', () => {
   addTool('toSlug', 'Slugify a string');
   addSkill('release-checklist', 'Run the release checklist. Use before publishing.');

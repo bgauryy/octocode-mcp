@@ -23,7 +23,7 @@ export interface ReadMediaImageResult {
 
 export function readMediaImageFile(filePath: string, cwd: string): ReadMediaImageResult {
   const abs = resolveFilePath(filePath, cwd);
-  assertPathAllowed(abs, cwd, 'readMedia');
+  assertPathAllowed(abs, cwd, 'inspectMedia');
   const loaded = loadImageForRender(abs);
   if (!loaded) {
     return {
@@ -46,13 +46,13 @@ function resolveView(type: MediaType, requested: unknown): MediaView {
   if (type === 'video') {
     const resolved = view ?? 'contactSheet';
     if (!['metadata', 'frame', 'contactSheet'].includes(resolved)) {
-      throw new Error('readMedia: video view must be metadata, frame, or contactSheet.');
+      throw new Error('inspectMedia: video view must be metadata, frame, or contactSheet.');
     }
     return resolved;
   }
   const resolved = view ?? 'waveform';
   if (!['metadata', 'waveform', 'spectrogram'].includes(resolved)) {
-    throw new Error('readMedia: audio view must be metadata, waveform, or spectrogram.');
+    throw new Error('inspectMedia: audio view must be metadata, waveform, or spectrogram.');
   }
   return resolved;
 }
@@ -84,13 +84,14 @@ export function registerReadMediaTool(
   registerFn: RegisterFn,
 ): void {
   registerFn(pi, registeredToolNames, {
-    name: 'readMedia',
-    label: 'Read Media',
-    description: 'Read local media into model context. image returns pixels; video returns metadata, a frame, or a contact sheet; audio returns metadata, a waveform, or a spectrogram. Read-only—use media to create or transform files.',
-    promptSnippet: 'Inspect local image/video/audio content; use media for authored or transformed outputs.',
+    name: 'inspectMedia',
+    label: 'Inspect Media',
+    description: 'Inspect local media and surface it in model context. image type returns inline pixels for vision; video returns metadata, a single frame, or a tiled contact sheet; audio returns metadata, a waveform, or a spectrogram. Read-only — does not write files. Use media to create or transform, runFfmpeg for advanced operations.',
+    promptSnippet: 'Read local media into model context. image→pixels; video→metadata/frame/contactSheet; audio→metadata/waveform/spectrogram. Read-only—use media to create or transform.',
     promptGuidelines: [
-      'Use type:image for screenshots/diagrams, type:video for a frame/contact sheet, and type:audio for a waveform/spectrogram.',
-      'Use view:metadata when visual content is unnecessary. Video/audio views require ffmpeg.',
+      'Use type:image for screenshots/diagrams (returns inline pixels to the model for vision); type:video for a frame or contact sheet; type:audio for waveform/spectrogram.',
+      'Use view:metadata when visual content is unnecessary — faster, no ffmpeg rendering required.',
+      'inspectMedia is read-only and never writes files. For creating images/PDFs/GIFs or transforming media, use media. For raw ffmpeg/ffprobe commands, use runFfmpeg.',
     ],
     parameters: buildQueryEnvelopeSchema(Type, buildParameters(Type), {
       reasoningDescription: 'Why this media must be inspected.',
@@ -111,11 +112,11 @@ export function registerReadMediaTool(
           if (batchSignal?.aborted) throw new Error('Operation aborted');
           const type = query['type'] as MediaType;
           if (!['image', 'video', 'audio'].includes(type)) {
-            throw new Error('readMedia: `type` must be image, video, or audio.');
+            throw new Error('inspectMedia: `type` must be image, video, or audio.');
           }
           const filePath = query['path'];
           if (typeof filePath !== 'string' || filePath.length === 0) {
-            throw new Error('readMedia: `path` is required.');
+            throw new Error('inspectMedia: `path` is required.');
           }
 
           if (type === 'image') {
@@ -180,18 +181,18 @@ export function registerReadMediaTool(
       const input = queries[0] ?? {};
       const type = typeof input['type'] === 'string' ? input['type'] : 'media';
       const filePath = typeof input['path'] === 'string' ? input['path'] : '(missing path)';
-      return buildToolView({ name: 'readMedia', state: 'request', segments: [{ text: type, token: 'bright' }, { text: filePath, token: 'path' }] }, theme);
+      return buildToolView({ name: 'inspectMedia', state: 'request', segments: [{ text: type, token: 'bright' }, { text: filePath, token: 'path' }] }, theme);
     },
 
     renderResult(result, opts, theme, context) {
-      if (opts.isPartial) return buildToolView(() => ({ name: 'readMedia', state: 'running', status: 'reading…' }), theme);
+      if (opts.isPartial) return buildToolView(() => ({ name: 'inspectMedia', state: 'running', status: 'reading…' }), theme);
       const ok = !result.isError;
       const note = (result.content.find((c) => c.type === 'text') as { text?: string } | undefined)?.text
         ?? (ok ? 'media loaded' : 'read failed');
       const details = result.details && typeof result.details === 'object' ? result.details as Record<string, unknown> : {};
       const source = typeof details['sourcePath'] === 'string' ? details['sourcePath'] : '';
       const base = buildToolView({
-        name: 'readMedia',
+        name: 'inspectMedia',
         state: ok ? 'success' : 'error',
         segments: [
           { text: note.split('\n').find(Boolean) ?? note, token: ok ? 'dim' : 'error' },

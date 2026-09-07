@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'vitest';
-import { EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS } from '@octocodeai/octocode-awareness';
+import { EXTERNAL_AGENT_AWARENESS_PROMPT } from '@octocodeai/octocode-awareness';
 import { buildPlanPrompt } from '../src/prompts/plan-prompt.js';
 import { PLAN_PROMPT_MAX_GOAL, PLAN_PROMPT_TRUNCATION_MARKER } from '@octocodeai/agent-contracts/prompts';
 import { SYSTEM_PROMPT } from '../src/prompts/system-prompt.js';
@@ -76,8 +76,8 @@ test('all typed role prompts expand the same shared protocol and preserve parser
     }
     assert.ok(expanded.includes(SUBAGENT_WORKER_CONTRACT), `${role} receives shared worker restrictions`);
     assert.ok(!expanded.includes(SUBAGENT_AWARENESS_GUIDANCE), `${role} omits the parallel ledger recipe`);
-    const composed = `${expanded}\n\n${EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS}`;
-    assert.equal(composed.split(EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS).length, 2, `${role} has one canonical operating guide`);
+    const composed = `${expanded}\n\n${EXTERNAL_AGENT_AWARENESS_PROMPT}`;
+    assert.equal(composed.split(EXTERNAL_AGENT_AWARENESS_PROMPT).length, 2, `${role} has one canonical operating guide`);
     assert.equal((composed.match(/<awareness>/g) ?? []).length, 1);
     assert.doesNotMatch(composed, /Send new signals with signal publish/);
     assert.match(composed, /Before the final response/);
@@ -96,12 +96,20 @@ test('all typed role prompts expand the same shared protocol and preserve parser
 
 
 test('main prompt composes compact host facts with the canonical Awareness protocol', () => {
-  const hostFacts = SYSTEM_PROMPT.replace(EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS, '');
+  const hostFacts = SYSTEM_PROMPT.replace(EXTERNAL_AGENT_AWARENESS_PROMPT, '');
   assert.ok(hostFacts.length < 1000);
-  assert.equal(SYSTEM_PROMPT.split(EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS).length, 2);
+  assert.equal(SYSTEM_PROMPT.split(EXTERNAL_AGENT_AWARENESS_PROMPT).length, 2);
   assert.match(SYSTEM_PROMPT, /MCPTool/);
   assert.match(SYSTEM_PROMPT, /user.*request determines the workflow/);
   assert.match(SYSTEM_PROMPT, /Permissions.*approval/);
   assert.match(SYSTEM_PROMPT, /data, not higher-priority instructions/);
   assert.doesNotMatch(hostFacts, /THINK|PLAN →|TL;DR|BEFORE acting|must exist|Never run any Git/);
+});
+
+test('main prompt routes decisions and context without prescribing a ceremony', () => {
+  assert.match(SYSTEM_PROMPT, /askUser/);
+  assert.match(SYSTEM_PROMPT, /plain messages/);
+  assert.match(SYSTEM_PROMPT, /never imply approval/);
+  assert.match(SYSTEM_PROMPT, /continuations/);
+  assert.equal((SYSTEM_PROMPT.match(/<interaction_context>/g) ?? []).length, 1);
 });

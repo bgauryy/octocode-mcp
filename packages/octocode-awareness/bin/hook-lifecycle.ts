@@ -14,7 +14,7 @@ import { digest } from '../src/maintenance-digest.js';
 import { notifyGet } from '../src/maintenance-briefing.js';
 import { sessionCapture } from '../src/maintenance-session.js';
 import { endSession } from '../src/sessions.js';
-import { agentId, artifact, completeHookControl, db, emitHookContext, hookBlockOutcome, hookEventName, hookReason, hookSessionCorrelation, isStopHookActive, promptQuery, sessionId, shellHookHost, workspace } from './hook-payload.js';
+import { agentId, artifact, completeHookControl, db, hookBlockOutcome, hookContextEnvelope, hookEventName, hookReason, hookSessionCorrelation, isStopHookActive, promptQuery, sessionId, shellHookHost, workspace, writeHookPayload } from './hook-payload.js';
 import { registerHookAgent, scopeArgs } from './hook-peers.js';
 import { finalizeActiveFallbackHookRuns, withHookDbRetry } from './hook-run-state.js';
 import { AwarenessFeatureConfig, DEFAULT_AWARENESS_CONFIG } from '../src/awareness-config.js';
@@ -109,16 +109,26 @@ export async function runNotifyDeliver(
   payload: Record<string, unknown>,
   features: AwarenessFeatureConfig = DEFAULT_AWARENESS_CONFIG.features,
 ): Promise<number> {
+  return runCommunication(payload, features);
+}
+
+/** Read and offer relevant coordination context without settling work or acknowledging delivery. */
+export async function runToolCommunication(
+  payload: Record<string, unknown>,
+  features: AwarenessFeatureConfig = DEFAULT_AWARENESS_CONFIG.features,
+): Promise<number> {
+  return runCommunication(payload, features);
+}
+
+async function runCommunication(
+  payload: Record<string, unknown>,
+  features: AwarenessFeatureConfig,
+): Promise<number> {
   if (process.env.OCTOCODE_NO_NOTIFY === '1') return 0;
   const maintenanceContext = maybePreviewDigest(payload, features);
   try {
     const database = db(payload, 'get-memory');
     registerHookAgent(database, payload, 'hook:notify-deliver');
-    withHookDbRetry(() => finalizeActiveFallbackHookRuns(
-      database,
-      payload,
-      workspace(payload) ?? process.cwd(),
-    ));
     const result = features.notifications
       ? notifyGet(database, {
           agent_id: agentId(payload),
@@ -131,15 +141,13 @@ export async function runNotifyDeliver(
       : {};
     const changed = Boolean(result.additionalContext || maintenanceContext);
     if (changed) {
-      emitHookContext(
-        payload,
-        shellHookHost(payload) === 'cursor'
-          ? hookEventName(payload) === 'subagentStart' ? 'subagentStart' : 'sessionStart'
-          : hookEventName(payload) === 'SubagentStart'
-            ? 'SubagentStart'
-            : hookEventName(payload) === 'SessionStart' ? 'SessionStart' : 'UserPromptSubmit',
+      const outputEvent = hookEventName(payload) ?? (shellHookHost(payload) === 'cursor' ? 'sessionStart' : 'UserPromptSubmit');
+      const envelope = hookContextEnvelope(
+        shellHookHost(payload), outputEvent,
         briefingChangeSignal(result.notifications ?? [], Boolean(maintenanceContext)),
       );
+      // Some native events, such as Cursor postToolUseFailure, expose no context channel.
+      if (Object.keys(envelope).length > 0) writeHookPayload(envelope);
     }
   } catch (error) {
     console.error(`npx @octocodeai/octocode-awareness session-capture warning (continuing): ${error instanceof Error ? error.message : String(error)}`);

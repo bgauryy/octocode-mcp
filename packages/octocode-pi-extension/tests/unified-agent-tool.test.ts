@@ -769,16 +769,26 @@ describe('spawn: typed profiles', () => {
     expect(spawnCall.tools).toContain('web');
   });
 
-  it('profile:custom uses lean resourceMode with explicit tools', async () => {
+  it('profile:custom uses the Octocode host with useful default tools', async () => {
+    await run(tools.get('agent')!, batch({ type: 'spawn', profile: 'custom', task: 'custom job' }));
+    const spawnCall = vi.mocked(agentTools.prepareSpawnAgentParams).mock.calls[0]![0] as {
+      resourceMode?: string; tools?: string[]; skills?: string[];
+    };
+    expect(spawnCall.resourceMode).toBe('octocode');
+    expect(spawnCall.tools).toEqual(['MCPTool', 'skill', 'bash']);
+    expect(spawnCall.skills).toBeDefined();
+  });
+
+  it('profile:custom preserves explicit lean mode and explicit tool scoping', async () => {
     await run(
       tools.get('agent')!,
-      batch({ type: 'spawn', profile: 'custom', task: 'custom job', tools: ['bash', 'write'] }),
+      batch({ type: 'spawn', profile: 'custom', task: 'custom job', tools: [], resourceMode: 'lean' }),
     );
     const spawnCall = vi.mocked(agentTools.prepareSpawnAgentParams).mock.calls[0]![0] as {
       resourceMode?: string; tools?: string[];
     };
     expect(spawnCall.resourceMode).toBe('lean');
-    expect(spawnCall.tools).toEqual(['bash', 'write']);
+    expect(spawnCall.tools).toEqual([]);
   });
 
   it('surfaces policyWarnings from the spawn record in the output', async () => {
@@ -862,7 +872,7 @@ describe('spawn: browser profile routing', () => {
     expect(spawnCall.systemPrompt).toContain('Browser specialist for:');
   });
 
-  it('sets tool allowlist to [chromeDebug] from buildSpawnConfig result', async () => {
+  it('keeps browser control plus Octocode research, skills, and Awareness access', async () => {
     await run(
       tools.get('agent')!,
       batch({ type: 'spawn', profile: 'browser', task: 'inspect DOM', runNow: false }),
@@ -870,7 +880,7 @@ describe('spawn: browser profile routing', () => {
     const spawnCall = vi.mocked(agentTools.prepareSpawnAgentParams).mock.calls[0]![0] as {
       tools?: string[];
     };
-    expect(spawnCall.tools).toEqual(['chromeDebug']);
+    expect(spawnCall.tools).toEqual(['chromeDebug', 'MCPTool', 'skill', 'bash']);
   });
 
   it('defaults to port 9222 when no port provided', async () => {

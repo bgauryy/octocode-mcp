@@ -1,4 +1,4 @@
-import type { RuntimeObservation } from './attend-physiology.js';
+import type { RuntimeObservation } from '@octocodeai/agent-contracts/physiology';
 import type { DatabaseSync } from 'node:sqlite';
 import { runMemoryOperation } from './tool-operations-memory.js';
 import { runLearningOperation } from './tool-operations-learning.js';

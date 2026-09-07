@@ -13,6 +13,7 @@ import {
   assertBashCommandAllowed,
   extractBashWriteTargets,
 } from '../src/tools/bash-tool.js';
+import type { PiContext } from '../src/types.js';
 
 const CWD = '/tmp/work';
 
@@ -219,19 +220,20 @@ function execBashH4(
 }
 
 test('H4: env-exfil approval fires even when classifySensitiveCommand also matches (no ?? hidden-gate regression)', async () => {
-  resetApprovalStore();
-  allowAlways('git-write'); // auto-approve git-write so only env-exfil would block
+  const ctx = { cwd: os.tmpdir() } as PiContext;
+  resetApprovalStore(ctx);
+  allowAlways(ctx, 'git-write'); // auto-approve git-write so only env-exfil would block
   const tool = loadBashToolForH4();
   // Before the fix: git push satisfied `??`, env-exfil was silently skipped.
   await assert.rejects(
-    () => execBashH4(tool, 'h4', { command: 'git push && env', reasoning: 'hidden exfil regression' }, { cwd: os.tmpdir() }),
+    () => execBashH4(tool, 'h4', { command: 'git push && env', reasoning: 'hidden exfil regression' }, ctx),
     /Expose inherited environment variables.*requires user approval.*non-interactive/i,
     'env-exfil must still prompt even when another approval class is auto-approved'
   );
 });
 
 test('H4: standalone env blocked non-interactively (baseline unchanged)', async () => {
-  resetApprovalStore();
+  resetApprovalStore(undefined);
   const tool = loadBashToolForH4();
   await assert.rejects(
     () => execBashH4(tool, 'h4b', { command: 'env', reasoning: 'baseline' }, { cwd: os.tmpdir() }),

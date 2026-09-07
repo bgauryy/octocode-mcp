@@ -1,12 +1,17 @@
 import { truncateToWidth } from '../tui/width.js';
+import { stripVTControlCharacters } from 'node:util';
+import { wrapTextWithAnsi } from '@earendil-works/pi-tui';
+import { AWARENESS_PEER_EVENT_MESSAGE_TYPE } from '@octocodeai/octocode-awareness';
 /**
  * custom-messages — branded transcript cards for Octocode lifecycle moments.
  *
- * Two custom message types get first-class renderers instead of pi's default
+ * Lifecycle and peer messages get dedicated renderers instead of pi's default
  * plain custom-message row:
  *  - compaction checkpoints (emitted from compaction-hooks on session_compact)
  *  - awareness handoffs (emitted when session awareness is handed to a
  *    successor context/agent)
+ *  - accepted Awareness peer messages (the existing attributed context payload)
+ * Recovery receipts use the state-entry renderer and add no model context.
  *
  * Contract discipline: `content` on a custom message ENTERS THE LLM CONTEXT.
  * Compaction therefore emits one bounded, explicit marker containing the
@@ -17,7 +22,7 @@ import { truncateToWidth } from '../tui/width.js';
  */
 
 
-import { BRAND_DIAMOND, SEP, paint } from '../tui/palette.js';
+import { BRAND_DIAMOND, SEP, paint, sanitizeLine } from '../tui/palette.js';
 import type { PiInstance, PiTheme } from '../types.js';
 import type { PlanCoordination, PlanStep, ReviewState } from './active-plan.js';
 import { makeComponentRenderer } from './render-helpers.js';
@@ -86,7 +91,7 @@ function fit(line: string, width: number): string {
 }
 
 function cardHeader(title: string, label: string, theme: PiTheme | undefined): string {
-  return `${paint(theme, 'brand', BRAND_DIAMOND)} ${paint(theme, 'title', title)}${paint(theme, 'dim', SEP)}${paint(theme, 'brand', label)}`;
+  return `${paint(theme, 'brand', BRAND_DIAMOND)} ${paint(theme, 'title', title)}${paint(theme, 'dim', SEP)}${paint(theme, 'muted', label)}`;
 }
 
 function listLine(title: string, items: string[], theme: PiTheme | undefined): string | undefined {
@@ -144,7 +149,7 @@ export function buildCompactionCard(
   if (details.summary) {
     const summaryLines = details.summary.split('\n');
     for (const line of summaryLines.slice(0, MAX_SUMMARY_LINES)) {
-      body.push(paint(theme, 'dim', line));
+      body.push(paint(theme, 'bright', line));
     }
     const omitted = summaryLines.length - MAX_SUMMARY_LINES;
     if (omitted > 0) {
@@ -155,7 +160,7 @@ export function buildCompactionCard(
     title: cardHeader('Compaction checkpoint', label, theme),
     body: body.filter((line): line is string => Boolean(line)),
     footer: 'context compacted — checkpoint ready',
-    borderToken: 'brand',
+    borderToken: 'dim',
   }, { width, theme });
 }
 
@@ -185,10 +190,10 @@ export function buildHandoffCard(
   const body: string[] = [];
   if (route) body.push(route);
   if (details.goal) {
-    body.push(`${paint(theme, 'muted', 'goal:')} ${paint(theme, 'dim', details.goal)}`);
+    body.push(`${paint(theme, 'muted', 'goal:')} ${paint(theme, 'bright', details.goal)}`);
   }
   for (const note of (details.notes ?? []).slice(0, MAX_LIST_ITEMS)) {
-    body.push(paint(theme, 'dim', `- ${note}`));
+    body.push(paint(theme, 'bright', `- ${note}`));
   }
   const omittedNotes = (details.notes?.length ?? 0) - MAX_LIST_ITEMS;
   if (omittedNotes > 0) {
@@ -200,8 +205,64 @@ export function buildHandoffCard(
     title: cardHeader('Awareness handoff', label, theme),
     body,
     footer: 'awareness handed off',
-    borderToken: 'brand',
+    borderToken: 'dim',
   }, { width, theme });
+}
+
+/** Peer messages reuse their existing attributed content; rendering adds no context. */
+export function buildPeerEventCard(message: unknown, expanded: boolean, theme: PiTheme | undefined, width: number): string[] {
+  const details = detailsOf(message);
+  const content = message && typeof message === 'object' && typeof (message as { content?: unknown }).content === 'string'
+    ? (message as { content: string }).content : '';
+  const clean = stripVTControlCharacters(content);
+  const attribution = /^\[peer:([^;\n]+); class:[^;\n]+; authority:data\]\n/.exec(clean);
+  const from = attribution?.[1] ?? 'peer';
+  const body = (attribution ? clean.slice(attribution[0].length) : clean).split('\n').map(sanitizeLine);
+  const kind = details['messageClass'] === 'blocking' ? 'blocking' : details['messageClass'] === 'handoff' ? 'handoff' : 'message';
+  const title = cardHeader(`Awareness ${kind}`, sanitizeLine(from), theme);
+  if (!expanded) {
+    return [title, ...body.filter(Boolean).slice(0, 1).map((line) => `  ${paint(theme, 'bright', line)}`),
+      paint(theme, kind === 'blocking' ? 'warning' : 'muted', '  Peer data · Ctrl+O expands'),
+    ].map((line) => fit(line, width));
+  }
+  return renderFrame({
+    title,
+    body: body.flatMap((line) => wrapTextWithAnsi(line, Math.max(1, width - 3))).map((line) => paint(theme, 'bright', line)),
+    footer: 'Peer data',
+    borderToken: kind === 'blocking' ? 'warning' : 'dim',
+  }, { width, theme });
+}
+
+/** A state-entry view: recovery receipts are inspectable without spending model tokens. */
+export function buildRecoveryCard(receipt: unknown, expanded: boolean, theme: PiTheme | undefined, width: number): string[] {
+  if (!receipt || typeof receipt !== 'object') return [];
+  const data = receipt as Record<string, unknown>;
+  const outcome = data['outcome'];
+  if (!['restored', 'expired', 'corrupt', 'identity-mismatch'].includes(String(outcome))) return [];
+  const strings = (key: string): string[] => Array.isArray(data[key])
+    ? (data[key] as unknown[]).filter((item): item is string => typeof item === 'string').map((item) => sanitizeLine(stripVTControlCharacters(item))) : [];
+  const restored = strings('restored');
+  const validated = strings('validated');
+  const corrupt = strings('corrupt');
+  const overBudget = strings('overBudget');
+  const stale = strings('stale');
+  const pending = strings('pendingInteractionIds').length;
+  const partial = outcome !== 'restored' || corrupt.length > 0 || overBudget.length > 0;
+  const label = outcome === 'restored' ? partial ? 'partial' : 'checked'
+    : outcome === 'expired' ? 'expired checkpoint'
+      : outcome === 'corrupt' ? 'unreadable checkpoint' : 'different session';
+  const title = cardHeader('Context recovery', label, theme);
+  const stats = `${pending ? `${pending} pending decision${pending === 1 ? '' : 's'} · ` : ''}${restored.length} restored · ${validated.length} validated`;
+  if (!expanded) return [title, ...wrapTextWithAnsi(stats, Math.max(1, width - 2))
+    .map((line) => paint(theme, partial ? 'warning' : 'muted', `  ${line}`))].map((line) => fit(line, width));
+  const body = [stats,
+    listLine('restored', restored, theme),
+    listLine('current sources changed', stale, theme),
+    listLine('unreadable', corrupt, theme),
+    listLine('over budget', overBudget, theme),
+    pending ? 'Pending decisions still require an explicit answer.' : undefined,
+  ].filter((line): line is string => Boolean(line));
+  return renderFrame({ title, body: body.flatMap((line) => wrapTextWithAnsi(line, Math.max(1, width - 3))), footer: partial ? 'Some checkpoint context was not restored' : 'Current sources checked', borderToken: partial ? 'warning' : 'dim' }, { width, theme });
 }
 
 // ─── Renderer registration ────────────────────────────────────────────────────
@@ -217,10 +278,13 @@ function detailsOf(message: unknown): Record<string, unknown> {
 }
 
 /**
- * Register the branded renderers for both Octocode custom-message types.
+ * Register the branded renderers for Octocode lifecycle and peer messages.
  * First-registrant wins in pi, so this should run once at extension setup.
  */
 export function registerOctocodeMessageRenderers(pi: PiInstance): void {
+  pi.registerMessageRenderer?.(AWARENESS_PEER_EVENT_MESSAGE_TYPE, (message, options, theme) =>
+    makeComponentRenderer((_props, { width }) => buildPeerEventCard(message, options?.expanded === true, theme, width), undefined),
+  );
   pi.registerMessageRenderer?.(COMPACTION_CHECKPOINT_TYPE, (message, options, theme) =>
     makeComponentRenderer((_props, { width: width }) => buildCompactionCard(
         detailsOf(message) as unknown as CompactionCheckpointDetails,
@@ -275,7 +339,10 @@ export function renderCompactionContextMarker(details: CompactionCheckpointDetai
     ...(details.estimatedTokensAfter !== undefined ? { estimatedTokensAfter: details.estimatedTokensAfter } : {}),
     ...(details.latestArtifactPath ? { artifact: bounded(details.latestArtifactPath, 512) } : {}),
     ...(planPointer ? { plan: planPointer } : {}),
-    ...(details.summary?.trim() ? { summaryAvailable: true, summary: bounded(details.summary, 3500) } : {}),
+    // Pi's native compaction summary is already retained in model context. Keep
+    // the body in details/artifacts for UI inspection without replaying it in
+    // this model-visible checkpoint marker.
+    ...(details.summary?.trim() ? { summaryAvailable: true } : {}),
   };
   return `<octocode_compaction_context>${JSON.stringify(payload)}</octocode_compaction_context>`;
 }

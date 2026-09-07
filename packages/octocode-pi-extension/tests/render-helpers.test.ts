@@ -229,7 +229,7 @@ test('Octocode renderers cover partial, collapsed, expanded, stats, and error st
   const running = buildOctocodeRenderResult('localSearch', textResult('still running'), { isPartial: true }, theme).render(120)[0]!;
   assert.match(running, /<accent>⠋|<accent>⠙|<accent>⠹|<accent>⠸|<accent>⠼|<accent>⠴|<accent>⠦|<accent>⠧|<accent>⠇|<accent>⠏/);
   assert.match(running, /<toolTitle>localSearch<\/toolTitle>/);
-  assert.match(running, /<dim>running…<\/dim>/);
+  assert.match(running, /<accent>running…<\/accent>/);
 
   const collapsed = buildOctocodeRenderResult(
     'localSearch',
@@ -244,6 +244,8 @@ test('Octocode renderers cover partial, collapsed, expanded, stats, and error st
   const bare = buildOctocodeRenderResult('npmSearch', textResult('found 3 packages\nsecond line'), { expanded: false }, theme).render(180)[0]!;
   assert.match(bare, /<dim>→ found 3 packages<\/dim>/, 'no stats → the response text is the result');
   assert.doesNotMatch(bare, /second line/);
+  assert.match(bare, /Ctrl\+O details/, 'multi-line results advertise their disclosure key inline');
+  assert.doesNotMatch(collapsed, /Ctrl\+O details/, 'complete one-line results do not advertise empty detail');
 
   const withPreview = buildOctocodeRenderResult(
     'localGetFileContent',
@@ -286,6 +288,21 @@ test('Octocode renderers cover partial, collapsed, expanded, stats, and error st
   assert.match(canonicalRows[0]!, /2 queries.*parallel/);
   assert.match(canonicalRows[1]!, /\[0\].*image a loaded/);
   assert.match(canonicalRows[2]!, /\[1\].*image b loaded/);
+
+  const expandedBatch = buildOctocodeRenderResult(
+    'readMedia',
+    textResult('2 queries succeeded · parallel.\nfull batch evidence', {
+      queryRunType: 'parallel',
+      results: [
+        { index: 0, status: 'success', summary: 'image a loaded' },
+        { index: 1, status: 'success', summary: 'image b loaded' },
+      ],
+    }),
+    { expanded: true },
+    theme,
+  ).render(180).join('\n');
+  assert.match(expandedBatch, /response:/);
+  assert.match(expandedBatch, /full batch evidence/, 'expanded batches reveal their full content instead of staying collapsed');
 
   const expanded = buildOctocodeRenderResult(
     'ghGetFileContent',

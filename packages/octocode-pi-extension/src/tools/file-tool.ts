@@ -187,14 +187,14 @@ export function registerFileTool(
     name: 'file',
     label: FILE_TOOL_DISPLAY_NAME,
     description: 'Create, edit, or delete files through one guarded mutation boundary. edit uses stale/lost-update checks and diffs; write is atomic; delete rejects directories and rechecks the target before unlinking.',
-    promptSnippet: 'Create, edit, or delete files through one guarded mutation tool.',
+    promptSnippet: 'Create, edit, or delete files through one guarded mutation boundary. edit uses stale/lost-update checks and diffs; write is atomic; delete rejects directories and rechecks before unlinking.',
     promptGuidelines: [
+      'Prefer file over bash for any file create, edit, or delete — file provides stale-edit guards, diff preview, and atomic writes that bash cannot.',
       'Use type:"edit" for targeted replacements, type:"write" for new files or intentional full rewrites, and type:"delete" only when removal is explicitly in scope.',
       'Read and understand existing files before edit/delete. Use exact oldText by default; normalized or lineRange matching is opt-in.',
       'For requireRecentRead or a lineRange edit without oldText, read through MCPTool localGetFileContent first; shell reads do not refresh the stale-edit guard.',
       'Keep replacements bounded with the smallest unique anchor, and split large mutations across separate calls before the model output limit.',
       'Each query has one concise reasoning field. Mixed batches are fully preflighted before the first mutation and reject duplicate target paths.',
-      'Do not use bash redirection, sed, or rm for ordinary file mutations when file is available.',
     ],
     parameters: buildParameters(Type),
     async execute(toolCallId, params, signal, onUpdate, ctx): Promise<ToolCallResult> {

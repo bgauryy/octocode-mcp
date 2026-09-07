@@ -53,6 +53,7 @@ export const TOOL_EFFECTS: Readonly<Record<string, ToolEffect>> = Object.freeze(
   askuser: 'read',
   skill: 'read',
   readmedia: 'read',
+  inspectmedia: 'read',
   web: 'read',
   ghsearch: 'read',
   ghgetfilecontent: 'read',

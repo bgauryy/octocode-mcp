@@ -65,6 +65,22 @@ peers at three, includes task/plan/reason and exclusive state, and reports
 `omitted_count` separately; there is no cursor pagination, so drill into a targeted
 surface instead of repeatedly increasing the lane limit.
 
+## Scoped attend revisions
+
+A full `attend` response includes an opaque `revision` and `unchanged: false`.
+Repeat the same actor, store, workspace and filters with `--revision <returned-token>`.
+An unchanged response retains the pending `next` action and unavailable sensors;
+retain the previous full packet. Fresh queries still execute, so this saves output
+context, not database work. Invisible memory-score drift does not invalidate the
+revision; changed selected evidence, expiry, blockers and debt do.
+
+Tokens bind protocol/schema version and the physical store. Invalid, foreign,
+partial or concurrently changing observations return a full fallback with a reset
+reason. A revision is not a lease, cached permission or proof of a complete database
+snapshot. Read current admission state before mutations. See
+[`attend-revision.ts`](../src/attend-revision.ts) and its
+[regressions](../tests/attend-revision.test.ts).
+
 ## Delta Delivery
 
 Prompt/session briefings and peer notices use `delivery_state` fingerprints by

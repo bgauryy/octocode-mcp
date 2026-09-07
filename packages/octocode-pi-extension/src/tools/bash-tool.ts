@@ -38,6 +38,10 @@ export const BASH_TAIL_CHARS = 3_000;
 export const BASH_RAW_ACCUMULATION_MAX = 150_000;
 /** Hard safety ceiling for a single ephemeral bash log. Crossing it is explicit. */
 export const BASH_OUTPUT_FILE_MAX_BYTES = 64 * 1024 * 1024;
+/** Hard upper ceiling on the timeout field (1 hour). A larger value almost certainly
+ * indicates an agent mistake (e.g. passing milliseconds instead of seconds).
+ * The value is clamped silently and the clamp is surfaced in the result text. */
+export const BASH_MAX_TIMEOUT_SEC = 3600;
 const BASH_TOOL_DISPLAY_NAME = 'bash (Octocode)';
 
 const PLAN_MODE_MUTATING_BASH_RE = /(^|[;|&(`\n])\s*(?:sudo\s+)?(?:touch|mkdir|rm|rmdir|mv|cp|install|ln|chmod|chown|truncate|dd|sed\s+[^;|&\n]*\s-i\b|perl\s+[^;|&\n]*\s-i\b|node\s+(?:--[^\s]+\s+)*-[ep]\b|python3?\s+-c\b|ruby\s+-e\b)\b|>>?|\btee\b/i;
@@ -268,8 +272,14 @@ function extractInPlaceEditTargets(seg: string): string[] {
 
 export function classifyEnvExfilCommand(command: string): ApprovalRequest | null {
   const cmd = command.trim();
-  const obviousEnvironmentDump = /(^|[;|&(`\n])\s*(?:env|printenv)(?:\s|$)/i.test(cmd) ||
-    /(^|[;|&(`\n])\s*(?:set|declare)(?:\s|$)/i.test(cmd) ||
+  // Direct env dump: env, printenv, set (standalone), declare/typeset (ksh/zsh alias for
+  // declare — standalone or with flags), export -p (print all exported vars),
+  // compgen -v (bash built-in listing all variable names).
+  const obviousEnvironmentDump =
+    /(^|[;|&(`\n])\s*(?:env|printenv)(?:\s|$)/i.test(cmd) ||
+    /(^|[;|&(`\n])\s*(?:set|declare|typeset)(?:\s|$)/i.test(cmd) ||
+    /(^|[;|&(`\n])\s*export\s+-[a-zA-Z]*p[a-zA-Z]*(?:\s|$)/i.test(cmd) ||
+    /(^|[;|&(`\n])\s*compgen\s+-[a-zA-Z]*v[a-zA-Z]*(?:\s|$)/i.test(cmd) ||
     /\/proc\/(?:self|\d+)\/environ\b/.test(cmd);
   const obviousSecretEcho = /\b(?:echo|printf)\b[^;|&\n]*(?:\$\{?[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASS|KEY|CREDENTIAL|AUTH)[A-Z0-9_]*\}?)/i.test(cmd);
   if (!obviousEnvironmentDump && !obviousSecretEcho) return null;
@@ -633,7 +643,14 @@ export function registerBashTool(
     {
       command: Type.String({ description: 'Bash command to execute' }),
       timeout: Type.Optional(
-        Type.Integer({ description: 'Timeout in seconds (optional, no default timeout)' }),
+        Type.Integer({
+          description:
+            'Timeout in seconds. OMITTING THIS FIELD MEANS NO TIMEOUT — commands that block on ' +
+            'stdin, interactive prompts, slow network, or pagers will hang indefinitely without it. ' +
+            `Max enforced ceiling: ${BASH_MAX_TIMEOUT_SEC}s (values above are clamped). ` +
+            'Always set timeout for: build commands, npx/npm/yarn, curl/wget, any command that ' +
+            'may wait for input. Suggested values: 30s for fast ops, 120s for builds, 300s for slow installs.',
+        }),
       ),
     },
     { additionalProperties: false },
@@ -647,13 +664,24 @@ export function registerBashTool(
     name: 'bash',
     label: 'bash (Octocode)',
     description:
-      'Octocode custom bash tool. Pass one or more ordered operations in queries; every query requires concise reasoning. queryRunType is sequential-only: commands always run one-by-one in source order, never in parallel. Replaces Pi built-in bash with the same shell execution plus Octocode path-guard on redirect/tee/cp/mv and sed -i / perl -i in-place write targets (cwd / home / OS temp / ALLOWED_PATHS), a small blocklist of catastrophic commands, and approval for obvious environment-variable exfiltration commands. Batches are preflighted, non-transactional, and stop on the first runtime failure. Note: opaque interpreters (node -e, python -c) can still write arbitrary paths and are not guarded — prefer edit/write for file mutations; use bash for git, builds, tests, and bulk mechanical edits.',
-    promptSnippet: 'Run shell commands with Octocode path-guard on write targets.',
+      'Octocode custom bash — same-name override of Pi built-in bash. ' +
+      'Accepts one or more queries (sequential only; never parallel); each query requires concise reasoning. ' +
+      'Adds Octocode path-guard: redirect/tee/cp/mv/sed-i/perl-i write targets must stay inside cwd, home, OS temp, or ALLOWED_PATHS. ' +
+      'Blocks a small set of catastrophic commands (rm -rf /, mkfs, dd to /dev/, shutdown/reboot). ' +
+      'Requires approval for obvious env-variable exfiltration. ' +
+      'Batches are fully preflighted before any command runs, non-transactional, and stop on the first failure. ' +
+      'WARNING — no default timeout: commands that read stdin, show interactive prompts, or open pagers hang indefinitely without a timeout field. ' +
+      'Opaque interpreters (node -e, python -c, ruby -e) can still write arbitrary paths and are not path-guarded — prefer file/write for mutations.',
+    promptSnippet: 'Run shell commands with Octocode path-guard on write targets and guarded timeout.',
     promptGuidelines: [
       'Octocode custom bash replaces Pi built-in bash; prefer file for ordinary creates, edits, and deletes.',
       'Never use bash for code search or file reads; use MCPTool so Octocode can return structured evidence and record edit freshness.',
       'Use bash for git, builds, tests, package managers, and bulk mechanical edits (e.g. sed).',
       'Bash query batches are always sequential: each command completes before the next starts.',
+      'ALWAYS pass timeout for any command that may block: builds, network ops (curl/wget), package installs (npx/npm/yarn/pip), or anything that might prompt. Omitting timeout means an indefinite hang with no recovery except host abort.',
+      'Interactive commands hang without timeout — use non-interactive flags: `npx -y pkg` (not `npx pkg`), pipe pagers through `cat`, avoid `read` in scripts without a timeout.',
+      'On macOS `timeout` is GNU-only and unavailable — use `gtimeout` (brew install coreutils) or `perl -e \'alarm N; exec @ARGV\' -- cmd` instead.',
+      'Isolate slow or network-bound commands in their own single-query bash call — one hang aborts all remaining queries in the batch.',
       'Commands that obviously print inherited environment variables or secret-like env vars require approval; bash otherwise keeps the inherited environment.',
       'Redirects (>, >>, tee) and cp/mv destinations must stay inside the working directory, home, OS temp, or ALLOWED_PATHS.',
       'Do not use bash to bypass the file path-guard.',
@@ -682,8 +710,12 @@ export function registerBashTool(
         },
         async execute(query, _index, itemCallId) {
           const command = query['command'] as string;
-          const timeout = typeof query['timeout'] === 'number' && Number.isFinite(query['timeout'])
+          const rawTimeout = typeof query['timeout'] === 'number' && Number.isFinite(query['timeout'])
             ? query['timeout']
+            : undefined;
+          const timeoutClamped = rawTimeout !== undefined && rawTimeout > BASH_MAX_TIMEOUT_SEC;
+          const timeout = rawTimeout !== undefined
+            ? Math.min(Math.max(1, rawTimeout), BASH_MAX_TIMEOUT_SEC)
             : undefined;
 
           // Evaluate env-exfil independently — the previous `??` short-circuit let
@@ -697,7 +729,7 @@ export function registerBashTool(
           for (const request of [envExfil, sensitive].filter(Boolean) as ApprovalRequest[]) {
             if (seenClasses.has(request.actionClass)) continue;
             seenClasses.add(request.actionClass);
-            const outcome = await requestApproval(ctx, request);
+            const outcome = await requestApproval(ctx, request, signal);
             if (!outcome.approved) {
               const why = outcome.interactive
                 ? 'The user declined this action.'
@@ -707,7 +739,13 @@ export function registerBashTool(
           }
           const outputPath = writeEphemeralToolOutput('', { toolName: 'bash', toolCallId: itemCallId, extension: 'log' });
           const { stdout, stderr, recentTail, stdoutChars, stderrChars, code, signal: killedBy, aborted, previewCapped, fileCapped } = await runBash(command, cwd, timeout, outputPath, signal, buildAwarenessCliEnvironment(ctx));
-          let combined = [stdout, stderr].filter(Boolean).join('\n');
+          // Label stderr separately when both streams have content so the agent can
+          // distinguish stdout from stderr without losing the tail context.
+          const stderrLabeled = stdout && stderr ? `[stderr]\n${stderr}` : stderr;
+          let combined = [stdout, stderrLabeled].filter(Boolean).join('\n');
+          if (timeoutClamped) {
+            combined = `[Warning: timeout ${rawTimeout}s exceeded max ceiling of ${BASH_MAX_TIMEOUT_SEC}s — clamped to ${BASH_MAX_TIMEOUT_SEC}s]\n${combined}`;
+          }
           if (previewCapped) {
             combined += `\n[Inline preview source capped at ${BASH_RAW_ACCUMULATION_MAX.toLocaleString()} chars; inspect the referenced log for later output]`;
             if (recentTail) combined += `\n[Actual process tail]\n${recentTail}`;

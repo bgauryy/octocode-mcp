@@ -21,7 +21,7 @@ describe('welcome layout', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     printWelcome();
     const lines = log.mock.calls.map(args => args.join(' '));
-    expect(lines.join('\n')).toContain('Octocode');
+    expect(lines.join('\n')).toContain('octocode code');
     expect(lines.every(line => line.length <= 36)).toBe(true);
     expect(lines.length).toBeLessThan(14);
   });

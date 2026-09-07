@@ -12,15 +12,26 @@ Feature behavior follows [CONFIGURATION.md](CONFIGURATION.md). Before every real
 installation, show the dry-run target and obtain separate user approval immediately
 before changing host settings; configuration answers do not grant that approval.
 
-Workspace policy selects a hook profile. `guard` and `coordination` install the edit
-guard/presence pair plus stop verification. `full` additionally installs prompt/session
-briefing, compaction, and session-end capture. The default is `coordination`.
+Workspace policy selects a hook profile. `guard` keeps matcher-limited mutation
+admission plus stop verification. `coordination` registers generic tool boundaries,
+validates native payloads, and classifies reads, writes, shells, MCP calls, and unknown
+tools before selecting communication or write subscribers. `full` additionally installs
+prompt/session briefing, compaction, and session-end capture. The default is `coordination`.
+
+A path-bearing payload is not sufficient evidence of a write. Only classified workspace
+writes enter presence, conflict admission, edit receipts, and fallback verification.
+Operation-bearing editor tools are classified by operation: `view` is a read, while
+known create/replace/insert operations are writes; unknown operations stay unknown.
+Generic communication and notification delivery do not settle work. Hook stdout offers
+context through the current host/event response channel; it does not prove persistence
+or model consumption.
 
 ## Lifecycle
 
 | Event | Behavior | Output/blocking |
 |---|---|---|
 | Prompt/session start (`full`) | Register agent; check a database/WAL change token before querying; detect changed operational state plus at most one prompt-grounded memory lead. | Emit a typed pointer such as `Awareness: memory 1.`; stay silent when stores are unchanged. |
+| Generic tool pre/post (`coordination`/`full`) | Validate and classify the native event; inspect bounded changed communication without creating write presence. | Event-specific context offer where supported; unsupported response events remain silent. |
 | Before write | Run harness guard, resolve task/explicit work, declare advisory path; honor exclusivity. | Silent normally; typed overlap pointer; host-native denial on guard or exclusive conflict. |
 | Successful write | Write edit audit and heartbeat; keep a scoped automatic HOOK active. | Best-effort, nonblocking. |
 | Failed write | Discard hook-created path presence that has no successful edit audit. | No edit audit or verification debt for a change that never happened. |

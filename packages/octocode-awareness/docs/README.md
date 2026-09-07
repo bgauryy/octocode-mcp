@@ -11,8 +11,9 @@ complete command inventory.
 | [AGENT_PHYSIOLOGY.md](AGENT_PHYSIOLOGY.md) | Observed operational state, advisory regulation, host-only sensors, and control acceptance criteria |
 | [HOW_IT_WORKS.md](HOW_IT_WORKS.md) | Canonical agent loop, structured `attend.next`, authority boundaries, hooks, memory, projection, and exit lifecycle |
 | [ENTITY_LINKS.md](ENTITY_LINKS.md) | All entity keys, declared foreign keys, logical links, and workspace checks |
-| [DB.md](DB.md) | SQLite schema, relationships, migration, scope |
-| [STORAGE_SCOPES.md](STORAGE_SCOPES.md) | Agent/Awareness path boundary, ownership matrix, overrides, migration, and artifacts |
+| [DB.md](DB.md) | Exact SQLite schema admission, relationships, consolidation, and scope |
+| [STORAGE_SCOPES.md](STORAGE_SCOPES.md) | Agent/Awareness path boundary, ownership matrix, overrides, canonical copies, and artifacts |
+| [LOCAL_HISTORY.md](LOCAL_HISTORY.md) | Private Git objects, correlated captures, restore previews, verification, and recovery limits |
 | [CONFIGURATION.md](CONFIGURATION.md) | Global feature defaults, onboarding questions, validation, and fixed safety boundaries |
 | [LOCKS.md](LOCKS.md) | Advisory file work, exclusive locks, verification |
 | [HOOKS.md](HOOKS.md) | Host installation and runtime behavior |
@@ -22,6 +23,7 @@ complete command inventory.
 | [HARNESS.md](HARNESS.md) | Maintainer invariants and verification matrix |
 | [VERIFY.md](VERIFY.md) | Any-agent quick, installed, host, monorepo, and release verification runbook |
 | [COMPREHENSIVE_AUDIT.md](COMPREHENSIVE_AUDIT.md) | Scored whole-system audit for coordination, storage, delivery, and read cost |
+| [Root Awareness assessment](../../../docs/AWARENESS_ASSESSMENT.md) | Dated cross-vendor evidence, feature ratings, and release-readiness limits owned at repository scope |
 | [FEATURE_SWEEP.md](FEATURE_SWEEP.md) | Isolated evaluation recipes for every feature family, including hooks, semantic recall, saturation, and long-run recovery |
 | [REFERENCES.md](REFERENCES.md) | Evidence map, prior art, hypotheses, and design limits |
 

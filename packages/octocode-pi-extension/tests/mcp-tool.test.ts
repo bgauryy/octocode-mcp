@@ -41,7 +41,7 @@ afterEach(() => {
   mcpTestHooks.clearCachedMcpCatalog();
 });
 
-test("MCP schema errors explain rejected branch fields instead of saying schema is false", () => {
+test("MCP schema errors end with the rejected field instead of a generic retry hint", () => {
   const text = formatMcpSchemaValidationErrors([
     {
       keyword: "Never",
@@ -49,10 +49,17 @@ test("MCP schema errors explain rejected branch fields instead of saying schema 
       schemaPath: "#/properties/queries/items/oneOf/0/properties/limit",
       message: "schema is false",
     },
-  ]);
+    {
+      keyword: "maximum",
+      instancePath: "/queries/0/pageSize",
+      schemaPath: "#/properties/queries/items/oneOf/3/properties/pageSize/maximum",
+      message: "must be <= 50",
+    },
+  ], { server: 'octocode', tool: 'localSearch' });
   assert.match(text, /\/queries\/0\/limit: field is not allowed for the selected operation/i);
-  assert.match(text, /MCPTool action:\"describe\"/i);
-  assert.doesNotMatch(text, /schema is false/i);
+  assert.match(text, /\/queries\/0\/pageSize: must be <= 50/i);
+  assert.doesNotMatch(text, /schema is false|Hint: run MCPTool/i);
+  assert.equal(text.trim().split('\n').at(-1), '- /queries/0/pageSize: must be <= 50');
 });
 
 test("compact MCP prompting is the default and exact mode is an explicit opt-out", () => {
@@ -144,7 +151,7 @@ test("mode-aware artifact persistence creates a validated compact guide only whe
   const guidePath = path.join(path.dirname(persisted.snapshotPath), "mcp.md");
   const guide = fs.readFileSync(guidePath, "utf8");
 
-  assert.match(guide, /^<!-- octocode-mcp-guide:v2 /);
+  assert.match(guide, /^<!-- octocode-mcp-guide:v3 /);
   assert.match(guide, /<mcp_catalog_index>/);
   assert.match(guide, /tool: echo/);
   assert.match(guide, /text \(string, required\)/);

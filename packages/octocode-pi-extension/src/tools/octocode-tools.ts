@@ -17,9 +17,9 @@ import type { ToolDefinition } from '../types.js';
 export const DIRECT_TOOL_DESCRIPTIONS: Readonly<Record<string, string>> = Object.freeze({
   file: 'Create, edit, or delete files through one guarded mutation boundary. Prefer file over bash for mutations. edit uses stale/lost-update checks and diffs; write is atomic; delete rejects directories and rechecks before unlinking.',
   bash: 'Run the Awareness CLI, builds, tests, Git, and mechanical shell tasks with guarded write targets and per-command reasoning. Prefer file for ordinary file mutations; never for code search or file reads.',
-  readMedia: 'Read local media. image->pixels; video->metadata/frame/contactSheet; audio->metadata/waveform/spectrogram. Read-only—use media to create or transform.',
-  media: 'Create or transform media. Render image/PDF from SVG, HTML, Markdown, or images; make GIFs, trim clips, extract audio, or convert formats. Writes are path-guarded; use readMedia for inspection.',
-  runFfmpeg: 'Run advanced ffmpeg or ffprobe argv directly with workspace path guards, timeout, cancellation, and progress. Prefer readMedia and media for standard operations. Use for filter_complex, loudnorm, or VMAF.',
+  inspectMedia: 'Inspect local media. image->pixels (inline vision); video->metadata/frame/contactSheet; audio->metadata/waveform/spectrogram. Read-only—use media to create or transform.',
+  media: 'Create or transform media. Render image/PDF from SVG, HTML, Markdown, or images; make GIFs, trim clips, extract audio, or convert formats. Writes are path-guarded; use inspectMedia for inspection.',
+  runFfmpeg: 'Run advanced ffmpeg or ffprobe argv directly with workspace path guards, timeout, cancellation, and progress. Prefer inspectMedia and media for standard operations. Use for filter_complex, loudnorm, or VMAF.',
   web: 'Fetch a URL or search the web for docs, releases, errors, and info outside the repository. Prefer repository/MCP tools for code evidence.',
   chromeDebug: 'Inspect/automate Chrome via CDP: DOM, console, network, screenshots, performance, storage, security, coverage, or raw Domain.method calls. Use agent profile:browser for multi-turn browser work.',
   agent: 'Spawn/manage researcher, planner, architect, browser, or custom workers. Spawn first; use agentId later. Workers use MCPTool for repository research and the harness Awareness CLI for coordination; other shell access follows their role.',

@@ -355,11 +355,11 @@ test('createSessionArtifactContext: resolve() rejects traversal attempts', () =>
 test('createSessionArtifactContext: writeText + writeJson create files atomically', () => {
   const ctx = createSessionArtifactContext({ cwd: tmpRoot, sessionManager: makeSessionManager('write-test') });
   ctx.writeText('logs/error.txt', 'hello error\n');
-  ctx.writeJson('checkpoint-ref.json', { storeDir: '/some/path', cwd: tmpRoot });
+    ctx.writeJson('export/latest-ref.json', { exportPath: '/some/path', cwd: tmpRoot });
 
   assert.equal(fs.readFileSync(ctx.resolve('logs/error.txt'), 'utf8'), 'hello error\n');
-  const ref = JSON.parse(fs.readFileSync(ctx.resolve('checkpoint-ref.json'), 'utf8')) as { storeDir: string };
-  assert.equal(ref.storeDir, '/some/path');
+    const ref = JSON.parse(fs.readFileSync(ctx.resolve('export/latest-ref.json'), 'utf8')) as { exportPath: string };
+    assert.equal(ref.exportPath, '/some/path');
 });
 
 test('createSessionArtifactContext: different session IDs produce isolated roots', () => {

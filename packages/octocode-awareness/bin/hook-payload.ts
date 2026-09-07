@@ -5,6 +5,7 @@ import { storageScopeForCommand } from '../src/workspace-policy.js';
 import { canonicalizePath } from '../src/git.js';
 import { extractWriteTargetPaths } from '../src/write-targets.js';
 import { resolveHookAgentId } from '../src/hook-identity.js';
+import { normalizeToolHookPayload, toolHookContextEnvelope } from './hook-tool-protocol.js';
 
 export type ShellHookHost = 'claude' | 'codex' | 'cursor' | 'copilot' | 'gemini' | 'opencode';
 
@@ -154,6 +155,9 @@ export function hookContextEnvelope(
   eventName: string,
   message: string,
 ): Record<string, unknown> {
+  if (eventName.toLowerCase().includes('tool')) {
+    return toolHookContextEnvelope(host, eventName, message) ?? {};
+  }
   if (host === 'cursor') {
     if (eventName === 'sessionStart') return { additional_context: message };
     return { permission: 'allow', agent_message: message };
@@ -349,6 +353,14 @@ export function hookEventName(payload: Record<string, unknown>): string | null {
 }
 
 export function hookToolFailed(payload: Record<string, unknown>): boolean {
+  const host = shellHookHost(payload);
+  const toolEvent = hookEventName(payload);
+  if (toolEvent) {
+    try {
+      const outcome = normalizeToolHookPayload(payload, host).outcome;
+      return outcome.terminal && outcome.kind !== 'success';
+    } catch { /* Non-tool lifecycle events use the generic failure fields below. */ }
+  }
   const input = objectOrEmpty(payloadInput(payload));
   const response = objectOrEmpty(payload.tool_response ?? payload.toolResponse ?? payload.result);
   const event = hookEventName(payload)?.toLowerCase() ?? '';
@@ -366,7 +378,7 @@ export function extractFiles(payload: Record<string, unknown>): string[] {
   const input = payloadForFileExtraction(payload);
   const inputObj = objectOrEmpty(input);
   const toolName = payload.tool_name ?? payload.toolName ?? payload.name ?? inputObj.tool_name ?? inputObj.toolName ?? '';
-  return extractWriteTargetPaths(toolName, input, { assumeWrite: true });
+  return extractWriteTargetPaths(toolName, input);
 }
 
 export function resolveHookPath(file: string, cwd = process.cwd()): string {

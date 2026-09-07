@@ -68,7 +68,7 @@ describe('strict Awareness database separation', () => {
     `);
     legacy.close();
 
-    expect(() => connectDb(dbPath)).toThrow(/schema upgrade required/);
+    expect(() => connectDb(dbPath)).toThrow(/exact current canonical schema/);
     const unchanged = new DatabaseSync(dbPath, { readOnly: true });
     expect(relationNames(unchanged)).not.toContain('awareness_plans');
     unchanged.close();

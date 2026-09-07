@@ -80,6 +80,11 @@
       "import": "./out/protocols.js",
       "default": "./out/protocols.js"
     },
+    "./physiology": {
+      "types": "./out/physiology.d.ts",
+      "import": "./out/physiology.js",
+      "default": "./out/physiology.js"
+    },
     "./agent-skills": {
       "types": "./out/agent-skills.d.ts",
       "import": "./out/agent-skills.js",
@@ -113,7 +118,8 @@
   },
   "dependencies": {
     "@octocodeai/config": "18.0.1",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

@@ -125,7 +125,7 @@ export const renderToolView: TuiComponent<ToolViewProps> = (props, context) => {
   const identityName = props.state === 'request' ? (context.theme?.bold?.(props.name) ?? props.name) : props.name;
   const identity = `${paint(context.theme, visual.token, visual.glyph)} ${paint(context.theme, 'title', identityName)}`;
   const headerSegments: InlineSegment[] = [
-    ...(props.status ? [{ text: props.status, token: props.state === 'error' ? 'error' : props.state === 'warning' ? 'warning' : 'dim' } as InlineSegment] : []),
+    ...(props.status ? [{ text: props.status, token: visual.token } as InlineSegment] : []),
     ...(props.segments ?? []),
   ];
   const headerTail = headerSegments
@@ -134,7 +134,7 @@ export const renderToolView: TuiComponent<ToolViewProps> = (props, context) => {
     .join(SEP);
   const lines = [truncateToWidth(headerTail ? `${identity}${paint(context.theme, 'dim', SEP)}${headerTail}` : identity, width)];
   for (const line of props.body ?? []) {
-    lines.push(truncateToWidth(`  ${paint(context.theme, line.token ?? 'dim', line.text ?? '')}`, width));
+    lines.push(truncateToWidth(`  ${paint(context.theme, line.token ?? 'bright', line.text ?? '')}`, width));
   }
   if (props.hint) lines.push(truncateToWidth(`  ${paint(context.theme, 'muted', props.hint)}`, width));
   return lines;

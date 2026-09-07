@@ -9,6 +9,9 @@ export function specsFor(host: InstallableHookHost, params: {
   hookDir: string;
   profile?: AwarenessHookProfile;
 }): HookSpec[] {
+  const toolMatcher = (matcher: string): string | undefined => (
+    (params.profile ?? 'full') === 'guard' ? matcher : undefined
+  );
   const spec = (event: string, name: string, matcher?: string): HookSpec => ({
     event,
     ...(matcher ? { matcher } : {}),
@@ -32,9 +35,9 @@ export function specsFor(host: InstallableHookHost, params: {
   };
   if (host === 'cursor') {
     return filterProfile([
-      spec('preToolUse', 'pre-edit.sh', WRITE_MATCHERS.cursor),
-      spec('postToolUse', 'post-edit.sh', WRITE_MATCHERS.cursor),
-      spec('postToolUseFailure', 'post-edit.sh', WRITE_MATCHERS.cursor),
+      spec('preToolUse', 'pre-edit.sh', toolMatcher(WRITE_MATCHERS.cursor)),
+      spec('postToolUse', 'post-edit.sh', toolMatcher(WRITE_MATCHERS.cursor)),
+      spec('postToolUseFailure', 'post-edit.sh', toolMatcher(WRITE_MATCHERS.cursor)),
       spec('subagentStart', 'notify-deliver.sh'),
       spec('stop', 'stop-verify.sh'),
       spec('subagentStop', 'stop-verify.sh'),
@@ -46,9 +49,9 @@ export function specsFor(host: InstallableHookHost, params: {
   if (host === 'copilot') {
     return filterProfile([
       spec('sessionStart', 'notify-deliver.sh'),
-      spec('preToolUse', 'pre-edit.sh', WRITE_MATCHERS.copilot),
-      spec('postToolUse', 'post-edit.sh', WRITE_MATCHERS.copilot),
-      spec('postToolUseFailure', 'post-edit.sh', WRITE_MATCHERS.copilot),
+      spec('preToolUse', 'pre-edit.sh', toolMatcher(WRITE_MATCHERS.copilot)),
+      spec('postToolUse', 'post-edit.sh', toolMatcher(WRITE_MATCHERS.copilot)),
+      spec('postToolUseFailure', 'post-edit.sh', toolMatcher(WRITE_MATCHERS.copilot)),
       spec('subagentStart', 'notify-deliver.sh'),
       spec('agentStop', 'stop-verify.sh'),
       spec('subagentStop', 'stop-verify.sh'),
@@ -60,8 +63,8 @@ export function specsFor(host: InstallableHookHost, params: {
   if (host === 'gemini') {
     return filterProfile([
       spec('SessionStart', 'notify-deliver.sh'),
-      spec('BeforeTool', 'pre-edit.sh', WRITE_MATCHERS.gemini),
-      spec('AfterTool', 'post-edit.sh', WRITE_MATCHERS.gemini),
+      spec('BeforeTool', 'pre-edit.sh', toolMatcher(WRITE_MATCHERS.gemini)),
+      spec('AfterTool', 'post-edit.sh', toolMatcher(WRITE_MATCHERS.gemini)),
       spec('BeforeAgent', 'notify-deliver.sh'),
       spec('AfterAgent', 'stop-verify.sh'),
       spec('PreCompress', 'session-compact.sh'),
@@ -71,8 +74,8 @@ export function specsFor(host: InstallableHookHost, params: {
   if (host === 'codex') {
     return filterProfile([
       spec('SessionStart', 'notify-deliver.sh'),
-      spec('PreToolUse', 'pre-edit.sh', WRITE_MATCHERS.codex),
-      spec('PostToolUse', 'post-edit.sh', WRITE_MATCHERS.codex),
+      spec('PreToolUse', 'pre-edit.sh', toolMatcher(WRITE_MATCHERS.codex)),
+      spec('PostToolUse', 'post-edit.sh', toolMatcher(WRITE_MATCHERS.codex)),
       spec('SubagentStart', 'notify-deliver.sh'),
       spec('Stop', 'stop-verify.sh'),
       spec('SubagentStop', 'stop-verify.sh'),
@@ -83,9 +86,9 @@ export function specsFor(host: InstallableHookHost, params: {
   }
   return filterProfile([
     spec('SessionStart', 'notify-deliver.sh'),
-    spec('PreToolUse', 'pre-edit.sh', WRITE_MATCHERS.claude),
-    spec('PostToolUse', 'post-edit.sh', WRITE_MATCHERS.claude),
-    spec('PostToolUseFailure', 'post-edit.sh', WRITE_MATCHERS.claude),
+    spec('PreToolUse', 'pre-edit.sh', toolMatcher(WRITE_MATCHERS.claude)),
+    spec('PostToolUse', 'post-edit.sh', toolMatcher(WRITE_MATCHERS.claude)),
+    spec('PostToolUseFailure', 'post-edit.sh', toolMatcher(WRITE_MATCHERS.claude)),
     spec('SubagentStart', 'notify-deliver.sh'),
     spec('Stop', 'stop-verify.sh'),
     spec('SubagentStop', 'stop-verify.sh'),

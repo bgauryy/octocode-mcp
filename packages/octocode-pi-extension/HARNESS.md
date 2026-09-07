@@ -8,8 +8,8 @@ Everything the extension registers with Pi on load: tools, system-prompt section
 
 The lightweight host facts in `src/prompts/system-prompt.ts` describe capabilities,
 untrusted data, permission boundaries, and `/configuration`, followed by the canonical
-full `EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS` (skill setup, command catalog,
-communication, bookkeeping and maintenance). They are built into
+compact `EXTERNAL_AGENT_AWARENESS_PROMPT` (cooperation, communication, verification
+and a generated capability map). Full recipes remain on demand through `guide` and the skill. They are built into
 `dist/system/SYSTEM_PROMPT.md` and supplied through `before_agent_start`. Workflow,
 planning depth, skill choice, and response style follow the user's request.
 No regex-triggered repo-state, output-recovery, or editor-comment prompts are injected.
@@ -44,7 +44,7 @@ Catalogued tools via `MCPTool server:"octocode"`: `ghSearch` · `ghGetFileConten
 
 ### Support Tools — 13
 
-Registered from extension sources and named in `OCTOCODE_SUPPORT_TOOL_NAMES`: `file`, `web`, `chromeDebug`, `agent`, `callTool`, `skill`, `plan`, `localServer`, `MCPTool`, `askUser`, `readMedia`, `media`, and `runFfmpeg`. Together with the guarded `bash` override, these form the 14-tool direct palette. Every direct tool exposes only a top-level `queries[]` array; each query requires concise `reasoning`. `/configuration` is the local management page, not a model-callable support-tool alias.
+Registered from extension sources and named in `OCTOCODE_SUPPORT_TOOL_NAMES`: `file`, `web`, `chromeDebug`, `agent`, `callTool`, `skill`, `plan`, `localServer`, `MCPTool`, `askUser`, `inspectMedia`, `media`, and `runFfmpeg`. Together with the guarded `bash` override, these form the 14-tool direct palette. Every direct tool exposes only a top-level `queries[]` array; each query requires concise `reasoning`. `/configuration` is the local management page, not a model-callable support-tool alias.
 
 | Tool | Label | Description |
 |---|---|---|
@@ -58,7 +58,7 @@ Registered from extension sources and named in `OCTOCODE_SUPPORT_TOOL_NAMES`: `f
 | `localServer` | Local Server | Serve an inspected local static directory over loopback for user review |
 | `MCPTool` | MCPTool | Call automatically discovered tools, describe one selected tool, and manage configured MCP servers |
 | `askUser` | Ask User | Ask the user through an interactive picker, form, or non-TUI fallback |
-| `readMedia` | Read Media | Perceive images, video frames/contact sheets, and audio metadata/visualizations |
+| `inspectMedia` | Inspect Media | Perceive images, video frames/contact sheets, and audio metadata/visualizations |
 | `media` | Media | Author images/PDFs or transform media into path-guarded output files |
 | `runFfmpeg` | Run FFmpeg | Run advanced ffmpeg/ffprobe argv with path guards, timeout, cancellation, and progress |
 
@@ -124,7 +124,9 @@ Format: `{ "mcpServers": { "<name>": { "command": "...", "args": [], "env": {}, 
 
 ## Bundled Skills
 
-Served via the `resources_discover` hook and installed at `dist/skills/`. The bundled
+Served via the `resources_discover` hook and installed at `dist/skills/`. Canonical
+discovery in `src/tools/skill-discovery.ts` merges enabled skills from Pi metadata,
+supported platform roots, Octocode roots, and this bundled directory. The bundled
 `octocode-awareness` skill is loadable and owns detailed operating guidance. See the
 [15-skill inventory](README.md#bundled-skills-15) for the complete enabled bundle.
 
@@ -146,8 +148,8 @@ Spawn workers with an `agent` query whose `type` is `spawn` and whose `profile` 
 | `researcher` | Evidence gathering and compact claim ledgers | `web` · `MCPTool` · `file` · `skill` · `bash` (Awareness CLI only) |
 | `architect` | Root-cause analysis and code archaeology | `web` · `MCPTool` · `file` · `skill` · `bash` (Awareness CLI and bounded test/build/debug checks) |
 | `planner` | Dependency-ordered implementation plans and test strategy | `web` · `MCPTool` · `file` · `skill` · `bash` (Awareness CLI only) |
-| `browser` | Multi-turn browser analysis and lifecycle management | Browser-specific CDP orchestration |
-| `custom` | Explicit model, prompt, toolset, and resource configuration | Caller-selected tools |
+| `browser` | Multi-turn browser analysis and lifecycle management | `chromeDebug` · `MCPTool` · `skill` · `bash` |
+| `custom` | General research and caller-defined work | `MCPTool` · `skill` · `bash` by default |
 
 Typed workers keep product-code investigation read-only. Their `file` capability
 is limited by role policy to parent-assigned RFC or durable handback artifacts;
@@ -156,6 +158,9 @@ worker can use the supplied Awareness CLI for scoped communication and bookkeepi
 `bash` does not replace MCP research. Architect additionally permits bounded
 non-destructive test, build and debug checks. Typed profiles use the current
 `file` and `skill` names rather than removed standalone memory/write wrappers.
+Browser and default custom workers also load the Octocode extension, enabled skills,
+and Awareness bindings. Explicit `tools:[]` maps to `--no-tools`; explicit lean mode
+disables extension and skill loading for isolated tool-less workers.
 
 ---
 
@@ -165,12 +170,14 @@ Registered via `pi.registerCommand`:
 
 | Command | Description |
 |---|---|
+| `/octocode-rewind` | Select bounded local history, preview file changes, and explicitly apply the reviewed preview. |
+| `/octocode-inbox` | Pick a spawned worker, then view its transcript, steer it, stop it, or dismiss the overlay. |
 | `/configuration` | Open the local browser configuration page from its overview. |
 
 The footer displays the same entry. Configuration includes MCP, skills, display,
 effort, permission controls, and an explicit Review plan action. Browser plan
 Start and Request changes use typed HTTP actions; feedback remains plain user text.
-Other extension slash commands have been removed.
+Other workflow actions remain in tools or the live Awareness CLI.
 
 ---
 
@@ -272,6 +279,21 @@ Read from env at runtime (not set by harness):
 
 ---
 
+## Conformance Testing Entrypoint
+
+Production Pi SDK probes are test-only and do not load with the runtime extension:
+
+```ts
+import {
+  createProductionPiScenarioSuite,
+  captureProductionPiLifecycle,
+} from '@octocodeai/pi-extension/testing';
+```
+
+The default `@octocodeai/pi-extension` entrypoint exports only runtime composition and must not statically reach `src/adapters/pi-production-probe.ts`.
+
+---
+
 ## Asset Paths
 
 Resolved by `getAssetPaths()` in `src/assets.ts`.
@@ -292,7 +314,7 @@ Resolved by `getAssetPaths()` in `src/assets.ts`.
 13  support tools            (see Support Tools table)
  1  guarded built-in override (bash)
  6  disabled built-ins       (read, edit, write, grep, find, ls → replaced)
-1  slash commands           (live inventory and guidance via /commands)
+3  slash commands           (local recovery, worker inbox, and configuration)
  1  flag                     (--no-context)
 12  lifecycle hooks          (hookComposer; session_start pre-warms MCP catalog)
     direct pi.on handlers    (metrics, UI, worker inbox, Awareness, and Pi-owned compaction observation)

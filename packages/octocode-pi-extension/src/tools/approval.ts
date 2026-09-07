@@ -16,8 +16,8 @@
  * auto-approves install/git while still prompting for deletes / sudo / publish /
  * system / infra. OCTOCODE_PERMISSION_LEVEL pins the starting level.
  *
- * All decisions live in module-level session state cleared on `session_start`
- * (see resetApprovalStore) — nothing persists to disk. Non-interactive hosts
+ * Decisions live in a policy instance scoped to the Pi context and cleared on
+ * `session_start` — nothing persists to disk or crosses extension instances. Non-interactive hosts
  * (rpc / json / print) cannot prompt, so the gate denies and tells the agent to
  * confirm inline before retrying — it never silently proceeds.
  */
@@ -35,6 +35,7 @@ import {
   APPROVAL_TITLE_SHELL_PERSISTENCE,
   APPROVAL_TITLES,
 } from '../tui/content.js';
+import { throwIfAborted } from './cancellation.js';
 
 /**
  * Classes auto-approved under `relaxed` — routine local-dev actions only.
@@ -63,44 +64,92 @@ export interface ApprovalOutcome {
   interactive: boolean;
 }
 
-/** Per-session set of action classes the user chose to "always allow". */
-const alwaysAllowed = new Set<ApprovalClass>();
+export class ApprovalPolicy {
+  private readonly remembered = new Set<ApprovalClass>();
+  private level: PermissionLevel = 'default';
 
-/** The session's permission level. In-memory only, reset on session_start. */
-let permissionLevel: PermissionLevel = 'default';
+  reset(): void {
+    this.remembered.clear();
+    this.level = 'default';
+  }
 
-/** Clear all remembered approvals AND reset the level. Called on session_start. */
-export function resetApprovalStore(): void {
-  alwaysAllowed.clear();
-  permissionLevel = 'default';
+  isAlwaysAllowed(cls: ApprovalClass): boolean {
+    return this.remembered.has(cls);
+  }
+
+  allowAlways(cls: ApprovalClass): void {
+    this.remembered.add(cls);
+  }
+
+  revokeAlways(cls: ApprovalClass): void {
+    this.remembered.delete(cls);
+  }
+
+  approvedClasses(): ApprovalClass[] {
+    return [...this.remembered];
+  }
+
+  getPermissionLevel(): PermissionLevel {
+    return this.level;
+  }
+
+  setPermissionLevel(level: PermissionLevel): void {
+    this.level = level;
+  }
+
+  applyStartupPermissionLevel(env: NodeJS.ProcessEnv = process.env): void {
+    const level = parsePermissionLevel(env['OCTOCODE_PERMISSION_LEVEL']);
+    if (level) this.level = level;
+  }
+
+  cyclePermissionLevel(): PermissionLevel {
+    const order: readonly PermissionLevel[] = ['default', 'relaxed', 'strict'];
+    this.level = order[(order.indexOf(this.level) + 1) % order.length]!;
+    return this.level;
+  }
 }
 
-/** Whether a class has a remembered "always allow" for this session. */
-export function isAlwaysAllowed(cls: ApprovalClass): boolean {
-  return alwaysAllowed.has(cls);
+const policiesByContext = new WeakMap<object, ApprovalPolicy>();
+
+export function createApprovalPolicy(): ApprovalPolicy {
+  return new ApprovalPolicy();
 }
 
-/** Remember an "always allow" decision for a class (session-scoped). */
-export function allowAlways(cls: ApprovalClass): void {
-  alwaysAllowed.add(cls);
+export function approvalPolicyFor(ctx: PiContext | undefined): ApprovalPolicy {
+  if (!ctx || typeof ctx !== 'object') return createApprovalPolicy();
+  const existing = policiesByContext.get(ctx);
+  if (existing) return existing;
+  const policy = createApprovalPolicy();
+  policiesByContext.set(ctx, policy);
+  return policy;
 }
 
-/** Drop one remembered class (it will prompt again). */
-export function revokeAlways(cls: ApprovalClass): void {
-  alwaysAllowed.delete(cls);
+export function resetApprovalStore(ctx: PiContext | undefined): void {
+  approvalPolicyFor(ctx).reset();
 }
 
-/** Snapshot of remembered classes — for status/session-state display. */
-export function approvedClasses(): ApprovalClass[] {
-  return [...alwaysAllowed];
+export function isAlwaysAllowed(ctx: PiContext | undefined, cls: ApprovalClass): boolean {
+  return approvalPolicyFor(ctx).isAlwaysAllowed(cls);
 }
 
-export function getPermissionLevel(): PermissionLevel {
-  return permissionLevel;
+export function allowAlways(ctx: PiContext | undefined, cls: ApprovalClass): void {
+  approvalPolicyFor(ctx).allowAlways(cls);
 }
 
-export function setPermissionLevel(level: PermissionLevel): void {
-  permissionLevel = level;
+export function revokeAlways(ctx: PiContext | undefined, cls: ApprovalClass): void {
+  approvalPolicyFor(ctx).revokeAlways(cls);
+}
+
+export function approvedClasses(ctx: PiContext | undefined): ApprovalClass[] {
+  return approvalPolicyFor(ctx).approvedClasses();
+}
+
+export function getPermissionLevel(ctx: PiContext | undefined): PermissionLevel {
+  return approvalPolicyFor(ctx).getPermissionLevel();
+}
+
+export function setPermissionLevel(ctx: PiContext | undefined, level: PermissionLevel): void {
+  approvalPolicyFor(ctx).setPermissionLevel(level);
 }
 
 /** Parse a user-supplied level name; undefined for anything unrecognized. */
@@ -116,9 +165,8 @@ export function parsePermissionLevel(value: string | undefined): PermissionLevel
  * Called on session_start AFTER resetApprovalStore, so an operator/CI can pin a
  * session's starting level without touching the in-session controls.
  */
-export function applyStartupPermissionLevel(env: NodeJS.ProcessEnv = process.env): void {
-  const level = parsePermissionLevel(env['OCTOCODE_PERMISSION_LEVEL']);
-  if (level) permissionLevel = level;
+export function applyStartupPermissionLevel(ctx: PiContext | undefined, env: NodeJS.ProcessEnv = process.env): void {
+  approvalPolicyFor(ctx).applyStartupPermissionLevel(env);
 }
 
 /**
@@ -126,10 +174,8 @@ export function applyStartupPermissionLevel(env: NodeJS.ProcessEnv = process.env
  * common mid-session wish from default is "stop prompting me", so relaxed
  * comes first — mirroring Claude Code's default → acceptEdits direction).
  */
-export function cyclePermissionLevel(): PermissionLevel {
-  const order: readonly PermissionLevel[] = ['default', 'relaxed', 'strict'];
-  permissionLevel = order[(order.indexOf(permissionLevel) + 1) % order.length]!;
-  return permissionLevel;
+export function cyclePermissionLevel(ctx: PiContext | undefined): PermissionLevel {
+  return approvalPolicyFor(ctx).cyclePermissionLevel();
 }
 
 
@@ -254,12 +300,15 @@ const ALWAYS = APPROVAL_CHOICE_ALWAYS;
 export async function requestApproval(
   ctx: PiContext | undefined,
   request: ApprovalRequest,
+  signal?: AbortSignal,
 ): Promise<ApprovalOutcome> {
-  const level = getPermissionLevel();
+  throwIfAborted(signal);
+  const policy = approvalPolicyFor(ctx);
+  const level = policy.getPermissionLevel();
   if (level === 'relaxed' && RELAXED_AUTO_CLASSES.has(request.actionClass)) {
     return { approved: true, remembered: true, always: false, interactive: true };
   }
-  if (level !== 'strict' && isAlwaysAllowed(request.actionClass)) {
+  if (level !== 'strict' && policy.isAlwaysAllowed(request.actionClass)) {
     return { approved: true, remembered: true, always: false, interactive: true };
   }
   if (!canPrompt(ctx)) {
@@ -268,10 +317,13 @@ export async function requestApproval(
 
   const prompt = request.detail ? `${request.title}\n${request.detail}` : request.title;
   const choices = level === 'strict' ? [YES, NO] : [YES, NO, ALWAYS];
-  const choice = await ctx!.ui!.select!(prompt, choices);
+  const choice = await ctx!.ui!.select!(prompt, choices, { signal });
+  // Some host or test implementations may ignore the dialog signal. Recheck
+  // before recording an "always" grant so a late result cannot mutate state.
+  throwIfAborted(signal);
 
   if (choice === ALWAYS) {
-    allowAlways(request.actionClass);
+    policy.allowAlways(request.actionClass);
     // Immediate feedback: what was remembered and how to undo it — a silent
     // session-wide grant is the one consent state the user must not lose track of.
     ctx?.ui?.notify?.(

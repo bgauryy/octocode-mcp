@@ -6,15 +6,15 @@ The extension exposes one model-callable `agent` facade for spawning workers and
 
 | Profile | Resources | Default mode | Use |
 |---|---|---|---|
-| `researcher` | `web`, `MCPTool`, installed Octocode skills | typed Octocode | Evidence gathering, prior art, and package or repository lookup. |
-| `planner` | `web`, `MCPTool`, installed Octocode skills | typed Octocode | Dependency-ordered plans, risks, verification strategy, and RFC handoffs. |
-| `architect` | `bash`, `web`, `MCPTool`, installed Octocode skills | typed Octocode | Root-cause and architecture analysis with targeted debug or test loops. |
-| `browser` | Chrome DevTools specialist prompt and tools | typed browser | Multi-turn security, network, DOM, coverage, worker, or emulation workflows. |
-| `custom` | Explicit `tools` and `systemPrompt` | `resourceMode:"lean"` | A clean bounded worker with only the resources the parent provides. |
+| `researcher` | `web`, `MCPTool`, `file`, `skill`, `bash`, enabled skills | typed Octocode | Evidence gathering, prior art, and package or repository lookup. |
+| `planner` | `web`, `MCPTool`, `file`, `skill`, `bash`, enabled skills | typed Octocode | Dependency-ordered plans, risks, verification strategy, and RFC handoffs. |
+| `architect` | `bash`, `web`, `MCPTool`, `file`, `skill`, enabled skills | typed Octocode | Root-cause and architecture analysis with targeted debug or test loops. |
+| `browser` | `chromeDebug`, `MCPTool`, `skill`, `bash`, enabled skills | typed Octocode | Multi-turn security, network, DOM, coverage, worker, or emulation workflows. |
+| `custom` | `MCPTool`, `skill`, `bash`, enabled skills | `resourceMode:"octocode"` | A general research-capable worker; callers can narrow its resources. |
 
-Typed profiles use their packaged system prompts and tool sets. The custom profile accepts `resourceMode:"lean"|"octocode"|"default"`. Pass `model`, `provider`, and `thinking` when the task needs an override; resolve live model identifiers with `pi -ne --list-models`.
+Typed profiles use their packaged system prompts and explicit tool sets. The custom profile accepts `resourceMode:"lean"|"octocode"|"default"`; `octocode` is its default. An explicit `tools:[]` becomes Pi's `--no-tools`, while explicit lean mode disables extension and skill loading. Pass `model`, `provider`, and `thinking` when the task needs an override; resolve live model identifiers with `pi -ne --list-models`.
 
-Workers never receive the `agent` facade, so they can't spawn or control sub-workers recursively. A spawn returns an `agentId`; use it in a later lifecycle query. Spawn queries and lifecycle queries with explicit IDs can't share a batch because generated IDs aren't available during preflight.
+Workers never receive the `agent` facade, and worker-process registration omits the tool and skill smith surfaces, so workers can't spawn sub-workers recursively. A spawn returns an `agentId`; use it in a later lifecycle query. Spawn queries and lifecycle queries with explicit IDs can't share a batch because generated IDs aren't available during preflight.
 
 ## Delegate a plan task
 
@@ -53,7 +53,7 @@ After `wait` or `inspect` returns a result, the parent owns this sequence:
 
 1. Verify each load-bearing finding against the cited source, semantic result, or observed check. A worker's confidence marker is not verification.
 2. Distill only key findings that can affect the current session into the `memory.md` path advertised by `<session_artifacts>`, under `## Findings`. Keep each entry within 200 characters and retain at most 10 entries in that section.
-3. Update the user promptly when a finding changes the hypothesis, plan, risk, or next action. Do not interrupt them for routine progress or duplicate the full handback.
+3. Update the parent session promptly when a finding changes the hypothesis, plan, risk, or next action. Do not interrupt the requester for routine progress or duplicate the full handback.
 4. Reconcile the finding with the active plan, then kill the worker unless another turn is intentional.
 
 Never copy raw handbacks or unverified claims into session memory. Awareness CLI `memory` commands are separate: use them only for verified reusable learning that should outlive this Pi session; use `memory.md` for bounded session continuity.
@@ -80,7 +80,7 @@ Use `signal reply --in-reply-to <signal-id>` for the existing thread, acknowledg
 
 ## Isolation
 
-Use `profile:"custom"` with `resourceMode:"lean"` for a parent-only worker that shouldn't join the Awareness peer bus. Add only the tool paths and resources it needs. Use typed or `resourceMode:"octocode"` profiles when the worker must coordinate through the same Awareness workspace.
+Use `profile:"custom"` with `resourceMode:"lean"` and `tools:[]` for a parent-only tool-less worker that shouldn't join the Awareness peer bus. Add only the resources it needs. Use typed profiles or the default custom mode when the worker must research through Octocode and coordinate through the same Awareness workspace.
 
 ## Example
 

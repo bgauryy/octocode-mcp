@@ -577,11 +577,20 @@ export function buildOctocodeRenderCall(
 /** First non-empty, trimmed line of a result's text content (its error message or summary). */
 /** Max visible cells of the inline `→ result` preview on a collapsed row. */
 const RESULT_PREVIEW_MAX = 100;
+const RESULT_DETAILS_HINT = 'Ctrl+O details';
+
+function resultText(result: ToolCallResult): string {
+  return (result.content as Array<{ type: string; text: string }> | undefined)
+    ?.find?.((part) => part?.type === 'text')?.text ?? '';
+}
 
 function firstResultTextLine(result: ToolCallResult): string {
-  const text = (result.content as Array<{ type: string; text: string }> | undefined)
-    ?.find?.((p) => p?.type === 'text')?.text ?? '';
-  return text.split('\n').map((line) => line.trim()).find(Boolean) ?? '';
+  return resultText(result).split('\n').map((line) => line.trim()).find(Boolean) ?? '';
+}
+
+function hasExpandableResultDetails(result: ToolCallResult): boolean {
+  const text = resultText(result).trim();
+  return text.includes('\n') || text.length > RESULT_PREVIEW_MAX;
 }
 
 function actionableResultError(result: ToolCallResult): string {
@@ -651,6 +660,7 @@ function renderQueryResultRows(
   rows: QueryResultRenderRow[],
   theme?: PiTheme,
   queryRunType?: 'sequential' | 'parallel',
+  showDetailsHint = false,
 ): RenderCallReturn {
   return makeCachedRenderer((width) => [
     ...(queryRunType
@@ -660,6 +670,7 @@ function renderQueryResultRows(
           segments: [
             { text: `${rows.length} queries`, token: 'count' },
             { text: queryRunType, token: queryRunType === 'parallel' ? 'link' : 'muted' },
+            ...(showDetailsHint ? [{ text: RESULT_DETAILS_HINT, token: 'muted' as const }] : []),
           ],
         }, theme).render(width)
       : []),
@@ -669,6 +680,9 @@ function renderQueryResultRows(
       segments: [
         { text: `[${row.index}]`, token: 'dim' },
         { text: row.summary, token: row.status === 'success' ? 'success' : row.status === 'failed' ? 'error' : 'muted' },
+        ...(!queryRunType && showDetailsHint && row.index === rows[0]?.index
+          ? [{ text: RESULT_DETAILS_HINT, token: 'muted' as const }]
+          : []),
       ],
     }, theme).render(width)),
   ]);
@@ -684,7 +698,9 @@ export function buildQueryResultRows(
   const queryRunType = details['queryRunType'] === 'parallel' || details['queryRunType'] === 'sequential'
     ? details['queryRunType'] as 'parallel' | 'sequential'
     : undefined;
-  return rows.length > 0 ? renderQueryResultRows(toolName, rows, theme, queryRunType) : undefined;
+  return rows.length > 0
+    ? renderQueryResultRows(toolName, rows, theme, queryRunType, hasExpandableResultDetails(result))
+    : undefined;
 }
 
 function buildProviderQueryResultRows(
@@ -719,7 +735,7 @@ function buildProviderQueryResultRows(
       summary,
     };
   });
-  return renderQueryResultRows(toolName, rows, theme);
+  return renderQueryResultRows(toolName, rows, theme, undefined, hasExpandableResultDetails(result));
 }
 
 /** Build the renderResult component for any octocode tool. */
@@ -734,10 +750,12 @@ export function buildOctocodeRenderResult(
     return buildToolView(() => ({ name: toolName, state: 'running', status: CLI_STATUS_TEXT.running }), theme);
   }
 
-  const queryRows = buildQueryResultRows(toolName, result, theme);
-  if (queryRows && extractQueryResultRows(result).length > 1) return queryRows;
-  const providerRows = buildProviderQueryResultRows(toolName, result, theme);
-  if (providerRows) return providerRows;
+  if (!opts.expanded) {
+    const queryRows = buildQueryResultRows(toolName, result, theme);
+    if (queryRows && extractQueryResultRows(result).length > 1) return queryRows;
+    const providerRows = buildProviderQueryResultRows(toolName, result, theme);
+    if (providerRows) return providerRows;
+  }
 
   // Pi ignores isError in the returned ToolCallResult value and instead sets a
   // system-level context.isError when execute() throws or the call is rejected
@@ -752,7 +770,10 @@ export function buildOctocodeRenderResult(
     const segments: InlineSegment[] = errText
       ? [{ text: truncatePlainToWidth(errText, 200), token: 'error' }]
       : [];
-    if (!opts.expanded) return buildToolView({ name: toolName, state: 'error', segments }, theme);
+    if (!opts.expanded) {
+      if (hasExpandableResultDetails(result)) segments.push({ text: RESULT_DETAILS_HINT, token: 'muted' });
+      return buildToolView({ name: toolName, state: 'error', segments }, theme);
+    }
     const text = (result.content as Array<{ type: string; text: string }>)?.find?.((p) => p.type === 'text')?.text ?? '';
     const allLines = text.split('\n');
     const shown = allLines.slice(0, 25);
@@ -789,7 +810,10 @@ export function buildOctocodeRenderResult(
     const firstLine = firstResultTextLine(result);
     if (firstLine) segments.push({ text: `→ ${truncatePlainToWidth(firstLine, RESULT_PREVIEW_MAX)}`, token: 'dim' });
   }
-  if (!opts.expanded) return buildToolView({ name: toolName, state: 'success', segments }, theme);
+  if (!opts.expanded) {
+    if (hasExpandableResultDetails(result)) segments.push({ text: RESULT_DETAILS_HINT, token: 'muted' });
+    return buildToolView({ name: toolName, state: 'success', segments }, theme);
+  }
   const text = (result.content as Array<{ type: string; text: string }>)?.find?.((p) => p.type === 'text')?.text ?? '';
   const allLines = text.split('\n');
   const shown = allLines.slice(0, 25);

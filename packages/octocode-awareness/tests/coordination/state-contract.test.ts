@@ -33,6 +33,20 @@ function database(): DatabaseSync {
 }
 
 describe('host state contracts', () => {
+  it('preserves stale ACTIVE debt in the public audit and scopes it by native owner and plan', () => {
+    const work = first.startWork({ filePath: 'src/late.ts', agentId: 'late-worker', reason: 'Final artifact', testPlan: 'Check final artifact', ttlSeconds: 60 });
+    const db = database();
+    try {
+      db.prepare('UPDATE run_files SET expires_at = ? WHERE run_id = ?').run('2000-01-01T00:00:00Z', work.runId);
+      expect(first.auditChecks({ agentId: 'late-worker', minAgeMs: 0 })).toMatchObject({
+        ok: false, pendingCount: 0, staleActiveCount: 1, staleActive: [{ runId: work.runId, agentId: 'late-worker' }],
+      });
+      expect(first.auditChecks({ agentId: 'other' })).toMatchObject({ ok: true, staleActiveCount: 0 });
+      const plan = first.createPlan({ agentId: 'lead', title: 'Other plan', goal: 'No stale work in this plan' });
+      expect(first.auditChecks({ planId: plan.planId })).toMatchObject({ ok: true, staleActiveCount: 0 });
+      expect(db.prepare('SELECT status FROM task_runs WHERE run_id = ?').get(work.runId)).toEqual({ status: 'ACTIVE' });
+    } finally { db.close(); }
+  });
   it('times out on a held lock, projects expiry without renewal, and prunes only its workspace', () => {
     const firstLock = first.acquireLock({
       filePath: 'src/held.ts', agentId: 'holder', reason: 'change host state', testPlan: 'state lock contract', ttlSeconds: 60,

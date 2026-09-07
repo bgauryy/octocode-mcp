@@ -53,11 +53,11 @@ const timeTool: GeneratedTool = {
 // triviality-declined name.
 const createMeta = { intent: 'parse a duration string', reason: 'reusable, non-trivial' };
 
-async function run(tool: ToolDefinition, params: Record<string, unknown>, ctx?: PiContext) {
+async function run(tool: ToolDefinition, params: Record<string, unknown>, ctx?: PiContext, signal?: AbortSignal) {
   const envelope = Array.isArray(params['queries'])
     ? params
     : { queries: [{ reasoning: 'exercise dynamic tool behavior', ...params }] };
-  const res = (await tool.execute('id', envelope, undefined, undefined, ctx)) as {
+  const res = (await tool.execute('id', envelope, signal, undefined, ctx)) as {
     content: Array<{ text: string }>;
     isError?: boolean;
     details: { status: string; result?: unknown; toolName?: string };
@@ -77,6 +77,8 @@ test('registerCallTool registers a callTool with the documented schema', () => {
   assert.ok(schema.properties.queries?.items?.properties?.['reasoning']);
   assert.ok(schema.properties.queries?.items?.required?.includes('reasoning'));
   assert.ok(schema.properties.queries?.items?.properties?.['toolType']);
+  const mode = schema.properties.queries?.items?.properties?.['mode'] as { description?: string };
+  assert.match(mode.description ?? '', /propose creation on a miss/i);
 });
 
 test('callTool executes multiple validated operations in source order', async () => {
@@ -125,6 +127,30 @@ test('create mode generates, verifies, registers, and runs', async () => {
   const res = await run(tool, { toolType: 'parseDuration', mode: 'create', metadata: createMeta });
   assert.equal(res.details.status, 'created-and-ran');
   assert.deepEqual(res.details.result, { tz: 'UTC' });
+});
+
+test('caller abort reaches generation and prevents registration after cancellation', async () => {
+  const controller = new AbortController();
+  let receivedSignal: AbortSignal | undefined;
+  let generationStarted!: () => void;
+  const started = new Promise<void>((resolve) => { generationStarted = resolve; });
+  setToolGeneratorForTests(async (args) => {
+    receivedSignal = args.signal;
+    generationStarted();
+    await new Promise<void>((_resolve, reject) => {
+      args.signal?.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true });
+    });
+    return timeTool;
+  });
+  const tool = loadTool();
+  const pending = run(tool, { toolType: 'parseDuration', mode: 'create', metadata: createMeta }, undefined, controller.signal);
+  await started;
+  controller.abort();
+  await assert.rejects(pending, /aborted|cancelled/i);
+  assert.equal(receivedSignal, controller.signal);
+
+  const listed = await run(tool, { toolType: 'inventory', mode: 'list' });
+  assert.doesNotMatch(listed.content[0]!.text, /parseDuration/);
 });
 
 test('create without a reason is rejected', async () => {

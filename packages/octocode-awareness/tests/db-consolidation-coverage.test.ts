@@ -2,11 +2,9 @@ import { DatabaseSync } from '@octocodeai/agent-contracts/sqlite';
 import { describe, expect, it } from 'vitest';
 import { SCHEMA_DDL, SCHEMA_INDEX_DDL } from '../src/db-schema.js';
 import {
-  actor,
-  assertSupportedSourceTables,
+  assertNoHistoryRowsForConsolidation,
   assertValidSource,
   copyCommonTables,
-  jsonArray,
   nullableText,
   scalar,
   text,
@@ -39,15 +37,6 @@ describe('database consolidation validation boundaries', () => {
     expect(() => assertValidSource(foreign)).toThrow('unsupported source application_id 1234');
     foreign.close();
 
-    const unknown = new DatabaseSync(':memory:');
-    unknown.exec('CREATE TABLE unexpected_relation(value TEXT)');
-    expect(() => assertSupportedSourceTables(unknown)).toThrow('unknown table unexpected_relation');
-    unknown.close();
-
-    const view = new DatabaseSync(':memory:');
-    view.exec('CREATE VIEW unsupported_view AS SELECT 1');
-    expect(() => assertSupportedSourceTables(view)).toThrow('views are not supported (unsupported_view)');
-    view.close();
   });
 
   it('rejects common-table schema drift instead of dropping data', () => {
@@ -65,7 +54,7 @@ describe('database consolidation validation boundaries', () => {
     destination.close();
   });
 
-  it('keeps source-value narrowing and actor adoption explicit', () => {
+  it('keeps source-value narrowing explicit', () => {
     expect(scalar(null, 'test', 'field')).toBeNull();
     expect(scalar(3, 'test', 'field')).toBe(3);
     expect(() => scalar({ value: 1 }, 'test', 'field')).toThrow('unsupported SQLite value');
@@ -73,18 +62,23 @@ describe('database consolidation validation boundaries', () => {
     expect(() => text('', 'test', 'field')).toThrow('is required');
     expect(nullableText(null, 'test', 'field')).toBeNull();
     expect(() => nullableText(3, 'test', 'field')).toThrow('must be text');
-    expect(jsonArray('["one"]', 'test', 'field')).toEqual(['one']);
-    expect(() => jsonArray('{}', 'test', 'field')).toThrow('must be a JSON array');
-    const adopted = new Set<string>();
-    expect(actor(null, 'test', 'agent', { unattributedAgentId: 'reviewer' }, adopted)).toBe('reviewer');
-    expect(adopted).toEqual(new Set(['reviewer']));
-    expect(() => actor(null, 'test', 'agent', {}, new Set())).toThrow('provide unattributedAgentId');
   });
 
   it('recognizes the Awareness application identity as a valid source identity', () => {
     const source = new DatabaseSync(':memory:');
     source.exec(`PRAGMA application_id = ${AWARENESS_APPLICATION_ID}`);
     expect(() => assertValidSource(source)).not.toThrow();
+    source.close();
+  });
+
+  it('rejects SQLite-only consolidation when path-bound history exists', () => {
+    const source = new DatabaseSync(':memory:');
+    source.exec(SCHEMA_DDL);
+    expect(() => assertNoHistoryRowsForConsolidation(source)).not.toThrow();
+    source.prepare(`INSERT INTO local_history_operations
+      (operation_id, workspace_path, agent_id, kind, status, request_hash, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run('op_1', '/repo', 'agent', 'checkpoint', 'complete', 'hash', 'now', 'now');
+    expect(() => assertNoHistoryRowsForConsolidation(source)).toThrow(/history-aware consolidation required/);
     source.close();
   });
 });

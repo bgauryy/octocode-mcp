@@ -149,6 +149,7 @@ export function insertNotification(
         messageId: signalId,
         fromAgentId: agentId,
         toAgentId: toAgent,
+        signalKind: normalizedKind,
         topic: subject,
         text: body?.trim() || subject,
         files,

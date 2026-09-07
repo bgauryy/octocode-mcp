@@ -10,6 +10,14 @@ import type { PiContext, PiInstance } from '../src/types.js';
 const workspace = '/work/repo';
 const tempRoots: string[] = [];
 
+function persistedSession(): { getSessionFile(): string } {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-peer-session-'));
+  tempRoots.push(root);
+  const file = path.join(root, 'session.jsonl');
+  fs.writeFileSync(file, '');
+  return { getSessionFile: () => file };
+}
+
 describe('Awareness event status projection', () => {
   const stats = {
     consumerId: 'pi:session-1',
@@ -74,13 +82,60 @@ function fakeStore(events: OutboxEventV1[]) {
       return { sequence: cursor, decision, duplicate: false };
     },
     getConsumerCursor: () => cursor,
-    markMessageRead: () => undefined,
+    markMessageRead: vi.fn(),
     close: vi.fn(),
   };
   return { store, acknowledgements, cursor: () => cursor };
 }
 
 describe('ordered Awareness event consumer', () => {
+  it.each(['informational', 'untrusted', 'host-policy', 'retry'] as const)('does not start an automatic turn for %s', async reason => {
+    const events: OutboxEventV1[] = [];
+    const fixture = fakeStore(events);
+    const entries: unknown[] = [];
+    const handlers = new Map<string, (event: unknown, ctx: PiContext) => Promise<void>>();
+    const sendMessage = vi.fn((message: unknown, _options?: unknown) => { entries.push({ type: 'custom_message', ...(message as object) }); });
+    const pi = { on: (event: string, handler: (event: unknown, ctx: PiContext) => Promise<void>) => handlers.set(event, handler), sendMessage } as unknown as PiInstance;
+    const ctx = { cwd: workspace, isProjectTrusted: () => reason !== 'untrusted', sessionManager: { ...persistedSession(), getSessionId: () => 'session-1', getEntries: () => entries } } as PiContext;
+    registerAwarenessEventConsumer(pi, { openStore: () => fixture.store, resolveExpectedAgentId: () => 'pi:session-1', ...(reason === 'host-policy' ? { canWake: () => false } : {}) });
+    await handlers.get('session_start')?.({}, ctx);
+    events.push(reason === 'informational' ? peerEvent(1) : peerEvent(1, { payload: { messageId: 'msg-1', fromAgentId: 'peer-a', toAgentId: 'pi:session-1', signalKind: 'blocker', text: 'Inspect blocker', files: [] } }));
+    await handlers.get('agent_end')?.({ willRetry: reason === 'retry' }, ctx);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(sendMessage.mock.calls.filter(call => (call[1] as { triggerTurn?: boolean })?.triggerTurn)).toHaveLength(0);
+    expect(fixture.acknowledgements).toHaveLength(reason === 'retry' ? 0 : 1);
+  });
+  it('coalesces directed actionable delivery into one bounded wake and ignores informational noise', async () => {
+    const actionable = (sequence: number, directed = true) => peerEvent(sequence, {
+      payload: { messageId: `msg-${sequence}`, fromAgentId: 'peer-a', toAgentId: directed ? 'pi:session-1' : null, signalKind: 'blocker', text: 'Please inspect the blocker', files: [] },
+    });
+    const events = [actionable(1), actionable(2), peerEvent(3), actionable(4, false)];
+    const fixture = fakeStore(events);
+    const handlers = new Map<string, (event: unknown, ctx: PiContext) => Promise<void>>();
+    const entries: unknown[] = [];
+    const sendMessage = vi.fn((message: unknown) => { entries.push({ type: 'custom_message', ...(message as object) }); });
+    const pi = { on: (event: string, handler: (event: unknown, ctx: PiContext) => Promise<void>) => handlers.set(event, handler), sendMessage } as unknown as PiInstance;
+    const ctx = { cwd: workspace, isProjectTrusted: () => true, sessionManager: { ...persistedSession(), getSessionId: () => 'session-1', getEntries: () => entries } } as PiContext;
+    registerAwarenessEventConsumer(pi, { openStore: () => fixture.store, resolveExpectedAgentId: () => 'pi:session-1' });
+    await handlers.get('session_start')?.({}, ctx);
+    const wakes = () => sendMessage.mock.calls.filter(call => (call as unknown[])[1] && ((call as unknown[])[1] as { triggerTurn?: boolean }).triggerTurn);
+    expect(wakes()).toHaveLength(1);
+    expect(wakes()[0]?.[0]).toMatchObject({ customType: 'octocode-peer-wake', content: expect.stringContaining('2 actionable') });
+    events.push(actionable(5));
+    await handlers.get('agent_end')?.({}, ctx);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(wakes()).toHaveLength(1);
+    await handlers.get('input')?.({ source: 'extension' }, ctx);
+    events.push(actionable(6));
+    await handlers.get('agent_end')?.({}, ctx);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(wakes()).toHaveLength(1);
+    await handlers.get('input')?.({ source: 'rpc' }, ctx);
+    events.push(actionable(7));
+    await handlers.get('agent_end')?.({}, ctx);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(wakes()).toHaveLength(2);
+  });
   it('delivers accepted peer data in sequence and never redelivers acknowledged events', async () => {
     const fixture = fakeStore([peerEvent(1), peerEvent(2)]);
     const delivered: string[] = [];
@@ -303,7 +358,7 @@ describe('ordered Awareness event consumer', () => {
     } as unknown as PiInstance;
     const ctx = {
       cwd: workspace,
-      sessionManager: { getSessionId: () => 'session-1', getEntries: () => [] },
+      sessionManager: { ...persistedSession(), getSessionId: () => 'session-1', getEntries: () => [] },
     } as PiContext;
 
     registerAwarenessEventConsumer(pi, {
@@ -345,7 +400,7 @@ describe('ordered Awareness event consumer', () => {
     } as unknown as PiInstance;
     const ctx = {
       cwd: workspace,
-      sessionManager: { getSessionId: () => 'session-1', getEntries: () => persistedEntries },
+      sessionManager: { ...persistedSession(), getSessionId: () => 'session-1', getEntries: () => persistedEntries },
     } as PiContext;
 
     registerAwarenessEventConsumer(pi, {
@@ -353,7 +408,8 @@ describe('ordered Awareness event consumer', () => {
       resolveExpectedAgentId: () => 'pi:session-1',
     });
     await handlers.get('session_start')?.[0]?.({}, ctx);
-    await handlers.get('turn_end')?.[0]?.({}, ctx);
+    await handlers.get('agent_end')?.[0]?.({}, ctx);
+    await new Promise<void>(resolve => setImmediate(resolve));
 
     expect(sendMessage).toHaveBeenCalledTimes(1);
     expect(fixture.acknowledgements).toEqual([{ eventId: 'evt-1', decision: 'accept' }]);
@@ -377,7 +433,7 @@ describe('ordered Awareness event consumer', () => {
     } as unknown as PiInstance;
     const ctx = {
       cwd: workspace,
-      sessionManager: { getSessionId: () => 'session-1', getEntries: () => persistedEntries },
+      sessionManager: { ...persistedSession(), getSessionId: () => 'session-1', getEntries: () => persistedEntries },
     } as PiContext;
 
     registerAwarenessEventConsumer(pi, {
@@ -387,15 +443,138 @@ describe('ordered Awareness event consumer', () => {
       now: () => Date.parse('2026-08-27T00:01:00.000Z'),
     });
     await handlers.get('session_start')?.[0]?.({}, ctx);
-    await handlers.get('turn_end')?.[0]?.({}, ctx);
+    await handlers.get('agent_end')?.[0]?.({}, ctx);
+    await new Promise<void>(resolve => setImmediate(resolve));
 
-    expect([...handlers.keys()].sort()).toEqual(['session_start', 'turn_end']);
+    expect([...handlers.keys()].sort()).toEqual(['agent_end', 'agent_start', 'input', 'session_shutdown', 'session_start']);
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
-      message: { customType: 'octocode-peer-event', content: '[peer:peer-a; class:informational; authority:data]\nbody-1', display: false },
+      message: { customType: 'octocode-peer-event', content: '[peer:peer-a; class:informational; authority:data]\nbody-1', display: true },
       options: { triggerTurn: false },
     });
     expect(JSON.stringify(statuses)).not.toContain('body-1');
     expect(statuses.at(-1)).toMatchObject({ backlogDepth: 0, lastAcknowledgedSequence: 1, accepted: 1, held: 0, refused: 0, errors: 0 });
+  });
+
+  it('alerts for a persisted blocking peer event once, even when acknowledgment retries', async () => {
+    const fixture = fakeStore([peerEvent(1, {
+      payload: { messageId: 'msg-1', fromAgentId: 'peer-a', toAgentId: 'pi:session-1', topic: 'BLOCKED', text: 'private-body' },
+    })]);
+    let firstAck = true;
+    const store = { ...fixture.store, acknowledgeEvent: (params: Parameters<AwarenessEventStore['acknowledgeEvent']>[0]) => {
+      if (firstAck) { firstAck = false; throw new Error('retry ack'); }
+      return fixture.store.acknowledgeEvent(params);
+    } };
+    const handlers = new Map<string, (event: unknown, ctx: PiContext) => Promise<void>>();
+    const entries: object[] = [];
+    const notify = vi.fn();
+    const pi = {
+      on: (name: string, handler: (event: unknown, ctx: PiContext) => Promise<void>) => handlers.set(name, handler),
+      sendMessage: vi.fn((message: object) => entries.push({ type: 'custom_message', ...message })),
+    } as unknown as PiInstance;
+    const ctx = { hasUI: true, cwd: workspace, ui: { notify }, sessionManager: { ...persistedSession(), getSessionId: () => 'session-1', getEntries: () => entries } } as PiContext;
+    registerAwarenessEventConsumer(pi, { openStore: () => store, resolveExpectedAgentId: () => 'pi:session-1' });
+    await handlers.get('session_start')!({}, ctx);
+    await handlers.get('agent_end')!({}, ctx);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+    expect(notify.mock.calls.filter(([text]) => text.includes('blocking message'))).toEqual([
+      ['Awareness: blocking message received. See the peer card for details.', 'warning'],
+    ]);
+    expect(JSON.stringify(notify.mock.calls)).not.toContain('private-body');
+  });
+
+  it('keeps startup and ephemeral messages unread until Pi creates its session file', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-peer-startup-'));
+    tempRoots.push(root);
+    const file = path.join(root, 'session.jsonl');
+    let sessionFile: string | undefined;
+    const fixture = fakeStore([peerEvent(1)]);
+    const openStore = vi.fn(() => fixture.store);
+    const handlers = new Map<string, (event: unknown, ctx: PiContext) => Promise<void>>();
+    const entries: object[] = [];
+    const pi = {
+      on: (name: string, handler: (event: unknown, ctx: PiContext) => Promise<void>) => handlers.set(name, handler),
+      sendMessage: vi.fn((message: object) => entries.push({ type: 'custom_message', ...message })),
+    } as unknown as PiInstance;
+    const ctx = { cwd: workspace, sessionManager: {
+      getSessionId: () => 'session-1', getSessionFile: () => sessionFile, getEntries: () => entries,
+    } } as PiContext;
+    registerAwarenessEventConsumer(pi, { openStore, resolveExpectedAgentId: () => 'pi:session-1' });
+    await handlers.get('session_start')!({}, ctx);
+    sessionFile = file;
+    await handlers.get('agent_end')!({}, ctx);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(openStore).not.toHaveBeenCalled();
+    expect(pi.sendMessage).not.toHaveBeenCalled();
+    expect(fixture.store.markMessageRead).not.toHaveBeenCalled();
+    expect(fixture.acknowledgements).toEqual([]);
+    fs.writeFileSync(file, '');
+    await handlers.get('agent_end')!({}, ctx);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+    expect(fixture.acknowledgements).toEqual([{ eventId: 'evt-1', decision: 'accept' }]);
+  });
+
+  it('stops an in-flight drain at shutdown and leaves undelivered messages available for replay', async () => {
+    const fixture = fakeStore([peerEvent(1), peerEvent(2)]);
+    const handlers = new Map<string, (event: unknown, ctx: PiContext) => Promise<void>>();
+    const entries: object[] = [];
+    let stopped = false;
+    const ctx = { cwd: workspace, sessionManager: {
+      ...persistedSession(), getSessionId: () => 'session-1', getEntries: () => entries,
+    } } as PiContext;
+    const pi = {
+      on: (name: string, handler: (event: unknown, ctx: PiContext) => Promise<void>) => handlers.set(name, handler),
+      sendMessage: vi.fn((message: object) => {
+        entries.push({ type: 'custom_message', ...message });
+        if (!stopped) {
+          stopped = true;
+          void handlers.get('session_shutdown')!({}, ctx);
+        }
+      }),
+    } as unknown as PiInstance;
+    registerAwarenessEventConsumer(pi, { openStore: () => fixture.store, resolveExpectedAgentId: () => 'pi:session-1' });
+
+    await handlers.get('session_start')!({}, ctx);
+    expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+    expect(fixture.acknowledgements.some(ack => ack.eventId === 'evt-2')).toBe(false);
+    await handlers.get('agent_end')!({}, ctx);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+
+    await handlers.get('session_start')!({}, ctx);
+    expect(pi.sendMessage).toHaveBeenCalledTimes(2);
+    expect(fixture.acknowledgements).toEqual([
+      { eventId: 'evt-1', decision: 'accept' },
+      { eventId: 'evt-2', decision: 'accept' },
+    ]);
+  });
+
+  it('waits for the completion hook to return and cancels scheduled delivery at shutdown', async () => {
+    const fixture = fakeStore([peerEvent(1)]);
+    const handlers = new Map<string, (event: unknown, ctx: PiContext) => Promise<void>>();
+    const entries: object[] = [];
+    let streaming = true;
+    const pi = {
+      on: (name: string, handler: (event: unknown, ctx: PiContext) => Promise<void>) => handlers.set(name, handler),
+      sendMessage: vi.fn((message: object) => {
+        // Pi queues steer messages while a completion hook is running.
+        if (!streaming) entries.push({ type: 'custom_message', ...message });
+      }),
+    } as unknown as PiInstance;
+    const ctx = { cwd: workspace, sessionManager: {
+      ...persistedSession(), getSessionId: () => 'session-1', getEntries: () => entries,
+    } } as PiContext;
+    registerAwarenessEventConsumer(pi, { openStore: () => fixture.store, resolveExpectedAgentId: () => 'pi:session-1' });
+    await handlers.get('agent_end')!({}, ctx);
+    expect(pi.sendMessage).not.toHaveBeenCalled();
+    streaming = false;
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(fixture.acknowledgements).toEqual([{ eventId: 'evt-1', decision: 'accept' }]);
+    await handlers.get('agent_end')!({}, ctx);
+    await handlers.get('session_shutdown')!({}, ctx);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(pi.sendMessage).toHaveBeenCalledTimes(1);
   });
 });

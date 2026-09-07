@@ -29,6 +29,7 @@ import { PI_CONFIG_DIR } from '../src/constants.js';
 import { DIRECT_TOOL_DESCRIPTIONS, getDirectToolContractStats, registerUniqueTool } from '../src/tools/octocode-tools.js';
 import { runtimeStoreFor, setManagedActivity, setManagedStatus } from '../src/tools/runtime-renderer.js';
 import { warmMcpCatalog } from '../src/tools/mcp-tool.js';
+import * as mcpPromptContext from '../src/tools/mcp-tool.js';
 import { projectMcpPath } from '../src/tools/mcp-config.js';
 import { createSessionArtifactContext } from '../src/tools/session-artifacts.js';
 import { SESSION_MEMORY_RELATIVE_PATH } from '../src/tools/session-memory.js';
@@ -605,11 +606,14 @@ test('path, asset, and output helpers cover edge cases', () => {
   }
 });
 
-test('worker processes do not receive the main Octocode prompt addendum', async () => {
+test('workers discover research tools and skills with one frozen Awareness guide, without main-agent policy', async () => {
   const previous = process.env['OCTOCODE_PI_SUBAGENT'];
   process.env['OCTOCODE_PI_SUBAGENT'] = '1';
   try {
-    const { handlers } = await captureExtensions();
+    const ready = vi.spyOn(mcpPromptContext, 'mcpCatalogReady').mockResolvedValue(true);
+    const catalog = vi.spyOn(mcpPromptContext, 'getCachedMcpCatalogAddendum').mockReturnValue('<mcp_catalog_index>\nserver: octocode\ntool: localSearch\n</mcp_catalog_index>');
+    const { handlers, pi } = await captureExtensions();
+    pi.setActiveTools(['MCPTool', 'skill', 'bash']);
     const result = (await handlers.get('before_agent_start')!.at(-1)!({
       systemPrompt: 'typed specialist prompt from --append-system-prompt',
       systemPromptOptions: {
@@ -619,11 +623,38 @@ test('worker processes do not receive the main Octocode prompt addendum', async 
 
     assert.ok(result?.systemPrompt?.startsWith('typed specialist prompt from --append-system-prompt'));
     assert.match(result!.systemPrompt!, /<awareness>/);
+    assert.match(result!.systemPrompt!, /cooperative community/);
+    assert.match(result!.systemPrompt!, /do not compete/);
+    assert.match(result!.systemPrompt!, /token budget and quality together/);
     assert.match(result!.systemPrompt!, /<awareness_cli_runtime>/);
+    assert.match(result!.systemPrompt!, /<mcp_catalog_index>[\s\S]*localSearch/);
+    assert.match(result!.systemPrompt!, /<available_skills>[\s\S]*octocode-research/);
+    assert.equal((result!.systemPrompt!.match(/<awareness>/g) ?? []).length, 1);
     assert.doesNotMatch(result!.systemPrompt!, /<octocode>/, 'workers preserve their typed prompt without the parent host addendum');
     const repeated = await handlers.get('before_agent_start')!.at(-1)!({ systemPrompt: result!.systemPrompt! }, { cwd: packageRoot });
     assert.deepEqual(repeated, result, 'worker turns reuse the trusted composed prompt without duplicating runtime guidance');
+    ready.mockRestore();
+    catalog.mockRestore();
   } finally {
+    vi.restoreAllMocks();
+    if (previous === undefined) delete process.env['OCTOCODE_PI_SUBAGENT'];
+    else process.env['OCTOCODE_PI_SUBAGENT'] = previous;
+  }
+});
+
+test('restricted workers omit instructions for unavailable skills and Awareness CLI', async () => {
+  const previous = process.env['OCTOCODE_PI_SUBAGENT'];
+  process.env['OCTOCODE_PI_SUBAGENT'] = '1';
+  try {
+    vi.spyOn(mcpPromptContext, 'mcpCatalogReady').mockResolvedValue(true);
+    vi.spyOn(mcpPromptContext, 'getCachedMcpCatalogAddendum').mockReturnValue('<mcp_catalog_index>localSearch</mcp_catalog_index>');
+    const { handlers, pi } = await captureExtensions();
+    pi.setActiveTools(['MCPTool']);
+    const result = await handlers.get('before_agent_start')!.at(-1)!({ systemPrompt: 'Restricted research worker.' }, { cwd: packageRoot }) as { systemPrompt: string };
+    assert.match(result.systemPrompt, /<mcp_catalog_index>/);
+    assert.doesNotMatch(result.systemPrompt, /<available_skills>|<awareness>|<awareness_cli_runtime>/);
+  } finally {
+    vi.restoreAllMocks();
     if (previous === undefined) delete process.env['OCTOCODE_PI_SUBAGENT'];
     else process.env['OCTOCODE_PI_SUBAGENT'] = previous;
   }
@@ -652,12 +683,44 @@ test('main-session system prompt is byte-stable after the initial complete disco
   assert.doesNotMatch(second!.systemPrompt!, /late-skill|Pi base prompt v2/);
 });
 
+test('session restart refreshes prompt source while turns inside a session keep frozen bytes', withTempMemoryHome(async (tmp) => {
+  const assets = await import('../src/assets.js');
+  const originalRead = assets.readTextIfExists;
+  const promptPath = assets.getAssetPaths().systemPrompt;
+  let promptText = 'PROMPT_SOURCE_FIRST_97c2';
+  const read = vi.spyOn(assets, 'readTextIfExists').mockImplementation((file) => (
+    file === promptPath ? promptText : originalRead(file)
+  ));
+  const { handlers } = await captureExtensions();
+  const ctx = { cwd: tmp!, hasUI: false, sessionManager: { getSessionId: () => 'prompt-cache-session' } };
+  const event = { systemPrompt: 'Pi base prompt', systemPromptOptions: { skills: [] } };
+  const invoke = async () => (await handlers.get('before_agent_start')!.at(-1)!(event, ctx)) as { systemPrompt: string };
+  try {
+    for (const handler of handlers.get('session_start') ?? []) await handler({ reason: 'new' }, ctx);
+    const first = await invoke();
+    assert.match(first.systemPrompt, /PROMPT_SOURCE_FIRST_97c2/);
+    promptText = 'PROMPT_SOURCE_REFRESHED_97c2';
+    assert.equal((await invoke()).systemPrompt, first.systemPrompt);
+    for (const handler of handlers.get('session_start') ?? []) await handler({ reason: 'resume' }, ctx);
+    const resumed = await invoke();
+    assert.match(resumed.systemPrompt, /PROMPT_SOURCE_REFRESHED_97c2/);
+    assert.doesNotMatch(resumed.systemPrompt, /PROMPT_SOURCE_FIRST_97c2/);
+    assert.equal((await invoke()).systemPrompt, resumed.systemPrompt);
+  } finally {
+    read.mockRestore();
+    for (const handler of handlers.get('session_shutdown') ?? []) await handler({}, ctx);
+  }
+}));
+
 test('changed session memory is delivered once per state through attributed turn context', withTempMemoryHome(async (tmp) => {
   assert.ok(tmp);
   const ctx = {
     cwd: tmp,
     hasUI: false,
-    sessionManager: { getSessionId: () => 'memory-delivery-session', getBranch: () => [{ type: 'message' }] },
+    sessionManager: {
+      getSessionId: () => 'memory-delivery-session',
+      getBranch: () => [{ type: 'message', id: 'memory-user', parentId: null, timestamp: new Date(0).toISOString(), message: { role: 'user', content: 'Continue the task.', timestamp: 0 } }],
+    },
   } as unknown as PiContext;
   const event = { systemPrompt: 'Pi base prompt', systemPromptOptions: { skills: [] } };
   const { handlers } = await captureExtensions();
@@ -1123,7 +1186,7 @@ test('public direct palette is exactly 14 queries-only tools with bounded per-qu
     assert.equal(runType.default, 'sequential', `${name} defaults to safe one-by-one execution`);
     assert.deepEqual(
       runType.enum,
-      name === 'readMedia' || name === 'web' || name === 'MCPTool'
+      name === 'inspectMedia' || name === 'web' || name === 'MCPTool'
         ? ['sequential', 'parallel']
         : ['sequential'],
       `${name} advertises only execution modes its implementation supports`,
@@ -2532,7 +2595,7 @@ test('agent browser profile spawns with routed context without launching Chrome'
     assert.match(prompt, /Network, Runtime, DOM, DOMDebugger/);
     assert.match(prompt, /Your ONLY browser tool is `chromeDebug`/);
     assert.match(prompt, /https:\/\/example\.com\/account/);
-    assert.equal(argValues(spawned[0]!.args, '--tools')[0], 'chromeDebug');
+    assert.equal(argValues(spawned[0]!.args, '--tools')[0], 'chromeDebug,MCPTool,skill,bash');
     assert.match(browserTool.renderResult!(result, { expanded: false }).render(120)[0]!, /agent.*SPAWNED/);
   } finally {
     setAgentProcessFactoryForTests(null);
@@ -2894,10 +2957,10 @@ test('generic turn activity never overwrites a specific plan lifecycle', async (
   }
 });
 
-test('configuration is the only extension slash command', async () => {
+test('extension slash commands expose configuration and explicit file recovery', async () => {
   const { commands } = await captureExtensions();
-  assert.deepEqual([...commands.keys()], ['configuration']);
-  assert.deepEqual(listExtensionHarness().extensionCommands, ['/configuration']);
+  assert.deepEqual([...commands.keys()].sort(), ['configuration', 'octocode-inbox', 'octocode-rewind']);
+  assert.deepEqual(listExtensionHarness().extensionCommands, ['/octocode-rewind', '/octocode-inbox', '/configuration']);
 });
 
 test('input hooks preserve repo-related user prompts without probing Git', async () => {
@@ -2947,11 +3010,11 @@ test('extension logs rich internal errors to repo .octocode/logs/error.txt', asy
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-error-log-'));
   const logPath = getInternalErrorLogPath(tmp);
   try {
-    await handlers.get('tool_execution_start')!.at(-1)!({
+    for (const handler of handlers.get('tool_execution_start') ?? []) await handler({
       toolCallId: 'call-1',
       toolName: 'exampleTool',
     }, { cwd: tmp, mode: 'tui', model: { id: 'test-model', reasoning: true } });
-    await handlers.get('tool_execution_end')!.at(-1)!({
+    for (const handler of handlers.get('tool_execution_end') ?? []) await handler({
       toolCallId: 'call-1',
       toolName: 'exampleTool',
       result: {
@@ -3800,6 +3863,7 @@ test('agent spawn starts a lean RPC Pi process and agent lifecycle can list/stat
       { queries: [{ reasoning: 'Exercise worker lifecycle.', type: 'spawn', task: 'check the docs',
         context: 'Relevant file: docs/a.md',
         name: 'docs-scout',
+        resourceMode: 'lean',
         model: 'sonnet:high',
         provider: 'guy-provider-anthropic',
         thinking: 'medium',
@@ -4136,7 +4200,7 @@ test('agent spawn covers octocode resource options, prompt file cleanup, list re
     assert.ok(args.includes('gpt-test'));
     assert.ok(args.includes('--thinking'));
     assert.ok(args.includes('low'));
-    assert.equal(args.includes('--skill'), false, 'custom profile does not load specialist skills');
+    assert.ok(argValues(args, '--skill').length > 0, 'Octocode custom workers receive the enabled skill inventory');
     assert.ok(args.includes('--tools'));
     assert.ok(
       args.includes('web'),
@@ -5104,6 +5168,26 @@ test('plan propose: approval card outcomes drive machine-legible [PLAN] verdicts
     assert.ok(review.startedAt);
     assert.deepEqual(getPlan(activePlanScope({ cwd })).map((step) => step.status), ['doing', 'todo']);
     clearPlan(activePlanScope({ cwd }));
+
+    // Receipt storage canonicalizes nested Git workspaces to the repository root.
+    // Start must consume through the receipt's canonical workspace, not the raw package cwd.
+    const repoRoot = path.join(cwd, 'nested-repo');
+    const nestedCwd = path.join(repoRoot, 'packages', 'app');
+    fs.mkdirSync(nestedCwd, { recursive: true });
+    execFileSync('git', ['init', '--quiet', repoRoot]);
+    const nestedRfcPath = path.join(nestedCwd, '.octocode', 'rfc', 'review', 'RFC.md');
+    fs.mkdirSync(path.dirname(nestedRfcPath), { recursive: true });
+    fs.writeFileSync(nestedRfcPath, '# Nested reviewable design\n');
+    const nestedCtx = { ...askCtx({ status: 'selected', value: 'start', label: 'Start implementation' }), cwd: nestedCwd } as unknown as PiContext;
+    res = await invokeExecute(planTool, {
+      action: 'propose',
+      steps: [{ text: 'Nested RFC step', paths: ['src/nested.ts'], acceptance: 'Nested step starts' }],
+      consequential: true,
+      rfcPath: nestedRfcPath,
+    }, nestedCtx);
+    assert.match((res.content[0] as { text: string }).text, /\[PLAN\] approved and started · rev/i);
+    assert.equal(getPlanReviewState(activePlanScope({ cwd: nestedCwd })).phase, 'executing');
+    clearPlan(activePlanScope({ cwd: nestedCwd }));
 
     // Request changes is the only alternative decision and returns review to draft.
     rfcCtx = askCtx({ status: 'selected', value: 'changes', label: 'Request changes' }) as unknown as PiContext;

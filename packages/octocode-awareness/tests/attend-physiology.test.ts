@@ -6,6 +6,15 @@ import type { AttendParams } from '../src/attend-model.js';
 import { assessOperationalState } from '../src/attend-physiology.js';
 
 describe('observed agent physiology', () => {
+  it('does not invent ownership from incomplete workspace rows', () => {
+    const result = assessOperationalState({
+      workboard: { Verify: [{}], FilesUnderWork: [{ file_path: '/repo/a.ts', locked: true }, {}] },
+      agentId: 'worker', workspacePath: '/repo', files: ['a.ts'], recalled: 0, referenceWarnings: 0,
+    });
+    expect(result.operational_state.verification).toEqual({ owned_observed: 0, total: 1 });
+    expect(result.operational_state.coordination).toEqual({ overlaps_observed: 0, locks_observed: 1 });
+    expect(result.regulation.actions).toEqual(['inspect_lock']);
+  });
   it('rejects removed aliases instead of falling back to the current workspace', () => {
     const db = new DatabaseSync(':memory:');
     initDb(db);
@@ -117,7 +126,10 @@ describe('host runtime observations', () => {
     expect(result.operational_state.unavailable).toContain('budget');
     expect(result.regulation.actions).toContain('inspect_recent_tool_failures');
     expect(result.regulation.actions).toContain('inspect_context_headroom');
-    expect(result.operational_state.runtime?.controls.compactions_committed).toBe(1);
+    expect(result.operational_state.runtime?.source).toBe('native_runtime');
+    if (result.operational_state.runtime?.source === 'native_runtime') {
+      expect(result.operational_state.runtime.controls.compactions_committed).toBe(1);
+    }
   });
 
   it('rejects malformed host observations and never infers health from absent tool samples', () => {

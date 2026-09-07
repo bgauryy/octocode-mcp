@@ -56,13 +56,14 @@ it('honors the agent filter and keeps unknown vendor/host labels unknown', () =>
 
 it('renders untrusted agent labels as literal inline text without creating headings or HTML', () => {
   registerAgent(db, {
-    agentId: 'peer`id', agentName: '<b>Reviewer</b>\n# Override',
+    agentId: 'peer`id', agentName: "O'Brien <b>Reviewer</b>\n# Override",
     agentVendor: 'provider`one', agentHost: 'custom', workspacePath: workspace,
   });
   const text = formatAwarenessQueryResult(queryAwareness(db, { view: 'agents', workspacePath: workspace, agentId: 'peer`id' }), 'markdown');
   expect(text).toContain('``peer`id``');
   expect(text).toContain('vendor=``provider`one``');
   expect(text).not.toContain('<b>');
+  expect(text).toContain('O&#39;Brien');
   expect(text).not.toContain('\n# Override');
   expect(text).toContain('Reviewer');
 });

@@ -97,6 +97,38 @@ exactly two attempts under a two-attempt ceiling, then reads the resulting retry
 receipt through the admitted native Awareness tool. Existing core compaction and
 input-budget tests own those enforcement boundaries.
 
+## Pi runtime sensing and advisory delivery
+
+Pi now supplies a separate `source: pi_runtime` variant through the shared
+[`agent-contracts/physiology`](../../octocode-agent-contracts/src/physiology.ts)
+Zod contract. The extension samples the public `getContextUsage()` API at native
+lifecycle boundaries, including headless sessions. It reports host measurements
+with session identity, generation, and observation time. Unknown or mismatched
+model limits omit context; input, model changes, and compaction invalidate it.
+These values do not come from the footer or cumulative billing usage.
+
+The session observer retains at most 32 terminal tool outcomes and bounded
+correlation IDs. Duplicate terminal events count once; explicit cancellation and
+block flags stay separate from failures. Awareness self-inspection is excluded,
+including its CLI environment binding, so polling cannot age out failures. Raw
+tool arguments, result bodies, and compaction summaries are not retained.
+Compaction counts reflect Pi success/failure events; an attempt alone is not a
+commit. No retry count is invented when the host does not provide that receipt.
+
+`assessRuntimeRegulation(observation)` is a pure library entrypoint for trusted
+host integration. It validates the same schema used by `attend` and returns
+canonical advisory actions without opening SQLite or inventing a workspace
+observation. The Pi extension projects changed pressure into a bounded 128-token
+turn-context segment alongside plan and memory updates. Unchanged advice is
+suppressed; unavailable samples cannot establish recovery. Fresh healthy samples
+rearm later recurrence. This projection does not invoke manual compaction, retry,
+change model, or grant execution authority. Pi remains the controller.
+
+The model-facing Awareness interface remains the installed CLI and bundled skill.
+There is no telemetry override CLI flag or additional model tool. Session-local
+sensor state is ephemeral and is never stored in the shared coordination ledger.
+`readPiPhysiology(ctx)` exposes the current host receipt for trusted integrations.
+
 ## Host capabilities without sensors
 
 | Proposed capability | Required evidence and owner |

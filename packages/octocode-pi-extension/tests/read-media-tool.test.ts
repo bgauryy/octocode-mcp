@@ -187,7 +187,7 @@ describe('readMedia tool', () => {
       undefined, undefined, { cwd: dir },
     );
     const line = tool.renderResult!(result, { expanded: false }).render(120).join('');
-    expect(line).toContain('readMedia');
+    expect(line).toContain('inspectMedia');
     expect(line).toMatch(/image\/png/);
   });
 

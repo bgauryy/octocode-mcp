@@ -113,9 +113,9 @@ const PLAN_ACTION_FIELDS: Readonly<Record<PlanAction, readonly string[]>> = Obje
   add: ['scope', 'text', 'activeForm', 'dependsOn', 'paths', 'taskReasoning', 'acceptance', 'checkCommand'],
   start: ['scope', 'index', 'revision', 'authorizationInteractionId'],
   complete: ['scope', 'index', 'receipt'],
-  remove: ['index'],
-  clear: [],
-  show: [],
+  remove: ['scope', 'index'],
+  clear: ['scope'],
+  show: ['scope'],
 });
 
 function assertPlanActionFields(query: QueryRecord, action: PlanAction): void {
@@ -312,7 +312,6 @@ function startReviewedPlan(
     return { ok: false, message: `displayed revision is stale (expected ${expectedRevision?.slice(0, 8) ?? 'none'})`, steps };
   }
   const planId = getPlanCoordination(scope).sourcePlanKey;
-  const receiptWorkspace = ctx?.cwd ?? scope;
   const createReceipt = (revision: string, receiptScope: 'plan.accept' | 'plan.start') => {
     if (!authorization) {
       return createHumanAuthorizationReceipt(ctx, {
@@ -341,7 +340,7 @@ function startReviewedPlan(
     }
     const accepted = acceptPlanReview(scope, displayedRevision, acceptReceipt.receiptId);
     if (!accepted.ok) return { ok: false, message: accepted.message, steps: accepted.steps };
-    consumeHumanAuthorizationReceipt(receiptWorkspace, {
+    consumeHumanAuthorizationReceipt(acceptReceipt.workspace, {
       receiptId: acceptReceipt.receiptId,
       planId,
       revision: displayedRevision,
@@ -359,7 +358,7 @@ function startReviewedPlan(
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : String(error), steps: getPlan(scope) };
   }
-  consumeHumanAuthorizationReceipt(receiptWorkspace, {
+  consumeHumanAuthorizationReceipt(startReceipt.workspace, {
     receiptId: startReceipt.receiptId,
     planId,
     revision: state.acceptedRevision,
@@ -516,7 +515,6 @@ function publishPlanActivity(ctx: PiContext | undefined, scope: string, steps: P
 
 // ─── /octocode-plan command (user can view / complete / delete tasks) ────────
 
-export const OCTOCODE_PLAN_COMMAND_USAGE = '/octocode-plan [new <goal>|off|show|html|changes [feedback]|complete <n>|start <displayed-revision|n>|remove <n>|clear]';
 export const OCTOCODE_PLAN_COMMAND_COMPLETIONS = ['new ', 'off', 'show', 'html', 'changes ', 'complete ', 'start ', 'remove ', 'clear'] as const;
 
 /** Host hook for `/octocode-plan new`: sends the plan-mode prompt to the agent as the next user turn. */
@@ -1072,18 +1070,23 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
       if (current.length === 0) {
         return planError(`[PLAN] no active plan — nothing to ${p.action}. Use plan set first.`, 'invalid-index');
       }
-      const reviewPhase = getPlanReviewState(scope).phase;
+      const reviewState = getPlanReviewState(scope);
+      const reviewPhase = reviewState.phase;
       if (p.action === 'start' && (reviewPhase === 'in_review' || reviewPhase === 'accepted')) {
         const revision = p.revision?.trim();
         const interactionId = p.authorizationInteractionId?.trim();
-        if (!revision || !interactionId || p.index !== undefined) {
-          return planError('[PLAN] reviewed implementation Start requires revision and authorizationInteractionId from the answered human authorization interaction; index is not valid for this transition.', 'authorization-required');
+        const recoveringAcceptedStart = reviewPhase === 'accepted' && !interactionId;
+        if (!revision || p.index !== undefined || (reviewPhase === 'in_review' && !interactionId)) {
+          return planError('[PLAN] reviewed implementation Start requires the exact revision; an in-review plan also requires authorizationInteractionId from the answered human Start interaction. index is not valid for this transition.', 'authorization-required');
+        }
+        if (recoveringAcceptedStart && !reviewState.acceptAuthorizationReceiptId) {
+          return planError('[PLAN] the accepted plan has no persisted human authorization receipt and cannot be resumed without a new answered Start interaction.', 'authorization-required');
         }
         const planId = getPlanCoordination(scope).sourcePlanKey;
-        const started = startReviewedPlan(scope, revision, ctx, {
+        const started = startReviewedPlan(scope, revision, ctx, interactionId ? {
           interactionId,
           expectedOptionId: planStartAuthorizationOptionId(planId, revision),
-        });
+        } : undefined);
         if (!started.ok) {
           refreshPlanUi(ctx);
           return planError(`[PLAN] implementation did not start: ${started.message}`, 'authorization-required');
@@ -1091,7 +1094,7 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
         steps = started.steps;
         writeCurrentPlanArtifacts(ctx, scope, 'active');
         refreshPlanUi(ctx);
-        auditPlanEvent(ctx, scope, 'start', { revision, source: 'interaction' });
+        auditPlanEvent(ctx, scope, 'start', { revision, source: recoveringAcceptedStart ? 'accepted-recovery' : 'interaction' });
         return {
           content: [{ type: 'text' as const, text: `[PLAN] approved and started · rev ${revision.slice(0, 8)}\n${renderList(steps)}` }],
           details: { action: p.action, ...planPresentation(ctx, scope), revision, decision: 'start' },
@@ -1247,8 +1250,9 @@ export function registerPlanTool(
       'RFC review uses one user decision: Start approves the exact displayed bytes and begins implementation; Request changes returns the plan to draft.',
     'Multiple independent steps may be doing in parallel. Use scope:"shared" for persistent multi-agent execution; it automatically projects stable steps, dependencies, ownership, and verification receipts into Awareness from one internal plan model.',
       'index is optional for ordinary executing-plan start/complete/remove: complete/remove default to the single current doing step; when multiple steps are doing, pass index. start defaults to the next runnable todo. Reviewed Start instead requires the displayed revision and answered authorizationInteractionId. Completing a mapped shared step requires receipt {command,status,message} from the declared check that actually ran.',
+    'Field reference — set/propose: [scope,steps,consequential,reason,rfcPath] · clarify: [questions] · add: [scope,text,activeForm,dependsOn,paths,taskReasoning,acceptance,checkCommand] · start: [scope,index,revision,authorizationInteractionId] · complete: [scope,index,receipt] · remove: [scope,index] · clear: [scope] · show: [scope].',
     ].join('\n'),
-    promptSnippet: 'Track a durable task checklist. Every call uses queries:[{reasoning, action, ...}]; actions are clarify/set/propose/add/start/complete/remove/show/clear.',
+    promptSnippet: 'Maintain a visible compaction-safe checklist. Use for multi-step/risky/shared work; skip obvious one-step tasks. Consequential RFCs need review then Start; shared completion needs a check receipt.',
     promptGuidelines: [
       'Every call uses queries:[{reasoning, action, ...}]. Put action-specific fields in that query item; never send action or its fields at the tool root.',
       'Research first. Use action:"clarify" only when an answer will change scope, architecture, acceptance criteria, or authorization and the repository cannot supply it. Prefer one question; use 2–3 only for independent blockers. Never ask for confirmation, information already given, or implementation details you can decide safely.',
@@ -1290,9 +1294,9 @@ export function registerPlanTool(
       taskReasoning: Type.Optional(Type.String({ description: 'For action:add — why the task exists or may omit paths.' })),
       acceptance: Type.Optional(Type.String({ description: 'For action:add — observable done state.' })),
       checkCommand: Type.Optional(Type.String({ description: 'For action:add — command that verifies the task.' })),
-      index: Type.Optional(Type.Integer({ minimum: 1, description: '1-based step number for ordinary executing-plan start/complete/remove. Reviewed Start uses revision + authorizationInteractionId instead.' })),
-      revision: Type.Optional(Type.String({ description: 'For reviewed action:start — the exact RFC revision shown to the user.' })),
-      authorizationInteractionId: Type.Optional(Type.String({ description: 'For noninteractive reviewed action:start — the answered authorization interaction delivered by the host continuation.' })),
+      index: Type.Optional(Type.Integer({ minimum: 1, description: '1-based step number for ordinary executing-plan start/complete/remove. Reviewed Start uses revision and, while in review, authorizationInteractionId instead.' })),
+      revision: Type.Optional(Type.String({ description: 'For reviewed action:start — the exact RFC revision shown to the user. An already accepted plan may resume from this revision after reload.' })),
+      authorizationInteractionId: Type.Optional(Type.String({ description: 'For noninteractive in-review action:start — the answered authorization interaction delivered by the host continuation. Omit only when resuming a persisted accepted plan.' })),
       consequential: Type.Optional(Type.Boolean({ description: 'For propose: true requires RFC review; false plus a non-empty reason explicitly overrides a consequential heuristic when RFC review is not warranted. Set treats this as metadata because execution is already authorized.' })),
       reason: Type.Optional(Type.String({ description: 'Planning rationale. Required with consequential:false when overriding a consequential proposal heuristic.' })),
       rfcPath: Type.Optional(Type.String({ description: 'For set/propose: a reviewable `.octocode/rfc/<name>/` folder or RFC.md. Propose hashes its exact bytes and enters review; the path must stay under the workspace RFC tree.' })),
@@ -1363,8 +1367,8 @@ export function registerPlanTool(
           if (action === 'start') {
             const hasRevision = typeof query['revision'] === 'string' && query['revision'].trim().length > 0;
             const hasInteraction = typeof query['authorizationInteractionId'] === 'string' && query['authorizationInteractionId'].trim().length > 0;
-            if (hasRevision !== hasInteraction) {
-              throw new Error('reviewed action:start requires revision and authorizationInteractionId together.');
+            if (hasInteraction && !hasRevision) {
+              throw new Error('reviewed action:start authorizationInteractionId requires revision.');
             }
             if (hasRevision && query['index'] !== undefined) {
               throw new Error('reviewed action:start cannot include index.');

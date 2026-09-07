@@ -6,14 +6,13 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { afterEach, test, vi } from 'vitest';
 import {
-  discoverSkillStates,
-  discoverSkills,
   formatSkillUsageLines,
   getSkillUsage,
   recordSkillLoad,
   registerSkillTool,
   resetSkillUsageForTests,
 } from '../src/tools/skill-tool.js';
+import { discoverSkillStates, discoverSkills } from '../src/tools/skill-discovery.js';
 import { setSkillEnabled } from '@octocodeai/agent-contracts/mcp-state';
 import { openOctocodeDb } from '../src/tools/storage-policy.js';
 import { registerUniqueTool } from '../src/tools/octocode-tools.js';

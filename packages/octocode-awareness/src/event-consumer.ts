@@ -6,6 +6,7 @@ import {
 import { openAwarenessStore } from './coordination/open.js';
 import type { OutboxEventV1 } from './coordination/coordination-continuity.js';
 import { normalizeWorkspacePath } from './git.js';
+import { normalizeNotificationKind } from './helpers.js';
 
 export const AWARENESS_PEER_EVENT_MESSAGE_TYPE = 'octocode-peer-event';
 
@@ -47,6 +48,8 @@ export interface AwarenessPeerDelivery {
     sequence: number;
     createdAt: string;
     messageClass: 'informational' | 'blocking' | 'handoff';
+    /** Validated routing metadata; broadcasts never cause a directed host wake. */
+    toAgentId?: string | null;
     provenance: 'peer-attributed-data';
   };
 }
@@ -67,6 +70,7 @@ interface PeerMessagePayload {
   fromAgentId: string;
   toAgentId: string | null;
   topic: string | null;
+  signalKind?: ReturnType<typeof normalizeNotificationKind>;
   text: string;
 }
 
@@ -94,11 +98,12 @@ function parsePeerPayload(event: ReturnType<typeof parseAgentEventEnvelopeV1>): 
     fromAgentId,
     toAgentId: nonEmptyString(payload['toAgentId']) ?? null,
     topic: nonEmptyString(payload['topic']) ?? null,
+    ...(payload['signalKind'] === undefined ? {} : { signalKind: normalizeNotificationKind(payload['signalKind']) }),
     text,
   };
 }
 
-const initialObservability = (consumerId: string): AwarenessEventObservability => ({
+export const createAwarenessEventObservability = (consumerId: string): AwarenessEventObservability => ({
   consumerId,
   backlogDepth: 0,
   backlogCapped: false,
@@ -119,7 +124,7 @@ export function createAwarenessEventConsumer(options: AwarenessEventConsumerOpti
   const workspace = normalizeWorkspacePath(options.workspace, options.workspace) ?? options.workspace;
   const maxEvents = Math.min(Math.max(options.maxEventsPerDrain ?? 100, 1), 999);
   const now = options.now ?? Date.now;
-  const stats = initialObservability(options.consumerId);
+  const stats = createAwarenessEventObservability(options.consumerId);
   let inFlight: Promise<AwarenessEventObservability> | undefined;
 
   const drainOnce = async (): Promise<AwarenessEventObservability> => {
@@ -148,6 +153,7 @@ export function createAwarenessEventConsumer(options: AwarenessEventConsumerOpti
               toAgentId: peerMessage.toAgentId,
               expectedAgentId: options.expectedAgentId,
               topic: peerMessage.topic,
+              signalKind: peerMessage.signalKind,
               text: peerMessage.text,
             });
             decision = policy.decision;
@@ -162,6 +168,7 @@ export function createAwarenessEventConsumer(options: AwarenessEventConsumerOpti
                   sequence: candidate.sequence,
                   createdAt: candidate.createdAt,
                   messageClass: policy.messageClass as 'informational' | 'blocking' | 'handoff',
+                  toAgentId: peerMessage.toAgentId,
                   provenance: 'peer-attributed-data',
                 },
               };

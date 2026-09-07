@@ -79,6 +79,22 @@ export function notificationsEnabled(env: NodeJS.ProcessEnv = process.env): bool
   return process.stdout?.isTTY === true;
 }
 
+/** Attention outside the terminal: use factual, body-free text supplied by the host. */
+export function notifyDesktopAttention(
+  ctx: PiContext | undefined,
+  message: string,
+  write?: (text: string) => void,
+): void {
+  // RPC reports hasUI=true, but raw terminal escapes would corrupt its stream.
+  if (suppressed || ctx?.mode !== 'tui' || !ctx.hasUI || !notificationsEnabled()) return;
+  try {
+    emitOsc9(message, write);
+    flashTerminalTitle(ctx, message);
+  } catch {
+    // Optional desktop delivery must never interrupt a decision or peer receipt.
+  }
+}
+
 /**
  * Emit an OSC 9 notification (`ESC ] 9 ; message BEL`) — supported by iTerm2,
  * kitty, WezTerm, ghostty and others as a desktop notification.

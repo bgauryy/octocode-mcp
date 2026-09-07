@@ -32,6 +32,7 @@ case 'query': {
     }
 case 'attend': {
       const result = attendAwareness(db, {
+        revision: request['revision'] as string | undefined,
         agentId: context.agentId,
         ...(context.runtimeObservation === undefined ? {} : { runtimeObservation: context.runtimeObservation }),
         workspacePath: (request['workspace_path'] as string | undefined) ?? cwd,

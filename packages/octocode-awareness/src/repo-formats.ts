@@ -76,8 +76,8 @@ export function markdownRows(rows: AwarenessQueryRow[]): string {
   return rows
     .map((row) => {
       if ('agent_id' in row && 'agent_name' in row) {
-        const name = escapeHtml(cellToString(row['agent_name']).replace(/\s+/g, ' ').trim() || 'Unnamed agent')
-          .replace(/([\\`*_{}\[\]()#+.!|~])/g, '\\$1');
+        const name = escapeHtml((cellToString(row['agent_name']).replace(/\s+/g, ' ').trim() || 'Unnamed agent')
+          .replace(/([\\`*_{}\[\]()#+.!|~])/g, '\\$1'));
         return `- ${markdownCode(row['agent_id'])} ${name} (vendor=${markdownCode(row['agent_vendor'] || 'unknown')}; host=${markdownCode(row['agent_host'] || 'unknown')})`;
       }
       const id = row['memory_id'] ?? row['plan_id'] ?? row['task_id'] ?? row['run_id'] ?? row['signal_id'] ?? row['refinement_id'] ?? row['file_path'] ?? row['metric'] ?? 'row';

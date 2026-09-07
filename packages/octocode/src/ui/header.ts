@@ -1,4 +1,4 @@
-import { c, bold, dim } from '../utils/colors.js';
+import { c, dim } from '../utils/colors.js';
 import { getAppContext } from '../utils/context.js';
 
 function printTitle(): void {
@@ -11,19 +11,30 @@ function printTitle(): void {
     ' ╚═════╝  ╚═════╝   ╚═╝    ╚═════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝',
   ];
 
-  for (const line of title) {
-    console.log(c('magenta', ' ' + line));
+  const code = [
+    ' ██████╗ ██████╗ ██████╗ ███████╗',
+    '██╔════╝██╔═══██╗██╔══██╗██╔════╝',
+    '██║     ██║   ██║██║  ██║█████╗',
+    '██║     ██║   ██║██║  ██║██╔══╝',
+    '╚██████╗╚██████╔╝██████╔╝███████╗',
+    ' ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝',
+  ];
+  const titleWidth = Math.max(...title.map(line => line.length));
+  for (const [index, line] of title.entries()) {
+    console.log(
+      ` ${c('magenta', line.padEnd(titleWidth))}  ${c('cyan', code[index] ?? '')}`
+    );
   }
 }
 
 export function printWelcome(): void {
   const width = process.stdout.columns ?? 80;
   console.log();
-  if (width >= 72 && (process.stdout.rows ?? 24) >= 32) {
+  if (width >= 104 && (process.stdout.rows ?? 24) >= 32) {
     printTitle();
     console.log();
   }
-  console.log(`  ${c('magenta', '◆')} ${bold('Octocode')}`);
+  console.log(`  ${c('magenta', 'octocode')} ${c('cyan', 'code')}`);
   console.log(`  ${dim('Code research. Clear answers.')}`);
   console.log();
 
@@ -42,7 +53,7 @@ export function printWelcome(): void {
 
 export function printGoodbye(): void {
   console.log();
-  console.log(`  ${c('magenta', '◆')} ${bold('Octocode')}`);
+  console.log(`  ${c('magenta', 'octocode')} ${c('cyan', 'code')}`);
   console.log(`  ${dim('Continue setup:')} octocode install`);
   console.log(`  ${dim('Explore tools:')}  octocode tools`);
   console.log(`  ${c('cyan', 'https://octocode.ai')}`);

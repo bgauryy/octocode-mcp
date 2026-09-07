@@ -1,6 +1,7 @@
 import { decideNext } from './attend-flow.js';
 import { getDatabasePath } from './db-runtime.js';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
 import { assertKnownOptions } from './helpers.js';
 import { getMemory } from './memory-recall.js';
@@ -8,10 +9,12 @@ import { queryAwareness } from './repo-query.js';
 import { AttendEvidence, AttendParams, AttendResult, chooseMode, compactRow, compactWorkboard, evidenceTrust, groupWorkboard, limitOf, ORGAN_REFERENCE, profileMap, resourceLeads, stringList, summarize, TEAM_NORMS, uniqueStrings } from './attend-model.js';
 import type { AwarenessQueryRow } from './repo-model.js';
 import { assessOperationalState, scopedWorkRows } from './attend-physiology.js';
+import { withAttendRevision } from './attend-revision.js';
+import type { AttendUnchangedResult } from './attend-model.js';
 
 const ATTEND_OPTION_KEYS = [
   'runtimeObservation', 'agentId', 'workspacePath', 'artifact', 'repo', 'ref', 'query',
-  'file', 'limit', 'compact', 'includeBodies', 'explainOrgan', 'cwd',
+  'file', 'limit', 'compact', 'includeBodies', 'explainOrgan', 'cwd', 'revision',
 ] as const;
 
 function clusterCompactHandoffs(rows: AwarenessQueryRow[]): AwarenessQueryRow[] {
@@ -52,17 +55,22 @@ function clusterCompactHandoffs(rows: AwarenessQueryRow[]): AwarenessQueryRow[] 
   return output;
 }
 
-export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): AttendResult {
+export function attendAwareness(db: DatabaseSync, params?: AttendParams & { revision?: undefined }): AttendResult;
+export function attendAwareness(db: DatabaseSync, params: AttendParams): AttendResult | AttendUnchangedResult;
+export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): AttendResult | AttendUnchangedResult {
   assertKnownOptions(params, ATTEND_OPTION_KEYS, 'attendAwareness');
+  const beforeVersion = db.prepare('PRAGMA data_version').get()?.['data_version'];
   const cwd = params.cwd ? resolve(params.cwd) : process.cwd();
   // D1 fix lives in repo-query `scopeFromParams`/`workspaceAliases`: the raw
   // workspace path below flows through to the normalized path set, which also matches
   // the git-root key that write paths store — so the profile block does not
   // undercount rows written from a package/subdir.
   const workspacePath = resolve(String(params.workspacePath ?? cwd));
+  let canonicalWorkspace = workspacePath;
+  try { canonicalWorkspace = realpathSync(workspacePath); } catch { /* Missing paths remain explicitly scoped. */ }
   const limit = limitOf(params.limit);
   const query = String(params.query ?? '').trim();
-  const files = stringList(params.file);
+  const files = uniqueStrings(stringList(params.file).map(file => relative(workspacePath, resolve(workspacePath, file)))).sort();
   const includeBodies = Boolean(params.includeBodies);
   const explainOrgan = Boolean(params.explainOrgan);
   const compact = Boolean(params.compact);
@@ -79,7 +87,9 @@ export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): At
     cwd,
   };
 
-  const profileResult = queryAwareness(db, { ...scope, view: 'repo-profile' });
+  // Profile is a fixed metric catalog, not a detail lane; avoid truncating it at
+  // the caller's per-column limit and mistaking omitted metrics for zero.
+  const profileResult = queryAwareness(db, { ...scope, view: 'repo-profile', limit: 500 });
   const profile = profileMap(profileResult.rows);
   const workboardResult = queryAwareness(db, { ...scope, view: 'workboard', query: null, preferAgentId: agentId || null, preferFiles: files });
   const rawWorkboard = groupWorkboard(workboardResult.rows);
@@ -284,12 +294,28 @@ export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): At
     readyTaskId: readyTasks.length > 0 && !query ? String(readyTasks[0]?.['id']) : undefined,
   });
 
+  const finish = (result: Omit<AttendResult, 'revision' | 'unchanged'>): AttendResult | AttendUnchangedResult => withAttendRevision({
+    db, requested: params.revision, result,
+    scope: { ...scope, workspacePath: canonicalWorkspace, agentId, files, compact, explainOrgan },
+    snapshot: { profile, rawWorkboard, memories: recall.memories.map(memory => {
+      // Decay continuously changes these invisible floating-point projections.
+      // Retain selected order and every persisted fact: rank crossings, expiry,
+      // changed references and evidence trust must still invalidate the packet.
+      const { score: _score, score_components: _components, ...evidenceState } = memory;
+      return evidenceState;
+    }) },
+    partial: profileResult.is_partial || workboardResult.is_partial || physiology.operational_state.coverage.omitted_rows > 0
+      // Recall has no exhaustive continuation contract; reaching its limit is uncertain.
+      || (memoryQuery !== '' && recall.memories.length >= Math.min(5, limit)),
+    stable: beforeVersion === db.prepare('PRAGMA data_version').get()?.['data_version'],
+  });
+
   if (compact) {
     const columnCount = (column: string): number => {
       const rows = rawWorkboard[column] ?? [];
       return Number(rows[0]?.['column_total'] ?? rows.length);
     };
-    return {
+    return finish({
       ok: true,
       generated_at: profileResult.generated_at,
       workspace_path: workspacePath,
@@ -309,10 +335,10 @@ export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): At
       workboard,
       evidence,
       next,
-    };
+    });
   }
 
-  const result: AttendResult = {
+  const result: Omit<AttendResult, 'revision' | 'unchanged'> = {
     ok: true,
     generated_at: profileResult.generated_at,
     workspace_path: workspacePath,
@@ -336,5 +362,5 @@ export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): At
     next,
   };
   if (explainOrgan) result.organ_reference = ORGAN_REFERENCE;
-  return result;
+  return finish(result);
 }

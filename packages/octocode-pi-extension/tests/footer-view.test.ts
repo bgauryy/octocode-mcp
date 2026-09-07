@@ -31,6 +31,20 @@ test('long worker names never hide a blocked or failed state in narrow panes', (
   }
 });
 
+test('worker updates keep a stable one-line footer height and expose an attention action', () => {
+  for (const width of [28, 36, 52, 80, 120, 160]) {
+    const lines = renderFooterView({ rows: [], agents: FULL.agents }, { width });
+    assert.equal(lines.length, 2, `${width}: every visible worker owns exactly one physical footer row`);
+    assert.match(lines[0]!, /agent builder.*running/);
+    assert.match(lines[1]!, /agent reviewer.*blocked/);
+    for (const line of lines) assert.ok(visibleWidth(line) <= width, `${width}: ${line}`);
+  }
+
+  const wide = renderFooterView({ rows: [], agents: FULL.agents }, { width: 120 }).join('\n');
+  assert.match(wide, /agent builder.*running.*running footer tests/);
+  assert.match(wide, /agent reviewer.*blocked.*\/octocode-inbox/);
+});
+
 test('footer retains each semantic state category at every supported width', () => {
   for (const width of [28, 40, 64, 96, 140]) {
     const lines = renderFooterView(FULL, { width });
@@ -42,7 +56,7 @@ test('footer retains each semantic state category at every supported width', () 
     assert.match(body, /main/);
     assert.match(body, /github/);
     assert.match(body, /agent builder.*running/);
-    assert.match(body, /doing running footer/);
+    if (width >= 96) assert.match(body, /doing running footer/);
     assert.match(body, /agent reviewer.*blocked/);
     assert.doesNotMatch(body, /agent old|killed/);
     for (const line of lines) assert.ok(visibleWidth(line) <= width, `${width}: ${line}`);

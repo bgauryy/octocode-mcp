@@ -81,6 +81,7 @@ export function cmdAttend(db: DatabaseSync, args: ParsedArgs, dbPath: string, op
   const rawFile = args['file'];
   const files = Array.isArray(rawFile) ? rawFile.map(String) : rawFile ? [String(rawFile)] : [];
   const result = attendAwareness(db, {
+    revision: args['revision'] === undefined ? undefined : String(args['revision']),
     agentId: String(args['agent_id'] ?? process.env.OCTOCODE_AGENT_ID ?? '').trim() || undefined,
     workspacePath: args['workspace'] ? String(args['workspace']) : process.cwd(),
     artifact: args['artifact'] ? String(args['artifact']) : null,

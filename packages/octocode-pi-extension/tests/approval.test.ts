@@ -3,7 +3,7 @@
  * Yes / No / Always-allow consent flow with session-scoped memory.
  */
 import assert from 'node:assert/strict';
-import { test, beforeEach } from 'vitest';
+import { test } from 'vitest';
 import {
   classifySensitiveCommand,
   requestApproval,
@@ -19,8 +19,6 @@ import {
   applyStartupPermissionLevel,
 } from '../src/tools/approval.js';
 import type { PiContext } from '../src/types.js';
-
-beforeEach(() => resetApprovalStore());
 
 // ─── classifySensitiveCommand ────────────────────────────────────────────────
 
@@ -70,7 +68,7 @@ test('Yes approves once without remembering', async () => {
   const out = await requestApproval(ctx, req);
   assert.equal(out.approved, true);
   assert.equal(out.always, false);
-  assert.equal(isAlwaysAllowed('git-write'), false);
+  assert.equal(isAlwaysAllowed(ctx, 'git-write'), false);
 });
 
 test('No declines', async () => {
@@ -86,6 +84,32 @@ test('dismissed prompt (undefined) declines', async () => {
   assert.equal(out.approved, false);
 });
 
+test('abort is forwarded to the approval prompt and blocks late remembered approval', async () => {
+  const controller = new AbortController();
+  let promptSignal: AbortSignal | undefined;
+  let resolvePrompt!: (choice: string) => void;
+  const ctx = {
+    hasUI: true,
+    ui: {
+      select: async (_prompt: string, _choices: string[], opts?: { signal?: AbortSignal }) => {
+        promptSignal = opts?.signal;
+        return await new Promise<string>((resolve) => { resolvePrompt = resolve; });
+      },
+    },
+  } as unknown as PiContext;
+  const pending = requestApproval(
+    ctx,
+    { actionClass: 'system', title: 't', detail: 'dynamic tool sandbox opt-out' },
+    controller.signal,
+  );
+  await Promise.resolve();
+  controller.abort();
+  resolvePrompt('Always allow this session');
+  await assert.rejects(pending, { name: 'AbortError' });
+  assert.equal(promptSignal, controller.signal);
+  assert.equal(isAlwaysAllowed(ctx, 'system'), false);
+});
+
 test('Always allow remembers class and skips future prompts', async () => {
   const calls = { n: 0 };
   const ctx = { hasUI: true, ui: { async select() { calls.n++; return 'Always allow this session'; } } } as unknown as PiContext;
@@ -93,8 +117,8 @@ test('Always allow remembers class and skips future prompts', async () => {
   const first = await requestApproval(ctx, req);
   assert.equal(first.approved, true);
   assert.equal(first.always, true);
-  assert.equal(isAlwaysAllowed('fs-delete'), true);
-  assert.deepEqual(approvedClasses(), ['fs-delete']);
+  assert.equal(isAlwaysAllowed(ctx, 'fs-delete'), true);
+  assert.deepEqual(approvedClasses(ctx), ['fs-delete']);
 
   const second = await requestApproval(ctx, req);
   assert.equal(second.approved, true);
@@ -112,9 +136,9 @@ test('non-interactive host cannot prompt and denies', async () => {
 test('resetApprovalStore clears remembered approvals', async () => {
   const ctx = { hasUI: true, ui: { async select() { return 'Always allow this session'; } } } as unknown as PiContext;
   await requestApproval(ctx, { actionClass: 'git-write', title: 't', detail: 'git push' });
-  assert.equal(isAlwaysAllowed('git-write'), true);
-  resetApprovalStore();
-  assert.equal(isAlwaysAllowed('git-write'), false);
+  assert.equal(isAlwaysAllowed(ctx, 'git-write'), true);
+  resetApprovalStore(ctx);
+  assert.equal(isAlwaysAllowed(ctx, 'git-write'), false);
 });
 
 // ─── expanded dangerous-operation classes ────────────────────────────────────
@@ -164,26 +188,28 @@ function selectingCtx(answers: string[], seen: string[][] = []): PiContext {
 }
 
 test('relaxed auto-approves install/git but still prompts deletes/sudo/publish/system/infra', async () => {
-  setPermissionLevel('relaxed');
-  const auto = await requestApproval(undefined, { actionClass: 'git-write', title: 't', detail: 'd' });
+  const ctx = { hasUI: false } as unknown as PiContext;
+  setPermissionLevel(ctx, 'relaxed');
+  const auto = await requestApproval(ctx, { actionClass: 'git-write', title: 't', detail: 'd' });
   assert.equal(auto.approved, true);
   assert.equal(auto.remembered, true);
   // fs-delete is deliberately NOT auto-approved under relaxed (path-guard
   // bounds writes, not deletions) — with no UI it must DENY like sudo.
   for (const cls of ['fs-delete', 'sudo'] as const) {
-    const denied = await requestApproval(undefined, { actionClass: cls, title: 't', detail: 'd' });
+    const denied = await requestApproval(ctx, { actionClass: cls, title: 't', detail: 'd' });
     assert.equal(denied.approved, false, cls);
     assert.equal(denied.interactive, false, cls);
   }
 });
 
 test('applyStartupPermissionLevel pins the level from the environment', () => {
-  applyStartupPermissionLevel({ OCTOCODE_PERMISSION_LEVEL: 'strict' } as NodeJS.ProcessEnv);
-  assert.equal(getPermissionLevel(), 'strict');
-  applyStartupPermissionLevel({ OCTOCODE_PERMISSION_LEVEL: 'bogus' } as NodeJS.ProcessEnv);
-  assert.equal(getPermissionLevel(), 'strict', 'unknown values leave the level unchanged');
-  applyStartupPermissionLevel({} as NodeJS.ProcessEnv);
-  assert.equal(getPermissionLevel(), 'strict', 'absent var leaves the level unchanged');
+  const ctx = {} as PiContext;
+  applyStartupPermissionLevel(ctx, { OCTOCODE_PERMISSION_LEVEL: 'strict' } as NodeJS.ProcessEnv);
+  assert.equal(getPermissionLevel(ctx), 'strict');
+  applyStartupPermissionLevel(ctx, { OCTOCODE_PERMISSION_LEVEL: 'bogus' } as NodeJS.ProcessEnv);
+  assert.equal(getPermissionLevel(ctx), 'strict', 'unknown values leave the level unchanged');
+  applyStartupPermissionLevel(ctx, {} as NodeJS.ProcessEnv);
+  assert.equal(getPermissionLevel(ctx), 'strict', 'absent var leaves the level unchanged');
 });
 
 test('compound command: Octocode dogfood segment does not exempt a separate install or pipe-to-shell segment', () => {
@@ -201,10 +227,11 @@ test('compound command: Octocode dogfood segment does not exempt a separate inst
 });
 
 test('strict ignores remembered classes and never offers Always', async () => {
-  allowAlways('fs-delete');
-  setPermissionLevel('strict');
   const seen: string[][] = [];
-  const outcome = await requestApproval(selectingCtx(['Yes (run once)'], seen), {
+  const ctx = selectingCtx(['Yes (run once)'], seen);
+  allowAlways(ctx, 'fs-delete');
+  setPermissionLevel(ctx, 'strict');
+  const outcome = await requestApproval(ctx, {
     actionClass: 'fs-delete', title: 't', detail: 'd',
   });
   assert.equal(outcome.approved, true);
@@ -213,16 +240,18 @@ test('strict ignores remembered classes and never offers Always', async () => {
 });
 
 test('resetApprovalStore clears the level back to default', () => {
-  setPermissionLevel('relaxed');
-  resetApprovalStore();
-  assert.equal(getPermissionLevel(), 'default');
+  const ctx = {} as PiContext;
+  setPermissionLevel(ctx, 'relaxed');
+  resetApprovalStore(ctx);
+  assert.equal(getPermissionLevel(ctx), 'default');
 });
 
 test('revokeAlways drops a single remembered class', () => {
-  allowAlways('install');
-  allowAlways('git-write');
-  revokeAlways('install');
-  assert.deepEqual(approvedClasses(), ['git-write']);
+  const ctx = {} as PiContext;
+  allowAlways(ctx, 'install');
+  allowAlways(ctx, 'git-write');
+  revokeAlways(ctx, 'install');
+  assert.deepEqual(approvedClasses(ctx), ['git-write']);
 });
 
 test('parsePermissionLevel accepts the three levels and rejects junk', () => {
@@ -247,10 +276,21 @@ test('classifies shell-startup persistence writes as system', () => {
 });
 
 test('cyclePermissionLevel goes default → relaxed → strict → default', () => {
-  assert.equal(getPermissionLevel(), 'default');
-  assert.equal(cyclePermissionLevel(), 'relaxed');
-  assert.equal(cyclePermissionLevel(), 'strict');
-  assert.equal(cyclePermissionLevel(), 'default');
+  const ctx = {} as PiContext;
+  assert.equal(getPermissionLevel(ctx), 'default');
+  assert.equal(cyclePermissionLevel(ctx), 'relaxed');
+  assert.equal(cyclePermissionLevel(ctx), 'strict');
+  assert.equal(cyclePermissionLevel(ctx), 'default');
+});
+
+test('approval policies are isolated across simultaneous Pi contexts', () => {
+  const first = {} as PiContext;
+  const second = {} as PiContext;
+  setPermissionLevel(first, 'relaxed');
+  allowAlways(first, 'git-write');
+  assert.equal(getPermissionLevel(second), 'default');
+  assert.deepEqual(approvedClasses(second), []);
+  assert.equal(isAlwaysAllowed(second, 'git-write'), false);
 });
 
 test('choosing Always notifies how to revoke the session grant', async () => {

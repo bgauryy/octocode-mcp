@@ -363,6 +363,12 @@ export function registerCompactionHooks(pi: PiInstance, notify: NotifyFn): void 
     }
   });
 
+  pi.on('session_compact_failed', async () => {
+    // Failure/cancellation also ends the host's temporary context replacement.
+    // Pi owns its error notification; do not emit a successful checkpoint here.
+    restoreActiveTools();
+  });
+
   pi.on('session_compact', async (event: SessionCompactEvent, ctx: PiContext) => {
     restoreActiveTools();
     try {

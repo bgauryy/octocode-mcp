@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
@@ -194,26 +195,75 @@ function clean() {
   fs.rmSync(distDir, { recursive: true, force: true });
 }
 
-async function acquireBuildLock() {
-  const deadline = Date.now() + 120_000;
+const BUILD_LOCK_WAIT_MS = 120_000;
+const BUILD_LOCK_ORPHAN_GRACE_MS = 30_000;
+
+function readBuildLockOwner(lockPath = buildLockPath) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+    return Number.isInteger(parsed?.pid) && typeof parsed?.token === 'string'
+      ? { pid: parsed.pid, token: parsed.token }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function processIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code !== 'ESRCH';
+  }
+}
+
+function buildLockCanBeReclaimed(lockPath = buildLockPath, orphanGraceMs = BUILD_LOCK_ORPHAN_GRACE_MS) {
+  const owner = readBuildLockOwner(lockPath);
+  if (owner) return !processIsAlive(owner.pid);
+  try {
+    return Date.now() - fs.statSync(lockPath).mtimeMs > orphanGraceMs;
+  } catch {
+    return true;
+  }
+}
+
+async function acquireBuildLock(lockPath = buildLockPath, options = {}) {
+  const waitMs = options.waitMs ?? BUILD_LOCK_WAIT_MS;
+  const orphanGraceMs = options.orphanGraceMs ?? BUILD_LOCK_ORPHAN_GRACE_MS;
+  const deadline = Date.now() + waitMs;
   for (;;) {
+    const token = randomUUID();
     try {
-      return fs.openSync(buildLockPath, 'wx', 0o600);
+      const fd = fs.openSync(lockPath, 'wx', 0o600);
+      try {
+        fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, token, createdAt: new Date().toISOString() }));
+        fs.fsyncSync(fd);
+        return { fd, token };
+      } catch (error) {
+        fs.closeSync(fd);
+        fs.rmSync(lockPath, { force: true });
+        throw error;
+      }
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
-      try {
-        if (Date.now() - fs.statSync(buildLockPath).mtimeMs > 300_000) {
-          fs.rmSync(buildLockPath, { force: true });
-          continue;
-        }
-      } catch {
+      if (buildLockCanBeReclaimed(lockPath, orphanGraceMs)) {
+        fs.rmSync(lockPath, { force: true });
         continue;
       }
-      if (Date.now() >= deadline) throw new Error(`Timed out waiting for build lock: ${buildLockPath}`);
+      if (Date.now() >= deadline) throw new Error(`Timed out waiting for build lock: ${lockPath}`);
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
 }
+
+function releaseBuildLock(lock, lockPath = buildLockPath) {
+  fs.closeSync(lock.fd);
+  const owner = readBuildLockOwner(lockPath);
+  if (owner?.token === lock.token) fs.rmSync(lockPath, { force: true });
+}
+
+export const __test__ = { acquireBuildLock, buildLockCanBeReclaimed, readBuildLockOwner, releaseBuildLock };
 
 function copySkillDirectories(sourceRoot, targetRoot) {
   if (!fs.existsSync(sourceRoot)) return 0;
@@ -411,15 +461,17 @@ async function build() {
     );
   } finally {
     fs.rmSync(stagedSkills, { recursive: true, force: true });
-    fs.closeSync(buildLock);
-    fs.rmSync(buildLockPath, { force: true });
+    releaseBuildLock(buildLock);
   }
 }
 
-if (process.argv.includes('--clean')) {
-  clean();
-} else if (process.argv.includes('--skills-only')) {
-  syncPackageSkills();
-} else {
-  build();
+const isMain = process.argv[1] !== undefined && path.resolve(process.argv[1]) === __filename;
+if (isMain) {
+  if (process.argv.includes('--clean')) {
+    clean();
+  } else if (process.argv.includes('--skills-only')) {
+    syncPackageSkills();
+  } else {
+    await build();
+  }
 }

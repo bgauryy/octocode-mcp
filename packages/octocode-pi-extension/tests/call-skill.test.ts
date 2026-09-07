@@ -10,6 +10,7 @@ import {
   setSkillGeneratorForTests,
   parseGeneratedSkill,
   assessSkillTriviality,
+  orchestrate,
   type GeneratedSkill,
 } from '../src/tools/call-skill.js';
 
@@ -45,7 +46,7 @@ const skill: GeneratedSkill = {
 };
 const createMeta = { intent: 'run tests then bump version then publish the package', reason: 'recurring release workflow' };
 
-async function run(tool: ToolDefinition, params: Record<string, unknown>) {
+async function run(tool: ToolDefinition, params: Record<string, unknown>, signal?: AbortSignal) {
   const metadata = (params['metadata'] ?? {}) as Record<string, unknown>;
   const query = {
     reasoning: 'exercise the dynamic skill lifecycle contract',
@@ -57,7 +58,7 @@ async function run(tool: ToolDefinition, params: Record<string, unknown>) {
     approveCreate: metadata['_approveCreate'],
     force: metadata['_force'],
   };
-  return (await tool.execute('id', { queries: [query] })) as {
+  return (await tool.execute('id', { queries: [query] }, signal)) as {
     content: Array<{ text: string }>;
     isError?: boolean;
     details: { status: string; skillName?: string; skillMd?: string };
@@ -93,6 +94,27 @@ test('create authors, validates, registers, and points at SKILL.md', async () =>
   const res = await run(tool, { skillType: 'release-checklist', mode: 'create', metadata: createMeta });
   assert.equal(res.details.status, 'created');
   assert.ok(res.details.skillMd && fs.existsSync(res.details.skillMd));
+});
+
+test('caller abort reaches skill generation and prevents registration', async () => {
+  const controller = new AbortController();
+  let receivedSignal: AbortSignal | undefined;
+  let generationStarted!: () => void;
+  const started = new Promise<void>((resolve) => { generationStarted = resolve; });
+  setSkillGeneratorForTests(async (args) => {
+    receivedSignal = args.signal;
+    generationStarted();
+    await new Promise<void>((_resolve, reject) => {
+      args.signal?.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true });
+    });
+    return skill;
+  });
+  const pending = orchestrate({ skillType: 'release-checklist', mode: 'create', metadata: createMeta }, undefined, controller.signal);
+  await started;
+  controller.abort();
+  await assert.rejects(pending, /aborted|cancelled/i);
+  assert.equal(receivedSignal, controller.signal);
+  assert.equal(fs.existsSync(path.join(home, 'release-checklist', 'SKILL.md')), false);
 });
 
 test('create requires a reason', async () => {

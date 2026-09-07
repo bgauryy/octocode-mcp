@@ -13,5 +13,6 @@ export * from './db.js';
 export * from './mcp-state.js';
 export * from './permissions.js';
 export * from './protocols.js';
+export * from './physiology.js';
 export * from './agent-skills.js';
 export * from './prompts/index.js';

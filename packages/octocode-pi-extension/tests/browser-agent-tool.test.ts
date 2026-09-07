@@ -133,7 +133,7 @@ test('agent browser profile navigates, runs routed schemes, passes findings to w
   assert.match(text, /\[AGENT\] navigated to https:\/\/example\.com\/app/);
   assert.match(text, /insecure cookie/);
   assert.match(text, /500 from \/api\/orders/);
-  assert.deepEqual(spawned[0].tools, ['chromeDebug']);
+  assert.deepEqual(spawned[0].tools, ['chromeDebug', 'MCPTool', 'skill', 'bash']);
   assert.equal(spawned[0].model, 'sonnet:high');
   assert.match(text, /Your ONLY browser tool is `chromeDebug`/);
   assert.match(text, /Network, Runtime, DOM, DOMDebugger, Fetch/);

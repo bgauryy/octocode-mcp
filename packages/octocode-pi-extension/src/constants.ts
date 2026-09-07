@@ -32,7 +32,7 @@ const COMMON_SUPPORT_TOOL_NAMES = [
   'askUser',
 ] as const;
 
-const MEDIA_SUPPORT_TOOL_NAMES = ['readMedia', 'media', 'runFfmpeg'] as const;
+const MEDIA_SUPPORT_TOOL_NAMES = ['inspectMedia', 'media', 'runFfmpeg'] as const;
 
 // Default model-callable support tools. Together with the overridden bash tool,
 // this is the 14-tool unified direct palette. Awareness operations use its CLI;

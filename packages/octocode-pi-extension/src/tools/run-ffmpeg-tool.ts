@@ -5,7 +5,7 @@
  * without a shell. Every file argument is resolved and path-guarded before the
  * process starts; timeout + AbortSignal apply; progress lines are forwarded.
  *
- * Use this when readMedia / media don't cover the operation:
+ * Use this when inspectMedia / media don't cover the operation:
  *   - Side-by-side / stacked   -filter_complex hstack / vstack
  *   - Text overlay             -vf drawtext=…  (needs --enable-libfreetype)
  *   - Audio normalize          -af loudnorm=I=-16:TP=-1.5:LRA=11
@@ -87,17 +87,24 @@ function resolveArgvPaths(args: string[], cwd: string): string[] {
       continue;
     }
 
-    // -i, -o flags signal the next arg is a file
-    if (arg === '-i' || arg === '-o') {
+    // Flags whose NEXT argument is a file path (inputs, outputs, and log files).
+    // -progress/-passlogfile/-vstats_file/-sdp_file take file paths and must be path-guarded.
+    if (arg === '-i' || arg === '-o' || arg === '-progress' || arg === '-passlogfile' ||
+        arg === '-vstats_file' || arg === '-sdp_file') {
       nextIsFile = true;
       resolved.push(arg);
       continue;
     }
 
-    // Heuristic: resolve args that look like file paths (not flags or filter exprs)
+    // Heuristic: resolve args that look like file paths (not flags or filter exprs).
+    // Key exclusion: args containing '=' are filter-graph expressions (movie=input.mp4,
+    // log_path=vmaf.json, key=value) - never bare file paths. Without this guard a
+    // filter string ending in an extension (e.g. `movie=input.mp4`) would be wrongly
+    // resolved to an absolute path and break the command.
     const looksLikePath =
       !arg.startsWith('-') &&
       !arg.startsWith('[') &&
+      !arg.includes('=') &&
       (arg.startsWith('./') || arg.startsWith('../') || arg.startsWith('/') ||
         // relative paths with a file extension that aren't pure numbers or codec names
         (/[./]/.test(arg) && /\.[a-zA-Z0-9]{2,4}$/.test(arg) && !/^[\d.]+$/.test(arg)));
@@ -155,7 +162,7 @@ export function registerRunFfmpegTool(
     label: 'Run FFmpeg',
     description:
       'Run advanced ffmpeg or ffprobe argv directly with workspace path guards, timeout, ' +
-      'cancellation, and progress. Prefer readMedia and media for standard inspection and transforms.' +
+      'cancellation, and progress. Prefer inspectMedia and media for standard inspection and transforms.' +
       '\n\n' +
       'Use for operations media does not expose:\n' +
       '  • Side-by-side      -filter_complex hstack / vstack\n' +
@@ -172,11 +179,13 @@ export function registerRunFfmpegTool(
       '  ["-y", "-i", "input.mp4", "-c:v", "h264_videotoolbox", "-b:v", "4M", "out.mp4"]\n' +
       '📖 Reference + cookbook (16 recipes): docs/FFMPEG.md',
     promptSnippet:
-      'Run any ffmpeg command directly; use readMedia for inspection and media for common transforms.',
+      'Run any ffmpeg command directly; use inspectMedia for inspection and media for common transforms.',
     promptGuidelines: [
-      'Use readMedia (inspection) and media (gif/trim/audio/convert/concat) for standard operations.',
+      'Use inspectMedia (inspection) and media (gif/trim/audio/convert/concat) for standard operations.',
       'Use runFfmpeg for: filter_complex, loudnorm, VMAF, avfoundation, ProRes, drawtext.',
-      'args is argv WITHOUT the binary name. Paths are auto-resolved and path-guarded.',
+      'args is argv WITHOUT the binary name. -hide_banner and -nostdin are always prepended; paths are auto-resolved and path-guarded.',
+      'Always include -y in args when writing a file that may already exist. Without -y, ffmpeg exits non-zero when output exists (stdin is disabled, so it cannot prompt).',
+      'binary:"ffprobe" auto-captures stdout (no need for captureStdout:true). Use captureStdout:true only for ffmpeg commands that write binary/data to stdout (output arg "-").',
       'See docs/FFMPEG.md#cookbook for 16 copy-paste recipes.',
     ],
     parameters: buildQueryEnvelopeSchema(Type, buildParameters(Type), {
@@ -212,9 +221,17 @@ export function registerRunFfmpegTool(
 
           const resolvedArgs = resolveArgvPaths(stringArgs, cwd);
           const timeoutMs = clampInt(query['timeoutSec'], 1, 1800, 120)! * 1000;
-          const captureStdout = query['captureStdout'] === true;
+          // ffprobe writes its output (JSON/text) to stdout, not stderr.
+          // Auto-enable captureStdout for ffprobe so output is never silently lost
+          // or rejected with a misleading 'exceeded 0MB' error.
+          const captureStdout = query['captureStdout'] === true || binaryName === 'ffprobe';
 
-          const result = await runBinary(bin, resolvedArgs, {
+          // -nostdin prevents ffmpeg from blocking on stdin prompts (e.g. 'Overwrite? [y/N]'
+          // when -y is omitted). -hide_banner suppresses the version banner in stderr.
+          // Both are safe for every command; prepended before user args.
+          const finalArgs = ['-hide_banner', '-nostdin', ...resolvedArgs];
+
+          const result = await runBinary(bin, finalArgs, {
             cwd,
             signal: batchSignal,
             timeoutMs,

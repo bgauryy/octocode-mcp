@@ -7,7 +7,7 @@ import { closeConfiguration, openMcpManager } from '../src/tools/mcp-html.js';
 import * as opener from '../src/tools/local-url-opener.js';
 import { stopLocalServer } from '../src/tools/local-server.js';
 import { getFooterDensity, setFooterDensity } from '../src/ui-extras.js';
-import { getPermissionLevel, setPermissionLevel } from '../src/tools/approval.js';
+import { getPermissionLevel } from '../src/tools/approval.js';
 import { resetDialStateForTests } from '../src/tools/effort-dial.js';
 import type { PiContext, PiInstance } from '../src/types.js';
 
@@ -18,7 +18,6 @@ afterEach(() => {
   stopLocalServer();
   vi.restoreAllMocks();
   setFooterDensity('compact');
-  setPermissionLevel('default');
   resetDialStateForTests();
   if (originalHome === undefined) delete process.env['OCTOCODE_HOME']; else process.env['OCTOCODE_HOME'] = originalHome;
   if (originalWorkers === undefined) delete process.env['OCTOCODE_AGENT_MAX_ACTIVE']; else process.env['OCTOCODE_AGENT_MAX_ACTIVE'] = originalWorkers;
@@ -76,7 +75,7 @@ test('configuration opens the system browser, applies controls, rejects stale ac
   assert.equal((await post(result.url, token, { action: 'set-effort', level: 'high', expectedRevision: '2' })).status, 200);
   assert.equal(thinking.length, 1);
   assert.equal((await post(result.url, token, { action: 'set-permission-level', level: 'strict', expectedRevision: '3' })).status, 200);
-  assert.equal(getPermissionLevel(), 'strict');
+  assert.equal(getPermissionLevel(ctx), 'strict');
   const reopened = await openMcpManager(ctx, [], 'overview', [], pi);
   assert.ok(reopened.url);
   assert.notEqual(await tokenFrom(reopened.url), token);

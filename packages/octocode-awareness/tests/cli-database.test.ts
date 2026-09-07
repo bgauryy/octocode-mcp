@@ -19,7 +19,7 @@ describe('database consolidation source CLI', () => {
     const result = run('database', 'consolidate', '--help');
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('database consolidate --source <existing-file> --destination <new-file>');
-    expect(result.stdout).toContain('--unattributed-agent-id <actor>');
+    expect(result.stdout).toContain('exact current canonical database');
   });
 
   it('returns a structured error before opening an incomplete command', () => {

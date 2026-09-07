@@ -1,4 +1,6 @@
 import type { DatabaseSync } from '@octocodeai/agent-contracts/sqlite';
+import { runHistoryCommand } from './cli-history.js';
+import { HistoryError } from '../src/history-store.js';
 import { connectDb, resolveDbPath } from '../src/db-runtime.js';
 import { mineWeakness } from '../src/memory-weakness.js';
 import { pruneStale } from '../src/maintenance-stale.js';
@@ -205,6 +207,11 @@ try {
 export let exitCode = 0;
 try {
   switch (command) {
+    case 'history_status': case 'history_capture': case 'history_checkpoint': case 'history_timeline':
+    case 'history_read': case 'history_restore_preview': case 'history_restore_apply': {
+      const result = await runHistoryCommand(db, command, args);
+      exitCode = emit(result, result.ok === false ? 2 : 0, opts); break;
+    }
     case 'tell-memory':    exitCode = cmdTellMemory(db, args, dbPath, opts); break;
     case 'get-memory':     exitCode = cmdGetMemory(db, args, dbPath, opts); break;
     case 'reflect':        exitCode = cmdReflect(db, args, dbPath, opts); break;
@@ -351,7 +358,8 @@ try {
   // Domain errors thrown from src/* land here; emit() attaches the same
   // {command,schema,example} context that flag-parse errors get from die().
   exitCode = emit({
-    error: err instanceof Error ? err.message : String(err),
+    ...(err instanceof HistoryError ? { ok: false, error: { code: err.code, message: err.message } }
+      : { error: err instanceof Error ? err.message : String(err) }),
   }, 1, opts);
 }
 

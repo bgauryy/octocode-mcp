@@ -62,15 +62,29 @@ export function registerWebTool(
         }),
       ),
       engine: Type.Optional(
-        Type.String({
-          description:
-            'Search: force a provider \u2014 "tavily", "serper", "exa", or "duckduckgo" (default: auto by available key).',
-        }),
+        Type.Union(
+          [
+            Type.Literal('tavily'),
+            Type.Literal('serper'),
+            Type.Literal('exa'),
+            Type.Literal('duckduckgo'),
+          ],
+          {
+            description:
+              'Search: force a provider \u2014 "tavily", "serper", "exa", or "duckduckgo" (default: auto by available key).',
+          },
+        ),
       ),
       timeRange: Type.Optional(
-        Type.String({
-          description: 'Search: recency filter \u2014 "day", "week", "month", or "year".',
-        }),
+        Type.Union(
+          [
+            Type.Literal('day'),
+            Type.Literal('week'),
+            Type.Literal('month'),
+            Type.Literal('year'),
+          ],
+          { description: 'Search: recency filter \u2014 "day", "week", "month", or "year".' },
+        ),
       ),
       includeDomains: Type.Optional(
         Type.Array(Type.String(), {
@@ -83,10 +97,13 @@ export function registerWebTool(
         }),
       ),
       exaType: Type.Optional(
-        Type.String({
-          description:
-            'Search (Exa): result type \u2014 "auto" (default), "neural", or "keyword". "neural" for semantic/AI-native queries; "keyword" for exact-match.',
-        }),
+        Type.Union(
+          [Type.Literal('auto'), Type.Literal('neural'), Type.Literal('keyword')],
+          {
+            description:
+              'Search (Exa): result type \u2014 "auto" (default), "neural", or "keyword". "neural" for semantic/AI-native queries; "keyword" for exact-match.',
+          },
+        ),
       ),
       exaCategory: Type.Optional(
         Type.String({
@@ -107,15 +124,26 @@ export function registerWebTool(
     name: 'web',
     label: 'Web',
     description:
-        'Browse the live web. Pass one or more queries[], each with reasoning plus either `url` (fetch page as text) or `query` (web search). ' +
-        'Use queryRunType:"parallel" for independent reads; sequential remains the default. ' +
-      'Search returns ranked {title, url, snippet} results plus an AI answer when available. ' +
-      'Search uses the best configured provider (Tavily \u2192 Serper \u2192 Exa \u2192 DuckDuckGo); set a key in ~/.octocode/.env to upgrade. Use engine:"exa" for AI-native neural/academic search. ' +
-      'Use for docs, changelogs, error messages, and current info beyond the codebase and training data.',
+      'Browse the live web. Accepts one or more queries[] (parallel or sequential); each query needs reasoning plus exactly one of ' +
+      '`url` (fetch a page as readable text) or `query` (web search). When both are given, url takes precedence. ' +
+      'Fetch: converts HTML to plain text, supports page:N pagination, enforces a 15s deadline per request. ' +
+      'Search: uses the best available provider \u2014 Tavily \u2192 Serper \u2192 Exa \u2192 DuckDuckGo (auto by available API key); ' +
+      'returns {title, url, snippet} results plus an AI answer when available; enforces a 30s deadline. ' +
+      'Use engine:"exa" for neural/academic search. ' +
+      'SSRF-hardened: private IPs, loopback, link-local, and metadata addresses (169.254.169.254 etc.) are blocked. ' +
+      'Use for docs, changelogs, error messages, live prices, and current info beyond the codebase and training data.',
     promptSnippet: 'Search the web or fetch and read a page',
     promptGuidelines: [
       'Prefer Octocode/local tools for code and packages; use web for external docs, news, and live info. ' +
         'Search with `query` to discover, then read the best hit with `url`.',
+      'Provide exactly one of url or query per query item. When both are given, url takes precedence and query is ignored.',
+      'Pagination: when a fetch result shows truncated: true, re-call the same url with page: 2, page: 3 \u2026 to continue. Each page is maxChars chars.',
+      'Blocked or thin pages: if a fetch returns a bot-challenge, 403, or near-empty content, try the URL from a search snippet, a docs-subdomain variant, or search instead of fetching directly.',
+      'DuckDuckGo (the no-key fallback) frequently returns bot-challenge errors. ' +
+        'Set TAVILY_API_KEY, SERPER_API_KEY, or EXA_API_KEY in ~/.octocode/.env for reliable results.',
+      'includeDomains and excludeDomains are Tavily-only \u2014 they are silently ignored by Serper, Exa, and DuckDuckGo.',
+      'Timeouts are built-in and fixed: 15s per fetch (headers + body + all redirects), 30s for search API calls. They cannot be overridden by the agent.',
+      'engine must be one of: tavily, serper, exa, duckduckgo (all lowercase). An unrecognised value falls back to the auto-ladder.',
     ],
     parameters,
 
@@ -130,8 +158,18 @@ export function registerWebTool(
         raw: params,
         signal,
         onUpdate: typeof onUpdate === 'function' ? onUpdate as (update: ToolCallResult) => void : undefined,
-          passthroughSingle: true,
-          allowParallel: true,
+        passthroughSingle: true,
+        allowParallel: true,
+        preflight(query) {
+          const hasUrl = typeof query['url'] === 'string' && (query['url'] as string).trim().length > 0;
+          const hasQuery = typeof query['query'] === 'string' && (query['query'] as string).trim().length > 0;
+          if (!hasUrl && !hasQuery) {
+            throw new Error(
+              'web requires either url (to fetch a page) or query (to search). ' +
+              'Both are missing — provide exactly one.',
+            );
+          }
+        },
         async execute(query, _index, _callId, batchSignal) {
           ensureWebEnv();
           const out = await runWebTool(

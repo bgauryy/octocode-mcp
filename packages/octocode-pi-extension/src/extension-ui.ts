@@ -2,7 +2,7 @@ import {
   approvedClasses,
   getPermissionLevel,
 } from './tools/approval.js';
-import { getCachedAwarenessStatus } from './tools/awareness-status.js';
+import { buildAwarenessFooterSegments, getCachedAwarenessStatus } from './tools/awareness-status.js';
 import {
   listVisibleWorkerLedgerEntries,
 } from './tools/agent-tools.js';
@@ -11,7 +11,7 @@ import { getActiveDialLevel } from './tools/effort-dial.js';
 import { peerWipCount } from './tools/peer-wip.js';
 import { makeComponentRenderer } from './tools/render-helpers.js';
 import {
-  activityPresentation,
+  runtimeActivityPresentation,
   runtimeStoreFor,
   setManagedFooter,
   setManagedStatus,
@@ -122,7 +122,7 @@ function buildOctocodeFooterLines(
   const agentRows = buildAgentFooterRows(listVisibleWorkerLedgerEntries(), now).rows;
   const planSegments = buildPlanFooterSegments(getCurrentPlanReadModel(ctx, activePlanScope(ctx)));
   const runtimeState = runtimeStoreFor(ctx)?.getState();
-  const activity = runtimeState ? activityPresentation(runtimeState.activity) : undefined;
+  const activity = runtimeState ? runtimeActivityPresentation(runtimeState) : undefined;
   const cachedAwareness = getCachedAwarenessStatus(ctx.cwd ?? process.cwd());
   // ── Row 1: Identity (branch · model · github · perm) + /configuration ──
   // The app already owns the Octocode brand; repeating it in every footer frame
@@ -145,9 +145,9 @@ function buildOctocodeFooterLines(
   } else if (state.githubAuth.status === 'checking') {
     identityParts.push({ text: 'github …', token: 'dim' });
   }
-  const permLevel = getPermissionLevel();
+  const permLevel = getPermissionLevel(ctx);
   if (permLevel) {
-    const grants = approvedClasses().length > 0 ? ` +${approvedClasses().length}` : '';
+    const grants = approvedClasses(ctx).length > 0 ? ` +${approvedClasses(ctx).length}` : '';
     identityParts.push({ text: `perm ${permLevel}${grants}`, token: permLevel === 'relaxed' ? 'warning' : 'dim' });
   }
   identityParts.unshift({ text: '/configuration', token: 'link' });
@@ -164,7 +164,7 @@ function buildOctocodeFooterLines(
     workerTotal: 0,
     agentDoing: undefined,
     awarenessPeers: cachedAwareness?.agentCount ?? 0,
-    awarenessUnread: cachedAwareness?.unreadInbox ?? 0,
+    awarenessUnread: 0, // The attention row owns unread state.
     peerDirty: peerWipCount(),
     blockedWorkers: 0,
     failedWorkers: 0,
@@ -204,14 +204,8 @@ function buildOctocodeFooterLines(
         ...(activity?.status
         ? [{
             text: activity.status,
-            token: runtimeState?.activity.kind === 'failed'
-              ? 'error' as const
-              : runtimeState?.activity.kind === 'blocked' || runtimeState?.activity.kind === 'awaiting_input'
-                ? 'warning' as const
-                : runtimeState?.activity.kind === 'complete'
-                  ? 'success' as const
-                  : 'brand' as const,
-            attention: runtimeState?.activity.kind === 'failed' || runtimeState?.activity.kind === 'blocked' || runtimeState?.activity.kind === 'awaiting_input',
+            token: activity.token,
+            attention: activity.attention,
           }]
         : state.activeTurnStartedAt !== undefined
           ? [{ text: `${WORKING_WORD}…`, token: 'brand' as const }]
@@ -219,6 +213,7 @@ function buildOctocodeFooterLines(
         context,
       ],
       planSegments,
+      buildAwarenessFooterSegments(cachedAwareness, runtimeState?.statuses['octocode-awareness-events']),
       identityParts,
       metricsSegments,
     ],

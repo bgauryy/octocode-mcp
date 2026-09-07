@@ -12,6 +12,7 @@ import {
   flashTerminalTitle,
   isTitleFlashPendingForTests,
   notificationsEnabled,
+  notifyDesktopAttention,
   resumeDesktopNotificationsForTests,
   suppressDesktopNotifications,
 } from '../src/tools/desktop-notify.js';
@@ -40,6 +41,28 @@ test('notificationsEnabled: explicit opt-out values win', () => {
 test('notificationsEnabled: unset falls back to stdout TTY detection', () => {
   const expected = process.stdout?.isTTY === true;
   assert.equal(notificationsEnabled({} as NodeJS.ProcessEnv), expected);
+});
+
+test('attention notices honor mute, noninteractive mode, and shutdown suppression', () => {
+  const previous = process.env.OCTOCODE_NOTIFY;
+  const writes: string[] = [];
+  const write = (text: string) => { writes.push(text); };
+  try {
+    process.env.OCTOCODE_NOTIFY = '0';
+    notifyDesktopAttention({ hasUI: true, mode: 'tui' }, 'Input needed', write);
+    process.env.OCTOCODE_NOTIFY = '1';
+    notifyDesktopAttention({ hasUI: false }, 'Input needed', write);
+    notifyDesktopAttention({ hasUI: true, mode: 'rpc' }, 'Input needed', write);
+    assert.equal(writes.length, 0);
+    notifyDesktopAttention({ hasUI: true, mode: 'tui' }, 'Input needed', write);
+    assert.equal(writes.length, 1);
+    suppressDesktopNotifications();
+    notifyDesktopAttention({ hasUI: true, mode: 'tui' }, 'Input needed', write);
+    assert.equal(writes.length, 1);
+  } finally {
+    if (previous === undefined) delete process.env.OCTOCODE_NOTIFY;
+    else process.env.OCTOCODE_NOTIFY = previous;
+  }
 });
 
 // ─── emitOsc9 ─────────────────────────────────────────────────────────────────

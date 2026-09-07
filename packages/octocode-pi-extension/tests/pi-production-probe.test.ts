@@ -4,10 +4,9 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createPiSdkScenarioSuite,
+  createProductionPiScenarioSuite,
   type ProductionPiScenarioId,
-} from "../src/adapters/pi-production-probe.js";
-import { createOctocodePiExtension } from "../src/index.js";
-import { APPROVED_PI_HOST_VERSION } from "../src/adapters/pi-host-compatibility.js";
+} from "../src/testing.js";
 
 const roots: string[] = [];
 
@@ -125,10 +124,7 @@ describe("Pi production scenario probe", () => {
   }, 30_000);
 
   it("composes the deterministic probe with the production Octocode Pi extension", async () => {
-    const suite = createPiSdkScenarioSuite(
-      fixture(),
-      createOctocodePiExtension({ hostVersion: APPROVED_PI_HOST_VERSION }),
-    );
+    const suite = createProductionPiScenarioSuite(fixture());
     const receipt = await suite.scenarioProbes["deterministic-model-turn"]!({
       scenario: { id: "deterministic-model-turn" },
       signal: new AbortController().signal,
@@ -142,10 +138,7 @@ describe("Pi production scenario probe", () => {
   }, 20_000);
 
   it("preserves the production extension durable entry count outside parity events", async () => {
-    const suite = createPiSdkScenarioSuite(
-      fixture(),
-      createOctocodePiExtension({ hostVersion: APPROVED_PI_HOST_VERSION }),
-    );
+    const suite = createProductionPiScenarioSuite(fixture());
     const receipt = await suite.scenarioProbes["persistence-restart"]!({
       scenario: { id: "persistence-restart" },
       signal: new AbortController().signal,

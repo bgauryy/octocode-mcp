@@ -46,9 +46,9 @@ describe('cross-editor hook installation', () => {
         String(item.command).includes('hook-runner.mjs'));
       expect(awareness).toMatchObject({
         type: 'command',
-        matcher: '^(?:create|edit|str_replace_editor|apply_patch)$',
         timeoutSec: 20,
       });
+      expect(awareness).not.toHaveProperty('matcher');
       expect(awareness.command).toContain('pre-edit --host copilot --skill-root');
       expect(awareness).not.toHaveProperty('hooks');
       expect(awareness).not.toHaveProperty('timeout');
@@ -127,9 +127,9 @@ describe('cross-editor hook installation', () => {
       const awareness = settings.hooks.BeforeTool.find((item: Record<string, any>) =>
         item.hooks?.some((hook: Record<string, unknown>) => String(hook.command).includes('hook-runner.mjs')));
       expect(awareness).toMatchObject({
-        matcher: '^(?:write_file|replace|run_shell_command)$',
         hooks: [{ type: 'command', timeout: 20_000 }],
       });
+      expect(awareness).not.toHaveProperty('matcher');
       expect(awareness.hooks[0].command).toContain('pre-edit --host gemini --skill-root');
 
       const checked = runHooksInstall([

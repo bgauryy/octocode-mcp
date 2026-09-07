@@ -73,18 +73,18 @@ describe('external-agent integration boundary', () => {
     expect(EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS).not.toContain('compatibility default is global');
     expect(execCli(['instructions', 'export'])).toEqual({
       code: 0,
-      stdout: `${EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS}\n`,
+      stdout: `${EXTERNAL_AGENT_AWARENESS_PROMPT}\n`,
       stderr: '',
     });
 
     const agentsMd = formatExternalAgentAwarenessInstructions('agents-md');
     expect(agentsMd).toContain(EXTERNAL_AGENT_AWARENESS_MARKER_START);
-    expect(agentsMd).toContain(EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS);
+    expect(agentsMd).toContain(EXTERNAL_AGENT_AWARENESS_PROMPT);
     expect(agentsMd).toContain(EXTERNAL_AGENT_AWARENESS_MARKER_END);
     expect(execCli(['instructions', 'export', '--format', 'agents-md']).stdout).toBe(`${agentsMd}\n`);
     expect(JSON.parse(execCli(['instructions', 'export', '--format', 'json']).stdout)).toEqual({
       format: 'prompt',
-      instructions: EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS,
+      instructions: EXTERNAL_AGENT_AWARENESS_PROMPT,
     });
     expect(execCli(['instructions', 'export', '--format', 'bad'])).toMatchObject({
       code: 1,

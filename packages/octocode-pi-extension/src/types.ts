@@ -269,6 +269,8 @@ export interface NewSessionOptions {
 
 export interface PiModel {
   id?: string;
+  /** Provider-declared model input limit used to validate host context usage. */
+  contextWindow?: number;
   reasoning?: boolean;
   /** Provider transport used by Pi's model adapter. */
   api?: string;

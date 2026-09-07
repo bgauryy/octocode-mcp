@@ -213,5 +213,6 @@ export function projectMemoryLean(memory: MemoryRecord): Record<string, unknown>
     result['score'] = Math.round(memory.score * 10_000) / 10_000;
   }
   if (memory.failure_signature) result['failure_signature'] = memory.failure_signature;
+  if (memory.evidence) result['evidence'] = memory.evidence;
   return result;
 }

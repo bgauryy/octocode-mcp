@@ -52,6 +52,7 @@ export function cmdTellMemory(db: DatabaseSync, args: ParsedArgs, dbPath: string
     repo: args['repo'] ? String(args['repo']) : null,
     ref: args['ref'] ? String(args['ref']) : null,
     fileTreeFingerprint: args['file_tree_fingerprint'] ? String(args['file_tree_fingerprint']) : null,
+    captureFingerprint: args['capture_fingerprint'] === true,
   }, Boolean(args['allow_similar']));
 
   if (guarded.skipped) {
@@ -124,6 +125,7 @@ export function cmdGetMemory(db: DatabaseSync, args: ParsedArgs, dbPath: string,
     fileRegex,
     files: getFiles,
     explain: Boolean(args['explain']),
+    checkFingerprint: args['check_fingerprint'] === true,
   };
   const payload: Record<string, unknown> = {
     db_path: dbPath,

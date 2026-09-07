@@ -23,7 +23,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { getOctocodeHome } from '@octocodeai/config';
 import { extensionHome, extensionTmpRoot } from '../extension-paths.js';
 import { KEYWORD_MATCH_THRESHOLD, tokenize, withRegistryLock, writeJsonAtomic, readJsonSafe } from './registry-store.js';
@@ -102,6 +102,7 @@ export type RunResult =
         | 'checksum-mismatch'
         | `capability-denied:${Capability}`
         | 'exec-failed'
+        | 'exec-aborted'
         | 'exec-timeout'
         | 'bad-output';
       detail?: string;
@@ -132,6 +133,7 @@ function readFromCache(key: string): unknown {
 
 const DEFAULT_RUN_TIMEOUT_MS = 5_000;
 const DEFAULT_TEST_TIMEOUT_MS = 15_000;
+const MAX_CHILD_STREAM_BYTES = 1024 * 1024;
 const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
 
 // ─── paths ──────────────────────────────────────────────────────────────────
@@ -365,13 +367,15 @@ function rollback(
  *   - hard timeout: a runaway tool is killed
  * The tool receives `metadata` as JSON on stdin and returns its result as JSON stdout.
  */
-export function runDynamicTool(
+export async function runDynamicTool(
   entry: ToolManifestEntry,
   metadata: unknown,
-  opts: { allow?: Capability[]; timeoutMs?: number } = {},
-): RunResult {
+  opts: { allow?: Capability[]; timeoutMs?: number; signal?: AbortSignal } = {},
+): Promise<RunResult> {
   const allow = opts.allow ?? [];
   const timeoutMs = opts.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
+
+  if (opts.signal?.aborted) return { ok: false, reason: 'exec-aborted' };
 
   if (!fs.existsSync(entry.entry)) return { ok: false, reason: 'not-found' };
   const src = fs.readFileSync(entry.entry, 'utf8');
@@ -427,18 +431,9 @@ export function runDynamicTool(
   const { args, env } = buildRunInvocation(runnerRealPath, toolRealPath, entry, allow);
 
   try {
-    const res = spawnSync(process.execPath, args, {
-      encoding: 'utf8',
-      timeout: timeoutMs,
-      env,
-      input: JSON.stringify(metadata ?? {}),
-    });
-    if (res.error && (res.error as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
-      return { ok: false, reason: 'exec-timeout' };
-    }
-    if (res.status !== 0) {
-      return { ok: false, reason: 'exec-failed', detail: (res.stderr || '').trim().slice(0, 500) };
-    }
+    const res = await runChild(process.execPath, args, env, JSON.stringify(metadata ?? {}), timeoutMs, opts.signal);
+    if (res.reason) return { ok: false, reason: res.reason, detail: res.detail };
+    if (res.status !== 0) return { ok: false, reason: 'exec-failed', detail: res.stderr.trim().slice(0, 500) };
     try {
       const parsed = JSON.parse(res.stdout);
       if (cacheable) storeInCache(cacheKey, parsed);
@@ -449,6 +444,98 @@ export function runDynamicTool(
   } finally {
     fs.rmSync(runnerDir, { recursive: true, force: true });
   }
+}
+
+interface ChildResult {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  reason?: 'exec-failed' | 'exec-timeout' | 'exec-aborted';
+  detail?: string;
+}
+
+function runChild(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  input: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<ChildResult> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve({ status: null, stdout: '', stderr: '', reason: 'exec-aborted' });
+      return;
+    }
+    // A separate process group lets timeout/abort terminate subprocesses launched
+    // by an exec-capable dynamic tool along with the Node runner on POSIX.
+    const processGroup = process.platform !== 'win32';
+    const child = spawn(command, args, { env, stdio: ['pipe', 'pipe', 'pipe'], detached: processGroup });
+    let stdout = '';
+    let stderr = '';
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let stopReason: ChildResult['reason'];
+    let stopDetail: string | undefined;
+    let settled = false;
+    const timer = setTimeout(() => stop('exec-timeout'), timeoutMs);
+    timer.unref?.();
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      child.stdout.removeAllListeners();
+      child.stderr.removeAllListeners();
+      child.stdin.removeAllListeners();
+    };
+    const finish = (result: ChildResult) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+    const stop = (reason: NonNullable<ChildResult['reason']>, detail?: string) => {
+      if (settled || stopReason) return;
+      stopReason = reason;
+      stopDetail = detail;
+      let groupKilled = false;
+      if (processGroup && child.pid) {
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+          groupKilled = true;
+        } catch {
+          // The group may have already exited; fall back to the direct child.
+        }
+      }
+      if (!groupKilled) child.kill('SIGKILL');
+    };
+    const onAbort = () => stop('exec-aborted');
+
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdoutBytes += Buffer.byteLength(chunk);
+      if (stdoutBytes > MAX_CHILD_STREAM_BYTES) {
+        stop('exec-failed', `stdout exceeded ${MAX_CHILD_STREAM_BYTES} byte limit`);
+        return;
+      }
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderrBytes += Buffer.byteLength(chunk);
+      if (stderrBytes > MAX_CHILD_STREAM_BYTES) {
+        stop('exec-failed', `stderr exceeded ${MAX_CHILD_STREAM_BYTES} byte limit`);
+        return;
+      }
+      stderr += chunk;
+    });
+    child.stdin.on('error', () => undefined);
+    child.on('error', (error) => finish({ status: null, stdout, stderr, reason: stopReason ?? 'exec-failed', detail: stopDetail ?? error.message }));
+    child.on('close', (status) => finish({ status, stdout, stderr, reason: stopReason, detail: stopDetail }));
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+    child.stdin.end(input);
+  });
 }
 
 /** Resolve a path's realpath, falling back to the resolved absolute path. */

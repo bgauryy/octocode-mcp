@@ -1,3 +1,4 @@
+import type { AssembledContextV1 } from './context-segments.js';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 
 export type RuntimePhase = 'idle' | 'initializing' | 'ready' | 'degraded' | 'failed' | 'disposing' | 'disposed';
@@ -61,6 +62,10 @@ export interface RuntimeContextState {
   directToolChars: number;
   providerSubtotalChars: number;
   estimatedTokens: number;
+  /** Payload-free character estimates, distinct from provider billing. */
+  contextAwarenessEstimates?: AssembledContextV1['estimates'];
+  /** Latest delivered body estimate only; replay replaces rather than accumulating. */
+  lastPeerDeliveryEstimate?: { method: 'ceil-utf16-chars/4'; sequence: number; tokens: number };
   mcpServers: number;
   mcpTools: number;
   skills: number;
@@ -70,6 +75,9 @@ export interface RuntimeContextState {
 
 export interface RuntimeFooterState {
   sessionStartedAt: number;
+  /** Transient execution only; tool results remain in their transcript rows. */
+  toolCalls?: Array<{ id: string; name: string }>;
+  compacting?: boolean;
   activeTurnStartedAt?: number;
   lastTurnMs?: number;
   completedTurns: number;

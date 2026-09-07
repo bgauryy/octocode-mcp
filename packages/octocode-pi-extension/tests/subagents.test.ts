@@ -15,14 +15,13 @@ import path from 'node:path';
 import os from 'node:os';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
-  getExternalSkillDirs,
   resolveSubagentSkills,
   SUBAGENT_REGISTRY,
 } from '../src/subagents.js';
 
-// ─── getExternalSkillDirs ─────────────────────────────────────────────────────
+// ─── canonical discovery reuse ────────────────────────────────────────────────
 
-describe('getExternalSkillDirs', () => {
+describe('canonical subagent skill discovery', () => {
   let tmpDir: string;
   let originalCwd: string;
 
@@ -38,34 +37,11 @@ describe('getExternalSkillDirs', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('is a named export — not a frozen IIFE result', () => {
-    expect(typeof getExternalSkillDirs).toBe('function');
-  });
-
-  it('includes <cwd>/.agents/skills relative to the CURRENT working directory', () => {
-    process.chdir(tmpDir);
-    const dirs = getExternalSkillDirs();
-    expect(dirs).toContain(path.join(tmpDir, '.agents', 'skills'));
-  });
-
-  it('returns a different .agents/skills path when cwd changes between calls', () => {
-    const dirsAtStart = getExternalSkillDirs();
-    process.chdir(tmpDir);
-    const dirsAfterChdir = getExternalSkillDirs();
-
-    const cwdPathAtStart = dirsAtStart.find(d => d.endsWith(path.join('.agents', 'skills')));
-    const cwdPathAfter = dirsAfterChdir.find(d => d.endsWith(path.join('.agents', 'skills')));
-
-    // After chdir the cwd-relative path resolves under tmpDir, not the original cwd
-    expect(cwdPathAtStart).not.toBe(cwdPathAfter);
-    expect(cwdPathAfter).toBe(path.join(tmpDir, '.agents', 'skills'));
-  });
-
-  it('always includes the ~/.pi/agent/skills root when HOME is set', () => {
-    const home = process.env.HOME;
-    if (!home) return; // skip if HOME is unset in this env
-    const dirs = getExternalSkillDirs();
-    expect(dirs).toContain(path.join(home, '.pi', 'agent', 'skills'));
+  it('discovers any valid skill name rather than a fixed Octocode allowlist', () => {
+    const skillDir = path.join(tmpDir, '.agents', 'skills', 'future-octocode-workflow');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: future-octocode-workflow\ndescription: Future workflow.\n---\n');
+    expect(resolveSubagentSkills(SUBAGENT_REGISTRY.researcher, tmpDir)).toContain(skillDir);
   });
 });
 
@@ -137,24 +113,23 @@ describe('resolveSubagentSkills', () => {
   });
 
   it('discovers a skill installed in <cwd>/.agents/skills at CALL TIME (not import time)', () => {
-    // Create a fake octocode-research skill dir AFTER module was already loaded
-    const skillDir = path.join(tmpDir, '.agents', 'skills', 'octocode-research');
+    // Create a skill AFTER the module was already loaded.
+    const skillDir = path.join(tmpDir, '.agents', 'skills', 'late-installed-workflow');
     fs.mkdirSync(skillDir, { recursive: true });
-    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# octocode-research\n');
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: late-installed-workflow\ndescription: Late workflow.\n---\n');
 
-    process.chdir(tmpDir);
-    const skills = resolveSubagentSkills(SUBAGENT_REGISTRY['researcher']);
-    expect(skills.some(s => s.includes('octocode-research'))).toBe(true);
+    const skills = resolveSubagentSkills(SUBAGENT_REGISTRY['researcher'], tmpDir);
+    expect(skills).toContain(skillDir);
   });
 
   it('includes one usable Awareness skill for every typed profile', () => {
     const skillDir = path.join(tmpDir, '.agents', 'skills', 'octocode-awareness');
     fs.mkdirSync(skillDir, { recursive: true });
-    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# octocode-awareness\n');
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: octocode-awareness\ndescription: Coordinate shared work.\n---\n');
 
     process.chdir(tmpDir);
     for (const profile of Object.values(SUBAGENT_REGISTRY)) {
-      const skills = resolveSubagentSkills(profile).filter(s => path.basename(s) === 'octocode-awareness');
+      const skills = resolveSubagentSkills(profile, tmpDir).filter(s => path.basename(s) === 'octocode-awareness');
       expect(skills).toHaveLength(1);
       expect(fs.existsSync(path.join(skills[0]!, 'SKILL.md'))).toBe(true);
     }

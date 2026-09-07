@@ -7,9 +7,8 @@ import { truncateToWidth, visibleWidth } from '../tui/width.js';
  * sees a line whose visible width exceeds the terminal width.
  */
 
-import { truncatePlainToWidth } from '../tools/render-helpers.js';
 import { BETA_ISSUES_PREFIX, BETA_ISSUES_URL, BETA_LABEL, TAGLINE } from '../tui/content.js';
-import { paint, SEP, type SemanticToken } from '../tui/palette.js';
+import { paint, SEP } from '../tui/palette.js';
 
 // ─── Minimal theme interface ──────────────────────────────────────────────────
 
@@ -22,58 +21,39 @@ export interface BannerTheme {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 
-/**
- * Octocode banner art: the block-style OCTOCODE CODE wordmark
- * (figlet "ANSI Shadow" face) painted by renderWordmarkLines with a
- * theme-aware lavender and purple gradient.
- */
-const WORDMARK_ART: readonly string[] = [
-  ' ██████╗  ██████╗████████╗ ██████╗  ██████╗ ██████╗ ██████╗ ███████╗   ██████╗ ██████╗ ██████╗ ███████╗',
-  '██╔═══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔════╝██╔═══██╗██╔══██╗██╔════╝  ██╔════╝██╔═══██╗██╔══██╗██╔════╝',
-  '██║   ██║██║        ██║   ██║   ██║██║     ██║   ██║██║  ██║█████╗    ██║     ██║   ██║██║  ██║█████╗',
-  '██║   ██║██║        ██║   ██║   ██║██║     ██║   ██║██║  ██║██╔══╝    ██║     ██║   ██║██║  ██║██╔══╝',
-  '╚██████╔╝╚██████╗   ██║   ╚██████╔╝╚██████╗╚██████╔╝██████╔╝███████╗  ╚██████╗╚██████╔╝██████╔╝███████╗',
-  ' ╚═════╝  ╚═════╝   ╚═╝    ╚═════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝   ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝',
+/** Each word is a separate paint span at every terminal width. */
+const OCTOCODE_ART: readonly string[] = [
+    ' ██████╗  ██████╗████████╗ ██████╗  ██████╗ ██████╗ ██████╗ ███████╗',
+    '██╔═══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔════╝██╔═══██╗██╔══██╗██╔════╝',
+    '██║   ██║██║        ██║   ██║   ██║██║     ██║   ██║██║  ██║█████╗  ',
+    '██║   ██║██║        ██║   ██║   ██║██║     ██║   ██║██║  ██║██╔══╝  ',
+    '╚██████╔╝╚██████╗   ██║   ╚██████╔╝╚██████╗╚██████╔╝██████╔╝███████╗',
+    ' ╚═════╝  ╚═════╝   ╚═╝    ╚═════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝',
+  ];
+const CODE_ART: readonly string[] = [
+  ' ██████╗ ██████╗ ██████╗ ███████╗',
+  '██╔════╝██╔═══██╗██╔══██╗██╔════╝',
+  '██║     ██║   ██║██║  ██║█████╗',
+  '██║     ██║   ██║██║  ██║██╔══╝',
+  '╚██████╗╚██████╔╝██████╔╝███████╗',
+  ' ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝',
 ];
-
-const WORDMARK_WIDTH = WORDMARK_ART.reduce((max, line) => Math.max(max, visibleWidth(line)), 0);
-
-/** Emoji lens+octopus mark prefixing the compact brand line (same glyphs as the HTML page / octocode CLI). */
-const BRAND_MARK_EMOJI = '🔍🐙';
-
-/** Product name shown after the emoji mark on the compact brand line. */
-const BRAND_NAME = 'Octocode';
-
-/** Static purple-family gradient used when the full wordmark cannot fit. */
-const COMPACT_BRAND_RAMP: readonly SemanticToken[] = [
-  'link',
-  'brand',
-  'title',
-  'muted',
-  'brand',
-  'link',
-  'title',
-  'muted',
-];
-
-// The active theme owns every brand color, including plain/light themes.
-// Use broad, static bands so identity stays calm and repaints stay deterministic.
-const WORDMARK_RAMP: readonly SemanticToken[] = ['link', 'brand', 'title', 'brand'];
+const OCTOCODE_WIDTH = Math.max(...OCTOCODE_ART.map(visibleWidth));
+const WORDMARK_WIDTH = OCTOCODE_WIDTH + 2 + Math.max(...CODE_ART.map(visibleWidth));
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
- * The banner art painted with the static theme gradient. Pure in (theme,
+ * The banner art painted with two solid, theme-owned colors. Pure in (theme,
  * width): identical input → byte-identical output, so repaints are free.
- * Width-safe: the PLAIN art is clipped first (truncatePlainToWidth injects no
- * SGR resets), then the surviving glyphs are painted.
+ * The art is shown only when both complete words fit.
  */
 export function renderWordmarkLines(theme: BannerTheme, width: number): string[] {
   // Narrow terminals: the art cannot survive a hard clip (each row degrades to
   // a mid-letter fragment + "…"), so below WORDMARK_WIDTH fall back to the
   // compact brand mark. Still pure in (theme, width) — no animation.
   //
-  // HEIGHT STABILITY: always return exactly WORDMARK_ART.length lines, even
+  // HEIGHT STABILITY: always return exactly OCTOCODE_ART.length lines, even
   // in compact mode. The banner is the FIRST entry in the transcript, so its
   // line number is 0 in the document. If its height changes (1 vs 6 lines)
   // on a terminal resize across the WORDMARK_WIDTH boundary, pi-tui's
@@ -82,28 +62,18 @@ export function renderWordmarkLines(theme: BannerTheme, width: number): string[]
   // strings keeps the height constant; the blank rows are invisible above
   // committed messages in a live session.
   if (width < WORDMARK_WIDTH) {
-    const name = [...BRAND_NAME]
-      .map((ch, index) => paint(theme, COMPACT_BRAND_RAMP[index] ?? 'brand', ch))
-      .join('');
-    const mark = `${BRAND_MARK_EMOJI} ${name}`;
+    const mark = `${paint(theme, 'brand', 'octocode')} ${paint(theme, 'brandAlt', 'code')}`;
     const lines: string[] = [truncateToWidth(mark, width)];
-    while (lines.length < WORDMARK_ART.length) lines.push('');
+    while (lines.length < OCTOCODE_ART.length) lines.push('');
     return lines;
   }
-  return WORDMARK_ART.map((line) => {
-    const clipped = truncatePlainToWidth(line, width);
-    return [...clipped].map((ch, col) => {
-      const stop = Math.min(WORDMARK_RAMP.length - 1,
-        Math.floor(col * WORDMARK_RAMP.length / WORDMARK_WIDTH));
-      return ch === ' ' ? ch : paint(theme, WORDMARK_RAMP[stop] ?? 'brand', ch);
-    }).join('');
-  });
+  return OCTOCODE_ART.map((line, row) =>
+    `${paint(theme, 'brand', line.padEnd(OCTOCODE_WIDTH))}  ${paint(theme, 'brandAlt', CODE_ART[row] ?? '')}`,
+  );
 }
 
 /**
- * Build the main Octocode banner block: the colored OCTOCODE wordmark topped
- * off with the official `🔍🐙 Octocode` brand line (same mark as the published
- * `octocode` CLI), which also carries the optional version.
+ * Build the two-color OCTOCODE CODE banner with an optional version row.
  *
  * Returns an array of width-safe strings (ANSI codes included) ready to be
  * passed to a pi TUI renderer. Each string is individually truncated to
@@ -132,13 +102,12 @@ export function renderTagline(theme: BannerTheme, width: number): string {
 }
 
 /**
- * Beta notice: gold label (this IS an act-on-me state — expect rough edges)
- * followed by a visible issue-tracker URL. Keep the URL literal instead of OSC 8
+ * Beta is release metadata, styled quietly beside the issue-tracker URL. Keep the URL literal instead of OSC 8
  * here: startup lines are width-sanitized/truncated, and raw URLs are more
  * reliable across terminals while still auto-linking in most emulators.
  */
 export function renderBetaNotice(theme: BannerTheme, width: number): string {
-  const line = `${paint(theme, 'warning', BETA_LABEL)} ${paint(theme, 'muted', `· ${BETA_ISSUES_PREFIX}`)} ${paint(theme, 'link', BETA_ISSUES_URL)}`;
+  const line = `${paint(theme, 'muted', BETA_LABEL)} ${paint(theme, 'muted', `· ${BETA_ISSUES_PREFIX}`)} ${paint(theme, 'link', BETA_ISSUES_URL)}`;
   return truncateToWidth(line, width);
 }
 

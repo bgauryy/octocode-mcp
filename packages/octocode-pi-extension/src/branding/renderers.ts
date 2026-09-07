@@ -88,7 +88,9 @@ export function withOctocodeRender<T extends ToolDefinition>(
         extractQueryResultRows(result).length > 1 &&
         !(own as { multiQueryAware?: boolean }).multiQueryAware
       ) {
-        return buildQueryResultRows(displayName, result, theme)!;
+        return opts?.expanded
+          ? buildOctocodeRenderResult(displayName, result, opts, theme, context)
+          : buildQueryResultRows(displayName, result, theme)!;
       }
       return own(result, opts, theme, context);
     };

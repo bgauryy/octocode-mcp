@@ -6,6 +6,7 @@ import { AWARENESS_COMMANDS } from './commands-spec.js';
 import { dispatchAwarenessCommand,type AwarenessCommandRequest } from './dispatch.js';
 import {
   EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS,
+  EXTERNAL_AGENT_AWARENESS_PROMPT,
   formatExternalAgentAwarenessInstructions,
   getExternalAgentAwarenessGuide,
 } from './external-policy.js';
@@ -205,7 +206,7 @@ function runCliInner(argv: string[], write: (chunk: string) => void): number {
     if (!['prompt', 'agents-md', 'json'].includes(format)) {
       throw new Error('instructions export --format must be prompt, agents-md, or json');
     }
-    if (format === 'json') print({ format: 'prompt', instructions: EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS });
+    if (format === 'json') print({ format: 'prompt', instructions: EXTERNAL_AGENT_AWARENESS_PROMPT });
     else write(`${formatExternalAgentAwarenessInstructions(format === 'agents-md' ? 'agents-md' : 'prompt')}\n`);
     return 0;
   }

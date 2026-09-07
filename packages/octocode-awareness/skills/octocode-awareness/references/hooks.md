@@ -24,17 +24,21 @@ Before installation, show the noncompact dry-run and obtain explicit approval. T
 
 For drift, preview removal, remove, reinstall, and strict-check. Configuration answers are not installation approval.
 
-## Write path
+## Tool path
 
-The following lifecycle describes the shared shell-hook runner. Pi uses its own native adapter: tool completion does not run checks or clear verification debt. Use observed receipts and `verify audit`; shared plan completion can consume its declared check receipt. Reflection and Awareness session capture remain explicit CLI workflows in Pi.
+The shared shell-hook runner validates and classifies generic read, write, shell, and MCP events. Coordination/full profiles inspect bounded communication at these boundaries; the guard profile remains limited to configured mutation matchers. A path in an unknown, read, shell, or MCP payload never makes it a write. Operation-bearing editor tools classify `view` as read and only known create/replace/insert operations as writes. Pi uses its own native adapter: tool completion does not run checks or clear verification debt; its unified-file semantics remain native until that adapter publishes an explicit contract. Use observed receipts and `verify audit`; shared plan completion can consume its declared check receipt. Reflection and Awareness session capture remain explicit CLI workflows in Pi.
 
-1. Extract deduplicated paths; no path is a no-op.
+Tool context on stdout is an offer through the host's event-specific response channel. It is not a persistence or model-consumption receipt. Events without a context channel queue their advisory for a later supported boundary. Unknown or nonterminal shell outcomes never become success receipts.
+
+## Write subscriber
+
+1. Classify a known workspace-write tool, then extract deduplicated targets; no target is a write-subscriber no-op.
 2. Evaluate the harness guard before DB presence.
 3. Resolve one TASK claim, matching WORK, or scoped HOOK fallback.
 4. Declare advisory work; real exclusivity blocks, ordinary overlap succeeds.
 5. Emit only changed overlap pointers.
 6. Log/heartbeat successful edits; failed writes create no success receipt.
-7. Stop, compact, or session end finalizes scoped HOOK work and audits debt.
+7. Stop, compact, or session end finalizes scoped HOOK work and audits debt. Inbox reads and notification delivery never finalize work.
 
 N edits in one scoped turn produce one pending HOOK with N files. TASK/WORK never merge into it. Correlation loss never marks success. Expiry removes stale coordination only.
 

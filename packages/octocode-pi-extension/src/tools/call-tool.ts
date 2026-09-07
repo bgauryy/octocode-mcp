@@ -21,6 +21,7 @@ import { buildToolView } from './render-helpers.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 import { spawnRpcAgent, waitForAgentTurn, isSubagentProcess, killWorkerById } from './agent-tools.js';
 import { requestApproval } from './approval.js';
+import { isAbortError, throwIfAborted } from './cancellation.js';
 import {
   resolveTool,
   registerGeneratedTool,
@@ -144,6 +145,7 @@ export interface GenerateArgs {
   existing?: ToolManifestEntry;
   model?: string;
   ctx?: PiContext;
+  signal?: AbortSignal;
 }
 
 export type ToolGenerator = (args: GenerateArgs) => Promise<GeneratedTool>;
@@ -178,7 +180,7 @@ function buildToolSmithPrompt(a: GenerateArgs): string {
   }
   lines.push(
     '',
-    'Before writing, briefly research and brainstorm: is there a Node built-in or a well-known, robust approach for this? Prefer the simplest correct design. Do NOT reinvent what the platform already provides.',
+    'Before writing, reason about whether a Node built-in or a well-known, robust approach fits. Prefer the simplest correct design. Do NOT reinvent what the platform already provides.',
     '',
     'Requirements:',
     '- Emit a self-contained ES module with a default export: `export default async function (metadata) { ... }` that returns a JSON-serializable value.',
@@ -258,7 +260,7 @@ const defaultGenerator: ToolGenerator = async (a) => {
     // Progress-aware: reset on every event and probe on quiet gaps so a long-but-
     // active tool-smith turn runs to completion, with an absolute backstop against
     // a genuinely hung worker wedging the main process.
-    await waitForAgentTurn(record, { maxSilenceMs: 120_000, absoluteCapMs: 600_000 });
+    await waitForAgentTurn(record, { maxSilenceMs: 120_000, absoluteCapMs: 600_000, signal: a.signal });
     const output = record.lastOutput || record.stderr || '';
     return parseGeneratedTool(output, a.toolType);
   } finally {
@@ -292,12 +294,17 @@ function stripReservedKeys(metadata: Record<string, unknown>): Record<string, un
   return rest;
 }
 
-async function approveSandboxOptOut(ctx: PiContext | undefined, toolType: string, intent: string) {
+async function approveSandboxOptOut(
+  ctx: PiContext | undefined,
+  toolType: string,
+  intent: string,
+  signal?: AbortSignal,
+) {
   return await requestApproval(ctx, {
     actionClass: 'system',
     title: 'Create non-sandboxed dynamic tool',
     detail: [`toolType: ${toolType}`, intent ? `intent: ${intent}` : undefined].filter(Boolean).join('\n'),
-  });
+  }, signal);
 }
 
 interface OrchestrateOutcome {
@@ -322,7 +329,8 @@ interface OrchestrateOutcome {
   tools?: Array<{ name: string; description: string; version: number; calls: number; failures: number }>;
 }
 
-async function orchestrate(params: CallToolParams, ctx?: PiContext): Promise<OrchestrateOutcome> {
+async function orchestrate(params: CallToolParams, ctx?: PiContext, signal?: AbortSignal): Promise<OrchestrateOutcome> {
+  throwIfAborted(signal);
   const metadata = params.metadata ?? {};
   const mode: Mode = params.mode ?? 'auto';
   const intent = typeof metadata['intent'] === 'string' ? (metadata['intent'] as string) : '';
@@ -420,15 +428,19 @@ async function orchestrate(params: CallToolParams, ctx?: PiContext): Promise<Orc
 
     let generated: GeneratedTool;
     try {
-      generated = await getGenerator()({ toolType: params.toolType, intent, metadata, mode, existing: entry, ctx });
+      generated = await getGenerator()({ toolType: params.toolType, intent, metadata, mode, existing: entry, ctx, signal });
     } catch (err) {
+      if (isAbortError(err) || signal?.aborted) throw err;
       return { status: 'error', pruned, message: `Tool generation failed: ${(err as Error).message}` };
     }
+    throwIfAborted(signal);
     // A tool may only opt OUT of the sandbox after the shared approval gate says yes.
     // Non-interactive hosts fail closed through requestApproval().
     const sandboxed = metadata['_sandboxed'] !== false;
     if (!sandboxed) {
-      const approval = await approveSandboxOptOut(ctx, params.toolType, intent);
+      throwIfAborted(signal);
+      const approval = await approveSandboxOptOut(ctx, params.toolType, intent, signal);
+      throwIfAborted(signal);
       if (!approval.approved) {
         const why = approval.interactive
           ? 'The user declined this action.'
@@ -441,6 +453,7 @@ async function orchestrate(params: CallToolParams, ctx?: PiContext): Promise<Orc
         };
       }
     }
+    throwIfAborted(signal);
     const reg = registerGeneratedTool({ ...generated, reason: generated.reason || reason, sandboxed, deterministic: generated.deterministic });
     if (!reg.ok) {
       return {
@@ -469,7 +482,9 @@ async function orchestrate(params: CallToolParams, ctx?: PiContext): Promise<Orc
     };
   }
 
-  const run = runDynamicTool(entry, args, { allow });
+  throwIfAborted(signal);
+  const run = await runDynamicTool(entry, args, { allow, signal });
+  throwIfAborted(signal);
   recordUsage(entry.name, run.ok);
   if (!run.ok) {
     return { status: 'error', toolName: entry.name, pruned, message: `Execution failed: ${run.reason}${run.detail ? ` — ${run.detail}` : ''}` };
@@ -522,7 +537,7 @@ export function registerCallTool(
     label: 'Call Tool',
     description: [
       'Meta-tool: request a capability by name and callTool reuses, creates, or maintains a verified dynamic tool to satisfy it.',
-      'Resolves an existing tool in O(1); on a miss it PROPOSES creation (it does not silently generate). After you research/brainstorm and the user confirms, re-call with mode:"create" to generate a self-contained tool via a tool-smith subagent, which is registered ONLY if its generated test passes, then run in an isolated subprocess.',
+      'Resolves an existing tool in O(1); on an auto-mode miss the runtime PROPOSES creation (it does not silently generate). After you research/brainstorm and the user confirms, re-call with mode:"create" to generate a self-contained tool via a tool-smith subagent, which is registered ONLY if its generated test passes, then run in an isolated subprocess.',
       '',
       'Modes: auto (default: reuse, else propose) · run (reuse only) · create (generate after approval) · enhance/fix (regenerate an existing tool) · list (inventory) · delete (remove a tool).',
       'Every call also prunes unambiguous junk (missing/always-failing tools) to keep the library lean.',
@@ -556,7 +571,7 @@ export function registerCallTool(
           type: 'string',
           enum: ['auto', 'run', 'create', 'enhance', 'fix', 'list', 'delete'],
           description:
-            'auto (default): reuse or create. run: reuse only, error on miss. create: force (re)generate. enhance/fix: regenerate an existing tool (version bump). list: inventory. delete: remove a tool.',
+            'auto (default): reuse an existing tool or propose creation on a miss. run: reuse only, error on miss. create: force (re)generate. enhance/fix: regenerate an existing tool (version bump). list: inventory. delete: remove a tool.',
         }),
       ),
     }, { additionalProperties: false }), {
@@ -583,7 +598,7 @@ export function registerCallTool(
             }
           : undefined,
         async execute(query) {
-          const outcome = await orchestrate(query as unknown as CallToolParams, ctx);
+          const outcome = await orchestrate(query as unknown as CallToolParams, ctx, signal);
           const header = renderHeader(outcome);
           const parts: string[] = [header];
           if (outcome.status === 'ran' || outcome.status === 'created-and-ran') {

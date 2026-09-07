@@ -10,6 +10,7 @@ import { setManagedActivity } from './runtime-renderer.js';
 import { brokerSessionId } from './interaction-broker.js';
 import { canReprojectRehydratedSegment } from './prompt-lifecycle.js';
 import { resolveSessionCheckpointSources } from './context-source-registry.js';
+import type { CurrentRehydrationSource } from './context-source-contracts.js';
 import {
   createSessionArtifactContext,
   inspectRehydrationLedger,
@@ -69,11 +70,6 @@ export interface RehydrationReceiptV1 {
   pendingInteractionIds: string[];
   consumerCursors: Record<string, { live: number; hint: number; decision: 'match' | 'live-ahead' | 'held' }>;
   recordedAt: string;
-}
-
-export interface CurrentRehydrationSource {
-  segment: ContextSegmentV1;
-  content: string;
 }
 
 export interface ValidatedRehydrationProjection {
@@ -274,7 +270,13 @@ function sameSegmentIdentity(checkpoint: ContextSegmentV1, current: ContextSegme
 export function consumeValidatedRehydration(
   ctx: PiContext,
   currentSources: CurrentRehydrationSource[],
-  options: { allowProjection?: boolean; totalTokenBudget?: number; now?: () => number } = {},
+  options: {
+    allowProjection?: boolean;
+    totalTokenBudget?: number;
+    now?: () => number;
+    /** Digests derived from the host's retained post-compaction model context. */
+    retainedContentDigests?: ReadonlySet<string>;
+  } = {},
 ): ValidatedRehydrationProjection | undefined {
   const sessionKey = createSessionArtifactContext(ctx).identity.sessionKey;
   const pending = pendingBySession.get(sessionKey);
@@ -314,7 +316,11 @@ export function consumeValidatedRehydration(
     validated.push(checkpoint.id);
     const mayProject = options.allowProjection === true
       && canReprojectRehydratedSegment(checkpoint);
-    if (!mayProject) {
+    // Only dedupe after the checkpoint/current-source trust checks above pass.
+    // The caller must derive this set from the retained model context, never
+    // from the full historical session entry list.
+    const alreadyRetained = options.retainedContentDigests?.has(checkpoint.digest) === true;
+    if (!mayProject || alreadyRetained) {
       skipped.push(checkpoint.id);
       continue;
     }

@@ -110,10 +110,10 @@ test('resolveTool matches a single-keyword tool on one overlapping token', () =>
   if (r.hit === 'keyword') assert.equal(r.entry.name, 'toSlug');
 });
 
-test('runDynamicTool executes in isolation and returns a structured result', () => {
+test('runDynamicTool executes in isolation and returns a structured result', async () => {
   const reg = register();
   assert.ok(reg.ok);
-  const run = runDynamicTool((reg as { entry: ToolManifestEntry }).entry, { timezone: 'Europe/Berlin' });
+  const run = await runDynamicTool((reg as { entry: ToolManifestEntry }).entry, { timezone: 'Europe/Berlin' });
   assert.equal(run.ok, true);
   if (run.ok) assert.deepEqual(run.result, { tool: 'getCurrentTime', timezone: 'Europe/Berlin' });
 });
@@ -154,26 +154,26 @@ test('deleteTool removes the entry and directory', () => {
   assert.equal(deleteTool('getCurrentTime', dir), false);
 });
 
-test('checksum mismatch blocks execution of a tampered tool', () => {
+test('checksum mismatch blocks execution of a tampered tool', async () => {
   const reg = register();
   assert.ok(reg.ok);
   const entry = (reg as { entry: ToolManifestEntry }).entry;
   fs.writeFileSync(entry.entry, GOOD.source + '\n// tampered');
-  const run = runDynamicTool(entry, {});
+  const run = await runDynamicTool(entry, {});
   assert.equal(run.ok, false);
   if (!run.ok) assert.equal(run.reason, 'checksum-mismatch');
 });
 
-test('missing entry file yields not-found', () => {
+test('missing entry file yields not-found', async () => {
   const reg = register();
   const entry = (reg as { entry: ToolManifestEntry }).entry;
   fs.rmSync(entry.entry);
-  const run = runDynamicTool(entry, {});
+  const run = await runDynamicTool(entry, {});
   assert.equal(run.ok, false);
   if (!run.ok) assert.equal(run.reason, 'not-found');
 });
 
-test('SANDBOX: a tool with no net capability cannot reach the network', () => {
+test('SANDBOX: a tool with no net capability cannot reach the network', async () => {
   const reg = register({
     name: 'sneakyNet',
     capabilities: [],
@@ -181,12 +181,12 @@ test('SANDBOX: a tool with no net capability cannot reach the network', () => {
     test: `process.exit(0);`,
   });
   const entry = (reg as { entry: ToolManifestEntry }).entry;
-  const run = runDynamicTool(entry, {});
+  const run = await runDynamicTool(entry, {});
   assert.equal(run.ok, false); // ERR_ACCESS_DENIED from the permission model
   if (!run.ok) assert.equal(run.reason, 'exec-failed');
 });
 
-test('SANDBOX: a tool with no fs capability cannot read arbitrary files', () => {
+test('SANDBOX: a tool with no fs capability cannot read arbitrary files', async () => {
   const reg = register({
     name: 'sneakyRead',
     capabilities: [],
@@ -194,12 +194,12 @@ test('SANDBOX: a tool with no fs capability cannot read arbitrary files', () => 
     test: `process.exit(0);`,
   });
   const entry = (reg as { entry: ToolManifestEntry }).entry;
-  const run = runDynamicTool(entry, {});
+  const run = await runDynamicTool(entry, {});
   assert.equal(run.ok, false);
   if (!run.ok) assert.equal(run.reason, 'exec-failed');
 });
 
-test('SANDBOX: process.env secrets are scrubbed from a sandboxed tool', () => {
+test('SANDBOX: process.env secrets are scrubbed from a sandboxed tool', async () => {
   process.env.CALLTOOL_SECRET_PROBE = 'top-secret';
   try {
     const reg = register({
@@ -209,7 +209,7 @@ test('SANDBOX: process.env secrets are scrubbed from a sandboxed tool', () => {
       test: `process.exit(0);`,
     });
     const entry = (reg as { entry: ToolManifestEntry }).entry;
-    const run = runDynamicTool(entry, {});
+    const run = await runDynamicTool(entry, {});
     assert.equal(run.ok, true);
     if (run.ok) assert.deepEqual(run.result, { leaked: null });
   } finally {
@@ -217,7 +217,7 @@ test('SANDBOX: process.env secrets are scrubbed from a sandboxed tool', () => {
   }
 });
 
-test('SANDBOX: a non-sandboxed tool runs with inherited env (opt-in trust)', () => {
+test('SANDBOX: a non-sandboxed tool runs with inherited env (opt-in trust)', async () => {
   process.env.CALLTOOL_TRUST_PROBE = 'visible';
   try {
     const reg = register({
@@ -229,7 +229,7 @@ test('SANDBOX: a non-sandboxed tool runs with inherited env (opt-in trust)', () 
     });
     const entry = (reg as { entry: ToolManifestEntry }).entry;
     assert.equal(entry.sandboxed, false);
-    const run = runDynamicTool(entry, {});
+    const run = await runDynamicTool(entry, {});
     assert.equal(run.ok, true);
     if (run.ok) assert.deepEqual(run.result, { seen: 'visible' });
   } finally {
@@ -237,7 +237,7 @@ test('SANDBOX: a non-sandboxed tool runs with inherited env (opt-in trust)', () 
   }
 });
 
-test('undeclared capability is denied, approved capability runs', () => {
+test('undeclared capability is denied, approved capability runs', async () => {
   const reg = register({
     name: 'netTool',
     capabilities: ['net'],
@@ -246,14 +246,14 @@ test('undeclared capability is denied, approved capability runs', () => {
   });
   assert.ok(reg.ok);
   const entry = (reg as { entry: ToolManifestEntry }).entry;
-  const denied = runDynamicTool(entry, {}, { allow: [] });
+  const denied = await runDynamicTool(entry, {}, { allow: [] });
   assert.equal(denied.ok, false);
   if (!denied.ok) assert.equal(denied.reason, 'capability-denied:net');
-  const allowed = runDynamicTool(entry, {}, { allow: ['net'] });
+  const allowed = await runDynamicTool(entry, {}, { allow: ['net'] });
   assert.equal(allowed.ok, true);
 });
 
-test('runaway tool is killed by the execution timeout', () => {
+test('runaway tool is killed by the execution timeout', async () => {
   const reg = register({
     name: 'loopTool',
     source: `export default async () => { while (true) {} };`,
@@ -261,32 +261,91 @@ test('runaway tool is killed by the execution timeout', () => {
   });
   const entry = (reg as { entry: ToolManifestEntry }).entry;
   const t0 = Date.now();
-  const run = runDynamicTool(entry, {}, { timeoutMs: 500 });
+  const run = await runDynamicTool(entry, {}, { timeoutMs: 500 });
   assert.equal(run.ok, false);
   if (!run.ok) assert.equal(run.reason, 'exec-timeout');
   assert.ok(Date.now() - t0 < 5000);
 });
 
-test('a throwing tool yields exec-failed', () => {
+test('an aborted dynamic tool is killed promptly', async () => {
+  const reg = register({
+    name: 'abortLoopTool',
+    source: `export default async () => { while (true) {} };`,
+    test: `process.exit(0);`,
+  });
+  const entry = (reg as { entry: ToolManifestEntry }).entry;
+  const controller = new AbortController();
+  const t0 = Date.now();
+  const pending = runDynamicTool(entry, {}, { timeoutMs: 10_000, signal: controller.signal });
+  setTimeout(() => controller.abort(), 50);
+  const run = await pending;
+  assert.equal(run.ok, false);
+  if (!run.ok) assert.equal(run.reason, 'exec-aborted');
+  assert.ok(Date.now() - t0 < 2_000);
+});
+
+test('an aborted exec-capable tool does not orphan its subprocess', async () => {
+  if (process.platform === 'win32') return;
+  const pidFile = path.join(dir, 'grandchild.pid');
+  const reg = register({
+    name: 'abortProcessTree',
+    sandboxed: false,
+    capabilities: ['exec', 'fs'],
+    source: `
+      import fs from 'node:fs';
+      import { spawn } from 'node:child_process';
+      export default async ({ pidFile }) => {
+        const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+        fs.writeFileSync(pidFile, String(child.pid));
+        await new Promise(() => {});
+      };
+    `,
+    test: `process.exit(0);`,
+  });
+  const entry = (reg as { entry: ToolManifestEntry }).entry;
+  const controller = new AbortController();
+  const pending = runDynamicTool(entry, { pidFile }, {
+    allow: ['exec', 'fs'],
+    timeoutMs: 10_000,
+    signal: controller.signal,
+  });
+  for (let i = 0; i < 100 && !fs.existsSync(pidFile); i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(fs.existsSync(pidFile), true, 'tool spawned its subprocess');
+  const grandchildPid = Number(fs.readFileSync(pidFile, 'utf8'));
+  try {
+    controller.abort();
+    const run = await pending;
+    assert.equal(run.ok, false);
+    if (!run.ok) assert.equal(run.reason, 'exec-aborted');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.throws(() => process.kill(grandchildPid, 0), (error: NodeJS.ErrnoException) => error.code === 'ESRCH');
+  } finally {
+    try { process.kill(grandchildPid, 'SIGKILL'); } catch { /* already gone */ }
+  }
+});
+
+test('a throwing tool yields exec-failed', async () => {
   const reg = register({
     name: 'throwTool',
     source: `export default async () => { throw new Error('boom'); };`,
     test: `process.exit(0);`,
   });
   const entry = (reg as { entry: ToolManifestEntry }).entry;
-  const run = runDynamicTool(entry, {});
+  const run = await runDynamicTool(entry, {});
   assert.equal(run.ok, false);
   if (!run.ok) assert.equal(run.reason, 'exec-failed');
 });
 
-test('non-JSON stdout yields bad-output', () => {
+test('non-JSON stdout yields bad-output', async () => {
   const reg = register({
     name: 'noisyTool',
     source: `export default async () => { console.log('side channel noise'); return { ok: 1 }; };`,
     test: `process.exit(0);`,
   });
   const entry = (reg as { entry: ToolManifestEntry }).entry;
-  const run = runDynamicTool(entry, {});
+  const run = await runDynamicTool(entry, {});
   assert.equal(run.ok, false);
   if (!run.ok) assert.equal(run.reason, 'bad-output');
 });
@@ -325,7 +384,7 @@ test('recordUsage on an unknown tool is a no-op', () => {
   assert.equal(readIndex(dir).tools.getCurrentTime.stats.calls, 0);
 });
 
-test('ROLLBACK: a failed enhance restores the previous good tool (no soft-broken state)', () => {
+test('ROLLBACK: a failed enhance restores the previous good tool (no soft-broken state)', async () => {
   const v1 = register();
   assert.ok(v1.ok);
   // Re-register (enhance) with a FAILING test → must roll back to v1.
@@ -334,11 +393,11 @@ test('ROLLBACK: a failed enhance restores the previous good tool (no soft-broken
   // The still-indexed v1 entry must run cleanly (files restored, checksum matches).
   const entry = readIndex(dir).tools.getCurrentTime;
   assert.equal(entry.version, 1);
-  const run = runDynamicTool(entry, { timezone: 'UTC' });
+  const run = await runDynamicTool(entry, { timezone: 'UTC' });
   assert.equal(run.ok, true);
 });
 
-test('STDIN: large metadata (beyond argv limits) is delivered via stdin', () => {
+test('STDIN: large metadata (beyond argv limits) is delivered via stdin', async () => {
   const reg = register({
     name: 'echoBig',
     source: `export default async (m) => ({ len: (m.blob || '').length });`,
@@ -347,19 +406,49 @@ test('STDIN: large metadata (beyond argv limits) is delivered via stdin', () => 
   assert.ok(reg.ok);
   const entry = (reg as { entry: ToolManifestEntry }).entry;
   const blob = 'x'.repeat(300_000); // exceeds typical argv single-arg limits
-  const run = runDynamicTool(entry, { blob });
+  const run = await runDynamicTool(entry, { blob });
   assert.equal(run.ok, true);
   if (run.ok) assert.deepEqual(run.result, { len: 300_000 });
 });
 
-test('HARDENING: eval / code-generation-from-strings is blocked in the sandbox', () => {
+test('OUTPUT: oversized stdout is bounded and kills the dynamic tool', async () => {
+  const reg = register({
+    name: 'oversizedOutput',
+    source: `export default async () => ({ payload: 'x'.repeat(1_100_000) });`,
+    test: `process.exit(0);`,
+  });
+  const entry = (reg as { entry: ToolManifestEntry }).entry;
+  const run = await runDynamicTool(entry, {});
+  assert.equal(run.ok, false);
+  if (!run.ok) {
+    assert.equal(run.reason, 'exec-failed');
+    assert.match(run.detail ?? '', /stdout exceeded 1048576 byte limit/);
+  }
+});
+
+test('OUTPUT: oversized stderr is bounded and kills the dynamic tool', async () => {
+  const reg = register({
+    name: 'oversizedErrorOutput',
+    source: `export default async () => { process.stderr.write('x'.repeat(1_100_000)); return { ok: true }; };`,
+    test: `process.exit(0);`,
+  });
+  const entry = (reg as { entry: ToolManifestEntry }).entry;
+  const run = await runDynamicTool(entry, {});
+  assert.equal(run.ok, false);
+  if (!run.ok) {
+    assert.equal(run.reason, 'exec-failed');
+    assert.match(run.detail ?? '', /stderr exceeded 1048576 byte limit/);
+  }
+});
+
+test('HARDENING: eval / code-generation-from-strings is blocked in the sandbox', async () => {
   const reg = register({
     name: 'evalTool',
     source: `export default async () => ({ v: eval('1+1') });`,
     test: `process.exit(0);`,
   });
   const entry = (reg as { entry: ToolManifestEntry }).entry;
-  const run = runDynamicTool(entry, {});
+  const run = await runDynamicTool(entry, {});
   assert.equal(run.ok, false);
   if (!run.ok) assert.equal(run.reason, 'exec-failed');
 });
@@ -371,7 +460,7 @@ test('LOCK: the registry lock dir is released after a mutating op', () => {
   assert.equal(fs.existsSync(path.join(dir, '.index.lock')), false);
 });
 
-test('CACHE: a deterministic, capability-free tool memoizes results by metadata', () => {
+test('CACHE: a deterministic, capability-free tool memoizes results by metadata', async () => {
   const reg = register({
     name: 'randPure',
     deterministic: true,
@@ -380,17 +469,17 @@ test('CACHE: a deterministic, capability-free tool memoizes results by metadata'
     test: `process.exit(0);`,
   });
   const entry = (reg as { entry: ToolManifestEntry }).entry;
-  const first = runDynamicTool(entry, { seed: 1 });
-  const second = runDynamicTool(entry, { seed: 1 });
+  const first = await runDynamicTool(entry, { seed: 1 });
+  const second = await runDynamicTool(entry, { seed: 1 });
   assert.equal(first.ok && first.cached, false, 'first run executes');
   assert.equal(second.ok && second.cached, true, 'second run is served from cache');
   if (first.ok && second.ok) assert.deepEqual(second.result, first.result, 'cached result is identical');
   // Different metadata is a cache miss (executes again).
-  const other = runDynamicTool(entry, { seed: 2 });
+  const other = await runDynamicTool(entry, { seed: 2 });
   assert.equal(other.ok && other.cached, false, 'different metadata misses the cache');
 });
 
-test('CACHE: a non-deterministic tool is never memoized', () => {
+test('CACHE: a non-deterministic tool is never memoized', async () => {
   const reg = register({
     name: 'randImpure',
     deterministic: false,
@@ -398,13 +487,13 @@ test('CACHE: a non-deterministic tool is never memoized', () => {
     test: `process.exit(0);`,
   });
   const entry = (reg as { entry: ToolManifestEntry }).entry;
-  const r1 = runDynamicTool(entry, {});
-  const r2 = runDynamicTool(entry, {});
+  const r1 = await runDynamicTool(entry, {});
+  const r2 = await runDynamicTool(entry, {});
   assert.equal(r1.ok && r1.cached, false);
   assert.equal(r2.ok && r2.cached, false);
 });
 
-test('CACHE: a tool with capabilities is never memoized (may have side effects)', () => {
+test('CACHE: a tool with capabilities is never memoized (may have side effects)', async () => {
   const reg = register({
     name: 'netPure',
     deterministic: true,
@@ -413,22 +502,22 @@ test('CACHE: a tool with capabilities is never memoized (may have side effects)'
     test: `process.exit(0);`,
   });
   const entry = (reg as { entry: ToolManifestEntry }).entry;
-  const r1 = runDynamicTool(entry, {}, { allow: ['net'] });
-  const r2 = runDynamicTool(entry, {}, { allow: ['net'] });
+  const r1 = await runDynamicTool(entry, {}, { allow: ['net'] });
+  const r2 = await runDynamicTool(entry, {}, { allow: ['net'] });
   assert.equal(r1.ok && r1.cached, false);
   assert.equal(r2.ok && r2.cached, false);
 });
 
-test('CACHE: re-registering a new version busts the cache', () => {
+test('CACHE: re-registering a new version busts the cache', async () => {
   register({ name: 'verPure', deterministic: true, source: `export default async () => ({ v: Math.random() });`, test: `process.exit(0);` });
   const v1 = readIndex(dir).tools.verPure;
-  const a = runDynamicTool(v1, {});
-  const b = runDynamicTool(v1, {});
+  const a = await runDynamicTool(v1, {});
+  const b = await runDynamicTool(v1, {});
   assert.equal(b.ok && b.cached, true, 'v1 cached');
   register({ name: 'verPure', deterministic: true, source: `export default async () => ({ v: 42 });`, test: `process.exit(0);` });
   const v2 = readIndex(dir).tools.verPure;
   assert.equal(v2.version, 2);
-  const c = runDynamicTool(v2, {});
+  const c = await runDynamicTool(v2, {});
   assert.equal(c.ok && c.cached, false, 'new version misses the old cache');
   if (c.ok) assert.deepEqual(c.result, { v: 42 });
   void a;

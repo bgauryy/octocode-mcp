@@ -432,11 +432,10 @@ export interface ShortcutHint {
  * tests/plain mode.
  */
 export function buildShortcutHintsRow(hints: readonly ShortcutHint[], theme?: PaintTheme): string {
-  const fallbackKeyTokens: readonly SemanticToken[] = ['brand', 'link', 'brandAlt', 'path', 'symbol', 'error'];
   return hints
     .filter((h) => !!h.key?.trim() && !!h.label?.trim())
-    .map((h, index) => {
-      const keyToken = h.keyToken ?? fallbackKeyTokens[index % fallbackKeyTokens.length] ?? 'bright';
+    .map((h) => {
+      const keyToken = h.keyToken ?? 'brand';
       const keyText = (h.key ?? '').trim();
       const labelText = (h.label ?? '').trim();
       const key = theme ? theme.bold(paint(theme, keyToken, keyText)) : keyText;

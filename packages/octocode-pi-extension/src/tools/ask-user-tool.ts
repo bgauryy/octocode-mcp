@@ -1,5 +1,6 @@
 import { truncateToWidth, visibleWidth } from '../tui/width.js';
 import { paint } from '../tui/palette.js';
+import { notifyDesktopAttention } from './desktop-notify.js';
 /**
  * askUser — interactive elicitation tool.
  *
@@ -242,6 +243,8 @@ function askFooterLines(theme: PiTheme | undefined, help: string, width: number,
 
 /** Max option rows painted at once; longer lists scroll in a window around the cursor. */
 const ASK_LIST_MAX_VISIBLE = 7;
+/** Max rendered preview lines painted at once; PageUp/PageDown scroll without moving option focus. */
+const ASK_PREVIEW_MAX_VISIBLE = 10;
 
 function renderAskChoiceLines(
   theme: PiTheme | undefined,
@@ -255,6 +258,7 @@ function renderAskChoiceLines(
   searchQuery?: string,
   pagination?: { current: number; total: number },
   headerLabel?: string,
+  previewOffset = 0,
 ): string[] {
   // Scroll window: long lists would overflow the terminal height (pi clips the
   // component), so paint at most ASK_LIST_MAX_VISIBLE rows centered on the
@@ -262,11 +266,26 @@ function renderAskChoiceLines(
   // remain reachable by navigation; the focused option itself is never clipped
   // or capped, so its complete decision context remains readable.
   const focused = items[cursor];
+  const focusedPreviewLines = focused?.preview
+    ? focused.preview.split('\n').flatMap((previewLine) => wrapAskPayload(
+        paint(theme, 'bright', previewLine || ' '),
+        `    `,
+        `    `,
+        width,
+      ))
+    : [];
+  const previewStart = Math.min(
+    Math.max(0, previewOffset),
+    Math.max(0, focusedPreviewLines.length - ASK_PREVIEW_MAX_VISIBLE),
+  );
+  const previewEnd = Math.min(focusedPreviewLines.length, previewStart + ASK_PREVIEW_MAX_VISIBLE);
+  const visiblePreviewLines = focusedPreviewLines.slice(previewStart, previewEnd);
+  const previewMarkerCount = (previewStart > 0 ? 1 : 0) + (previewEnd < focusedPreviewLines.length ? 1 : 0);
   const focusedDetail = focused
     ? (focused.description ? 1 : 0) +
       (focused.pros?.length ?? 0) +
       (focused.cons?.length ?? 0) +
-      (focused.preview ? focused.preview.split('\n').length : 0)
+      visiblePreviewLines.length + previewMarkerCount
     : 0;
   const visibleRows = Math.max(3, ASK_LIST_MAX_VISIBLE - focusedDetail);
   let start = 0;
@@ -324,7 +343,7 @@ function renderAskChoiceLines(
     if (active) {
       if (item.description) {
         detail.push(...wrapAskPayload(
-          paint(theme, 'dim', item.description),
+          paint(theme, 'muted', item.description),
           `    `,
           `    `,
           width,
@@ -350,9 +369,19 @@ function renderAskChoiceLines(
         ));
       }
       if (item.preview) {
-        for (const previewLine of item.preview.split('\n')) {
+        if (previewStart > 0) {
           detail.push(...wrapAskPayload(
-            paint(theme, 'dim', previewLine || ' '),
+            paint(theme, 'dim', `↑ ${previewStart} earlier preview line${previewStart === 1 ? '' : 's'}`),
+            `    `,
+            `    `,
+            width,
+          ));
+        }
+        detail.push(...visiblePreviewLines);
+        const remaining = focusedPreviewLines.length - previewEnd;
+        if (remaining > 0) {
+          detail.push(...wrapAskPayload(
+            paint(theme, 'dim', `↓ ${remaining} more preview line${remaining === 1 ? '' : 's'}`),
             `    `,
             `    `,
             width,
@@ -521,6 +550,9 @@ async function runAskOverlay(
   // boxed into the choices.
   return ctx.ui!.custom!<AskOutcome>(
     (tuiRaw: unknown, theme: PiTheme, _kb: unknown, done: (o: AskOutcome) => void) => {
+      if (!params.pagination || params.pagination.current === 1) {
+        notifyDesktopAttention(ctx, 'Octocode needs your input. See the decision widget.');
+      }
       const tui = tuiRaw as { requestRender?: () => void };
       let finished = false;
       // Land the cursor on the recommended option (if any) so the safe default
@@ -532,6 +564,7 @@ async function runAskOverlay(
       let warning: string | undefined;
       let searchMode = false;
       let searchQuery = '';
+      let previewOffset = 0;
       let finalOutcome: AskOutcome | undefined;
       const selected = new Set<number>();
       const formValues: Record<string, string> = {};
@@ -650,6 +683,7 @@ async function runAskOverlay(
         searchMode = true;
         searchQuery = next;
         cursor = 0;
+        previewOffset = 0;
         warning = undefined;
         rerender();
       };
@@ -694,13 +728,16 @@ async function runAskOverlay(
         // and drop enter/esc — the keys the user most needs. Use a compact hint
         // that keeps the essential keys visible below the card's frame cap.
         const narrow = askFrameWidth(w) < 56;
+        const previewHelp = rows[cursor]?.preview
+          ? narrow ? 'pg↑↓ • ' : 'pgup/pgdn preview • '
+          : '';
         const help = mode === 'multi'
           ? narrow
-            ? `${multiCount}↑↓ • space • a/i • enter ✓ • esc`
-            : `${multiCount}↑↓ navigate • / filter • space toggle • a all • i invert • enter confirm • esc cancel`
+            ? `${previewHelp}${multiCount}↑↓ • space • a/i • enter ✓ • esc`
+            : `${previewHelp}${multiCount}↑↓ navigate • / filter • space toggle • a all • i invert • enter confirm • esc cancel`
           : narrow
-            ? '← back • ↑↓ • enter • esc'
-            : '← back • ↑↓ navigate • / filter • 1-9 select • enter select • esc cancel';
+            ? `${previewHelp}← back • ↑↓ • enter • esc`
+            : `${previewHelp}← back • ↑↓ navigate • / filter • 1-9 select • enter select • esc cancel`;
         return renderAskChoiceLines(
           theme,
           params.question,
@@ -713,6 +750,7 @@ async function runAskOverlay(
           searchMode ? searchQuery : undefined,
           params.pagination,
           params.headerLabel,
+          previewOffset,
         );
       };
 
@@ -728,6 +766,7 @@ async function runAskOverlay(
           next = (next + step + count) % count;
         }
         cursor = next;
+        previewOffset = 0;
         warning = undefined;
         rerender();
       };
@@ -750,6 +789,30 @@ async function runAskOverlay(
 
         if (mode === 'single' || mode === 'multi') {
           if (matchesKey(data, Key.left)) { finish({ status: 'back' }); return; }
+          if (choiceRows()[cursor]?.preview && matchesKey(data, Key.pageUp)) {
+            previewOffset = Math.max(0, previewOffset - ASK_PREVIEW_MAX_VISIBLE);
+            warning = undefined;
+            rerender();
+            return;
+          }
+          if (choiceRows()[cursor]?.preview && matchesKey(data, Key.pageDown)) {
+            previewOffset = Math.min(Number.MAX_SAFE_INTEGER, previewOffset + ASK_PREVIEW_MAX_VISIBLE);
+            warning = undefined;
+            rerender();
+            return;
+          }
+          if (choiceRows()[cursor]?.preview && matchesKey(data, Key.home)) {
+            previewOffset = 0;
+            warning = undefined;
+            rerender();
+            return;
+          }
+          if (choiceRows()[cursor]?.preview && matchesKey(data, Key.end)) {
+            previewOffset = Number.MAX_SAFE_INTEGER;
+            warning = undefined;
+            rerender();
+            return;
+          }
           if (matchesKey(data, Key.up) || matchesKey(data, Key.ctrl('p'))) { move(-1); return; }
           if (matchesKey(data, Key.down) || matchesKey(data, Key.ctrl('n'))) { move(1); return; }
           if (data === '/') { setSearch(''); return; }
@@ -875,19 +938,13 @@ export function registerAskUserTool(
   registerFn(pi, registeredToolNames, {
     name: 'askUser',
     label: 'Ask user',
-    description: [
-      'Collect one genuine, decision-changing human answer through the terminal UI. Research first; do not use this for facts available from code, routine confirmation, or normal conversation.',
-      'Use options[] for mutually exclusive choices. Keep labels short, add one non-duplicative description only when needed, and mark the safest sensible default recommended:true. A discussion/free-text escape is always available.',
-      'Use multiSelect only when several choices can be true; use fields[] for a few related short answers. Disabled choices remain visible with their reason.',
-      'Back and cancellation never authorize a default. Non-interactive hosts return a durable pending interaction so the question can be asked inline.',
-    ].join('\n'),
-    promptSnippet: 'Ask the user a question via an interactive list picker or text input (real UI, not prose)',
+    description: 'Collect a decision in an inline widget: options for one choice, multiSelect for independent choices, fields for related answers, or text input. Returns an answer or explicit interaction status.',
+    promptSnippet: 'Collect a missing user decision with askUser.',
     promptGuidelines: [
-      'Ask only when the answer changes scope, architecture, acceptance, authorization, or an irreducible preference. Prefer one question.',
-      'Use short mutually exclusive labels; add descriptions or pros/cons only for distinct information, never repetition. Mark the safest sensible default recommended:true.',
-      'Treat the discussion row as conversation: answer or revise the choices instead of forcing a selection.',
-      'Back, cancel, and timeout do not authorize a default. If interactive UI is unavailable, ask inline.',
-      'Use multiSelect for genuinely independent selections and fields[] for related formatted answers; constrain counts or validation only when required.',
+      'Ask only when the answer changes the next action and cannot be learned from available evidence. Continue routine authorized work without a confirmation widget.',
+      'Prefer one question and distinct short options. Mark a sensible recommendation; add descriptions, trade-offs, or previews only when they change the decision.',
+      'The discussion row allows free text. Back, cancel, and timeout never authorize a default. Resume pending interactions through the host; use an inline question only when no interaction is available.',
+      'Use options[] for one-of-many; multiSelect for independent toggles; fields[] for structured form input; omit options for free text.',
     ],
     parameters: buildQueryEnvelopeSchema(Type, Type.Object({
       question: Type.String({ description: 'The question to show the user. Keep it one clear sentence.' }),

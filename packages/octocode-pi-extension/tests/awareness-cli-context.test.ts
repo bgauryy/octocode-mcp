@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { defaultDbPath, EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS } from '@octocodeai/octocode-awareness';
+import { defaultDbPath, EXTERNAL_AGENT_AWARENESS_PROMPT } from '@octocodeai/octocode-awareness';
 import { SYSTEM_PROMPT } from '../src/prompts/system-prompt.js';
 import { OCTOCODE_SUPPORT_TOOL_NAMES } from '../src/constants.js';
 import type { PiContext } from '../src/types.js';
@@ -14,7 +14,7 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe('canonical Awareness CLI in Pi', () => {
   it('injects the package-owned instructions and removes duplicated model tools', () => {
-    expect(SYSTEM_PROMPT).toContain(EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS);
+    expect(SYSTEM_PROMPT).toContain(EXTERNAL_AGENT_AWARENESS_PROMPT);
     for (const name of ['memory', 'message', 'lock']) expect([...OCTOCODE_SUPPORT_TOOL_NAMES]).not.toContain(name);
     expect(SYSTEM_PROMPT).toContain('skill install');
   });

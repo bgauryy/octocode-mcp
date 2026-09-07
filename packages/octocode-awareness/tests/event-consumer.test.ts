@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
+import { initDb } from '../src/db-init.js';
+import { insertNotification } from '../src/notifications-core.js';
 import {
   createAwarenessEventConsumer,
   type AwarenessEventStore,
@@ -46,6 +49,40 @@ function fakeStore(events: OutboxEventV1[]) {
 }
 
 describe('Awareness event consumer', () => {
+  it.each([
+    ['blocker', 'blocking', 'accept'],
+    ['handoff', 'handoff', 'accept'],
+    ['request', 'proposal', 'hold'],
+    ['decision', 'proposal', 'hold'],
+    ['fyi', 'informational', 'accept'],
+  ] as const)('preserves canonical %s signals through publication and delivery', async (kind, messageClass, decision) => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      initDb(db);
+      insertNotification(db, {
+        agentId: 'peer-a', toAgent: 'native:session-1', kind,
+        subject: 'Build update', body: 'The build output is ready.', workspacePath: workspace,
+      });
+      const row = db.prepare('SELECT payload_json FROM event_outbox').get() as { payload_json: string };
+      const payload = JSON.parse(row.payload_json) as { messageId: string };
+      const fixture = fakeStore([peerEvent(1, { payload, aggregate: { kind: 'message', id: payload.messageId } })]);
+      const deliver = vi.fn();
+      await createAwarenessEventConsumer({
+        workspace, consumerId: 'native-session:session-1', expectedAgentId: 'native:session-1',
+        openStore: () => fixture.store, deliver,
+      }).drain();
+      expect(fixture.acknowledgements).toEqual([{ eventId: 'evt-1', decision }]);
+      if (decision === 'hold') {
+        expect(deliver).not.toHaveBeenCalled();
+        expect(fixture.reads).toEqual([]);
+      } else {
+        expect(deliver).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+          details: expect.objectContaining({ messageClass }),
+        }));
+      }
+    } finally { db.close(); }
+  });
+
   it('delivers accepted peer data in order and serializes concurrent drains', async () => {
     const fixture = fakeStore([peerEvent(1), peerEvent(2)]);
     const deliver = vi.fn();

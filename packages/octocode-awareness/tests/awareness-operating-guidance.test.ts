@@ -52,7 +52,7 @@ describe('Awareness operating guidance', () => {
 
   it('carries communication, lifecycle ownership, and closing evidence into every host export', () => {
     const exported = JSON.parse(execCli(['instructions', 'export', '--format', 'json']).stdout).instructions;
-    expect(exported).toBe(EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS);
+    expect(exported).toBe(EXTERNAL_AGENT_AWARENESS_PROMPT);
     for (const prompt of [EXTERNAL_AGENT_AWARENESS_PROMPT, exported]) {
       expect(prompt).toContain('local and external code research');
       expect(prompt).toContain('`npx octocode`');

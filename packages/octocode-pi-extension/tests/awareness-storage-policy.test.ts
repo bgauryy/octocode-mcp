@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, test } from 'vitest';
@@ -69,6 +69,8 @@ test('event consumers bind delivery to the latest context and recipient identity
   const workspace = path.join(root, 'workspace');
   mkdirSync(workspace);
   const dbPath = path.join(root, 'awareness.sqlite3');
+  const sessionFile = path.join(root, 'session.jsonl');
+  writeFileSync(sessionFile, '');
   let entries: any[] = [];
   const sent: any[] = [];
   const handlers = new Map<string, (...args: any[]) => Promise<void>>();
@@ -81,7 +83,14 @@ test('event consumers bind delivery to the latest context and recipient identity
     openStore: () => openAwarenessStore({ workspace, dbPath }),
     resolveExpectedAgentId: () => recipient,
   });
-  const context = (captured = entries) => ({ cwd: workspace, sessionManager: { getSessionId: () => 'stable', getEntries: () => captured } }) as PiContext;
+  const context = (captured = entries) => ({
+    cwd: workspace,
+    sessionManager: {
+      getSessionId: () => 'stable',
+      getSessionFile: () => sessionFile,
+      getEntries: () => captured,
+    },
+  }) as PiContext;
   const seed = (to: string, text: string) => {
     const store = openAwarenessStore({ workspace, dbPath });
     try { store.sendMessage({ fromAgentId: 'peer', toAgentId: to, topic: 'EVIDENCE', text }); } finally { store.close(); }
@@ -93,7 +102,8 @@ test('event consumers bind delivery to the latest context and recipient identity
   await handlers.get('session_start')!({}, context());
   recipient = 'second';
   seed('second', 'new recipient');
-  await handlers.get('turn_end')!({}, context());
+  await handlers.get('agent_end')!({}, context());
+  await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(sent.length, 3);
   assert.match(String(sent[2]?.content), /new recipient/);
 });

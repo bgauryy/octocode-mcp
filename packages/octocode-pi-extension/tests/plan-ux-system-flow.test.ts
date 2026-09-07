@@ -163,6 +163,7 @@ test('drives AskUser, explicit browser Start, shared work, verification, and eve
     assert.equal(flow.eventsOf('command.expanded').length, 0, 'browser actions never inject slash commands');
     flow.assertSequence(['ui.dialog', 'session.restarted']);
   } finally {
+    await flow.emit('session_shutdown', { reason: 'test-cleanup' });
     stopLocalServer();
     await isolated.cleanup();
     if (previousDb === undefined) delete process.env['OCTOCODE_AGENT_DB_PATH']; else process.env['OCTOCODE_AGENT_DB_PATH'] = previousDb;
@@ -220,6 +221,7 @@ test('registered AskUser widget covers recommended, free-text, cancel, and nonin
       { inputs: [] },
     ] },
   });
+  let rpc: ReturnType<typeof createPiFlowHarness> | undefined;
   try {
     await extension(flow.pi as unknown as PiInstance);
 
@@ -242,7 +244,7 @@ test('registered AskUser widget covers recommended, free-text, cancel, and nonin
   const timedOut = await flow.runTool('askUser', { queries: [{ reasoning: 'bound an unattended prompt', question: 'Still there?', timeoutMs: 5 }] }) as { details: { status: string } };
   assert.equal(timedOut.details?.status, 'timed_out', JSON.stringify(timedOut));
 
-  const rpc = createPiFlowHarness({ cwd: workspace, hasUI: false, mode: 'rpc', sessionId: 'rpc-question' });
+  rpc = createPiFlowHarness({ cwd: workspace, hasUI: false, mode: 'rpc', sessionId: 'rpc-question' });
   await extension(rpc.pi as unknown as PiInstance);
   const unavailable = await rpc.runTool('askUser', { queries: [{ reasoning: 'RPC must not fake a default', question: 'Ship?', options: [{ value: 'yes', label: 'Yes', recommended: true }] }] }) as { content: Array<{ text: string }>; details: { status: string; reason: string } };
   assert.deepEqual(unavailable.details, {
@@ -253,6 +255,8 @@ test('registered AskUser widget covers recommended, free-text, cancel, and nonin
   assert.match(unavailable.content[0]!.text, /no durable .*answer route/i);
   assert.match(unavailable.content[0]!.text, /ask the user inline/i);
   } finally {
+    if (rpc) await rpc.emit('session_shutdown', { reason: 'test-cleanup' });
+    await flow.emit('session_shutdown', { reason: 'test-cleanup' });
     setInteractionStoreFactoryForTests();
     await isolated.cleanup();
   }

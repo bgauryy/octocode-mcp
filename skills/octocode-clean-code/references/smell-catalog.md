@@ -45,4 +45,15 @@ Keep the canonical copy; update all callers before deleting the duplicate.
 | TODO with no ticket and no owner >90 days | Always |
 | `@deprecated` JSDoc with no migration path | After caller updates complete |
 
-Next: when the class is confirmed, load `references/cleanup-playbook.md` for the TRIAGE and EXCISE phases.
+## Test debt
+
+| Signal | Verification required |
+|--------|----------------------|
+| Test filename ends with `-N`, `-N-N`, or contains a date (`2026-07-10`) | Base file exists; numbered file's describe blocks are a strict subset — no unique paths |
+| `it.skip` / `describe.skip` / `xit` with no linked ticket or >90-day stale comment | No observable test coverage gap after removal |
+| `vi.fn().mockReturnValue(x)` where x equals the real return and no `expect` references the mock | Stub is purely decorative — safe to delete |
+| Mock asserts `toHaveBeenCalledTimes` on a non-exported helper | Tests internals — rewrite to assert on the public output |
+| `spawnSync` called without `env:` while subprocess reads a host-injected var (`OCTOCODE_AGENT_ID`, `CI`) | Test is environment-coupled — add explicit `env:` isolation |
+| `beforeEach` creates a resource; no `it` in the same block consumes it | Unused setup — delete the setup block |
+
+Next: when the class is confirmed, load `references/cleanup-playbook.md` for the TRIAGE and EXCISE phases. For replacement tests, load `references/test-quality.md`.

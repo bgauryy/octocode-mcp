@@ -1,3 +1,5 @@
+import { HISTORY_ROUTE_DESCRIPTORS } from './definitions-history.js';
+
 export const commandIndex = [
   { command: "attend", schema: "attend", use: "Build one bounded lobby with actions, relevant evidence/gaps, and a next command.", example: 'npx @octocodeai/octocode-awareness attend --query "current task" --workspace "$PWD" --compact' },
   { command: "status", schema: "workspace_status", use: "Check DB health, locks, pending verification, memory counts.", example: 'npx @octocodeai/octocode-awareness status --workspace "$PWD" --compact' },
@@ -89,6 +91,7 @@ export const commandIndex = [
   {"command": "instructions export", "schema": "instructions_export", "use": "Export host instructions.", "example": "npx @octocodeai/octocode-awareness instructions export --help"},
   {"command": "hooks pre-edit", "schema": "pre_edit", "use": "Check the edit gate.", "example": "npx @octocodeai/octocode-awareness hooks pre-edit --help"},
   {"command": "database consolidate", "schema": "database_consolidate", "use": "Convert a supported historical database into a new canonical file.", "example": "npx @octocodeai/octocode-awareness database consolidate --help"},
+  ...HISTORY_ROUTE_DESCRIPTORS.map(({ required: _required, allowed: _allowed, ...route }) => route),
 ];
 
 /** Vocabulary is derived from the same rows used by schema discovery. */

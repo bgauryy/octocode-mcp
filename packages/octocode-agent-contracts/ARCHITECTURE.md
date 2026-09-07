@@ -12,6 +12,13 @@ native, Pi, and Awareness. It is not an agent runtime or a UI composition root.
   not own Awareness relations or Rust runtime durability.
 - `entities.ts`, `permissions.ts`, and `protocols.ts` own cross-host data and
   permission shapes.
+- `physiology.ts` owns strict Zod runtime observation schemas and their inferred
+  types, published at `@octocodeai/agent-contracts/physiology`. The discriminated
+  native/Pi variants validate bounded counters, session identity, timestamp order,
+  and context arithmetic. Unknown fields are rejected; absent sensors remain
+  absent. Awareness owns advisory thresholds and Pi owns its measurements and
+  execution controls. Zod is an external runtime dependency of this package;
+  consumers that bundle dependencies retain their existing packaging policy.
 - `mcp-discovery.ts` and `mcp-state.ts` own persistent MCP discovery and override
   contracts.
 - `agent-skills.ts` owns Agent Skill discovery and metadata contracts.

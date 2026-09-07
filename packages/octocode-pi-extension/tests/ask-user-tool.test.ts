@@ -66,15 +66,16 @@ test('askUser registration teaches decision-changing questions, concise choices,
   const tool = loadTool();
 
   assert.equal(tool.name, 'askUser');
-  assert.match(tool.description, /decision-changing/);
-  assert.match(tool.description, /discussion\/free-text escape/);
-  assert.match(tool.description, /non-duplicative description/);
-  assert.match(tool.description, /recommended:true/);
-  assert.match(tool.description, /non-interactive hosts/i);
-  assert.match(tool.promptGuidelines?.join('\n') ?? '', /answer changes scope, architecture, acceptance, authorization/);
-  assert.match(tool.promptGuidelines?.join('\n') ?? '', /recommended:true/);
-  assert.match(tool.promptGuidelines?.join('\n') ?? '', /discussion row as conversation/);
-  assert.match(tool.promptGuidelines?.join('\n') ?? '', /interactive UI is unavailable, ask inline/);
+  const guidance = `${tool.description}\n${tool.promptGuidelines?.join('\n') ?? ''}`;
+  assert.ok(guidance.length < 1000, 'widget policy stays compact beside its schema');
+  assert.match(guidance, /answer changes the next action/);
+  assert.match(guidance, /Continue routine authorized work/);
+  assert.match(guidance, /distinct short options/);
+  assert.match(guidance, /recommendation/);
+  assert.match(guidance, /discussion row allows free text/);
+  assert.match(guidance, /cancel, and timeout never authorize a default/);
+  assert.match(guidance, /Resume pending interactions through the host/);
+  assert.match(guidance, /inline question only when no interaction is available/);
   const schema = tool.parameters as {
     properties?: { queries?: { items?: { properties?: Record<string, unknown>; required?: string[] } } };
     required?: string[];
@@ -623,49 +624,50 @@ test('askUser progressively discloses focused descriptions and trade-offs and la
   assert.deepEqual(result.details, { status: 'selected', value: 'safe', label: 'Leave it' });
 });
 
-test('askUser preserves complete decision content at narrow widths without clipping or detail caps', async () => {
+test('askUser bounds long previews, keeps decision rows visible, and scrolls without changing focus', async () => {
   const tool = loadTool();
   const { ctx, render, send } = overlayCtx();
-  const question = 'Which complete rollout strategy should remain readable in a narrow terminal before implementation starts?';
-  const label = 'Keep the compatibility adapter until every persisted session has migrated safely';
-  const description = 'This deliberately long description explains the session, data, browser, and agent consequences without dropping its final words.';
-  const pros = [
-    'preserves restart safety for sessions created by earlier releases',
-    'keeps browser and terminal behavior aligned during rollout',
-    'allows deterministic rollback after a failed verification receipt',
-  ];
-  const cons = [
-    'requires one additional compatibility checkpoint before cleanup',
-    'keeps a temporary adapter visible for another release window',
-    'adds a final migration audit before deletion is authorized',
-  ];
-  const preview = [
-    'preview line one: read the durable session',
-    'preview line two: validate the accepted revision',
-    'preview line three: resume the exact continuation',
-    'preview line four: verify browser and terminal parity',
-    'preview line five: remove the adapter only after success',
-  ].join('\n');
+  const question = 'Which rollout strategy?';
+  const preview = Array.from(
+    { length: 25 },
+    (_, index) => `preview line ${String(index + 1).padStart(2, '0')}: verify checkpoint`,
+  ).join('\n');
 
   const pending = tool.execute('id', {
     question,
-    options: [{ value: 'safe', label, description, pros, cons, preview, recommended: true }],
+    options: [
+      { value: 'start', label: 'Start implementation', preview, recommended: true },
+      { value: 'changes', label: 'Request changes' },
+    ],
   }, undefined, undefined, ctx);
+  const normalize = (lines: string[]): string => lines.join('\n').replace(/\x1b\[[0-9;]*m/g, '');
 
-  const lines = render(30);
-  const normalized = lines.join('\n')
-    .replace(/\x1b\[[0-9;]*m/g, '')
-    .replace(/[│╭╮╰╯─]/g, ' ')
-    .replace(/\s+/g, ' ');
-  assert.ok(lines.every((line) => visibleWidth(line) <= 30), 'every wrapped row remains terminal-width safe');
-  for (const completeText of [question, label, description, ...pros, ...cons, ...preview.split('\n')]) {
-    assert.ok(normalized.includes(completeText), `complete UI content remains visible: ${completeText}`);
-  }
-  assert.match(normalized, /recommended/);
-  assert.match(normalized, /← back • ↑↓ • enter • esc/);
+  const firstLines = render(80);
+  const first = normalize(firstLines);
+  assert.match(first, /preview line 01/);
+  assert.doesNotMatch(first, /preview line 25/, 'the preview is bounded instead of flooding the decision card');
+  assert.match(first, /↓ 15 more preview lines/);
+  assert.match(first, /Start implementation \[recommended\]/);
+  assert.match(first, /Request changes/, 'the rejection row remains visible below the preview');
+  assert.match(first, /pgup\/pgdn preview/);
+  assert.ok(firstLines.length < 30, 'a large preview keeps a bounded rendered height');
 
-  send('\x1b');
-  await pending;
+  const narrowLines = render(30);
+  assert.ok(narrowLines.every((line) => visibleWidth(line) <= 30), 'every viewport row remains terminal-width safe');
+
+  send('\x1b[6~');
+  const second = normalize(render(80));
+  assert.doesNotMatch(second, /preview line 01/);
+  assert.match(second, /preview line 11/);
+  assert.match(second, /↑ 10 earlier preview lines/);
+  assert.match(second, /Request changes/);
+
+  send('\x1b[5~');
+  assert.match(normalize(render(80)), /preview line 01/);
+  send('\x1b[6~');
+  send('\r');
+  const result = await pending;
+  assert.deepEqual(result.details, { status: 'selected', value: 'start', label: 'Start implementation' });
 });
 
 test('askUser transcript renderers wrap complete questions and selected labels instead of truncating them', () => {

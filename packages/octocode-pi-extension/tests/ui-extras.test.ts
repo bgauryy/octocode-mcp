@@ -47,13 +47,13 @@ test('buildShortcutHintsRow color-codes keycaps and action labels', () => {
     { key: 'esc', label: 'stop', token: 'error', keyToken: 'error' },
   ], theme);
 
-  assert.equal(row, '**<accent:shift+tab>** <mdLink:think> · **<warning:ctrl+shift+a>** <warning:perm> · **<syntaxOperator:ctrl+l>** <accent:model> · **<error:esc>** <error:stop>');
+  assert.equal(row, '**<accent:shift+tab>** <mdLink:think> · **<warning:ctrl+shift+a>** <warning:perm> · **<mdCode:ctrl+l>** <accent:model> · **<error:esc>** <error:stop>');
   assert.deepEqual(calls, [
     ['accent', 'shift+tab'],
     ['mdLink', 'think'],
     ['warning', 'ctrl+shift+a'],
     ['warning', 'perm'],
-    ['syntaxOperator', 'ctrl+l'],
+    ['mdCode', 'ctrl+l'],
     ['accent', 'model'],
     ['error', 'esc'],
     ['error', 'stop'],

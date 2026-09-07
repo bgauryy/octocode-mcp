@@ -246,6 +246,8 @@ export interface CheckAudit {
   ok: boolean;
   pending: PendingVerification[];
   pendingCount: number;
+  staleActive: Array<{ runId: string; taskId: string | null; agentId: string }>;
+  staleActiveCount: number;
   filters: {
     agentId: string | null;
     planId: string | null;

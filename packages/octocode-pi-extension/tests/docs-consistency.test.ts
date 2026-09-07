@@ -45,7 +45,7 @@ test('support tool inventory exposes only the consolidated coordination surface'
 test('agent-facing docs expose only the consolidated media surface', () => {
   for (const relativePath of ['README.md', 'HARNESS.md', 'docs/TOOLS.md']) {
     const content = readPackageFile(relativePath);
-    assert.ok(content.includes('`readMedia`'), `readMedia missing from ${relativePath}`);
+    assert.ok(content.includes('`inspectMedia`'), `inspectMedia missing from ${relativePath}`);
     assert.ok(content.includes('`media`'), `media missing from ${relativePath}`);
     assert.doesNotMatch(content, /\| `readImage` \||\| `createMedia` \|/, `${relativePath} advertises a retired media tool`);
   }

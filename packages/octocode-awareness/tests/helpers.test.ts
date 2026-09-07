@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   utcNow, parseJsonList, tagsText, normalizeTags,
   normalizeReferences, normalizeLabel, normalizeNotificationKind, normalizeReflectionOutcome, normalizeFilePath, rowToMemory,
@@ -7,15 +7,15 @@ import {
 import { resolve } from 'node:path';
 
 describe('utcNow', () => {
-  it('returns ISO-8601 without milliseconds', () => {
-    const ts = utcNow();
-    expect(ts).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
-  });
+  afterEach(() => vi.useRealTimers());
 
-  it('two calls within 1s are close', () => {
-    const a = new Date(utcNow()).getTime();
-    const b = new Date(utcNow()).getTime();
-    expect(b - a).toBeLessThan(1000);
+  it('returns exact UTC seconds across a clock boundary', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-02T03:04:05.999Z'));
+    expect(utcNow()).toBe('2026-01-02T03:04:05Z');
+
+    vi.setSystemTime(new Date('2026-01-02T03:04:06.000Z'));
+    expect(utcNow()).toBe('2026-01-02T03:04:06Z');
   });
 });
 

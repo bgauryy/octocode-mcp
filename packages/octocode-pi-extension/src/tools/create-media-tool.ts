@@ -6,7 +6,7 @@
  *   type=pdf                    → headless Chrome printToPDF
  *   type=gif|trim|audio|convert → ffmpeg / ffprobe
  *
- * Read-only inspection belongs to readMedia.
+ * Read-only inspection belongs to inspectMedia.
  *
  * Inline-capable results (image, frame, contactSheet, waveform) render in the
  * TUI like createImage did; the PNG stays out of model context unless
@@ -234,13 +234,14 @@ export function registerMediaTool(
   registerFn(pi, registeredToolNames, {
     name: 'media',
     label: 'Media',
-    description: 'Create or transform media. Render image/PDF from SVG, HTML, Markdown, or images; make GIFs, trim clips, extract audio, convert formats, or concat sources[]. Writes are path-guarded; use readMedia for inspection.',
+    description: 'Create or transform media. Render image/PDF from SVG, HTML, Markdown, or images; make GIFs, trim clips, extract audio, convert formats, or concat sources[]. Writes are path-guarded; use inspectMedia to inspect existing files without writing.',
     promptSnippet: 'Create image/PDF artifacts or transform existing audio/video/image files.',
     promptGuidelines: [
       'Use type:image/pdf to author; type:gif/trim/audio/convert transforms `source` into `dest`.',
       'type:concat joins sources[] — reencode:true for different codecs/resolutions.',
+      'For inspecting existing media without writing files, use inspectMedia. For raw ffmpeg operations (filter_complex, loudnorm, VMAF), use runFfmpeg.',
       'convert videoCodec:"h264_videotoolbox"/"hevc_videotoolbox" for hardware encoding on macOS.',
-      'Use readMedia for metadata, frames, contact sheets, waveforms, and spectrograms.',
+      'Use inspectMedia for metadata, frames, contact sheets, waveforms, and spectrograms (read-only, returns inline pixels for vision).'
     ],
     parameters: buildQueryEnvelopeSchema(Type, buildParameters(Type), {
       reasoningDescription: 'Concise reason this media operation is necessary.',

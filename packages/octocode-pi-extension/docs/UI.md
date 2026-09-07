@@ -1,6 +1,6 @@
 # Octocode TUI design
 
-This page is the canonical design contract and widget inventory for the Octocode Pi terminal interface. `src/tui/` is the canonical rendering layer; tool modules supply state and event handlers but do not own layout primitives.
+This page is the canonical design contract and widget inventory for the shipped Octocode Pi terminal interface. `src/tui/` is the canonical rendering layer; tool modules supply state and event handlers but do not own layout primitives. [Adaptive status and progress UX](STATUS_PROGRESS_UX.md) defines the proposed target for bounded footer metadata, plans, tasks, agents, messages, and verification; it becomes canonical here only after implementation checks pass.
 
 The TUI is conversation-first: transcript content is durable, decisions appear inline at the point of interruption, persistent state has one owner, and detailed navigation uses temporary overlays or explicit commands.
 
@@ -56,13 +56,34 @@ Only one interactive surface owns keyboard focus. Closing or submitting that sur
 | Workers | Worker inbox and agent inspection (`agent-inbox.ts`, `agent-tools.ts`) | Pick → inspect → steer or stop. Footer rows show every visible non-killed worker, attention first; commands retain the complete ledger and evidence. |
 | Configuration | Effort dial (`effort-dial.ts`) | Show the current value, explain each choice, and persist the selected level. |
 | Safety | MCP consent and removal pickers (`mcp-tool.ts`) | Name the external process or server and make cancel the safe exit. Never mutate when interactive consent is unavailable. |
-| Recovery | Checkpoint picker (`rewind-command.ts`) | Identify snapshots by time and intent; distinguish file restoration from conversation rewind. |
+| Recovery | Local history picker (`rewind-command.ts`) | Identify entries by time and intent, preview file changes, apply only the confirmed preview, and report the receipt's verification run as pending. |
 | Editor | Mention and plan-step autocomplete (`autocomplete-providers.ts`) | `@` selects workers or skills, `#` selects plan steps, and all other input delegates to file completion. |
 | Editor | Watch mode (`ai-watch.ts`) | Convert explicit `AI!` comments into steer or follow-up messages without stealing editor focus; injected prompts are bounded and point back to the source when markers are omitted. |
 | Persistent state | Unified footer (`tui/footer-view.ts`, footer registration in `extension-ui.ts`) | Responsive state rows plus one row per visible worker. Promote activity, warnings, exact context, current work, identity, and settings; truncate individual segments at the available width rather than hiding them behind `+N`. |
 | Discovery | Dashboard and command guide (`index.ts`, `commands-command.ts`) | Present health first, then the smallest useful next actions. The live command registry owns command inventory. |
 | Feedback | Inline validation and notifications (`ask-user-tool.ts`, `desktop-notify.ts`) | Keep recoverable validation next to the control; reserve desktop notifications for completion, failure, or blocked work. |
 | Export | Branded HTML export (`export-command.ts`) | Produce a sibling artifact without changing transcript state. |
+
+## Notification and recovery inventory
+
+| Event | User surface | Context behavior |
+|---|---|---|
+| Tool starts or overlaps another call | Footer names the running tool and concurrent count. The tool row owns arguments, progress, and results. | No extra message is injected. |
+| Tool fails | Result row plus one warning per tool name per turn. | The original tool result remains authoritative; notifications exclude arguments and output. |
+| Decision widget opens | Inline question; optional desktop alert on the first interview page. | Submission, cancellation, timeout, and pending host interaction retain distinct outcomes. |
+| Awareness message arrives | Attributed, expandable peer card. Canonical `blocker` and `handoff` signals alert regardless of their subject wording. | The existing attributed message is displayed once, without adding a second copy to context. Signal kind survives the outbox; `request` and `decision` signals are held for human review. |
+| Peer delivery fails or a proposal is held | Deduplicated warning and persistent Awareness attention in the footer. | An unconfirmed delivery is not acknowledged. Held proposals do not become model instructions or approval. |
+| Verification debt or unread peer messages | Awareness attention row; detailed shared status remains in commands. | Counts are a UI projection of the shared store. |
+| Worker completes or fails | Existing worker row and inbox notification; desktop notification when idle or after a long run. | Worker evidence remains in its result and ledger. |
+| Compaction starts | Footer shows **Compacting context…**. | Pi owns normal summarization; the deterministic checkpoint is reserved for split-turn overflow. |
+| Compaction succeeds | Expandable checkpoint card with estimates and artifact references. | Current context sources are validated before recovery. |
+| Compaction fails or is cancelled | Pi reports the outcome; the extension clears compaction activity and restores the selected tools. | No successful checkpoint is emitted. |
+| Context recovery finishes | State-entry card reports validated and restored counts, pending decisions, and omitted context. | Rendering the receipt costs no model tokens. Stale or invalid sources never acquire authority from a checkpoint. |
+| Plan or task changes | Existing footer, tool result, and live plan page share the canonical read model. | Plan changes are delivered on change; unresolved decisions remain pending through recovery. |
+
+[`lifecycle-ui.ts`](../src/tools/lifecycle-ui.ts) projects transient tool and compaction events without overwriting plan activity. [`custom-messages.ts`](../src/tools/custom-messages.ts) renders peer, checkpoint, and recovery cards. [`awareness-event-consumer.ts`](../src/tools/awareness-event-consumer.ts) confirms persistence before acknowledging peer delivery or notifying about a received message.
+
+Desktop attention uses [`desktop-notify.ts`](../src/tools/desktop-notify.ts): `OCTOCODE_NOTIFY=0` mutes it, noninteractive decision and peer paths emit no terminal escapes, and shutdown suppression prevents late alerts from reaching a replacement session. Desktop payloads contain only event labels, without questions, peer bodies, or tool output. Routine successful tools use their result rows without a desktop alert.
 
 ## Responsive layout
 
@@ -179,7 +200,7 @@ The runtime tool inventory remains:
 ## Command inventory
 
 The browser reads `pi.getCommands()` when opened. It hides private names, groups
-entries by source, and supports search. Octocode contributes `/configuration`;
+entries by source, and supports search. Octocode contributes `/octocode-rewind` and `/configuration`;
 host commands and user-installed skills or prompts keep their own entries.
 
 At startup the footer checks GitHub login through `npx octocode auth status --json`.
@@ -191,9 +212,10 @@ Motion language: the transcript and footer use no animated decoration — pi's w
 
 ## Agent ledger
 
-The footer shows current workers. Ask the agent to inspect, message, wait for, or
-stop a worker through its `agent` tool. Notifications remain available without
-an extension slash command.
+The footer shows current workers. `/octocode-inbox` opens the keyboard-driven
+worker picker, then offers transcript, steer, and stop actions. The same command
+is discoverable through the command palette; the `agent` tool remains the model-facing
+control path.
 
 Ledger badges:
 
@@ -224,7 +246,7 @@ Ledger badges:
 | **Default fg** | `count`, `bright` | Values such as counts and totals, plus pending plan rows — bright against dim labels | — |
 | **Grey ramp** | `muted` → `dim` → theme `faint` | Secondary text → chrome (separators, `│` bars, hints, finished plan rows) → rules | primary content |
 
-The footer speaks in words, not glyphs, across responsive rows: `ctx ▓▓░░ 25% (250k/1M) · plan 3/6 · task 4 validating UI`, followed by identity/configuration and one row for each visible worker. When width is limited, each row keeps its highest-priority content and truncates safely; it does not hide footer state behind `+N`. `/octocode-status`, `/octocode-agents`, and `/octocode-harness` retain diagnostic detail.
+The footer speaks in words, not glyphs, across responsive rows: `ctx ▓▓░░ 25% (250k/1M) · plan 3/6 · task 4 validating UI`, followed by identity/configuration and exactly one physical row for each visible worker. Worker rows keep identity and state first, reserve room for `/octocode-inbox` on attention states, and add elapsed/activity only when width remains. Their height does not change as live details update, so footer repaints do not move the transcript viewport. The footer does not hide state behind `+N`; `/octocode-inbox`, `/octocode-status`, `/octocode-agents`, and `/octocode-harness` retain detail.
 
 Attention states in the footer (`⚠`, `✗`, `✉`, near-full ctx) are additionally **bold** (`FooterSegment.attention`) — the only emphasis in the toolbar, so bold always means "look here". Per-row budget: at most three colours plus the grey ramp.
 
@@ -233,6 +255,7 @@ Raw ANSI output (shell transcript rows, `coloredDiff`) goes through `cli-design.
 ## Width and theme rules
 
 - Shared width-safe renderers build every rendered line.
+- Collapsed multi-line tool results keep one transcript row and show `Ctrl+O details`; expanded batches render their full response instead of repeating the compact rows.
 - Use theme colors from callback contexts when Pi provides a theme; raw shell rows use the visual contract's `NO_COLOR`-aware fallback.
 - The `askUser` decision picker uses Pi `ctx.ui.custom(builder)` inline (no overlay options) so the prompt appears in the message flow at the bottom, reading as part of the conversation rather than a floating overlay box.
 - Footer/status success is quiet; warnings and errors notify.

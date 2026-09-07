@@ -28,7 +28,7 @@ test('all registered core tools accept representative queries through the real P
   const examples: Record<string, Record<string, unknown>> = {
     file: { type: 'write', path: '/tmp/example.txt', content: 'example' },
     bash: { command: 'true' },
-    readMedia: { type: 'image', path: '/tmp/example.png' },
+    inspectMedia: { type: 'image', path: '/tmp/example.png' },
     media: { type: 'image', svg: '<svg/>', dest: '/tmp/example.png' },
     runFfmpeg: { args: ['-version'] },
     web: { query: 'Pi extension documentation' },

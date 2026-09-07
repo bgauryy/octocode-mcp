@@ -330,6 +330,36 @@ function makeHarness(entries: WorkerLedgerEntry[] = []): Harness {
   };
 }
 
+test('registerAgentInbox registers a reachable worker inbox command', async () => {
+  const fakePi = makeFakePi();
+  const entry = makeEntry();
+  const overlayTitles: string[] = [];
+  let overlayStep = 0;
+  const registration = registerAgentInbox(
+    fakePi.pi,
+    () => undefined,
+    {
+      registerListener: () => () => undefined,
+      listEntries: () => [entry],
+      runOverlay: async (_ctx, opts) => {
+        overlayTitles.push(opts.title);
+        overlayStep += 1;
+        return overlayStep === 1 ? entry.agentId : 'dismiss';
+      },
+      steer: () => false,
+      kill: () => false,
+      transcript: () => undefined,
+      notificationsEnabled: () => false,
+    },
+  );
+
+  const command = fakePi.commands['octocode-inbox'];
+  assert.ok(command, 'the documented /octocode-inbox command is registered');
+  await command.handler('', { hasUI: true } as unknown as PiContext);
+  assert.deepEqual(overlayTitles, ['Octocode agent inbox', 'atlas (aaaabbbb)']);
+  registration.shutdown();
+});
+
 test('registerAgentInbox: worker exit while idle fires OSC + title flash + one notify, deduped per worker', () => {
   const h = makeHarness();
   const entry = makeEntry({ status: 'exited', normalizedStatus: 'done', result: 'refactor complete' });

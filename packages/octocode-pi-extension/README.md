@@ -24,7 +24,7 @@ The live source inventory is authoritative. Use `/configuration` inside Pi and s
 | Pi support tools | 13 |
 | Guarded Pi builtin overrides | 1 (`bash`) |
 | Disabled Pi builtins | 6 |
-| Slash command entries | 1 |
+| Slash command entries | 3 |
 | Bundled main-agent skills | 15 |
 
 ### Support tools
@@ -41,7 +41,7 @@ The live source inventory is authoritative. Use `/configuration` inside Pi and s
 | `localServer` | Serve an inspected local directory on loopback for review. |
 | `MCPTool` | Discover, describe, call, and manage MCP tools and servers. |
 | `askUser` | Request structured input through Pi's UI. |
-| `readMedia` | Inspect images, video, and audio. |
+| `inspectMedia` | Inspect images, video, and audio. |
 | `media` | Create or transform media and PDFs. |
 | `runFfmpeg` | Run guarded ffmpeg or ffprobe argument lists. |
 
@@ -54,6 +54,12 @@ locks, memory, bookkeeping and maintenance share the same SQLite ledger as nativ
 Pi events and external CLI agents. Pi retains automatic registry/event delivery,
 mutation guards and plan UI. Peers must use the same physical database and workspace
 with distinct stable IDs. See [Awareness agent flow](docs/AWARENESS_AGENT_FLOW.md).
+
+Awareness also records bounded local file history around native `file` mutations with bundled private Git storage. `/octocode-rewind` previews and explicitly applies a selected file restore in interactive Pi; headless sessions use the same `history` commands through the bundled Awareness CLI and skill. This does not snapshot the workspace on every prompt or rewind the conversation.
+
+Typed and browser workers receive explicit Octocode research, skill, and Awareness
+capabilities. Custom workers default to `MCPTool`, `skill`, and `bash`; callers can
+request an explicit allowlist, `tools:[]`, or lean mode for a narrower worker.
 
 ## Configuration and privacy
 
@@ -78,16 +84,18 @@ Set `OCTOCODE_HOME` to change the Octocode home directory. Set `OCTOCODE_STORAGE
 
 See the repository [configuration guide](https://github.com/bgauryy/octocode/blob/main/docs/CONFIGURATION.md) for every supported key and [docs/SETTINGS.md](docs/SETTINGS.md) for Pi's control center, persistence, and security behavior.
 
-## Slash command entries (1)
+## Slash command entries (3)
 
 | Command | Purpose |
 |---|---|
+| `/octocode-rewind` | Preview and explicitly apply a local file-history restore. |
+| `/octocode-inbox` | Inspect, steer, or stop spawned workers through a keyboard-driven picker. |
 | `/configuration` | Open the local browser configuration page. |
 
 The footer shows `/configuration`. The page controls MCP connections and tools,
 skills, permissions, theme, effort, and footer density, and opens the current plan
 for review. Host-provided and user-installed commands remain in the live inventory.
-The extension does not add workflow commands or rewrite input through regex triggers.
+The recovery command remains preview-first and does not rewrite input through regex triggers.
 
 ## Bundled skills (15)
 
@@ -129,4 +137,6 @@ yarn workspace @octocodeai/pi-extension test
 yarn workspace @octocodeai/pi-extension typecheck
 ```
 
-The package's production test suite checks the documented inventories against the executable harness so counts and names cannot drift silently.
+The package's production test suite checks the documented inventories against the executable harness so counts and names cannot drift silently. Cross-host conformance code imports `createProductionPiScenarioSuite` and `captureProductionPiLifecycle` from `@octocodeai/pi-extension/testing`; the runtime root intentionally exports neither helper.
+
+Awareness uses one compact cooperation policy with full CLI/skill detail on demand. See [agent flow](docs/AWARENESS_AGENT_FLOW.md#final-worker-audits-and-context-estimates) for bounded wake-ups, final worker debt audits and context-estimate limits.

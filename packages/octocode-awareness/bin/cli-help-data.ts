@@ -1,4 +1,5 @@
 import { BUNDLED_SKILLS, BUNDLED_SKILLS_DIR } from './cli-model.js';
+import { HISTORY_ROUTE_DESCRIPTORS } from '../src/schema/definitions-history.js';
 
 // ─── Help text ────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ hooks: install --host codex|claude|cursor --profile guard|coordination|full --dr
 exits: 0 ok / 1 validation|verification debt / 2 conflict|wait|strict hook health`;
 
 export const COMMAND_TO_SCHEMA: Record<string, string> = {
+  ...Object.fromEntries(HISTORY_ROUTE_DESCRIPTORS.map(route => [route.schema, route.schema])),
   'tell-memory': 'memory_record',
   'get-memory': 'memory_recall',
   'memory-archive': 'memory_lifecycle',
@@ -86,6 +88,7 @@ export const COMMAND_TO_SCHEMA: Record<string, string> = {
 };
 
 export const COMMAND_DISPLAY: Record<string, string> = {
+  ...Object.fromEntries(HISTORY_ROUTE_DESCRIPTORS.map(route => [route.schema, route.command])),
   'tell-memory': 'memory record',
   'get-memory': 'memory recall',
   'memory-archive': 'memory archive',
@@ -127,6 +130,7 @@ export const COMMAND_DISPLAY: Record<string, string> = {
 };
 
 export const COMMAND_EXAMPLE: Record<string, string> = {
+  ...Object.fromEntries(HISTORY_ROUTE_DESCRIPTORS.map(route => [route.schema, route.example])),
   'tell-memory': 'npx @octocodeai/octocode-awareness memory record --agent-id agent --task-context "build failure" --observation "Run yarn build before tests" --importance 7 --label GOTCHA --workspace "$PWD" --compact',
   'get-memory': 'npx @octocodeai/octocode-awareness memory recall --query "current task" --workspace "$PWD" --smart --compact',
   'memory-archive': 'npx @octocodeai/octocode-awareness memory archive --memory-id mem_123 --dry-run --compact',

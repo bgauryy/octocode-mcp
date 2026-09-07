@@ -87,6 +87,63 @@ describe('production rehydration orchestration', () => {
     expect(consumeValidatedRehydration(ctx as never, [], { allowProjection: true })).toBeUndefined();
   });
 
+  it('validates but does not reproject current content already retained by the host', () => {
+    const { ctx, artifact } = setup();
+    const retainedPlan = '<active_plan>retained</active_plan>';
+    const segment = writeSegment('active-plan', 'plan', 'plan-domain', 'user', 'task', 'transcript', retainedPlan);
+    writeRehydrationLedger(artifact, {
+      capturedAt: new Date().toISOString(),
+      segments: [segment],
+      segmentContents: { [segment.id]: retainedPlan },
+      plan: { scope: 'same', branchSnapshotId: 'same', generation: 1 },
+      pendingInteractionIds: [], consumerCursors: {},
+    });
+    rehydrateSession(ctx as never, 'compaction', {
+      getLivePlan: () => ({ scope: 'same', branchSnapshotId: 'same', generation: 1, phase: 'executing', content: retainedPlan }),
+      openContinuity: () => ({ listPendingInteractions: () => [], getConsumerCursor: () => 0, close: vi.fn() }),
+      setActivity: vi.fn(),
+    });
+    const projection = consumeValidatedRehydration(ctx as never, [{ segment, content: retainedPlan }], {
+      allowProjection: true,
+      retainedContentDigests: new Set([contentDigest(retainedPlan)]),
+    });
+    expect(projection?.receipt.validated).toEqual(['active-plan']);
+    expect(projection?.receipt.reprojected).toEqual([]);
+    expect(projection?.receipt.skipped).toContain('active-plan');
+    expect(projection?.content).toBe('');
+  });
+
+  it('reprojects discarded or changed content and ignores retained digests until checkpoint trust validates', () => {
+    const { ctx, artifact } = setup();
+    const checkpointContent = 'checkpoint bytes';
+    const currentContent = 'changed bytes';
+    const segment = writeSegment('memory', 'memory-lead', 'memory', 'external-data', 'task', 'inspectable', checkpointContent);
+    writeRehydrationLedger(artifact, {
+      capturedAt: new Date().toISOString(), segments: [segment],
+      segmentContents: { memory: checkpointContent }, pendingInteractionIds: [], consumerCursors: {},
+    });
+    const dependencies = {
+      getLivePlan: () => undefined,
+      openContinuity: () => ({ listPendingInteractions: () => [], getConsumerCursor: () => 0, close: vi.fn() }),
+      setActivity: vi.fn(),
+    };
+    rehydrateSession(ctx as never, 'compaction', dependencies);
+    const changed = consumeValidatedRehydration(ctx as never, [{
+      segment: writeSegment('memory', 'memory-lead', 'memory', 'external-data', 'task', 'inspectable', currentContent),
+      content: currentContent,
+    }], { allowProjection: true, retainedContentDigests: new Set([contentDigest(currentContent)]) });
+    expect(changed?.receipt.stale).toContain('memory');
+    expect(changed?.receipt.validated).toEqual([]);
+
+    rehydrateSession(ctx as never, 'compaction', dependencies);
+    const discarded = consumeValidatedRehydration(ctx as never, [{ segment, content: checkpointContent }], {
+      allowProjection: true,
+      retainedContentDigests: new Set(),
+    });
+    expect(discarded?.receipt.reprojected).toEqual(['memory']);
+    expect(discarded?.content).toContain(checkpointContent);
+  });
+
   it('rejects stale plan revisions and changed content without mutating live authority', () => {
     const { ctx, artifact } = setup();
     writeRehydrationLedger(artifact, {

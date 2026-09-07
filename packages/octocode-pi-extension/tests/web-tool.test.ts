@@ -178,7 +178,7 @@ test('web renderResult covers partial, search stats, page stats, expanded text, 
   const partial = tool.renderResult!(textResult('pending'), { isPartial: true }, theme).render(120)[0]!;
   assert.match(partial, /<accent>[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]<\/accent>/);
   assert.match(partial, /<toolTitle>web<\/toolTitle>/);
-  assert.match(partial, /<dim>Fetching\u2026<\/dim>/);
+  assert.match(partial, /<accent>Fetching\u2026<\/accent>/);
 
   const search = tool.renderResult!(
     textResult('search', { results: [{}, {}] }),

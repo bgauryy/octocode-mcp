@@ -12,6 +12,7 @@ import { hasUiTickSubscriber, setUiTickSubscriber } from '../tui/ui-ticker.js';
 import { shortId } from './ids.js';
 import { SEP } from '../tui/palette.js';
 import { openPersistentAwareness } from './storage-policy.js';
+import { inspectWorkerAwareness, type WorkerAwarenessInspection } from './awareness-worker-audit.js';
 import type {
   PiContext,
   SpawnPolicy,
@@ -144,6 +145,7 @@ interface AgentRecord {
   planScope?: string;
   process: AgentProcess;
   status: AgentStatus;
+  awarenessInspection?: WorkerAwarenessInspection;
   startedAt: number;
   updatedAt: number;
   exitCode?: number;
@@ -592,6 +594,7 @@ function buildPiArgs(params: SpawnAgentParams, name: string, promptFiles: string
   if (shouldForceThinkingOffForToolCallingWorker(params, workerTools)) args.push('--thinking', 'off');
   else if (params.thinking) args.push('--thinking', params.thinking);
   if (workerTools.length) args.push('--tools', workerTools.join(','));
+  else if (params.tools !== undefined) args.push('--no-tools');
   args.push('--no-context-files');
 
   if (resourceMode === 'lean') {
@@ -1083,6 +1086,7 @@ function processRpcLine(record: AgentRecord, line: string): void {
     // silence watchdog whenever the channel proves live.
     touch(record);
   } else if (eventType === 'agent_start') {
+    record.awarenessInspection = undefined;
     // A structured result belongs to the turn that just ended. Clear it before
     // exposing the new turn as running, otherwise a prior [DONE]/[BLOCKED]
     // overrides the live process state in the footer and ledger.
@@ -1118,6 +1122,7 @@ function processRpcLine(record: AgentRecord, line: string): void {
     if ((event as { willRetry?: boolean }).willRetry === true || record.pendingMessages > 0) {
       touch(record);
     } else {
+      record.awarenessInspection = inspectWorkerAwareness(record);
       touch(record, 'idle');
       notifyWaiters(record);
     }
@@ -1385,6 +1390,7 @@ export function spawnRpcAgent(params: SpawnAgentParams, ctx?: PiContext): AgentR
     // ledger keeps showing 'queued' against a dead worker.
     record.pendingMessages = 0;
     if (record.status !== 'killed') touch(record, code === 0 ? 'exited' : 'failed');
+    record.awarenessInspection = inspectWorkerAwareness(record);
     pushLedgerEvent(record, record.status === 'failed' ? 'error' : 'exit', `process closed with code ${record.exitCode ?? 'unknown'}`);
     removePromptFiles(record);
     cleanupRecordWorktree(record);
@@ -1415,6 +1421,8 @@ function summarizeAgent(record: AgentRecord, opts: { full?: boolean } = {}) {
     agentId: record.id,
     name: record.name,
     status: record.status,
+    awarenessAgentId: record.awarenessAgentId,
+    awarenessInspection: record.awarenessInspection,
     cwd: record.cwd,
     model: getArgValue(record.args, '--model'),
     provider: getArgValue(record.args, '--provider'),
@@ -1700,14 +1708,18 @@ export function waitForAgent(record: AgentRecord, options: WaitOptions = {}): Pr
  */
 export async function waitForAgentTurn(
   record: AgentRecord,
-  opts: { maxSilenceMs?: number; absoluteCapMs?: number } = {},
+  opts: { maxSilenceMs?: number; absoluteCapMs?: number; signal?: AbortSignal } = {},
 ): Promise<WaitOutcome> {
   const startedAt = record.updatedAt;
   const absoluteCapMs = opts.absoluteCapMs;
   let outcome: WaitOutcome;
   do {
     const remaining = absoluteCapMs ? Math.max(1, absoluteCapMs - (Date.now() - startedAt)) : undefined;
-    outcome = await waitForAgent(record, { maxSilenceMs: opts.maxSilenceMs, absoluteCapMs: remaining });
+    outcome = await waitForAgent(record, {
+      maxSilenceMs: opts.maxSilenceMs,
+      absoluteCapMs: remaining,
+      signal: opts.signal,
+    });
     if (outcome.reason === 'terminal' || outcome.reason === 'cap') break;
     // reason:'idle' — keep waiting only if the worker is still alive-and-quiet.
     if (!outcome.probedAlive || !isProcessAlive(record)) break;
@@ -1716,6 +1728,9 @@ export async function waitForAgentTurn(
 }
 
 function renderAgentResult(records: AgentRecord[], header: string): ToolCallResult {
+  for (const record of records) {
+    if (isTerminal(record)) record.awarenessInspection = inspectWorkerAwareness(record);
+  }
   const summaries = records.map((record) => summarizeAgent(record));
   const lines: string[] = [`${header} (${records.length}):`];
   for (const s of summaries) {
@@ -1735,6 +1750,11 @@ function renderAgentResult(records: AgentRecord[], header: string): ToolCallResu
     const toolInfo = typeof s.activeTool === 'string' ? ` \u00b7 active:${s.activeTool}` : '';
     const modelInfo = ` \u00b7 ${formatAgentModelLine(s)}`;
     lines.push(`  ${meta.icon} ${s.name} (${shortId(s.agentId)}) \u00b7 ${meta.label}${exit}${handback}${modelInfo} \u00b7 ${elapsed}${toolInfo}${preview}`);
+    lines.push(`    agentId: ${s.agentId}`);
+    if (s.awarenessInspection) {
+      const inspection = s.awarenessInspection;
+      lines.push(`    Awareness ${inspection.agentId ?? 'identity unavailable'}: ${inspection.status === 'unavailable' ? 'debt unknown' : `${inspection.pendingCount} pending checks, ${inspection.staleActiveCount} stale active`}; inspection is not verification.`);
+    }
   }
   return {
     content: [{ type: 'text', text: lines.join('\n') }],
@@ -1886,7 +1906,7 @@ function formatOctocodeAgentsHelp(): string {
     '- after spawning: agent({queries:[{reasoning:"...",type:"inspect"|"wait"|"message"|"kill",agentId:"..."}]} )',
     '- visible UI: running/blocked/failed/done workers appear in the unified footer until hide/prune/remove; killed workers are omitted',
     '',
-    'Tip: ids can be full ids or short prefixes shown by list.',
+    'Tip: lifecycle calls should copy the canonical agentId shown by list; unique short prefixes are accepted for convenience.',
   ].join('\n');
 }
 

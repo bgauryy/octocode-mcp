@@ -54,6 +54,7 @@ One root noun/action vocabulary owns the Awareness ledger: `plan`, `task`, `work
 | `memory` | Scoped observations, lexical/semantic recall, provenance and expiry, evaluation, reindexing, and lifecycle. |
 | `refinement`, `reflect` | Owned follow-up and concise reusable lessons. |
 | `session capture` | Repository continuation context and session-linked learning. |
+| `history` | [Local history](docs/LOCAL_HISTORY.md). |
 | `maintenance` | Initialization, diagnostics, stale-state cleanup, and self-tests. |
 | `config`, `hooks`, `hook run` | Policy, host integration, health checks, and lifecycle receipts. |
 | `docs`, `schema` | Reference navigation and command/entity discovery. |
@@ -71,7 +72,13 @@ Awareness reports observed verification debt, scoped contention, reference warni
 
 ## Integrate and verify
 
-In-process hosts import `openAwarenessStore` and external-agent helpers; unique continuity commands also expose `dispatchAwarenessCommand` from `@octocodeai/octocode-awareness`. The sibling native host imports that public package API through a local Yarn portal during development. Internal callers import the owning module. Shared entity types and embedding utilities belong to `@octocodeai/agent-contracts/entities` and `@octocodeai/agent-contracts/embed`; Awareness does not provide compatibility modules for them. Preview optional hooks before installation, then check the selected host:
+In-process hosts import `openAwarenessStore`, `dispatchAwarenessCommand`, and
+`createAwarenessEventConsumer` from the public package API. See the
+[runtime flow](docs/HOW_IT_WORKS.md#peer-event-delivery) for ordered outbox delivery.
+The sibling native host uses that API through a local Yarn portal during development.
+Shared entity types and embedding utilities belong to
+`@octocodeai/agent-contracts/entities` and `@octocodeai/agent-contracts/embed`.
+Preview optional hooks before installation, then check the selected host:
 
 ```bash
 npx @octocodeai/octocode-awareness hooks install --host <host> --profile coordination --dry-run

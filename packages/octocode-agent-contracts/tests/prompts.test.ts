@@ -10,6 +10,14 @@ import {
 import * as sharedPrompts from '../src/prompts/index.js';
 
 describe('shared prompts', () => {
+  it('shares compact widget and context guidance without introducing host tool names', () => {
+    const prompt = buildOctocodeSystemPrompt('');
+    expect(prompt).toContain('<interaction_context>');
+    expect(prompt).toContain('plain messages');
+    expect(prompt).toContain('never imply approval');
+    expect(prompt).toContain('continuations');
+    expect(sharedPrompts).toHaveProperty('INTERACTION_CONTEXT_GUIDANCE');
+  });
   it('exports only prompts that participate in a supported runtime flow', () => {
     expect(sharedPrompts).not.toHaveProperty('MULTIDIMENSIONAL_MATHEMATICAL_FRAMEWORK_PROMPT');
   });

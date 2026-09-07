@@ -1,4 +1,4 @@
-import { assertContextSegmentAuthority, contentDigest, type ContextSegmentV1 } from '@octocodeai/octocode-awareness';
+import { EXTERNAL_AGENT_AWARENESS_PROMPT, assertContextSegmentAuthority, contentDigest, type ContextSegmentV1 } from '@octocodeai/octocode-awareness';
 
 export interface ContextSegmentInput {
   id: string;
@@ -16,6 +16,13 @@ export interface AssembledContextV1 {
   version: 1;
   content: string;
   manifest: ContextSegmentV1[];
+  /** Payload-free estimates; provider usage and cache totals are separate observations. */
+  estimates: {
+    method: 'ceil-utf16-chars/4';
+    total: number;
+    awarenessInstructions: number;
+    byKind: Partial<Record<ContextSegmentV1['kind'], number>>;
+  };
 }
 
 export const INITIAL_CONTEXT_TOKEN_BUDGET = 80_000;
@@ -60,15 +67,26 @@ export function assembleContextSegments(
   const seen = new Set<string>();
   const nonEmpty = inputs.filter((input) => input.content.trim().length > 0);
   let totalEstimatedTokens = 0;
+  const byKind: AssembledContextV1['estimates']['byKind'] = {};
+  let awarenessInstructions = 0;
   const manifest = nonEmpty.map((input) => {
     if (!input.id.trim() || seen.has(input.id)) throw new Error(`context segment id must be unique: ${input.id}`);
     seen.add(input.id);
     const estimatedTokens = estimateContextTokens(input.content);
     totalEstimatedTokens += estimatedTokens;
+    byKind[input.kind] = (byKind[input.kind] ?? 0) + estimatedTokens;
+    if (input.id === 'awareness-cli-runtime') awarenessInstructions += estimatedTokens;
+    if (input.id === 'octocode-product-policy') {
+      awarenessInstructions += (input.content.split(EXTERNAL_AGENT_AWARENESS_PROMPT).length - 1)
+        * estimateContextTokens(EXTERNAL_AGENT_AWARENESS_PROMPT);
+    }
     return contextSegmentFromInput(input);
   });
   if (options.totalTokenBudget !== undefined && totalEstimatedTokens > options.totalTokenBudget) {
     throw new Error(`context assembly exceeds total token budget ${options.totalTokenBudget} (estimated ${totalEstimatedTokens})`);
   }
-  return { version: 1, content: nonEmpty.map((input) => input.content).join('\n\n'), manifest };
+  return {
+    version: 1, content: nonEmpty.map((input) => input.content).join('\n\n'), manifest,
+    estimates: { method: 'ceil-utf16-chars/4', total: totalEstimatedTokens, awarenessInstructions, byKind },
+  };
 }

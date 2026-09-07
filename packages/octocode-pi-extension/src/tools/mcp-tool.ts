@@ -2034,7 +2034,7 @@ async function validateOneMcpTool(
   };
 }
 
-export function formatMcpSchemaValidationErrors(errors: McpSchemaValidationError[]): string {
+export function formatMcpSchemaValidationErrors(errors: McpSchemaValidationError[], _target: { server: string; tool: string }): string {
   const seen = new Set<string>();
   const lines = errors.flatMap((error) => {
     const message = /schema is false|expected never/i.test(error.message)
@@ -2045,7 +2045,6 @@ export function formatMcpSchemaValidationErrors(errors: McpSchemaValidationError
     seen.add(line);
     return [line];
   });
-  lines.push('Hint: run MCPTool action:"describe" for this tool, then use only fields supported by the selected operation.');
   return lines.join("\n");
 }
 
@@ -2517,7 +2516,7 @@ export async function handleMcpAction(
     if (!validation.valid) {
       mcpSchemaMetrics.blockedCalls += 1;
       return result(
-        `MCP_SCHEMA_INVALID ${serverName}/${tool}\n${formatMcpSchemaValidationErrors(validation.errors)}`,
+        `MCP_SCHEMA_INVALID ${serverName}/${tool}\n${formatMcpSchemaValidationErrors(validation.errors, { server: serverName, tool })}`,
         {
           server: serverName,
           tool,

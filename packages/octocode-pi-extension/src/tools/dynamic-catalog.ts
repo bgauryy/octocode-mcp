@@ -50,16 +50,16 @@ function renderSection(label: string, entries: CatalogEntry[]): string[] {
  * skills. Reads both registries without an in-memory cache; the caller owns the
  * session-level prompt freeze.
  */
-export function getDynamicCapabilitiesAddendum(installedSkillNames: Iterable<string> = []): string {
+export function getDynamicCapabilitiesAddendum(installedSkillNames: Iterable<string> = [], available: { tools?: boolean; skills?: boolean } = {}): string {
   let toolEntries: CatalogEntry[] = [];
   let skillEntries: CatalogEntry[] = [];
   try {
-    toolEntries = listTools().map((t) => ({ name: t.name, description: t.description, uses: t.stats?.calls ?? 0 }));
+    if (available.tools !== false) toolEntries = listTools().map((t) => ({ name: t.name, description: t.description, uses: t.stats?.calls ?? 0 }));
   } catch {
     // A missing/corrupt tools registry must never break prompt assembly.
   }
   try {
-    skillEntries = listSkills().map((s) => ({ name: s.name, description: s.description, uses: s.stats?.uses ?? 0 }));
+    if (available.skills !== false) skillEntries = listSkills().map((s) => ({ name: s.name, description: s.description, uses: s.stats?.uses ?? 0 }));
   } catch {
     // Same for skills.
   }
@@ -69,7 +69,7 @@ export function getDynamicCapabilitiesAddendum(installedSkillNames: Iterable<str
 
   return [
     '<dynamic_capabilities>',
-    'Self-created reusable capabilities available this session (via callTool / skill type:"call"). ' +
+    `Self-created reusable capabilities available this session (via ${[toolEntries.length ? 'callTool' : '', skillEntries.length ? 'skill type:"call"' : ''].filter(Boolean).join(' / ')}). ` +
       'Their list modes expose full schemas and steps.',
     ...renderSection('tools', toolEntries),
     ...renderSection('skills', skillEntries),

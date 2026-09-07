@@ -7,7 +7,7 @@ import { extensionWorkspaceRoot } from '../src/extension-paths.js';
 import { buildDiscoverySnapshot, getDiscoveryFilePath, writeDiscoveryFile } from '../src/tools/discovery-file.js';
 import { discoverMcpConfigs, discoverMcpSystem } from '../src/tools/mcp-discovery.js';
 import { __test__ as mcpTestHooks } from '../src/tools/mcp-tool.js';
-import type { DiscoveredSkillState } from '../src/tools/skill-tool.js';
+import type { DiscoveredSkillState } from '../src/tools/skill-discovery.js';
 import type { PiContext } from '../src/types.js';
 
 afterEach(() => {
@@ -62,6 +62,7 @@ test('discovery context accounting includes direct tool contracts in the provide
       skills: 1,
       status: 'frozen',
       mode: 'exact',
+      contextAwarenessEstimates: { method: 'ceil-utf16-chars/4', total: 100, awarenessInstructions: 25, byKind: { 'product-policy': 100 } },
     },
   });
 
@@ -73,6 +74,7 @@ test('discovery context accounting includes direct tool contracts in the provide
     directToolChars: 40_000,
     providerSubtotalChars: 57_000,
     estimatedTokens: 14_250,
+    contextAwarenessEstimates: { method: 'ceil-utf16-chars/4', total: 100, awarenessInstructions: 25, byKind: { 'product-policy': 100 } },
     mcpServers: 1,
     mcpTools: 14,
     skills: 1,

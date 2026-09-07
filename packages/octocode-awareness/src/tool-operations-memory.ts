@@ -64,6 +64,7 @@ case 'recall': {
         })(),
         asOf: request['as_of'] as string | undefined ?? null,
         explain: Boolean(request['explain']),
+        checkFingerprint: request['check_fingerprint'] === true,
         cwd,
       }, useSemantic) as unknown as RecallResult;
       type MemRecord = {
@@ -76,6 +77,7 @@ case 'recall': {
         tags?: string[];
         references?: string[];
         failure_signature?: string;
+        evidence?: import('./memory-evidence.js').MemoryEvidence;
         repo?: string;
         ref?: string;
       };
@@ -91,6 +93,7 @@ case 'recall': {
         if (m.tags?.length) lean['tags'] = m.tags;
         if (m.references?.length) lean['references'] = m.references;
         if (m.failure_signature) lean['failure_signature'] = m.failure_signature;
+        if (m.evidence) lean['evidence'] = m.evidence;
         if (m.repo) lean['repo'] = m.repo;
         if (m.ref) lean['ref'] = m.ref;
         const requestedFile = typeof request['file'] === 'string' ? resolve(cwd, request['file']) : null;
@@ -145,6 +148,7 @@ case 'record': {
         repo: request['repo'] as string | undefined,
         ref: request['ref'] as string | undefined,
         fileTreeFingerprint: request['file_tree_fingerprint'] as string | undefined,
+        captureFingerprint: request['capture_fingerprint'] === true,
         cwd,
       }, request['allow_similar'] === true);
       if (guarded.skipped) {

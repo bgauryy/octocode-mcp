@@ -11,8 +11,9 @@ Main agent
 
 browser-agent (subagent)
   ├─ chromeDebug          ← 28 CDP schemes, full CDP via scheme:"raw"
-  ├─ web                  ← CDP docs lookup
-  └─ MCPTool              ← Octocode MCP local tools for source reads/search/tree
+  ├─ MCPTool              ← Octocode MCP research catalog
+  ├─ skill                ← enabled workflows, including browser and Awareness guidance
+  └─ bash                 ← harness-provided Awareness CLI
 
 subagents/browser-agent/
   SYSTEM_PROMPT.md        ← subagent instructions (loaded at spawn)

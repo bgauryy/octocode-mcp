@@ -86,34 +86,16 @@ verification from them.
 Other tools can own databases in the same `.octocode/` directory. Identify a
 file by its documented name and database identity, not by its parent directory.
 
-## Migration and legacy stores
+## Canonical store requirement
 
-Older installations can contain Awareness relations in
-`$OCTOCODE_HOME/agent/agent.sqlite3`, or can contain legacy files such as
-`<workspace>/.octocode/agent.sqlite3`. Treat these as migration sources, not as
-valid targets for a new Awareness open.
+The CLI accepts only the exact current canonical Awareness schema. Older,
+incomplete, drifted, and mixed Agent/Awareness databases are rejected without
+rewriting them. Select a fresh Awareness store when the selected database does
+not satisfy the current schema fingerprint.
 
-A historical `<workspace>/.octocode/agent/` artifact directory is neither the
-current global Agent root nor an Awareness database. Preserve it until its
-session/checkpoint contents have been inventoried; don't merge it into the new
-Awareness file or delete it merely because it is under `.octocode/`.
-
-1. Stop writers to the source store.
-2. Preserve a byte-for-byte backup, including any SQLite `-wal` and `-shm`
-   companions.
-3. Inventory the source identity and recognized relations before copying data.
-4. Migrate only Awareness-owned entity families into the selected
-   `awareness.sqlite3`; never copy an entire mixed database over an Agent,
-   Awareness, CLI, or MCP store.
-5. Validate row counts, foreign keys, integrity, schema identity, and the
-   workspace mapping before switching writers.
-6. Keep the source until the migrated store has passed real CLI operations and a
-   restart. Delete legacy data only through a separate, explicit cleanup step.
-
-The CLI accepts the canonical Awareness schema only. Automatic backfills and
-the mixed-store migration command have been removed. An incompatible database
-is rejected without rewriting it; preserve the source and use a separately
-validated export/import process before changing writers.
+`database consolidate` copies an exact current canonical store into a new file.
+It does not migrate or repair any other schema. A source with local-history rows
+is also rejected because its Git object store is bound to the database path.
 
 ## Operational checks
 

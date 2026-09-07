@@ -108,7 +108,7 @@ export function registerLocalServerTool(
     promptSnippet: 'Serve local static artifacts over a loopback-only, path-guarded local server.',
     promptGuidelines: [
       'Use localServer for generated HTML/Markdown artifacts that are clearer in a browser (plans, design diagrams, reports).',
-      'In the interactive TUI, action:serve opens the page by default. Use open:false when the user only wants the URL.',
+      'localServer action:serve returns a URL without opening a browser. Pass open:true only when the user has asked or approved.',
       'Serve only directories you authored or inspected; never expose secrets, home directories wholesale, or untrusted downloads.',
       'Unmount or stop surfaces when they are no longer useful.',
     ],

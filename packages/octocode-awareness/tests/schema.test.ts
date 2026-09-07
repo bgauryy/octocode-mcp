@@ -96,6 +96,9 @@ describe('initDb table set', () => {
       'awareness_agents',
       'edit_log',
       'harness_log',
+      'local_history_operations',
+      'local_history_versions',
+      'local_history_restores',
     ]);
     const rows = db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"

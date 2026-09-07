@@ -1,4 +1,5 @@
 import { CONTINUITY_SCHEMA_DDL } from './db-continuity-schema.js';
+import { LOCAL_HISTORY_INDEX_DDL, LOCAL_HISTORY_SCHEMA_DDL } from './db-history-schema.js';
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
 /**
@@ -317,6 +318,8 @@ export const SCHEMA_DDL = `
       run_id       TEXT REFERENCES task_runs(run_id) ON DELETE SET NULL,
       created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
+
+    ${LOCAL_HISTORY_SCHEMA_DDL}
 `;
 
 export const SCHEMA_INDEX_DDL = `
@@ -387,6 +390,7 @@ export const SCHEMA_INDEX_DDL = `
   CREATE INDEX IF NOT EXISTS idx_harness_log_event_type ON harness_log(event_type);
   CREATE INDEX IF NOT EXISTS idx_harness_log_memory     ON harness_log(memory_id);
   CREATE INDEX IF NOT EXISTS idx_harness_log_run        ON harness_log(run_id);
+  ${LOCAL_HISTORY_INDEX_DDL}
 `;
 export const FTS_SCHEMA_DDL = `
   CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts

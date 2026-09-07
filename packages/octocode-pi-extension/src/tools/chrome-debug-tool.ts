@@ -44,12 +44,15 @@ function setStatus(ctx: PiContext | undefined, msg: string | undefined): void {
 // ─── Tool description ─────────────────────────────────────────────────────────
 
 const DESCRIPTION = [
-  'Chrome DevTools Protocol. All 28 schemes fully implemented:',
-  'debug | network | console | dom | performance | screenshot | security | storage | intercept | automate | live-page | user-auth',
+  'Inspect/automate Chrome via CDP: DOM, console, network, screenshots, performance, storage, security, coverage, or raw Domain.method calls.',
+  'Use for live-page debugging, DOM/network inspection, screenshot capture, browser automation, JS coverage, and accessibility audits.',
+  'Use agent profile:browser for multi-turn browser work.',
+  '',
+  'All 28 schemes: debug | network | console | dom | performance | screenshot | security | storage | intercept | automate | live-page | user-auth',
   'accessibility | workers | service-worker | websocket | supply-chain | consent | scrape | emulate | inject | monitor | login',
   'memory | css-coverage | js-coverage | full-audit | raw',
   '',
-  'raw=ANY CDP Domain.Method (auto-enables domain) | stealth=bot-detection evasions | bypassCSP | scriptSource | xpath | depth',
+  'raw=ANY CDP Domain.Method (auto-enables domain) | stealth=bot-evasion | bypassCSP | scriptSource | xpath | depth',
   'url navigates first | port=9222 | launch=true | durationMs | selector | expression',
 ].join('\n');
 

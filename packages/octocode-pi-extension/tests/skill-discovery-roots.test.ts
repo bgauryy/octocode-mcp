@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { skillDiscoveryRoots } from '../src/tools/skill-tool.js';
+import { skillDiscoveryRoots } from '../src/tools/skill-discovery.js';
 
 describe('Pi adapter Skill compatibility roots', () => {
   it('includes Pi, Claude, Cursor, Codex, .agent, and .agents in project and user scopes', () => {

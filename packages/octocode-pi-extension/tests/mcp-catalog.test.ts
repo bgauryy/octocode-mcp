@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { afterEach, test } from 'vitest';
 import {
   buildMcpCatalogSnapshot,
@@ -144,6 +145,110 @@ test('exact catalog includes every enabled server tool description and normalize
   assert.match(rendered, /inputSchema: \{"properties":\{"path":\{"type":"string"\}\},"required":\["path"\],"type":"object"\}/);
   assert.doesNotMatch(rendered, /schemaDigest|capturedAt/);
   assert.equal(rendered.match(/<\/mcp_catalog>/g)?.length, 1);
+});
+
+function oversizedUnionSnapshot() {
+  return buildMcpCatalogSnapshot({
+    cwd: '/tmp/catalog-branches', sources: [], configSignatures: { octocode: 'branches' },
+    servers: [{ name: 'octocode', tools: [{
+      name: 'localSearch', description: 'Search text, syntax, files and trees. '.repeat(35),
+      inputSchema: {
+        type: 'object', required: ['queries'], properties: { queries: {
+          type: 'array', items: { anyOf: [
+            ['text', 'searchText'], ['structural', 'pattern'], ['structural', 'rule'], ['files', 'names'], ['tree', 'maxDepth'],
+          ].map(([operation, field]) => ({
+            type: 'object', required: ['operation', 'path', field!], additionalProperties: false,
+            properties: {
+              operation: { type: 'string', const: operation }, path: { type: 'string' },
+              [field!]: { type: 'string' },
+              ...Object.fromEntries(Array.from({ length: 12 }, (_, index) => [`option${index}`, {
+                type: 'string', description: 'Detailed field help. '.repeat(30), enum: ['alpha', 'beta', 'gamma'],
+              }])),
+            },
+          })) },
+        } },
+      },
+    }] }],
+  });
+}
+
+test('bounded guide preserves every union branch and required field before optional detail', () => {
+  const guide = renderMcpCatalogIndex(oversizedUnionSnapshot());
+  const description = guide.split('description: ')[1]!;
+  assert.ok(description.split('\n')[0]!.length <= 4_000);
+  for (const [operation, required] of [['text', 'searchText'], ['structural', 'pattern'], ['structural', 'rule'], ['files', 'names'], ['tree', 'maxDepth']]) {
+    assert.ok(guide.includes(`operation="${operation}"`), operation);
+    assert.ok(guide.includes(required!), required);
+  }
+  assert.match(guide, /partial/i);
+  const next = /MCPTool\((\{"queries":.*?\})\)/.exec(guide);
+  assert.ok(next, 'partial summary provides a complete executable describe call');
+  assert.deepEqual(JSON.parse(next[1]!), { queries: [{ action: 'describe', server: 'octocode', tool: 'localSearch', reasoning: 'Read the complete input schema' }] });
+  assert.doesNotMatch(description.split('\n')[0]!, /…$/);
+});
+
+test('minimum branch inventory survives when optional field names alone exceed the budget', () => {
+  const snapshot = oversizedUnionSnapshot();
+  const schema = snapshot.servers[0]!.tools[0]!.inputSchema as any;
+  for (const variant of schema.properties.queries.items.anyOf) {
+    for (let i = 0; i < 200; i++) variant.properties[`additionalOption${i}`] = { type: 'string' };
+  }
+  const guide = renderMcpCatalogIndex(snapshot);
+  assert.match(guide, /optional fields omitted/i);
+  for (const operation of ['text', 'structural', 'files', 'tree']) assert.ok(guide.includes(`operation="${operation}"`));
+  assert.match(guide, /maxDepth/);
+  assert.match(guide, /names/);
+});
+
+test('the real localSearch CLI schema retains all five variants in the model-visible catalog', () => {
+  const home = tempRoot('octocode-live-catalog-');
+  const tool = JSON.parse(execFileSync(process.execPath, [
+    path.resolve(import.meta.dirname, '../../octocode/out/octocode.js'),
+    'tools', 'localSearch', '--scheme', '--json',
+  ], { encoding: 'utf8', timeout: 15_000, env: { ...process.env, OCTOCODE_HOME: home } }));
+  assert.ok(tool.inputSchema, 'real CLI returns the exact schema');
+  const snapshot = buildMcpCatalogSnapshot({
+    cwd: home, sources: [], configSignatures: { octocode: 'live' },
+    servers: [{ name: 'octocode', tools: [{ name: tool.name, description: tool.description, inputSchema: tool.inputSchema }] }],
+  });
+  const guide = renderMcpCatalogIndex(snapshot);
+  const description = guide.split('description: ')[1]!.split('\n')[0]!;
+  assert.ok(description.length <= 4_000, `description chars=${description.length}`);
+  const variants = tool.inputSchema.properties.queries.items.anyOf;
+  assert.equal(variants.length, 5);
+  for (const variant of variants) {
+    const operation = variant.properties.operation.const;
+    assert.ok(description.includes(`operation="${operation}"`));
+    for (const field of variant.required) assert.ok(description.includes(field), `${operation} missing ${field}`);
+  }
+  assert.match(description, /operation="files"[^}]*names/);
+  assert.match(description, /operation="tree"[^}]*maxDepth/);
+  assert.match(description, /Input summary partial/);
+});
+
+test('an oversized minimum inventory returns explicit recovery instead of a clipped schema', () => {
+  const snapshot = oversizedUnionSnapshot();
+  const schema = snapshot.servers[0]!.tools[0]!.inputSchema as any;
+  schema.properties.queries.items.anyOf = Array.from({ length: 100 }, (_, index) => ({
+    type: 'object', required: ['operation', `requiredBranchField${index}`],
+    properties: { operation: { const: `operation-${index}` }, [`requiredBranchField${index}`]: { type: 'string' } },
+  }));
+  const description = renderMcpCatalogIndex(snapshot).split('description: ')[1]!.split('\n')[0]!;
+  assert.match(description, /Input summary omitted: complete branch inventory exceeds/);
+  assert.match(description, /MCPTool\(\{"queries":/);
+  assert.doesNotMatch(description, /requiredBranchField/);
+  assert.ok(description.length <= 4_000);
+});
+
+test('cached guides from before branch-preserving rendering are invalidated', async () => {
+  const home = tempRoot('octocode-mcp-guide-version-');
+  const snapshot = fixtureSnapshot(home);
+  const snapshotPath = await writeMcpCatalogSnapshot(snapshot, { home });
+  const guidePath = path.join(path.dirname(snapshotPath), 'mcp.md');
+  const current = fs.readFileSync(guidePath, 'utf8');
+  assert.ok(await readMcpCatalogGuide({ snapshot, home }));
+  fs.writeFileSync(guidePath, current.replace(/octocode-mcp-guide:v\d+/, 'octocode-mcp-guide:v2'));
+  assert.equal(await readMcpCatalogGuide({ snapshot, home }), undefined);
 });
 
 test('guide generation receives every tool name, description, and exact input schema', () => {

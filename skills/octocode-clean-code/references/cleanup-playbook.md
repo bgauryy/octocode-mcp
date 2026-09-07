@@ -17,6 +17,7 @@ State: target path(s), smell classes in scope (shims, re-exports, duplicates, do
 | Docs / comments | `localGetFileContent` minify:none | apply `references/doc-hygiene.md` rules |
 | Schema / type redundancy | `localSearch` structural + `lspGetSemantics` callers | duplicate interfaces, type aliases, protocol stubs |
 | Dependency junk | `localGetFileContent` minify:none on each package.json | unused, duplicate, misaligned, phantom deps |
+| Test debt | `localSearch` files with name regex on candidate package + `localGetFileContent` minify:symbols on each hit | numbered/dated files, skip blocks, rigid mocks, redundant stubs, env-coupled setup |
 
 ## INVENTORY
 
@@ -46,5 +47,7 @@ Present the inventory and proposed batch. State exactly what will be deleted or 
 ## VERIFY
 
 Run the project's own checks after each batch: `yarn build` → `yarn test` → `yarn typecheck` → `yarn lint`. Report exact output. Classify failures as pre-existing or introduced; revert introduced failures, never suppress them.
+
+For test-debt excisions: if coverage thresholds drop, follow the coverage replacement rule in `references/test-quality.md` — either add a quality replacement test or lower the threshold with documented justification and a labelled commit.
 
 Next: after VERIFY passes, return to TRIAGE for the next batch or report done.

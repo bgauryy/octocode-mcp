@@ -332,15 +332,6 @@ export function formatOctocodeCronStatus(snapshots: OctocodeCronJobSnapshot[]): 
   return lines.join('\n');
 }
 
-export const OCTOCODE_CRON_COMMAND_COMPLETIONS = [
-  'list',
-  'check',
-  'check all',
-  'cancel',
-  'cancel all',
-  'help',
-] as const;
-
 export const OCTOCODE_CRON_COMMAND_USAGE = 'list|check [default|all|job]|cancel [default|all|job]|help';
 
 function formatRunResults(results: OctocodeCronRunResult[]): string {

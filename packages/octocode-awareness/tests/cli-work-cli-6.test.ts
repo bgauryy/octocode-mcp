@@ -38,10 +38,12 @@ interface RunResult {
 }
 function run(dbPath: string, args: string[], opts: {
     cwd?: string;
+    env?: NodeJS.ProcessEnv;
 } = {}): RunResult {
     const result = spawnSync(NODE, [TSX, SCRIPT, '--db', dbPath, ...args], {
         cwd: opts.cwd ?? process.cwd(),
         encoding: 'utf8',
+        ...(opts.env !== undefined ? { env: opts.env } : {}),
         // repo inject / heavy CLI paths can exceed 10s on cold machines
         timeout: 30000,
     });
@@ -54,14 +56,17 @@ function run(dbPath: string, args: string[], opts: {
 }
 function ok(dbPath: string, args: string[], opts: {
     cwd?: string;
+    env?: NodeJS.ProcessEnv;
 } = {}): Record<string, unknown> {
     const r = run(dbPath, args, opts);
     expect(r.status, `expected exit 0 for ${args[0]}: stderr=${r.stderr} stdout=${r.stdout}`).toBe(0);
     expect(r.parsed?.['ok'], `expected ok:true for ${args[0]}: ${r.stdout}`).not.toBe(false);
     return r.parsed!;
 }
-function fail(dbPath: string, args: string[], expectedStatus = 1): Record<string, unknown> | null {
-    const r = run(dbPath, args);
+function fail(dbPath: string, args: string[], expectedStatus = 1, opts: {
+    env?: NodeJS.ProcessEnv;
+} = {}): Record<string, unknown> | null {
+    const r = run(dbPath, args, opts);
     expect(r.status, `expected exit ${expectedStatus} for ${args[0]}: stdout=${r.stdout}`).toBe(expectedStatus);
     return r.parsed;
 }
@@ -310,7 +315,10 @@ describe('agent registry', () => {
   });
 
   it('requires agent id when registering', () => {
-    const result = fail(db, ['agent', 'register']);
+    // Strip OCTOCODE_AGENT_ID so the CLI cannot fall back to a host-injected identity
+    const env = { ...process.env };
+    delete env['OCTOCODE_AGENT_ID'];
+    const result = fail(db, ['agent', 'register'], 1, { env });
     expect(result?.['error']).toContain('--agent-id is required');
   });
 });

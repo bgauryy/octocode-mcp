@@ -10,18 +10,21 @@ import { awarenessEntityCatalog } from './entities.js';
 import { commandIndex } from './command-catalog.js';
 import { integrationSchemas } from './definitions-integration.js';
 import { CLI_REQUIRED, projectCliProperties } from './cli-contract.js';
+import { historyExamples, historyRequestSchemas, historySchemas } from './definitions-history.js';
 
 export const schemas = {
   ...memorySchemas,
   ...workSchemas,
   ...operationSchemas,
   ...integrationSchemas,
+  ...historySchemas,
 };
-export const examples = { ...coreExamples, ...integrationExamples };
+export const examples = { ...coreExamples, ...integrationExamples, ...historyExamples };
 export type SchemaName = keyof typeof schemas;
 
 const listableSchemas = [
   ...Object.keys(integrationSchemas),
+  ...Object.keys(historyRequestSchemas),
   "memory_record", "memory_recall",
   "attend", "query",
   "workspace_status", "export_harness", "session_capture",
@@ -32,7 +35,7 @@ const listableSchemas = [
 ];
 
 
-const CORE_NOUNS = new Set(["verify", "attend", "plan", "task", "work", "memory", "signal", "query"]);
+const CORE_NOUNS = new Set(["verify", "attend", "plan", "task", "work", "memory", "signal", "query", "history"]);
 // Rare/expert/redundant commands stay fully available under `--all` and
 // `<command> --help`, but are hidden from the default lobby catalog to keep the
 // agent-facing surface small. Removing them here removes catalog verbosity, not

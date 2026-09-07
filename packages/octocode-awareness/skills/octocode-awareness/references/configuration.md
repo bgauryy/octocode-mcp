@@ -8,7 +8,7 @@ Global scope stores durable Awareness state in `$OCTOCODE_HOME/awareness/awarene
 
 Other files under `<workspace>/.octocode/`, including Octocode research databases and generated projections, retain their own owners. Do not merge, rename, delete, or infer Awareness state from them.
 
-For an explicitly requested historical-store conversion, inspect `database consolidate --help`. The supported command is `database consolidate --source <existing-file> --destination <new-file>`: it reads the source without modifying it, creates a new canonical file, and rejects incomplete contracts or collisions. Never open an Agent runtime database as an ordinary Awareness store. Ordinary scope changes do not migrate or merge existing databases.
+For an explicitly requested copy of an exact current canonical store, inspect `database consolidate --help`. The command `database consolidate --source <existing-file> --destination <new-file>` reads the source without modifying it and creates a new canonical file. It rejects incompatible schemas, collisions, and history-bearing sources whose sidecar bytes cannot be copied by this route. It does not convert historical or mixed stores. Never open an Agent runtime database as an Awareness store. Scope changes do not migrate or merge databases.
 
 ## Identity and trust
 

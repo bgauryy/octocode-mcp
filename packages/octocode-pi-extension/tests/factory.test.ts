@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { test } from 'vitest';
 import octocodeDefault, { createOctocodePiExtension } from '../src/index.js';
+import * as runtimeEntrypoint from '../src/index.js';
+import * as testingEntrypoint from '../src/testing.js';
 import { resolvePromptMode, composeSystemPrompt } from '../src/prompt.js';
 
 test('default export preserves the single-arg Pi contract (default(pi))', () => {
@@ -12,6 +15,22 @@ test('createOctocodePiExtension returns a single-arg wiring function', () => {
   const wiring = createOctocodePiExtension({ promptMode: 'octocode-first' });
   assert.equal(typeof wiring, 'function');
   assert.equal(wiring.length, 1);
+});
+
+test('production conformance helpers are exported only from the testing subpath', () => {
+  assert.equal('createProductionPiScenarioSuite' in runtimeEntrypoint, false);
+  assert.equal('captureProductionPiLifecycle' in runtimeEntrypoint, false);
+  assert.equal(typeof testingEntrypoint.createProductionPiScenarioSuite, 'function');
+  assert.equal(typeof testingEntrypoint.captureProductionPiLifecycle, 'function');
+
+  const manifest = JSON.parse(
+    fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+  ) as { exports?: Record<string, unknown> };
+  assert.deepEqual(manifest.exports?.['./testing'], {
+    types: './dist/testing.d.ts',
+    import: './dist/testing.js',
+    default: './dist/testing.js',
+  });
 });
 
 test('resolvePromptMode: explicit option wins, then env, then append default', () => {

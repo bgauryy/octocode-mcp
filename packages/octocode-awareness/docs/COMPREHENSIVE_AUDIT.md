@@ -1,4 +1,9 @@
-# Comprehensive Awareness Audit
+# Comprehensive Awareness audit
+
+This page defines the repeatable audit rubric. The dated
+[Awareness assessment](../../../docs/AWARENESS_ASSESSMENT.md) owns the latest
+feature ratings and local activation findings; it does not replace this acceptance
+procedure or turn partial host evidence into a comprehensive PASS.
 
 Use this scored lane to answer whether the complete Awareness control loop works.
 Run in a disposable workspace/database. Complete the Installed and applicable Host
@@ -14,7 +19,7 @@ vars inline per command — an open stdin hangs instead of failing, and a droppe
 | Reads | compact attend/status; targeted work/verify/signal/memory reads | bounded next action, explicit omissions, deliberate deep drill-down |
 | Work | two-agent same-file start/list/show/heartbeat/end | peers coexist and ending one run preserves the other |
 | Locks | conflicting acquire/wait/release; stale dry-run prune | conflict exits 2 before unsafe presence; cleanup never means success |
-| Tasks and verify | dependency block/unblock; submit/mark/audit | predecessor stays blocked until verified; zero final debt |
+| Tasks and verify | dependency block/unblock; submit/mark/audit for parent and every owned worker | predecessor stays blocked until verified; zero owned final debt; unrelated peer debt preserved and disclosed |
 | Communication | register; signal publish/list/reply/ack/resolve; refinement lifecycle | recipient/thread/unread ownership holds; unrelated work is preserved |
 | Memory and reflection | record/recall/supersede/archive/restore; reflect record | scoped/ranked SQLite truth; immutable replacement history; current evidence wins |
 | Query exports | `query --format csv/html/json` export; live-DB read vs export content comparison | export reflects live SQLite; no stale state injected; `wiki sync` projection feature was removed |

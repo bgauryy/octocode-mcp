@@ -1,42 +1,19 @@
 import { truncateToWidth } from '../tui/width.js';
 import { paint } from '../tui/palette.js';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import {
-  defaultAgentSkillSources,
-  discoverAgentSkillInventory,
-  type AgentSkillSourceDescriptor,
-} from '@octocodeai/agent-contracts/agent-skills';
 import type { ToolDefinition, ToolCallResult, PiTheme, PiContext, SkillInfo, TSchema } from '../types.js';
-import { getAssetPaths } from '../assets.js';
 import type { registerUniqueTool } from './octocode-tools.js';
 import { stringEnumSchema } from './schema-helpers.js';
 
 import { makeComponentRenderer } from './render-helpers.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 import { orchestrate } from './call-skill.js';
-import { getSkillEnablement } from '@octocodeai/agent-contracts/mcp-state';
-import { openOctocodeDb } from './storage-policy.js';
 import { MODEL_VISIBLE_TOOL_RESULT_MAX_CHARS } from './tool-result-budget.js';
+import { discoverSkills, type DiscoveredSkill } from './skill-discovery.js';
 
 type TypeBoxBuilder = (typeof import('typebox'))['Type'];
 type RegisterFn = typeof registerUniqueTool;
-
-export interface DiscoveredSkill {
-  name: string;
-  description: string;
-
-  path: string;
-
-  dir: string;
-
-  source: string;
-}
-
-export interface DiscoveredSkillState extends DiscoveredSkill {
-  enabled: boolean;
-}
 
 // Leave room for identity, file discovery, and recovery calls inside the 12k
 // model-visible tool-result budget; otherwise the initial page itself spills.
@@ -44,120 +21,6 @@ const SKILL_CONTENT_CAP = 8_000;
 
 const SKILL_FILE_LIST_CAP = 30;
 const SKILL_FILE_LIST_CHAR_CAP = 1_600;
-
-function skillKey(name: string): string {
-  return name.replace(/\s+/g, ' ').trim().toLowerCase();
-}
-
-export function skillDiscoveryRoots(cwd: string, home = os.homedir()): Array<{ dir: string; source: string }> {
-  return defaultAgentSkillSources(cwd, home).map((source) => ({
-    dir: source.root,
-    source: source.id,
-  }));
-}
-
-export function discoverAllSkills(cwd: string, piSkills?: SkillInfo[], home = os.homedir()): DiscoveredSkill[] {
-  const found = new Map<string, DiscoveredSkill>();
-  const piMetadata = new Set<string>();
-  const piConcrete = new Set<string>();
-  for (const skill of piSkills ?? []) {
-    const name = skill.name?.trim();
-    if (!name) continue;
-    const md = (skill as { path?: string; filePath?: string }).path
-      ?? (skill as { path?: string; filePath?: string }).filePath ?? '';
-    const key = skillKey(name);
-    piMetadata.add(key);
-    if (md) piConcrete.add(key);
-    found.set(key, {
-      name,
-      description: skill.description ?? '',
-      path: md,
-      dir: md ? path.dirname(md) : '',
-      source: [skill.source, skill.scope].filter(Boolean).join('/') || 'pi',
-    });
-  }
-  const sources: AgentSkillSourceDescriptor[] = defaultAgentSkillSources(cwd, home);
-  for (const [root, scope] of [
-    [path.join(home, '.octocode', 'skills'), 'user'],
-    [path.join(cwd, '.octocode', 'skills'), 'workspace'],
-  ] as const) {
-    sources.push({
-      id: `octocode:${scope}:${root}`,
-      vendor: 'octocode',
-      scope,
-      root,
-      precedence: sources.length,
-      defaultEnabled: true,
-    });
-  }
-  try {
-    sources.push({
-      id: 'pi:bundled',
-      vendor: 'pi',
-      scope: 'user',
-      root: getAssetPaths().skillsDir,
-      precedence: sources.length,
-      defaultEnabled: true,
-    });
-  } catch (error) {
-    // A source-less development build has no bundled skill directory.
-    // Warn so the gap is not invisible during development.
-    console.warn('[octocode:skills] bundled skill directory unavailable (dev build without dist/skills?):', (error as Error)?.message ?? error);
-  }
-  for (const skill of piSkills ?? []) {
-    const file = (skill as { path?: string; filePath?: string }).path
-      ?? (skill as { path?: string; filePath?: string }).filePath;
-    if (!file || path.basename(file) !== 'SKILL.md') continue;
-    const root = path.dirname(path.dirname(path.resolve(file)));
-    if (sources.some((source) => path.resolve(source.root) === root)) continue;
-    sources.push({
-      id: `pi:runtime:${root}`,
-      vendor: 'pi',
-      scope: 'user',
-      root,
-      precedence: sources.length,
-      defaultEnabled: true,
-    });
-  }
-  const inventory = discoverAgentSkillInventory(sources, () => true);
-  for (const entry of [...inventory.entries].sort((left, right) => left.precedence - right.precedence)) {
-    if (!entry.enabled || entry.parseStatus !== 'valid' || !entry.skill) continue;
-    const key = skillKey(entry.skill.name);
-    const existing = found.get(key);
-    if (piConcrete.has(key)) continue;
-    const source = entry.source === 'pi:bundled'
-      ? 'bundled'
-      : entry.scope === 'workspace'
-        ? entry.vendor === 'agents' ? 'project' : `project:${entry.vendor}`
-        : entry.vendor === 'pi' ? 'user' : `user:${entry.vendor}`;
-    found.set(key, existing && piMetadata.has(key)
-      ? { ...existing, path: entry.skill.path, dir: entry.skill.dir }
-      : {
-          name: entry.skill.name,
-          description: entry.skill.description,
-          path: entry.skill.path,
-          dir: entry.skill.dir,
-          source,
-        });
-  }
-  return [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
-}
-
-export function discoverSkillStates(cwd: string, piSkills?: SkillInfo[], home = os.homedir()): DiscoveredSkillState[] {
-  const skills = discoverAllSkills(cwd, piSkills, home);
-  try {
-    const db = openOctocodeDb();
-    const scopeKey = path.resolve(cwd);
-    return skills.map((skill) => ({ ...skill, enabled: getSkillEnablement(db, scopeKey, skill.name, true) }));
-  } catch {
-    return skills.map((skill) => ({ ...skill, enabled: true }));
-  }
-}
-
-/** Effective loadable inventory. Disabled skills remain discoverable only in settings. */
-export function discoverSkills(cwd: string, piSkills?: SkillInfo[], home = os.homedir()): DiscoveredSkill[] {
-  return discoverSkillStates(cwd, piSkills, home).filter((skill) => skill.enabled);
-}
 
 export interface SkillUsageEntry {
   count: number;
@@ -319,6 +182,7 @@ function executeLoadItem(
 async function executeCallItem(
   query: Record<string, unknown>,
   ctx?: PiContext,
+  signal?: AbortSignal,
 ): Promise<ToolCallResult> {
   const skillType = typeof query['skillType'] === 'string' ? query['skillType'].trim() : '';
   const mode = typeof query['mode'] === 'string' ? query['mode'] : undefined;
@@ -339,7 +203,7 @@ async function executeCallItem(
     },
   };
 
-  const outcome = await orchestrate(params, ctx);
+  const outcome = await orchestrate(params, ctx, signal);
   const parts: string[] = [renderCallOutcomeHeader(outcome as unknown as Record<string, unknown>)];
   if (outcome.status === 'listed') {
     parts.push(
@@ -435,7 +299,7 @@ export function registerSkillTool(
       execute: async (query) => {
         const type = typeof query['type'] === 'string' ? query['type'] : 'load';
         if (type === 'call') {
-          return executeCallItem(query, ctx);
+          return executeCallItem(query, ctx, signal);
         }
         return executeLoadItem(query, cwd, getPiSkills);
       },
@@ -494,16 +358,12 @@ export function registerSkillTool(
       '',
       'type:"call" — Meta-tool for reusable multi-step workflows: resolves an existing dynamic skill in O(1); on a miss it PROPOSES creation (never silently authors). After you research/brainstorm and the user confirms, re-call with mode:"create" and reason; a skill-smith authors the SKILL.md, which is registered ONLY if it passes frontmatter+structure validation. Every call prunes junk skills. Replaces explicit typed fields for intent, reason, approveCreate, and force (no more opaque metadata).',
     ].join('\n'),
-    promptSnippet: [
-      'skill is the unified skill facade with queries[] (each requiring reasoning):',
-      '  type:"load" — load/list installed SKILL.md skills: skill({queries:[{reasoning:"…", type:"load", name:"…", reason:"…"}]})',
-      '  type:"call" — manage dynamic skills: skill({queries:[{reasoning:"…", type:"call", skillType:"…", mode:"auto"}]})',
-      'Load the minimal matching skill BEFORE acting; use type:"call" for recurring multi-step workflows not covered by an installed skill.',
-    ].join('\n'),
+    promptSnippet: 'Load an installed Agent Skill, or list/manage reusable dynamic workflow skills. Load a matching skill BEFORE acting. type:load for installed skills; type:call for dynamic lifecycle.',
     promptGuidelines: [
-      'When loading a skill (type:"load"), pass reason as one concise, user-facing clause that explains why the skill matches the current task.',
+      'Routing: skill type:"load" activates an installed SKILL.md workflow; skill type:"call" creates/reuses a dynamic multi-step workflow; callTool for a single deterministic function; agent when independent context and full tool access are needed.',
+      'Load the minimal matching skill BEFORE acting (type:"load"). Pass reason as one concise, user-facing clause explaining why the skill matches the current task.',
       'Use type:"call" for recurring multi-step workflows; never for a single action a tool/bash/callTool already covers.',
-      'On a creation proposal (type:"call"): research existing skills/tools/commands and brainstorm the smallest workflow, then ASK the user before re-calling with mode:"create" and a clear reason.',
+      'On a creation proposal (type:"call"): research existing skills/tools/commands and brainstorm the smallest workflow, then ASK the user before re-calling with mode:"create".',
       'Multi-query: run load and call operations in a single skill({queries:[…]}) call when they are logically related.',
     ],
     parameters,

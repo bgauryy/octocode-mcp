@@ -2,6 +2,16 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { composeSystemPrompt } from '../src/prompt.js';
 import { SYSTEM_PROMPT_MARKER } from '../src/constants.js';
+import { adaptPiResearchGuidance } from '../src/prompt.js';
+
+test('Octocode removes only the native shell-search fallback from Pi Guidelines', () => {
+  const fallback = '- Use bash for file operations like ls, rg, find';
+  const project = `<project_context>\nGuidelines:\n${fallback}\n</project_context>`;
+  const prompt = `Available tools:\n- MCPTool: research\n\nGuidelines:\n${fallback}\n- Keep the other host guideline\n\n${project}`;
+  const result = adaptPiResearchGuidance(prompt);
+  assert.equal(result, `Available tools:\n- MCPTool: research\n\nGuidelines:\n- Keep the other host guideline\n\n${project}`);
+  assert.equal(adaptPiResearchGuidance(project), project, 'repository instructions are not native host guidance');
+});
 
 test('composeSystemPrompt never trusts a marker in Pi-owned input as a dedup receipt', () => {
   const piSystemPrompt = `Pi prompt\n<project_context>${SYSTEM_PROMPT_MARKER}</project_context>`;

@@ -1,6 +1,7 @@
 /* v8 ignore file -- exercised through built CLI and isolated-package subprocess tests */
 import { z } from 'zod';
 import { PLAN_STATUSES } from '@octocodeai/agent-contracts/entities';
+import { AttendRevisionInputSchema } from './attend-revision.js';
 import {
   agentId, nonEmptyText, tags, workspacePath, artifactScope, repoScope,
   refScope, references, memoryLabel, memorySort, importanceLevel, targetFiles,
@@ -36,7 +37,9 @@ memory_record: z
         .min(1)
         .max(256)
         .optional()
-        .describe("Opaque source fingerprint for provenance; Awareness does not validate it or use it as freshness proof."),
+        .describe("Opaque provenance; use capture_fingerprint for a runtime-generated declared-file fingerprint. Never verification proof."),
+      capture_fingerprint: z.boolean().default(false)
+        .describe("Capture current content/modes for all declared file references and dependencies; rejects unknown/foreign/bounded-out sources. Do not combine with file_tree_fingerprint."),
       supersedes: z
         .array(z.string().trim().min(1).max(128))
         .max(200)
@@ -58,6 +61,8 @@ memory_record: z
     .describe("Record a memory."),
   memory_recall: z
     .object({
+      check_fingerprint: z.boolean().default(false)
+        .describe("Recheck retained declared file/dependency bytes with bounded I/O. Returns fresh/stale/unknown; unchecked captures remain unknown. Freshness does not verify the memory claim or dependency completeness."),
       query: z.string().trim().max(1000).default("").describe("Recall query."),
       limit: z.number().int().min(1).max(50).default(3),
       min_importance: z.number().int().min(1).max(10).default(1),
@@ -150,6 +155,7 @@ memory_record: z
     .describe("Query awareness views for agents, scripts, and humans."),
   attend: z
     .object({
+      revision: AttendRevisionInputSchema.optional(),
       agent_id: agentId.optional().describe("Stable agent identity used to prioritize owned work."),
       query: z.string().trim().max(1000).default("").describe("Current task, risk, or design question."),
       limit: z.number().int().min(1).max(50).default(10).describe("Rows per workboard column and evidence cap."),

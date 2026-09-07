@@ -19,7 +19,7 @@ import { loadMcpConfig, type McpServerConfig } from './mcp-config.js';
 import { getMcpDiscoverySnapshot, getMcpPromptArtifactStatus, handleMcpAction, isMcpServerConnected } from './mcp-tool.js';
 import { runtimeStoreFor } from './runtime-renderer.js';
 import { hasStoredMcpOAuthTokens } from './mcp-oauth.js';
-import { discoverSkillStates } from './skill-tool.js';
+import { discoverSkillStates } from './skill-discovery.js';
 import { serveDirectory, unmount } from './local-server.js';
 import { openPlanReview } from './plan-tool.js';
 import { openLocalUrl } from './local-url-opener.js';
@@ -134,26 +134,26 @@ export function parseMcpManagerAction(raw: unknown): McpManagerAction {
   return { action, server, scope } as McpManagerAction;
 }
 
-const settingsAdapters = new Map<string, PiSettingsAdapter>();
+const settingsAdapters = new WeakMap<object, PiSettingsAdapter>();
 const hookDiscovery = new Map<string, CodexHookDiscoveryResult>();
 const pluginContributions = new ContributionRegistry();
 
 function settingsAdapter(ctx?: PiContext): PiSettingsAdapter {
-  const key = path.resolve(ctx?.cwd ?? process.cwd());
-  const cached = settingsAdapters.get(key);
+  const cacheKey = ctx && typeof ctx === 'object' ? ctx : undefined;
+  const cached = cacheKey ? settingsAdapters.get(cacheKey) : undefined;
   if (cached) return cached;
   const registry = new SettingsRegistry();
   registry.register({ key: 'runtime.footer-density', schemaVersion: 1, section: 'Appearance', order: 10, kind: { type: 'enum', values: ['compact', 'default', 'full'] }, scopes: ['session'], defaultValue: getFooterDensity(), mutability: 'editable', application: 'immediate', visibility: 'public', owner: 'pi-extension', documentation: 'docs/SETTINGS.md' });
-  registry.register({ key: 'runtime.permission-level', schemaVersion: 1, section: 'Runtime', order: 10, kind: { type: 'enum', values: ['default', 'relaxed', 'strict'] }, scopes: ['session'], defaultValue: getPermissionLevel(), mutability: 'editable', application: 'immediate', visibility: 'public', owner: 'pi-extension', documentation: 'docs/SETTINGS.md' });
+  registry.register({ key: 'runtime.permission-level', schemaVersion: 1, section: 'Runtime', order: 10, kind: { type: 'enum', values: ['default', 'relaxed', 'strict'] }, scopes: ['session'], defaultValue: getPermissionLevel(ctx), mutability: 'editable', application: 'immediate', visibility: 'public', owner: 'pi-extension', documentation: 'docs/SETTINGS.md' });
   registry.register({ key: 'models.active', schemaVersion: 1, section: 'Models', order: 10, kind: { type: 'object' }, scopes: ['imported'], defaultValue: { providerId: ctx?.model?.provider ?? null, modelId: ctx?.model?.id ?? null }, mutability: 'read-only', application: 'next-session', visibility: 'public', owner: 'pi-extension', documentation: 'docs/SETTINGS.md', classificationReason: 'Active Pi model is a compatibility projection; canonical defaults are edited by agent-core.' });
   registry.register({ key: 'runtime.theme', schemaVersion: 1, section: 'Appearance', order: 20, kind: { type: 'enum', values: ['host', 'dark', 'light'] }, scopes: ['session'], defaultValue: 'host', mutability: 'editable', application: 'immediate', visibility: 'public', owner: 'pi-extension', documentation: 'docs/SETTINGS.md' });
   registry.register({ key: 'runtime.effort', schemaVersion: 1, section: 'Runtime', order: 20, kind: { type: 'enum', values: ['host', ...EFFORT_LEVELS] }, scopes: ['session'], defaultValue: getActiveDialLevel() ?? 'host', mutability: 'editable', application: 'immediate', visibility: 'public', owner: 'pi-extension', documentation: 'docs/SETTINGS.md' });
   const adapter = new PiSettingsAdapter(new SettingsService(registry));
   adapter.subscribe((result) => {
     if (result.effectiveValue?.key === 'runtime.footer-density') setFooterDensity(result.effectiveValue.value as FooterDensity);
-    if (result.effectiveValue?.key === 'runtime.permission-level') setPermissionLevel(result.effectiveValue.value as PermissionLevel);
+    if (result.effectiveValue?.key === 'runtime.permission-level') setPermissionLevel(ctx, result.effectiveValue.value as PermissionLevel);
   });
-  settingsAdapters.set(key, adapter);
+  if (cacheKey) settingsAdapters.set(cacheKey, adapter);
   return adapter;
 }
 
@@ -345,7 +345,7 @@ export async function renderMcpManagerPage(ctx?: PiContext, actionToken = '', pi
   const importedCount = [...loaded.configuredServers.values()].filter((config) => config.discovered).length;
   const enabledSkillCount = skills.filter((skill) => skill.enabled).length;
   const footerDensity = getFooterDensity();
-  const permissionLevel = getPermissionLevel();
+  const permissionLevel = getPermissionLevel(ctx);
   const canonicalSettings: SettingsSnapshot = settingsAdapter(ctx).snapshot();
   const settingsRevision = canonicalSettings.revision;
   const settingValue = (key: string): unknown => canonicalSettings.values.find((value) => value.key === key)?.value;
@@ -539,6 +539,6 @@ function configurationMountName(cwd: string): string {
 export function closeConfiguration(ctx?: PiContext): void {
   const cwd = path.resolve(ctx?.cwd ?? process.cwd());
   unmount(configurationMountName(cwd));
-  settingsAdapters.delete(cwd);
+  if (ctx && typeof ctx === 'object') settingsAdapters.delete(ctx);
   hookDiscovery.delete(cwd);
 }

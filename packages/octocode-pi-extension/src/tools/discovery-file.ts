@@ -13,13 +13,14 @@ import { extensionWorkspaceRoot } from '../extension-paths.js';
  * Best-effort: a failed write never affects the session.
  */
 
+import type { AssembledContextV1 } from './context-segments.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { PiContext } from '../types.js';
 import { getMcpDiscoverySnapshot, type McpDiscoverySnapshot } from './mcp-tool.js';
 import { discoverMcpConfigs } from './mcp-discovery.js';
 import type { DiscoveredMcpConfig } from '@octocodeai/agent-contracts/agent-skills';
-import type { DiscoveredSkillState } from './skill-tool.js';
+import type { DiscoveredSkillState } from './skill-discovery.js';
 
 
 /** Per-section character counts for the harness prompt overhead. */
@@ -41,6 +42,7 @@ export interface SystemPromptStats {
   providerSubtotalChars: number;
   /** Rough token estimate of the provider subtotal at 4 chars/token. */
   estimatedTokens: number;
+  contextAwarenessEstimates?: AssembledContextV1['estimates'];
   mcpServers: number;
   mcpTools: number;
   skills: number;
@@ -77,6 +79,7 @@ export async function buildDiscoverySnapshot(
     overhead?: {
       sysChars: number; mcpChars: number; dynamicChars: number;
       totalChars: number; mcpServers: number; mcpTools: number; skills: number;
+      contextAwarenessEstimates?: AssembledContextV1['estimates'];
       directToolChars?: number; status?: 'pending' | 'frozen' | 'stale'; mode?: 'exact' | 'compact';
     };
   },
@@ -92,6 +95,7 @@ export async function buildDiscoverySnapshot(
         directToolChars: opts.overhead.directToolChars ?? 0,
         providerSubtotalChars: opts.overhead.totalChars + (opts.overhead.directToolChars ?? 0),
         estimatedTokens: Math.round((opts.overhead.totalChars + (opts.overhead.directToolChars ?? 0)) / 4),
+        ...(opts.overhead.contextAwarenessEstimates ? { contextAwarenessEstimates: opts.overhead.contextAwarenessEstimates } : {}),
         mcpServers: opts.overhead.mcpServers,
         mcpTools: opts.overhead.mcpTools,
         skills: opts.overhead.skills,
@@ -127,15 +131,7 @@ export async function buildDiscoverySnapshot(
  */
 export async function writeDiscoveryFile(
   ctx: PiContext | undefined,
-  opts: {
-    skills: DiscoveredSkillState[];
-    nativeTools: string[];
-    home?: string;
-    octocodeHome?: string;
-    overhead?: { sysChars: number; mcpChars: number; dynamicChars: number;
-                 totalChars: number; mcpServers: number; mcpTools: number; skills: number;
-                 directToolChars?: number; status?: 'pending' | 'frozen' | 'stale'; mode?: 'exact' | 'compact' };
-  },
+  opts: Parameters<typeof buildDiscoverySnapshot>[1],
 ): Promise<string | null> {
   try {
     const snapshot = await buildDiscoverySnapshot(ctx, opts);

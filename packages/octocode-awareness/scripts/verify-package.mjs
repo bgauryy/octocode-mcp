@@ -51,6 +51,20 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function strictObjectSchemaBranches(schema, name) {
+  const branches = schema?.type === 'object'
+    ? [schema]
+    : (Array.isArray(schema?.oneOf) ? schema.oneOf : null);
+  assert(branches?.length, `${name} json-schema must be an object schema or oneOf strict object schemas`);
+  for (const [index, branch] of branches.entries()) {
+    assert(
+      branch && branch.type === 'object' && branch.properties && branch.additionalProperties === false,
+      `${name} json-schema branch ${index + 1} must be a strict object schema`,
+    );
+  }
+  return branches;
+}
+
 const packRunner = process.env.npm_execpath;
 assert(packRunner && existsSync(packRunner), 'pack verification must run through a package-manager runtime (yarn or npm)');
 const isYarn = /yarn/i.test(packRunner);
@@ -192,7 +206,7 @@ try {
   assert(!existsSync(join(installed, 'out/schemas')), 'static out/schemas must not ship — schemas are served dynamically');
   for (const name of names) {
     const schema = JSON.parse(run(process.execPath, [cli, 'schema', 'json-schema', name, '--compact'], installedOptions));
-    assert(schema && typeof schema === 'object' && schema.type === 'object', `${name} json-schema must be an object schema`);
+    strictObjectSchemaBranches(schema, name);
     const example = run(process.execPath, [cli, 'schema', 'example', name, '--compact'], installedOptions);
     run(process.execPath, [cli, 'schema', 'validate', name, '-', '--compact'], { ...installedOptions, input: example });
   }

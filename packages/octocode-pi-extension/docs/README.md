@@ -36,7 +36,8 @@ use `node $OCTOCODE_CLI tools <name> --scheme`.
 
 | Document | Owns |
 |---|---|
-| [UI.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/UI.md) | TUI design contract, widget inventory, responsive layout, core flows, and troubleshooting. |
+| [UI.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/UI.md) | Current TUI design contract, widget inventory, responsive layout, core flows, and troubleshooting. |
+| [STATUS_PROGRESS_UX.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/STATUS_PROGRESS_UX.md) | Target adaptive UX for footer metadata, progress, plans, tasks, agents, messages, attention, and verification. |
 | [SETTINGS.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/SETTINGS.md) | Complete `/settings` control-center reference: commands, MCP, discovery, tools, skills, persistence, security, refresh behavior, and limitations. |
 | [RUNTIME_STATE.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/RUNTIME_STATE.md) | Session initialization, Zustand state ownership, MCP readiness, and disposal. |
 | [SESSION_ARTIFACTS.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/SESSION_ARTIFACTS.md) | Where session files live (plans, screenshots, logs, compaction snapshots), manifest, and cleanup. |
@@ -47,6 +48,7 @@ use `node $OCTOCODE_CLI tools <name> --scheme`.
 | Document | Owns |
 |---|---|
 | [AGENT_TOOL_AUDIT.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/AGENT_TOOL_AUDIT.md) | Dated decision snapshot for palette ratings, Awareness signal value, and contract-size evidence. Current registries remain source-owned. |
+| [Awareness assessment](https://github.com/bgauryy/octocode/blob/main/docs/AWARENESS_ASSESSMENT.md) | Dated cross-host evidence, engineering ratings, activation limits, and evaluated next increments. |
 
 ---
 

@@ -3,6 +3,7 @@ node_modules
 .tmp-*
 build
 dist
+**/.octocode-build.lock
 .yarn/install-state.gz
 _docs
 _scripts

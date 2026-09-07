@@ -89,7 +89,7 @@ describe('registerUniqueTool with builtin overrides', () => {
       ['file', [{ reasoning: 'write alpha', type: 'write', path: '/a.ts' }, { reasoning: 'delete beta', type: 'delete', path: '/b.ts' }]],
       ['plan', [{ reasoning: 'show plan', action: 'show' }, { reasoning: 'clear plan', action: 'clear' }]],
       ['web', [{ reasoning: 'search alpha', query: 'alpha' }, { reasoning: 'fetch beta', url: 'https://example.com/beta' }]],
-      ['readMedia', [{ reasoning: 'inspect alpha', type: 'image', path: '/a.png', view: 'metadata' }, { reasoning: 'inspect beta', type: 'image', path: '/b.png', view: 'metadata' }]],
+      ['inspectMedia', [{ reasoning: 'inspect alpha', type: 'image', path: '/a.png', view: 'metadata' }, { reasoning: 'inspect beta', type: 'image', path: '/b.png', view: 'metadata' }]],
       ['media', [{ reasoning: 'render alpha', type: 'image', dest: '/a.png' }, { reasoning: 'render beta', type: 'image', dest: '/b.png' }]],
       ['agent', [{ reasoning: 'inspect alpha', type: 'inspect', agentId: 'alpha' }, { reasoning: 'inspect beta', type: 'inspect', agentId: 'beta' }]],
     ];
@@ -182,6 +182,19 @@ describe('withOctocodeRender', () => {
     expect(lines[0]).toMatch(/✓.*\[0\].*alpha ok/);
     expect(lines[1]).toMatch(/✗.*\[1\].*beta failed/);
     expect(lines[2]).toMatch(/[–-].*\[2\].*not run/);
+
+    const expandedBatch = makeResult({
+      ...batch,
+      content: [{ type: 'text', text: 'batch summary\nfull batch evidence' }],
+    });
+    const expanded = def.renderResult!(
+      expandedBatch,
+      { expanded: true } as RenderResultOptions,
+      stubTheme,
+      { args: { queries: [{ reasoning: 'first' }, { reasoning: 'second' }, { reasoning: 'third' }] } } as never,
+    ).render(120).join('\n');
+    expect(customRenderResult).not.toHaveBeenCalled();
+    expect(expanded).toContain('full batch evidence');
   });
 
   it('overrides an existing renderResult on a system error (context.isError)', () => {

@@ -105,14 +105,20 @@ describe('renderBannerLines', () => {
     expect(lines.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('paints the static math-driven purple gradient on the wordmark', () => {
+  it('uses one solid color per word in the compact brand', () => {
     const lines = renderBannerLines(stubTheme, 80);
     const joined = lines.join('');
-    expect(joined).toContain('[mdLink:');    // lavender highlight (brightest stop reached by gradient)
-    expect(joined).toContain('[accent:');    // purple brand body
-    expect(joined).toContain('[toolTitle:'); // saturated purple title stop
-    expect(joined).toContain('[muted:');     // violet-gray shadow tail
-    expect(joined).not.toContain('[syntaxOperator:'); // no teal/cyan detour
+    expect(joined).toContain('[accent:octocode]');
+    expect(joined).toContain('[mdCode:code]');
+    expect(joined).not.toContain('[muted:');
+  });
+
+  it('paints each full word as one span in wide art and keeps resize height stable', () => {
+    const spans: string[] = [];
+    const theme = { fg: (token: string, text: string) => { spans.push(token); return text; }, bold: (text: string) => text };
+    const wide = renderBannerLines(theme, 160);
+    expect(spans).toEqual(Array.from({ length: 6 }, () => ['accent', 'mdCode']).flat());
+    expect(renderBannerLines(theme, 36)).toHaveLength(wide.length);
   });
 
   it('includes version when provided', () => {
@@ -191,7 +197,8 @@ describe('renderBetaNotice', () => {
     const last = lines.at(-1) ?? '';
     expect(last).toContain('BETA VERSION');
     expect(last).toContain('for issues:');
-    expect(last).toContain('[warning:');
+    expect(last).toContain('[muted:');
+    expect(last).not.toContain('[warning:');
     expect(last).toContain('[mdLink:');
     expect(last).not.toContain('\x1b]8;;');
   });

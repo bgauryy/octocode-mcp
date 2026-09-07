@@ -25,7 +25,7 @@ The direct palette contains 14 extension-owned tools: 13 support tools and the g
 | ------------------------ | ---------------------------------------- |
 | Core                     | `file`, `bash`                           |
 | Browser and workers      | `chromeDebug`, `agent`                   |
-| Media and web            | `readMedia`, `media`, `runFfmpeg`, `web` |
+| Media and web            | `inspectMedia`, `media`, `runFfmpeg`, `web` |
 | MCP                      | `MCPTool`                                |
 | Dynamic capabilities     | `callTool`, `skill`                      |
 | Planning and interaction | `plan`, `askUser`, `localServer`         |
@@ -86,9 +86,9 @@ Session-scoped maintenance jobs are controlled by `/octocode-cron`; see [CRON.md
 | Find dead-code candidates                               | `localAnalyzeGraph` with `operation:"deadCode"`               |
 | Symbol identity, refs, callers, types                   | `lspGetSemantics`                                              |
 | Resolve npm package to source                           | `npmSearch`                                                    |
-| See a local image / screenshot                          | `readMedia` with `type:"image"`                                |
-| Inspect video/audio metadata                            | `readMedia` with `type:"video"` / `"audio"`, `view:"metadata"` |
-| See a video frame/contact sheet or audio visualization  | `readMedia` with the matching `view`                           |
+| See a local image / screenshot                          | `inspectMedia` with `type:"image"`                                |
+| Inspect video/audio metadata                            | `inspectMedia` with `type:"video"` / `"audio"`, `view:"metadata"` |
+| See a video frame/contact sheet or audio visualization  | `inspectMedia` with the matching `view`                           |
 | Author an image or PDF                                  | `media` with `type:"image"` / `"pdf"`                          |
 | Convert / clip / resize / gif / extract audio           | `media` with `type:"convert"` / `"trim"` / `"gif"` / `"audio"` |
 | Single-shot Chrome DevTools call                        | `chromeDebug`                                                  |
@@ -219,14 +219,17 @@ Spawn profiles:
 | `planner`    | Dependency-ordered implementation plans, risks, verification strategy, and RFC handoffs. |
 | `architect`  | Root-cause and architecture analysis with local tools and targeted shell checks.         |
 | `browser`    | Routed multi-turn Chrome DevTools work.                                                  |
-| `custom`     | A clean worker with explicit tools, system prompt, and resource mode.                    |
+| `custom`     | A general Octocode worker whose tools, system prompt, and resource mode can be narrowed. |
 
-Researcher, planner and architect all receive `web`, `MCPTool`, `file`, `skill`
+Researcher, planner, and architect all receive `web`, `MCPTool`, `file`, `skill`,
 and `bash`. Role policy limits `file` to an assigned RFC or durable handback artifact,
 keeps product research read-only, and routes research through MCP. Researcher and
 planner use `bash` only for the supplied Awareness CLI; architect also permits
 bounded non-destructive test/build/debug checks. Each worker keeps its distinct
-Awareness identity while sharing the parent's database/workspace bindings.
+Awareness identity while sharing the parent's database/workspace bindings. Browser
+workers receive `chromeDebug`, `MCPTool`, `skill`, and `bash`. Custom workers default
+to `MCPTool`, `skill`, and `bash`; explicit `tools:[]` maps to Pi's `--no-tools`, and
+explicit lean mode disables extension and skill loading.
 
 ```text
 agent({queries:[{
@@ -251,7 +254,7 @@ This user command manages the in-session worker ledger shown in the unified foot
 
 ## Media and web tools
 
-### `readMedia`
+### `inspectMedia`
 
 The read-only perception boundary for local media. Each query chooses `type:"image"`, `"video"`, or `"audio"` and provides `path`. Images are returned directly. Video supports `view:"metadata"`, `"frame"`, or `"contactSheet"`; audio supports `view:"metadata"`, `"waveform"`, or `"spectrogram"`. Visual results are sent to the model as image content as well as rendered in capable terminals. Defaults favor useful perception: `contactSheet` for video and `waveform` for audio.
 
@@ -303,7 +306,6 @@ opaque hashes, so private file paths are not copied into the manifest or indexes
 | `plan`           | `plan/plan.html`, `plan/plan.md`, `plan/state.json`, `plan/branches/*.json` | Primary plan artifacts and branch snapshots                                  |
 | `browser`        | `browser/port-<N>/session.json`, `browser/screenshots/*.png`                | chromeDebug session metadata and screenshots                                 |
 | `compaction`     | `compaction/<timestamp>-<label>.md`, `compaction/latest.md`                 | Compaction checkpoint markdown                                               |
-| `checkpoint-ref` | `checkpoint-ref.json`                                                       | Pointer to shadow-git store (stays at `$OCTOCODE_HOME/extension/checkpoints/<cwd-hash>/`) |
 | `log`            | `logs/error.txt`                                                            | Extension error/warning log                                                  |
 | `image`          | `images/<name>-<ts>.png`                                                    | `media` fallback PNGs                                                        |
 | `export`         | `export/latest-ref.json`                                                    | Pointer to the branded session HTML export                                   |
@@ -313,6 +315,10 @@ All write operations are atomic (`O_EXCL` temp + rename) and use private permiss
 cannot be created (e.g., workspace does not yet exist).
 
 Large generic tool results and bash logs are intentionally not durable session artifacts. They use private files under `$OCTOCODE_HOME/extension/tmp/tool-results/`, include an exact path in the bounded result, support chunked reads through `localGetFileContent`, and are removed during `session_shutdown`. A later write prunes crash leftovers older than 24 hours.
+
+## Local file history
+
+Successful native `file` mutations are captured before and after through the shared Awareness history store. Awareness owns the private bundled Git objects and metadata; Pi does not invoke system Git or write a second history database. Use `/octocode-rewind` to select a bounded timeline entry, inspect its file-level preview, and explicitly approve the same preview for apply. In headless sessions, use the bundled `octocode-awareness history timeline`, `history read`, `history restore-preview`, and `history restore-apply` commands through the Awareness skill. Pi never snapshots the whole workspace on input and never rewinds conversation state.
 
 ---
 

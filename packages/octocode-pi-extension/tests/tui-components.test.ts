@@ -4,6 +4,14 @@ import { test } from 'vitest';
 import { CURSOR_MARKER } from '@earendil-works/pi-tui';
 import { renderFrame, renderInlineRows, renderStack, renderToolView } from '../src/tui/components.js';
 
+test('tool output uses readable text while active status uses the brand accent', () => {
+  const spans: Array<[string, string]> = [];
+  const theme = { fg: (token: string, text: string) => { spans.push([token, text]); return text; }, bold: (text: string) => text };
+  renderToolView({ name: 'file', state: 'running', status: 'Reading', body: [{ text: 'Important evidence' }] }, { width: 80, theme: theme as never });
+  assert.ok(spans.some(([token, text]) => token === 'accent' && text === 'Reading'));
+  assert.ok(spans.some(([token, text]) => token === 'text' && text === 'Important evidence'));
+});
+
 
 test('renderFrame closes and aligns every border at narrow and wide widths', () => {
   for (const width of [2, 3, 18, 32, 64, 100]) {

@@ -21,6 +21,7 @@ import {
   MAX_ACTIVE_AGENTS,
   DEFAULT_SPAWN_POLICY,
   evaluateStepBudget,
+  executeAgentLifecycle,
   formatElapsed,
   formatAgentLedgerDetails,
   getWorkerTranscript,
@@ -32,6 +33,7 @@ import {
   listVisibleWorkerLedgerEntries,
   handleOctocodeAgentsCommand,
   waitForAgent,
+  waitForAgentTurn,
   findLivePlanWorker,
 } from '../src/tools/agent-tools.js';
 import { registerUnifiedAgentTool } from '../src/tools/unified-agent-tool.js';
@@ -112,6 +114,18 @@ test('agent spawn requires task and rejects the retired prompt alias', () => {
   setAgentProcessFactoryForTests(factory);
   assert.throws(() => spawnRpcAgent({ prompt: 'retired assignment spelling' } as never), /requires task/);
   assert.equal(factory.mock.calls.length, 0);
+});
+
+test('agent inspect list exposes the canonical agentId for follow-up lifecycle calls', async () => {
+  const mock = makeMockAgentProcess();
+  setAgentProcessFactoryForTests(() => mock as never);
+  const record = spawnRpcAgent({ task: 'copyable identity worker' });
+
+  const result = await executeAgentLifecycle({ type: 'inspect' });
+  const text = (result.content[0] as { text: string }).text;
+  assert.ok(text.includes(`agentId: ${record.id}`), text);
+  const details = result.details as { agents: Array<{ agentId: string }> };
+  assert.ok(details.agents.some((agent) => agent.agentId === record.id));
 });
 
 test('agent CLI uses canonical commands and rejects status and clear aliases', async () => {
@@ -328,6 +342,17 @@ test('spawnRpcAgent forces OCTOCODE_LAUNCHER_MODE=subprocess so worker --tools/-
     'subprocess',
     'worker env must force subprocess launch mode so the curated tool allowlist is not silently dropped',
   );
+});
+
+test('spawnRpcAgent serializes an explicit empty tool allowlist as --no-tools', () => {
+  if (isSubagentProcess()) return;
+  const mock = makeMockAgentProcess();
+  setAgentProcessFactoryForTests(() => mock as never);
+
+  const record = spawnRpcAgent({ task: 'tool-less worker', resourceMode: 'octocode', tools: [] });
+
+  assert.ok(record.args.includes('--no-tools'));
+  assert.equal(record.args.includes('--tools'), false);
 });
 
 // ─── L1: ledger elapsed time must freeze once an agent is terminal ───────────
@@ -567,6 +592,18 @@ test('cancelling one agent wait preserves another waiter and normal completion',
   assert.equal(record.activityListeners.size, 1);
   mock._emit('stdout:data', Buffer.from(`${JSON.stringify({ type: 'agent_end', messages: [] })}\n`));
   assert.deepEqual(await collecting, { reason: 'terminal', stillRunning: false, probedAlive: false });
+  assert.equal(record.waiters.size, 0);
+  assert.equal(record.activityListeners.size, 0);
+});
+
+test('waitForAgentTurn forwards cancellation and releases worker listeners', async () => {
+  const mock = makeMockAgentProcess();
+  setAgentProcessFactoryForTests(() => mock as never);
+  const record = spawnRpcAgent({ task: 'cancel whole turn wait', resourceMode: 'lean' });
+  const controller = new AbortController();
+  const pending = waitForAgentTurn(record, { signal: controller.signal });
+  controller.abort();
+  await assert.rejects(pending, { name: 'AbortError' });
   assert.equal(record.waiters.size, 0);
   assert.equal(record.activityListeners.size, 0);
 });

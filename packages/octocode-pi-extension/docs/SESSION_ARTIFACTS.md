@@ -67,7 +67,6 @@ combined with a SHA-256 fingerprint of the session + workspace, so:
 | Chrome CDP event log | `browser/port-<N>/cdp-events.jsonl` | `chromeDebug` (debug mode) |
 | Compaction snapshot | `compaction/<timestamp>-<label>.md` | Compaction hook |
 | Latest compaction snapshot | `compaction/latest.md` | Compaction hook |
-| Checkpoint store pointer | `checkpoint-ref.json` | Checkpoint engine |
 | Error / warning log | `logs/error.txt` | Internal error handler |
 | Fallback images (PNGs) | `images/<name>-<timestamp>.png` | `media` |
 | Export HTML reference | `export/latest-ref.json` | `/octocode-export` command |
@@ -226,26 +225,6 @@ resolved paths.
 
 If ledger staging fails, compaction still succeeds, and the checkpoint card still
 appears. Continue from Pi's summary and the current active plan.
-
----
-
-## Checkpoint pointer
-
-The shadow-git checkpoint store intentionally lives **outside** the working repository to
-avoid polluting version control:
-
-```
-$OCTOCODE_HOME/extension/checkpoints/<cwd-hash>/
-```
-
-The session artifact tree contains a lightweight JSON pointer at `checkpoint-ref.json`:
-
-```json
-{ "storeDir": "/Users/you/.octocode/extension/checkpoints/abc123/", "cwd": "/Users/you/myproject" }
-```
-
-This lets the session manifest track *that* checkpointing happened, without
-moving the actual git objects.
 
 ---
 

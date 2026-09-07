@@ -13,6 +13,7 @@ const originalHome = process.env['OCTOCODE_HOME'];
 const originalCompactMcp = process.env['OCTOCODE_COMPACT_MCP'];
 const originalStorageMode = process.env['OCTOCODE_STORAGE_MODE'];
 const roots: string[] = [];
+const settingsCtx = {} as PiContext;
 afterEach(() => {
   if (originalHome === undefined) delete process.env['OCTOCODE_HOME'];
   else process.env['OCTOCODE_HOME'] = originalHome;
@@ -22,16 +23,16 @@ afterEach(() => {
   else process.env['OCTOCODE_STORAGE_MODE'] = originalStorageMode;
   while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true });
   setFooterDensity('default');
-  setPermissionLevel('default');
+  setPermissionLevel(settingsCtx, 'default');
 });
 
 test('settings actions apply typed session runtime controls', async () => {
   const density = parseMcpManagerAction({ action: 'set-footer-density', density: 'compact' });
   const permission = parseMcpManagerAction({ action: 'set-permission-level', level: 'strict' });
-  await applyMcpManagerAction(density);
-  await applyMcpManagerAction(permission);
+  await applyMcpManagerAction(density, settingsCtx);
+  await applyMcpManagerAction(permission, settingsCtx);
   assert.equal(getFooterDensity(), 'compact');
-  assert.equal(getPermissionLevel(), 'strict');
+  assert.equal(getPermissionLevel(settingsCtx), 'strict');
   assert.throws(() => parseMcpManagerAction({ action: 'set-footer-density', density: 'huge' }), /Invalid footer density/);
   assert.throws(() => parseMcpManagerAction({ action: 'set-permission-level', level: 'unsafe' }), /Invalid permission level/);
 });

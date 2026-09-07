@@ -87,7 +87,7 @@ describe('shell hook correlation state', () => {
     const memoryHome = mkdtempSync(join(tmpdir(), 'octocode-hook-correlation-invalid-'));
     const workspace = join(memoryHome, 'repo');
     mkdirSync(workspace, { recursive: true });
-    const payload = { workspace, eventId: 'reused-event', file_path: 'src/a.ts' };
+    const payload = { workspace, tool_name: 'Write', eventId: 'reused-event', file_path: 'src/a.ts' };
     try {
       const first = runHook('pre-edit', payload, memoryHome, workspace);
       expect(first.status, first.stderr).toBe(0);
@@ -119,7 +119,7 @@ describe('shell hook correlation state', () => {
     const memoryHome = mkdtempSync(join(tmpdir(), 'octocode-hook-correlation-expired-'));
     const workspace = join(memoryHome, 'repo');
     mkdirSync(workspace, { recursive: true });
-    const payload = { workspace, eventId: 'aged-event', file_path: 'src/a.ts' };
+    const payload = { workspace, tool_name: 'Write', eventId: 'aged-event', file_path: 'src/a.ts' };
     try {
       const first = runHook('pre-edit', payload, memoryHome, workspace);
       expect(first.status, first.stderr).toBe(0);
@@ -149,7 +149,7 @@ describe('shell hook correlation state', () => {
     const memoryHome = mkdtempSync(join(tmpdir(), 'octocode-hook-correlation-concurrent-'));
     const workspace = join(memoryHome, 'repo');
     mkdirSync(workspace, { recursive: true });
-    const payload = { workspace, eventId: 'parallel-event', file_path: 'src/shared.ts' };
+    const payload = { workspace, tool_name: 'Write', eventId: 'parallel-event', file_path: 'src/shared.ts' };
     try {
       const starts = await Promise.all(Array.from({ length: 3 }, () => (
         runHookAsync('pre-edit', payload, memoryHome, workspace)
