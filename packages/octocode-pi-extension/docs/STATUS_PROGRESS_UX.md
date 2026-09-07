@@ -1,6 +1,6 @@
 # Adaptive status and progress UX
 
-> Status: target design. Current builds do not implement it. [UI.md](UI.md) documents current behavior until this design and its acceptance suite pass.
+> Status: core implementation shipped. `UxSnapshotV1`, event reconciliation, adaptive priority/budget policy, bounded worker aggregation, one-line cell-safe rendering, and production footer wiring are implemented and covered by focused fixtures. Transcript-wide message normalization, durable peer/local reconciliation, the complete state/layout matrix, and a recorded real interactive Pi pass remain acceptance debt. [UI.md](UI.md) is canonical for shipped behavior.
 
 This design gives users one truthful answer to four questions:
 
@@ -30,12 +30,12 @@ The existing architecture has strong foundations but an inflexible final project
 |---|---|---|
 | Canonical plan state | `tools/plan-read-model.ts` exposes phase, revision, task states, dependencies, receipts, pending interactions, and summary counts to terminal, browser, RPC, prompt, and Markdown projections. | Keep this owner. Adapt it into the UX snapshot; do not create another plan store. |
 | Footer controller | `extension-ui.ts` is the production owner that reads runtime, plan, worker, Awareness, identity, and context state before calling `tui/footer-view.ts`. | Keep one controller and one registered footer component. |
-| Footer layout | Five semantic row groups are offered at every width, followed by one row for every non-killed worker. Tests explicitly reject worker aggregation. | Replace entity-per-row rendering with bounded, honest aggregation and attention-first exceptions. |
-| Foreground activity | `tools/runtime-store.ts` has a useful discriminated activity model, but `setActivity` is last-writer-wins and does not carry producer, sequence, lease, or freshness metadata. | Add arbitration metadata in the derived layer so stale completion cannot erase newer work. |
-| Progress | The footer shows `plan done/total` and one selected task. The plan model distinguishes local and shared task states, but the footer does not explain ready, dependency-blocked, verifying, failed, or dynamic-plan semantics. | Show only knowable progress; never manufacture a percentage. |
-| Agents | `ui-extras.ts` normalizes process and worker-result states and captures task, plan step, active tool, messages, elapsed time, and recent activity. | Preserve the data, but summarize normal workers and promote only attention states. |
-| Messages | Worker queue activity, the agent inbox, Awareness unread messages, notifications, and transcript entries are separate surfaces with different wording. | Normalize message events and use one message grammar and one attention count. |
-| Detail | `/octocode-inbox`, plan HTML, terminal plan output, and Awareness detail already provide drill-down paths. | The footer can aggregate safely when it always names the detail route. |
+| Footer layout | `tui/status-policy.ts` applies automatic, compact, or expanded row budgets; normal workers aggregate by state and blocked/failed workers remain named. `tui/footer-view.ts` renders one physical line per selected row. | Keep selection pure and renderer-only; expand the layout matrix without restoring entity-per-row growth. |
+| Foreground activity | `tools/runtime-store.ts` remains the canonical discriminated activity store. `tools/ux-event-reducer.ts` now provides pure sequence rejection, coalescing, expiry, and canonical reload reconciliation for ephemeral producers. | Wire producer-owned source sequences and leases through every activity publisher before claiming end-to-end stale-completion protection. |
+| Progress | `tools/ux-snapshot.ts` classifies linear, graph, dynamic, and indeterminate progress. The policy shows a denominator only for a stable linear plan and uses state counts for graph or dynamic work. | Extend canonical verification/task fields when all plan surfaces can consume the richer states. |
+| Agents | `tools/ux-snapshot.ts` preserves normalized process/result precedence, assignments, active operations, messages, elapsed time, and update time. The policy summarizes normal states and names blocked/failed workers with `/octocode-inbox`. | Keep the inbox as the complete ledger and action route. |
+| Messages | Worker queued counts and cached Awareness unread counts merge only in the UX snapshot and policy; canonical stores remain separate. Notifications and transcript producers still use their existing wording. | Finish one transition grammar and durable coalescing contract across transcript and notifications. |
+| Detail | `/octocode-inbox`, plan HTML, terminal plan output, Awareness detail, `/configuration`, and transcript routes remain complete drill-down surfaces. The one-line renderer promotes routes before optional tail detail. | Preserve a real detail route before reducing ambient detail further. |
 
 ### Structural verification snapshot
 
@@ -83,11 +83,11 @@ Input requests, permission decisions, stale authority, failed checks, blocked ac
 
 ### 5. Progress must state its confidence
 
-A stable linear plan can show `3/8`. A conditional or parallel graph shows state counts such as `3 done · 2 active · 1 ready · 2 blocked`. Indeterminate work shows activity and elapsed time, not a fake percentage or ETA.
+A stable linear plan can show `3/8`. A conditional or parallel graph shows state counts such as `3 done · 2 active · 1 ready · 2 blocked`. Indeterminate work shows activity and elapsed time instead of inventing percentages or ETAs.
 
 ### 6. Stable while ticking, adaptive when meaning changes
 
-Elapsed time and spinner frames may repaint text but must not change footer height. Repack rows only on a semantic transition, resize, density change, or attention change.
+Elapsed time and spinner frames can repaint text but must not change footer height. Repack rows only on a semantic transition, resize, density change, or attention change.
 
 ### 7. Text carries meaning
 
@@ -107,8 +107,8 @@ Introduce a derived `UxSnapshotV1`. The name is illustrative; the important cont
 | Tasks | stable ID, index, label, status, dependencies, owner, verification state, updated time | Supports footer selection and detail views. |
 | Agents | stable ID, label, normalized state, assignment, active operation, pending messages, elapsed time, updated time | Supports honest parallel-work summaries. |
 | Attention | kind, severity, actor, concise reason, required action, detail route, created time | Drives preemption and notifications. |
-| Messages | unread count, queued count, latest relevant sender and subject, detail route | Unifies worker and peer message visibility. |
-| Provenance | source owner, source revision or sequence, observed time, stale-after policy | Prevents stale projections from looking current. |
+| Messages | unread count; queued count; latest relevant sender and subject; detail route | Unifies worker and peer message visibility. |
+| Provenance | source owner; source revision or sequence; observed time; stale-after policy | Prevents stale projections from looking current. |
 
 ### Event envelope
 

@@ -1,6 +1,6 @@
 /**
  * plan-registration — tool schema, execute handler, and registration.
- * Owns: inferConsequential, executePlanQuery (tool execute), registerPlanTool.
+ * Owns: inferConsequential, executePlanQuery, registerPlanTool.
  * Imports from planning module split; does not import from active-plan or plan-tool.
  */
 
@@ -9,11 +9,6 @@ import type { ToolDefinition, ToolCallResult, PiContext, PiTheme, RenderResultOp
 import type { registerUniqueTool } from '../octocode-tools.js';
 import { CLI_STATUS_TEXT } from '../../tui/cli-design.js';
 import { runAskPrompt, type AskOutcome } from '../ask-user-tool.js';
-import {
-  consumeHumanAuthorizationReceipt,
-  createHumanAuthorizationReceipt,
-  createHumanAuthorizationReceiptFromInteraction,
-} from '../interaction-broker.js';
 import { planArtifactsDir } from '../plan-html.js';
 import {
   PLAN_APPROVE_DESC,
@@ -47,8 +42,6 @@ import {
   getPlan,
   getPlanReviewState,
   getPlanCoordination,
-  updatePlanCoordination,
-  setPlanAwarenessMappings,
   resolveRfcPath,
   setPlanRfc,
   getPlanRfc,
@@ -58,10 +51,7 @@ import {
 import { activatePlan, addStep, startStep, restorePlanSteps, completeStep, removeStep } from './plan-executor.js';
 import {
   proposePlanReview,
-  acceptPlanReview,
   requestPlanChanges,
-  startAcceptedPlan,
-  rollbackAcceptedPlanStart,
 } from './plan-lifecycle.js';
 import {
   renderList,
@@ -73,7 +63,6 @@ import {
   buildRfcReviewTldr,
   projectPlanIndexes,
   writeCurrentPlanArtifacts,
-  sharedStartContractError,
 } from './plan-presentation.js';
 import {
   tearDownPlanHtml,
@@ -88,7 +77,7 @@ import { stepLabel, depsMet, type PlanStep, type StepInput } from './plan-types.
 
 /** At/above this step count a plan is treated as consequential regardless of self-report. */
 const CONSEQUENTIAL_STEP_COUNT = 5;
-/** Risk vocabulary that flags consequential work in a step's text. */
+/** Risk vocabulary that flags consequential work in a step’s text. */
 const RISK_RE = /\b(migrat|schema|auth|delete|\bdrop\b|truncate|rename|breaking|public[\s-]?api|secret|credential|\btoken\b|encrypt|permission|rollback|backfill|lockfile|release)\w*/i;
 
 /** Cap on questions per clarify call — a bounded interview, not an interrogation. */
@@ -97,6 +86,25 @@ const MAX_CLARIFY = 3;
 type TypeBoxBuilder = (typeof import('typebox'))['Type'];
 type RegisterFn = typeof registerUniqueTool;
 type PlanAction = 'set' | 'propose' | 'clarify' | 'add' | 'start' | 'complete' | 'remove' | 'clear' | 'show';
+
+/** Fields allowed per action — used to reject stray root-level fields. */
+const PLAN_ACTION_FIELDS: Readonly<Record<PlanAction, readonly string[]>> = Object.freeze({
+  set: ['scope', 'steps', 'consequential', 'reason', 'rfcPath'],
+  propose: ['scope', 'steps', 'consequential', 'reason', 'rfcPath'],
+  clarify: ['questions'],
+  add: ['scope', 'text', 'activeForm', 'dependsOn', 'paths', 'taskReasoning', 'acceptance', 'checkCommand'],
+  start: ['scope', 'index', 'revision', 'authorizationInteractionId'],
+  complete: ['scope', 'index', 'receipt'],
+  remove: ['scope', 'index'],
+  clear: ['scope'],
+  show: ['scope'],
+});
+
+function assertPlanActionFields(query: QueryRecord, action: PlanAction): void {
+  const allowed = new Set(['reasoning', 'action', ...PLAN_ACTION_FIELDS[action]]);
+  const extra = Object.keys(query).filter((field) => !allowed.has(field));
+  if (extra.length > 0) throw new Error(`action:${action} does not accept ${extra.join(', ')}.`);
+}
 
 /** One clarify-phase question: a prompt plus optional multiple-choice options. */
 interface ClarifyQuestion {
@@ -129,17 +137,14 @@ interface PlanParams extends QueryRecord {
   questions?: ClarifyQuestion[];
   /** Required with consequential:false to override the heuristic. */
   reason?: string;
-  /** For shared scope: coordination metadata. */
-  localReason?: string;
-  coordinationWorkspace?: string;
 }
 
-// ─── Exported helpers ─────────────────────────────────────────────────────
+// ─── Exported pure helpers ──────────────────────────────────────────────────
 
 /**
  * Heuristic "does this look consequential?" from the proposed steps alone — step
  * count and risk vocabulary. Pure and exported for testing. Returns the verdict
- * plus the human-readable signals that fired (for the gate's block message).
+ * plus the human-readable signals that fired (for the gate’s block message).
  */
 export function inferConsequential(steps: StepInput[]): { consequential: boolean; signals: string[] } {
   const texts = steps.map((s) => (typeof s === 'string' ? s : s?.text ?? ''));
@@ -175,9 +180,8 @@ function auditPlanEvent(
 }
 
 /**
- * Core per-query plan executor — the body of what was the monolithic `execute`.
- * Handles one action (PlanParams) against the given ctx and returns a
- * ToolCallResult. Called from inside `executeQueryBatch` per query.
+ * Core per-query plan executor. Handles one action (PlanParams) against the
+ * given ctx and returns a ToolCallResult. Called from inside executeQueryBatch.
  */
 async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Promise<ToolCallResult> {
   const scope = activePlanScope(ctx);
@@ -202,17 +206,21 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
     if (!ctx) {
       return clarifyResult(`[PLAN] this host cannot prompt — ask these inline and continue:\n${questions.map((q, i) => `${i + 1}. ${q.prompt}`).join('\n')}`);
     }
+    const settleClarify = (detail: string): void => {
+      if (getPlanReviewState(scope).phase === 'abandoned') setPlanLifecycle(scope, 'researching');
+      if (getPlanReviewState(scope).phase !== 'draft') setPlanLifecycle(scope, 'draft');
+      setManagedActivity(ctx, { kind: 'planning', planScope: scope, detail });
+    };
     const recorded: string[] = [];
     let halted: string | undefined;
     let pendingInteraction: AskOutcome['interaction'] | undefined;
-    // Use a mutable index so back-navigation can revisit a prior question.
     let qi = 0;
     while (qi < questions.length) {
       const q = questions[qi]!;
       const prompt = String(q.prompt).trim();
       const outcome = await runAskPrompt(ctx, {
         question: prompt,
-        options: q.options?.map((o) => ({
+        options: (q.options ?? []).map((o) => ({
           value: o.value ?? o.label,
           label: o.label,
           description: o.description,
@@ -220,20 +228,30 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
           pros: o.pros,
           cons: o.cons,
         })),
+        pagination: { current: qi + 1, total: questions.length },
       });
+      if (!outcome) {
+        halted = '[PLAN] clarify cancelled before an answer was recorded.';
+        break;
+      }
       if (outcome.status === 'pending') {
         pendingInteraction = outcome.interaction;
         halted = `[PLAN] clarify paused pending continuation (correlation=${outcome.interaction?.correlationId ?? 'unavailable'})`;
         break;
       }
       if (outcome.status === 'unavailable') {
-        // Host cannot prompt; store the question as-is and move on.
         addPlanDecision(scope, prompt, '(awaiting user reply)');
         recorded.push(prompt);
         qi++;
         continue;
       }
-      const answer = outcome.status === 'text' ? (outcome.value ?? '').trim() : outcome.status === 'selected' ? String(outcome.value ?? '') : '';
+      if (outcome.status !== 'text' && outcome.status !== 'selected') {
+        halted = `[PLAN] clarify ${outcome.status}.`;
+        break;
+      }
+      const answer = outcome.status === 'text'
+        ? (outcome.value ?? '').trim()
+        : String(outcome.label ?? outcome.value ?? '');
       if (!answer) { qi++; continue; }
       addPlanDecision(scope, prompt, answer);
       recorded.push(prompt);
@@ -241,9 +259,13 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
     }
     if (recorded.length > 0) auditPlanEvent(ctx, scope, 'clarify', { decisionsRecorded: recorded.length });
     const decisionsText = recorded.length > 0
-      ? `[PLAN] ${recorded.length} decision(s) recorded. Proceed to propose.`
-      : '[PLAN] no new decisions recorded.';
+      ? `[PLAN] recorded ${recorded.length} decision(s) · decision-complete. Proceed to propose.`
+      : '[PLAN] no new decisions recorded · decision-complete.';
     if (halted) {
+      if (!pendingInteraction) {
+        settleClarify('decision-cancelled');
+        return clarifyResult(halted);
+      }
       return clarifyResult(halted, false, {
         pendingInteraction: {
           version: pendingInteraction!.version,
@@ -254,6 +276,7 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
         continuation: { version: 1, adapter: 'interaction-broker', resumeOn: ['answer', 'session_start'] },
       });
     }
+    settleClarify('decision-complete');
     return clarifyResult(decisionsText);
   }
 
@@ -268,16 +291,16 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
     if (supplied) {
       const res = resolveRfcPath(planWorkspace(scope), supplied);
       if (res.error) {
-        return { hasNewRfc: false, error: gateError(`[PLAN] rfcPath ${supplied} could not be resolved: ${res.error}`, 'rfc-unresolvable') };
+        return { hasNewRfc: false, error: gateError(`[PLAN] rfcPath ${supplied} did not resolve: ${res.error}`, 'rfc-unresolvable') };
       }
       const existingRfc = getPlanRfc(scope);
       return { rfc: res.path!, hasNewRfc: res.path !== existingRfc };
     }
     const existingRfc = getPlanRfc(scope);
     if (existingRfc) return { rfc: existingRfc, hasNewRfc: false };
-    if (p.action === 'propose' || (p.action === 'set' && p.consequential !== false)) {
-      const steps = Array.isArray(p.steps) ? p.steps : [];
-      const consequence = inferConsequential(steps);
+    if (p.action === 'propose') {
+      const stepsForGate = Array.isArray(p.steps) ? p.steps : [];
+      const consequence = inferConsequential(stepsForGate);
       const isConsequential = p.consequential ?? consequence.consequential;
       if (isConsequential) {
         const signals = consequence.signals.join('; ');
@@ -372,11 +395,11 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
           steps = started.steps;
           const activeArtifacts = writeCurrentPlanArtifacts(ctx, scope, 'active');
           refreshPlanUi(ctx);
-          const verdict = `[PLAN] approved and started · rev ${revision.slice(0, 8)}`;
+          const startVerdict = `[PLAN] approved and started · rev ${revision.slice(0, 8)}`;
           auditPlanEvent(ctx, scope, 'start', { revision, source: 'propose' });
           return {
-            content: [{ type: 'text', text: `${verdict}\n${renderList(steps)}` }],
-            details: { action: p.action, ...planPresentation(ctx, scope), verdict, revision, decision: 'start', ...(activeArtifacts ? { artifacts: activeArtifacts } : {}) },
+            content: [{ type: 'text', text: `${summary}\n\n${startVerdict}\n${renderList(steps)}` }],
+            details: { action: p.action, ...planPresentation(ctx, scope), verdict: startVerdict, revision, decision: 'start', ...(activeArtifacts ? { artifacts: activeArtifacts } : {}) },
           } as unknown as ToolCallResult;
         }
 
@@ -384,18 +407,11 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
           const changed = requestPlanChanges(scope);
           if (changed.ok) writeCurrentPlanArtifacts(ctx, scope, 'draft');
           refreshPlanUi(ctx);
-          const verdict = '[PLAN] changes requested — revise the RFC and re-propose.';
+          const changesVerdict = '[PLAN] changes requested — revise the RFC and re-propose.';
           auditPlanEvent(ctx, scope, 'changes', { revision, feedbackProvided: false });
           return {
-            content: [{ type: 'text', text: `${verdict}\n${summary}` }],
-            details: {
-              action: p.action,
-              ...planPresentation(ctx, scope),
-              verdict,
-              revision,
-              decision: outcome?.status ?? 'unavailable',
-              ...(artifacts ? { artifacts } : {}),
-            },
+            content: [{ type: 'text', text: `${changesVerdict}\n${summary}` }],
+            details: { action: p.action, ...planPresentation(ctx, scope), verdict: changesVerdict, revision, decision: outcome.status, ...(artifacts ? { artifacts } : {}) },
           } as unknown as ToolCallResult;
         }
 
@@ -404,40 +420,36 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
           const changed = requestPlanChanges(scope);
           if (changed.ok) writeCurrentPlanArtifacts(ctx, scope, 'draft');
           refreshPlanUi(ctx);
-          const verdict = `[PLAN] adjust requested: ${feedback}\nRevise the RFC and re-propose.`;
+          if (feedback) addPlanDecision(scope, 'Requested plan changes', feedback);
+          const textVerdict = `[PLAN] changes requested: ${feedback}\nRevise the RFC and re-propose.`;
           auditPlanEvent(ctx, scope, 'changes', { revision, feedbackProvided: Boolean(feedback) });
           return {
-            content: [{ type: 'text', text: `${verdict}\n${summary}` }],
-            details: {
-              action: p.action,
-              ...planPresentation(ctx, scope),
-              verdict,
-              revision,
-              decision: outcome.status,
-              ...(artifacts ? { artifacts } : {}),
-            },
+            content: [{ type: 'text', text: `${textVerdict}\n${summary}` }],
+            details: { action: p.action, ...planPresentation(ctx, scope), verdict: textVerdict, revision, decision: outcome.status, ...(artifacts ? { artifacts } : {}) },
           } as unknown as ToolCallResult;
         }
 
-        const verdict = (() => {
+        const pendingOrUnavailableVerdict = (() => {
           if (!outcome || outcome.status === 'unavailable') {
-            return '[PLAN] proposed for RFC review — this host cannot prompt. The plan is ready; issue \'Start\' explicitly when ready.';
+            return '[PLAN] plan ready — show this overview inline. Decision: Start implementation or Request changes.';
           }
           if (outcome.status === 'pending') {
             return `[PLAN] approval pending (correlation=${outcome.interaction?.correlationId ?? 'unavailable'}) — do not execute until the durable host continuation records approval.`;
           }
+          if (outcome.status === 'cancelled' || outcome.status === 'back') {
+            return '[PLAN] review cancelled — the RFC remains ready.';
+          }
           return '[PLAN] rejected — do not execute. Ask the user how to proceed.';
         })();
-
-        let pageNote = artifacts
+        const rfcPageNote = artifacts
           ? `\nPlan doc: ${artifacts.mdPath}`
           : '\nPlan doc could not be written — continuing with the in-terminal plan.';
         return {
-          content: [{ type: 'text', text: `${verdict}\n${renderList(steps)}${pageNote}` }],
+          content: [{ type: 'text', text: `${pendingOrUnavailableVerdict}\n${summary}${rfcPageNote}` }],
           details: {
             action: p.action,
             ...planPresentation(ctx, scope),
-            verdict,
+            verdict: pendingOrUnavailableVerdict,
             revision,
             decision: outcome?.status ?? 'unavailable',
             ...(outcome?.status === 'pending' && outcome.interaction ? {
@@ -455,10 +467,10 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
       }
 
       // Non-RFC propose (simple approval gate)
-      const artifacts = writeCurrentPlanArtifacts(ctx, scope, 'draft');
+      const proposeArtifacts = writeCurrentPlanArtifacts(ctx, scope, 'draft');
       refreshPlanUi(ctx);
       auditPlanEvent(ctx, scope, 'propose');
-      const outcome = ctx
+      const proposeOutcome = ctx
         ? await runAskPrompt(ctx, {
             question: `${steps.length} step${steps.length === 1 ? '' : 's'} in the panel below — ${PLAN_PROPOSE_HINT}`,
             headerLabel: PLAN_APPROVAL_HEADER,
@@ -477,7 +489,7 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
             ],
           })
         : undefined;
-      const approved = outcome?.status === 'selected' && outcome.value === 'start';
+      const approved = proposeOutcome?.status === 'selected' && proposeOutcome.value === 'start';
       if (approved) {
         steps = activatePlan(scope);
         ensureUnifiedProjection(scope, p.scope, ctx);
@@ -486,42 +498,41 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
         auditPlanEvent(ctx, scope, 'start', { source: 'propose' });
       }
       const proposeVerdict = (() => {
-        if (!outcome || outcome.status === 'unavailable') {
+        if (!proposeOutcome || proposeOutcome.status === 'unavailable') {
           return '[PLAN] proposed, but this host cannot prompt — present the plan inline and get approval in your reply before executing.';
         }
-        if (outcome.status === 'pending') {
-          return `[PLAN] approval pending (correlation=${outcome.interaction?.correlationId ?? 'unavailable'}) — do not execute until the durable host continuation records approval.`;
+        if (proposeOutcome.status === 'pending') {
+          return `[PLAN] approval pending (correlation=${proposeOutcome.interaction?.correlationId ?? 'unavailable'}) — do not execute until the durable host continuation records approval.`;
         }
         if (approved) {
           return '[PLAN] approved and started — keep steps updated via complete.';
         }
-        if (outcome.status === 'text' && outcome.value) {
-          return `[PLAN] adjust requested: ${outcome.value}\nRevise the plan and re-propose.`;
+        if (proposeOutcome.status === 'text' && proposeOutcome.value) {
+          return `[PLAN] adjust requested: ${proposeOutcome.value}\nRevise the plan and re-propose.`;
         }
         return '[PLAN] rejected — do not execute. Ask the user how to proceed.';
       })();
-
-      let pageNote = artifacts
-        ? `\nPlan doc: ${artifacts.mdPath}`
+      let proposePageNote = proposeArtifacts
+        ? `\nPlan doc: ${proposeArtifacts.mdPath}`
         : '\nPlan doc could not be written — continuing with the in-terminal plan.';
       if (approved) {
         const approvedArtifacts = writeCurrentPlanArtifacts(ctx, scope, 'approved');
-        pageNote = approvedArtifacts
+        proposePageNote = approvedArtifacts
           ? `\nPlan doc: ${approvedArtifacts.mdPath}\nPlan HTML: ${approvedArtifacts.htmlPath}\n/octocode-plan html opens the visual plan.`
           : '\n/octocode-plan html opens the visual plan.';
       }
       return {
-        content: [{ type: 'text', text: `${proposeVerdict}\n${renderList(steps)}${pageNote}` }],
+        content: [{ type: 'text', text: `${proposeVerdict}\n${renderList(steps)}${proposePageNote}` }],
         details: {
           action: p.action,
           ...planPresentation(ctx, scope),
           verdict: proposeVerdict,
-          ...(outcome?.status === 'pending' && outcome.interaction ? {
+          ...(proposeOutcome?.status === 'pending' && proposeOutcome.interaction ? {
             pendingInteraction: {
-              version: outcome.interaction.version,
-              interactionId: outcome.interaction.interactionId,
-              correlationId: outcome.interaction.correlationId,
-              sessionId: outcome.interaction.sessionId,
+              version: proposeOutcome.interaction.version,
+              interactionId: proposeOutcome.interaction.interactionId,
+              correlationId: proposeOutcome.interaction.correlationId,
+              sessionId: proposeOutcome.interaction.sessionId,
             },
             continuation: { version: 1, adapter: 'interaction-broker', resumeOn: ['answer', 'session_start'] },
           } : {}),
@@ -599,12 +610,14 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
         } else {
           const doing = current.map((s, i) => ({ step: s, index: i + 1 })).filter(({ step }) => step.status === 'doing');
           if (doing.length > 1) {
-            return planError(`[PLAN] multiple steps are in progress (${doing.map((d) => d.index).join(', ')}); pass index to complete or remove the target step.`, 'ambiguous-index');
+            return planError(`[PLAN] ${doing.length} steps are in progress (${doing.map((d) => d.index).join(', ')}); pass index to complete or remove the target step.`, 'ambiguous-target');
           }
           idx = (doing[0]?.index ?? 0);
         }
         if (idx < 1) {
-          return planError(`[PLAN] no dependency-ready step to ${p.action}. Pass index to target a specific step.`, 'no-runnable-step');
+          return p.action === 'start'
+            ? planError('[PLAN] no dependency-ready step to start. Pass index to target a specific step.', 'no-runnable-step')
+            : planError('[PLAN] no step is in progress. Pass index to target a specific step.', 'no-active-step');
         }
       } else {
         idx = p.index;
@@ -696,12 +709,11 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
   const artifactHint = (p.action === 'set' || p.action === 'add' || p.action === 'start' || p.action === 'complete' || p.action === 'remove') && steps.length > 0
     ? `\nPlan doc: ${path.join(planArtifactsDir(scope), 'plan.md')}`
     : '';
-  const baseNote = artifactHint;
   const taskIds = steps.length > 0
     ? `\nTask IDs for agent.planStep: ${steps.map((step, index) => `${index + 1}=${step.id}`).join(', ')}`
     : '';
   return {
-    content: [{ type: 'text', text: `${header}\n${renderList(steps)}${taskIds}${baseNote}` }],
+    content: [{ type: 'text', text: `${header}\n${renderList(steps)}${taskIds}${artifactHint}` }],
     details: { action: p.action, ...planPresentation(ctx, scope) },
   } as unknown as ToolCallResult;
 }
@@ -731,12 +743,20 @@ export function registerPlanTool(
       'Every call uses queries:[{reasoning, action, ...}]. Put lifecycle fields inside each query item; root-level action fields are invalid.',
       'Use clarify only for unresolved decision-changing blockers; set for already-authorized work; propose with an RFC for review; add/start/complete/remove to keep execution truthful; clear when done or abandoned.',
       'RFC review uses one user decision: Start approves the exact displayed bytes and begins implementation; Request changes returns the plan to draft.',
-      'Multiple independent steps may be doing in parallel. Use scope:"shared" for persistent multi-agent execution; it automatically projects stable steps, dependencies, ownership, and verification receipts into Awareness from one internal call. Shared tasks can only be completed via action:"complete" with an observed check receipt.',
+      'Multiple independent steps may be doing in parallel. Use scope:"shared" for persistent multi-agent execution; it automatically projects stable steps, dependencies, ownership, and verification receipts into Awareness from one internal call. Shared tasks can only be completed via action:"complete" with an observed receipt {command,status,message}.',
       'action:"start" without index begins the first dependency-ready todo step. action:"complete" without index completes the current doing step. action:"remove" without index removes the current doing step.',
       'Shared task IDs are returned in the response and in the plan footer. The agent.planStep tool (if available) reads them for task-level Awareness operations; the plan tool handles ownership and projection automatically, so avoid duplicating that work once the task is done or abandoned. Shared task projection, ownership, dependencies, check receipts, and finalization are internal to plan; there is no separate public task tool.',
       'For independent lanes, encode ordering with dependsOn, start runnable lanes with action:"start" and index:N before batching or spawning, and pass explicit indices when completing parallel steps.',
       'Give active steps a concise activeForm (for example, "Editing file"). The footer shows plan progress and current or blocking work; action:"show", plan.md, and plan.html retain the complete checklist.',
       'Plan lifecycle prompts are reserved for clarification, proposal approval, and consequential RFC review. Actions "set", "start", and "complete" never interrupt execution with presentation-only questions; use /octocode-plan html only when the user asks for the visual plan. The tool returns plan.md and plan.html paths for explicit review.',
+    ].join('\n'),
+    promptSnippet: 'Maintain a visible compaction-safe checklist. Use for multi-step/risky/shared work; skip obvious single-step tasks. Consequential RFCs need review then Start; shared completion needs a check receipt. Every call uses queries:[{reasoning, action, ...}]. Use action:"set" for authorized work and action:"propose" with an RFC for review; then use add/start/complete/remove/show/clear to keep execution truthful.',
+    promptGuidelines: [
+      'Every call uses queries:[{reasoning, action, ...}]. Put lifecycle fields inside each query item; never send action or its fields at the tool root.',
+      'Full plan flow: (a) research proportionally; (b) for consequential work load octocode-rfc-generator skill and author the RFC; (c) use action:"clarify" only for decision-changing questions — answer will change scope, architecture, acceptance criteria, or authorization. Prefer one question; use 2–3 only for independent blockers. Always include a free-text discussion option; (d) call plan with action:"propose" + rfcPath; (e) after the proposal, send a message with plan overview and links to the RFC files; (f) the decision widget asks once: Start implementation or Request changes — always includes free-text for feedback.',
+      'Use action:"set" for already-authorized work. When the user asks for a plan, research first and propose the RFC; Planning never disables tools.',
+      'Keep the checklist truthful: start the active step before work, then use action:"complete" only after its check passes. Shared task projection, ownership, dependencies, check receipts, and finalization are internal to plan; there is no separate public task tool.',
+      'For independent lanes, encode ordering with dependsOn, start runnable lanes with action:"start" and index:N before batching or spawning, and pass explicit indices when completing parallel steps.',
     ],
     parameters: buildQueryEnvelopeSchema(Type, Type.Object({
       action: Type.Unsafe({ type: 'string', enum: ['set', 'propose', 'clarify', 'add', 'start', 'complete', 'remove', 'clear', 'show'], description: 'Plan lifecycle operation; use the matching action branch and fields.' }),
@@ -764,145 +784,164 @@ export function registerPlanTool(
         ),
       ),
       text: Type.Optional(Type.String({ description: 'Step text for action:add.' })),
-      activeForm: Type.Optional(Type.String({ description: 'Present-continuous form for action:add, e.g. "Editing file".' })),
-      dependsOn: Type.Optional(Type.Array(Type.Integer({ minimum: 1 }), { description: '1-based indices for action:add step dependencies.' })),
+      activeForm: Type.Optional(Type.String({ description: 'Present-continuous form for action:add.' })),
+      dependsOn: Type.Optional(Type.Array(Type.Integer({ minimum: 1 }), { description: '1-based step indices for action:add.' })),
       paths: Type.Optional(Type.Array(Type.String(), { description: 'Paths for action:add.' })),
       taskReasoning: Type.Optional(Type.String({ description: 'Why the step exists or why it has no path scope. For action:add.' })),
       acceptance: Type.Optional(Type.String({ description: 'Observable done state for action:add.' })),
       checkCommand: Type.Optional(Type.String({ description: 'Verification command for action:add.' })),
       index: Type.Optional(Type.Integer({ minimum: 1, description: '1-based step index for start/complete/remove when targeting a specific step.' })),
       revision: Type.Optional(Type.String({ description: 'For reviewed action:start — the exact displayed RFC revision string.' })),
-      authorizationInteractionId: Type.Optional(Type.String({ description: 'For noninteractive reviewed action:start — the interaction ID from the answered human Start interaction.' })),
+      authorizationInteractionId: Type.Optional(Type.String({ description: 'For noninteractive reviewed action:start — the interaction ID.' })),
       consequential: Type.Optional(Type.Boolean({ description: 'For propose: true requires RFC review; false with a non-empty reason overrides heuristic inference.' })),
-      rfcPath: Type.Optional(Type.String({ description: 'For set/propose: path to the RFC file or directory. Required for consequential proposals.' })),
-      questions: Type.Optional(Type.Array(Type.Object({
-        prompt: Type.String({ description: 'The clarification question.' }),
-        options: Type.Optional(Type.Array(Type.Object({
-          value: Type.Optional(Type.String()),
-          label: Type.String(),
-          description: Type.Optional(Type.String()),
-          recommended: Type.Optional(Type.Boolean()),
-          pros: Type.Optional(Type.Array(Type.String())),
-          cons: Type.Optional(Type.Array(Type.String())),
-        }))),
-      }), { maxItems: 3, description: 'For action:clarify — up to 3 high-impact questions.' })),
-      reason: Type.Optional(Type.String({ description: 'For consequential:false — required justification for overriding the heuristic.' })),
-      localReason: Type.Optional(Type.String({ description: 'For scope:shared — human-readable reason why a local scope is preferred.' })),
-      coordinationWorkspace: Type.Optional(Type.String({ description: 'For scope:shared — explicit Awareness workspace path.' })),
-    }, { additionalProperties: false })),
-    validate(query) {
-      const action = String(query['action'] ?? '');
-      if (!['set', 'propose', 'clarify', 'add', 'start', 'complete', 'remove', 'clear', 'show'].includes(action)) {
-        throw new Error(`Unknown plan action: ${action}.`);
-      }
-      if (query['scope'] !== undefined && !['auto', 'session', 'shared'].includes(String(query['scope']))) {
-        throw new Error(`Invalid scope: ${String(query['scope'])}. Must be auto, session, or shared.`);
-      }
-      if (action === 'set' || action === 'propose') {
-        if (!Array.isArray(query['steps'])) throw new Error(`action:${action} — steps must be an array.`);
-        if (query['steps'].length === 0) throw new Error(`action:${action} — steps must not be empty; use action:clear to remove a plan.`);
-      }
-      if (action === 'add') {
-        const text = typeof query['text'] === 'string' ? query['text'].trim() : '';
-        if (!text) throw new Error('action:add requires a non-empty text field.');
-      }
-      if (query['receipt'] !== undefined) {
-        const receipt = query['receipt'];
-        if (action !== 'complete' || !receipt || typeof receipt !== 'object' || Array.isArray(receipt)) {
-          throw new Error('receipt is only valid as an object for action:complete.');
-        }
-        const record = receipt as Record<string, unknown>;
-        if (typeof record['command'] !== 'string' || !record['command'].trim()) throw new Error('receipt.command is required.');
-        if (record['status'] !== 'SUCCESS' && record['status'] !== 'FAILED') throw new Error('receipt.status must be SUCCESS or FAILED.');
-        if (typeof record['message'] !== 'string' || !record['message'].trim()) throw new Error('receipt.message is required.');
-      }
-      if (action === 'start') {
-        const hasRevision = typeof query['revision'] === 'string' && query['revision'].trim().length > 0;
-        const hasInteraction = typeof query['authorizationInteractionId'] === 'string' && query['authorizationInteractionId'].trim().length > 0;
-        if (hasInteraction && !hasRevision) {
-          throw new Error('reviewed action:start authorizationInteractionId requires revision.');
-        }
-        if (hasRevision && query['index'] !== undefined) {
-          throw new Error('reviewed action:start cannot include index.');
-        }
-      }
-      if ((action === 'start' || action === 'complete' || action === 'remove') && query['index'] != null) {
-        const idx = Number(query['index']);
-        if (!Number.isInteger(idx) || idx < 1) {
-          throw new Error(`action:${action} — index must be a positive integer when provided (got ${String(query['index'])}).`);
-        }
-      }
-    },
-    async execute(query, _queryIndex, _itemId, _sig, _upd, queryCtx) {
-      return executePlanQuery(query as PlanParams, queryCtx);
-    },
-    summarize(result, query) {
-      const action = String(query['action'] ?? 'unknown');
-      const firstLine = (result.content.find((c) => c.type === 'text') as { text?: string } | undefined)?.text?.split('\n').find(Boolean)?.trim();
-      return firstLine ?? (result.isError ? `plan(${action}) failed` : `plan(${action}) ok`);
-    },
-  });
-
-  return;
-
-  // Suppress unused-import warnings for registerFn and Type when tree-shaken.
-  void (registerFn satisfies RegisterFn);
-  void (Type satisfies TypeBoxBuilder);
-}
-
-// Re-export renderResult and renderCall hooks separately for IDE discoverability
-export function renderPlanCall(raw: unknown, theme?: PiTheme) {
-  return buildQueryCallBlocks(raw, theme, (singleArgs) => {
-    const queries = Array.isArray(singleArgs['queries'])
-      ? singleArgs['queries'] as Record<string, unknown>[]
-      : [];
-    const q = (queries[0] ?? {}) as unknown as PlanParams;
-    const extra = q.action === 'set' || q.action === 'propose'
-      ? ` (${(q.steps ?? []).length} steps)`
-      : q.index ? ` #${q.index}` : '';
-    return buildToolView({
-      name: 'plan',
-      state: 'request',
-      segments: [
-        { text: q.action, token: 'bright' },
-        ...(extra ? [{ text: extra.trim().replace(/^\(|\)$/g, ''), token: 'count' as const }] : []),
+      reason: Type.Optional(Type.String({ description: 'Planning rationale. Required with consequential:false when overriding a consequential proposal heuristic.' })),
+      rfcPath: Type.Optional(Type.String({ description: 'For set/propose: a reviewable `.octocode/rfc/<name>/` folder or RFC.md. Propose hashes its exact bytes and enters review; the path must stay under the workspace RFC tree.' })),
+      questions: Type.Optional(Type.Array(
+        Type.Object({
+          prompt: Type.String({ description: 'One concise question whose answer changes scope, architecture, acceptance criteria, or authorization and cannot be answered from the repo.' }),
+          options: Type.Optional(Type.Array(Type.Object({
+            label: Type.String(),
+            value: Type.Optional(Type.String()),
+            description: Type.Optional(Type.String({ description: 'One short sentence of decision-relevant nuance; omit when the label is self-explanatory.' })),
+            recommended: Type.Optional(Type.Boolean({ description: 'Marks the recommended default; lands the cursor here.' })),
+            pros: Type.Optional(Type.Array(Type.String(), { description: 'Distinct upside bullets; omit when description or label already says it.' })),
+            cons: Type.Optional(Type.Array(Type.String(), { description: 'Distinct risk bullets; omit when description or label already says it.' })),
+          }), { description: 'Multiple-choice options; omit for a free-text question. A free-text escape is always offered.' })),
+        }),
+        { minItems: 1, maxItems: 3, description: 'For clarify: prefer one decision-changing blocker; use 2–3 only when independent and all must be answered before planning.' },
+      )),
+    }, {
+      oneOf: [
+        { title: 'set', properties: { action: { const: 'set' } }, required: ['action', 'steps'] },
+        { title: 'propose', properties: { action: { const: 'propose' } }, required: ['action', 'steps'] },
+        { title: 'clarify', properties: { action: { const: 'clarify' } }, required: ['action', 'questions'] },
+        { title: 'add', properties: { action: { const: 'add' } }, required: ['action', 'text'] },
+        { title: 'start', properties: { action: { const: 'start' } }, required: ['action'] },
+        { title: 'complete', properties: { action: { const: 'complete' } }, required: ['action'] },
+        { title: 'remove', properties: { action: { const: 'remove' } }, required: ['action'] },
+        { title: 'clear', properties: { action: { const: 'clear' } }, required: ['action'] },
+        { title: 'show', properties: { action: { const: 'show' } }, required: ['action'] },
       ],
-    }, theme);
-  });
-}
+    }), { reasoningDescription: 'Why this plan transition is necessary.' }),
 
-export function renderPlanResult(result: ToolCallResult, opts: RenderResultOptions, theme?: PiTheme) {
-  if (opts.isPartial) {
-    return buildToolView(() => ({ name: 'plan', state: 'running', status: CLI_STATUS_TEXT.running }), theme);
-  }
-  const r = result as ToolCallResult & { details?: { steps?: PlanStep[]; action?: string; results?: unknown[] } };
-  const resultText = r.content?.find((part) => part.type === 'text')?.text ?? '';
-  if (r.isError) {
-    return buildToolView({
-      name: 'plan',
-      state: 'error',
-      segments: [{ text: resultText || 'plan operation failed', token: 'error' }],
-    }, theme);
-  }
-  if (Array.isArray(r?.details?.results)) {
-    const count = r.details!.results!.length;
-    return buildToolView({ name: 'plan', state: 'success', segments: [{ text: `${count} operation${count === 1 ? '' : 's'}`, token: 'count' }] }, theme);
-  }
-  const steps = r?.details?.steps ?? [];
-  if (r?.details?.action === 'clear') {
-    return buildToolView({ name: 'plan', state: 'success', segments: [{ text: 'cleared', token: 'dim' }] }, theme);
-  }
-  if (steps.length === 0) {
-    return buildToolView({ name: 'plan', state: 'neutral', segments: [{ text: resultText || 'no active plan', token: 'dim' }] }, theme);
-  }
-  const done = steps.filter((s) => s.status === 'done').length;
-  const current = steps.find((s) => s.status === 'doing') ?? steps.find((s) => s.status === 'todo');
-  return buildToolView({
-    name: 'plan',
-    state: done === steps.length ? 'success' : 'neutral',
-    segments: [
-      { text: `${done}/${steps.length}`, token: 'count' },
-      ...(current ? [{ text: stepLabel(current), token: 'bright' as const }] : []),
-    ],
-  }, theme);
+    async execute(toolCallId: string, rawArgs: Record<string, unknown>, signal?: AbortSignal, onUpdate?: (update: ToolCallResult) => void, ctx?: PiContext) {
+      return executeQueryBatch({
+        toolCallId,
+        raw: rawArgs,
+        signal,
+        onUpdate,
+        ctx,
+        passthroughSingle: true,
+        preflight(query) {
+          const action = String(query['action'] ?? '');
+          const VALID_ACTIONS: PlanAction[] = ['set', 'propose', 'clarify', 'add', 'start', 'complete', 'remove', 'clear', 'show'];
+          if (!VALID_ACTIONS.includes(action as PlanAction)) {
+            throw new Error(`unknown plan action: "${action}". Must be one of: ${VALID_ACTIONS.join(', ')}.`);
+          }
+          assertPlanActionFields(query, action as PlanAction);
+          if (query['scope'] !== undefined && !['auto', 'session', 'shared'].includes(String(query['scope']))) {
+            throw new Error(`invalid scope: ${String(query['scope'])}. Must be auto, session, or shared.`);
+          }
+          if (action === 'set' || action === 'propose') {
+            if (!Array.isArray(query['steps'])) throw new Error(`action:${action} — steps must be an array.`);
+            if (query['steps'].length === 0) throw new Error(`action:${action} — steps must not be empty; use action:clear to remove a plan.`);
+          }
+          if (action === 'add') {
+            const text = typeof query['text'] === 'string' ? query['text'].trim() : '';
+            if (!text) throw new Error('action:add requires a non-empty text field.');
+          }
+          if (query['receipt'] !== undefined) {
+            const receipt = query['receipt'];
+            if (action !== 'complete' || !receipt || typeof receipt !== 'object' || Array.isArray(receipt)) {
+              throw new Error('receipt is only valid as an object for action:complete.');
+            }
+            const record = receipt as Record<string, unknown>;
+            if (typeof record['command'] !== 'string' || !record['command'].trim()) throw new Error('receipt.command is required.');
+            if (record['status'] !== 'SUCCESS' && record['status'] !== 'FAILED') throw new Error('receipt.status must be SUCCESS or FAILED.');
+            if (typeof record['message'] !== 'string' || !record['message'].trim()) throw new Error('receipt.message is required.');
+          }
+          if (action === 'start') {
+            const hasRevision = typeof query['revision'] === 'string' && query['revision'].trim().length > 0;
+            const hasInteraction = typeof query['authorizationInteractionId'] === 'string' && query['authorizationInteractionId'].trim().length > 0;
+            if (hasInteraction && !hasRevision) {
+              throw new Error('reviewed action:start authorizationInteractionId requires revision.');
+            }
+            if (hasRevision && query['index'] !== undefined) {
+              throw new Error('reviewed action:start cannot include index.');
+            }
+          }
+          if ((action === 'start' || action === 'complete' || action === 'remove') && query['index'] != null) {
+            const idx = Number(query['index']);
+            if (!Number.isInteger(idx) || idx < 1) {
+              throw new Error(`action:${action} — index must be a positive integer when provided (got ${String(query['index'])}).`);
+            }
+          }
+        },
+        async execute(query, _queryIndex, _itemId, _sig, _upd, queryCtx) {
+          return executePlanQuery(query as PlanParams, queryCtx);
+        },
+        summarize(result, query) {
+          const action = String(query['action'] ?? 'unknown');
+          const firstLine = (result.content.find((c) => c.type === 'text') as { text?: string } | undefined)?.text?.split('\n').find(Boolean)?.trim();
+          return firstLine ?? (result.isError ? `plan(${action}) failed` : `plan(${action}) ok`);
+        },
+      });
+    },
+
+    renderCall(raw: unknown, theme?: PiTheme) {
+      return buildQueryCallBlocks(raw, theme, (singleArgs) => {
+        const queries = Array.isArray(singleArgs['queries'])
+          ? singleArgs['queries'] as Record<string, unknown>[]
+          : [];
+        const q = (queries[0] ?? {}) as unknown as PlanParams;
+        const extra = q.action === 'set' || q.action === 'propose'
+          ? ` (${(q.steps ?? []).length} steps)`
+          : q.index ? ` #${q.index}` : '';
+        return buildToolView({
+          name: 'plan',
+          state: 'request',
+          segments: [
+            { text: q.action, token: 'bright' },
+            ...(extra ? [{ text: extra.trim().replace(/^\(|\)$/g, ''), token: 'count' as const }] : []),
+          ],
+        }, theme);
+      });
+    },
+
+    renderResult(result: ToolCallResult, opts: RenderResultOptions, theme?: PiTheme) {
+      if (opts.isPartial) {
+        return buildToolView(() => ({ name: 'plan', state: 'running', status: CLI_STATUS_TEXT.running }), theme);
+      }
+      const r = result as ToolCallResult & { details?: { steps?: PlanStep[]; action?: string; results?: unknown[] } };
+      const resultText = r.content?.find((part) => part.type === 'text')?.text ?? '';
+      if (r.isError) {
+        return buildToolView({
+          name: 'plan',
+          state: 'error',
+          segments: [{ text: resultText || 'plan operation failed', token: 'error' }],
+        }, theme);
+      }
+      if (Array.isArray(r?.details?.results)) {
+        const count = r.details!.results!.length;
+        return buildToolView({ name: 'plan', state: 'success', segments: [{ text: `${count} operation${count === 1 ? '' : 's'}`, token: 'count' }] }, theme);
+      }
+      const steps = r?.details?.steps ?? [];
+      if (r?.details?.action === 'clear') {
+        return buildToolView({ name: 'plan', state: 'success', segments: [{ text: 'cleared', token: 'dim' }] }, theme);
+      }
+      if (steps.length === 0) {
+        return buildToolView({ name: 'plan', state: 'neutral', segments: [{ text: resultText || 'no active plan', token: 'dim' }] }, theme);
+      }
+      const done = steps.filter((s) => s.status === 'done').length;
+      const current = steps.find((s) => s.status === 'doing') ?? steps.find((s) => s.status === 'todo');
+      return buildToolView({
+        name: 'plan',
+        state: done === steps.length ? 'success' : 'neutral',
+        segments: [
+          { text: `${done}/${steps.length}`, token: 'count' },
+          ...(current ? [{ text: stepLabel(current), token: 'bright' as const }] : []),
+        ],
+      }, theme);
+    },
+  });
 }

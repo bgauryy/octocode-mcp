@@ -24,7 +24,7 @@ import { AWARENESS_PEER_EVENT_MESSAGE_TYPE } from '@octocodeai/octocode-awarenes
 
 import { BRAND_DIAMOND, SEP, paint, sanitizeLine } from '../tui/palette.js';
 import type { PiInstance, PiTheme } from '../types.js';
-import type { PlanCoordination, PlanStep, ReviewState } from './active-plan.js';
+import type { PlanCoordination, PlanStep, ReviewState } from './planning/plan-types.js';
 import { makeComponentRenderer } from './render-helpers.js';
 import { renderFrame } from '../tui/components.js';
 

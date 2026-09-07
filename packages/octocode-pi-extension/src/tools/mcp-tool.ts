@@ -17,7 +17,6 @@ import {
 import { ensurePrivateDirectory } from '@octocodeai/agent-contracts/permissions';
 import { openOctocodeDb } from "./storage-policy.js";
 import type {
-  ContentPart,
   NotifyFn,
   PiContext,
   PiInstance,
@@ -46,11 +45,10 @@ import {
   resolveServerCwd,
   scopeTargetPath,
   upsertServerInFile,
-  type McpConfigSource,
   type McpLoadedConfig,
   type McpScope,
   type McpServerConfig,
-} from "./mcp-config.js";
+} from "./mcp/config.js";
 
 import { assertPathAllowed } from "./path-guard.js";
 import {
@@ -82,68 +80,42 @@ import {
   writeMcpCatalogSnapshot,
   type McpCatalogServerInput,
   type McpCatalogSnapshotV1,
-} from "./mcp-catalog.js";
+} from "./mcp/catalog.js";
 import {
   McpSchemaUnsupportedError,
   compileMcpSchemaValidator,
   type McpCompiledSchemaValidator,
   type McpSchemaValidationError,
-} from "./mcp-schema-validator.js";
+} from "./mcp/schema-validator.js";
 import {
   createMcpOAuthFlow,
   revokeStoredMcpOAuthCredentials,
   type McpOAuthFlow,
-} from "./mcp-oauth.js";
-
-export const OCTOCODE_COMPACT_MCP_ENV = "OCTOCODE_COMPACT_MCP";
-export const OCTOCODE_MCP_AI_GUIDE_ENV = "OCTOCODE_MCP_AI_GUIDE";
-
-export function isCompactMcpEnabled(
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  const value = env[OCTOCODE_COMPACT_MCP_ENV]?.trim().toLowerCase();
-  return value !== "0" && value !== "false" && value !== "no" && value !== "off";
-}
-
-export function isMcpAiGuideEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const value = env[OCTOCODE_MCP_AI_GUIDE_ENV]?.trim().toLowerCase();
-  return value === "1" || value === "true" || value === "yes" || value === "on";
-}
-
-type TypeBoxBuilder = (typeof import("typebox"))["Type"];
-
-type McpAction =
-  | "describe"
-  | "call"
-  | "resources"
-  | "read-resource"
-  | "prompts"
-  | "get-prompt"
-  | "complete"
-  | "enable"
-  | "disable"
-  | "status"
-  | "restart"
-  | "stop"
-  | "config"
-  | "add"
-  | "remove";
-
-interface McpConnection {
-  name: string;
-  config: McpServerConfig;
-  /** Stable signature of the normalized config; used to auto-reconnect on config drift. */
-  configSig: string;
-  client: Client;
-  transport: Transport;
-  stderr: string[];
-  startedAt: number;
-  oauth?: McpOAuthFlow;
-}
+} from "./mcp/oauth.js";
+import {
+  isCompactMcpEnabled,
+  isMcpAiGuideEnabled,
+} from "./mcp/env.js";
+import { collectMcpPages, type McpCursorPage } from "./mcp/pagination.js";
+import {
+  resolveMcpCallContent,
+  resolveMcpCallTable,
+  summarizeMcpCallDetails,
+  stringify,
+} from "./mcp/sanitize.js";
+import type {
+  TypeBoxBuilder,
+  McpAction,
+  McpConnection,
+  ListedMcpServer,
+  ValidatedMcpTool,
+  McpDiscoveryServer,
+  McpDiscoverySnapshot,
+  McpPromptArtifactStatus,
+  PersistMcpArtifactsOptions,
+} from "./mcp/types.js";
 
 const MCP_STATUS_NAME = "octocode-mcp";
-const MAX_MCP_PAGES = 100;
-const MAX_MCP_PAGE_ITEMS = 10_000;
 const MCP_DISCOVERY_ATTEMPT_TIMEOUT_MS = 7_500;
 export const MCP_PROMPT_READY_TIMEOUT_MS = 35_000;
 const connections = new Map<string, McpConnection>();
@@ -172,41 +144,6 @@ const warmGenerations = new Map<string, number>();
 /** Bound the cwd-keyed caches so a long-lived process visiting many cwds cannot grow them without limit. */
 const MAX_CACHED_CWDS = 32;
 
-interface McpCursorPage {
-  nextCursor?: string;
-}
-
-async function collectMcpPages<T>(
-  label: string,
-  fetchPage: (cursor: string | undefined) => Promise<McpCursorPage>,
-  readItems: (page: McpCursorPage) => T[],
-): Promise<T[]> {
-  const items: T[] = [];
-  const seenCursors = new Set<string>();
-  let cursor: string | undefined;
-  for (let pageNumber = 1; pageNumber <= MAX_MCP_PAGES; pageNumber += 1) {
-    const page = await fetchPage(cursor);
-    const pageItems = readItems(page);
-    if (!Array.isArray(pageItems))
-      throw new Error(`${label} returned a non-array page`);
-    if (items.length + pageItems.length > MAX_MCP_PAGE_ITEMS) {
-      throw new Error(
-        `${label} exceeded the ${MAX_MCP_PAGE_ITEMS}-item safety limit`,
-      );
-    }
-    items.push(...pageItems);
-    const nextCursor =
-      typeof page.nextCursor === "string" && page.nextCursor.length > 0
-        ? page.nextCursor
-        : undefined;
-    if (!nextCursor) return items;
-    if (seenCursors.has(nextCursor))
-      throw new Error(`${label} repeated cursor ${nextCursor}`);
-    seenCursors.add(nextCursor);
-    cursor = nextCursor;
-  }
-  throw new Error(`${label} exceeded the ${MAX_MCP_PAGES}-page safety limit`);
-}
 
 function cacheKey(ctx?: PiContext): string {
   return path.resolve(ctx?.cwd ?? process.cwd());
@@ -703,217 +640,6 @@ export function stopMcpConfigWatchers(): number {
   return count;
 }
 
-/**
- * Interop fallback for MCP call results: octocode-mcp (without
- * OCTOCODE_MCP_FULL_TEXT) replaces text content with a compact
- * "structuredContent available …" stub while the real data lives in
- * structuredContent. Pi renders only text blocks, so when the stub sentinel is
- * detected (or content is empty) and structuredContent exists, surface the
- * structured payload instead — otherwise the model researches blind.
- */
-export function resolveMcpCallText(payload: unknown): string {
-  return resolveMcpCallContent(payload)
-    .map((part) => (part.type === "text" ? part.text : stringify(part)))
-    .join("\n");
-}
-
-/** Preserve MCP model content natively; use structuredContent for compact stubs. */
-export function resolveMcpCallContent(payload: unknown): ContentPart[] {
-  if (!isPlainRecord(payload))
-    return [{ type: "text", text: stringify(payload) }];
-  const content = Array.isArray(payload["content"]) ? payload["content"] : [];
-  const textBlocks = content.filter(
-    (item): item is Record<string, unknown> =>
-      isPlainRecord(item) &&
-      item["type"] === "text" &&
-      typeof item["text"] === "string",
-  );
-  const structured = payload["structuredContent"];
-  const hasStructured = structured !== undefined && structured !== null;
-  const onlyStub =
-    textBlocks.length > 0 &&
-    textBlocks.every((item) =>
-      String(item["text"]).startsWith("structuredContent available"),
-    );
-  if (hasStructured && (textBlocks.length === 0 || onlyStub)) {
-    const nonText = content.filter(
-      (item) => !(isPlainRecord(item) && item["type"] === "text"),
-    );
-    return [
-      { type: "text", text: stringify(structured) },
-      ...nonText.map((item): ContentPart => {
-        if (
-          isPlainRecord(item) &&
-          item["type"] === "image" &&
-          typeof item["data"] === "string" &&
-          typeof item["mimeType"] === "string"
-        ) {
-          return {
-            type: "image",
-            data: item["data"],
-            mimeType: item["mimeType"],
-          };
-        }
-        return { type: "text", text: stringify(item) };
-      }),
-    ];
-  }
-  if (content.length > 0) {
-    return content.map((item): ContentPart => {
-      if (
-        isPlainRecord(item) &&
-        item["type"] === "text" &&
-        typeof item["text"] === "string"
-      ) {
-        return { type: "text", text: item["text"] };
-      }
-      if (
-        isPlainRecord(item) &&
-        item["type"] === "image" &&
-        typeof item["data"] === "string" &&
-        typeof item["mimeType"] === "string"
-      ) {
-        return {
-          type: "image",
-          data: item["data"],
-          mimeType: item["mimeType"],
-        };
-      }
-      // Pi currently accepts text/image content only. Keep unsupported MCP blocks
-      // losslessly as JSON text rather than silently dropping them.
-      return { type: "text", text: stringify(item) };
-    });
-  }
-  return [{ type: "text", text: stringify(payload) }];
-}
-
-function mcpStructuredRows(payload: unknown): Record<string, unknown>[] {
-  if (!isPlainRecord(payload) || !isPlainRecord(payload["structuredContent"])) {
-    return [];
-  }
-  const rows = payload["structuredContent"]["results"];
-  return Array.isArray(rows)
-    ? rows.filter((row): row is Record<string, unknown> => isPlainRecord(row))
-    : [];
-}
-
-function numericField(record: Record<string, unknown>, key: string): number {
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function structuredRowMetrics(row: Record<string, unknown>): {
-  data: Record<string, unknown>;
-  matches: number;
-  files: number;
-  references: number;
-  chars: number;
-} {
-  const data = isPlainRecord(row["data"]) ? row["data"] : {};
-  const stats = isPlainRecord(data["stats"]) ? data["stats"] : {};
-  return {
-    data,
-    matches: numericField(stats, "totalOccurrences"),
-    files: numericField(stats, "filesMatched") || numericField(data, "totalFiles"),
-    references: numericField(data, "totalReferences"),
-    chars: numericField(data, "returnedChars"),
-  };
-}
-
-function plural(value: number, singular: string): string {
-  const pluralWord = singular === "match" ? "matches" : `${singular}s`;
-  return `${value} ${value === 1 ? singular : pluralWord}`;
-}
-
-/** Aggregate every structured MCP batch row so receipts never report only row zero. */
-export function summarizeMcpStructuredResults(payload: unknown): string | undefined {
-  const rows = mcpStructuredRows(payload);
-  if (rows.length === 0) return undefined;
-  const totals = rows.reduce<{ matches: number; files: number; references: number; chars: number }>(
-    (sum, row) => {
-      const metric = structuredRowMetrics(row);
-      sum.matches += metric.matches;
-      sum.files += metric.files;
-      sum.references += metric.references;
-      sum.chars += metric.chars;
-      return sum;
-    },
-    { matches: 0, files: 0, references: 0, chars: 0 },
-  );
-  return [
-    plural(rows.length, "result"),
-    totals.matches > 0 ? plural(totals.matches, "match") : undefined,
-    totals.files > 0 ? plural(totals.files, "file") : undefined,
-    totals.references > 0 ? plural(totals.references, "reference") : undefined,
-    totals.chars > 0 ? `${totals.chars} chars` : undefined,
-  ]
-    .filter((part): part is string => Boolean(part))
-    .join(" · ");
-}
-
-function tableCell(value: unknown): string {
-  return String(value ?? "").replace(/[|\r\n]+/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function summarizeStructuredRow(row: Record<string, unknown>): string {
-  const { data, matches, files, references, chars } = structuredRowMetrics(row);
-  if (typeof data["error"] === "string") return tableCell(data["error"]);
-  const explicit = typeof data["summary"] === "string" ? data["summary"] : undefined;
-  if (explicit) return tableCell(explicit);
-  const metrics = [
-    matches > 0 ? plural(matches, "match") : undefined,
-    files > 0 ? plural(files, "file") : undefined,
-    references > 0 ? plural(references, "reference") : undefined,
-    chars > 0 ? `${chars} chars` : undefined,
-    numericField(data, "totalLines") > 0
-      ? plural(numericField(data, "totalLines"), "line")
-      : undefined,
-  ].filter((part): part is string => Boolean(part));
-  return metrics.join(" · ") || "ok";
-}
-
-/** Optional model-facing table view for large structured MCP batches. */
-export function resolveMcpCallTable(payload: unknown): ContentPart[] | undefined {
-  const rows = mcpStructuredRows(payload);
-  const aggregate = summarizeMcpStructuredResults(payload);
-  if (rows.length === 0 || !aggregate) return undefined;
-  const lines = rows.map((row, position) => {
-    const { data } = structuredRowMetrics(row);
-    const index = typeof row["index"] === "number" ? row["index"] : position;
-    const status = tableCell(row["status"] ?? (data["error"] ? "error" : "ok"));
-    const item = tableCell(
-      data["path"] ?? data["file"] ?? data["uri"] ?? data["name"] ?? `[${index}]`,
-    );
-    return `${index} | ${status} | ${item} | ${summarizeStructuredRow(row)}`;
-  });
-  return [
-    {
-      type: "text",
-      text: `${aggregate}\nindex | status | item | summary\n${lines.join("\n")}`,
-    },
-  ];
-}
-
-/** Session/UI metadata only; provider-visible MCP bytes live exclusively in content. */
-export function summarizeMcpCallDetails(payload: unknown): Record<string, unknown> {
-  const record = isPlainRecord(payload) ? payload : {};
-  const content = Array.isArray(record['content']) ? record['content'] : [];
-  const summary = summarizeMcpStructuredResults(payload);
-  return {
-    isError: record['isError'] === true,
-    contentBlocks: content.length,
-    textBlocks: content.filter((item) => isPlainRecord(item) && item['type'] === 'text').length,
-    imageBlocks: content.filter((item) => isPlainRecord(item) && item['type'] === 'image').length,
-    hasStructuredContent: record['structuredContent'] !== undefined && record['structuredContent'] !== null,
-    ...(summary ? { summary } : {}),
-  };
-}
-
-function stringify(value: unknown): string {
-  return typeof value === "string"
-    ? value
-    : (JSON.stringify(value, null, 2) ?? String(value));
-}
 
 function result(
   text: string,
@@ -1246,13 +972,6 @@ export async function generateMcpCatalogGuide(
   return { guide: renderMcpCatalogIndex(snapshot), generated: false };
 }
 
-interface PersistMcpArtifactsOptions {
-  compactMcp?: boolean;
-  ctx?: PiContext;
-  signal?: AbortSignal;
-  guide?: string;
-  home?: string;
-}
 
 /**
  * Persist the exact catalog for every mode, but only create/update mcp.md when
@@ -1620,17 +1339,6 @@ export function getCachedMcpCatalogAddendum(ctx?: PiContext): string {
   return cachedCatalogGuides.get(key) ?? "";
 }
 
-export interface McpPromptArtifactStatus {
-  mode: "exact" | "compact";
-  status: "pending" | "ready";
-  promptChars: number;
-  workspaceKey?: string;
-  configDigest?: string;
-  capturedAt?: string;
-  catalogPath?: string;
-  guidePath?: string;
-  guideState: "active" | "ignored" | "missing";
-}
 
 export function getMcpPromptArtifactStatus(
   ctx?: PiContext,
@@ -1692,22 +1400,6 @@ export function getMcpSchemaMetrics(
   };
 }
 
-export interface McpDiscoveryServer {
-  name: string;
-  command: string;
-  args: string[];
-  description?: string;
-  /** Present only for servers whose catalog was discovered (warmed/listed). */
-  toolCount?: number;
-  tools?: Array<{ name: string; description: string }>;
-}
-
-export interface McpDiscoverySnapshot {
-  sources: McpConfigSource[];
-  servers: McpDiscoveryServer[];
-  warnings: string[];
-}
-
 /**
  * Machine-readable snapshot of the full MCP configuration + discovered catalogs,
  * for the .octocode/discovery.json inventory. Reads config fresh (cheap file
@@ -1746,7 +1438,6 @@ export async function getMcpDiscoverySnapshot(
 }
 
 export const __test__ = {
-  collectMcpPages,
   registerMcpClientHandlers,
   persistMcpArtifacts,
   setCachedMcpCatalog(
@@ -1853,16 +1544,6 @@ function formatMcpServerStatus(config: McpLoadedConfig): string {
     .join("\n");
 }
 
-export interface ListedMcpServer {
-  name: string;
-  instructions?: string;
-  tools: unknown[];
-  text: string;
-  configSignature?: string;
-  /** Fetch time for diagnostics only; never render it in eager catalog or lazy index bytes. */
-  cachedAt?: number;
-}
-
 function summarizeSchema(tool: Record<string, unknown>): string {
   const schema = tool["inputSchema"];
   if (!isPlainRecord(schema)) return "";
@@ -1930,14 +1611,6 @@ async function listServerTools(
   };
 }
 
-interface ValidatedMcpTool {
-  server: string;
-  tool: string;
-  instructions?: string;
-  inputSchema: unknown;
-  schemaDigest: string;
-  validator: McpCompiledSchemaValidator;
-}
 
 function schemaFreshServerKey(
   ctx: PiContext | undefined,

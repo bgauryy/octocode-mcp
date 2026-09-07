@@ -8,7 +8,7 @@ import { getSessionDir, getScreenshotDir } from '../src/chrome-debug.js';
 import { getInternalErrorLogPath } from '../src/index.js';
 import { getDiscoveryFilePath } from '../src/tools/discovery-file.js';
 import { getRegistryDir } from '../src/tools/dynamic-tools.js';
-import { projectMcpPath } from '../src/tools/mcp-config.js';
+import { projectMcpPath } from '../src/tools/mcp/config.js';
 import { createSessionArtifactContext } from '../src/tools/session-artifacts.js';
 
 const previousOctocodeHome = process.env.OCTOCODE_HOME;

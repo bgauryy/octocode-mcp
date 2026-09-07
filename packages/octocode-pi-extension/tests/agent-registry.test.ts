@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { withPeerCoordination } from '../src/tools/agent-tools.js';
+import { withPeerCoordination } from '../src/tools/agents/process.js';
 
 describe('withPeerCoordination', () => {
   it('appends self id and peer ids, excluding self and blanks', () => {

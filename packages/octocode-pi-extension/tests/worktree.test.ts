@@ -5,15 +5,11 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterAll, afterEach, beforeAll, beforeEach, test } from 'vitest';
 import { allowLocalFixtureProcesses } from '../../../test-utils/external-effects-guard.js';
-import {
-  cleanupSpawnedAgentsForShutdown,
-  evaluateSpawnPolicy,
-  formatAgentLedgerDetails,
-  listWorkerLedgerEntries,
-  prepareSpawnAgentParams,
-  setAgentProcessFactoryForTests,
-  spawnRpcAgent,
-} from '../src/tools/agent-tools.js';
+import { cleanupSpawnedAgentsForShutdown, prepareSpawnAgentParams, spawnRpcAgent } from '../src/tools/agents/process.js';
+import { listWorkerLedgerEntries } from '../src/tools/agents/ledger.js';
+import { setAgentProcessFactoryForTests } from '../src/tools/agents/registry.js';
+import { formatAgentLedgerDetails } from '../src/tools/agents/rendering.js';
+import { evaluateSpawnPolicy } from '../src/tools/agents/policy.js';
 import { createAgentWorktree, sweepAgentWorktrees } from '../src/tools/worktree.js';
 import type { PiContext } from '../src/types.js';
 import { makeMockAgentProcess } from './helpers/mock-process.js';

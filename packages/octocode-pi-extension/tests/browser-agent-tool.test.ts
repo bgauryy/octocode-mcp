@@ -58,12 +58,12 @@ async function registerBrowserAgentWithMocks(options: {
     },
   }));
   const spawnRpcAgent = vi.fn(() => ({ id: 'browser-worker', name: 'Browser Worker', policyWarnings: [] }));
-  vi.doMock('../src/tools/agent-tools.js', async (importOriginal) => ({
-    ...await importOriginal<typeof import('../src/tools/agent-tools.js')>(),
+  vi.doMock('../src/tools/agents/process.js', async (importOriginal) => ({
+    ...await importOriginal<typeof import('../src/tools/agents/process.js')>(),
     spawnRpcAgent,
   }));
 
-  const { registerUnifiedAgentTool } = await import('../src/tools/unified-agent-tool.js');
+  const { registerUnifiedAgentTool } = await import('../src/tools/agents/tool.js');
   const tools = new Map<string, ToolDefinition>();
   const pi = { registerTool: (def: ToolDefinition) => tools.set(def.name, def) };
   registerUnifiedAgentTool(
@@ -90,7 +90,7 @@ async function registerBrowserAgentWithMocks(options: {
 afterEach(() => {
   vi.doUnmock('../src/chrome-debug.js');
   vi.doUnmock('../src/chrome-debug-schemes.js');
-  vi.doUnmock('../src/tools/agent-tools.js');
+  vi.doUnmock('../src/tools/agents/process.js');
   vi.resetModules();
 });
 

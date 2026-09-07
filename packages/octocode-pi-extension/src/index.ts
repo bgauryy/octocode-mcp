@@ -55,18 +55,17 @@ import {
 import { registerCompactionPolicyGuidance } from './tools/compaction-policy-guidance.js';
 import { registerLifecycleUi } from './tools/lifecycle-ui.js';
 import { budgetToolResult } from './tools/tool-result-budget.js';
+import { cleanupSpawnedAgentsForShutdown } from './tools/agents/process.js';
+import { listWorkerLedgerEntries } from './tools/agents/ledger.js';
+import { isSubagentProcess, pruneDroppableAgentsForSession } from './tools/agents/registry.js';
 import {
-  cleanupSpawnedAgentsForShutdown,
   formatAgentLedger,
-  listWorkerLedgerEntries,
   refreshAgentLedgerUi,
   setAgentLedgerMetricsRefreshForUi,
-  isSubagentProcess,
-  pruneDroppableAgentsForSession,
-} from './tools/agent-tools.js';
+} from './tools/agents/rendering.js';
 import { registerWebTool } from './tools/web-tool.js';
 import { registerChromeDebugTool } from './tools/chrome-debug-tool.js';
-import { registerUnifiedAgentTool } from './tools/unified-agent-tool.js';
+import { registerUnifiedAgentTool } from './tools/agents/tool.js';
 import { registerCallTool } from './tools/call-tool.js';
 import { registerFileTool } from './tools/file-tool.js';
 import { registerReadMediaTool } from './tools/read-media-tool.js';
@@ -98,7 +97,6 @@ import { applyStartupPermissionLevel, resetApprovalStore } from './tools/approva
 import {
   getCachedMcpCatalogAddendum,
   getCachedMcpCounts,
-  isCompactMcpEnabled,
   mcpCatalogReady,
   registerMcpTool,
   startMcpConfigWatcher,
@@ -106,10 +104,11 @@ import {
   stopMcpConfigWatchers,
   warmMcpCatalog,
 } from './tools/mcp-tool.js';
-import { openMcpManager, closeConfiguration } from './tools/mcp-html.js';
+import { isCompactMcpEnabled } from './tools/mcp/env.js';
+import { openMcpManager, closeConfiguration } from './tools/mcp/html.js';
 import { getDynamicCapabilitiesAddendum } from './tools/dynamic-catalog.js';
 import { renderAvailableSkillsAddendum } from './tools/skill-catalog.js';
-import { registerPlanTool } from './tools/plan-tool.js';
+import { registerPlanTool } from './tools/planning/plan-registration.js';
 import { registerLocalServerTool } from './tools/local-server-tool.js';
 import { registerAskUserTool } from './tools/ask-user-tool.js';
 import {
@@ -134,7 +133,7 @@ import {
   bumpPlanTurn,
   setPlanEntryAppender,
   PLAN_ENTRY_TYPE,
-} from './tools/active-plan.js';
+} from './tools/planning/plan-store.js';
 import { getCurrentPlanReadModel, renderPlanContext } from './tools/plan-read-model.js';
 import {
   getCachedAwarenessStatus,
@@ -148,10 +147,10 @@ import { deriveSessionName } from './ui-extras.js';
 import { paintUi } from './tui/palette.js';
 import { setUiTickSubscriber } from './tui/ui-ticker.js';
 import { closeAllChromeConnections } from './chrome-connection-cache.js';
-import { setPlanMetricsRefreshForUi } from './tools/plan-tool.js';
+import { setPlanMetricsRefreshForUi } from './tools/planning/plan-command.js';
 import { adoptPlanModePolicy, evaluateToolCapability, exitPlanMode, getPlanModePolicy } from './tools/plan-mode.js';
 import { clearAllReadStates } from './tools/file-state.js';
-import { registerAgentInbox, type AgentInboxRegistration } from './tools/agent-inbox.js';
+import { registerAgentInbox, type AgentInboxRegistration } from './tools/agents/inbox.js';
 import { collectPublicCommands } from './tools/commands-command.js';
 import { runCleanupOnInit } from './tools/cleanup-command.js';
 import { probeGitHubAuth } from './tools/github-auth-status.js';

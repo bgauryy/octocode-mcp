@@ -4,7 +4,7 @@ import { contentDigest, type ContextSegmentV1 } from '@octocodeai/octocode-aware
 import type { PiContext, PiInstance } from '../types.js';
 import {
   activePlanScope,
-} from './active-plan.js';
+} from './planning/plan-store.js';
 import { getCurrentPlanReadModel, renderPlanContext } from './plan-read-model.js';
 import { setManagedActivity } from './runtime-renderer.js';
 import { brokerSessionId } from './interaction-broker.js';

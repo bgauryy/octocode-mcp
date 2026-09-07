@@ -13,35 +13,28 @@ import os from 'node:os';
 import path from 'node:path';
 import { test, beforeEach, afterEach, vi } from 'vitest';
 import { Type } from 'typebox';
+import { spawnRpcAgent } from '../src/tools/agents/process.js';
+import { executeAgentLifecycle, getWorkerTranscript } from '../src/tools/agents/lifecycle.js';
+import { handleOctocodeAgentsCommand } from '../src/tools/agents/command.js';
+import { waitForAgent, waitForAgentTurn } from '../src/tools/agents/wait.js';
 import {
-  spawnRpcAgent,
-  setAgentProcessFactoryForTests,
-  isSubagentProcess,
-  MAX_AGENT_RECORDS,
-  MAX_ACTIVE_AGENTS,
-  DEFAULT_SPAWN_POLICY,
-  evaluateStepBudget,
-  executeAgentLifecycle,
   formatElapsed,
   formatAgentLedgerDetails,
-  getWorkerTranscript,
-  listWorkerLedgerEntries,
   refreshAgentLedgerUi,
   isLedgerTickerActiveForTests,
   stopLedgerTickerForTests,
-  extractDeltaSummary,
-  listVisibleWorkerLedgerEntries,
-  handleOctocodeAgentsCommand,
-  waitForAgent,
-  waitForAgentTurn,
-  findLivePlanWorker,
-} from '../src/tools/agent-tools.js';
-import { registerUnifiedAgentTool } from '../src/tools/unified-agent-tool.js';
+} from '../src/tools/agents/rendering.js';
+import { setAgentProcessFactoryForTests, isSubagentProcess } from '../src/tools/agents/registry.js';
+import { listWorkerLedgerEntries, listVisibleWorkerLedgerEntries, findLivePlanWorker } from '../src/tools/agents/ledger.js';
+import { MAX_AGENT_RECORDS, MAX_ACTIVE_AGENTS, DEFAULT_SPAWN_POLICY } from '../src/tools/agents/types.js';
+import { extractDeltaSummary } from '../src/tools/agents/normalization.js';
+import { evaluateStepBudget } from '../src/tools/agents/policy.js';
+import { registerUnifiedAgentTool } from '../src/tools/agents/tool.js';
 import type { ToolDefinition } from '../src/types.js';
 import { makeMockAgentProcess } from './helpers/mock-process.js';
 import { extensionWorkspaceRoot } from '../src/extension-paths.js';
-import { activePlanScope, clearPlan, setPlan } from '../src/tools/active-plan.js';
-import { registerPlanTool } from '../src/tools/plan-tool.js';
+import { activePlanScope, clearPlan, setPlan } from '../src/tools/planning/plan-store.js';
+import { registerPlanTool } from '../src/tools/planning/plan-registration.js';
 
 test('extractDeltaSummary prefers the latest structured worker line', () => {
   const out = '[STATUS] booting\nsome noise\n[ACTION] editing src/foo.ts\ntrailing chatter';

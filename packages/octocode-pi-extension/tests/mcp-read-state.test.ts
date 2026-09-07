@@ -9,7 +9,7 @@ import {
   stopAllMcpServers,
 } from '../src/tools/mcp-tool.js';
 import { checkReadState, clearReadStatesForTests } from '../src/tools/file-state.js';
-import { projectMcpPath } from '../src/tools/mcp-config.js';
+import { projectMcpPath } from '../src/tools/mcp/config.js';
 import type { PiContext } from '../src/types.js';
 
 const serverEntry = import.meta.resolve('@modelcontextprotocol/server');

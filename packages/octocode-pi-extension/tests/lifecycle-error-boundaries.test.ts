@@ -154,7 +154,7 @@ test(
 
     // Make activePlanScope throw.  It is called at the top of the overflow path
     // BEFORE any try/catch in the handler.
-    const activePlanModule = await import('../src/tools/active-plan.js');
+    const activePlanModule = await import('../src/tools/planning/plan-store.js');
     vi.spyOn(activePlanModule, 'activePlanScope').mockImplementation(() => {
       throw new Error('simulated plan-scope error in session_before_compact');
     });

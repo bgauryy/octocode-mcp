@@ -10,7 +10,7 @@ import {
   registerMcpTool,
   stopAllMcpServers,
 } from '../src/tools/mcp-tool.js';
-import { projectMcpPath } from '../src/tools/mcp-config.js';
+import { projectMcpPath } from '../src/tools/mcp/config.js';
 import type { PiContext, PiInstance, ToolCallResult, ToolDefinition } from '../src/types.js';
 
 const MCP_SERVER_ENTRY = import.meta.resolve('@modelcontextprotocol/server');

@@ -4,7 +4,7 @@
  *
  * Required index.ts wiring (this module never edits index.ts itself):
  *
- *   import { registerAgentInbox } from './tools/agent-inbox.js';
+ *   import { registerAgentInbox } from './tools/agents/inbox.js';
  *   // after registerUnifiedAgentTool(...), inside activate():
  *   const agentInbox = registerAgentInbox(pi, notify);
  *   // in the session_shutdown hook (before/alongside cleanupSpawnedAgentsForShutdown):
@@ -22,18 +22,14 @@
  *    active, or when a worker that ran > 30s completes (even mid-turn).
  */
 
-import type { PiContext, PiInstance, WorkerLedgerEntry, WorkerLedgerEventType, NotifyFn } from '../types.js';
-import { runSelectOverlay, type SelectOverlayItem, type SelectOverlayOptions } from './ui-overlays.js';
-import { truncatePlainToWidth } from './render-helpers.js';
-import { shortId } from './ids.js';
-import {
-  formatElapsed,
-  getWorkerTranscript,
-  killWorkerById,
-  listWorkerLedgerEntries,
-  registerWorkerLedgerListener,
-  steerWorkerById,
-} from './agent-tools.js';
+import type { PiContext, PiInstance, WorkerLedgerEntry, WorkerLedgerEventType, NotifyFn } from '../../types.js';
+import { runSelectOverlay, type SelectOverlayItem, type SelectOverlayOptions } from '../ui-overlays.js';
+import { truncatePlainToWidth } from '../render-helpers.js';
+import { shortId } from '../ids.js';
+import { getWorkerTranscript, steerWorkerById } from './lifecycle.js';
+import { killWorkerById } from './kill.js';
+import { listWorkerLedgerEntries, registerWorkerLedgerListener } from './ledger.js';
+import { formatElapsed } from './rendering.js';
 import {
   clearTitleFlashTimer,
   desktopNotificationsSuppressed,
@@ -42,7 +38,7 @@ import {
   notificationsEnabled,
   suppressDesktopNotifications,
   resumeDesktopNotifications,
-} from './desktop-notify.js';
+} from '../desktop-notify.js';
 
 /** Completed workers that ran longer than this always notify, even mid-turn. */
 export const LONG_RUN_NOTIFY_MS = 30_000;

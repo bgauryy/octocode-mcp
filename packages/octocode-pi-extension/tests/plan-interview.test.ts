@@ -22,8 +22,8 @@ vi.mock('../src/tools/ask-user-tool.js', () => ({
   },
 }));
 
-import { registerPlanTool } from '../src/tools/plan-tool.js';
-import { getPlanDecisions, clearPlan, getPlanReviewState } from '../src/tools/active-plan.js';
+import { registerPlanTool } from '../src/tools/planning/plan-registration.js';
+import { getPlanDecisions, clearPlan, getPlanReviewState } from '../src/tools/planning/plan-store.js';
 import { runtimeStoreFor } from '../src/tools/runtime-renderer.js';
 import type { ForegroundActivity } from '../src/tools/runtime-store.js';
 

@@ -1,7 +1,8 @@
 import type { PiContext } from '../types.js';
 import type { TaskStatus } from '@octocodeai/agent-contracts/entities';
-import type { PlanCoordination, PlanDecision, PlanReviewComment, PlanStep, ReviewQuestion, ReviewState } from './active-plan.js';
-import { activePlanScope, dependencyIndexes, getPlan, getPlanCoordination, getPlanReviewState, getPlanTurnsSinceUpdate } from './active-plan.js';
+import type { PlanCoordination, PlanDecision, PlanReviewComment, PlanStep, ReviewQuestion, ReviewState } from './planning/plan-types.js';
+import { dependencyIndexes } from './planning/plan-types.js';
+import { activePlanScope, getPlan, getPlanCoordination, getPlanReviewState, getPlanTurnsSinceUpdate } from './planning/plan-store.js';
 import { listPendingInteractionIds } from './interaction-broker.js';
 import { escapePromptMetadata } from './prompt-safety.js';
 import { openPersistentAwareness } from './storage-policy.js';

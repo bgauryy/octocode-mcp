@@ -15,14 +15,19 @@ import { openAwarenessStore } from '@octocodeai/octocode-awareness';
 import { SUBAGENT_WORKER_CONTRACT, SUBAGENT_AWARENESS_GUIDANCE } from '@octocodeai/agent-contracts/prompts';
 import { getAppendSystemTarget, parseSetupScope, splitArgs, truncateUserVisibleToolOutput } from '../src/utils.js';
 import { mergeManagedAppendSystem } from '../src/prompt.js';
-import { cleanupSpawnedAgentsForShutdown, evaluateSpawnPolicy, formatAgentLedgerDetails, listWorkerLedgerEntries, setAgentProcessFactoryForTests, normalizeWorkerOutput, evaluateWorkerRecoveryRisk } from '../src/tools/agent-tools.js';
+import { cleanupSpawnedAgentsForShutdown } from '../src/tools/agents/process.js';
+import { listWorkerLedgerEntries } from '../src/tools/agents/ledger.js';
+import { setAgentProcessFactoryForTests } from '../src/tools/agents/registry.js';
+import { formatAgentLedgerDetails } from '../src/tools/agents/rendering.js';
+import { normalizeWorkerOutput, evaluateWorkerRecoveryRisk } from '../src/tools/agents/normalization.js';
+import { evaluateSpawnPolicy } from '../src/tools/agents/policy.js';
 import { runHookMiddleware } from '../src/hook-composer.js';
 import { getPiRegistryRegistrationReceipts } from '../src/adapters/pi-registry-adapters.js';
 import { applyCustomEditsToContent } from '../src/tools/edit-tool.js';
 import { recordFileReadState, clearReadStatesForTests } from '../src/tools/file-state.js';
 import { assertPathAllowed } from '../src/tools/path-guard.js';
-import { activePlanScope, clearPlan, getPlan, getPlanReviewState, setPlan } from '../src/tools/active-plan.js';
-import { setPlanDirectoryServerForTests } from '../src/tools/plan-tool.js';
+import { activePlanScope, clearPlan, getPlan, getPlanReviewState, setPlan } from '../src/tools/planning/plan-store.js';
+import { setPlanDirectoryServerForTests } from '../src/tools/planning/plan-command.js';
 import { setPlanOpenerForTests } from '../src/tools/plan-html.js';
 import { buildFooterSegments, setFooterDensity } from '../src/ui-extras.js';
 import { PI_CONFIG_DIR } from '../src/constants.js';
@@ -30,7 +35,7 @@ import { DIRECT_TOOL_DESCRIPTIONS, getDirectToolContractStats, registerUniqueToo
 import { runtimeStoreFor, setManagedActivity, setManagedStatus } from '../src/tools/runtime-renderer.js';
 import { warmMcpCatalog } from '../src/tools/mcp-tool.js';
 import * as mcpPromptContext from '../src/tools/mcp-tool.js';
-import { projectMcpPath } from '../src/tools/mcp-config.js';
+import { projectMcpPath } from '../src/tools/mcp/config.js';
 import { createSessionArtifactContext } from '../src/tools/session-artifacts.js';
 import { SESSION_MEMORY_RELATIVE_PATH } from '../src/tools/session-memory.js';
 
@@ -2709,13 +2714,13 @@ test('Octocode metrics footer updates on session and turn lifecycle (single surf
   );
   const initial = renderFooter();
   assert.doesNotMatch(initial, /◆ Octocode/, 'footer does not repeat the app brand');
-  assert.match(initial, /ctx [▓░]{8} 50% \(50\.0k\/100k\)/, 'footer shows current and maximum context exactly');
+  assert.match(initial, /ctx 50%/, 'footer shows current context pressure without duplicating diagnostic totals');
   // Pre-first-turn footer carries no `turns 0` / `last —` placeholders.
   assert.doesNotMatch(initial, /turns 0/);
   assert.doesNotMatch(initial, /last —/);
   assert.match(initial, /update-awareness/);
   assert.doesNotMatch(initial, /keys .*shift\+tab|ctrl\+shift\+a.*perm|esc.*stop/);
-  assert.match(initial, /\/configuration/);
+  assert.match(initial, /config/, 'the settings route survives compact rendering');
   assert.doesNotMatch(initial, /\/commands guide/);
   assert.doesNotMatch(initial, /\/harness inspect|\/now snapshot|\/status dash/);
   assert.match(initial, /github ✓/);
@@ -2734,7 +2739,7 @@ test('Octocode metrics footer updates on session and turn lifecycle (single surf
   assert.equal(branchChange, undefined);
 
   for (const turnStart of handlers.get('turn_start') ?? []) await turnStart(undefined, ctx);
-  assert.match(renderFooter(), /Thinking…/, 'active operation is named in the footer');
+  assert.match(renderFooter(), /Thinking/, 'active operation is named without duplicating spinner motion in the footer');
   assert.equal(workingVisibility.at(-1), true, 'active operation keeps Pi\'s animated working row visible');
   assert.equal(
     statusCalls.some(([key, value]) => key === 'octocode-thinking' && /thinking/i.test(value ?? '')),
@@ -2995,7 +3000,7 @@ test('extension lifecycle notifications fall back to console outside UI contexts
     infos.push(String(message));
   };
   try {
-    const opener = vi.spyOn(await import('../src/tools/mcp-html.js'), 'openMcpManager').mockResolvedValue({ ok: true, url: 'http://127.0.0.1:1234/configuration/settings.html' });
+    const opener = vi.spyOn(await import('../src/tools/mcp/html.js'), 'openMcpManager').mockResolvedValue({ ok: true, url: 'http://127.0.0.1:1234/configuration/settings.html' });
     try {
       await commands.get('configuration')!.handler('', undefined);
       assert.ok(infos.some((message) => /\[octocode:info\].*Configuration opened/.test(message)));
@@ -4047,8 +4052,8 @@ test('agent ledger splits ambient counts from bounded worker detail', async () =
       false,
       'worker detail does not create a duplicate persistent panel'
     );
-    assert.match(footerText(), /agent ui-worker.*running/, 'footer owns the per-worker running row');
-    assert.doesNotMatch(footerText(), /agents 1|1 live/, 'the worker row is not repeated as aggregate counts');
+    assert.match(footerText(), /Agents 1[\s\S]*inbox[\s\S]*1 running/, 'normal workers use one bounded aggregate row with a promoted route');
+    assert.doesNotMatch(footerText(), /agent ui-worker.*running/, 'normal workers do not grow the footer by entity');
 
     spawned[0]!.emitStdout({
       type: 'message_end',
@@ -4060,29 +4065,26 @@ test('agent ledger splits ambient counts from bounded worker detail', async () =
     spawned[0]!.emitStdout({ type: 'agent_end', messages: [] });
     assert.match(
       footerText(),
-      /blocked[\s\S]*need parent input/,
-      'async worker handback remains visible in the footer',
+      /ui-worker blocked[\s\S]*inbox/,
+      'blocked workers remain individually identifiable with a detail route',
     );
-    assert.doesNotMatch(footerText(), /agents 1|1 live|blocked 1/, 'blocked state appears once, on its worker row');
+    assert.doesNotMatch(footerText(), /need parent input/, 'handback detail remains in the inbox instead of the ambient footer');
 
     await invokeExecute(
       messageTool,
       { queries: [{ reasoning: 'Exercise worker lifecycle.', type: 'message', agentId, message: 'answer: proceed' }] },
       ctx
     );
-    // Before the worker starts the turn, the footer shows truthful queue state
-    // instead of faking a running worker. Full message history stays in inspect.
-    assert.match(
-      footerText(),
-      /ui-worker[\s\S]*queued/,
-      'a queued turn stays visibly queued in the footer',
-    );
+    // Before the worker starts the turn, the prior blocked result remains
+    // authoritative while the queued message is surfaced as separate attention.
+    assert.match(footerText(), /ui-worker blocked/, 'queued work does not erase the durable blocked result');
+    assert.match(footerText(), /1 messages pending[\s\S]*inbox/, 'queued work names the inbox detail route');
     // The worker actually begins the queued turn → running.
     spawned[0]!.emitStdout({ type: 'agent_start' });
     assert.match(
       footerText(),
-      /ui-worker .*running/,
-      'the footer switches to running once the queued turn starts',
+      /Agents 1[\s\S]*1 running/,
+      'the aggregate footer switches to running once the queued turn starts',
     );
 
     spawned[0]!.emitStdout({
@@ -4096,10 +4098,10 @@ test('agent ledger splits ambient counts from bounded worker detail', async () =
     spawned[0]!.close(0);
     assert.match(
       footerText(),
-      /ui-worker[\s\S]*exited[\s\S]*ok/,
-      'completed workers keep their concise result visible in the footer',
+      /Agents 1[\s\S]*inbox[\s\S]*1 done/,
+      'completed workers collapse to one normal completion summary with an inbox route',
     );
-    assert.doesNotMatch(footerText(), /agents 1(?!\/)/, 'completed worker detail is not repeated as a count');
+    assert.doesNotMatch(footerText(), /ui-worker|\bok\b/, 'completed worker detail leaves the ambient footer');
     assert.equal(
       widgetCalls.some((call) => call.key === 'octocode-status-panel'),
       false,

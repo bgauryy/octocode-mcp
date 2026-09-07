@@ -6,12 +6,12 @@ import { getDefaultEnvironment } from '@modelcontextprotocol/client/stdio';
 import { getMcpEnablement } from '@octocodeai/agent-contracts/mcp-state';
 import { readMcpConfigText } from '@octocodeai/agent-contracts/agent-skills';
 import { ensurePrivateDirectory, hardenPrivateFile, PRIVATE_FILE_MODE } from '@octocodeai/agent-contracts/permissions';
-import type { PiContext } from '../types.js';
+import type { PiContext } from '../../types.js';
 import { getOctocodeHome } from '@octocodeai/config';
-import { extensionWorkspaceRoot, extensionCacheRoot, extensionHome } from '../extension-paths.js';
-import { discoverMcpSystem } from './mcp-discovery.js';
+import { extensionWorkspaceRoot, extensionCacheRoot, extensionHome } from '../../extension-paths.js';
+import { discoverMcpSystem } from './discovery.js';
 
-import { openOctocodeDb } from './storage-policy.js';
+import { openOctocodeDb } from '../storage-policy.js';
 
 export interface McpServerConfig {
   transport?: 'stdio' | 'http';

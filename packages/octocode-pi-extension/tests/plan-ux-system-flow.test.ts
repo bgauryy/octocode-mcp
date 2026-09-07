@@ -9,8 +9,8 @@ import { createIsolatedAwarenessStore, createPiFlowHarness } from '@octocodeai/a
 import { openAwarenessStore } from '@octocodeai/octocode-awareness';
 import {
   clearPlan,
-} from '../src/tools/active-plan.js';
-import { openPlanReview } from '../src/tools/plan-tool.js';
+} from '../src/tools/planning/plan-store.js';
+import { openPlanReview } from '../src/tools/planning/plan-command.js';
 import { buildPlanPageHtmlFromModel, setPlanOpenerForTests } from '../src/tools/plan-html.js';
 import { buildPlanReadModel, getCurrentPlanReadModel, renderPlanContext, renderPlanReadModel } from '../src/tools/plan-read-model.js';
 import { buildPlanFooterSegments } from '../src/extension-ui.js';
@@ -194,7 +194,11 @@ test('terminal footer keeps current work visible and width-safe while the canoni
     const lines = renderFooterView({ rows: [buildPlanFooterSegments(model)] }, { width });
     for (const line of lines) assert.ok(visibleWidth(line) <= width, `line fits width ${width}: ${line}`);
     const normalized = lines.join(' ').replace(/\s+/g, ' ');
-    assert.ok(normalized.includes('Implementing the cross-layer change'), `current task remains visible at width ${width}`);
+    if (width >= 80) {
+      assert.ok(normalized.includes('Implementing the cross-layer change'), `current task label fits at width ${width}`);
+    } else {
+      assert.ok(!normalized.includes('Implementing the cross-layer change'), `long task label defers to plan detail at width ${width}`);
+    }
     assert.ok(!normalized.includes(steps[0]!.text), 'completed detail stays in the durable full plan');
     assert.ok(!normalized.includes(steps[4]!.text), 'later work stays collapsed in the persistent panel');
     assert.match(normalized, /task 2/, 'the active lane remains identifiable at every width');

@@ -8,9 +8,9 @@ import type {
   OAuthTokens,
   StreamableHTTPClientTransport,
 } from '@modelcontextprotocol/client';
-import type { PiContext } from '../types.js';
-import { renderOctocodePage } from '../tui/html-page.js';
-import { openApprovedExternalUrl } from './local-url-opener.js';
+import type { PiContext } from '../../types.js';
+import { renderOctocodePage } from '../../tui/html-page.js';
+import { openApprovedExternalUrl } from '../local-url-opener.js';
 
 export interface StoredOAuthCredential {
   clientInformation?: OAuthClientInformation;

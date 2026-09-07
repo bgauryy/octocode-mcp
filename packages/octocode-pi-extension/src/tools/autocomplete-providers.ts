@@ -10,8 +10,8 @@
  * Wiring (src/index.ts) — data sources are injected, this module imports none:
  *
  *   import { registerOctocodeAutocomplete } from './tools/autocomplete-providers.js';
- *   import { listWorkerLedgerEntries } from './tools/agent-tools.js';
- *   import { getPlan } from './tools/active-plan.js';
+ *   import { listWorkerLedgerEntries } from './tools/agents/ledger.js';
+ *   import { getPlan } from './tools/planning/plan-store.js';
  *
  *   // wherever ctx.ui becomes available (e.g. session_start handler):
  *   registerOctocodeAutocomplete(ctx.ui, {

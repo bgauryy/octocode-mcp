@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, test } from 'vitest';
 import { handleMcpAction, stopAllMcpServers } from '../src/tools/mcp-tool.js';
-import { projectMcpPath } from '../src/tools/mcp-config.js';
+import { projectMcpPath } from '../src/tools/mcp/config.js';
 import type { PiContext, ToolCallResult } from '../src/types.js';
 
 const roots: string[] = [];

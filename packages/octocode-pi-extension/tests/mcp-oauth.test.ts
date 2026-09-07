@@ -5,7 +5,7 @@ import {
   createMcpOAuthFlowWithDependencies,
   type McpOAuthDependencies,
   type StoredOAuthCredential,
-} from '../src/tools/mcp-oauth.js';
+} from '../src/tools/mcp/oauth.js';
 import type { PiContext } from '../src/types.js';
 
 function memoryDependencies(opened: string[] = []) {

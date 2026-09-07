@@ -7,17 +7,19 @@ import { afterEach, beforeEach, test } from 'vitest';
 import { Type } from 'typebox';
 import type { ToolDefinition } from '../src/types.js';
 import {
-  setPlan, addStep, startStep, completeStep, clearPlan, getPlan,
-  bumpPlanTurn, readPersistedPlanForTests, depsMet, displayStatus,
+  setPlan, clearPlan, getPlan,
+  bumpPlanTurn, readPersistedPlanForTests,
   activePlanScope, adoptPlanFromBranch, setPlanEntryAppender, PLAN_ENTRY_TYPE,
   getPlanRfc, setPlanRfc, resolveRfcPath, readPersistedRfcForTests,
   getPlanDecisions, addPlanDecision, setPlanDecisions, readPersistedDecisionsForTests,
-  getPlanLifecycle, setPlanLifecycle, finishPlanVerification, getPlanReviewState, activatePlan, readPersistedLifecycleForTests,
-  currentRfcRevision, proposePlanReview, acceptPlanReview, requestPlanChanges, startAcceptedPlan,
-  setPlanAwarenessMappings, getPlanCoordination,
-  type PlanDecision, type PlanStep,
-} from '../src/tools/active-plan.js';
-import { registerPlanTool, refreshPlanUi, handleOctocodePlanCommand, OCTOCODE_PLAN_COMMAND_COMPLETIONS, setPlanMetricsRefreshForUi } from '../src/tools/plan-tool.js';
+  getPlanLifecycle, setPlanLifecycle, finishPlanVerification, getPlanReviewState, readPersistedLifecycleForTests,
+  currentRfcRevision, setPlanAwarenessMappings, getPlanCoordination,
+} from '../src/tools/planning/plan-store.js';
+import { addStep, startStep, completeStep, activatePlan } from '../src/tools/planning/plan-executor.js';
+import { depsMet, displayStatus, type PlanDecision, type PlanStep } from '../src/tools/planning/plan-types.js';
+import { proposePlanReview, acceptPlanReview, requestPlanChanges, startAcceptedPlan } from '../src/tools/planning/plan-lifecycle.js';
+import { registerPlanTool } from '../src/tools/planning/plan-registration.js';
+import { refreshPlanUi, handleOctocodePlanCommand, OCTOCODE_PLAN_COMMAND_COMPLETIONS, setPlanMetricsRefreshForUi } from '../src/tools/planning/plan-command.js';
 import { buildPlanFooterSegments } from '../src/extension-ui.js';
 import { renderFooterView } from '../src/tui/footer-view.js';
 import { planArtifactsDir, setPlanOpenerForTests } from '../src/tools/plan-html.js';
@@ -1388,7 +1390,7 @@ test('RFC proposal records requested changes from the same ask widget', async ()
     }
   });
 });
-test('the footer keeps the current task readable while the full plan preserves backlog detail', () => {
+test('the footer truncates current work while the full plan preserves backlog detail', () => {
   const steps: PlanStep[] = [
     { id: 'setup', text: 'Completed setup', status: 'done' },
     { id: 'change', text: 'A long-ish step description here', activeForm: 'Implementing the focused change', status: 'doing' },
@@ -1396,9 +1398,12 @@ test('the footer keeps the current task readable while the full plan preserves b
     { id: 'verify', text: 'Later verification', status: 'todo' },
   ];
   const model = panelModel(steps);
-  const wrapped = renderFooterView({ rows: [buildPlanFooterSegments(model)] }, { width: 24 }).join(' ').replace(/\s+/g, ' ');
-  assert.ok(wrapped.includes('Implementing the focused change'), 'narrow footer preserves the complete current label');
-  assert.ok(!wrapped.includes('Completed setup'), 'completed detail stays in the canonical full plan, not the persistent panel');
+  const footerLines = renderFooterView({ rows: [buildPlanFooterSegments(model)] }, { width: 24 });
+  const compact = footerLines.join(' ').replace(/\s+/g, ' ');
+  assert.equal(footerLines.length, 1, 'one selected semantic row owns one physical line');
+  assert.match(compact, /plan 1\/4/, 'knowable progress survives narrow truncation');
+  assert.ok(!compact.includes('Implementing the focused change'), 'long labels defer to the canonical plan detail surface');
+  assert.ok(!compact.includes('Completed setup'), 'completed detail stays in the canonical full plan, not the persistent panel');
   const full = renderPlanReadModel(model, 'terminal') as string;
   assert.match(full, /1\/4/, 'progress remains visible');
   assert.match(full, /\[doing\] A long-ish step description here/, 'the active lane is explicit');

@@ -1,77 +1,51 @@
-import { truncateToWidth, visibleWidth } from './width.js';
-/** Pure footer view: state collection stays outside, layout stays testable here. */
+/** Pure footer view: state collection and ranking stay outside. */
 import type { PiTheme } from '../types.js';
-import { renderInlineRows, type InlineSegment, type TuiRenderContext } from './components.js';
-import { paint, SEP, type SemanticToken } from './palette.js';
-
-
-export interface FooterAgentView {
-  label: string;
-  state: string;
-  elapsed: string;
-  task?: string;
-  doing?: string;
-  token?: SemanticToken;
-  attention?: boolean;
-}
+import type { InlineSegment, TuiRenderContext } from './components.js';
+import { paint, SEP } from './palette.js';
+import { truncateToWidth, visibleWidth } from './width.js';
 
 export interface FooterViewProps {
-  /**
-   * Semantic footer rows. Each row wraps responsively, but no state is replaced
-   * by a `+N` disclosure. Keep related facts together (activity/context, plan,
-   * repository identity, metrics) so a narrow terminal never hides an entire
-   * category of live state.
-   */
+  /** Already-selected semantic rows. Each row owns exactly one physical line. */
   rows: readonly (readonly InlineSegment[])[];
-  agents?: readonly FooterAgentView[];
 }
 
-function agentRow(agent: FooterAgentView, context: TuiRenderContext): string[] {
-  const stateToken = agent.token ?? (agent.state === 'failed' ? 'error' : agent.state === 'blocked' ? 'warning' : agent.state === 'done' ? 'success' : 'brand');
-  const state = paint(context.theme, stateToken, agent.state);
-  const emphasizedState = agent.attention && context.theme ? context.theme.bold(state) : state;
-  const activity = agent.doing ? `doing ${agent.doing}` : agent.task ? `task ${agent.task}` : '';
-  const tail: InlineSegment[] = [
-    ...(agent.attention ? [{ text: '/octocode-inbox', token: 'link' as const, attention: true }] : []),
-    { text: agent.elapsed, token: 'dim' },
-    ...(activity ? [{ text: activity, token: 'muted' as const }] : []),
-  ];
+function compactRoute(text: string): string {
+  if (text === '/octocode-inbox') return 'inbox';
+  if (text === '/configuration') return 'config';
+  return text;
+}
 
-  // A worker always owns exactly one physical footer row. Stable height matters:
-  // changing footer line count while live state ticks causes viewport movement and
-  // makes transcript scrollback hard to inspect. Wide panes reserve room for the
-  // highest-value tail; narrow panes preserve identity + state first.
-  const tailReserve = context.width >= 52 && tail.length > 0
-    ? Math.min(28, Math.floor(context.width / 3))
-    : 0;
-  const labelWidth = Math.max(
-    0,
-    context.width - 2 - visibleWidth(SEP) - visibleWidth(agent.state)
-      - (tailReserve > 0 ? visibleWidth(SEP) + tailReserve : 0),
-  );
-  const label = truncateToWidth(agent.label, labelWidth);
-  let line = labelWidth > 0
-    ? `  ${paint(context.theme, 'muted', label)}${SEP}${emphasizedState}`
-    : emphasizedState;
+function isRoute(segment: InlineSegment): boolean {
+  return segment.text.startsWith('/') || segment.text === 'plan' || segment.text === 'transcript' || segment.text === 'interaction';
+}
 
-  for (const segment of tail) {
-    const remaining = context.width - visibleWidth(line) - visibleWidth(SEP);
+function renderSemanticRow(segments: readonly InlineSegment[], context: TuiRenderContext): string | undefined {
+  const visible = segments.filter((segment) => Boolean(segment.text?.trim()));
+  if (visible.length === 0) return undefined;
+  const first = visible[0]!;
+  const routes = visible.slice(1).filter(isRoute);
+  const required = visible.slice(1).filter((segment) => segment.attention && !isRoute(segment));
+  const optional = visible.slice(1).filter((segment) => !segment.attention && !isRoute(segment));
+  const ordered = [first, ...routes, ...required, ...optional];
+  let line = '';
+  for (const segment of ordered) {
+    const text = compactRoute(segment.text);
+    const colored = paint(context.theme, segment.token ?? 'dim', text);
+    const value = segment.attention && context.theme?.bold ? context.theme.bold(colored) : colored;
+    const joiner = line ? SEP : '';
+    const remaining = context.width - visibleWidth(line) - visibleWidth(joiner);
     if (remaining <= 0) break;
-    const value = paint(context.theme, segment.token ?? 'dim', segment.text);
-    const emphasized = segment.attention && context.theme ? context.theme.bold(value) : value;
-    line = `${line}${SEP}${truncateToWidth(emphasized, remaining)}`;
-    if (visibleWidth(emphasized) > remaining) break;
+    const clipped = truncateToWidth(value, remaining);
+    if (!clipped) break;
+    line = `${line}${joiner}${clipped}`;
+    if (visibleWidth(value) > remaining) break;
   }
-  return [truncateToWidth(line, context.width)];
+  return truncateToWidth(line, context.width);
 }
 
-/** Unified persistent state: responsive semantic rows plus every visible worker. */
+/** Render the status policy's selected rows without reading or ranking state. */
 export function renderFooterView(props: FooterViewProps, context: TuiRenderContext & { theme?: PiTheme }): string[] {
-  const header = props.rows.flatMap((segments) => renderInlineRows({ segments }, context));
-  const agents = (props.agents ?? [])
-    .filter((agent) => agent.state !== 'killed')
-    .map((agent, index) => ({ agent, index }))
-    .sort((a, b) => Number(b.agent.attention) - Number(a.agent.attention) || a.index - b.index)
-    .map(({ agent }) => agent);
-  return [...header, ...agents.flatMap((agent) => agentRow(agent, context))];
+  return props.rows
+    .map((segments) => renderSemanticRow(segments, context))
+    .filter((line): line is string => Boolean(line));
 }

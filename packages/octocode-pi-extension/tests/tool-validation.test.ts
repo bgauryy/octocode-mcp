@@ -8,7 +8,7 @@ import { validateToolArguments } from '@earendil-works/pi-ai';
 import type { PiContext, ToolDefinition } from '../src/types.js';
 import { registerUniqueTool } from '../src/tools/octocode-tools.js';
 import { registerFileTool } from '../src/tools/file-tool.js';
-import { registerPlanTool } from '../src/tools/plan-tool.js';
+import { registerPlanTool } from '../src/tools/planning/plan-registration.js';
 
 function capture(register: typeof registerFileTool | typeof registerPlanTool): ToolDefinition {
   let tool: ToolDefinition | undefined;

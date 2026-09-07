@@ -11,7 +11,7 @@ import {
   loadMcpConfig,
   projectMcpPath,
   projectMcpConfigPaths,
-} from '../src/tools/mcp-config.js';
+} from '../src/tools/mcp/config.js';
 import type { PiContext } from '../src/types.js';
 
 function writeServer(filePath: string, name: string, command: string): void {

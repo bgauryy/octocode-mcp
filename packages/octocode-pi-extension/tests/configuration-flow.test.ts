@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, test, vi } from 'vitest';
-import { closeConfiguration, openMcpManager } from '../src/tools/mcp-html.js';
+import { closeConfiguration, openMcpManager } from '../src/tools/mcp/html.js';
 import * as opener from '../src/tools/local-url-opener.js';
 import { stopLocalServer } from '../src/tools/local-server.js';
 import { getFooterDensity, setFooterDensity } from '../src/ui-extras.js';

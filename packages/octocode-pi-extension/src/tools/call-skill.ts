@@ -15,7 +15,10 @@
 import type { ToolDefinition, PiContext } from '../types.js';
 import { sliceBetween } from '../utils.js';
 import type { registerUniqueTool } from './octocode-tools.js';
-import { spawnRpcAgent, waitForAgentTurn, isSubagentProcess, killWorkerById } from './agent-tools.js';
+import { spawnRpcAgent } from './agents/process.js';
+import { waitForAgentTurn } from './agents/wait.js';
+import { isSubagentProcess } from './agents/registry.js';
+import { killWorkerById } from './agents/kill.js';
 import { isAbortError, throwIfAborted } from './cancellation.js';
 import {
   resolveSkill,

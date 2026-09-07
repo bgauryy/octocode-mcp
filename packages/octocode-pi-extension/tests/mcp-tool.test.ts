@@ -7,10 +7,12 @@ import {
 } from "@octocodeai/agent-contracts/mcp-state";
 import { openOctocodeDb } from "../src/tools/storage-policy.js";
 import { afterEach, beforeEach, test } from "vitest";
-import { __test__ as mcpTestHooks, getCachedMcpCatalogAddendum, getCachedMcpCounts, isCompactMcpEnabled, isMcpAiGuideEnabled, formatMcpSchemaValidationErrors, mcpCatalogReady, resolveMcpCallContent, resolveMcpCallTable, resolveMcpCallText, summarizeMcpStructuredResults, stopAllMcpServers, warmMcpCatalog } from '../src/tools/mcp-tool.js';
-import { OCTOCODE_MCP_ENV_DEFAULTS } from '../src/tools/mcp-config.js';
-import { buildMcpCatalogSnapshot } from "../src/tools/mcp-catalog.js";
-import { projectMcpPath } from "../src/tools/mcp-config.js";
+import { __test__ as mcpTestHooks, getCachedMcpCatalogAddendum, getCachedMcpCounts, formatMcpSchemaValidationErrors, mcpCatalogReady, stopAllMcpServers, warmMcpCatalog } from '../src/tools/mcp-tool.js';
+import { isCompactMcpEnabled, isMcpAiGuideEnabled } from '../src/tools/mcp/env.js';
+import { resolveMcpCallContent, resolveMcpCallTable, resolveMcpCallText, summarizeMcpStructuredResults, summarizeMcpCallDetails } from '../src/tools/mcp/sanitize.js';
+import { OCTOCODE_MCP_ENV_DEFAULTS } from '../src/tools/mcp/config.js';
+import { buildMcpCatalogSnapshot } from "../src/tools/mcp/catalog.js";
+import { projectMcpPath } from "../src/tools/mcp/config.js";
 
 const MCP_SERVER_ENTRY = import.meta.resolve("@modelcontextprotocol/server");
 const MCP_STDIO_ENTRY = import.meta.resolve("@modelcontextprotocol/server/stdio");
@@ -176,38 +178,6 @@ test("env defaults: full-text MCP responses + local tools + npm cache vars are a
   assert.ok(OCTOCODE_MCP_ENV_DEFAULTS["npm_config_cache"]!.length > 0);
 });
 
-test("MCP pagination follows every cursor without dropping page-one or later items", async () => {
-  const requested: Array<string | undefined> = [];
-  const items = await mcpTestHooks.collectMcpPages<{ name: string }>(
-    "tools/list",
-    async (cursor) => {
-      requested.push(cursor);
-      if (!cursor) return { tools: [{ name: "first" }], nextCursor: "page-2" };
-      if (cursor === "page-2")
-        return { tools: [{ name: "second" }], nextCursor: "page-3" };
-      return { tools: [{ name: "third" }] };
-    },
-    (page) => (page as { tools: Array<{ name: string }> }).tools,
-  );
-  assert.deepEqual(requested, [undefined, "page-2", "page-3"]);
-  assert.deepEqual(
-    items.map((item) => item.name),
-    ["first", "second", "third"],
-  );
-});
-
-test("MCP pagination rejects a repeated cursor instead of looping forever", async () => {
-  await assert.rejects(
-    () =>
-      mcpTestHooks.collectMcpPages(
-        "resources/list",
-        async () => ({ resources: [], nextCursor: "same" }),
-        (page) => (page as { resources: unknown[] }).resources,
-      ),
-    /repeated cursor same/,
-  );
-});
-
 test("MCP client capability handlers expose only trusted roots and deny headless sampling/input", async () => {
   const requests = new Map<
     string,
@@ -327,8 +297,7 @@ test("call content: native text and image blocks reach the model unchanged", () 
   assert.deepEqual(resolveMcpCallContent({ content }), content);
 });
 
-test("call details summarize MCP payload shape without duplicating text, images, or structured content", async () => {
-  const { summarizeMcpCallDetails } = await import('../src/tools/mcp-tool.js');
+test("call details summarize MCP payload shape without duplicating text, images, or structured content", () => {
   const details = summarizeMcpCallDetails({
     content: [
       { type: 'text', text: 'large-provider-visible-text' },
@@ -1390,7 +1359,7 @@ test("replacement session owns a fresh MCP warm and superseded context failures 
 });
 
 // ─── add / remove server (mcp.json CRUD, no agent restart) ────────────────────
-import { upsertServerInFile, removeServerFromFile, configSignature } from '../src/tools/mcp-config.js';
+import { upsertServerInFile, removeServerFromFile, configSignature } from '../src/tools/mcp/config.js';
 
 function freshDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "octo-mcp-crud-"));

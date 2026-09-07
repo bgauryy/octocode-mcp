@@ -12,11 +12,11 @@ import { registerUniqueTool } from '../src/tools/octocode-tools.js';
 import { registerBashTool } from '../src/tools/bash-tool.js';
 import { registerFileTool } from '../src/tools/file-tool.js';
 import { registerAskUserTool } from '../src/tools/ask-user-tool.js';
-import { registerPlanTool } from '../src/tools/plan-tool.js';
+import { registerPlanTool } from '../src/tools/planning/plan-registration.js';
 import { registerWebTool } from '../src/tools/web-tool.js';
 import { registerReadMediaTool } from '../src/tools/read-media-tool.js';
 import { registerMediaTool } from '../src/tools/create-media-tool.js';
-import { registerUnifiedAgentTool } from '../src/tools/unified-agent-tool.js';
+import { registerUnifiedAgentTool } from '../src/tools/agents/tool.js';
 import type { ToolDefinition, PiTheme, ToolCallResult, RenderResultOptions } from '../src/types.js';
 // ─── Stub theme ───────────────────────────────────────────────────────────────
 

@@ -19,7 +19,10 @@ import { sliceBetween } from '../utils.js';
 import type { registerUniqueTool } from './octocode-tools.js';
 import { buildToolView } from './render-helpers.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
-import { spawnRpcAgent, waitForAgentTurn, isSubagentProcess, killWorkerById } from './agent-tools.js';
+import { spawnRpcAgent } from './agents/process.js';
+import { waitForAgentTurn } from './agents/wait.js';
+import { isSubagentProcess } from './agents/registry.js';
+import { killWorkerById } from './agents/kill.js';
 import { requestApproval } from './approval.js';
 import { isAbortError, throwIfAborted } from './cancellation.js';
 import {

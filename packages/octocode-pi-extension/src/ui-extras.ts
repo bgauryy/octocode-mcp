@@ -145,7 +145,7 @@ function ellipsize(text: string, max: number): string {
  */
 export type FooterDensity = 'compact' | 'default' | 'full';
 
-let footerDensity: FooterDensity = 'compact';
+let footerDensity: FooterDensity = 'default';
 
 export function getFooterDensity(): FooterDensity {
   return footerDensity;

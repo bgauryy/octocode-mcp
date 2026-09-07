@@ -5,6 +5,7 @@
 
 import path from 'node:path';
 import type { PiContext, NotifyFn } from '../../types.js';
+import { buildPlanPrompt } from '../../prompts/plan-prompt.js';
 import { adoptPlanModePolicy, enterPlanMode, exitPlanMode, isPlanMode } from '../plan-mode.js';
 import {
   consumeHumanAuthorizationReceipt,
@@ -314,17 +315,21 @@ export async function handleOctocodePlanCommand(args: string, ctx: PiContext | u
     return;
   }
   if (action === 'new') {
-    const goal = args.trim().replace(/^new\b/, '').trim();
+    const goal = args.trim().replace(/^new\b/, '').trim().replace(/\s+/g, ' ');
     if (!sendPrompt) {
       notify(ctx, 'This host cannot send prompts — describe the goal and ask the agent to call plan with action:"propose" inside queries[].', 'warning');
       return;
     }
     enterPlanMode(ctx);
     setPlanLifecycle(scope, 'researching');
-    const prompt = goal
-      ? `Research the following goal, then use the plan tool (action:"propose" inside queries[]) once ready: ${goal}`
-      : 'Research the task and use the plan tool (action:"propose" inside queries[]) once ready.';
-    await sendPrompt(prompt);
+    notify(ctx, 'Creating plan… Plan mode on.', 'info');
+    try {
+      await sendPrompt(buildPlanPrompt(goal));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setManagedActivity(ctx, { kind: 'failed', label: 'Could not start plan mode' });
+      notify(ctx, `Could not start plan mode: ${message}`, 'warning');
+    }
     return;
   }
   if (action === 'html') {
@@ -348,6 +353,7 @@ export async function handleOctocodePlanCommand(args: string, ctx: PiContext | u
     case 'changes': {
       const result = requestPlanChanges(scope);
       if (!result.ok) { notify(ctx, `Cannot request changes: ${result.message}`, 'warning'); return; }
+      if (remainder) addPlanDecision(scope, 'Requested plan changes', remainder);
       writeCurrentPlanArtifacts(ctx, scope, 'draft');
       refreshPlanUi(ctx);
       notify(ctx, `Changes requested${remainder ? `: ${remainder}` : ''}. Revise the RFC and re-propose.`, 'info');

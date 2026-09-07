@@ -1,5 +1,5 @@
 import type { PiContext, PiInstance, SessionBeforeCompactEvent, SessionCompactEvent, NotifyFn } from '../types.js';
-import { activePlanScope, getPlan, getPlanCoordination, getPlanReviewState } from './active-plan.js';
+import { activePlanScope, getPlan, getPlanCoordination, getPlanReviewState } from './planning/plan-store.js';
 import { getCurrentPlanReadModel, renderPlanContext } from './plan-read-model.js';
 import { emitCompactionCheckpoint, type CompactionCheckpointDetails } from './custom-messages.js';
 import { writeCompactionArtifact } from './compaction-artifacts.js';

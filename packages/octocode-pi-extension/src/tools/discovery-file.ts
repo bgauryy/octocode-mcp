@@ -17,8 +17,9 @@ import type { AssembledContextV1 } from './context-segments.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { PiContext } from '../types.js';
-import { getMcpDiscoverySnapshot, type McpDiscoverySnapshot } from './mcp-tool.js';
-import { discoverMcpConfigs } from './mcp-discovery.js';
+import { getMcpDiscoverySnapshot } from './mcp-tool.js';
+import type { McpDiscoverySnapshot } from './mcp/types.js';
+import { discoverMcpConfigs } from './mcp/discovery.js';
 import type { DiscoveredMcpConfig } from '@octocodeai/agent-contracts/agent-skills';
 import type { DiscoveredSkillState } from './skill-discovery.js';
 

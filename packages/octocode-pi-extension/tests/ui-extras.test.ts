@@ -388,7 +388,7 @@ test('footer density: default and full omit redundant peer counts', () => {
 
 test('footer density: module-level mode drives the default parameter; parse rejects junk', () => {
   try {
-    assert.equal(getFooterDensity(), 'compact');
+    assert.equal(getFooterDensity(), 'default');
     setFooterDensity('compact');
     assert.equal(getFooterDensity(), 'compact');
     const joined = buildFooterSegments(DENSITY_INPUT).map((s) => s.text).join(' | ');

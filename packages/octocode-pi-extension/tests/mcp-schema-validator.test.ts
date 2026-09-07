@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import {
   McpSchemaUnsupportedError,
   compileMcpSchemaValidator,
-} from '../src/tools/mcp-schema-validator.js';
+} from '../src/tools/mcp/schema-validator.js';
 
 test('validator accepts representative valid MCP arguments across required JSON Schema constructs', () => {
   const schemas: Array<[unknown, unknown]> = [

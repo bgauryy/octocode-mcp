@@ -17,7 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ResourceMode } from './tools/agent-tools.js';
+import type { ResourceMode } from './tools/agents/types.js';
 import { discoverSkills } from './tools/skill-discovery.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────

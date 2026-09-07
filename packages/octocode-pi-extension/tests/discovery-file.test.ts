@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, test } from 'vitest';
 import { extensionWorkspaceRoot } from '../src/extension-paths.js';
 import { buildDiscoverySnapshot, getDiscoveryFilePath, writeDiscoveryFile } from '../src/tools/discovery-file.js';
-import { discoverMcpConfigs, discoverMcpSystem } from '../src/tools/mcp-discovery.js';
+import { discoverMcpConfigs, discoverMcpSystem } from '../src/tools/mcp/discovery.js';
 import { __test__ as mcpTestHooks } from '../src/tools/mcp-tool.js';
 import type { DiscoveredSkillState } from '../src/tools/skill-discovery.js';
 import type { PiContext } from '../src/types.js';

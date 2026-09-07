@@ -1,0 +1,319 @@
+import type { PlanReadModelTaskV1, PlanReadModelV1 } from './plan-read-model.js';
+import type { ForegroundActivity, RuntimeState } from './runtime-store.js';
+import type { AgentFooterEntry } from '../ui-extras.js';
+
+export type UxPriority = 'P0' | 'P1' | 'P2' | 'P3' | 'P4';
+export type UxSeverity = 'info' | 'warning' | 'error';
+export type UxProgressMode = 'linear' | 'graph' | 'dynamic' | 'indeterminate';
+export type UxVerificationState = 'pending' | 'running' | 'passed' | 'failed' | 'waived';
+
+export interface UxSessionV1 {
+  phase: RuntimeState['phase'];
+  activity: { kind: ForegroundActivity['kind']; label: string; since: number; detail?: string };
+  elapsedMs: number;
+  contextPressure?: number;
+  observationTime: number;
+}
+
+export interface UxPlanV1 {
+  id: string;
+  phase: PlanReadModelV1['phase'];
+  revision?: string;
+  total: number;
+  displayTotal?: number;
+  done: number;
+  active: number;
+  ready: number;
+  blocked: number;
+  verifying: number;
+  failed: number;
+  dynamic: boolean;
+  progressMode: UxProgressMode;
+  detailRoute: 'plan';
+}
+
+export interface UxTaskV1 {
+  id: string;
+  index: number;
+  label: string;
+  activeLabel?: string;
+  status: PlanReadModelTaskV1['status'];
+  dependencies: number[];
+  owner?: string;
+  verification: UxVerificationState;
+  updatedAt: number;
+}
+
+export interface UxAgentV1 {
+  id: string;
+  label: string;
+  state: string;
+  assignment?: string;
+  planStep?: string;
+  activeOperation?: string;
+  pendingMessages: number;
+  elapsedMs?: number;
+  updatedAt: number;
+}
+
+export interface UxAttentionV1 {
+  id: string;
+  kind: 'input' | 'authorization' | 'runtime_failed' | 'plan_blocked' | 'agent_blocked' | 'agent_failed' | 'messages' | 'context_pressure' | 'stale_source';
+  priority: UxPriority;
+  severity: UxSeverity;
+  actor: string;
+  reason: string;
+  requiredAction?: string;
+  detailRoute: string;
+  createdAt: number;
+}
+
+export interface UxProvenanceV1 {
+  owner: 'runtime' | 'plan' | 'workers' | 'awareness';
+  sequence: number;
+  observedAt: number;
+  staleAfterMs?: number;
+  stale: boolean;
+}
+
+export interface UxSnapshotV1 {
+  version: 1;
+  observedAt: number;
+  session: UxSessionV1;
+  goal: { text?: string; milestone?: string; nextAction?: string };
+  plan?: UxPlanV1;
+  tasks: UxTaskV1[];
+  agents: UxAgentV1[];
+  attention: UxAttentionV1[];
+  messages: { unread: number; queued: number; latestSender?: string; latestSubject?: string; detailRoute: '/octocode-inbox' };
+  provenance: UxProvenanceV1[];
+}
+
+export interface UxSnapshotInput {
+  now?: number;
+  runtime: Pick<RuntimeState, 'generation' | 'phase' | 'activity' | 'context' | 'footer'>;
+  plan?: PlanReadModelV1;
+  agents?: readonly AgentFooterEntry[];
+  goal?: UxSnapshotV1['goal'];
+  dynamicPlan?: boolean;
+  awareness?: {
+    unread: number;
+    observedAt: number;
+    staleAfterMs: number;
+    sequence?: number;
+    latestSender?: string;
+    latestSubject?: string;
+  };
+}
+
+const TERMINAL_AGENT_STATES = new Set(['done', 'failed', 'killed', 'completed', 'exited', 'error']);
+const PRIORITY_ORDER: Record<UxPriority, number> = { P0: 0, P1: 1, P2: 2, P3: 3, P4: 4 };
+
+function effectiveAgentState(agent: AgentFooterEntry): string {
+  const processState = agent.status.toLowerCase();
+  if (TERMINAL_AGENT_STATES.has(processState)) return processState;
+  const resultState = agent.normalizedStatus?.toLowerCase();
+  if (resultState === 'done' || resultState === 'failed' || resultState === 'blocked') return resultState;
+  if ((agent.pendingMessages ?? 0) > 0 && processState === 'idle') return 'queued';
+  return processState;
+}
+
+function parsedTime(value: string, fallback: number): number {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function activityLabel(activity: ForegroundActivity): { label: string; detail?: string } {
+  switch (activity.kind) {
+    case 'idle': return { label: 'Idle' };
+    case 'thinking': return { label: 'Thinking' };
+    case 'researching': return { label: activity.detail ? `Researching ${activity.detail}` : 'Researching' };
+    case 'awaiting_input': return { label: `Needs you · ${activity.question}`, detail: activity.question };
+    case 'planning': return { label: activity.detail ? `Planning ${activity.detail}` : 'Planning' };
+    case 'reviewing': return { label: activity.revision ? `Reviewing plan rev ${activity.revision}` : 'Reviewing plan' };
+    case 'awaiting_start': return { label: `Needs you · Start plan rev ${activity.revision}` };
+    case 'ready_to_work': return { label: activity.label };
+    case 'working': return { label: activity.label };
+    case 'verifying': return { label: activity.label ? `Verifying ${activity.label}` : 'Verifying' };
+    case 'blocked': return { label: `Blocked · ${activity.label}`, detail: activity.label };
+    case 'complete': return { label: activity.label ? `Complete · ${activity.label}` : 'Complete' };
+    case 'failed': return { label: `Failed · ${activity.label}`, detail: activity.label };
+  }
+}
+
+function isLinearPlan(plan: PlanReadModelV1): boolean {
+  if (plan.tasks.length <= 1) return true;
+  return plan.tasks.every((task, index) => index === 0
+    ? task.dependsOn.length === 0
+    : task.dependsOn.length === 1 && task.dependsOn[0] === index);
+}
+
+function taskVerification(task: PlanReadModelTaskV1, phase: PlanReadModelV1['phase']): UxVerificationState {
+  if (task.status === 'done') return 'passed';
+  if (task.status === 'doing' && phase === 'verifying') return 'running';
+  return 'pending';
+}
+
+function freezeDeep<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value as Record<string, unknown>)) freezeDeep(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+export function deriveUxSnapshot(input: UxSnapshotInput): UxSnapshotV1 {
+  const now = input.now ?? Date.now();
+  const activity = input.runtime.activity;
+  const activityPresentation = activityLabel(activity);
+  const plan = input.plan;
+  const dynamic = input.dynamicPlan ?? false;
+  const linear = plan ? isLinearPlan(plan) : false;
+  const progressMode: UxProgressMode = !plan || plan.summary.total === 0
+    ? 'indeterminate'
+    : dynamic ? 'dynamic' : linear ? 'linear' : 'graph';
+  const tasks: UxTaskV1[] = (plan?.tasks ?? []).map((task) => ({
+    id: task.id,
+    index: task.index,
+    label: task.text,
+    ...(task.activeText ? { activeLabel: task.activeText } : {}),
+    status: task.status,
+    dependencies: [...task.dependsOn],
+    verification: taskVerification(task, plan!.phase),
+    updatedAt: now,
+  }));
+  const agents: UxAgentV1[] = (input.agents ?? []).map((agent) => {
+    const updatedAt = parsedTime(agent.updatedAt, now);
+    const startedAt = parsedTime(agent.startedAt, updatedAt);
+    const state = effectiveAgentState(agent);
+    const terminal = TERMINAL_AGENT_STATES.has(state) || state === 'blocked';
+    const activeOperation = agent.lastMessage
+      ? `msg${agent.lastMessage.direction === 'to-agent' ? '→' : '←'} ${agent.lastMessage.action}: ${agent.lastMessage.preview}`
+      : agent.activeTool ? `tool ${agent.activeTool}` : agent.deltaSummary;
+    return {
+      id: agent.agentId,
+      label: agent.name,
+      state,
+      ...(agent.task ? { assignment: agent.task } : {}),
+      ...(agent.planStep ? { planStep: agent.planStep } : {}),
+      ...(activeOperation ? { activeOperation } : {}),
+      pendingMessages: agent.pendingMessages ?? 0,
+      elapsedMs: Math.max(0, (terminal ? updatedAt : now) - startedAt),
+      updatedAt,
+    };
+  }).sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+
+  const contextUsage = input.runtime.footer.usage;
+  const contextPressure = contextUsage?.tokens !== undefined && contextUsage.contextWindow > 0
+    ? Math.max(0, Math.floor((contextUsage.tokens / contextUsage.contextWindow) * 100))
+    : undefined;
+  const attention: UxAttentionV1[] = [];
+  const addAttention = (item: UxAttentionV1): void => { attention.push(item); };
+  if (activity.kind === 'awaiting_input') addAttention({
+    id: `input:${activity.planScope}`, kind: 'input', priority: 'P0', severity: 'warning', actor: 'Octocode',
+    reason: activity.question, requiredAction: 'Answer the pending question', detailRoute: 'interaction', createdAt: activity.since,
+  });
+  if (activity.kind === 'awaiting_start') addAttention({
+    id: `authorization:${activity.planScope}`, kind: 'authorization', priority: 'P0', severity: 'warning', actor: 'Octocode',
+    reason: `Start plan rev ${activity.revision}`, requiredAction: 'Approve exact plan revision', detailRoute: 'plan', createdAt: activity.since,
+  });
+  for (const interactionId of plan?.pendingInteractionIds ?? []) addAttention({
+    id: `interaction:${interactionId}`, kind: 'input', priority: 'P0', severity: 'warning', actor: 'Octocode',
+    reason: `Input needed · ${interactionId}`, requiredAction: 'Answer the pending interaction', detailRoute: 'interaction', createdAt: now,
+  });
+  if (input.runtime.phase === 'failed' || activity.kind === 'failed') addAttention({
+    id: 'runtime:failed', kind: 'runtime_failed', priority: 'P1', severity: 'error', actor: 'Octocode',
+    reason: activity.kind === 'failed' ? activity.label : 'Runtime failed', requiredAction: 'Inspect transcript', detailRoute: 'transcript', createdAt: 'since' in activity ? activity.since : now,
+  });
+  if (activity.kind === 'blocked' || (plan?.summary.blocked ?? 0) > 0) addAttention({
+    id: `plan:${plan?.planId ?? 'runtime'}:blocked`, kind: 'plan_blocked', priority: 'P1', severity: 'warning', actor: 'Plan',
+    reason: activity.kind === 'blocked' ? activity.label : `${plan!.summary.blocked} blocked task${plan!.summary.blocked === 1 ? '' : 's'}`,
+    requiredAction: 'Inspect plan', detailRoute: 'plan', createdAt: 'since' in activity ? activity.since : now,
+  });
+  for (const agent of agents) {
+    if (agent.state !== 'blocked' && agent.state !== 'failed' && agent.state !== 'error') continue;
+    const failed = agent.state === 'failed' || agent.state === 'error';
+    addAttention({
+      id: `agent:${agent.id}:${agent.state}`,
+      kind: failed ? 'agent_failed' : 'agent_blocked',
+      priority: 'P2', severity: failed ? 'error' : 'warning', actor: agent.label,
+      reason: agent.assignment ?? agent.activeOperation ?? agent.state,
+      requiredAction: 'Open inbox', detailRoute: '/octocode-inbox', createdAt: agent.updatedAt,
+    });
+  }
+  const queued = agents.reduce((sum, agent) => sum + agent.pendingMessages, 0);
+  const unread = Math.max(0, input.awareness?.unread ?? 0);
+  if (queued + unread > 0) addAttention({
+    id: 'messages:pending', kind: 'messages', priority: 'P2', severity: 'info', actor: 'Messages',
+    reason: `${queued + unread} pending`, requiredAction: 'Open inbox', detailRoute: '/octocode-inbox', createdAt: now,
+  });
+  if (contextPressure !== undefined && contextPressure >= 90) addAttention({
+    id: 'context:pressure', kind: 'context_pressure', priority: 'P3', severity: contextPressure >= 97 ? 'error' : 'warning', actor: 'Context',
+    reason: `${contextPressure}% used`, requiredAction: 'Compact or finish current work', detailRoute: '/configuration', createdAt: now,
+  });
+
+  const awarenessStale = input.awareness
+    ? now - input.awareness.observedAt > input.awareness.staleAfterMs
+    : false;
+  if (awarenessStale) addAttention({
+    id: 'awareness:stale', kind: 'stale_source', priority: 'P3', severity: 'warning', actor: 'Awareness',
+    reason: `Last observed ${Math.max(0, now - input.awareness!.observedAt)}ms ago`, requiredAction: 'Inspect coordination status', detailRoute: 'awareness', createdAt: input.awareness!.observedAt,
+  });
+
+  attention.sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
+    || b.createdAt - a.createdAt || a.id.localeCompare(b.id));
+
+  const snapshot: UxSnapshotV1 = {
+    version: 1,
+    observedAt: now,
+    session: {
+      phase: input.runtime.phase,
+      activity: { kind: activity.kind, label: activityPresentation.label, since: 'since' in activity ? activity.since : now, ...(activityPresentation.detail ? { detail: activityPresentation.detail } : {}) },
+      elapsedMs: Math.max(0, now - input.runtime.footer.sessionStartedAt),
+      ...(contextPressure !== undefined ? { contextPressure } : {}),
+      observationTime: now,
+    },
+    goal: { ...(input.goal ?? {}) },
+    ...(plan && plan.summary.total > 0 ? {
+      plan: {
+        id: plan.planId,
+        phase: plan.phase,
+        ...(plan.revision ? { revision: plan.revision } : {}),
+        total: plan.summary.total,
+        ...(progressMode === 'linear' ? { displayTotal: plan.summary.total } : {}),
+        done: plan.summary.done,
+        active: plan.summary.running,
+        ready: plan.tasks.filter((task) => task.status === 'todo').length,
+        blocked: plan.summary.blocked,
+        verifying: plan.phase === 'verifying' ? plan.summary.running : 0,
+        failed: plan.phase === 'failed' ? Math.max(1, plan.summary.blocked) : 0,
+        dynamic,
+        progressMode,
+        detailRoute: 'plan',
+      },
+    } : {}),
+    tasks,
+    agents,
+    attention,
+    messages: {
+      unread,
+      queued,
+      ...(input.awareness?.latestSender ? { latestSender: input.awareness.latestSender } : {}),
+      ...(input.awareness?.latestSubject ? { latestSubject: input.awareness.latestSubject } : {}),
+      detailRoute: '/octocode-inbox',
+    },
+    provenance: [
+      { owner: 'runtime', sequence: input.runtime.generation, observedAt: now, stale: false },
+      ...(plan ? [{ owner: 'plan' as const, sequence: plan.review.generation, observedAt: now, stale: false }] : []),
+      { owner: 'workers', sequence: agents.reduce((max, agent) => Math.max(max, agent.updatedAt), 0), observedAt: now, stale: false },
+      ...(input.awareness ? [{
+        owner: 'awareness' as const,
+        sequence: input.awareness.sequence ?? input.awareness.observedAt,
+        observedAt: input.awareness.observedAt,
+        staleAfterMs: input.awareness.staleAfterMs,
+        stale: awarenessStale,
+      }] : []),
+    ],
+  };
+  return freezeDeep(snapshot);
+}

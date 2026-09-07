@@ -10,21 +10,21 @@ import {
   setSkillEnabled,
 } from '@octocodeai/agent-contracts/mcp-state';
 import { ensurePrivateDirectory, hardenPrivateFile, PRIVATE_FILE_MODE } from '@octocodeai/agent-contracts/permissions';
-import { openOctocodeDb } from './storage-policy.js';
-import type { PiCommand, PiContext, PiInstance, SkillInfo } from '../types.js';
+import { openOctocodeDb } from '../storage-policy.js';
+import type { PiCommand, PiContext, PiInstance, SkillInfo } from '../../types.js';
 import { getOctocodeHome } from '@octocodeai/config';
-import { extensionTmpRoot } from '../extension-paths.js';
-import { escapeHtml, renderOctocodePage } from '../tui/html-page.js';
-import { loadMcpConfig, type McpServerConfig } from './mcp-config.js';
-import { getMcpDiscoverySnapshot, getMcpPromptArtifactStatus, handleMcpAction, isMcpServerConnected } from './mcp-tool.js';
-import { runtimeStoreFor } from './runtime-renderer.js';
-import { hasStoredMcpOAuthTokens } from './mcp-oauth.js';
-import { discoverSkillStates } from './skill-discovery.js';
-import { serveDirectory, unmount } from './local-server.js';
-import { openPlanReview } from './plan-tool.js';
-import { openLocalUrl } from './local-url-opener.js';
-import { getFooterDensity, setFooterDensity, type FooterDensity } from '../ui-extras.js';
-import { getPermissionLevel, setPermissionLevel } from './approval.js';
+import { extensionTmpRoot } from '../../extension-paths.js';
+import { escapeHtml, renderOctocodePage } from '../../tui/html-page.js';
+import { loadMcpConfig, type McpServerConfig } from './config.js';
+import { getMcpDiscoverySnapshot, getMcpPromptArtifactStatus, handleMcpAction, isMcpServerConnected } from '../mcp-tool.js';
+import { runtimeStoreFor } from '../runtime-renderer.js';
+import { hasStoredMcpOAuthTokens } from './oauth.js';
+import { discoverSkillStates } from '../skill-discovery.js';
+import { serveDirectory, unmount } from '../local-server.js';
+import { openPlanReview } from '../planning/plan-command.js';
+import { openLocalUrl } from '../local-url-opener.js';
+import { getFooterDensity, setFooterDensity, type FooterDensity } from '../../ui-extras.js';
+import { getPermissionLevel, setPermissionLevel } from '../approval.js';
 import { type PermissionLevel } from '@octocodeai/agent-contracts/protocols';
 import {
   ContributionRegistry,
@@ -33,11 +33,11 @@ import {
   revision,
   type SettingsSnapshot,
 } from '@octocodeai/agent-core';
-import { PiSettingsAdapter } from '../adapters/pi-settings-adapter.js';
-import { applyDialLevel, EFFORT_LEVELS, getActiveDialLevel, type EffortLevel } from './effort-dial.js';
-import { updateOctocodeMetricsUi } from '../extension-ui.js';
-import { OCTOCODE_THEME_DARK, OCTOCODE_THEME_LIGHT } from '../ui-extras.js';
-import { discoverCodexHookSources, type CodexHookDiscoveryResult } from '../adapters/pi-hook-discovery.js';
+import { PiSettingsAdapter } from '../../adapters/pi-settings-adapter.js';
+import { applyDialLevel, EFFORT_LEVELS, getActiveDialLevel, type EffortLevel } from '../effort-dial.js';
+import { updateOctocodeMetricsUi } from '../../extension-ui.js';
+import { OCTOCODE_THEME_DARK, OCTOCODE_THEME_LIGHT } from '../../ui-extras.js';
+import { discoverCodexHookSources, type CodexHookDiscoveryResult } from '../../adapters/pi-hook-discovery.js';
 
 export const SETTINGS_HTML_FILE = 'settings.html';
 

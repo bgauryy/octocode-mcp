@@ -3,11 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, test } from 'vitest';
-import { SETTINGS_HTML_FILE, applyMcpManagerAction, parseMcpManagerAction, renderMcpManagerPage } from '../src/tools/mcp-html.js';
+import { SETTINGS_HTML_FILE, applyMcpManagerAction, parseMcpManagerAction, renderMcpManagerPage } from '../src/tools/mcp/html.js';
 import type { PiCommand, PiContext } from '../src/types.js';
 import { getFooterDensity, setFooterDensity } from '../src/ui-extras.js';
 import { getPermissionLevel, setPermissionLevel } from '../src/tools/approval.js';
-import { projectMcpPath } from '../src/tools/mcp-config.js';
+import { projectMcpPath } from '../src/tools/mcp/config.js';
 
 const originalHome = process.env['OCTOCODE_HOME'];
 const originalCompactMcp = process.env['OCTOCODE_COMPACT_MCP'];

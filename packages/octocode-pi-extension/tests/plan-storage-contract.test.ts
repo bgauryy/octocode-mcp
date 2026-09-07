@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, test } from 'vitest';
-import { activePlanScope, adoptPlanFromBranch, clearPlan, getPlan, PLAN_ENTRY_TYPE, readPersistedPlanForTests } from '../src/tools/active-plan.js';
+import { activePlanScope, adoptPlanFromBranch, clearPlan, getPlan, PLAN_ENTRY_TYPE, readPersistedPlanForTests } from '../src/tools/planning/plan-store.js';
 import { createSessionArtifactContext, readPlanProjection } from '../src/tools/session-artifacts.js';
 
 const roots: string[] = [];

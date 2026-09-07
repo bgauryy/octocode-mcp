@@ -13,7 +13,7 @@ import {
   reserveTokensForCompactionThreshold,
 } from '../src/tools/context-tools.js';
 import { __test__ as compactionInternals, registerCompactionHooks, resetCompactionCheckpointDedupe } from '../src/tools/compaction-hooks.js';
-import { activePlanScope, clearPlan } from '../src/tools/active-plan.js';
+import { activePlanScope, clearPlan } from '../src/tools/planning/plan-store.js';
 import { buildCompactionMarkdown } from '../src/tools/compaction-artifacts.js';
 import { createSessionArtifactContext, writeRehydrationLedger } from '../src/tools/session-artifacts.js';
 import { consumeValidatedRehydration, rehydrateSession } from '../src/tools/rehydration-orchestrator.js';

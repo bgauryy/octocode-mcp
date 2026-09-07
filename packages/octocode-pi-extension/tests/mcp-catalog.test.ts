@@ -18,7 +18,7 @@ import {
   snapshotPathForWorkspace,
   stableSchemaDigest,
   writeMcpCatalogSnapshot,
-} from '../src/tools/mcp-catalog.js';
+} from '../src/tools/mcp/catalog.js';
 
 const roots: string[] = [];
 

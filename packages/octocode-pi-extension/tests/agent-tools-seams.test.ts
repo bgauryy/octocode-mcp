@@ -6,18 +6,12 @@
  */
 import assert from 'node:assert/strict';
 import { test, beforeEach, afterEach } from 'vitest';
-import {
-  spawnRpcAgent,
-  setAgentProcessFactoryForTests,
-  isSubagentProcess,
-  registerWorkerLedgerListener,
-  steerWorkerById,
-  killWorkerById,
-  getWorkerTranscript,
-  formatAgentLedgerDetails,
-  pruneDroppableAgentsForSession,
-  listWorkerLedgerEntries,
-} from '../src/tools/agent-tools.js';
+import { spawnRpcAgent } from '../src/tools/agents/process.js';
+import { steerWorkerById, getWorkerTranscript } from '../src/tools/agents/lifecycle.js';
+import { killWorkerById } from '../src/tools/agents/kill.js';
+import { formatAgentLedgerDetails } from '../src/tools/agents/rendering.js';
+import { setAgentProcessFactoryForTests, isSubagentProcess, pruneDroppableAgentsForSession } from '../src/tools/agents/registry.js';
+import { registerWorkerLedgerListener, listWorkerLedgerEntries } from '../src/tools/agents/ledger.js';
 import type { WorkerLedgerEntry, WorkerLedgerEventType } from '../src/types.js';
 import { emitAgentEnd, makeMockAgentProcess } from './helpers/mock-process.js';
 

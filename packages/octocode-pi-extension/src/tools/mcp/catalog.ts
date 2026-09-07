@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 import { chmod, lstat, mkdir, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { getOctocodeHome } from '@octocodeai/config';
-import { extensionHome } from '../extension-paths.js';
-import { atomicWriteUtf8 } from './file-state.js';
-import { escapePromptMetadata } from './prompt-safety.js';
+import { extensionHome } from '../../extension-paths.js';
+import { atomicWriteUtf8 } from '../file-state.js';
+import { escapePromptMetadata } from '../prompt-safety.js';
 
 export const MCP_CATALOG_SNAPSHOT_VERSION = 1 as const;
 const DEFAULT_SERVER_NAME = 'octocode';

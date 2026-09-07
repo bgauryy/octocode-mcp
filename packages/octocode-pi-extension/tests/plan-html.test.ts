@@ -20,7 +20,9 @@ import {
   setPlanOpenerForTests,
   type RfcDoc,
 } from '../src/tools/plan-html.js';
-import { setPlan, setPlanRfc, setPlanDecisions, getPlan, completeStep, clearPlan, type PlanStep, type ReviewState } from '../src/tools/active-plan.js';
+import { setPlan, setPlanRfc, setPlanDecisions, getPlan, clearPlan } from '../src/tools/planning/plan-store.js';
+import { completeStep } from '../src/tools/planning/plan-executor.js';
+import { type PlanStep, type ReviewState } from '../src/tools/planning/plan-types.js';
 import { buildPlanReadModel } from '../src/tools/plan-read-model.js';
 import { extensionHome } from '../src/extension-paths.js';
 

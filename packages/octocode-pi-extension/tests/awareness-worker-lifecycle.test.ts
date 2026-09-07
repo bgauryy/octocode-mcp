@@ -8,7 +8,8 @@ vi.mock('../src/tools/storage-policy.js', () => ({
     auditChecks(params: unknown) { fixture.audit(params); return { pendingCount: fixture.pending.length, pending: fixture.pending, staleActiveCount: 0, staleActive: [] }; },
   }),
 }));
-import { spawnRpcAgent, setAgentProcessFactoryForTests } from '../src/tools/agent-tools.js';
+import { spawnRpcAgent } from '../src/tools/agents/process.js';
+import { setAgentProcessFactoryForTests } from '../src/tools/agents/registry.js';
 
 afterEach(() => { setAgentProcessFactoryForTests(null); fixture.pending = []; fixture.audit.mockClear(); });
 

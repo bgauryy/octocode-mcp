@@ -1,6 +1,6 @@
 # Octocode TUI design
 
-This page is the canonical design contract and widget inventory for the shipped Octocode Pi terminal interface. `src/tui/` is the canonical rendering layer; tool modules supply state and event handlers but do not own layout primitives. [Adaptive status and progress UX](STATUS_PROGRESS_UX.md) defines the proposed target for bounded footer metadata, plans, tasks, agents, messages, and verification; it becomes canonical here only after implementation checks pass.
+This page is the canonical design contract and widget inventory for the shipped Octocode Pi terminal interface. `src/tui/` is the canonical rendering layer; tool modules supply state and event handlers but do not own layout primitives. [Adaptive status and progress UX](STATUS_PROGRESS_UX.md) records the rationale, complete target, and acceptance matrix for the shipped snapshot and bounded-footer architecture.
 
 The TUI is conversation-first: transcript content is durable, decisions appear inline at the point of interruption, persistent state has one owner, and detailed navigation uses temporary overlays or explicit commands.
 
@@ -17,7 +17,7 @@ The TUI is conversation-first: transcript content is durable, decisions appear i
 ## Component and state architecture
 
 - `src/tui/components.ts` owns the pure functional component contract, responsive inline rows, stacks, and cell-perfect closed frames. Consumers import directly from the defining TUI modules.
-- `src/tui/footer-view.ts` owns the unified persistent footer. `extension-ui.ts` projects activity, exact context use/current maximum, compact plan/task progress, every visible worker, attention, identity, and settings into it; diagnostic telemetry stays in commands.
+- `src/tools/ux-snapshot.ts` derives one immutable `UxSnapshotV1` from runtime, plan, worker, and Awareness read models. `src/tui/status-policy.ts` ranks and groups that snapshot within the active density and viewport budget. `src/tui/footer-view.ts` renders only the selected semantic rows; `extension-ui.ts` remains the single controller and footer registration owner.
 - Call, result, and message renderers use `makeComponentRenderer` and the same functional component contract, so width enforcement and invalidation behavior are uniform.
 - `runtime-store.ts` is the Zustand source of truth for initialization, statuses, notices, foreground activity, context composition, MCP progress, and footer metrics. Renderers subscribe or read snapshots; they do not keep parallel UI state. Pi working visibility is derived from foreground activity and carries no second message value.
 - Plan and agent mutations request a footer repaint through the shared runtime state.
@@ -30,7 +30,7 @@ The visual order is also the attention order:
 1. Transcript: user messages, agent responses, tool rows, and durable completion cards.
 2. Inline decision: one focused `askUser` card at the bottom of the conversation.
 3. Editor: the normal input surface when no decision owns focus.
-4. Footer: priority-ordered state rows plus one row for every visible worker.
+4. Footer: bounded, priority-ordered state rows with normal workers aggregated and attention workers named.
 5. Overlay: temporary navigation or management opened through an explicit action.
 6. Browser companion: optional rich review, opened only after an explicit choice.
 
@@ -53,13 +53,13 @@ Only one interactive surface owns keyboard focus. Closing or submitting that sur
 | Navigation | Shared select overlay (`ui-overlays.ts`) | Search visible labels and descriptions; preserve focus through filtering; cancel with Escape or Ctrl-C. |
 | Navigation | Shared multi-select overlay (`ui-overlays.ts`, `multi-select-list.ts`) | Use the same focus, selection, validation, and cancellation language as `askUser`. |
 | Navigation | Command palette (`command-palette.ts`) | Filter all public commands and direct actions; dispatch the selected command through the normal message path. |
-| Workers | Worker inbox and agent inspection (`agent-inbox.ts`, `agent-tools.ts`) | Pick → inspect → steer or stop. Footer rows show every visible non-killed worker, attention first; commands retain the complete ledger and evidence. |
+| Workers | Worker inbox and agent inspection (`agent-inbox.ts`, `agent-tools.ts`) | Pick → inspect → steer or stop. The footer summarizes normal workers by state and names blocked or failed workers; commands retain the complete ledger and evidence. |
 | Configuration | Effort dial (`effort-dial.ts`) | Show the current value, explain each choice, and persist the selected level. |
 | Safety | MCP consent and removal pickers (`mcp-tool.ts`) | Name the external process or server and make cancel the safe exit. Never mutate when interactive consent is unavailable. |
 | Recovery | Local history picker (`rewind-command.ts`) | Identify entries by time and intent, preview file changes, apply only the confirmed preview, and report the receipt's verification run as pending. |
 | Editor | Mention and plan-step autocomplete (`autocomplete-providers.ts`) | `@` selects workers or skills, `#` selects plan steps, and all other input delegates to file completion. |
 | Editor | Watch mode (`ai-watch.ts`) | Convert explicit `AI!` comments into steer or follow-up messages without stealing editor focus; injected prompts are bounded and point back to the source when markers are omitted. |
-| Persistent state | Unified footer (`tui/footer-view.ts`, footer registration in `extension-ui.ts`) | Responsive state rows plus one row per visible worker. Promote activity, warnings, exact context, current work, identity, and settings; truncate individual segments at the available width rather than hiding them behind `+N`. |
+| Persistent state | Unified footer (`tools/ux-snapshot.ts`, `tui/status-policy.ts`, `tui/footer-view.ts`, footer registration in `extension-ui.ts`) | Derive one immutable snapshot, select no more than the density/viewport budget, aggregate normal workers, preserve attention routes, and render one physical line per selected semantic row. |
 | Discovery | Dashboard and command guide (`index.ts`, `commands-command.ts`) | Present health first, then the smallest useful next actions. The live command registry owns command inventory. |
 | Feedback | Inline validation and notifications (`ask-user-tool.ts`, `desktop-notify.ts`) | Keep recoverable validation next to the control; reserve desktop notifications for completion, failure, or blocked work. |
 | Export | Branded HTML export (`export-command.ts`) | Produce a sibling artifact without changing transcript state. |
@@ -96,7 +96,7 @@ Decision cards align with the transcript and use a bounded reading measure:
 
 Shared picker overlays use a 72-column target, 32-column minimum, two-cell outer margin, and at most 70% of terminal height. Select lists show at most eight rows by default. Descriptions, previews, and trade-offs appear only for the focused item and count against the visible-row budget.
 
-The footer degrades by priority: keep the required action and error state, then exact context and current work, then passive metrics. Worker attention rows sort first. Never truncate Enter, Escape, or cancellation guidance before optional shortcuts.
+The footer degrades by priority: keep required human action and safety state, then current outcome and verification, then collaboration attention, operational context, and diagnostics. Automatic density targets 15% of terminal height with a six-row maximum; compact uses at most two rows and expanded uses at most ten. Heartbeat-only repaints preserve selected row identities and footer height. Never truncate Enter, Escape, or cancellation guidance before optional shortcuts.
 
 ## Input and focus
 
@@ -183,7 +183,7 @@ A new or changed widget is not complete until it satisfies these checks:
 ## Configuration
 
 Run `/configuration`, also shown in the footer, to open the local browser controls.
-The extension adds one slash command. Workflow choices remain with the user and
+The extension adds one slash command. Workflow choices remain with you and the
 model; input text and model output do not trigger regex-generated instructions.
 
 The page includes session permissions, footer density, theme, effort, MCP
@@ -246,7 +246,7 @@ Ledger badges:
 | **Default fg** | `count`, `bright` | Values such as counts and totals, plus pending plan rows — bright against dim labels | — |
 | **Grey ramp** | `muted` → `dim` → theme `faint` | Secondary text → chrome (separators, `│` bars, hints, finished plan rows) → rules | primary content |
 
-The footer speaks in words, not glyphs, across responsive rows: `ctx ▓▓░░ 25% (250k/1M) · plan 3/6 · task 4 validating UI`, followed by identity/configuration and exactly one physical row for each visible worker. Worker rows keep identity and state first, reserve room for `/octocode-inbox` on attention states, and add elapsed/activity only when width remains. Their height does not change as live details update, so footer repaints do not move the transcript viewport. The footer does not hide state behind `+N`; `/octocode-inbox`, `/octocode-status`, `/octocode-agents`, and `/octocode-harness` retain detail.
+The footer speaks in words, not glyphs. Stable linear plans can show `Plan 3/6`; graph and dynamic plans use state counts and never manufacture a percentage or fixed denominator. Normal workers occupy one aggregate row, while blocked and failed workers remain named with an inbox route. Compact mode groups active outcome facts so collaboration attention can remain visible. Every selected semantic row renders as one cell-width-safe physical line; long labels truncate and remain complete in the plan or inbox. `/octocode-inbox`, `/octocode-status`, `/octocode-agents`, and `/octocode-harness` retain detail.
 
 Attention states in the footer (`⚠`, `✗`, `✉`, near-full ctx) are additionally **bold** (`FooterSegment.attention`) — the only emphasis in the toolbar, so bold always means "look here". Per-row budget: at most three colours plus the grey ramp.
 

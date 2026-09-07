@@ -6,7 +6,7 @@ import { buildPlanReadModel } from '../src/tools/plan-read-model.js';
 import { formatAwarenessPanel } from '../src/tools/awareness-status.js';
 import { buildCompactionCard, buildHandoffCard } from '../src/tools/custom-messages.js';
 import { buildOctocodeRenderResult } from '../src/tools/render-helpers.js';
-import type { PlanStep } from '../src/tools/active-plan.js';
+import type { PlanStep } from '../src/tools/planning/plan-types.js';
 import type { ToolCallResult } from '../src/types.js';
 import { buildPlanFooterSegments } from '../src/extension-ui.js';
 

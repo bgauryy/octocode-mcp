@@ -15,7 +15,7 @@ import {
   runAgentInboxOverlay,
   shouldNotifyWorkerEvent,
   type AgentInboxDeps,
-} from '../src/tools/agent-inbox.js';
+} from '../src/tools/agents/inbox.js';
 import {
   clearTitleFlashTimer,
   resumeDesktopNotificationsForTests,
