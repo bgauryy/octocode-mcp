@@ -10,7 +10,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Type } from 'typebox';
 import type { ToolDefinition, ToolCallResult } from '../src/types.js';
 import {
   AGENT_OPERATIONS,
@@ -31,8 +30,6 @@ import {
 } from '../src/tools/plan-mode.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const typeBuilder = Type as unknown as (typeof import('typebox'))['Type'];
 
 /** Build a minimal one-query batch for the tool's execute(). */
 function batch(...queries: Record<string, unknown>[]): Record<string, unknown> {
@@ -262,7 +259,7 @@ async function loadSut() {
     names.add(def.name);
     targetPi.registerTool?.(def);
   };
-  registerUnifiedAgentTool(pi, typeBuilder, new Set<string>(), registerFn as never);
+  registerUnifiedAgentTool(pi, new Set<string>(), registerFn as never);
   return tools;
 }
 

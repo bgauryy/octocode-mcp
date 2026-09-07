@@ -1,10 +1,29 @@
+import { z, type ZodTypeAny } from "zod";
 import type { PiContext, ToolCallResult } from "../types.js";
 import { budgetToolResult } from "./tool-result-budget.js";
 
-type TypeBoxBuilder = (typeof import("typebox"))["Type"];
-type TSchema = import("typebox").TSchema;
+// Strip JS MAX_SAFE_INTEGER bounds that Zod v4 adds for .int() fields by default.
+const ZINT_MAX = 9007199254740991;
+const ZINT_MIN = -9007199254740991;
 
-export const QUERY_REASONING_MAX_LENGTH = 240;
+/**
+ * Convert a Zod schema to a plain JSON Schema (Draft 7) for tool registration.
+ * Strips the $schema URI and the MAX_SAFE_INTEGER bounds Zod emits for integers.
+ */
+export function toToolSchema(schema: ZodTypeAny): Record<string, unknown> {
+  const { $schema, ...rest } = z.toJSONSchema(schema, {
+    target: 'jsonSchema7',
+    override(ctx) {
+      if ((ctx.jsonSchema as Record<string, unknown>)['maximum'] === ZINT_MAX)
+        delete (ctx.jsonSchema as Record<string, unknown>)['maximum'];
+      if ((ctx.jsonSchema as Record<string, unknown>)['minimum'] === ZINT_MIN)
+        delete (ctx.jsonSchema as Record<string, unknown>)['minimum'];
+    },
+  }) as Record<string, unknown>;
+  void $schema;
+  return rest;
+}
+
 export const QUERY_BATCH_MAX_ITEMS = 100;
 export const QUERY_PARALLEL_MAX_CONCURRENCY = 4;
 export type QueryRunType = "sequential" | "parallel";
@@ -104,64 +123,37 @@ export class QueryBatchError extends Error {
 }
 
 /**
- * Add the universal per-query reasoning field without using Type.Intersect or
- * Type.Union, which keeps the emitted schema accepted by Google-family providers.
- * The caller still owns action-specific runtime preflight.
+ * Build the standard query-envelope JSON Schema from a Zod item schema.
+ * The item schema should be z.looseObject({...}) so query items don't reject
+ * extra fields the model sends. The reasoning field is injected automatically.
  */
 export function buildQueryEnvelopeSchema(
-  Type: TypeBoxBuilder,
-  itemSchema: TSchema,
+  itemSchema: ZodTypeAny,
   options: QueryEnvelopeOptions = {},
-): TSchema {
-  const source = itemSchema as TSchema & {
-    properties?: Record<string, TSchema>;
-    required?: string[];
-  };
-  const reasoning = Type.String({
-    minLength: 1,
-    maxLength: QUERY_REASONING_MAX_LENGTH,
-    description:
-      options.reasoningDescription ??
-      "Concise reason this operation is necessary.",
-  });
-  const properties = {
-    reasoning,
-    ...(source.properties ?? {}),
-  };
-  const required = [
-    "reasoning",
-    ...(source.required ?? []).filter((name) => name !== "reasoning"),
-  ];
-  const querySchema = Type.Unsafe({
-    ...source,
-    type: "object",
-    properties,
-    required,
-  });
-
-  return Type.Object(
-    {
-      queries: Type.Array(querySchema, {
-        minItems: 1,
-        maxItems: options.maxItems ?? QUERY_BATCH_MAX_ITEMS,
-        description: options.allowParallel
-          ? "Queries return in source order; queryRunType selects sequential or parallel execution."
-          : "Queries run one-by-one in source order.",
-      }),
-      queryRunType: Type.Optional(
-        Type.String({
-          enum: options.allowParallel
-            ? ["sequential", "parallel"]
-            : ["sequential"],
-          default: "sequential",
-          description: options.allowParallel
-            ? "Run policy: sequential is one-by-one; parallel overlaps independent queries."
-            : "Run policy; sequential executes one-by-one.",
-        }),
-      ),
-    },
-    { additionalProperties: false },
+): Record<string, unknown> {
+  const reasoning = z.string().min(1).max(240).describe(
+    options.reasoningDescription ?? 'Concise reason this operation is necessary.',
   );
+  const querySchema = (itemSchema as z.ZodObject<z.ZodRawShape>).extend({ reasoning });
+  const schema = z.object({
+    queries: z.array(querySchema)
+      .min(1)
+      .max(options.maxItems ?? QUERY_BATCH_MAX_ITEMS)
+      .describe(
+        options.allowParallel
+          ? 'Queries return in source order; queryRunType selects sequential or parallel execution.'
+          : 'Queries run one-by-one in source order.',
+      ),
+    queryRunType: z.optional(
+      (options.allowParallel
+        ? z.enum(['sequential', 'parallel'])
+            .describe('Run policy: sequential is one-by-one; parallel overlaps independent queries.')
+        : z.enum(['sequential'])
+            .describe('Run policy; sequential executes one-by-one.')
+      ).default('sequential'),
+    ),
+  });
+  return toToolSchema(schema);
 }
 
 function resolveQueryRunType(
@@ -204,10 +196,8 @@ function assertBatchShape(
     if (!reasoning) {
       throw new Error(`queries[${index}] requires non-empty reasoning.`);
     }
-    if (reasoning.length > QUERY_REASONING_MAX_LENGTH) {
-      throw new Error(
-        `queries[${index}].reasoning must be at most ${QUERY_REASONING_MAX_LENGTH} characters.`,
-      );
+    if (reasoning.length > 240) {
+      throw new Error(`queries[${index}] reasoning must be at most 240 characters (got ${reasoning.length}).`);
     }
     return { ...query, reasoning } as QueryRecord;
   });

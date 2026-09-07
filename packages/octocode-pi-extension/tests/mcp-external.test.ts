@@ -4,7 +4,6 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { afterEach, test } from 'vitest';
-import { Type } from 'typebox';
 import {
   __test__ as mcpTestHooks,
   registerMcpTool,
@@ -19,9 +18,7 @@ const MCP_STDIO_ENTRY = import.meta.resolve('@modelcontextprotocol/server/stdio'
 function buildMcpTool(): ToolDefinition {
   const tools = new Map<string, ToolDefinition>();
   registerMcpTool(
-    { registerTool: (definition: ToolDefinition) => tools.set(definition.name, definition) } as unknown as PiInstance,
-    Type,
-    new Set<string>(),
+    { registerTool: (definition: ToolDefinition) => tools.set(definition.name, definition) } as unknown as PiInstance, new Set<string>(),
     (_pi, _names, definition) => tools.set(definition.name, definition),
   );
   const definition = tools.get('MCPTool');

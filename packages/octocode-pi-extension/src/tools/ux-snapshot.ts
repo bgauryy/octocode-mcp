@@ -243,10 +243,21 @@ export function deriveUxSnapshot(input: UxSnapshotInput): UxSnapshotV1 {
   }
   const queued = agents.reduce((sum, agent) => sum + agent.pendingMessages, 0);
   const unread = Math.max(0, input.awareness?.unread ?? 0);
-  if (queued + unread > 0) addAttention({
-    id: 'messages:pending', kind: 'messages', priority: 'P2', severity: 'info', actor: 'Messages',
-    reason: `${queued + unread} pending`, requiredAction: 'Open inbox', detailRoute: '/octocode-inbox', createdAt: now,
-  });
+  if (queued + unread > 0) {
+    // Use the earliest known arrival time so messages sort correctly against
+    // other P2 items. Using 'createdAt: now' always stamped them as newest,
+    // which displaced more urgent agent-blocked/failed alerts.
+    const queuedSince = queued > 0
+      ? agents.filter((a) => a.pendingMessages > 0)
+          .reduce<number>((min, a) => Math.min(min, a.updatedAt), now)
+      : now;
+    const unreadSince = unread > 0 && input.awareness ? input.awareness.observedAt : now;
+    const messagesSince = Math.min(queuedSince, unreadSince);
+    addAttention({
+      id: 'messages:pending', kind: 'messages', priority: 'P2', severity: 'info', actor: 'Messages',
+      reason: `${queued + unread} pending`, requiredAction: 'Open inbox', detailRoute: '/octocode-inbox', createdAt: messagesSince,
+    });
+  }
   if (contextPressure !== undefined && contextPressure >= 90) addAttention({
     id: 'context:pressure', kind: 'context_pressure', priority: 'P3', severity: contextPressure >= 97 ? 'error' : 'warning', actor: 'Context',
     reason: `${contextPressure}% used`, requiredAction: 'Compact or finish current work', detailRoute: '/configuration', createdAt: now,

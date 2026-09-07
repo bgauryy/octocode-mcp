@@ -1804,7 +1804,6 @@ test("startMcpConfigWatcher starts watchers and stop closes them", () => {
 });
 
 // ─── Universal queries[] schema / multi-query / preflight ─────────────────────
-import { Type } from "typebox";
 import type { ToolDefinition } from "../src/types.js";
 import { registerMcpTool, preflightMcpQuery } from "../src/tools/mcp-tool.js";
 import { registerUniqueTool } from "../src/tools/octocode-tools.js";
@@ -1816,9 +1815,7 @@ function buildMcpToolDef(): ToolDefinition {
   registerMcpTool(
     {
       registerTool: (def: ToolDefinition) => tools.set(def.name, def),
-    } as unknown as import("../src/types.js").PiInstance,
-    Type,
-    new Set<string>(),
+    } as unknown as import("../src/types.js").PiInstance, new Set<string>(),
     (pi, names, def) => registerUniqueTool(pi, names, def),
   );
   const def = tools.get("MCPTool");

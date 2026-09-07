@@ -31,10 +31,10 @@ function clampInt(val: unknown, min: number, max: number, def: number): number {
 import { buildToolView } from './render-helpers.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 import { createSessionArtifactContext } from './session-artifacts.js';
-import type { TSchema, ToolCallResult, ToolDefinition, PiTheme } from '../types.js';
+import type { ToolCallResult, ToolDefinition, PiTheme } from '../types.js';
 import type { registerUniqueTool } from './octocode-tools.js';
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 
 export function persistFfmpegStdout(
@@ -121,39 +121,26 @@ function resolveArgvPaths(args: string[], cwd: string): string[] {
   return resolved;
 }
 
-function buildParameters(Type: TypeBoxBuilder): TSchema {
-  return Type.Object({
-    binary: Type.Optional(Type.Union(
-      [Type.Literal('ffmpeg'), Type.Literal('ffprobe')],
-      {
-        description:
-          'Which binary to run. Default: ffmpeg. Use ffprobe for metadata-only queries.',
-      },
-    )),
-    args: Type.Array(Type.String(), {
-      minItems: 1,
-      description:
-        'ffmpeg argv WITHOUT the binary name. ' +
-        'Example: ["-y", "-i", "input.mp4", "-c:v", "h264_videotoolbox", "-b:v", "4M", "out.mp4"]. ' +
-        'File paths are resolved relative to cwd and path-guarded automatically. ' +
-        'See docs/FFMPEG.md#cookbook for copy-paste patterns.',
-    }),
-    captureStdout: Type.Optional(Type.Boolean({
-      description:
-        'Capture pipe-to-stdout image/data bytes in a private session artifact and return its path. ' +
-        'Default false — stdout is ignored and only stderr/exit-code matter.',
-    })),
-    timeoutSec: Type.Optional(Type.Integer({
-      minimum: 1,
-      maximum: 1800,
-      description: 'Wall-clock timeout in seconds. Default 120.',
-    })),
-  }, { additionalProperties: false }) as TSchema;
-}
+const runFfmpegItemSchema = z.looseObject({
+  binary: z.enum(['ffmpeg', 'ffprobe'])
+    .describe('Which binary to run. Default: ffmpeg. Use ffprobe for metadata-only queries.')
+    .optional(),
+  args: z.array(z.string()).min(1).describe(
+    'ffmpeg argv WITHOUT the binary name. ' +
+    'Example: ["-y", "-i", "input.mp4", "-c:v", "h264_videotoolbox", "-b:v", "4M", "out.mp4"]. ' +
+    'File paths are resolved relative to cwd and path-guarded automatically. ' +
+    'See docs/FFMPEG.md#cookbook for copy-paste patterns.',
+  ),
+  captureStdout: z.boolean().optional().describe(
+    'Capture pipe-to-stdout image/data bytes in a private session artifact and return its path. ' +
+    'Default false — stdout is ignored and only stderr/exit-code matter.',
+  ),
+  timeoutSec: z.number().int().min(1).max(1800).optional()
+    .describe('Wall-clock timeout in seconds. Default 120.'),
+});
 
 export function registerRunFfmpegTool(
   pi: { registerTool?(def: ToolDefinition): void },
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: RegisterFn,
 ): void {
@@ -188,7 +175,7 @@ export function registerRunFfmpegTool(
       'binary:"ffprobe" auto-captures stdout (no need for captureStdout:true). Use captureStdout:true only for ffmpeg commands that write binary/data to stdout (output arg "-").',
       'See docs/FFMPEG.md#cookbook for 16 copy-paste recipes.',
     ],
-    parameters: buildQueryEnvelopeSchema(Type, buildParameters(Type), {
+    parameters: buildQueryEnvelopeSchema(runFfmpegItemSchema, {
       reasoningDescription: 'Why this ffmpeg command is needed and what it produces.',
     }),
 

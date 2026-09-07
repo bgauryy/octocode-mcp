@@ -7,12 +7,12 @@
 import { runWebTool, renderWebResult } from '../web.js';
 import { propagateOctocodeEnv, getOctocodeHome } from '@octocodeai/config';
 import { CLI_STATUS_TEXT } from '../tui/cli-design.js';
-import type { TSchema, ToolDefinition, PiTheme, ToolCallResult } from '../types.js';
+import type { ToolDefinition, PiTheme, ToolCallResult } from '../types.js';
 import type { registerUniqueTool } from './octocode-tools.js';
 import { buildToolView } from './render-helpers.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 
 // Lazy env-refresh: propagateOctocodeEnv runs once at activation, but if Pi
@@ -31,94 +31,34 @@ function ensureWebEnv(): void {
 
 export function registerWebTool(
   pi: { registerTool?(def: ToolDefinition): void },
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: RegisterFn,
 ): void {
-  const querySchema = Type.Object(
-    {
-      url: Type.Optional(
-        Type.String({ description: 'Absolute http(s) URL to fetch and read as text.' }),
-      ),
-      query: Type.Optional(
-        Type.String({ description: 'Web search query (used when no url is given).' }),
-      ),
-      maxResults: Type.Optional(
-        Type.Integer({ minimum: 1, maximum: 20, description: 'Search: max results (default 5).' }),
-      ),
-      maxChars: Type.Optional(
-        Type.Integer({
-          minimum: 500,
-          maximum: 50000,
-          description: 'Fetch: max characters of page text to return per page (default 15000).',
-        }),
-      ),
-      page: Type.Optional(
-        Type.Integer({
-          minimum: 1,
-          maximum: 20,
-          description:
-            'Fetch: page number for long documents (default 1). Each page is maxChars chars. Pass page: 2, 3\u2026 when the result shows truncated: true.',
-        }),
-      ),
-      engine: Type.Optional(
-        Type.Union(
-          [
-            Type.Literal('tavily'),
-            Type.Literal('serper'),
-            Type.Literal('exa'),
-            Type.Literal('duckduckgo'),
-          ],
-          {
-            description:
-              'Search: force a provider \u2014 "tavily", "serper", "exa", or "duckduckgo" (default: auto by available key).',
-          },
-        ),
-      ),
-      timeRange: Type.Optional(
-        Type.Union(
-          [
-            Type.Literal('day'),
-            Type.Literal('week'),
-            Type.Literal('month'),
-            Type.Literal('year'),
-          ],
-          { description: 'Search: recency filter \u2014 "day", "week", "month", or "year".' },
-        ),
-      ),
-      includeDomains: Type.Optional(
-        Type.Array(Type.String(), {
-          description: 'Search (Tavily): allowlist domains, e.g. ["docs.python.org"].',
-        }),
-      ),
-      excludeDomains: Type.Optional(
-        Type.Array(Type.String(), {
-          description: 'Search (Tavily): blocklist domains to drop noise.',
-        }),
-      ),
-      exaType: Type.Optional(
-        Type.Union(
-          [Type.Literal('auto'), Type.Literal('neural'), Type.Literal('keyword')],
-          {
-            description:
-              'Search (Exa): result type \u2014 "auto" (default), "neural", or "keyword". "neural" for semantic/AI-native queries; "keyword" for exact-match.',
-          },
-        ),
-      ),
-      exaCategory: Type.Optional(
-        Type.String({
-          description:
-            'Search (Exa): category filter \u2014 "research paper", "news", "github", "company", "pdf". Narrows Exa results to a specific content type.',
-        }),
-      ),
-    },
-    { additionalProperties: false },
-  ) as TSchema;
-
-    const parameters = buildQueryEnvelopeSchema(Type, querySchema, {
-      reasoningDescription: 'Concise reason this web fetch or search is necessary.',
-      allowParallel: true,
-  });
+  const parameters = buildQueryEnvelopeSchema(
+    z.looseObject({
+      url: z.string().optional().describe('Absolute http(s) URL to fetch and read as text.'),
+      query: z.string().optional().describe('Web search query (used when no url is given).'),
+      maxResults: z.number().int().min(1).max(20).optional()
+        .describe('Search: max results (default 5).'),
+      maxChars: z.number().int().min(500).max(50000).optional()
+        .describe('Fetch: max characters of page text to return per page (default 15000).'),
+      page: z.number().int().min(1).max(20).optional()
+        .describe('Fetch: page number for long documents (default 1). Each page is maxChars chars. Pass page: 2, 3… when the result shows truncated: true.'),
+      engine: z.enum(['tavily', 'serper', 'exa', 'duckduckgo']).optional()
+        .describe('Search: force a provider — "tavily", "serper", "exa", or "duckduckgo" (default: auto by available key).'),
+      timeRange: z.enum(['day', 'week', 'month', 'year']).optional()
+        .describe('Search: recency filter — "day", "week", "month", or "year".'),
+      includeDomains: z.array(z.string()).optional()
+        .describe('Search (Tavily): allowlist domains, e.g. ["docs.python.org"].'),
+      excludeDomains: z.array(z.string()).optional()
+        .describe('Search (Tavily): blocklist domains to drop noise.'),
+      exaType: z.enum(['auto', 'neural', 'keyword']).optional()
+        .describe('Search (Exa): result type — "auto" (default), "neural", or "keyword". "neural" for semantic/AI-native queries; "keyword" for exact-match.'),
+      exaCategory: z.string().optional()
+        .describe('Search (Exa): category filter — "research paper", "news", "github", "company", "pdf". Narrows Exa results to a specific content type.'),
+    }),
+    { reasoningDescription: 'Concise reason this web fetch or search is necessary.', allowParallel: true },
+  );
 
   registerFn(pi, registeredToolNames, {
     name: 'web',

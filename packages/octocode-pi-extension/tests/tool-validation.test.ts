@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, test } from 'vitest';
-import { Type } from 'typebox';
 import { validateToolArguments } from '@earendil-works/pi-ai';
 import type { PiContext, ToolDefinition } from '../src/types.js';
 import { registerUniqueTool } from '../src/tools/octocode-tools.js';
@@ -13,7 +12,7 @@ import { registerPlanTool } from '../src/tools/planning/plan-registration.js';
 function capture(register: typeof registerFileTool | typeof registerPlanTool): ToolDefinition {
   let tool: ToolDefinition | undefined;
   const pi = { registerTool: (definition: ToolDefinition) => { tool = definition; } };
-  register(pi, Type, new Set<string>(), registerUniqueTool);
+  register(pi, new Set<string>(), registerUniqueTool);
   if (!tool) throw new Error('tool was not registered');
   return tool;
 }

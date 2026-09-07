@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, test } from 'vitest';
-import { Type } from 'typebox';
 import type { ToolDefinition } from '../src/types.js';
 import {
   setPlan, clearPlan, getPlan,
@@ -475,7 +474,7 @@ test('long step text is truncated and the list is capped', () => {
 function loadTool(sendUserMessage?: (message: string, options?: { deliverAs?: 'steer' | 'followUp'; expandPromptTemplates?: boolean }) => void | Promise<void>): ToolDefinition {
   const tools = new Map<string, ToolDefinition>();
   const pi = { registerTool: (d: ToolDefinition) => tools.set(d.name, d), sendUserMessage };
-  registerPlanTool(pi, Type, new Set<string>(), (p, n, d) => { n.add(d.name); p.registerTool?.(d); });
+  registerPlanTool(pi, new Set<string>(), (p, n, d) => { n.add(d.name); p.registerTool?.(d); });
   const tool = tools.get('plan')!;
   return {
     ...tool,

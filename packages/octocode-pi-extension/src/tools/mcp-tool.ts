@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { truncateToWidth } from '../tui/width.js';
 import fs from "node:fs";
 import path from "node:path";
@@ -25,7 +26,6 @@ import type {
   RenderContext,
   ToolCallResult,
   ToolDefinition,
-  TSchema,
 } from "../types.js";
 import { capMapSize } from "../utils.js";
 import {
@@ -56,7 +56,6 @@ import {
   executeQueryBatch,
   type QueryRecord,
 } from "./query-envelope.js";
-import { stringEnumSchema } from "./schema-helpers.js";
 import { runSelectOverlay } from "./ui-overlays.js";
 import {
   publishMcpRuntimeState,
@@ -104,7 +103,6 @@ import {
   stringify,
 } from "./mcp/sanitize.js";
 import type {
-  TypeBoxBuilder,
   McpAction,
   McpConnection,
   ListedMcpServer,
@@ -1316,7 +1314,19 @@ export async function mcpCatalogReady(
     if (timer) clearTimeout(timer);
   }
   const ready = completed && Boolean(cachedCatalogs.get(key)?.length);
-  if (!completed && !ready) invalidateWarmResult(key);
+  if (!completed) {
+    // The in-flight warm did not settle in time (timeout) OR it settled with
+    // false (naturally failed). In both cases, evict it from warmsInFlight and
+    // promptReadiness so the next warmMcpCatalog call starts a fresh warm rather
+    // than re-returning the same stale promise that (a) won't cache results
+    // (generation was bumped by invalidateWarmResult) and (b) keeps mcpCatalogReady
+    // callers waiting on an already-failed/slow channel.
+    // Safety: if the warm already completed and cleaned itself up, both deletes
+    // are no-ops; the old warm's finally handles the warmGenerations tombstone.
+    invalidateWarmResult(key);
+    warmsInFlight.delete(key);
+    promptReadiness.delete(key);
+  }
   return ready;
 }
 
@@ -2427,7 +2437,6 @@ function renderResult(
 
 export function registerMcpTool(
   pi: PiInstance,
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: (
     pi: PiInstance,
@@ -2436,103 +2445,26 @@ export function registerMcpTool(
   ) => void,
 ): void {
   // ── Per-query item schema: each queries[] entry carries one MCP action + fields. ──
-  const itemSchema = Type.Object(
-    {
-      action: stringEnumSchema(
-        Type,
-        [
-          "describe",
-          "call",
-          "resources",
-          "read-resource",
-          "prompts",
-          "get-prompt",
-          "complete",
-          "enable",
-          "disable",
-          "status",
-          "restart",
-          "stop",
-          "config",
-          "add",
-          "remove",
-        ],
-        "MCP action. Enabled tool discovery is automatic during extension initialization; calls validate against cached exact schemas internally.",
-      ) as TSchema,
-      server: Type.Optional(
-        Type.String({
-          description:
-            "MCP server name. For add/remove this is the key written to mcp.json.",
-        }),
-      ),
-      tool: Type.Optional(
-        Type.String({ description: "MCP tool name for describe/call." }),
-      ),
-      uri: Type.Optional(
-        Type.String({ description: "Resource URI for read-resource." }),
-      ),
-      name: Type.Optional(
-        Type.String({ description: "Prompt name for get-prompt." }),
-      ),
-      ref: Type.Optional(
-        Type.Object(
-          {},
-          {
-            description: "Prompt or resource-template reference for complete.",
-            additionalProperties: true,
-          },
-        ),
-      ),
-      argument: Type.Optional(
-        Type.Object(
-          {},
-          {
-            description: "Partial argument for complete.",
-            additionalProperties: true,
-          },
-        ),
-      ),
-      arguments: Type.Optional(
-        Type.Object(
-          {},
-          {
-            description:
-              "Selected tool input. Octocode tool queries nest under arguments.queries[].",
-            additionalProperties: true,
-          },
-        ),
-      ),
-      responseView: Type.Optional(
-        stringEnumSchema(
-          Type,
-          ["full", "table"],
-          "call output: full evidence (default) or a compact table for large batches.",
-        ) as TSchema,
-      ),
-      config: Type.Optional(
-        Type.Object(
-          {},
-          {
-            description:
-              "Server config for add: stdio {command,args?,env?,cwd?} or HTTP {url,headers?}.",
-            additionalProperties: true,
-          },
-        ),
-      ),
-      scope: Type.Optional(
-        stringEnumSchema(
-          Type,
-          ["project", "global"],
-          "add/remove target: project ($OCTOCODE_HOME/extension/workspaces/<workspace>/mcp/servers.json) or global ($OCTOCODE_HOME/extension/mcp/servers.json).",
-        ) as TSchema,
-      ),
-    },
-    { additionalProperties: false },
-  ) as TSchema;
+  const itemSchema = z.looseObject({
+    action: z.enum([
+      'describe','call','resources','read-resource','prompts','get-prompt',
+      'complete','enable','disable','status','restart','stop','config','add','remove',
+    ]).describe('MCP action. Enabled tool discovery is automatic during extension initialization; calls validate against cached exact schemas internally.'),
+    server: z.string().optional().describe('MCP server name. For add/remove this is the key written to mcp.json.'),
+    tool: z.string().optional().describe('MCP tool name for describe/call.'),
+    uri: z.string().optional().describe('Resource URI for read-resource.'),
+    name: z.string().optional().describe('Prompt name for get-prompt.'),
+    ref: z.record(z.string(), z.unknown()).optional().describe('Prompt or resource-template reference for complete.'),
+    argument: z.record(z.string(), z.unknown()).optional().describe('Partial argument for complete.'),
+    arguments: z.record(z.string(), z.unknown()).optional().describe('Selected tool input. Octocode tool queries nest under arguments.queries[].'),
+    responseView: z.enum(['full', 'table']).optional().describe('call output: full evidence (default) or a compact table for large batches.'),
+    config: z.record(z.string(), z.unknown()).optional().describe('Server config for add: stdio {command,args?,env?,cwd?} or HTTP {url,headers?}.'),
+    scope: z.enum(['project', 'global']).optional().describe('add/remove target: project ($OCTOCODE_HOME/extension/workspaces/<workspace>/mcp/servers.json) or global ($OCTOCODE_HOME/extension/mcp/servers.json).'),
+  });
 
   // Universal ordered queries[] envelope: all queries are preflighted before the first side-effect.
-  const parameters = buildQueryEnvelopeSchema(Type, itemSchema, {
-    reasoningDescription: "Concise reason this MCP operation is necessary.",
+  const parameters = buildQueryEnvelopeSchema(itemSchema, {
+    reasoningDescription: 'Concise reason this MCP operation is necessary.',
     allowParallel: true,
   });
 

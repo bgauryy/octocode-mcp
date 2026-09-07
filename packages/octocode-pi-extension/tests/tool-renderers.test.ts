@@ -5,7 +5,6 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { Type } from 'typebox';
 import { withOctocodeRender } from '../src/branding/renderers.js';
 import { buildOctocodeRenderCall, buildToolCallSummary } from '../src/tools/render-helpers.js';
 import { registerUniqueTool } from '../src/tools/octocode-tools.js';
@@ -61,28 +60,28 @@ describe('registerUniqueTool with builtin overrides', () => {
     const pi = { registerTool: (def: ToolDefinition) => tools.set(def.name, def) };
     const names = new Set<string>();
 
-    registerFileTool(pi, Type, names, registerUniqueTool);
-    registerBashTool(pi, Type, names, registerUniqueTool);
+    registerFileTool(pi, names, registerUniqueTool);
+    registerBashTool(pi, names, registerUniqueTool);
 
     expect([...tools.keys()]).toEqual(['file', 'bash']);
     for (const name of ['file', 'bash']) {
       expect(tools.get(name)?.renderCall).toBeTypeOf('function');
       expect(tools.get(name)?.renderResult).toBeTypeOf('function');
     }
-    expect(() => registerFileTool(pi, Type, names, registerUniqueTool)).toThrow(/tool name collision: file/);
+    expect(() => registerFileTool(pi, names, registerUniqueTool)).toThrow(/tool name collision: file/);
   });
 
   it('renders Bash, file, plan, web, media, and agent queries as operation/reason pairs', () => {
     const tools = new Map<string, ToolDefinition>();
     const pi = { registerTool: (def: ToolDefinition) => tools.set(def.name, def) };
     const names = new Set<string>();
-    registerBashTool(pi, Type, names, registerUniqueTool);
-    registerFileTool(pi, Type, names, registerUniqueTool);
-    registerPlanTool(pi, Type, names, registerUniqueTool);
-    registerWebTool(pi, Type, names, registerUniqueTool);
-    registerReadMediaTool(pi, Type, names, registerUniqueTool);
-    registerMediaTool(pi, Type, names, registerUniqueTool);
-    registerUnifiedAgentTool(pi, Type, names, registerUniqueTool);
+    registerBashTool(pi, names, registerUniqueTool);
+    registerFileTool(pi, names, registerUniqueTool);
+    registerPlanTool(pi, names, registerUniqueTool);
+    registerWebTool(pi, names, registerUniqueTool);
+    registerReadMediaTool(pi, names, registerUniqueTool);
+    registerMediaTool(pi, names, registerUniqueTool);
+    registerUnifiedAgentTool(pi, names, registerUniqueTool);
 
     const cases: Array<[string, Array<Record<string, unknown>>]> = [
       ['bash', [{ reasoning: 'run alpha', command: 'echo alpha' }, { reasoning: 'run beta', command: 'echo beta' }]],
@@ -429,12 +428,12 @@ describe('buildToolCallSummary', () => {
 // ─── Shared load helper ───────────────────────────────────────────────────────
 
 function loadTool(
-  registerFn: (pi: { registerTool?: (d: ToolDefinition) => void }, T: unknown, names: Set<string>, reg: unknown) => void,
+  registerFn: (pi: { registerTool?: (d: ToolDefinition) => void }, names: Set<string>, reg: unknown) => void,
   toolName: string,
 ): ToolDefinition {
   const tools = new Map<string, ToolDefinition>();
   const pi = { registerTool: (d: ToolDefinition) => tools.set(d.name, d) };
-  registerFn(pi, Type, new Set(), registerUniqueTool);
+  registerFn(pi, new Set(), registerUniqueTool);
   return tools.get(toolName)!;
 }
 

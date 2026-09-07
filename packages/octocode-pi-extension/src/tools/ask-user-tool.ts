@@ -38,7 +38,7 @@ import { renderFrame } from '../tui/components.js';
 import { CURSOR_MARKER, Input, Key, matchesKey, wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import { answerPendingInteraction, createPendingInteraction, shouldBrokerInteraction } from './interaction-broker.js';
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 
 export interface AskOption {
@@ -931,7 +931,6 @@ async function runAskOverlay(
 
 export function registerAskUserTool(
   pi: { registerTool?(def: ToolDefinition): void },
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: RegisterFn,
 ): void {
@@ -946,51 +945,41 @@ export function registerAskUserTool(
       'The discussion row allows free text. Back, cancel, and timeout never authorize a default. Resume pending interactions through the host; use an inline question only when no interaction is available.',
       'Use options[] for one-of-many; multiSelect for independent toggles; fields[] for structured form input; omit options for free text.',
     ],
-    parameters: buildQueryEnvelopeSchema(Type, Type.Object({
-      question: Type.String({ description: 'The question to show the user. Keep it one clear sentence.' }),
-      options: Type.Optional(
-        Type.Array(
-          Type.Object({
-            value: Type.String({ description: 'Value returned to you when this option is chosen.' }),
-            label: Type.Optional(Type.String({ description: 'Short display label (defaults to value).' })),
-            description: Type.Optional(Type.String({ description: 'Optional one-line nuance shown only for the focused option; omit when the label is enough.' })),
-            pros: Type.Optional(Type.Array(Type.String(), { description: 'Upsides of this option — short bullets shown as ✓ lines under the focused row.' })),
-            cons: Type.Optional(Type.Array(Type.String(), { description: 'Downsides/risks of this option — short bullets shown as ✗ lines under the focused row.' })),
-            recommended: Type.Optional(Type.Boolean({ description: 'Mark the safe/recommended default: badges the row and lands the cursor here first.' })),
-            preview: Type.Optional(Type.String({ description: 'Optional multi-line preview shown under the option while it is focused (multi-select overlay).' })),
-            disabled: Type.Optional(Type.Union([
-              Type.Boolean({ description: 'true makes this option visible but not selectable.' }),
-              Type.String({ description: 'Reason shown next to a visible but non-selectable option.' }),
-            ], { description: 'Visible but non-selectable option, optionally with a reason.' })),
-            group: Type.Optional(Type.String({ description: 'Optional group heading used to cluster related choices in the list.' })),
-          }),
-          { description: 'Options for a list picker. Omit for a free-text prompt.' },
-        ),
-      ),
-      placeholder: Type.Optional(Type.String({ description: 'Placeholder for the free-text input.' })),
-      multiSelect: Type.Optional(
-        Type.Boolean({ description: 'With options[]: let the user toggle several options (space), all/clear with a, invert with i, and confirm (enter). Returns the chosen values[].' }),
-      ),
-      min: Type.Optional(Type.Integer({ minimum: 0, description: 'Multi-select only: minimum number of selections required to confirm.' })),
-      max: Type.Optional(Type.Integer({ minimum: 1, description: 'Multi-select only: maximum number of selections allowed.' })),
-      fields: Type.Optional(
-        Type.Array(
-          Type.Object({
-            name: Type.String({ description: 'Key for this answer in the returned values object.' }),
-            label: Type.Optional(Type.String({ description: 'Prompt label shown to the user (defaults to name).' })),
-            placeholder: Type.Optional(Type.String({ description: 'Placeholder for this field input.' })),
-            required: Type.Optional(Type.Boolean({ description: 'Keep focus on this field until a non-empty value is provided.' })),
-            minLength: Type.Optional(Type.Integer({ minimum: 0, description: 'Minimum trimmed character count for this field.' })),
-            maxLength: Type.Optional(Type.Integer({ minimum: 1, description: 'Maximum trimmed character count for this field.' })),
-            pattern: Type.Optional(Type.String({ description: 'JavaScript regular expression the trimmed field value must match.' })),
-          }),
-          { description: 'Simple sequential form: one text input per field, answers returned keyed by name. Takes precedence over options[].' },
-        ),
-      ),
-      timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400_000, description: 'Interactive wait limit in milliseconds. Expiry returns timed_out and never selects a default.' })),
-    }, { additionalProperties: false }), {
-      reasoningDescription: 'Concise reason this question is necessary to decide the next action.',
-    }),
+    parameters: buildQueryEnvelopeSchema(
+      z.looseObject({
+        question: z.string().describe('The question to show the user. Keep it one clear sentence.'),
+        options: z.array(
+          z.object({
+            value: z.string().describe('Value returned to you when this option is chosen.'),
+            label: z.string().optional().describe('Short display label (defaults to value).'),
+            description: z.string().optional().describe('Optional one-line nuance shown only for the focused option; omit when the label is enough.'),
+            pros: z.array(z.string()).optional().describe('Upsides of this option — short bullets shown as ✓ lines under the focused row.'),
+            cons: z.array(z.string()).optional().describe('Downsides/risks of this option — short bullets shown as ✗ lines under the focused row.'),
+            recommended: z.boolean().optional().describe('Mark the safe/recommended default: badges the row and lands the cursor here first.'),
+            preview: z.string().optional().describe('Optional multi-line preview shown under the option while it is focused (multi-select overlay).'),
+            disabled: z.union([z.boolean(), z.string()]).optional().describe('true makes this option visible but not selectable. String reason is shown next to the option.'),
+            group: z.string().optional().describe('Optional group heading used to cluster related choices in the list.'),
+          })
+        ).optional(),
+        placeholder: z.string().optional().describe('Placeholder for the free-text input.'),
+        multiSelect: z.boolean().optional().describe('With options[]: let the user toggle several options (space), all/clear with a, invert with i, and confirm (enter). Returns the chosen values[].'),
+        min: z.number().int().min(0).optional().describe('Multi-select only: minimum number of selections required to confirm.'),
+        max: z.number().int().min(1).optional().describe('Multi-select only: maximum number of selections allowed.'),
+        fields: z.array(
+          z.object({
+            name: z.string().describe('Key for this answer in the returned values object.'),
+            label: z.string().optional().describe('Prompt label shown to the user (defaults to name).'),
+            placeholder: z.string().optional().describe('Placeholder for this field input.'),
+            required: z.boolean().optional().describe('Keep focus on this field until a non-empty value is provided.'),
+            minLength: z.number().int().min(0).optional().describe('Minimum trimmed character count for this field.'),
+            maxLength: z.number().int().min(1).optional().describe('Maximum trimmed character count for this field.'),
+            pattern: z.string().optional().describe('JavaScript regular expression the trimmed field value must match.'),
+          })
+        ).optional(),
+        timeoutMs: z.number().int().min(1).max(86_400_000).optional().describe('Interactive wait limit in milliseconds. Expiry returns timed_out and never selects a default.'),
+      }),
+      { reasoningDescription: 'Concise reason this question is necessary to decide the next action.' },
+    ),
 
     async execute(id: string, raw: Record<string, unknown>, signal, onUpdate, ctx?: PiContext): Promise<ToolCallResult> {
       const queries = Array.isArray(raw.queries)
@@ -1139,7 +1128,6 @@ export function registerAskUserTool(
         const query = queries[0]!;
         const reasoning = typeof query['reasoning'] === 'string' ? query['reasoning'].trim() : '';
         if (!reasoning) throw new Error('queries[0] requires non-empty reasoning.');
-        if (reasoning.length > 240) throw new Error('queries[0].reasoning must be at most 240 characters.');
         return runQuery(query);
       }
 

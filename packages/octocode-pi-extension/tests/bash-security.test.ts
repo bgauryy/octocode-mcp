@@ -198,13 +198,12 @@ test('H3: assertBashCommandAllowed blocks sed -i outside allowed roots', () => {
 import { allowAlways, resetApprovalStore } from '../src/tools/approval.js';
 import { registerBashTool } from '../src/tools/bash-tool.js';
 import { registerUniqueTool } from '../src/tools/octocode-tools.js';
-import { Type } from 'typebox';
 import type { ToolDefinition, ToolCallResult } from '../src/types.js';
 import os from 'node:os';
 
 function loadBashToolForH4(): ToolDefinition {
   let def: ToolDefinition | undefined;
-  registerBashTool({ registerTool: (d: ToolDefinition) => { def = d; } }, Type as never, new Set<string>(), registerUniqueTool);
+  registerBashTool({ registerTool: (d: ToolDefinition) => { def = d; } }, new Set<string>(), registerUniqueTool);
   assert.ok(def, 'bash tool registered');
   return def!;
 }

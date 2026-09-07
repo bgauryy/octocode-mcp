@@ -154,7 +154,11 @@ export async function waitForAgentTurn(
   record: AgentRecord,
   opts: { maxSilenceMs?: number; absoluteCapMs?: number; signal?: AbortSignal } = {},
 ): Promise<WaitOutcome> {
-  const startedAt = record.updatedAt;
+  // Measure the absolute cap from the call site, not from the record's last
+  // activity time. Using record.updatedAt would make the budget shrink by
+  // however long the worker was already idle before waitForAgentTurn was
+  // called, causing premature timeouts (e.g. 60s idle + 600s cap = only 540s).
+  const startedAt = Date.now();
   const absoluteCapMs = opts.absoluteCapMs;
   let outcome: WaitOutcome;
   do {

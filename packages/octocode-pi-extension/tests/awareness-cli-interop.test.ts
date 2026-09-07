@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Type } from 'typebox';
 import { openPersistentAwareness } from '../src/tools/storage-policy.js';
 import { allowLocalFixtureProcesses } from '../../../test-utils/external-effects-guard.js';
 import { registerBashTool } from '../src/tools/bash-tool.js';
@@ -137,7 +136,7 @@ describe.each(['global', 'repo'] as const)('Pi native Awareness adapter / extern
 
   it('runs the quoted Awareness runner through the real Pi bash tool with native storage and identity', async () => {
     let bash: ToolDefinition | undefined;
-    registerBashTool({ registerTool: (tool) => { bash = tool; } }, Type, new Set(), registerUniqueTool);
+    registerBashTool({ registerTool: (tool) => { bash = tool; } }, new Set(), registerUniqueTool);
     const result = await bash!.execute('awareness-interop', { queries: [{
       reasoning: 'Publish a fixture signal through the installed Awareness CLI using native Pi bindings.',
       command: '"$OCTOCODE_NODE" "$OCTOCODE_AWARENESS_CLI" --db "$OCTOCODE_AWARENESS_DB" signal publish --agent-id "$OCTOCODE_AGENT_ID" --workspace "$OCTOCODE_AWARENESS_WORKSPACE" --to-agent external-skill-agent --kind fyi --subject "Bash bridge" --body "Native identity and database" --compact',

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { Type } from 'typebox';
 import { visibleWidth } from '@earendil-works/pi-tui';
 import { registerAskUserTool, runAskPrompt } from '../src/tools/ask-user-tool.js';
 import { configureInteractionBrokerRoute, setInteractionStoreFactoryForTests } from '../src/tools/interaction-broker.js';
@@ -9,7 +8,7 @@ import type { PiContext, ToolDefinition } from '../src/types.js';
 function loadTool(): ToolDefinition {
   const tools = new Map<string, ToolDefinition>();
   const pi = { registerTool: (d: ToolDefinition) => tools.set(d.name, d) };
-  registerAskUserTool(pi, Type, new Set<string>(), (p, names, def) => {
+  registerAskUserTool(pi, new Set<string>(), (p, names, def) => {
     names.add(def.name);
     p.registerTool?.(def);
   });

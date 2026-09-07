@@ -14,7 +14,7 @@ import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 import { getShellConfig } from '@earendil-works/pi-coding-agent';
-import type { TSchema, ToolCallResult, ToolDefinition, PiTheme } from '../types.js';
+import type { ToolCallResult, ToolDefinition, PiTheme } from '../types.js';
 
 import { buildToolView, makeComponentRenderer } from './render-helpers.js';
 import { assertPathAllowed } from './path-guard.js';
@@ -25,7 +25,7 @@ import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js
 import { chunkReadHint, writeEphemeralToolOutput } from './ephemeral-tool-output.js';
 import { buildAwarenessCliEnvironment } from './awareness-cli-context.js';
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 
 /** Max chars injected into model context per bash call (single content block). */
@@ -635,30 +635,22 @@ async function runBash(
 
 export function registerBashTool(
   pi: { registerTool?(def: ToolDefinition): void },
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: RegisterFn,
 ): void {
-  const querySchema = Type.Object(
-    {
-      command: Type.String({ description: 'Bash command to execute' }),
-      timeout: Type.Optional(
-        Type.Integer({
-          description:
-            'Timeout in seconds. OMITTING THIS FIELD MEANS NO TIMEOUT — commands that block on ' +
-            'stdin, interactive prompts, slow network, or pagers will hang indefinitely without it. ' +
-            `Max enforced ceiling: ${BASH_MAX_TIMEOUT_SEC}s (values above are clamped). ` +
-            'Always set timeout for: build commands, npx/npm/yarn, curl/wget, any command that ' +
-            'may wait for input. Suggested values: 30s for fast ops, 120s for builds, 300s for slow installs.',
-        }),
+  const parameters = buildQueryEnvelopeSchema(
+    z.looseObject({
+      command: z.string().describe('Bash command to execute'),
+      timeout: z.number().int().min(1).optional().describe(
+        'Timeout in seconds. OMITTING THIS FIELD MEANS NO TIMEOUT — commands that block on ' +
+        'stdin, interactive prompts, slow network, or pagers will hang indefinitely without it. ' +
+        `Max enforced ceiling: ${BASH_MAX_TIMEOUT_SEC}s (values above are clamped). ` +
+        'Always set timeout for: build commands, npx/npm/yarn, curl/wget, any command that ' +
+        'may wait for input. Suggested values: 30s for fast ops, 120s for builds, 300s for slow installs.',
       ),
-    },
-    { additionalProperties: false },
-  ) as TSchema;
-  const parameters = buildQueryEnvelopeSchema(Type, querySchema, {
-    reasoningDescription: 'Concise reason this shell command is necessary.',
-    allowParallel: false,
-  });
+    }),
+    { reasoningDescription: 'Concise reason this shell command is necessary.', allowParallel: false },
+  );
 
   registerFn(pi, registeredToolNames, {
     name: 'bash',

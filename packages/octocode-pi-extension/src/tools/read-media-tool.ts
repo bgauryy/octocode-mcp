@@ -5,10 +5,10 @@ import { resolveFilePath } from './file-state.js';
 import { buildImageLinesFromData, effectiveInlineImages, formatBytes, isTerminalImageCapable, loadImageForRender, terminalImageProtocol } from './image-render.js';
 import { runMediaQuery } from './media-tool.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
-import type { TSchema, ToolCallResult, ToolDefinition, PiTheme } from '../types.js';
+import type { ToolCallResult, ToolDefinition, PiTheme } from '../types.js';
 import type { registerUniqueTool } from './octocode-tools.js';
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 type MediaType = 'image' | 'video' | 'audio';
 type MediaView = 'metadata' | 'frame' | 'contactSheet' | 'waveform' | 'spectrogram';
@@ -57,29 +57,23 @@ function resolveView(type: MediaType, requested: unknown): MediaView {
   return resolved;
 }
 
-function buildParameters(Type: TypeBoxBuilder): TSchema {
-  return Type.Object({
-    type: Type.Union(
-      [Type.Literal('image'), Type.Literal('video'), Type.Literal('audio')],
-      { description: 'Media kind. image returns pixels; video/audio default to a visual summary.' },
-    ),
-    path: Type.String({ minLength: 1, description: 'Local media path.' }),
-    view: Type.Optional(Type.Union(
-      ['metadata', 'frame', 'contactSheet', 'waveform', 'spectrogram'].map((value) => Type.Literal(value)),
-      { description: 'video: metadata/frame/contactSheet. audio: metadata/waveform/spectrogram.' },
-    )),
-    at: Type.Optional(Type.String({ description: 'frame timestamp; default 0.' })),
-    count: Type.Optional(Type.Integer({ minimum: 1, maximum: 64, description: 'contactSheet frame count; default 9.' })),
-    columns: Type.Optional(Type.Integer({ minimum: 1, maximum: 64, description: 'contactSheet columns.' })),
-    width: Type.Optional(Type.Integer({ minimum: 1, maximum: 4096, description: 'Visual width in pixels.' })),
-    height: Type.Optional(Type.Integer({ minimum: 1, maximum: 4096, description: 'waveform/spectrogram height.' })),
-    timeoutSec: Type.Optional(Type.Integer({ minimum: 1, maximum: 1800, description: 'ffmpeg timeout; default 120.' })),
-  }, { additionalProperties: false }) as TSchema;
-}
+const readMediaItemSchema = z.looseObject({
+  type: z.enum(['image', 'video', 'audio']).describe(
+    'Media kind. image returns pixels; video/audio default to a visual summary.',
+  ),
+  path: z.string().min(1).describe('Local media path.'),
+  view: z.enum(['metadata', 'frame', 'contactSheet', 'waveform', 'spectrogram']).optional()
+    .describe('video: metadata/frame/contactSheet. audio: metadata/waveform/spectrogram.'),
+  at: z.string().optional().describe('frame timestamp; default 0.'),
+  count: z.number().int().min(1).max(64).optional().describe('contactSheet frame count; default 9.'),
+  columns: z.number().int().min(1).max(64).optional().describe('contactSheet columns.'),
+  width: z.number().int().min(1).max(4096).optional().describe('Visual width in pixels.'),
+  height: z.number().int().min(1).max(4096).optional().describe('waveform/spectrogram height.'),
+  timeoutSec: z.number().int().min(1).max(1800).optional().describe('ffmpeg timeout; default 120.'),
+});
 
 export function registerReadMediaTool(
   pi: { registerTool?(def: ToolDefinition): void },
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: RegisterFn,
 ): void {
@@ -93,7 +87,7 @@ export function registerReadMediaTool(
       'Use view:metadata when visual content is unnecessary — faster, no ffmpeg rendering required.',
       'inspectMedia is read-only and never writes files. For creating images/PDFs/GIFs or transforming media, use media. For raw ffmpeg/ffprobe commands, use runFfmpeg.',
     ],
-    parameters: buildQueryEnvelopeSchema(Type, buildParameters(Type), {
+    parameters: buildQueryEnvelopeSchema(readMediaItemSchema, {
       reasoningDescription: 'Why this media must be inspected.',
       allowParallel: true,
     }),

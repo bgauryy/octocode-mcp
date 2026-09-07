@@ -25,7 +25,7 @@ import path from 'node:path';
 
 import { Resvg } from '@resvg/resvg-js';
 
-import type { TSchema, ToolCallResult, ToolDefinition, PiContext, PiTheme, RenderContext } from '../types.js';
+import type { ToolCallResult, ToolDefinition, PiContext, PiTheme, RenderContext } from '../types.js';
 import { createSessionArtifactContext } from './session-artifacts.js';
 import type { registerUniqueTool } from './octocode-tools.js';
 import { cliStatusGlyph, cliStatusToken, cliToolTitle } from '../tui/cli-design.js';
@@ -37,7 +37,7 @@ import { connectToChrome, cleanupConnection, findChromePath } from '../chrome-de
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 import { extensionTmpRoot } from '../extension-paths.js';
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 
 /** Refuse to render output larger than this — matches image-render's inline cap. */
@@ -385,25 +385,18 @@ export function cleanupImplicitImageArtifacts(): number {
   return removed;
 }
 
-function buildParameters(Type: TypeBoxBuilder): TSchema {
-  return Type.Object(
-    {
-      svg: Type.Optional(Type.String({ description: 'SVG document to render (must contain an <svg> element). Lightweight vector path — no browser needed. Provide svg OR html.' })),
-      html: Type.Optional(Type.String({ description: 'HTML markup to render via headless Chrome — full CSS/flex/grid/gradients/webfonts/emoji. Use for rich, "any image" visuals. Provide svg OR html. Requires Chrome installed.' })),
-      width: Type.Optional(Type.Integer({ minimum: 1, description: 'Target render width in pixels. SVG: scales the vector. HTML: viewport width (content reflows to it). Omit to fit content. Max 4096.' })),
-      height: Type.Optional(Type.Integer({ minimum: 1, description: 'HTML only: fixed viewport height in pixels. Omit to fit content height. Max 8192.' })),
-      background: Type.Optional(Type.String({ description: 'Background color (e.g. "white", "#0d1117", "rgba(0,0,0,0)"). Default: transparent.' })),
-      name: Type.Optional(Type.String({ description: 'Display name for the image (shown as the placeholder label on terminals without image support).' })),
-      saveTo: Type.Optional(Type.String({ description: 'Optional path to also save the rendered PNG to disk (path-guarded to the workspace).' })),
-      showToModel: Type.Optional(Type.Boolean({ description: 'Also return the image to the model as a vision block. Default false (rendered in the TUI for the user only, saving context).' })),
-    },
-    { additionalProperties: false },
-  );
-}
-
+const createImageItemSchema = z.looseObject({
+  svg: z.string().optional().describe('SVG document to render (must contain an <svg> element). Lightweight vector path — no browser needed. Provide svg OR html.'),
+  html: z.string().optional().describe('HTML markup to render via headless Chrome — full CSS/flex/grid/gradients/webfonts/emoji. Provide svg OR html. Requires Chrome.'),
+  width: z.number().int().min(1).optional().describe('Target render width in pixels. SVG: scales the vector. HTML: viewport width. Omit to fit content. Max 4096.'),
+  height: z.number().int().min(1).optional().describe('HTML only: fixed viewport height in pixels. Omit to fit content height. Max 8192.'),
+  background: z.string().optional().describe('Background color (e.g. "white", "#0d1117", "rgba(0,0,0,0)"). Default: transparent.'),
+  name: z.string().optional().describe('Display name for the image.'),
+  saveTo: z.string().optional().describe('Optional path to also save the rendered PNG to disk (path-guarded to the workspace).'),
+  showToModel: z.boolean().optional().describe('Also return the image to the model as a vision block. Default false.'),
+});
 export function registerCreateImageTool(
   pi: { registerTool?(def: ToolDefinition): void },
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: RegisterFn,
 ): void {
@@ -421,7 +414,7 @@ export function registerCreateImageTool(
       'Prefer text for textual answers. The rendered PNG stays out of model context by default; set showToModel:true only if you need to inspect the result. Max 4MB output.',
       'If the terminal can\'t show inline images (VS Code/tmux/plain xterm), the tool saves the PNG and says so — OFFER to open it in a browser and ALWAYS ask the user first (askUser); never open a browser automatically.',
     ],
-    parameters: buildQueryEnvelopeSchema(Type, buildParameters(Type), {
+    parameters: buildQueryEnvelopeSchema(createImageItemSchema, {
       reasoningDescription: 'Concise reason this image creation is necessary.',
     }),
 

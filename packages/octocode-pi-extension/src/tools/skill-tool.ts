@@ -2,9 +2,8 @@ import { truncateToWidth } from '../tui/width.js';
 import { paint } from '../tui/palette.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ToolDefinition, ToolCallResult, PiTheme, PiContext, SkillInfo, TSchema } from '../types.js';
+import type { ToolDefinition, ToolCallResult, PiTheme, PiContext, SkillInfo } from '../types.js';
 import type { registerUniqueTool } from './octocode-tools.js';
-import { stringEnumSchema } from './schema-helpers.js';
 
 import { makeComponentRenderer } from './render-helpers.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
@@ -12,7 +11,7 @@ import { orchestrate } from './call-skill.js';
 import { MODEL_VISIBLE_TOOL_RESULT_MAX_CHARS } from './tool-result-budget.js';
 import { discoverSkills, type DiscoveredSkill } from './skill-discovery.js';
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 
 // Leave room for identity, file discovery, and recovery calls inside the 12k
@@ -240,44 +239,30 @@ function renderCallOutcomeHeader(o: Record<string, unknown>): string {
 
 export function registerSkillTool(
   pi: { registerTool?(def: ToolDefinition): void },
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: RegisterFn,
   getPiSkills: () => SkillInfo[] | undefined,
 ): void {
   // ── Per-item schema: type:"load" | type:"call" with explicit typed fields ──
-  const itemSchema = Type.Object({
-    reasoning: Type.String({ minLength: 1, maxLength: 240, description: 'Concise reason this query is necessary.' }),
-    type: Type.Optional(stringEnumSchema(
-      Type,
-      ['load', 'call'],
+  const itemSchema = z.looseObject({
+    type: z.enum(['load', 'call']).optional().describe(
       'load (default): work with installed SKILL.md skills (load or list). call: manage dynamic skills (reuse, create, enhance, fix, list, delete).',
-    ) as TSchema),
-    // ── type:load fields ──
-    action: Type.Optional(stringEnumSchema(
-      Type,
-      ['load', 'list'],
-      'load (default): return one skill\'s full SKILL.md + directory + files. list: catalog of every discovered skill.',
-    ) as TSchema),
-    name: Type.Optional(Type.String({ description: 'Skill name for type:load action:load (exact name from <available_skills> or action:list).' })),
-    reason: Type.Optional(Type.String({
-      minLength: 1,
-      description: 'Required for type:load action:load. One concise, user-facing clause explaining why this skill matches the current task. Also used as skill creation reason for type:call mode:create.',
-    })),
-    // ── type:call fields ──
-    skillType: Type.Optional(Type.String({ description: 'Skill name / workflow id (lowercase a-z, 0-9, hyphens). Required for type:call.' })),
-    mode: Type.Optional(stringEnumSchema(
-      Type,
-      ['auto', 'use', 'create', 'enhance', 'fix', 'list', 'delete'],
+    ),
+    action: z.enum(['load', 'list']).optional().describe(
+      "load (default): return one skill's full SKILL.md + directory + files. list: catalog of every discovered skill.",
+    ),
+    name: z.string().optional().describe('Skill name for type:load action:load (exact name from <available_skills> or action:list).'),
+    reason: z.string().optional().describe('Required for type:load action:load. One concise, user-facing clause explaining why this skill matches the current task. Also used as skill creation reason for type:call.'),
+    skillType: z.string().optional().describe('Skill name / workflow id (lowercase a-z, 0-9, hyphens). Required for type:call.'),
+    mode: z.enum(['auto', 'use', 'create', 'enhance', 'fix', 'list', 'delete']).optional().describe(
       'auto (default) · use (reuse only) · create (after user approval) · enhance/fix (revise existing) · list · delete.',
-    ) as TSchema),
-    intent: Type.Optional(Type.String({ description: 'What the workflow does (type:call). Guides skill-smith authoring and keyword matching.' })),
-    approveCreate: Type.Optional(Type.Boolean({ description: 'Approve creation in auto mode without an extra roundtrip (type:call).' })),
-    force: Type.Optional(Type.Boolean({ description: 'Override the triviality decline gate (type:call).' })),
-  }, { additionalProperties: false }) as TSchema;
+    ),
+    intent: z.string().optional().describe('What the workflow does (type:call). Guides skill-smith authoring and keyword matching.'),
+    approveCreate: z.boolean().optional().describe('Approve creation in auto mode without an extra roundtrip (type:call).'),
+    force: z.boolean().optional().describe('Override the triviality decline gate (type:call).'),
+  });
 
-  const parameters = buildQueryEnvelopeSchema(Type, itemSchema, {
-    maxItems: 100,
+  const parameters = buildQueryEnvelopeSchema(itemSchema, {
     reasoningDescription: 'Concise reason this query is necessary.',
   });
 

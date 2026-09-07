@@ -4,7 +4,6 @@ import type { McpServerConfig, McpConfigSource } from './config.js';
 import type { McpOAuthFlow } from './oauth.js';
 import type { McpCompiledSchemaValidator } from './schema-validator.js';
 
-export type TypeBoxBuilder = (typeof import("typebox"))["Type"];
 
 export type McpAction =
   | "describe"

@@ -146,13 +146,24 @@ function candidates(snapshot: UxSnapshotV1, diagnostics: readonly StatusDiagnost
     || snapshot.session.activity.kind === 'awaiting_start'
     || snapshot.session.activity.kind === 'blocked'
     || snapshot.session.activity.kind === 'failed';
-  if (!activityAttention && snapshot.session.activity.kind !== 'idle') result.push({
-    id: 'session:activity', priority: 'P1', order: 0,
-    segments: [
-      { text: snapshot.session.activity.label, token: 'brand' },
-      { text: `${Math.max(0, Math.floor((snapshot.observedAt - snapshot.session.activity.since) / 1_000))}s`, token: 'dim' },
-    ],
-  });
+  if (!activityAttention && snapshot.session.activity.kind !== 'idle') {
+    const elapsedSec = Math.max(0, Math.floor((snapshot.observedAt - snapshot.session.activity.since) / 1_000));
+    // Animate dots for "actively working" states so the footer visually signals
+    // progress on every 1s tick: Thinking → Thinking. → Thinking.. → Thinking...
+    const animated = snapshot.session.activity.kind === 'thinking'
+      || snapshot.session.activity.kind === 'researching'
+      || snapshot.session.activity.kind === 'planning'
+      || snapshot.session.activity.kind === 'working'
+      || snapshot.session.activity.kind === 'verifying';
+    const dots = animated ? '.'.repeat(elapsedSec % 4) : '';
+    result.push({
+      id: 'session:activity', priority: 'P1', order: 0,
+      segments: [
+        { text: `${snapshot.session.activity.label}${dots}`, token: 'brand' },
+        { text: `${elapsedSec}s`, token: 'dim' },
+      ],
+    });
+  }
   const plan = planSegments(snapshot);
   if (plan) result.push({ id: 'plan:progress', priority: 'P1', order: 10, segments: plan, detailRoute: 'plan' });
   result.push(...agentCandidates(snapshot));

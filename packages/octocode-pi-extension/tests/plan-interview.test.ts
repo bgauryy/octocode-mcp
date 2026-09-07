@@ -4,7 +4,6 @@
  */
 import assert from 'node:assert/strict';
 import { afterEach, test, vi } from 'vitest';
-import { Type } from 'typebox';
 import type { ToolDefinition, PiContext } from '../src/types.js';
 
 // A scripted outcome queue + a record of the questions / pagination metadata
@@ -30,7 +29,7 @@ import type { ForegroundActivity } from '../src/tools/runtime-store.js';
 function loadTool(): ToolDefinition {
   const tools = new Map<string, ToolDefinition>();
   const pi = { registerTool: (d: ToolDefinition) => tools.set(d.name, d) };
-  registerPlanTool(pi, Type, new Set<string>(), (p, n, d) => { n.add(d.name); p.registerTool?.(d); });
+  registerPlanTool(pi, new Set<string>(), (p, n, d) => { n.add(d.name); p.registerTool?.(d); });
   return tools.get('plan')!;
 }
 

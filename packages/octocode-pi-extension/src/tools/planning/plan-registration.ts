@@ -83,7 +83,7 @@ const RISK_RE = /\b(migrat|schema|auth|delete|\bdrop\b|truncate|rename|breaking|
 /** Cap on questions per clarify call — a bounded interview, not an interrogation. */
 const MAX_CLARIFY = 3;
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 type PlanAction = 'set' | 'propose' | 'clarify' | 'add' | 'start' | 'complete' | 'remove' | 'clear' | 'show';
 
@@ -725,7 +725,6 @@ export function registerPlanTool(
     registerTool?(def: ToolDefinition): void;
     sendUserMessage?(message: string, options?: { deliverAs?: 'steer' | 'followUp'; expandPromptTemplates?: boolean }): void | Promise<void>;
   },
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: RegisterFn,
 ): void {
@@ -758,71 +757,56 @@ export function registerPlanTool(
       'Keep the checklist truthful: start the active step before work, then use action:"complete" only after its check passes. Shared task projection, ownership, dependencies, check receipts, and finalization are internal to plan; there is no separate public task tool.',
       'For independent lanes, encode ordering with dependsOn, start runnable lanes with action:"start" and index:N before batching or spawning, and pass explicit indices when completing parallel steps.',
     ],
-    parameters: buildQueryEnvelopeSchema(Type, Type.Object({
-      action: Type.Unsafe({ type: 'string', enum: ['set', 'propose', 'clarify', 'add', 'start', 'complete', 'remove', 'clear', 'show'], description: 'Plan lifecycle operation; use the matching action branch and fields.' }),
-      scope: Type.Optional(Type.Unsafe({ type: 'string', enum: ['auto', 'session', 'shared'], description: 'Projection policy. auto stays local unless safely adopting existing shared ownership.' })),
-      receipt: Type.Optional(Type.Object({
-        command: Type.String({ minLength: 1, description: 'The exact declared check command that was actually run.' }),
-        status: Type.Unsafe({ type: 'string', enum: ['SUCCESS', 'FAILED'], description: 'Observed check result.' }),
-        message: Type.String({ minLength: 1, description: 'Concise observed result, such as test counts or failure cause.' }),
-      }, { additionalProperties: false, description: 'For action:complete on shared tasks, the observed check receipt recorded atomically with completion.' })),
-      steps: Type.Optional(
-        Type.Array(
-          Type.Union([
-            Type.String(),
-            Type.Object({
-              text: Type.String(),
-              activeForm: Type.Optional(Type.String({ description: 'Present-continuous label shown while this step runs, e.g. "Editing file".' })),
-              dependsOn: Type.Optional(Type.Array(Type.Integer({ minimum: 1 }), { description: '1-based indices of steps that must be done first; converted to stable step identities when stored.' })),
-              paths: Type.Optional(Type.Array(Type.String(), { description: 'Workspace-relative paths this task may change.' })),
-              reasoning: Type.Optional(Type.String({ description: 'Why this task exists or may omit paths.' })),
-              acceptance: Type.Optional(Type.String({ description: 'Observable done state for this task.' })),
-              checkCommand: Type.Optional(Type.String({ description: 'Command that verifies this task after DONE.' })),
-            }),
-          ]),
-          { minItems: 1, maxItems: 100, description: 'Non-empty replacement checklist for set/propose; strings are shorthand for {text}.' },
-        ),
-      ),
-      text: Type.Optional(Type.String({ description: 'Step text for action:add.' })),
-      activeForm: Type.Optional(Type.String({ description: 'Present-continuous form for action:add.' })),
-      dependsOn: Type.Optional(Type.Array(Type.Integer({ minimum: 1 }), { description: '1-based step indices for action:add.' })),
-      paths: Type.Optional(Type.Array(Type.String(), { description: 'Paths for action:add.' })),
-      taskReasoning: Type.Optional(Type.String({ description: 'Why the step exists or why it has no path scope. For action:add.' })),
-      acceptance: Type.Optional(Type.String({ description: 'Observable done state for action:add.' })),
-      checkCommand: Type.Optional(Type.String({ description: 'Verification command for action:add.' })),
-      index: Type.Optional(Type.Integer({ minimum: 1, description: '1-based step index for start/complete/remove when targeting a specific step.' })),
-      revision: Type.Optional(Type.String({ description: 'For reviewed action:start — the exact displayed RFC revision string.' })),
-      authorizationInteractionId: Type.Optional(Type.String({ description: 'For noninteractive reviewed action:start — the interaction ID.' })),
-      consequential: Type.Optional(Type.Boolean({ description: 'For propose: true requires RFC review; false with a non-empty reason overrides heuristic inference.' })),
-      reason: Type.Optional(Type.String({ description: 'Planning rationale. Required with consequential:false when overriding a consequential proposal heuristic.' })),
-      rfcPath: Type.Optional(Type.String({ description: 'For set/propose: a reviewable `.octocode/rfc/<name>/` folder or RFC.md. Propose hashes its exact bytes and enters review; the path must stay under the workspace RFC tree.' })),
-      questions: Type.Optional(Type.Array(
-        Type.Object({
-          prompt: Type.String({ description: 'One concise question whose answer changes scope, architecture, acceptance criteria, or authorization and cannot be answered from the repo.' }),
-          options: Type.Optional(Type.Array(Type.Object({
-            label: Type.String(),
-            value: Type.Optional(Type.String()),
-            description: Type.Optional(Type.String({ description: 'One short sentence of decision-relevant nuance; omit when the label is self-explanatory.' })),
-            recommended: Type.Optional(Type.Boolean({ description: 'Marks the recommended default; lands the cursor here.' })),
-            pros: Type.Optional(Type.Array(Type.String(), { description: 'Distinct upside bullets; omit when description or label already says it.' })),
-            cons: Type.Optional(Type.Array(Type.String(), { description: 'Distinct risk bullets; omit when description or label already says it.' })),
-          }), { description: 'Multiple-choice options; omit for a free-text question. A free-text escape is always offered.' })),
-        }),
-        { minItems: 1, maxItems: 3, description: 'For clarify: prefer one decision-changing blocker; use 2–3 only when independent and all must be answered before planning.' },
-      )),
-    }, {
-      oneOf: [
-        { title: 'set', properties: { action: { const: 'set' } }, required: ['action', 'steps'] },
-        { title: 'propose', properties: { action: { const: 'propose' } }, required: ['action', 'steps'] },
-        { title: 'clarify', properties: { action: { const: 'clarify' } }, required: ['action', 'questions'] },
-        { title: 'add', properties: { action: { const: 'add' } }, required: ['action', 'text'] },
-        { title: 'start', properties: { action: { const: 'start' } }, required: ['action'] },
-        { title: 'complete', properties: { action: { const: 'complete' } }, required: ['action'] },
-        { title: 'remove', properties: { action: { const: 'remove' } }, required: ['action'] },
-        { title: 'clear', properties: { action: { const: 'clear' } }, required: ['action'] },
-        { title: 'show', properties: { action: { const: 'show' } }, required: ['action'] },
-      ],
-    }), { reasoningDescription: 'Why this plan transition is necessary.' }),
+    parameters: buildQueryEnvelopeSchema(
+      z.looseObject({
+        action: z.enum(['set','propose','clarify','add','start','complete','remove','clear','show'])
+          .describe('Plan lifecycle operation; use the matching action branch and fields.'),
+        scope: z.enum(['auto','session','shared']).optional()
+          .describe('Projection policy. auto stays local unless safely adopting existing shared ownership.'),
+        receipt: z.object({
+          command: z.string().min(1).describe('The exact declared check command that was actually run.'),
+          status: z.enum(['SUCCESS','FAILED']).describe('Observed check result.'),
+          message: z.string().min(1).describe('Concise observed result, such as test counts or failure cause.'),
+        }).optional(),
+        steps: z.array(z.union([
+          z.string(),
+          z.object({
+            text: z.string(),
+            acceptance: z.string().optional().describe('Observable done state for this task.'),
+            activeForm: z.string().optional().describe('Present-continuous label shown while this step runs.'),
+            checkCommand: z.string().optional().describe('Command that verifies this task after DONE.'),
+            dependsOn: z.array(z.number().int().min(1)).optional().describe('1-based indices of steps that must be done first.'),
+            paths: z.array(z.string()).optional().describe('Workspace-relative paths this task may change.'),
+            reasoning: z.string().optional().describe('Why this task exists or may omit paths.'),
+          }),
+        ])).min(1).optional(),
+        text: z.string().optional().describe('Step text for action:add.'),
+        activeForm: z.string().optional().describe('Present-continuous form for action:add.'),
+        dependsOn: z.array(z.number().int().min(1)).optional().describe('1-based step indices for action:add.'),
+        paths: z.array(z.string()).optional().describe('Paths for action:add.'),
+        taskReasoning: z.string().optional().describe('Why the step exists or why it has no path scope. For action:add.'),
+        acceptance: z.string().optional().describe('Observable done state for action:add.'),
+        checkCommand: z.string().optional().describe('Verification command for action:add.'),
+        index: z.number().int().min(1).optional().describe('1-based step index for start/complete/remove when targeting a specific step.'),
+        revision: z.string().optional().describe('For reviewed action:start — the exact displayed RFC revision string.'),
+        authorizationInteractionId: z.string().optional().describe('For noninteractive reviewed action:start — the interaction ID.'),
+        consequential: z.boolean().optional().describe('For propose: true requires RFC review; false with a non-empty reason overrides heuristic inference.'),
+        reason: z.string().optional().describe('Planning rationale. Required with consequential:false when overriding a consequential proposal heuristic.'),
+        rfcPath: z.string().optional().describe('For set/propose: a reviewable `.octocode/rfc/<name>/` folder or RFC.md. Propose hashes its exact bytes and enters review; the path must stay under the workspace RFC tree.'),
+        questions: z.array(z.object({
+          prompt: z.string().describe('One concise question whose answer changes scope, architecture, acceptance criteria, or authorization and cannot be answered from the repo.'),
+          options: z.array(z.object({
+            label: z.string(),
+            value: z.string().optional(),
+            description: z.string().optional().describe('One short sentence of decision-relevant nuance; omit when the label is self-explanatory.'),
+            recommended: z.boolean().optional().describe('Marks the recommended default; lands the cursor here.'),
+            pros: z.array(z.string()).optional().describe('Distinct upside bullets; omit when description or label already says it.'),
+            cons: z.array(z.string()).optional().describe('Distinct risk bullets; omit when description or label already says it.'),
+          })).optional().describe('Multiple-choice options; omit for a free-text question. A free-text escape is always offered.'),
+        })).min(1).max(3).optional().describe('For clarify: prefer one decision-changing blocker; use 2–3 only when independent and all must be answered before planning.'),
+      }),
+      { reasoningDescription: 'Why this plan transition is necessary.' },
+    ),
 
     async execute(toolCallId: string, rawArgs: Record<string, unknown>, signal?: AbortSignal, onUpdate?: (update: ToolCallResult) => void, ctx?: PiContext) {
       return executeQueryBatch({

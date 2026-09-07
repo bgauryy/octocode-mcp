@@ -17,6 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SUBAGENT_PLACEHOLDERS } from '@octocodeai/agent-contracts/prompts';
 import type { ResourceMode } from './tools/agents/types.js';
 import { discoverSkills } from './tools/skill-discovery.js';
 
@@ -73,15 +74,18 @@ export type SubagentName =
 
 // ─── Runtime path resolution ──────────────────────────────────────────────────
 
-function resolveSubagentsDir(): string {
+function resolveSubagentsDir(): { dir: string; isBuilt: boolean } {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const distDir = path.join(moduleDir, 'subagents');
-  if (fs.existsSync(distDir)) return distDir;
-  return path.resolve(moduleDir, '..', 'subagents');
+  if (fs.existsSync(distDir)) return { dir: distDir, isBuilt: true };
+  return { dir: path.resolve(moduleDir, '..', 'subagents'), isBuilt: false };
 }
 
+const _subagentsResolution = resolveSubagentsDir();
 /** dist/subagents/ in published builds; packageRoot/subagents/ in source tests. */
-const SUBAGENTS_DIR = resolveSubagentsDir();
+const SUBAGENTS_DIR = _subagentsResolution.dir;
+/** true when running from the built dist/ directory (placeholders are replaced). */
+export const SUBAGENTS_IS_BUILT = _subagentsResolution.isBuilt;
 
 function subagentSkillPath(name: SubagentName, skillName: string): string {
   return path.join(SUBAGENTS_DIR, name, 'skills', skillName);
@@ -118,7 +122,21 @@ export function loadSystemPrompt(config: SubagentConfig): string {
         `Run: yarn workspace @octocodeai/pi-extension build`
     );
   }
-  return fs.readFileSync(p, 'utf8');
+  const prompt = fs.readFileSync(p, 'utf8');
+  // Guard only applies when loading from the built dist/ directory.
+  // The source-tree subagents/ templates intentionally contain {{...}} placeholders
+  // that are expanded at build time. In test/dev fallback mode (no dist/ present)
+  // the placeholder check is skipped to keep unit tests runnable without a prior build.
+  if (SUBAGENTS_IS_BUILT) {
+    const leftover = SUBAGENT_PLACEHOLDERS.find((ph) => prompt.includes(ph));
+    if (leftover) {
+      throw new Error(
+        `subagent ${path.basename(path.dirname(p))}: prompt contains unexpanded placeholder "${leftover}".\n` +
+          `Run: yarn workspace @octocodeai/pi-extension build`
+      );
+    }
+  }
+  return prompt;
 }
 
 // ─── Registry ─────────────────────────────────────────────────────────────────

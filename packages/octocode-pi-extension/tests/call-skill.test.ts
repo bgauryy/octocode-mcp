@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { afterEach, beforeEach, test } from 'vitest';
-import { Type } from 'typebox';
 import type { ToolDefinition } from '../src/types.js';
 import { registerSkillTool } from '../src/tools/skill-tool.js';
 import {
@@ -31,7 +30,7 @@ afterEach(() => {
 function loadTool(): ToolDefinition {
   const tools = new Map<string, ToolDefinition>();
   const pi = { registerTool: (def: ToolDefinition) => tools.set(def.name, def) };
-  registerSkillTool(pi, Type, new Set<string>(), (p, n, def) => {
+  registerSkillTool(pi, new Set<string>(), (p, n, def) => {
     n.add(def.name);
     p.registerTool?.(def);
   }, () => []);

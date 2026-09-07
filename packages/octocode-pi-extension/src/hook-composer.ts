@@ -53,9 +53,8 @@ export async function runHookMiddleware(
       if (shouldStopForBlock(event, aggregate)) break;
     } catch (error) {
       options.onError?.(error, event, middleware.name, args);
-      if (event === 'tool_call') {
-        return { block: true, reason: formatHookError(error, event, middleware.name) };
-      }
+      // tool_call is always a LifecycleBus event (PI_LIFECYCLE_MAPPINGS) and
+      // never reaches this legacy pi.on path; no block handling needed here.
     }
   }
   return aggregate;

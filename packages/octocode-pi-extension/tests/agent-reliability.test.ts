@@ -12,7 +12,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test, beforeEach, afterEach, vi } from 'vitest';
-import { Type } from 'typebox';
 import { spawnRpcAgent } from '../src/tools/agents/process.js';
 import { executeAgentLifecycle, getWorkerTranscript } from '../src/tools/agents/lifecycle.js';
 import { handleOctocodeAgentsCommand } from '../src/tools/agents/command.js';
@@ -453,9 +452,7 @@ test('SEV-1: AgentMessage wait cleanup ignores a context invalidated while waiti
   const record = spawnRpcAgent({ task: 'wait across replacement', resourceMode: 'lean' }, ctx);
   const tools = new Map<string, ToolDefinition>();
   registerUnifiedAgentTool(
-    { registerTool: (definition: ToolDefinition) => tools.set(definition.name, definition) } as never,
-    Type,
-    new Set<string>(),
+    { registerTool: (definition: ToolDefinition) => tools.set(definition.name, definition) } as never, new Set<string>(),
     (pi, names, definition) => {
       names.add(definition.name);
       pi.registerTool?.(definition);
@@ -484,7 +481,7 @@ test('agent wait cancellation releases waiters and probes without terminating th
   setAgentProcessFactoryForTests(() => mock as never);
   const record = spawnRpcAgent({ task: 'keep working after cancelled wait', resourceMode: 'lean' });
   const tools = new Map<string, ToolDefinition>();
-  registerUnifiedAgentTool({}, Type, new Set(), (_pi, _names, definition) => {
+  registerUnifiedAgentTool({}, new Set(), (_pi, _names, definition) => {
     tools.set(definition.name, definition);
   });
   const controller = new AbortController();
@@ -547,8 +544,8 @@ test('public plan assignment reaches the worker RPC prompt and prevents duplicat
   const mock = makeMockAgentProcess();
   setAgentProcessFactoryForTests(() => mock as never);
   const tools = new Map<string, ToolDefinition>();
-  registerUnifiedAgentTool({}, Type, new Set(), (_pi, _names, definition) => tools.set(definition.name, definition));
-  registerPlanTool({}, Type, new Set(), (_pi, _names, definition) => tools.set(definition.name, definition));
+  registerUnifiedAgentTool({}, new Set(), (_pi, _names, definition) => tools.set(definition.name, definition));
+  registerPlanTool({}, new Set(), (_pi, _names, definition) => tools.set(definition.name, definition));
   try {
     setPlan(scope, [{ text: 'Implement endpoint', paths: ['src/endpoint.ts'], acceptance: 'Endpoint verified', checkCommand: 'yarn test endpoint' }]);
     const shown = await tools.get('plan')!.execute('show-plan', { queries: [{ reasoning: 'Read the active task identity', action: 'show' }] }, undefined, undefined, ctx);
@@ -771,9 +768,7 @@ test('SEV-1: agent typed profile inherits the parent provider when the caller do
   });
   const tools = new Map<string, ToolDefinition>();
   registerUnifiedAgentTool(
-    { registerTool: (def) => tools.set(def.name, def) },
-    Type,
-    new Set<string>(),
+    { registerTool: (def) => tools.set(def.name, def) }, new Set<string>(),
     (pi, names, def) => { names.add(def.name); pi.registerTool?.(def); },
   );
   const ctx = {

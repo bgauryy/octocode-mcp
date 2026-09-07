@@ -20,7 +20,7 @@ import path from 'node:path';
 import { connectToChrome, cleanupConnection, redactObject } from '../chrome-debug.js';
 import { resolveSessionIdentity } from './session-artifacts.js';
 import { connectionKey, getLiveConnection, cacheConnection, evictConnection } from '../chrome-connection-cache.js';
-import { SCHEME_REGISTRY, SCHEMES, ACTIONS, STEALTH_SCRIPT } from '../chrome-debug-schemes.js';
+import { SCHEME_REGISTRY, SCHEMES, STEALTH_SCRIPT } from '../chrome-debug-schemes.js';
 import type { ChromeDebugParams, Scheme } from '../chrome-debug-schemes.js';
 import { CLI_STATUS_TEXT, cliStatusGlyph, cliStatusToken, cliToolTitle } from '../tui/cli-design.js';
 import type { ToolDefinition, ToolCallResult, PiTheme, PiContext, RenderContext } from '../types.js';
@@ -30,7 +30,7 @@ import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js
 import { makeComponentRenderer } from './render-helpers.js';
 import { setManagedStatus } from './runtime-renderer.js';
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
@@ -60,7 +60,6 @@ const DESCRIPTION = [
 
 export function registerChromeDebugTool(
   pi: { registerTool?(def: ToolDefinition): void },
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: RegisterFn,
   _notify?: (ctx: PiContext | undefined, message: string, level?: string) => void,
@@ -78,174 +77,70 @@ export function registerChromeDebugTool(
       'Screenshots → <workspace>/.octocode/screenshots/. Set OCTOCODE_CDP_DEBUG=1 for cdp-events.jsonl log.',
     ],
     parameters: (() => {
-      const itemSchema = Type.Object({
-      scheme: Type.Unsafe({
-        type: 'string',
-        enum: [...SCHEMES],
-        description: 'Smart prebuilt debug need. Use "raw" for any CDP Domain.method not covered by a scheme.',
-      }),
-      action: Type.Optional(
-        Type.Unsafe({
-          type: 'string',
-          enum: [...ACTIONS],
-          description: 'Verb within the scheme. Most schemes default to observe.',
-        }),
-      ),
-      // Navigation / target
-      url: Type.Optional(
-        Type.String({ description: 'URL to navigate to before running the scheme recipe.' }),
-      ),
-      selector: Type.Optional(
-        Type.String({ description: 'CSS selector for DOM-focused schemes.' }),
-      ),
-      expression: Type.Optional(
-        Type.String({ description: 'JavaScript expression to evaluate (action: eval or live-page).' }),
-      ),
-      interact: Type.Optional(
-        Type.Object(
-          {
-            click: Type.Optional(Type.String({ description: 'CSS selector to click.' })),
-            fill: Type.Optional(
-              Type.Object(
-                {
-                  selector: Type.String({ description: 'CSS selector of the input.' }),
-                  value: Type.String({ description: 'Value to fill in.' }),
-                },
-                { description: 'Fill an input field.' },
-              ),
-            ),
-            wait: Type.Optional(Type.String({ description: 'Wait duration in ms before other interact steps.' })),
-          },
-          { description: 'Browser interaction steps (click, fill, wait).' },
-        ),
-      ),
-      // Raw action
-      method: Type.Optional(
-        Type.String({ description: 'CDP Domain.method for scheme:"raw". Example: "Network.getCookies".' }),
-      ),
-      params: Type.Optional(
-        Type.Unsafe({ type: 'object', additionalProperties: true, description: 'CDP params object for scheme:"raw". Example: {"urls":["https://example.com"]} for Network.getCookies, {"query":"button"} for DOM.performSearch.' }),
-      ),
-      sessionId: Type.Optional(
-        Type.String({ description: 'Route to a worker/iframe CDP session.' }),
-      ),
-      // Screenshot
-      format: Type.Optional(
-        Type.Unsafe({
-          type: 'string',
-          enum: ['png', 'jpeg', 'webp', 'pdf'],
-          description: 'Screenshot format. "pdf" uses Page.printToPDF.',
-        }),
-      ),
-      quality: Type.Optional(
-        Type.Integer({
-          minimum: 0,
-          maximum: 100,
-          description: 'JPEG quality (0-100).',
-        }),
-      ),
-      clip: Type.Optional(
-        Type.Object(
-          {
-            x: Type.Unsafe({ type: 'number' }),
-            y: Type.Unsafe({ type: 'number' }),
-            width: Type.Unsafe({ type: 'number' }),
-            height: Type.Unsafe({ type: 'number' }),
-            scale: Type.Optional(Type.Unsafe({ type: 'number' })),
-          },
-          { description: 'Clip region for screenshot.' },
-        ),
-      ),
-      fullPage: Type.Optional(
-        Type.Boolean({ description: 'Capture full page height (captureBeyondViewport).' }),
-      ),
-      // Emulate
-      device: Type.Optional(
-        Type.Object(
-          {
-            width: Type.Integer(),
-            height: Type.Integer(),
-            deviceScaleFactor: Type.Unsafe({ type: 'number' }),
-            mobile: Type.Boolean(),
-            userAgent: Type.Optional(Type.String()),
-          },
-          { description: 'Device metrics for emulation.' },
-        ),
-      ),
-      throttle: Type.Optional(
-        Type.Object(
-          {
-            offline: Type.Optional(Type.Boolean()),
-            downloadThroughput: Type.Optional(Type.Unsafe({ type: 'number' })),
-            uploadThroughput: Type.Optional(Type.Unsafe({ type: 'number' })),
-            latency: Type.Optional(Type.Unsafe({ type: 'number' })),
-          },
-          { description: 'Network throttle conditions.' },
-        ),
-      ),
-      // Session / lifecycle
-      durationMs: Type.Optional(
-        Type.Integer({ description: 'Observation window in ms for monitor/observe schemes. Default: 5000.' }),
-      ),
-      timeoutMs: Type.Optional(
-        Type.Integer({ description: 'Per-call CDP timeout in ms. Default: 60000.' }),
-      ),
-      port: Type.Optional(
-        Type.Integer({
-          default: 9222,
-          description: 'Chrome remote debugging port. Default: 9222.',
-        }),
-      ),
-      targetId: Type.Optional(
-        Type.String({ description: 'Attach to a specific CDP target by ID.' }),
-      ),
-      targetUrl: Type.Optional(
-        Type.String({ description: 'Attach to a target whose URL contains this substring.' }),
-      ),
-      targetType: Type.Optional(
-        Type.String({ description: 'Attach to a target of this type (page, worker, …).' }),
-      ),
-      newTab: Type.Optional(
-        Type.String({ description: 'Open a new tab at this URL.' }),
-      ),
-      keepTab: Type.Optional(
-        Type.Boolean({ description: 'Keep the target alive after the call. Default: true.' }),
-      ),
-      launch: Type.Optional(
-        Type.Boolean({
-          description:
-            'Launch Chrome if not already running on the port. ' +
-            'Always uses a non-default --user-data-dir (Chrome ≥136 requirement).',
-        }),
-      ),
-      headless: Type.Optional(
-        Type.Boolean({ description: 'Launch Chrome headless. Default: false (visible).' }),
-      ),
-      stealth: Type.Optional(
-        Type.Boolean({ description: 'Inject stealth evasions before navigation: patches navigator.webdriver, window.chrome, plugins, vendor, hardwareConcurrency, permissions, WebGL. Use on sites with bot detection.' }),
-      ),
-      bypassCSP: Type.Optional(
-        Type.Boolean({ description: 'Bypass Content-Security-Policy before script injection. Required for scheme:"inject" on CSP-protected sites.' }),
-      ),
-      scriptSource: Type.Optional(
-        Type.String({ description: 'JavaScript source to inject via scheme:"inject"/"raw" (Page.addScriptToEvaluateOnNewDocument). Runs before any page script. Preferred over nesting in params to avoid JSON escaping fragility.' }),
-      ),
-      scriptFile: Type.Optional(
-        Type.String({ description: 'Absolute path to a local .mjs file whose exported *SCRIPT constant (or full text) is injected. Avoids inline string escaping. Example: "/abs/path/stealth-inject.mjs".' }),
-      ),
-      depth: Type.Optional(
-        Type.Integer({ description: 'Max results to return for scheme:"scrape" (default 50) or AX tree depth for scheme:"accessibility" (default -1 = full).' }),
-      ),
-      xpath: Type.Optional(
-        Type.String({ description: 'XPath expression for scheme:"scrape". Evaluated alongside selector.' }),
-      ),
-      cleanup: Type.Optional(
-        Type.Boolean({
-          description: 'Close tabs opened by this call and, if the tool launched Chrome, terminate it.',
-        }),
-      ),
+      const itemSchema = z.looseObject({
+        scheme: z.enum([
+          'debug','network','console','dom','performance','screenshot',
+          'intercept','security','storage','automate','live-page','user-auth',
+          'raw','memory','css-coverage','js-coverage','websocket',
+          'service-worker','workers','accessibility','supply-chain','full-audit',
+          'consent','scrape','login','emulate','inject','monitor',
+        ]).describe('Smart prebuilt debug need. Use "raw" for any CDP Domain.method not covered by a scheme.'),
+        action: z.enum(['observe','capture','navigate','interact','wait','breakpoint',
+          'resume','screenshot','eval','list-targets','attach','cleanup','raw']).optional()
+          .describe('Verb within the scheme. Most schemes default to observe.'),
+        url: z.string().optional().describe('URL to navigate to before running the scheme recipe.'),
+        selector: z.string().optional().describe('CSS selector for DOM-focused schemes.'),
+        expression: z.string().optional().describe('JavaScript expression to evaluate (action: eval or live-page).'),
+        interact: z.object({
+          click: z.string().optional().describe('CSS selector to click.'),
+          fill: z.object({
+            selector: z.string().describe('CSS selector of the input.'),
+            value: z.string().describe('Value to fill in.'),
+          }).optional(),
+          wait: z.string().optional().describe('Wait duration in ms before other interact steps.'),
+        }).optional(),
+        clip: z.object({
+          x: z.number(), y: z.number(), width: z.number(), height: z.number(),
+          scale: z.number().optional(),
+        }).optional().describe('Clip region for screenshot.'),
+        format: z.enum(['png','jpeg','webp','pdf']).optional().describe('Screenshot format. "pdf" uses Page.printToPDF.'),
+        quality: z.number().int().min(0).max(100).optional().describe('JPEG quality (0-100).'),
+        fullPage: z.boolean().optional().describe('Capture full page height (captureBeyondViewport).'),
+        device: z.object({
+          width: z.number().int(),
+          height: z.number().int(),
+          deviceScaleFactor: z.number(),
+          mobile: z.boolean(),
+          userAgent: z.string().optional(),
+        }).optional().describe('Device metrics for emulation.'),
+        throttle: z.object({
+          offline: z.boolean().optional(),
+          downloadThroughput: z.number().optional(),
+          uploadThroughput: z.number().optional(),
+          latency: z.number().optional(),
+        }).optional(),
+        durationMs: z.number().int().optional().describe('Observation window in ms for monitor/observe schemes. Default: 5000.'),
+        timeoutMs: z.number().int().optional().describe('Per-call CDP timeout in ms. Default: 60000.'),
+        port: z.number().int().optional().describe('Chrome remote debugging port. Default: 9222.'),
+        targetId: z.string().optional().describe('Attach to a specific CDP target by ID.'),
+        targetUrl: z.string().optional().describe('Attach to a target whose URL contains this substring.'),
+        targetType: z.string().optional().describe('Attach to a target of this type (page, worker, …).'),
+        newTab: z.string().optional().describe('Open a new tab at this URL.'),
+        keepTab: z.boolean().optional().describe('Keep the target alive after the call. Default: true.'),
+        launch: z.boolean().optional().describe('Launch Chrome if not already running on the port. Always uses a non-default --user-data-dir (Chrome ≥136 requirement).'),
+        headless: z.boolean().optional().describe('Launch Chrome headless. Default: false (visible).'),
+        stealth: z.boolean().optional().describe('Inject stealth evasions before navigation.'),
+        bypassCSP: z.boolean().optional().describe('Bypass Content-Security-Policy before script injection. Required for scheme:"inject" on CSP-protected sites.'),
+        scriptSource: z.string().optional().describe('JavaScript source to inject via scheme:"inject"/"raw". Runs before any page script.'),
+        scriptFile: z.string().optional().describe('Absolute path to a local .mjs file whose exported *SCRIPT constant (or full text) is injected.'),
+        depth: z.number().int().optional().describe('Max results to return for scheme:"scrape" (default 50) or AX tree depth for scheme:"accessibility" (default -1 = full).'),
+        xpath: z.string().optional().describe('XPath expression for scheme:"scrape". Evaluated alongside selector.'),
+        cleanup: z.boolean().optional().describe('Close tabs opened by this call and, if the tool launched Chrome, terminate it.'),
+        method: z.string().optional().describe('CDP Domain.method for scheme:"raw". Example: "Network.getCookies".'),
+        params: z.record(z.string(), z.unknown()).optional().describe('CDP params object for scheme:"raw".'),
+        sessionId: z.string().optional().describe('Route to a worker/iframe CDP session.'),
       });
-      return buildQueryEnvelopeSchema(Type, itemSchema, {
+      return buildQueryEnvelopeSchema(itemSchema, {
         reasoningDescription: 'Concise reason this Chrome DevTools Protocol operation is necessary.',
       });
     })(),

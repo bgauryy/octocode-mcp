@@ -38,7 +38,7 @@ import {
 } from './dynamic-tools.js';
 import fs from 'node:fs';
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 
 type Mode = 'auto' | 'run' | 'create' | 'enhance' | 'fix' | 'list' | 'delete';
@@ -527,7 +527,6 @@ function renderHeader(outcome: OrchestrateOutcome): string {
 
 export function registerCallTool(
   pi: { registerTool?(def: ToolDefinition): void },
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: RegisterFn,
 ): void {
@@ -557,29 +556,20 @@ export function registerCallTool(
       'Maintain the library: it auto-prunes junk each call; use mode:"list" to review and mode:"delete" to remove obsolete or superseded tools.',
       'Generated tools are verification-gated (their test must pass) and sandboxed; approve net/fs/exec explicitly via metadata._allow only when required.',
     ],
-    parameters: buildQueryEnvelopeSchema(Type, Type.Object({
-      toolType: Type.String({
-        description: 'Logical name of the capability, e.g. "getCurrentTime", "toSlug", "uuidV4". Used as the O(1) registry key.',
+    parameters: buildQueryEnvelopeSchema(
+      z.looseObject({
+        toolType: z.string().describe(
+          'Logical name of the capability, e.g. "getCurrentTime", "toSlug", "uuidV4". Used as the O(1) registry key.',
+        ),
+        metadata: z.record(z.string(), z.unknown()).optional().describe(
+          'Runtime input args for the tool. Reserved keys: `intent`, `_allow`, `reason`.',
+        ),
+        mode: z.enum(['auto', 'run', 'create', 'enhance', 'fix', 'list', 'delete']).optional().describe(
+          'auto (default): reuse an existing tool or propose creation on a miss. run: reuse only, error on miss. create: force (re)generate. enhance/fix: regenerate an existing tool. list: inventory. delete: remove a tool.',
+        ),
       }),
-      metadata: Type.Optional(
-        Type.Unsafe({
-          type: 'object',
-          additionalProperties: true,
-          description:
-            'Runtime input args for the tool. Reserved keys: `intent` (natural-language description used to generate a missing tool), `_allow` (array approving capabilities like ["net"]), and `_sandboxed:false` (request explicit approval for a rare non-sandboxed trusted tool).',
-        }),
-      ),
-      mode: Type.Optional(
-        Type.Unsafe({
-          type: 'string',
-          enum: ['auto', 'run', 'create', 'enhance', 'fix', 'list', 'delete'],
-          description:
-            'auto (default): reuse an existing tool or propose creation on a miss. run: reuse only, error on miss. create: force (re)generate. enhance/fix: regenerate an existing tool (version bump). list: inventory. delete: remove a tool.',
-        }),
-      ),
-    }, { additionalProperties: false }), {
-      reasoningDescription: 'Concise reason this dynamic tool operation is necessary.',
-    }),
+      { reasoningDescription: 'Concise reason this dynamic tool operation is necessary.' },
+    ),
 
     async execute(id: string, rawParams: Record<string, unknown>, signal, onUpdate, ctx?: PiContext) {
       const queryCount = Array.isArray(rawParams.queries) ? rawParams.queries.length : 0;

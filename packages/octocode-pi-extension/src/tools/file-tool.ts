@@ -1,6 +1,6 @@
 import { lstat, unlink } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
-import type { TSchema, ToolCallResult, ToolDefinition, PiTheme } from '../types.js';
+import type { ToolCallResult, ToolDefinition, PiTheme } from '../types.js';
 import { CLI_STATUS_TEXT } from '../tui/cli-design.js';
 import { buildQueryCallBlocks, buildToolView } from './render-helpers.js';
 import { assertPathAllowed } from './path-guard.js';
@@ -21,7 +21,7 @@ import { commitWrite, resolveWritePath, validateWriteParams } from './write-tool
 import type { registerUniqueTool } from './octocode-tools.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch, QUERY_BATCH_MAX_ITEMS, type QueryRecord } from './query-envelope.js';
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 type FileOperation = 'edit' | 'write' | 'delete';
 
@@ -149,37 +149,25 @@ async function commitDelete(prepared: PreparedDelete, cwd: string, signal?: Abor
   };
 }
 
-function buildParameters(Type: TypeBoxBuilder): TSchema {
-  const editOperation = Type.Object({
-    oldText: Type.Optional(Type.String({ description: 'Current text; required except for lineRange.' })),
-    newText: Type.String({ description: 'Replacement text.' }),
-    replaceAll: Type.Optional(Type.Boolean({ description: 'Replace every match; default false.' })),
-    matchMode: Type.Optional(Type.Unsafe({ type: 'string', enum: ['exact', 'normalized', 'lineRange'], description: 'Match strategy; default exact.' })),
-    startLine: Type.Optional(Type.Integer({ minimum: 1, description: 'First line for lineRange.' })),
-    endLine: Type.Optional(Type.Integer({ minimum: 1, description: 'Inclusive last line for lineRange.' })),
-  }, { additionalProperties: false });
-  const item = Type.Object({
-    type: Type.Unsafe({ type: 'string', enum: ['edit', 'write', 'delete'], description: 'Mutation operation.' }),
-    path: Type.String({ minLength: 1, description: 'Target file path.' }),
-    content: Type.Optional(Type.String({ description: 'Complete content for write.' })),
-    edits: Type.Optional(Type.Array(editOperation, { minItems: 1, description: 'Targeted replacements for edit.' })),
-    requireRecentRead: Type.Optional(Type.Boolean({ description: 'Require a fresh recorded read before edit.' })),
-  }, {
-    additionalProperties: false,
-    oneOf: [
-      { title: 'edit', properties: { type: { const: 'edit' } }, required: ['type', 'path', 'edits'] },
-      { title: 'write', properties: { type: { const: 'write' } }, required: ['type', 'path', 'content'] },
-      { title: 'delete', properties: { type: { const: 'delete' } }, required: ['type', 'path'] },
-    ],
-  });
-  return buildQueryEnvelopeSchema(Type, item as TSchema, {
-    reasoningDescription: 'Why this file mutation is necessary.',
-  });
-}
+const fileEditOperationSchema = z.object({
+  oldText: z.string().optional().describe('Current text; required except for lineRange.'),
+  newText: z.string().describe('Replacement text.'),
+  replaceAll: z.boolean().optional().describe('Replace every match; default false.'),
+  matchMode: z.enum(['exact', 'normalized', 'lineRange']).optional().describe('Match strategy; default exact.'),
+  startLine: z.number().int().min(1).optional().describe('First line for lineRange.'),
+  endLine: z.number().int().min(1).optional().describe('Inclusive last line for lineRange.'),
+});
+
+const fileItemSchema = z.looseObject({
+  type: z.enum(['edit', 'write', 'delete']).describe('Mutation operation.'),
+  path: z.string().min(1).describe('Target file path.'),
+  content: z.string().optional().describe('Complete content for write.'),
+  edits: z.array(fileEditOperationSchema).min(1).optional().describe('Targeted replacements for edit.'),
+  requireRecentRead: z.boolean().optional().describe('Require a fresh recorded read before edit.'),
+});
 
 export function registerFileTool(
   pi: { registerTool?(def: ToolDefinition): void },
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: RegisterFn,
 ): void {
@@ -196,7 +184,9 @@ export function registerFileTool(
       'Keep replacements bounded with the smallest unique anchor, and split large mutations across separate calls before the model output limit.',
       'Each query has one concise reasoning field. Mixed batches are fully preflighted before the first mutation and reject duplicate target paths.',
     ],
-    parameters: buildParameters(Type),
+    parameters: buildQueryEnvelopeSchema(fileItemSchema, {
+      reasoningDescription: 'Why this file mutation is necessary.',
+    }),
     async execute(toolCallId, params, signal, onUpdate, ctx): Promise<ToolCallResult> {
       const cwd = ctx?.cwd ?? process.cwd();
       const rawQueries = Array.isArray(params['queries']) ? params['queries'] as Array<Record<string, unknown>> : [];

@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { afterEach, test, vi } from 'vitest';
-import { Type } from 'typebox';
 import type { ToolDefinition, ToolCallResult, PiTheme } from '../src/types.js';
 
 const theme: PiTheme = {
@@ -42,7 +41,7 @@ async function loadRegisteredWebTool(
     targetPi.registerTool?.(def);
   };
 
-  registerWebTool(pi, Type, registeredNames, registerFn);
+  registerWebTool(pi, registeredNames, registerFn);
   return { tool: tools.get('web')!, runWebTool, renderWebResult, propagateOctocodeEnv, getOctocodeHome };
 }
 
@@ -135,9 +134,7 @@ test('multi-query: two queries execute in order and return batch summary', async
   const { registerWebTool } = await import('../src/tools/web-tool.js');
   const tools = new Map<string, ToolDefinition>();
   registerWebTool(
-    { registerTool: (d) => tools.set(d.name, d) },
-    Type,
-    new Set<string>(),
+    { registerTool: (d) => tools.set(d.name, d) }, new Set<string>(),
     (_pi, _n, d) => _pi.registerTool?.(d),
   );
   const tool = tools.get('web')!;

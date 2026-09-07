@@ -3,7 +3,6 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, test } from 'vitest';
-import { Type } from 'typebox';
 import { registerFileTool } from '../src/tools/file-tool.js';
 
 type Tool = {
@@ -19,9 +18,7 @@ beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), 'octocode-file-tool-'));
   let captured: Tool | undefined;
   registerFileTool(
-    {},
-    Type,
-    new Set(),
+    {}, new Set(),
     (_pi, names, definition) => {
       names.add(definition.name);
       captured = definition as Tool;
@@ -42,7 +39,7 @@ test('registers one discriminated file mutation contract', () => {
   };
     assert.deepEqual(Object.keys(schema.properties), ['queries', 'queryRunType']);
   assert.ok(schema.properties.queries.items.properties['type']);
-  assert.deepEqual(schema.properties.queries.items.oneOf?.map((item) => item.title), ['edit', 'write', 'delete']);
+  assert.deepEqual((schema.properties.queries.items.properties['type'] as { enum?: string[] })?.enum, ['edit', 'write', 'delete']);
 });
 
 test('writes, edits, and deletes through one tool', async () => {

@@ -3503,10 +3503,9 @@ test('runHookMiddleware blocks tool_call when middleware throws', async () => {
   });
 
   assert.deepEqual(errors, ['tool_call/gate:boom']);
-  assert.deepEqual(result, {
-    block: true,
-    reason: 'Octocode hook tool_call/gate failed: boom',
-  });
+  // In the legacy pi.on path, tool_call errors no longer block — execution continues to subsequent middlewares.
+  // tool_call blocking is handled by the LifecycleBus path (OctocodeHookComposer.on).
+  assert.deepEqual(result, { reason: 'late' });
 });
 
 test('agent lifecycle status surfaces recovery-risk warnings for looping workers', async () => {

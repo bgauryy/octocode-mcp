@@ -19,7 +19,7 @@ import path from 'node:path';
 
 import { Marked } from 'marked';
 
-import type { TSchema, ToolCallResult, ToolDefinition, PiContext, PiTheme, RenderContext } from '../types.js';
+import type { ToolCallResult, ToolDefinition, PiContext, PiTheme, RenderContext } from '../types.js';
 import type { registerUniqueTool } from './octocode-tools.js';
 import { buildToolView } from './render-helpers.js';
 import { assertPathAllowed } from './path-guard.js';
@@ -29,7 +29,7 @@ import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js
 import { createImageFromSvg, createImageFromHtml, persistRenderedPng, renderHtmlToPdf } from './create-image-tool.js';
 import { runMediaQuery, type MediaResult } from './media-tool.js';
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 
 const MEDIA_OPERATIONS = ['image', 'pdf', 'gif', 'trim', 'audio', 'convert', 'concat'] as const;
@@ -185,49 +185,40 @@ export async function runMediaOperation(
 // Registration
 // ---------------------------------------------------------------------------
 
-function buildParameters(Type: TypeBoxBuilder): TSchema {
-  return Type.Object(
-    {
-      type: Type.Union(MEDIA_OPERATIONS.map((operation) => Type.Literal(operation)), {
-        description: 'Operation: image, pdf, gif, trim, audio, convert, or concat.',
-      }),
-      dest: Type.Optional(Type.String({ description: 'Output path. Required except for inline image.' })),
-      overwrite: Type.Optional(Type.Boolean({ description: 'Allow overwriting an existing `dest`. Default false.' })),
-      // image / html authoring
-      svg: Type.Optional(Type.String({ description: 'image: SVG source.' })),
-      html: Type.Optional(Type.String({ description: 'image/pdf: HTML source.' })),
-      markdown: Type.Optional(Type.String({ description: 'pdf: Markdown source.' })),
-      images: Type.Optional(Type.Array(Type.String(), { description: 'pdf: image paths, one page each.' })),
-      width: Type.Optional(Type.Integer({ minimum: 1, maximum: 4096, description: 'Image/GIF/convert width.' })),
-      height: Type.Optional(Type.Integer({ minimum: 1, maximum: 4096, description: 'HTML image height.' })),
-      background: Type.Optional(Type.String({ description: 'image background color.' })),
-      name: Type.Optional(Type.String({ description: 'image display name.' })),
-      landscape: Type.Optional(Type.Boolean({ description: 'pdf landscape mode.' })),
-      pdfScale: Type.Optional(Type.Unsafe({ type: 'number', minimum: 0.1, maximum: 2, description: 'pdf scale; default 1.' })),
-      // ffmpeg passthrough
-      source: Type.Optional(Type.String({ description: 'Input path for gif/trim/audio/convert.' })),
-      sources: Type.Optional(Type.Array(Type.String(), { minItems: 2, description: 'concat: ordered list of input paths to join (minimum 2).' })),
-      from: Type.Optional(Type.String({ description: 'gif/trim: start timestamp.' })),
-      to: Type.Optional(Type.String({ description: 'gif/trim: end timestamp.' })),
-      duration: Type.Optional(Type.String({ description: 'trim: clip length (alternative to `to`).' })),
-      reencode: Type.Optional(Type.Boolean({ description: 'trim/concat: frame-accurate re-encode instead of fast stream-copy.' })),
-      fps: Type.Optional(Type.Integer({ minimum: 1, description: 'gif/convert: frames per second.' })),
-      format: Type.Optional(Type.String({ description: 'audio: mp3 | aac | wav | flac.' })),
-      bitrate: Type.Optional(Type.String({ description: 'audio: e.g. "192k". convert: target bitrate for hw codecs (h264_videotoolbox/hevc_videotoolbox), e.g. "4M".' })),
-      scale: Type.Optional(Type.String({ description: 'convert: WxH, e.g. "1280x-1".' })),
-      videoCodec: Type.Optional(Type.String({ description: 'convert/trim/concat: h264 | hevc | vp9 | av1 | copy | h264_videotoolbox | hevc_videotoolbox (hw, macOS).' })),
-      audioCodec: Type.Optional(Type.String({ description: 'convert/trim/concat: aac | mp3 | copy | none.' })),
-      crf: Type.Optional(Type.Integer({ minimum: 0, maximum: 51, description: 'convert: quality (lower=better, 23 default).' })),
-      timeoutSec: Type.Optional(Type.Integer({ minimum: 1, description: 'ffmpeg modes: max seconds before the process is killed. Default 120.' })),
-      showToModel: Type.Optional(Type.Boolean({ description: 'image: also return pixels to model.' })),
-    },
-    { additionalProperties: false },
-  );
-}
-
+const mediaItemSchema = z.looseObject({
+  type: z.enum(['image', 'pdf', 'gif', 'trim', 'audio', 'convert', 'concat']).describe(
+    'Operation: image, pdf, gif, trim, audio, convert, or concat.',
+  ),
+  dest: z.string().optional().describe('Output path. Required except for inline image.'),
+  overwrite: z.boolean().optional().describe('Allow overwriting an existing `dest`. Default false.'),
+  svg: z.string().optional().describe('image: SVG source.'),
+  html: z.string().optional().describe('image/pdf: HTML source.'),
+  markdown: z.string().optional().describe('pdf: Markdown source.'),
+  images: z.array(z.string()).optional().describe('pdf: image paths, one page each.'),
+  width: z.number().int().min(1).max(4096).optional().describe('Image/GIF/convert width.'),
+  height: z.number().int().min(1).max(4096).optional().describe('HTML image height.'),
+  background: z.string().optional().describe('image background color.'),
+  name: z.string().optional().describe('image display name.'),
+  source: z.string().optional().describe('Input path for gif/trim/audio/convert.'),
+  sources: z.array(z.string()).min(2).optional().describe('concat: ordered list of input paths to join (minimum 2).'),
+  pdfScale: z.number().min(0.1).max(2).optional().describe('pdf scale; default 1.'),
+  landscape: z.boolean().optional().describe('pdf landscape mode.'),
+  from: z.string().optional().describe('gif/trim: start timestamp.'),
+  to: z.string().optional().describe('gif/trim: end timestamp.'),
+  duration: z.string().optional().describe('trim: clip length (alternative to `to`).'),
+  reencode: z.boolean().optional().describe('trim/concat: frame-accurate re-encode instead of fast stream-copy.'),
+  fps: z.number().int().min(1).optional().describe('gif/convert: frames per second.'),
+  format: z.string().optional().describe('audio: mp3 | aac | wav | flac.'),
+  bitrate: z.string().optional().describe('audio: e.g. "192k". convert: target bitrate for hw codecs, e.g. "4M".'),
+  scale: z.string().optional().describe('convert: WxH, e.g. "1280x-1".'),
+  videoCodec: z.string().optional().describe('convert/trim/concat: h264 | hevc | vp9 | av1 | copy | h264_videotoolbox | hevc_videotoolbox (hw, macOS).'),
+  audioCodec: z.string().optional().describe('convert/trim/concat: aac | mp3 | copy | none.'),
+  crf: z.number().int().min(0).max(51).optional().describe('convert: quality (lower=better, 23 default).'),
+  timeoutSec: z.number().int().min(1).optional().describe('ffmpeg modes: max seconds before the process is killed. Default 120.'),
+  showToModel: z.boolean().optional().describe('image: also return pixels to model.'),
+});
 export function registerMediaTool(
   pi: { registerTool?(def: ToolDefinition): void },
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: RegisterFn,
 ): void {
@@ -243,7 +234,7 @@ export function registerMediaTool(
       'convert videoCodec:"h264_videotoolbox"/"hevc_videotoolbox" for hardware encoding on macOS.',
       'Use inspectMedia for metadata, frames, contact sheets, waveforms, and spectrograms (read-only, returns inline pixels for vision).'
     ],
-    parameters: buildQueryEnvelopeSchema(Type, buildParameters(Type), {
+    parameters: buildQueryEnvelopeSchema(mediaItemSchema, {
       reasoningDescription: 'Concise reason this media operation is necessary.',
     }),
 

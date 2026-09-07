@@ -700,40 +700,38 @@ function existingDirectory(filePath: string): string | null {
 
 // ─── Pi wiring ────────────────────────────────────────────────────────────────
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
 
 interface SupportToolRegistrationArgs {
   pi: PiInstance;
-  Type: TypeBoxBuilder;
   registeredToolNames: Set<string>;
   notify: NotifyFn;
   getLatestAvailableSkills: () => SkillInfo[] | undefined;
 }
 
-function registerSupportToolPhase({ pi, Type, registeredToolNames, notify, getLatestAvailableSkills }: SupportToolRegistrationArgs): void {
-  registerFileTool(pi, Type, registeredToolNames, registerUniqueTool);
-  registerBashTool(pi, Type, registeredToolNames, registerUniqueTool);
-  registerReadMediaTool(pi, Type, registeredToolNames, registerUniqueTool);
-  registerMediaTool(pi, Type, registeredToolNames, registerUniqueTool);
-  registerRunFfmpegTool(pi, Type, registeredToolNames, registerUniqueTool);
+function registerSupportToolPhase({ pi, registeredToolNames, notify, getLatestAvailableSkills }: SupportToolRegistrationArgs): void {
+  registerFileTool(pi, registeredToolNames, registerUniqueTool);
+  registerBashTool(pi, registeredToolNames, registerUniqueTool);
+  registerReadMediaTool(pi, registeredToolNames, registerUniqueTool);
+  registerMediaTool(pi, registeredToolNames, registerUniqueTool);
+  registerRunFfmpegTool(pi, registeredToolNames, registerUniqueTool);
 
-  registerWebTool(pi, Type, registeredToolNames, registerUniqueTool);
+  registerWebTool(pi, registeredToolNames, registerUniqueTool);
 
   if (process.env['OCTOCODE_CHROME_DEBUG'] !== '0') {
-    registerChromeDebugTool(pi, Type, registeredToolNames, registerUniqueTool, notify);
+    registerChromeDebugTool(pi, registeredToolNames, registerUniqueTool, notify);
   }
 
-  registerUnifiedAgentTool(pi, Type, registeredToolNames, registerUniqueTool);
-  registerCallTool(pi, Type, registeredToolNames, registerUniqueTool);
+  registerUnifiedAgentTool(pi, registeredToolNames, registerUniqueTool);
+  registerCallTool(pi, registeredToolNames, registerUniqueTool);
 
   // Octocode-owned skill loading replaces Pi's read-based flow. The public
   // skill facade dispatches load/list and dynamic lifecycle queries.
-  registerSkillTool(pi, Type, registeredToolNames, registerUniqueTool, getLatestAvailableSkills);
+  registerSkillTool(pi, registeredToolNames, registerUniqueTool, getLatestAvailableSkills);
 
-  registerPlanTool(pi, Type, registeredToolNames, registerUniqueTool);
-  registerLocalServerTool(pi, Type, registeredToolNames, registerUniqueTool);
-  registerAskUserTool(pi, Type, registeredToolNames, registerUniqueTool);
-  registerMcpTool(pi, Type, registeredToolNames, registerUniqueTool);
+  registerPlanTool(pi, registeredToolNames, registerUniqueTool);
+  registerLocalServerTool(pi, registeredToolNames, registerUniqueTool);
+  registerAskUserTool(pi, registeredToolNames, registerUniqueTool);
+  registerMcpTool(pi, registeredToolNames, registerUniqueTool);
 }
 
 interface RuntimeUiRegistrationArgs {
@@ -837,7 +835,6 @@ function registerTurnMetricsPhase({ pi, startMetricsTicker, stopMetricsTicker, t
 
 interface WorkerToolRegistrationArgs {
   pi: PiInstance;
-  Type: TypeBoxBuilder;
   registeredToolNames: Set<string>;
   notify: NotifyFn;
 }
@@ -1786,18 +1783,16 @@ async function wireOctocodePiExtension(
   }
 
   if (pi.registerTool) {
-    const { Type } = await import('typebox');
 
     registerSupportToolPhase({
       pi,
-      Type,
       registeredToolNames,
       notify,
       getLatestAvailableSkills: () => latestAvailableSkills,
     });
     registerRuntimeUiPhase({ pi, notify });
   registerTurnMetricsPhase({ pi, startMetricsTicker, stopMetricsTicker, toolStartTimes, toolInputs });
-  agentInbox = registerWorkerToolPhase({ pi, Type, registeredToolNames, notify });
+  agentInbox = registerWorkerToolPhase({ pi, registeredToolNames, notify });
 
     // ── Foreground activity fallback: bracket generic model reasoning ────────────
     // Registered AFTER all phase hooks so these sit at the END of the turn_start

@@ -21,7 +21,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test, describe, vi } from 'vitest';
-import { Type } from 'typebox';
 
 import {
   captureScreenshot,
@@ -1178,9 +1177,7 @@ test('OCTOCODE_SUPPORT_TOOL_NAMES includes "chromeDebug"', () => {
 test('chromeDebug tool rejects unknown schemes and renders call/result states', async () => {
   const tools = new Map<string, ToolDefinition>();
   registerChromeDebugTool(
-    { registerTool: (def) => tools.set(def.name, def) },
-    Type,
-    new Set<string>(),
+    { registerTool: (def) => tools.set(def.name, def) }, new Set<string>(),
     (pi, names, def) => {
       names.add(def.name);
       pi.registerTool?.(def);
@@ -1302,7 +1299,6 @@ test('chromeDebug tool execute path connects, runs a recipe, cleans up, redacts 
   }));
 
   try {
-    const { Type } = await import('typebox');
     const { registerUniqueTool } = await import('../src/tools/octocode-tools.js');
     const { registerChromeDebugTool } = await import('../src/tools/chrome-debug-tool.js');
 
@@ -1312,9 +1308,7 @@ test('chromeDebug tool execute path connects, runs a recipe, cleans up, redacts 
       renderResult: (result: { content: Array<{ type: string; text: string }>; details?: unknown }, opts: { expanded?: boolean; isPartial?: boolean }) => { render(width: number): string[] };
     } | undefined;
     registerChromeDebugTool(
-      { registerTool: (def) => { tool = def as typeof tool; } },
-      Type,
-      new Set(),
+      { registerTool: (def) => { tool = def as typeof tool; } }, new Set(),
       registerUniqueTool,
     );
     assert.ok(tool, 'tool registered');
@@ -1429,9 +1423,7 @@ describe('chromeDebug queries[] envelope', () => {
   function makeChromeDebugTool() {
     const tools = new Map<string, ToolDefinition>();
     registerChromeDebugTool(
-      { registerTool: (def) => tools.set(def.name, def) },
-      Type,
-      new Set<string>(),
+      { registerTool: (def) => tools.set(def.name, def) }, new Set<string>(),
       (pi, names, def) => { names.add(def.name); pi.registerTool?.(def); },
     );
     return tools.get('chromeDebug')!;
@@ -1512,7 +1504,6 @@ test('OCTOCODE_CHROME_DEBUG=0 prevents chromeDebug registration', async () => {
     // Re-import with a fresh capture (use the registration logic directly)
     const { registerChromeDebugTool } = await import('../src/tools/chrome-debug-tool.js');
     const { registerUniqueTool } = await import('../src/tools/octocode-tools.js');
-    const { Type } = await import('typebox');
 
     const names = new Set<string>();
     const registered: string[] = [];
@@ -1522,7 +1513,7 @@ test('OCTOCODE_CHROME_DEBUG=0 prevents chromeDebug registration', async () => {
 
     // Simulate what index.ts does: skip if OCTOCODE_CHROME_DEBUG === '0'
     if (process.env['OCTOCODE_CHROME_DEBUG'] !== '0') {
-      registerChromeDebugTool(pi, Type, names, registerUniqueTool);
+      registerChromeDebugTool(pi, names, registerUniqueTool);
     }
 
     assert.equal(registered.length, 0, 'chromeDebug should NOT be registered when OCTOCODE_CHROME_DEBUG=0');

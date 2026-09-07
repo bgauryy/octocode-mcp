@@ -1,12 +1,16 @@
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+/**
+ * Shared schema-building helpers used by tool registration functions.
+ * Pure JSON Schema output — no TypeBox or Zod needed at the call site.
+ */
 
 /**
- * Build a TypeBox string-enum schema for tool registration.
+ * Build a plain JSON Schema string-enum with description.
+ * Prefer z.enum([...]).describe('...') in new Zod-based schemas;
+ * this helper remains for cases that compose raw JSON Schema objects.
  */
 export function stringEnumSchema(
-  Type: TypeBoxBuilder,
   values: readonly string[],
   description: string,
 ): Record<string, unknown> {
-  return Type.Unsafe({ type: 'string', enum: [...values], description });
+  return { type: 'string', enum: [...values], description };
 }

@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { afterEach, beforeEach, test } from 'vitest';
-import { Type } from 'typebox';
 import type { PiContext, ToolDefinition } from '../src/types.js';
 import {
   registerCallTool,
@@ -32,7 +31,7 @@ function loadTool(): ToolDefinition {
   const tools = new Map<string, ToolDefinition>();
   const pi = { registerTool: (def: ToolDefinition) => tools.set(def.name, def) };
   const names = new Set<string>();
-  registerCallTool(pi, Type, names, (p, n, def) => {
+  registerCallTool(pi, names, (p, n, def) => {
     n.add(def.name);
     p.registerTool?.(def);
   });

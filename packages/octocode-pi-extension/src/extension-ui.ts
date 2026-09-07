@@ -162,16 +162,17 @@ function buildOctocodeFooterLines(
   });
 
   const branch = footerData?.getGitBranch?.();
+  // Segment order: stable items first so they are never truncated by variable-length
+  // dynamic segments. renderSemanticRow renders optional segments in insertion order,
+  // so the last segment truncates first. Branch is last because its length varies
+  // (e.g. "updates" vs "updates (2 changed)") and should absorb width pressure.
   const identity: InlineSegment[] = [{ text: '/configuration', token: 'link' }];
-  if (branch) identity.push({ text: formatBranchSegment(branch, state.gitDirty ?? false, state.gitDirtyFiles), token: 'dim' });
+  // Stable: model only changes when the user switches models.
   if (ctx.model?.id) {
     const modelLabel = ctx.model.provider ? `${ctx.model.provider}/${ctx.model.id}` : ctx.model.id;
     identity.push({ text: `model ${modelLabel}`, token: 'muted' });
   }
-  if (state.githubAuth.status === 'authenticated') identity.push({ text: 'github ✓', token: 'success' });
-  else if (state.githubAuth.status === 'missing') identity.push({ text: 'github ✗ login', token: 'error', attention: true });
-  else if (state.githubAuth.status === 'error') identity.push({ text: 'github ✗', token: 'error', attention: true });
-  else if (state.githubAuth.status === 'checking') identity.push({ text: 'github …', token: 'dim' });
+  // Mostly stable: permission level rarely changes mid-session.
   const permissionLevel = getPermissionLevel(ctx);
   if (permissionLevel) {
     const grants = approvedClasses(ctx).length;
@@ -181,6 +182,13 @@ function buildOctocodeFooterLines(
       attention: permissionLevel === 'relaxed',
     });
   }
+  // Dynamic: github auth status (short, changes on auth events).
+  if (state.githubAuth.status === 'authenticated') identity.push({ text: 'github ✓', token: 'success' });
+  else if (state.githubAuth.status === 'missing') identity.push({ text: 'github ✗ login', token: 'error', attention: true });
+  else if (state.githubAuth.status === 'error') identity.push({ text: 'github ✗', token: 'error', attention: true });
+  else if (state.githubAuth.status === 'checking') identity.push({ text: 'github …', token: 'dim' });
+  // Dynamic last: branch length varies with dirty-file count — truncates first.
+  if (branch) identity.push({ text: formatBranchSegment(branch, state.gitDirty ?? false, state.gitDirtyFiles), token: 'dim' });
 
   const metrics = buildFooterSegments({
     tokens: undefined,
@@ -255,7 +263,17 @@ export function updateOctocodeMetricsUi(ctx: PiContext | undefined, _now = Date.
         footerRequestRenderByCtx.get(ctx)?.();
       };
       const unsubscribeBranch = footerData?.onBranchChange?.(repaint);
-      const unsubscribeRuntime = store.subscribe(repaint);
+      // Smart subscription: only repaint when slices the footer actually reads
+      // have changed. Skips irrelevant mutations (tasks, mcp, phase, stage,
+      // notice, generation) that never affect buildOctocodeFooterLines output.
+      const unsubscribeRuntime = store.subscribe((state, prevState) => {
+        if (state.activity !== prevState.activity
+          || state.footer !== prevState.footer
+          || state.statuses !== prevState.statuses
+          || state.context !== prevState.context) {
+          repaint();
+        }
+      });
       return {
         ...renderer,
         dispose: () => {

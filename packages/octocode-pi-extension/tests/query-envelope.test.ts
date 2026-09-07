@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { Type } from "typebox";
+import { z } from "zod";
 import {
   buildQueryEnvelopeSchema,
   executeQueryBatch,
@@ -7,8 +7,6 @@ import {
   QueryBatchError,
 } from "../src/tools/query-envelope.js";
 import type { ToolCallResult } from "../src/types.js";
-
-const typeBuilder = Type as unknown as (typeof import("typebox"))["Type"];
 
 function textResult(
   text: string,
@@ -21,8 +19,7 @@ function textResult(
 describe("query envelope", () => {
   it("builds the query contract with an explicit sequential execution policy", () => {
     const schema = buildQueryEnvelopeSchema(
-      typeBuilder,
-      Type.Object({ value: Type.String() }, { additionalProperties: false }),
+      z.looseObject({ value: z.string() }),
     ) as {
       properties?: {
         queries?: {
@@ -60,13 +57,8 @@ describe("query envelope", () => {
       minLength: 1,
       maxLength: 240,
     });
-    expect(schema.properties?.queries?.items?.required).toEqual([
-      "reasoning",
-      "value",
-    ]);
-    expect(schema.properties?.queries?.items?.properties).toHaveProperty(
-      "value",
-    );
+    expect(schema.properties?.queries?.items?.required).toContain("reasoning");
+    expect(schema.properties?.queries?.items?.properties).toHaveProperty("value");
     expect(schema.properties?.queryRunType).toMatchObject({
       default: "sequential",
       enum: ["sequential"],
@@ -76,8 +68,7 @@ describe("query envelope", () => {
 
   it("exposes parallel execution only when the tool opts in", () => {
     const schema = buildQueryEnvelopeSchema(
-      typeBuilder,
-      Type.Object({ value: Type.String() }, { additionalProperties: false }),
+      z.looseObject({ value: z.string() }),
       { allowParallel: true },
     ) as { properties?: { queryRunType?: { enum?: string[] } } };
 

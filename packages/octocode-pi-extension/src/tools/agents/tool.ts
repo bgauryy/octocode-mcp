@@ -29,94 +29,60 @@ import {
   executeQueryBatch,
   type QueryRecord,
 } from '../query-envelope.js';
-import { stringEnumSchema } from '../schema-helpers.js';
 import { makeComponentRenderer } from '../render-helpers.js';
 import { truncateToWidth } from '../../tui/width.js';
 import { CLI_GLYPH } from '../../tui/cli-design.js';
 import { paint } from '../../tui/palette.js';
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 
 /** Register the single public agent tool. */
 export function registerUnifiedAgentTool(
   pi: { registerTool?(def: ToolDefinition): void },
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: RegisterFn,
 ): void {
   // Workers cannot spawn workers — never register this tool inside a subagent process.
   if (isSubagentProcess()) return;
 
-  // ── Item schema ────────────────────────────────────────────────────────────────────
-  const operationEnum = stringEnumSchema(
-    Type,
-    AGENT_OPERATIONS as unknown as string[],
-    'Operation: spawn | inspect | wait | message | steer | abort | kill.',
-  );
-  const profileEnum = stringEnumSchema(
-    Type,
-    AGENT_PROFILES as unknown as string[],
-    'Spawn profile: researcher | planner | architect | browser | custom.',
-  );
-  const deliveryEnum = stringEnumSchema(
-    Type,
-    ['send', 'followUp'],
-    'Message delivery: send starts a new idle turn; followUp queues after the current turn.',
-  );
-  const isolationEnum = stringEnumSchema(
-    Type,
-    ['shared', 'worktree'],
-    'Filesystem isolation for spawn. shared (default) uses current cwd; worktree creates an isolated git worktree.',
-  );
-  const resourceModeEnum = stringEnumSchema(
-    Type,
-    ['lean', 'octocode', 'default'],
-    'Resource mode for custom profile. octocode is the default; lean disables extensions and skills.',
-  );
+  // ── Item schema ──────────────────────────────────────────────────────────────────────────────────
+  const itemSchema = z.looseObject({
+    type: z.enum(AGENT_OPERATIONS as unknown as [string, ...string[]]).describe('Operation: spawn | inspect | wait | message | steer | abort | kill.'),
+    name: z.string().optional().describe('Worker display name.'),
+    task: z.string().optional().describe('Worker assignment/instructions for spawn; not a plan task record.'),
+    context: z.string().optional().describe('Evidence or constraints prepended to the worker assignment.'),
+    profile: z.enum(AGENT_PROFILES as unknown as [string, ...string[]]).optional().describe('Spawn profile: researcher | planner | architect | browser | custom.'),
+    model: z.string().optional().describe('Model id from `pi -ne --list-models`.'),
+    provider: z.string().optional().describe('Provider name (required when model id collides with a builtin namespace).'),
+    thinking: z.string().optional().describe('Thinking level: off|minimal|low|medium|high|xhigh.'),
+    noSession: z.boolean().optional().describe('Pass --no-session to the spawned worker (default true).'),
+    isolation: z.enum(['shared', 'worktree']).optional().describe('Filesystem isolation for spawn. shared (default) uses current cwd; worktree creates an isolated git worktree.'),
+    includeUncommitted: z.boolean().optional().describe('With isolation:worktree, apply uncommitted tracked changes.'),
+    planStep: z.string().optional().describe('Stable task ID from the current plan (spawn with plan assignment).'),
+    // browser profile
+    url: z.string().optional().describe('URL to pass to the browser profile (spawn/browser).'),
+    port: z.number().int().optional().describe('Chrome remote debug port (spawn/browser, default 9222).'),
+    launch: z.boolean().optional().describe('Launch Chrome for initial browser analysis (default false).'),
+    headless: z.boolean().optional().describe('Launch Chrome headless for initial browser analysis (default true).'),
+    runNow: z.boolean().optional().describe('Run routed initial browser analysis before spawning (default true).'),
+    durationMs: z.number().int().optional().describe('Initial browser scheme observation window in milliseconds (default 5000).'),
+    workspaceCwd: z.string().optional().describe('Workspace root for browser screenshots and session paths.'),
+    // custom profile
+    tools: z.array(z.string()).optional().describe('Tool allowlist for custom profile. Defaults to MCPTool, skill, and bash; [] requests no tools.'),
+    systemPrompt: z.string().optional().describe('Extra system prompt for custom profile (spawn).'),
+    resourceMode: z.enum(['lean', 'octocode', 'default']).optional().describe('Resource mode for custom profile. octocode is the default; lean disables extensions and skills.'),
+    // lifecycle fields
+    agentId: z.string().optional().describe('Target agent id (inspect/wait/message/steer/abort/kill).'),
+    message: z.string().optional().describe('Message text (message/steer).'),
+    delivery: z.enum(['send', 'followUp']).optional().describe('Message delivery: send starts a new idle turn; followUp queues after the current turn.'),
+    timeoutMs: z.number().int().optional().describe('Wait silence budget in milliseconds (default 300000).'),
+    remove: z.boolean().optional().describe('Remove the worker record after wait/kill when safe.'),
+    full: z.boolean().optional().describe('Return full retained history for inspect/wait/abort/kill.'),
+  });
 
-  // All lifecycle-specific fields are optional; type is the discriminator.
-  // Google-family schemas require a string enum instead of Type.Union / Type.Literal.
-  const itemSchema = Type.Object(
-    {
-      type: operationEnum as ReturnType<TypeBoxBuilder['String']>,
-      // spawn fields
-      profile: Type.Optional(profileEnum as ReturnType<TypeBoxBuilder['String']>),
-      task: Type.Optional(Type.String({ description: 'Worker assignment/instructions for spawn; not a plan task record.' })),
-      context: Type.Optional(Type.String({ description: 'Evidence or constraints prepended to the worker assignment.' })),
-      name: Type.Optional(Type.String({ description: 'Worker display name.' })),
-      model: Type.Optional(Type.String({ description: 'Model id from `pi -ne --list-models`.' })),
-      provider: Type.Optional(Type.String({ description: 'Provider name (required when model id collides with a builtin namespace).' })),
-      thinking: Type.Optional(Type.String({ description: 'Thinking level: off|minimal|low|medium|high|xhigh.' })),
-      cwd: Type.Optional(Type.String({ description: 'Working directory (spawn).' })),
-      isolation: Type.Optional(isolationEnum as ReturnType<TypeBoxBuilder['String']>),
-      includeUncommitted: Type.Optional(Type.Boolean({ description: 'With isolation:worktree, apply uncommitted tracked changes.' })),
-      planStep: Type.Optional(Type.String({ description: 'Stable task id from the current plan (spawn with plan assignment).' })),
-      // browser profile
-      url: Type.Optional(Type.String({ description: 'URL to pass to the browser profile (spawn/browser).' })),
-      port: Type.Optional(Type.Integer({ description: 'Chrome remote debug port (spawn/browser, default 9222).' })),
-      launch: Type.Optional(Type.Boolean({ description: 'Launch Chrome for initial browser analysis (default false).' })),
-      headless: Type.Optional(Type.Boolean({ description: 'Launch Chrome headless for initial browser analysis (default true).' })),
-      runNow: Type.Optional(Type.Boolean({ description: 'Run routed initial browser analysis before spawning (default true).' })),
-      durationMs: Type.Optional(Type.Integer({ description: 'Initial browser scheme observation window in milliseconds (default 5000).' })),
-      workspaceCwd: Type.Optional(Type.String({ description: 'Workspace root for browser screenshots and session paths.' })),
-      // custom profile
-      tools: Type.Optional(Type.Array(Type.String(), { description: 'Tool allowlist for custom profile. Defaults to MCPTool, skill, and bash; [] requests no tools.' })),
-      systemPrompt: Type.Optional(Type.String({ description: 'Extra system prompt for custom profile (spawn).' })),
-      resourceMode: Type.Optional(resourceModeEnum as ReturnType<TypeBoxBuilder['String']>),
-      noSession: Type.Optional(Type.Boolean({ description: 'Pass --no-session to the spawned worker (default true).' })),
-      // lifecycle fields
-      agentId: Type.Optional(Type.String({ description: 'Target agent id (inspect/wait/message/steer/abort/kill).' })),
-      message: Type.Optional(Type.String({ description: 'Message text (message/steer).' })),
-      delivery: Type.Optional(deliveryEnum as ReturnType<TypeBoxBuilder['String']>),
-      timeoutMs: Type.Optional(Type.Integer({ description: 'Wait silence budget in milliseconds (default 300000).' })),
-      remove: Type.Optional(Type.Boolean({ description: 'Remove the worker record after wait/kill when safe.' })),
-      full: Type.Optional(Type.Boolean({ description: 'Return full retained history for inspect/wait/abort/kill.' })),
-    },
-  );
-
-  const parameters = buildQueryEnvelopeSchema(Type, itemSchema, {
-    reasoningDescription: 'Concise reason this agent operation is necessary (max 240 chars).',
+  const parameters = buildQueryEnvelopeSchema(itemSchema, {
+    reasoningDescription: 'Concise reason this agent operation is necessary.',
   });
 
   registerFn(pi, registeredToolNames, {

@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { Type } from 'typebox';
 import { readMediaImageFile, registerReadMediaTool } from '../src/tools/read-media-tool.js';
 import { setCapabilityCheckForTests, setImageVisibilityCheckForTests } from '../src/tools/image-render.js';
 import type { ImageContentPart, ToolDefinition } from '../src/types.js';
@@ -25,9 +24,7 @@ afterEach(async () => {
 function getTool(): ToolDefinition {
   let def: ToolDefinition | undefined;
   registerReadMediaTool(
-    { registerTool: (d: ToolDefinition) => { def = d; } },
-    Type,
-    new Set<string>(),
+    { registerTool: (d: ToolDefinition) => { def = d; } }, new Set<string>(),
     (pi, _n, d) => pi.registerTool?.(d),
   );
   if (!def) throw new Error('readMedia not registered');

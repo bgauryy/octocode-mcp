@@ -15,7 +15,7 @@ import type { ToolCallResult, ToolDefinition, PiContext, PiTheme } from '../type
 import type { registerUniqueTool } from './octocode-tools.js';
 import { openLocalUrl, type LocalUrlOpenPreference, type LocalUrlOpenResult } from './local-url-opener.js';
 
-type TypeBoxBuilder = (typeof import('typebox'))['Type'];
+import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 
 interface LocalServerQuery {
@@ -56,45 +56,27 @@ export function registerLocalServerTool(
     registerTool?(def: ToolDefinition): void;
     sendUserMessage?(message: string, options?: { deliverAs?: 'steer' | 'followUp' }): void | Promise<void>;
   },
-  Type: TypeBoxBuilder,
   registeredToolNames: Set<string>,
   registerFn: RegisterFn,
   dependencies: LocalServerToolDependencies = {},
 ): void {
   const openUrl = dependencies.openUrl ?? ((url, preference) => openLocalUrl(url, { preference }));
-  const querySchema = Type.Object(
-    {
-      action: Type.Unsafe({
-        type: 'string',
-        enum: ['serve', 'unmount', 'status', 'stop'],
-        description: 'serve|unmount|status|stop',
-      }),
-      name: Type.Optional(Type.String({
-        description: 'Mount name: one safe URL path segment. Required for serve/unmount.',
-      })),
-      dir: Type.Optional(Type.String({
-        description: 'Directory to serve for action:serve. Relative paths resolve against cwd.',
-      })),
-      indexFile: Type.Optional(Type.String({
-        description: 'File served at the mount root for action:serve. Default index.html.',
-      })),
-      open: Type.Optional(Type.Boolean({
-        description: 'Open the mounted page only after the user explicitly asks or approves. Defaults to false in every mode.',
-      })),
-      browser: Type.Optional(Type.Unsafe({
-        type: 'string',
-        enum: ['auto', 'chrome', 'system', 'vscode', 'none'],
-        description: 'Browser target for action:serve. auto prefers VS Code when available, then Chrome, then the system opener.',
-      })),
-    },
-    { additionalProperties: false },
-  );
-
-  const parameters = buildQueryEnvelopeSchema(Type, querySchema, {
-    reasoningDescription: 'Concise reason this local server operation is necessary.',
-  });
-
-  registerFn(pi, registeredToolNames, {
+  const parameters = buildQueryEnvelopeSchema(
+    z.looseObject({
+      action: z.enum(['serve', 'unmount', 'status', 'stop']).describe('serve|unmount|status|stop'),
+      name: z.string().optional()
+        .describe('Mount name: one safe URL path segment. Required for serve/unmount.'),
+      dir: z.string().optional()
+        .describe('Directory to serve for action:serve. Relative paths resolve against cwd.'),
+      indexFile: z.string().optional()
+        .describe('File served at the mount root for action:serve. Default index.html.'),
+      open: z.boolean().optional()
+        .describe('Open the mounted page only after the user explicitly asks or approves. Defaults to false in every mode.'),
+      browser: z.enum(['auto', 'chrome', 'system', 'vscode', 'none']).optional()
+        .describe('Browser target for action:serve. auto prefers VS Code when available, then Chrome, then the system opener.'),
+    }),
+    { reasoningDescription: 'Concise reason this local server operation is necessary.' },
+  );registerFn(pi, registeredToolNames, {
     name: 'localServer',
     label: 'Local Server',
     description: [

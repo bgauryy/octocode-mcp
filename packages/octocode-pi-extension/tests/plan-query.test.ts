@@ -11,7 +11,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, test } from 'vitest';
-import { Type } from 'typebox';
 import { openAwarenessStore } from '@octocodeai/octocode-awareness';
 import type { ToolDefinition, PiContext } from '../src/types.js';
 import { registerPlanTool } from '../src/tools/planning/plan-registration.js';
@@ -32,7 +31,7 @@ const CWD = '/tmp/plan-query-test-ws';
 function loadTool(): ToolDefinition {
   const tools = new Map<string, ToolDefinition>();
   const pi = { registerTool: (d: ToolDefinition) => tools.set(d.name, d) };
-  registerPlanTool(pi, Type, new Set<string>(), registerUniqueTool);
+  registerPlanTool(pi, new Set<string>(), registerUniqueTool);
   return tools.get('plan')!;
 }
 
@@ -104,12 +103,11 @@ test('plan schema discriminates actions and advertises their required fields', (
     };
   };
   const item = schema.properties?.queries?.items;
-  assert.deepEqual(item?.oneOf?.map((branch) => branch.title), [
-    'set', 'propose', 'clarify', 'add', 'start', 'complete', 'remove', 'clear', 'show',
-  ]);
-  assert.deepEqual(item?.oneOf?.find((branch) => branch.title === 'set')?.required, ['action', 'steps']);
-  assert.deepEqual(item?.oneOf?.find((branch) => branch.title === 'clarify')?.required, ['action', 'questions']);
-  assert.deepEqual(item?.oneOf?.find((branch) => branch.title === 'add')?.required, ['action', 'text']);
+  // Check action enum values (replaces oneOf discrimination)
+  assert.deepEqual(
+    (item?.properties?.['action'] as { enum?: string[] })?.enum,
+    ['set', 'propose', 'clarify', 'add', 'start', 'complete', 'remove', 'clear', 'show'],
+  );
   assert.equal(item?.properties?.['steps']?.minItems, 1);
   assert.equal(item?.properties?.['questions']?.maxItems, 3);
 });

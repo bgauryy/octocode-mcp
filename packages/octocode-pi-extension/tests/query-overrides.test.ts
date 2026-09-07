@@ -2,13 +2,10 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { Type } from 'typebox';
 import { allowLocalFixtureProcesses } from '../../../test-utils/external-effects-guard.js';
 import { registerBashTool } from '../src/tools/bash-tool.js';
 import { registerFileTool } from '../src/tools/file-tool.js';
 import type { ToolCallResult, ToolDefinition } from '../src/types.js';
-
-const typeBuilder = Type as unknown as (typeof import('typebox'))['Type'];
 
 let restoreProcessGuard: () => void;
 beforeAll(() => {
@@ -24,7 +21,7 @@ function register(registerTool: typeof registerBashTool): ToolDefinition {
     _names: Set<string>,
     def: ToolDefinition,
   ): void => target.registerTool?.(def);
-  registerTool(pi, typeBuilder, new Set<string>(), registerFn);
+  registerTool(pi, new Set<string>(), registerFn);
   return captured!;
 }
 

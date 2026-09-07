@@ -9,7 +9,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test, beforeEach, afterEach } from 'vitest';
-import { Type } from 'typebox';
 import type { ToolDefinition } from '../src/types.js';
 import { registerFileTool } from '../src/tools/file-tool.js';
 import { registerUniqueTool } from '../src/tools/octocode-tools.js';
@@ -26,7 +25,7 @@ beforeEach(() => {
   clearReadStatesForTests();
 
   const tools = new Map<string, ToolDefinition>();
-  registerFileTool({ registerTool: (def) => tools.set(def.name, def) }, Type, new Set<string>(), registerUniqueTool);
+  registerFileTool({ registerTool: (def) => tools.set(def.name, def) }, new Set<string>(), registerUniqueTool);
   fileTool = tools.get('file')!;
   assert.ok(fileTool, 'public file tool must be registered');
 });

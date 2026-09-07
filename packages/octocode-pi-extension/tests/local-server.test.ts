@@ -9,7 +9,6 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { afterEach, test } from 'vitest';
-import { Type } from 'typebox';
 import {
   serveDirectory,
   unmount,
@@ -164,7 +163,7 @@ function loadLocalServerTool(
 ): ToolDefinition {
   const tools = new Map<string, ToolDefinition>();
   const pi = { registerTool: (def: ToolDefinition) => tools.set(def.name, def), sendUserMessage };
-  registerLocalServerTool(pi, Type, new Set<string>(), registerUniqueTool, openUrl ? { openUrl } : undefined);
+  registerLocalServerTool(pi, new Set<string>(), registerUniqueTool, openUrl ? { openUrl } : undefined);
   const tool = tools.get('localServer');
   assert.ok(tool, 'localServer tool registered');
   return tool!;

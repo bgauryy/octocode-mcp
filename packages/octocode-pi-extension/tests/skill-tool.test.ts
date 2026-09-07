@@ -223,12 +223,9 @@ test('usage ledger records loads and formats dashboard lines, newest first', () 
 // ─── the unified skill tool (queries[] envelope) ─────────────────────────────────────────
 
 async function makeTool(piSkills?: SkillInfo[]): Promise<ToolDefinition> {
-  const { Type } = await import('typebox');
   let def: ToolDefinition | undefined;
   registerSkillTool(
-    { registerTool: (d: ToolDefinition) => { def = d; } },
-    Type,
-    new Set<string>(),
+    { registerTool: (d: ToolDefinition) => { def = d; } }, new Set<string>(),
     (pi, names, d) => registerUniqueTool(pi, names, d),
     () => piSkills,
   );

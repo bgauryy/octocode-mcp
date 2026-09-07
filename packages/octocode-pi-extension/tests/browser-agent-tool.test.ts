@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { afterEach, test, vi } from 'vitest';
-import { Type } from 'typebox';
 import type { ToolDefinition } from '../src/types.js';
 
 type CdpHandler = () => void;
@@ -67,9 +66,7 @@ async function registerBrowserAgentWithMocks(options: {
   const tools = new Map<string, ToolDefinition>();
   const pi = { registerTool: (def: ToolDefinition) => tools.set(def.name, def) };
   registerUnifiedAgentTool(
-    pi,
-    Type,
-    new Set<string>(),
+    pi, new Set<string>(),
     (targetPi, names, def) => {
       names.add(def.name);
       targetPi.registerTool?.(def);

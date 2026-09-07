@@ -398,11 +398,10 @@ test('bash execution remains available while plan mode is active', async () => {
 
 // ─── renderResult ────────────────────────────────────────────────────────────
 
-import { Type } from 'typebox';
 
 function loadBashTool(): ToolDefinition {
   let def: ToolDefinition | undefined;
-  registerBashTool({ registerTool: (d: ToolDefinition) => { def = d; } }, Type as never, new Set<string>(), registerUniqueTool);
+  registerBashTool({ registerTool: (d: ToolDefinition) => { def = d; } }, new Set<string>(), registerUniqueTool);
   assert.ok(def, 'bash tool registered');
   return def!;
 }

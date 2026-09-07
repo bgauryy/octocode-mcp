@@ -3,7 +3,6 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Type } from 'typebox';
 import {
   cleanupImplicitImageArtifacts,
   createImageFromSvg,
@@ -27,9 +26,7 @@ afterEach(async () => {
 function getTool(): ToolDefinition {
   let def: ToolDefinition | undefined;
   registerCreateImageTool(
-    { registerTool: (d: ToolDefinition) => { def = d; } },
-    Type,
-    new Set<string>(),
+    { registerTool: (d: ToolDefinition) => { def = d; } }, new Set<string>(),
     (pi, _n, d) => pi.registerTool?.(d),
   );
   if (!def) throw new Error('createImage not registered');

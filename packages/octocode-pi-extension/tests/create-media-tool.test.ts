@@ -3,7 +3,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Type } from 'typebox';
 import {
   pdfDocumentFromHtml,
   pdfDocumentFromMarkdown,
@@ -39,7 +38,7 @@ describe('pdf document builders', () => {
 describe('registerMediaTool', () => {
   it('registers the single artifact-producing `media` tool', () => {
     let def: ToolDefinition | undefined;
-    registerMediaTool({ registerTool: (d: ToolDefinition) => { def = d; } }, Type, new Set(), (pi, _n, d) => pi.registerTool?.(d));
+    registerMediaTool({ registerTool: (d: ToolDefinition) => { def = d; } }, new Set(), (pi, _n, d) => pi.registerTool?.(d));
     expect(def?.name).toBe('media');
   });
 
@@ -47,7 +46,7 @@ describe('registerMediaTool', () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'create-media-details-'));
     try {
       let def: ToolDefinition | undefined;
-      registerMediaTool({ registerTool: (d: ToolDefinition) => { def = d; } }, Type, new Set(), (pi, _n, d) => pi.registerTool?.(d));
+      registerMediaTool({ registerTool: (d: ToolDefinition) => { def = d; } }, new Set(), (pi, _n, d) => pi.registerTool?.(d));
       const result = await def!.execute!(
         'media-details',
         { queries: [{ reasoning: 'render preview', type: 'image', svg: SVG }] },
