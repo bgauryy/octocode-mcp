@@ -1,4 +1,4 @@
-import { EXTERNAL_AGENT_AWARENESS_PROMPT, assertContextSegmentAuthority, contentDigest, type ContextSegmentV1 } from '@octocodeai/octocode-awareness';
+import { AWARENESS_PI_HOST_PROMPT, assertContextSegmentAuthority, contentDigest, type ContextSegmentV1 } from '@octocodeai/octocode-awareness';
 
 export interface ContextSegmentInput {
   id: string;
@@ -77,8 +77,8 @@ export function assembleContextSegments(
     byKind[input.kind] = (byKind[input.kind] ?? 0) + estimatedTokens;
     if (input.id === 'awareness-cli-runtime') awarenessInstructions += estimatedTokens;
     if (input.id === 'octocode-product-policy') {
-      awarenessInstructions += (input.content.split(EXTERNAL_AGENT_AWARENESS_PROMPT).length - 1)
-        * estimateContextTokens(EXTERNAL_AGENT_AWARENESS_PROMPT);
+      awarenessInstructions += (input.content.split(AWARENESS_PI_HOST_PROMPT).length - 1)
+        * estimateContextTokens(AWARENESS_PI_HOST_PROMPT);
     }
     return contextSegmentFromInput(input);
   });

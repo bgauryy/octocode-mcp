@@ -103,7 +103,10 @@ test('agent browser profile navigates, runs routed schemes, passes findings to w
   } = await registerBrowserAgentWithMocks();
 
   const result = await tool.execute('call-1', { queries: [{ reasoning: 'Inspect browser security', type: 'spawn', profile: 'browser',
-    task: 'audit security cookies and network auth failures',
+    goal: 'Audit security cookies and network auth failures.',
+    context: 'Inspect https://example.com/app.', scope: 'Security and network evidence only.',
+    ownership: 'Read-only browser inspection.', acceptance: 'Cookie and failed-request evidence returned.',
+    returnShape: 'Findings, evidence, and terminal state.',
     url: 'https://example.com/app',
     port: 19333,
     model: 'sonnet:high',
@@ -130,7 +133,7 @@ test('agent browser profile navigates, runs routed schemes, passes findings to w
   assert.match(text, /\[AGENT\] navigated to https:\/\/example\.com\/app/);
   assert.match(text, /insecure cookie/);
   assert.match(text, /500 from \/api\/orders/);
-  assert.deepEqual(spawned[0].tools, ['chromeDebug', 'MCPTool', 'skill', 'bash']);
+  assert.deepEqual(spawned[0].tools, ['chromeDebug', 'MCPTool', 'skill', 'awareness', 'bash']);
   assert.equal(spawned[0].model, 'sonnet:high');
   assert.match(text, /Your ONLY browser tool is `chromeDebug`/);
   assert.match(text, /Network, Runtime, DOM, DOMDebugger, Fetch/);
@@ -146,8 +149,9 @@ test('agent browser profile passes connection errors to its worker', async () =>
   });
 
   await tool.execute('call-1', { queries: [{ reasoning: 'Inspect console errors', type: 'spawn', profile: 'browser',
-    task: 'inspect console errors',
-    runNow: true,
+    goal: 'Inspect console errors.', context: 'Chrome connection may be unavailable.', scope: 'Console evidence only.',
+    ownership: 'Read-only browser inspection.', acceptance: 'Return connection or console evidence.',
+    returnShape: 'Finding and terminal state.', runNow: true,
   }] });
 
   const spawned = spawnRpcAgent.mock.calls[0] as unknown as [Record<string, unknown>];

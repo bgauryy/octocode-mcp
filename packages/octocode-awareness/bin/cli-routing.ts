@@ -29,7 +29,7 @@ export const KNOWN_FLAGS: Record<string, string[]> = {
   'awareness-config': ['action', 'hooks', 'notifications', 'verification_gate', 'session_capture', 'maintenance_reminders'],
   'self-test': [],
   'prune-stale-locks': ['older_than_minutes', 'expired_only', 'agent_id', 'target_file', 'workspace', 'artifact', 'dry_run'],
-  'audit-unverified': ['agent_id', 'workspace', 'artifact', 'older_than_days', 'origin', 'before'],
+  'audit-unverified': ['agent_id', 'workspace', 'artifact', 'older_than_days', 'origin', 'before', 'limit', 'offset'],
   'verify': ['run_id', 'all_pending', 'agent_id', 'status', 'message', 'workspace', 'artifact', 'adopt_verification'],
   'mine-weakness': ['agent_id', 'workspace', 'artifact', 'min_count', 'limit', 'cwd'],
   'doc-staleness': ['agent_id', 'workspace', 'artifact', 'targets_json', 'min_edits', 'min_lines', 'propose', 'session_id'],

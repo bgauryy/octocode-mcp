@@ -26,7 +26,12 @@ agent({queries:[{
   type: "spawn",
   profile: "browser",
   name: "browser-audit",
-  task: "Goal: audit the login flow\nContext: inspect https://example.com\nScope: security headers, cookies, storage, and login traffic\nOwnership: browser inspection only; do not modify repository files\nAcceptance: report evidence for every requested surface\nReturn: emit [FINDING], [ACTION], and terminal [DONE], [BLOCKED], or [FAILED] lines",
+  goal: "Audit the login flow.",
+  context: "Inspect https://example.com.",
+  scope: "Security headers, cookies, storage, and login traffic only.",
+  ownership: "Read-only browser inspection; no repository writes.",
+  acceptance: "Evidence for every requested surface.",
+  returnShape: "[FINDING], [ACTION], and one terminal state.",
   url: "https://example.com",
   port: 9222,
   launch: false,
@@ -91,8 +96,8 @@ Parallelize only independent inspections. Use separate debugging ports and give 
 
 ```
 agent({queries:[
-  {reasoning:"Run the independent security lane.", type:"spawn", profile:"browser", name:"security-lane", task:"Goal: audit browser security\nContext: inspect https://example.com\nScope: headers, cookies, and storage\nOwnership: read-only browser inspection on port 9222\nAcceptance: evidence for each security surface\nReturn: findings and terminal status", url:"https://example.com", port:9222},
-  {reasoning:"Run the independent performance lane.", type:"spawn", profile:"browser", name:"performance-lane", task:"Goal: audit browser performance\nContext: inspect https://example.com\nScope: web vitals, heap, layout, and script metrics\nOwnership: read-only browser inspection on port 9223\nAcceptance: measured evidence for each metric family\nReturn: metrics, actions, and terminal status", url:"https://example.com", port:9223}
+  {reasoning:"Run the independent security lane.", type:"spawn", profile:"browser", name:"security-lane", goal:"Audit browser security.", context:"Inspect https://example.com.", scope:"Headers, cookies, and storage only.", ownership:"Read-only browser inspection on port 9222.", acceptance:"Evidence for each security surface.", returnShape:"Findings and terminal status.", url:"https://example.com", port:9222},
+  {reasoning:"Run the independent performance lane.", type:"spawn", profile:"browser", name:"performance-lane", goal:"Audit browser performance.", context:"Inspect https://example.com.", scope:"Web vitals, heap, layout, and script metrics only.", ownership:"Read-only browser inspection on port 9223.", acceptance:"Measured evidence for each metric family.", returnShape:"Metrics, actions, and terminal status.", url:"https://example.com", port:9223}
 ]})
 ```
 

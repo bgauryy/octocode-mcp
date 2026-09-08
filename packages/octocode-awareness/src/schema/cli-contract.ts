@@ -33,6 +33,8 @@ const CLI_ALLOWED: Record<string, string[]> = {
   'work start': ['agent_id', 'session_id', 'workspace', 'artifact', 'run_id', 'rationale', 'test_plan', 'context_ref', 'file', 'exclusive', 'ttl_minutes', 'ttl_seconds'],
   'work touch': ['agent_id', 'run_id', 'file', 'ttl_minutes', 'ttl_seconds'], 'work end': ['agent_id', 'run_id', 'file'],
   'work list': ['agent_id', 'workspace', 'artifact', 'run_id', 'all', 'full', 'limit', 'offset'], 'work show': ['agent_id', 'workspace', 'artifact', 'run_id', 'file', 'all', 'full', 'limit', 'offset'],
+  'verify audit': ['agent_id', 'workspace', 'artifact', 'older_than_days', 'origin', 'before', 'limit', 'offset'],
+  'verify mark': ['run_id', 'all_pending', 'agent_id', 'status', 'message', 'workspace', 'artifact', 'adopt_verification'],
   'memory recall': ['query', 'limit', 'min_importance', 'label', 'tag', 'smart', 'workspace', 'artifact', 'repo', 'ref', 'state', 'sort', 'global_only', 'strict_scope', 'all_workspaces', 'as_of', 'reference', 'regex', 'file_regex', 'file', 'explain', 'semantic', 'full'],
   'refinement get': ['workspace', 'refinement_id', 'artifact', 'repo', 'ref', 'quality', 'include_handoffs', 'state', 'limit', 'offset', 'full'],
   'lock prune': ['older_than_minutes', 'expired_only', 'agent_id', 'workspace', 'artifact', 'target_file', 'dry_run'],

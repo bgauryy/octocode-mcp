@@ -22,9 +22,11 @@ test('maps every production Pi lifecycle family to a canonical event', () => {
     'resources_discover', 'project_trust', 'context', 'input', 'before_agent_start',
     'session_start', 'session_shutdown', 'session_info_changed', 'session_before_switch',
     'session_before_fork', 'session_before_compact', 'session_compact', 'session_compact_failed', 'session_tree',
-    'agent_start', 'agent_end', 'turn_start', 'turn_end', 'message_start', 'message_end',
-    'tool_call', 'tool_execution_start', 'tool_execution_end', 'model_select',
-    'thinking_level_select', 'before_provider_request', 'after_provider_response',
+    'agent_start', 'agent_end', 'agent_settled',
+    'turn_start', 'turn_end',
+    'message_start', 'message_update', 'message_end',
+    'tool_call', 'tool_execution_start', 'tool_execution_update', 'tool_execution_end',
+    'model_select', 'thinking_level_select', 'before_provider_request', 'after_provider_response',
   ];
   assert.deepEqual(Object.keys(PI_LIFECYCLE_MAPPINGS).sort(), expected.sort());
 });

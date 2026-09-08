@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { isPersistentStorageEnabled } from '@octocodeai/config';
+import { isPersistentStorageEnabledForExtension as isPersistentStorageEnabled } from '@octocodeai/config';
 import {
   createAwarenessEventConsumer,
   createAwarenessEventObservability,

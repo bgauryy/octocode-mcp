@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { defaultDbPath, EXTERNAL_AGENT_AWARENESS_PROMPT } from '@octocodeai/octocode-awareness';
+import { defaultDbPath, AWARENESS_PI_HOST_PROMPT } from '@octocodeai/octocode-awareness';
 import { SYSTEM_PROMPT } from '../src/prompts/system-prompt.js';
 import { OCTOCODE_SUPPORT_TOOL_NAMES } from '../src/constants.js';
 import type { PiContext } from '../src/types.js';
@@ -13,10 +13,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('canonical Awareness CLI in Pi', () => {
-  it('injects the package-owned instructions and removes duplicated model tools', () => {
-    expect(SYSTEM_PROMPT).toContain(EXTERNAL_AGENT_AWARENESS_PROMPT);
+  it('injects the canonical policy behind one native Awareness facade', () => {
+    expect(SYSTEM_PROMPT).toContain(AWARENESS_PI_HOST_PROMPT);
+    expect(SYSTEM_PROMPT).toMatch(/awareness lists, describes, and calls/i);
+    expect([...OCTOCODE_SUPPORT_TOOL_NAMES]).toContain('awareness');
     for (const name of ['memory', 'message', 'lock']) expect([...OCTOCODE_SUPPORT_TOOL_NAMES]).not.toContain(name);
-    expect(SYSTEM_PROMPT).toContain('skill install');
+    expect(SYSTEM_PROMPT).toContain('external-host-only');
   });
 
   it('binds shell calls to the native store, workspace, identity and local runtime', () => {
@@ -31,6 +33,9 @@ describe('canonical Awareness CLI in Pi', () => {
     expect(env.OCTOCODE_AWARENESS_CLI).toMatch(/octocode-awareness\.js$/);
     expect(renderAwarenessCliContext(ctx)).toContain('pi-cli-test');
     expect(renderAwarenessCliContext(ctx)).toContain('$OCTOCODE_AWARENESS_DB');
+    expect(renderAwarenessCliContext(ctx, { nativeTool: true })).toMatch(/native awareness tool.*list, describe, and call/i);
+    expect(renderAwarenessCliContext(ctx, { nativeTool: true })).toMatch(/external-host-only/i);
+    expect(renderAwarenessCliContext(ctx)).toMatch(/lacks the native awareness facade/i);
   });
 
   it('does not advertise a durable CLI binding when persistence is disabled', () => {

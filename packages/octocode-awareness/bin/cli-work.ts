@@ -73,21 +73,41 @@ export function cmdAuditUnverified(db: DatabaseSync, args: ParsedArgs, dbPath: s
     origins: valuesFor(args, 'origin').map((origin) => origin.toUpperCase() as 'TASK' | 'WORK' | 'HOOK'),
     before: args['before'] ? String(args['before']) : null,
   });
-  if (opts.compact || process.env['OCTOCODE_AWARENESS_COMPACT'] === '1') {
-    const detailLimit = 3;
-    const unverified = result.unverified.slice(0, detailLimit);
-    const staleActive = result.stale_active.slice(0, Math.max(0, detailLimit - unverified.length));
-    return emit({
-      db_path: dbPath,
-      ...result,
-      unverified,
-      stale_active: staleActive,
-      unverified_count: result.unverified.length,
-      stale_active_count: result.stale_active.length,
-      omitted_count: result.count - unverified.length - staleActive.length,
-    }, result.count > 0 ? 1 : 0, opts);
+  const compact = opts.compact || process.env['OCTOCODE_AWARENESS_COMPACT'] === '1';
+  const paginate = compact || args['limit'] !== undefined || args['offset'] !== undefined;
+  if (!paginate) return emit({ db_path: dbPath, ...result }, result.count > 0 ? 1 : 0, opts);
+
+  const limit = listLimit(args, compact ? 20 : 200);
+  const offset = args['offset'] === undefined ? 0 : Number(args['offset']);
+  if (!Number.isInteger(offset) || offset < 0) die('--offset must be a non-negative integer');
+  const rows = [
+    ...result.unverified.map((value) => ({ kind: 'unverified' as const, value })),
+    ...result.stale_active.map((value) => ({ kind: 'stale_active' as const, value })),
+  ];
+  const page = rows.slice(offset, offset + limit);
+  const unverified = page.flatMap((row) => row.kind === 'unverified' ? [row.value] : []);
+  const staleActive = page.flatMap((row) => row.kind === 'stale_active' ? [row.value] : []);
+  const nextOffset = offset + page.length;
+  const hasMore = nextOffset < rows.length;
+  const nextParams: Record<string, unknown> = { limit, offset: nextOffset };
+  for (const field of ['agent_id', 'workspace', 'artifact', 'older_than_days', 'before'] as const) {
+    if (args[field] !== undefined) nextParams[field] = args[field];
   }
-  return emit({ db_path: dbPath, ...result }, result.count > 0 ? 1 : 0, opts);
+  const origins = valuesFor(args, 'origin');
+  if (origins.length) nextParams['origin'] = origins;
+
+  return emit({
+    db_path: dbPath,
+    ...result,
+    unverified,
+    stale_active: staleActive,
+    unverified_count: result.unverified.length,
+    stale_active_count: result.stale_active.length,
+    returned_count: page.length,
+    omitted_count: result.count - page.length,
+    pagination: { offset, limit, total: rows.length, has_more: hasMore, ...(hasMore ? { next_offset: nextOffset } : {}) },
+    ...(hasMore ? { next: { command: 'verify audit', params: nextParams } } : {}),
+  }, result.count > 0 ? 1 : 0, opts);
 }
 
 export function cmdVerify(db: DatabaseSync, args: ParsedArgs, dbPath: string, opts: EmitOptions): number {

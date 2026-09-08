@@ -389,7 +389,7 @@ test('complete advances the next todo to doing and counts done', () => {
   const s = getPlan(CWD);
   assert.equal(s[0]!.status, 'done');
   assert.equal(s[1]!.status, 'doing'); // auto-advanced
-  assert.match(renderActivePlanAddendum(CWD), /1\/3 completed/);
+  assert.match(renderActivePlanAddendum(CWD), /1 done · 1 active · 1 ready · 0 blocked/);
 });
 
 test('addStep appends a todo; start can open a parallel active lane', () => {
@@ -714,23 +714,17 @@ test('plan tool add supports dependsOn ordering', async () => {
   clearPlan(cwd);
 });
 
-test('plan tool teaches default-index flow, unified shared projection, and parallel lanes', () => {
+test('plan tool gives compact behavioral routing and truthful transition contrasts', () => {
   const tool = loadTool();
-  assert.match(tool.description, /remove/);
-  assert.match(tool.description, /multiple independent steps may be doing in parallel/i);
-  assert.match(tool.description, /scope:"shared".*automatically/);
-  assert.match(tool.description, /receipt \{command,status,message\}/);
+  for (const part of ['Definition:', 'Contrast:', 'Consequence:', 'Principle:', 'Action:']) assert.match(tool.description, new RegExp(part));
+  assert.match(tool.description, /skip the tool for an obvious one-step edit/i);
+  assert.match(tool.description, /complete only after an observed check/i);
   const guidelines = tool.promptGuidelines?.join('\n') ?? '';
   assert.match(guidelines, /queries.*reasoning.*action/is);
-  assert.match(guidelines, /active step.*action:\"complete\"/i);
-  assert.match(guidelines, /internal to plan/);
-  assert.doesNotMatch(guidelines, /update it in the same turn/);
-  assert.match(guidelines, /action:\"start\".*index:N/i);
+  assert.match(guidelines, /Wrong: propose.*ceremonial RFC.*Right: use action:"set"/is);
+  assert.match(guidelines, /Wrong: complete because a worker said DONE.*verify.*action:"complete"/is);
+  assert.match(guidelines, /independent lanes.*dependsOn.*delegation/is);
   assert.doesNotMatch(guidelines, /plan\(/i);
-  assert.match(guidelines, /asks once: Start implementation or Request changes/i);
-  assert.match(guidelines, /Planning never disables tools/i);
-  assert.match(guidelines, /answer will change scope, architecture, acceptance criteria, or authorization/);
-  assert.match(guidelines, /Prefer one question; use 2–3 only for independent blockers/);
 });
 
 test('plan tool requires explicit complete index when multiple lanes are doing', async () => {
@@ -1345,8 +1339,9 @@ test('interactive RFC proposal shows the overview and starts from one ask-widget
       assert.deepEqual(opened, [], 'the ask widget keeps browser review optional');
       assert.equal(getPlanReviewState(ws).phase, 'executing');
       assert.deepEqual(getPlan(ws).map((step) => step.status), ['doing', 'todo']);
-      assert.match(res.content[0]!.text, /Summary/);
+      // Interactive outcome: steps and RFC links are shown in the plan widget, not echoed in content.
       assert.match(res.content[0]!.text, /approved and started|implementation started/i);
+      assert.doesNotMatch(res.content[0]!.text, /Summary|Plan doc:|RFC/);
       assert.ok(calls.notify.some((message) => /Creating plan…/i.test(message)));
 
       const markdown = fs.readFileSync(path.join(planArtifactsDir(ws), 'plan.md'), 'utf8');
@@ -1382,7 +1377,8 @@ test('RFC proposal records requested changes from the same ask widget', async ()
       assert.equal(getPlanReviewState(ws).phase, 'draft');
       assert.deepEqual(getPlan(ws).map((step) => step.status), ['todo', 'todo']);
       assert.match(res.content[0]!.text, /changes requested/i);
-      assert.match(res.content[0]!.text, /Summary/);
+      // Interactive outcome: steps and RFC TL;DR links are shown in the plan widget, not echoed in content.
+      assert.doesNotMatch(res.content[0]!.text, /Summary|Plan doc:|RFC plan overview|RFC URI/);
     } finally {
       clearPlan(ws);
       fs.rmSync(ws, { recursive: true, force: true });
@@ -1404,7 +1400,7 @@ test('the footer truncates current work while the full plan preserves backlog de
   assert.ok(!compact.includes('Implementing the focused change'), 'long labels defer to the canonical plan detail surface');
   assert.ok(!compact.includes('Completed setup'), 'completed detail stays in the canonical full plan, not the persistent panel');
   const full = renderPlanReadModel(model, 'terminal') as string;
-  assert.match(full, /1\/4/, 'progress remains visible');
+  assert.match(full, /1 done · 1 active · 1 blocked/, 'graph progress remains visible without a serial denominator');
   assert.match(full, /\[doing\] A long-ish step description here/, 'the active lane is explicit');
   assert.match(full, /executing/, 'the current lifecycle phase stays visible');
   for (const step of steps) assert.ok(full.includes(step.text), 'full inspection retains every task');

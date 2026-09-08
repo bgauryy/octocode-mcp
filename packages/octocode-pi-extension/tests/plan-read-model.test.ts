@@ -85,7 +85,7 @@ describe('plan presentation read model', () => {
       review: { phase: 'executing', branchSnapshotId: 'b1', generation: 2, revision: 'rev-1', acceptedRevision: 'rev-1', decisions: [], blockingQuestions: [], comments: [] },
       coordination: { mode: 'required', sourcePlanKey: 'p1', coordinationWorkspace: '/repo', awarenessPlanId: 'shared-1', materializedRevision: 'rev-1' },
     });
-    expect(model).toMatchObject({ version: 1, revision: 'rev-1', summary: { total: 2, done: 1, running: 1 } });
+    expect(model).toMatchObject({ version: 1, revision: 'rev-1', shape: 'linear', summary: { total: 2, done: 1, running: 1 } });
     const terminal = renderPlanReadModel(model, 'terminal') as string;
     const browser = renderPlanReadModel(model, 'browser') as string;
     const rpc = renderPlanReadModel(model, 'rpc');
@@ -124,7 +124,7 @@ describe('plan presentation read model', () => {
     expect(JSON.stringify(model)).toBe(before);
     expect(rpc).toEqual(model);
     expect(model).toMatchObject({
-      version: 1, phase: 'executing', revision: 'rev-7', acceptedRevision: 'rev-7',
+      version: 1, phase: 'executing', revision: 'rev-7', acceptedRevision: 'rev-7', shape: 'linear',
       authorization: { acceptReceiptId: 'accept-7', startReceiptId: 'start-7' },
       coordination: { mode: 'required', awarenessPlanId: 'plan-7', materializedRevision: 'rev-7' },
       pendingInteractionIds: ['question-1', 'question-2'],

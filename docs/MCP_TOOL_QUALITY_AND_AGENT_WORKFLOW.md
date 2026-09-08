@@ -6,6 +6,8 @@ For routing decisions, read the [research manifest](OCTOCODE_RESEARCH_MANIFEST.m
 For parameters and defaults, use the [tool reference](OCTOCODE_TOOLS.md) and live
 schemas. Do not use a historical score or backlog entry as release acceptance.
 
+Every acceptance run must cover the shared contract as well as tool-specific behavior: a strict `{ queries: [...] }` envelope; 1–5 same-tool query rows; optional per-query `goal` and `reasoning`; zero-based result `index` alignment; isolated row errors; compact `variants` and `relations`; collection/content/whole-response continuations; and typed terminal limits. The [tool reference's base-call section](OCTOCODE_TOOLS.md#how-every-tool-call-works) is the normative prose summary.
+
 ## Inspect the surface being tested
 
 After building the CLI, run these commands from the monorepo root:

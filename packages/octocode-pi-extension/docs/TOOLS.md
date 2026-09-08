@@ -19,7 +19,7 @@ developer code map.
 
 ## Tool inventory
 
-The direct palette contains 14 extension-owned tools: 13 support tools and the guarded `bash` override. GitHub, local, LSP, and npm research tools are provided indirectly through the built-in `octocode` MCP server.
+The direct palette contains 15 extension-owned tools: 14 support tools and the guarded `bash` override. GitHub, local, LSP, and npm research tools are provided indirectly through the built-in `octocode` MCP server.
 
 | Family                   | Direct tools                             |
 | ------------------------ | ---------------------------------------- |
@@ -28,7 +28,7 @@ The direct palette contains 14 extension-owned tools: 13 support tools and the g
 | Media and web            | `inspectMedia`, `media`, `runFfmpeg`, `web` |
 | MCP                      | `MCPTool`                                |
 | Dynamic capabilities     | `callTool`, `skill`                      |
-| Planning and interaction | `plan`, `askUser`, `localServer`         |
+| Planning and coordination | `plan`, `awareness`, `askUser`, `localServer` |
 
 Every direct tool exposes a `queries` batch. Each query requires a non-empty `reasoning` string of at most 240 characters. A call accepts at most 100 queries and validates the full batch before side effects. Sequential mode executes in source order and stops on the first runtime failure. Tools that explicitly expose `queryRunType:"parallel"` overlap only their documented independent operations, run at most four queries concurrently by default, and still return results in source order. Successful batches return a compact receipt index followed by every child content block—including images—in source order; the receipt never replaces model-visible results. One-query calls preserve the underlying result details and rendering contract.
 
@@ -58,7 +58,7 @@ MCP call details likewise retain only block counts and status metadata; full tex
 structured content, and image bytes live solely in the bounded model content or
 its lossless spill artifact.
 
-The Awareness CLI is the model-facing coordination, learning and maintenance surface through `bash`; it does not add wrapper tools to the Pi palette.
+The `awareness` tool is the model-facing coordination, learning, verification, history, and maintenance facade. It reads the canonical package catalog: use `action:"list"`, then `action:"describe"` for an unfamiliar command, then `action:"call"`. Pi injects database, workspace, and actor fields. Commands described as `external-host-only` stay on the bound CLI through guarded `bash`.
 
 Session-scoped maintenance jobs are controlled by `/octocode-cron`; see [CRON.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/CRON.md). `OCTOCODE_SUPPORT_TOOL_NAMES` in `src/constants.ts` is the direct support-tool source of truth.
 
@@ -66,9 +66,11 @@ Session-scoped maintenance jobs are controlled by `/octocode-cron`; see [CRON.md
 
 ## Routing Guide
 
+`gh*`, `local*`, `lspGetSemantics`, and `npmSearch` below are inner tools of the built-in `octocode` MCP server. In Pi, discover/describe/call them through `MCPTool`; they are not direct Pi tools. Use the bundled `npx octocode tools` route only outside the native MCP facade.
+
 | Task                                                    | Tool                                                           |
 | ------------------------------------------------------- | -------------------------------------------------------------- |
-| Run shell commands, git, builds                         | `bash`                                                         |
+| Run authorized builds, tests, or bounded debug commands | `bash`                                                         |
 | Edit existing file (exact replacement)                  | `file` with `type:"edit"`                                      |
 | Create / overwrite a file                               | `file` with `type:"write"`                                     |
 | Delete a file or symbolic link                          | `file` with `type:"delete"`                                    |
@@ -96,6 +98,9 @@ Session-scoped maintenance jobs are controlled by `/octocode-cron`; see [CRON.md
 | Multi-turn browser session                              | `agent` spawn, then wait/message/steer/abort/kill queries      |
 | Spawn background Pi worker                              | `agent` with `type:"spawn"`                                    |
 | Coordinate spawned workers                              | `agent` lifecycle queries                                      |
+| Discover or describe Awareness commands                 | `awareness` with `action:"list"` or `"describe"`            |
+| Run a supported Awareness command                       | `awareness` with `action:"call"`                              |
+| Run an `external-host-only` Awareness command           | Bound Awareness CLI through guarded `bash` after approval      |
 | Fetch a URL / web search                                | `web`                                                          |
 | List / call an external MCP server tool                 | `MCPTool`                                                      |
 | Add / remove / restart an MCP server (no agent restart) | `MCPTool` (action: add/remove/restart)                         |
@@ -199,7 +204,7 @@ Resolve npm package names → GitHub repo. Exact package name returns rich singl
 
 ## Browser and agent tools
 
-See [`BROWSER_AGENT.md`](https://github.com/bgauryy/octocode-mcp/blob/main/packages/octocode-pi-extension/subagents/browser-agent/BROWSER_AGENT.md) for the Chrome DevTools scheme reference.
+See [`BROWSER_AGENT.md`](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/subagents/browser-agent/BROWSER_AGENT.md) for the Chrome DevTools scheme reference.
 
 ### `chromeDebug`
 
@@ -218,18 +223,11 @@ Spawn profiles:
 | `researcher` | Evidence gathering across web, GitHub, npm, local files, binaries, and LSP.              |
 | `planner`    | Dependency-ordered implementation plans, risks, verification strategy, and RFC handoffs. |
 | `architect`  | Root-cause and architecture analysis with local tools and targeted shell checks.         |
+| `implementer`| One bounded code change under exclusive ownership with an observed acceptance check.     |
 | `browser`    | Routed multi-turn Chrome DevTools work.                                                  |
-| `custom`     | A general Octocode worker whose tools, system prompt, and resource mode can be narrowed. |
+| `custom`     | An explicit uncovered role with caller-selected tools and a required system prompt.      |
 
-Researcher, planner, and architect all receive `web`, `MCPTool`, `file`, `skill`,
-and `bash`. Role policy limits `file` to an assigned RFC or durable handback artifact,
-keeps product research read-only, and routes research through MCP. Researcher and
-planner use `bash` only for the supplied Awareness CLI; architect also permits
-bounded non-destructive test/build/debug checks. Each worker keeps its distinct
-Awareness identity while sharing the parent's database/workspace bindings. Browser
-workers receive `chromeDebug`, `MCPTool`, `skill`, and `bash`. Custom workers default
-to `MCPTool`, `skill`, and `bash`; explicit `tools:[]` maps to Pi's `--no-tools`, and
-explicit lean mode disables extension and skill loading.
+Typed workers use Octocode `MCPTool` and matching skills for repository research; the implementer additionally receives `file` for its explicit ownership. Role policy keeps researcher/planner/architect/browser product work read-only except for assigned artifacts, and limits shell to Awareness or role-bounded checks. Each worker has a distinct Awareness identity in the parent's database/workspace. Browser workers receive `chromeDebug`, `MCPTool`, `skill`, `awareness`, and `bash`. Custom workers must declare a non-empty role `systemPrompt` and an explicit least-capability `tools` list; `tools:[]` maps to Pi's `--no-tools`, and lean mode disables extension and skill loading.
 
 ```text
 agent({queries:[{

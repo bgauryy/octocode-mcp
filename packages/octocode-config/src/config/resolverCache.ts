@@ -3,6 +3,7 @@ import { DEFAULT_CONFIG } from './defaults.js';
 import { loadConfigSync } from './loader.js';
 import { validateConfig } from './validator.js';
 import {
+  resolveExtensionStorage,
   resolveGitHub,
   resolveLocal,
   resolveTools,
@@ -28,6 +29,7 @@ const CONFIG_ENV_KEYS = [
   'OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH',
   'OCTOCODE_ENABLE_STATS',
   'OCTOCODE_STORAGE_MODE',
+  'OCTOCODE_EXTENSION_STORAGE_MODE',
 ] as const;
 
 type FileState = 'absent' | 'valid' | 'invalid';
@@ -79,6 +81,7 @@ function buildResolvedConfig(
     output: resolveOutput(fileConfig?.output),
     session: resolveSession(),
     storage: resolveStorage(fileConfig?.storage),
+    extension: resolveExtensionStorage(fileConfig),
     source,
     configPath: fileState !== 'absent' ? options.configPath : undefined,
   };

@@ -5,7 +5,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { KNOWN_FLAGS, COMMAND_ROUTES } from '../bin/cli-routing.js';
-import { runSchemaCli } from '../src/schema/cli.js';
+import { getAwarenessCommandDescriptor, listAwarenessCommandDescriptors, runSchemaCli } from '../src/schema/cli.js';
+import { commandIndex } from '../src/schema/command-catalog.js';
 import { tsxCli } from './helpers/tsx-cli.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -46,6 +47,45 @@ async function schemaCommand(command: string): Promise<Record<string, unknown>> 
 }
 
 describe('CLI discovery contracts', () => {
+  it('describes and classifies every canonical command exactly once', () => {
+    const descriptors = listAwarenessCommandDescriptors();
+    expect(commandIndex).toHaveLength(97);
+    expect(descriptors).toHaveLength(commandIndex.length);
+    expect(new Set(descriptors.map((entry) => entry.command)).size).toBe(commandIndex.length);
+    expect(Object.isFrozen(descriptors)).toBe(true);
+
+    for (const entry of descriptors) {
+      expect(entry.schema).toBeTruthy();
+      expect(entry.effect).toMatch(/^(read|coordination-write|workspace-write|host-config-write|destructive-admin)$/);
+      expect(entry.piMode).toMatch(/^(normal|recovery|external-host-only)$/);
+      expect(entry.injected).toContain('compact');
+      expect(entry.inputSchema['x-awareness-effect']).toBe(entry.effect);
+      expect(entry.inputSchema['x-awareness-pi-mode']).toBe(entry.piMode);
+      expect(entry.inputSchema['x-awareness-injected']).toEqual(entry.injected);
+      expect(Object.isFrozen(entry)).toBe(true);
+      expect(Object.isFrozen(entry.inputSchema)).toBe(true);
+      expect(getAwarenessCommandDescriptor(entry.command)).toEqual(entry);
+    }
+  });
+
+  it('publishes verify host bindings, pagination, and report exit semantics', async () => {
+    const audit = getAwarenessCommandDescriptor('verify audit');
+    const mark = getAwarenessCommandDescriptor('verify mark');
+    expect(audit).toMatchObject({
+      injected: ['database', 'workspace', 'agent-id', 'compact'],
+      resultExitCodes: [0, 1],
+    });
+    expect(mark).toMatchObject({
+      injected: ['database', 'workspace', 'agent-id', 'compact'],
+    });
+
+    const auditSchema = await schemaCommand('verify audit');
+    expect(auditSchema.properties).toMatchObject({
+      limit: expect.any(Object),
+      offset: expect.any(Object),
+    });
+  });
+
   it('publishes only root flags accepted by each schema route', async () => {
     const output: string[] = [];
     const spy = vi.spyOn(console, 'log').mockImplementation((value: unknown) => { output.push(String(value)); });

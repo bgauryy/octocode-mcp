@@ -15,6 +15,47 @@ Awareness is coordination evidence, not code truth. One canonical schema/entity 
 Capabilities: ${[...new Set(commandIndex.map(({ command }) => command.split(' ')[0]))].join(', ')}.
 </awareness>`;
 
+/**
+ * Pi-hosted agent coordination prompt. Uses the native awareness tool facade instead of CLI syntax.
+ * Fixes the five critical friction points:
+ * 1. memory recall — must run before any planning or edit
+ * 2. verify audit  — gates every session closing
+ * 3. task heartbeat — extend claim leases on long operations
+ * 4. work touch     — refresh file presence on long runs
+ * 5. signal ack     — must follow every signal handling action
+ */
+export const AWARENESS_PI_HOST_PROMPT = `<awareness>
+Awareness is shared coordination state: work presence, task ownership, locks, signals, memory, verification, and file history. Activate when peers, overlap, shared-file edits, locks, signals, verification debt, multi-session continuity, or reusable evidence can change the next action. Skip for routine solo work with no shared-state signal.
+
+Use the Pi awareness tool — never shell or npx: action:"list" discovers commands, action:"describe" reads the exact input schema, action:"call" executes. Pi injects database, workspace, and actor automatically; never pass or override those fields.
+
+Essential loop — follow in order:
+1. awareness(call "attend") — build a bounded lobby: what is active, blocked, and next. Use first on session start or when state changes.
+2. awareness(call "memory recall") — recall repo lessons before any planning or edit. The highest-ROI command; do not skip.
+3. awareness(call "work list") — check peer file ownership before writing.
+4. awareness(call "work start") — declare file ownership before editing. Include paths, rationale, and test-plan. Add exclusive:true only for non-mergeable changes.
+5. Do the work.
+6. awareness(call "verify mark") — only after the declared check ran with an observed result: status SUCCESS or FAILED. Expiry, exit, and ack never prove verification.
+7. awareness(call "work end") or awareness(call "task submit") — close the run.
+8. Before the final response, awareness(call "verify audit") — find remaining debt. Settle or disclose; never omit this gate.
+
+Signals — follow the full cycle:
+- Read: awareness(call "signal list") with include_bodies:true when content matters.
+- Publish: awareness(call "signal publish") with kind:blocker|decision|handoff|fyi and to_agent:<peer-id>.
+- Reply in thread: awareness(call "signal reply") with in_reply_to:<signal-id>. Never use signal publish kind:reply for replies.
+- After handling: awareness(call "signal ack") with signal_id:<id>. Ack means handled, not completed; unacked signals accumulate noise.
+- Close thread: awareness(call "signal resolve") only when all work in the thread is done.
+
+Long operations (>2 min): call awareness(call "task heartbeat") and awareness(call "work touch") periodically — expired leases orphan work.
+
+Locks: awareness(call "lock acquire") for non-mergeable files only; exit 2 means conflict — wait or coordinate. lock release is not success; verify separately.
+Memory: recall before work, record after verified outcomes only.
+Effect classes — read: safe; coordination-write: reversible; workspace-write / destructive-admin: dry-run first, apply only within authorization.
+
+S-tier commands: attend, memory recall, work start, work end, task ready, task claim, verify audit.
+Capabilities: ${[...new Set(commandIndex.map(({ command }) => command.split(' ')[0]))].join(', ')}.
+</awareness>`;
+
 /** Full on-demand reference; hosts embed the compact standing policy above. */
 export const EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS = EXTERNAL_AGENT_AWARENESS_PROMPT.replace(
   '</awareness>',

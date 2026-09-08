@@ -12,7 +12,7 @@ test('the former top-level MCP discovery shape is rejected before any operation'
   );
 });
 
-for (const role of ['architect', 'planner', 'researcher']) {
+for (const role of ['architect', 'implementer', 'planner', 'researcher']) {
   test(`${role} research recipe passes the real MCP batch preflight`, async () => {
     const source = fs.readFileSync(path.resolve(import.meta.dirname, '../subagents', role, 'SYSTEM_PROMPT.md'), 'utf8');
     const recipes = [...source.matchAll(/MCPTool\(([^\n]+)\)/g)];

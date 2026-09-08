@@ -29,10 +29,11 @@ describe('shared prompts', () => {
     expect(prompt.endsWith('\n')).toBe(true);
   });
 
-  it('routes measurable loops to the installed graph-eval skill without legacy aliases', () => {
+  it('routes measured improvement loops to the installed eval skill without hijacking ordinary retries', () => {
     const prompt = buildOctocodeSystemPrompt('<coordination>shared</coordination>');
-    expect(prompt).toContain('octocode-graph-eval');
-    expect(prompt).not.toContain('octocode-eval');
+    expect(prompt).toContain('octocode-eval-benchmark');
+    expect(prompt).toContain('Ordinary bounded retries and debug loops use their direct acceptance check');
+    expect(prompt).not.toContain('octocode-graph-eval');
   });
 
   it('keeps the shared policy host-neutral instead of advertising Pi-only tools', () => {
@@ -50,16 +51,40 @@ describe('shared prompts', () => {
     expect(prompt).toContain('Never re-execute it');
   });
 
-  it('uses the negotiated research catalog instead of stale inner tool names', () => {
+  it('uses the negotiated catalog and teaches efficient research routing without stale tool inventories', () => {
     const prompt = buildOctocodeSystemPrompt('<coordination>shared</coordination>');
     expect(prompt).toContain('Call catalog before choosing and schema before the first call');
     expect(prompt).toContain('never reuse an absent name');
+    expect(prompt).toContain('text for lexical anchors, structural/AST for syntax shapes, files for path or metadata filters, and tree for bounded orientation');
+    expect(prompt).toContain('matchString with bounded context for a unique anchor');
+    for (const minify of ['minify:"symbols"', 'minify:"standard"', 'minify:"none"']) {
+      expect(prompt).toContain(minify);
+    }
+    expect(prompt).toContain('dependencies, dependents, paths, cycles/SCCs, reachability, and dead-code candidates');
+    expect(prompt).toContain('definitions, references, callers/callees, implementations, and types');
+    expect(sharedPrompts).toHaveProperty('LOCAL_TOOL_GUIDANCE');
     expect(prompt).not.toContain('localSearch operation:');
   });
 
-  it('keeps plan goals bounded', () => {
-    const prompt = buildPlanPrompt('x'.repeat(PLAN_PROMPT_MAX_GOAL + 1));
+  it('keeps plan goals bounded and centralizes atomic Start semantics behind a host adapter', () => {
+    const prompt = buildPlanPrompt('x'.repeat(PLAN_PROMPT_MAX_GOAL + 1), {
+      proposalInstruction: 'Call the host plan envelope.',
+      reviewInstruction: 'Show the host review card.',
+    });
     expect(prompt).toContain(PLAN_PROMPT_TRUNCATION_MARKER);
+    expect(prompt).toContain('Call the host plan envelope.');
+    expect(prompt).toContain('Show the host review card.');
+    expect(prompt).toContain('Start binds the exact displayed revision and begins the first runnable step in one action');
+    expect(prompt).toContain('there is no separate Accept action');
+    expect(prompt).toContain('a lightweight proposal omits the RFC path');
+    expect(prompt).not.toContain('acceptance binds that revision but does not authorize implementation');
+  });
+
+  it('does not instruct agents to mutate workspace reflection state', () => {
+    const prompt = buildOctocodeSystemPrompt('<coordination>shared</coordination>');
+    expect(prompt).toContain('never create or hand-edit workspace `.octocode/` state for reflection');
+    expect(prompt).not.toContain('.octocode/REFLECT.md');
+    expect(prompt).toContain('workspace-relative path:line anchors');
   });
 
   it('expands every shared subagent placeholder', () => {

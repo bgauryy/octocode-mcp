@@ -213,6 +213,10 @@ task: z
         .describe("Restrict migration/audit to selected run origins."),
       before: z.string().datetime().optional()
         .describe("Only runs created before this ISO timestamp."),
+      limit: z.number().int().min(1).max(200).optional()
+        .describe("Maximum verification rows returned; compact mode defaults to 20."),
+      offset: z.number().int().min(0).max(1_000_000).optional()
+        .describe("Zero-based verification row offset; copy the returned continuation."),
     })
     .strict()
               .describe("Read-only listing of unverified and stale ACTIVE runs."),

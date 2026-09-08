@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { normalizeWorkspacePath, type AuthorizationReceiptV1, type InteractionAnswerV1, type InteractionRequestV1, type OutboxEventV1, type StoredInteractionV1 } from '@octocodeai/octocode-awareness';
 import type { PiContext } from '../types.js';
-import { isPersistentStorageEnabled } from '@octocodeai/config';
+import { isPersistentStorageEnabledForExtension as isPersistentStorageEnabled } from '@octocodeai/config';
 import { openPersistentAwareness } from './storage-policy.js';
 
 interface InteractionStore {

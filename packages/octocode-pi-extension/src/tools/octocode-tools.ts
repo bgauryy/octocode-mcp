@@ -22,12 +22,13 @@ export const DIRECT_TOOL_DESCRIPTIONS: Readonly<Record<string, string>> = Object
   runFfmpeg: 'Run advanced ffmpeg or ffprobe argv directly with workspace path guards, timeout, cancellation, and progress. Prefer inspectMedia and media for standard operations. Use for filter_complex, loudnorm, or VMAF.',
   web: 'Fetch a URL or search the web for docs, releases, errors, and info outside the repository. Prefer repository/MCP tools for code evidence.',
   chromeDebug: 'Inspect/automate Chrome via CDP: DOM, console, network, screenshots, performance, storage, security, coverage, or raw Domain.method calls. Use agent profile:browser for multi-turn browser work.',
-  agent: 'Spawn/manage researcher, planner, architect, browser, or custom workers. Spawn first; use agentId later. Workers use MCPTool for repository research and the harness Awareness CLI for coordination; other shell access follows their role.',
+  agent: 'Spawn/manage researcher, planner, architect, implementer, browser, or custom workers. Custom requires explicit tools and systemPrompt. Spawn first; use agentId later. Workers use MCPTool for repository research; the parent verifies and integrates.',
   callTool: 'Reuse a verified dynamic tool, or propose/create/fix/delete one after approval. Research existing tools first. Use only for small reusable deterministic capabilities—not trivial shell one-liners or multi-step workflows.',
-  skill: 'Load an installed Agent Skill, or list/manage reusable dynamic workflow skills. Load a matching skill BEFORE acting. type:load for installed skills; type:call for dynamic lifecycle.',
+  skill: 'Load an installed Agent Skill for a specialized workflow, or list/manage reusable dynamic skills. Do not load one for routine work. type:load uses installed skills; type:call manages dynamic lifecycle.',
   plan: 'Maintain a visible compaction-safe checklist. Use for multi-step/risky/shared work; skip obvious one-step tasks. Consequential RFCs need review then Start; shared completion needs a check receipt.',
   localServer: 'Serve inspected local static artifacts on a shared 127.0.0.1 server. Use for HTML plans/designs/reports; ask before opening a browser. Unmount when done.',
   askUser: 'Ask one genuine decision question using options, multi-select, free text, or fields. Mark the safe default recommended; ordinary conversation does not need this tool.',
+  awareness: 'Discover and invoke the canonical Awareness coordination, memory, verification, history, and maintenance runtime without shell syntax. List or describe unfamiliar commands before calling them.',
   MCPTool: 'Use automatically discovered MCP tools; prefer server:"octocode" over bash for code search/file reads. Describe unfamiliar tools before their first call. Supports stdio and Streamable HTTP.',
 });
 

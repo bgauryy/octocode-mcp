@@ -108,6 +108,7 @@ test('projects existing plan and task ids coherently while backlog tracks unfini
     version: 1,
     planId: 'pi-plan-123',
     phase: 'executing',
+    shape: 'linear',
     summary: { total: 3, done: 1, running: 1, blocked: 0 },
     tasks: [
       { id: 'task-a', index: 1, text: 'First', status: 'done', dependsOn: [] },

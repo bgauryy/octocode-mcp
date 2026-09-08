@@ -1491,11 +1491,11 @@ export function preflightMcpQuery(query: QueryRecord): void {
     );
   }
   if (action === "describe") {
-    if (!server) throw new Error("describe requires server");
-    if (!tool) throw new Error("describe requires tool");
+    if (!server) throw new Error('describe requires server — use server:"octocode" for the built-in Octocode research server');
+    if (!tool) throw new Error('describe requires tool — pass the exact MCP tool name, e.g. "localSearch" or "lspGetSemantics"');
   } else if (action === "call") {
-    if (!server) throw new Error("call requires server");
-    if (!tool) throw new Error("call requires tool");
+    if (!server) throw new Error('call requires server — use server:"octocode" for the built-in Octocode research server');
+    if (!tool) throw new Error('call requires tool — pass the exact MCP tool name, e.g. "localSearch" or "lspGetSemantics"');
   } else if (action === "resources" || action === "prompts") {
     if (!server) throw new Error(`${action} requires server`);
   } else if (action === "read-resource") {
@@ -1679,13 +1679,21 @@ async function validateOneMcpTool(
     ctx,
     signal,
   );
-  if (!server) throw new Error(`Unknown MCP server: ${target.server}`);
+  if (!server) {
+    const knownServers = (cachedCatalogs.get(cacheKey(ctx)) ?? []).map((s) => s.name);
+    const serverHint = knownServers.length > 0
+      ? ` Known servers: ${knownServers.join(', ')}.`
+      : ' Check MCPTool action:"status" for connected servers.';
+    throw new Error(`Unknown MCP server: "${target.server}".${serverHint}`);
+  }
   const rawTool = server.tools.find(
     (candidate) =>
       isPlainRecord(candidate) && candidate["name"] === target.tool,
   );
   if (!isPlainRecord(rawTool) || !Object.hasOwn(rawTool, "inputSchema")) {
-    throw new Error(`Unknown MCP tool: ${target.server}/${target.tool}`);
+    const toolNames = server.tools.filter(isPlainRecord).map((t) => String(t["name"])).filter(Boolean);
+    const toolHint = toolNames.length > 0 ? ` Available tools on "${target.server}": ${toolNames.join(', ')}.` : '';
+    throw new Error(`Unknown MCP tool: ${target.server}/${target.tool}.${toolHint}`);
   }
   try {
     const enabled = getMcpEnablement(

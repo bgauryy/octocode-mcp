@@ -55,7 +55,10 @@ test('UX corpus and rubric freeze reproducible launch evidence', () => {
   }
   assert.ok(tasks.some((task) => task['terminalProfile'] === '44-column-color'));
   assert.ok(tasks.some((task) => task['terminalProfile'] === '80-column-no-color'));
-  assert.ok(tasks.some((task) => task['prohibited'] === 'implementation-start'));
+  assert.equal(tasks.some((task) => task['id'] === 'accept-without-start'), false);
+  const atomicStart = tasks.find((task) => task['id'] === 'start-displayed-revision');
+  assert.match(String(atomicStart?.['instruction']), /authorizes.*begins implementation/i);
+  assert.match(String(atomicStart?.['success']), /final-phase-executing/);
   assert.ok(tasks.some((task) => task['prohibited'] === 'workspace-mutation'));
 
   const density = fixture['defaultDensityFixture'] as Record<string, unknown>;

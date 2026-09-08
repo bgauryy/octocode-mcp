@@ -70,7 +70,7 @@ export interface SubagentConfig {
 
 /** Union of all registered subagent names (extend when adding new subagents). */
 export type SubagentName =
-  'browser-agent' | 'researcher' | 'planner' | 'architect';
+  'browser-agent' | 'researcher' | 'planner' | 'architect' | 'implementer';
 
 // ─── Runtime path resolution ──────────────────────────────────────────────────
 
@@ -155,7 +155,8 @@ export const SUBAGENT_REGISTRY = {
       'MCPTool',     // Octocode MCP server: localGetFileContent, localSearch, localAnalyzeGraph, etc.
       'file',        // only parent-assigned durable handback artifacts
       'skill',       // load bundled/user workflows, including Awareness
-      'bash',        // harness-provided Awareness CLI; other shell use remains role-bound
+      'awareness',   // native coordination, memory, verification, and history gateway
+      'bash',        // assigned shell work and external-host-only Awareness fallback
     ],
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'low',
@@ -173,7 +174,8 @@ export const SUBAGENT_REGISTRY = {
       'MCPTool', // octocode MCP server: all GitHub, local, LSP, npm research tools
       'file',   // only parent-assigned durable handback artifacts
       'skill',  // load bundled/user workflows, including Awareness
-      'bash',   // harness-provided Awareness CLI; other shell use remains role-bound
+      'awareness', // native coordination, memory, verification, and history gateway
+      'bash',   // assigned shell work and external-host-only Awareness fallback
     ],
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'low',
@@ -190,7 +192,8 @@ export const SUBAGENT_REGISTRY = {
       'MCPTool', // octocode MCP server: all GitHub, local, LSP, npm research tools
       'file',   // only parent-assigned durable handback artifacts
       'skill',  // load bundled/user workflows, including Awareness
-      'bash',   // harness-provided Awareness CLI; other shell use remains role-bound
+      'awareness', // native coordination, memory, verification, and history gateway
+      'bash',   // assigned shell work and external-host-only Awareness fallback
     ],
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'low',
@@ -208,9 +211,26 @@ export const SUBAGENT_REGISTRY = {
       'MCPTool', // octocode MCP server: all GitHub, local, LSP, npm research tools
       'file',   // only parent-assigned durable handback artifacts
       'skill',  // load bundled/user workflows, including Awareness
+      'awareness', // native coordination, memory, verification, and history gateway
     ],
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'medium',
     systemPromptPath: subagentPromptPath('architect'),
+  },
+  implementer: {
+    name: 'implementer' as SubagentName,
+    label: 'Implementer',
+    description:
+      'Bounded code implementation specialist. Edits only explicitly assigned ownership, runs the assigned acceptance check, and returns evidence for parent verification.',
+    tools: [
+      'MCPTool', // inspect exact code, symbols, callers, and contracts
+      'file',    // assigned source edits and durable handback
+      'skill',   // load only a matching implementation workflow
+      'awareness', // native coordination, verification, and handoff gateway
+      'bash',    // assigned tests/builds and external-host-only Awareness fallback
+    ],
+    resourceMode: 'octocode' as ResourceMode,
+    thinking: 'medium',
+    systemPromptPath: subagentPromptPath('implementer'),
   },
 } satisfies Record<SubagentName, SubagentConfig>;

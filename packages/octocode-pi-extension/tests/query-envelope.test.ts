@@ -55,7 +55,7 @@ describe("query envelope", () => {
       schema.properties?.queries?.items?.properties?.reasoning,
     ).toMatchObject({
       minLength: 1,
-      maxLength: 240,
+      maxLength: 400,
     });
     expect(schema.properties?.queries?.items?.required).toContain("reasoning");
     expect(schema.properties?.queries?.items?.properties).toHaveProperty("value");
@@ -104,9 +104,9 @@ describe("query envelope", () => {
 
     await expect(
       prepareQueryBatch({
-        queries: [{ reasoning: "x".repeat(241), value: "ok" }],
+        queries: [{ reasoning: "x".repeat(401), value: "ok" }],
       }),
-    ).rejects.toThrow(/at most 240/);
+    ).rejects.toThrow(/at most 400/);
   });
 
   it("executes prepared queries in order and returns every child content block to the agent by default", async () => {

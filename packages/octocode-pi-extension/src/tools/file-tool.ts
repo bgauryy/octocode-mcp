@@ -79,7 +79,7 @@ function sameSnapshot(left: DeleteSnapshot, right: DeleteSnapshot): boolean {
 function assertOnlyFields(query: QueryRecord, allowed: readonly string[], operation: FileOperation): void {
   const allowedSet = new Set(['reasoning', 'type', ...allowed]);
   const extra = Object.keys(query).filter((key) => !allowedSet.has(key));
-  if (extra.length > 0) throw new Error(`${operation} does not accept ${extra.join(', ')}.`);
+  if (extra.length > 0) throw new Error(`${operation} does not accept ${extra.join(', ')} — valid fields for ${operation}: type, reasoning, ${allowed.join(', ')}.`);
 }
 
 function validateBase(query: QueryRecord): { operation: FileOperation; path: string } {
@@ -179,6 +179,7 @@ export function registerFileTool(
     promptGuidelines: [
       'Prefer file over bash for any file create, edit, or delete — file provides stale-edit guards, diff preview, and atomic writes that bash cannot.',
       'Use type:"edit" for targeted replacements, type:"write" for new files or intentional full rewrites, and type:"delete" only when removal is explicitly in scope.',
+      'Strict per-operation fields: write accepts only path and content; delete accepts only path; edit accepts only path, edits, and requireRecentRead. Any other field (confirm, force, dryRun, etc.) causes a runtime error even though the JSON Schema does not reject it at validation time.',
       'Read and understand existing files before edit/delete. Use exact oldText by default; normalized or lineRange matching is opt-in.',
       'For requireRecentRead or a lineRange edit without oldText, read through MCPTool localGetFileContent first; shell reads do not refresh the stale-edit guard.',
       'Keep replacements bounded with the smallest unique anchor, and split large mutations across separate calls before the model output limit.',

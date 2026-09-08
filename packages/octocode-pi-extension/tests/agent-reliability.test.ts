@@ -552,7 +552,7 @@ test('public plan assignment reaches the worker RPC prompt and prevents duplicat
     const shownText = shown.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n');
     const taskId = /Task IDs for agent\.planStep: 1=([^\s,]+)/.exec(shownText)?.[1];
     assert.ok(taskId, 'model-visible plan text must provide the stable ID required by agent.planStep');
-    const params = { queries: [{ reasoning: 'Delegate independent endpoint work', type: 'spawn', task: 'Implement the endpoint', planStep: taskId }] };
+    const params = { queries: [{ reasoning: 'Delegate independent endpoint work', type: 'spawn', profile: 'implementer', goal: 'Implement the endpoint', context: 'The active plan supplies the endpoint contract.', scope: 'Endpoint task only.', ownership: 'src/endpoint.ts', acceptance: 'Endpoint verified.', returnShape: 'Changed path, observed check, and terminal state.', planStep: taskId }] };
     await tools.get('agent')!.execute('assigned-spawn', params, undefined, undefined, ctx);
     const prompt = String(mock.writes.find((write) => write.type === 'prompt')?.message);
     assert.ok(prompt.includes(taskId));
@@ -780,7 +780,8 @@ test('SEV-1: agent typed profile inherits the parent provider when the caller do
 
   await tools.get('agent')!.execute('id', { queries: [{ reasoning: 'Check typed worker provider inheritance', type: 'spawn',
     profile: 'researcher',
-    task: 'Goal: test\nContext: test\nScope: test\nOwnership: test\nAcceptance: test\nReturn: test',
+    goal: 'Test provider inheritance.', context: 'Typed worker test.', scope: 'Provider arguments only.',
+    ownership: 'Read-only test ownership.', acceptance: 'Inherited provider reaches argv.', returnShape: 'Observed argv and terminal state.',
   }] }, undefined, undefined, ctx);
 
   const providerIdx = capturedArgs.indexOf('--provider');

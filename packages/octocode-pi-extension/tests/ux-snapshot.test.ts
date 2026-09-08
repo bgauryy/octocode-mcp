@@ -26,6 +26,7 @@ function plan(overrides: Partial<PlanReadModelV1> = {}): PlanReadModelV1 {
     pendingInteractionIds: [],
     runtime: { turnsSinceUpdate: 0 },
     ...overrides,
+    shape: overrides.shape ?? 'linear',
   };
 }
 
@@ -81,6 +82,7 @@ test('derives a frozen linear snapshot and keeps worker completion separate from
 test('marks parallel plans as graph progress and promotes input, failures, messages, context, and stale sources', () => {
   const parallel = plan({
     phase: 'needs_answers',
+    shape: 'graph',
     pendingInteractionIds: ['interaction-1'],
     summary: { total: 4, done: 1, running: 1, blocked: 1 },
     tasks: [

@@ -6,13 +6,7 @@ Everything the extension registers with Pi on load: tools, system-prompt section
 
 ## System Prompt
 
-The lightweight host facts in `src/prompts/system-prompt.ts` describe capabilities,
-untrusted data, permission boundaries, and `/configuration`, followed by the canonical
-compact `EXTERNAL_AGENT_AWARENESS_PROMPT` (cooperation, communication, verification
-and a generated capability map). Full recipes remain on demand through `guide` and the skill. They are built into
-`dist/system/SYSTEM_PROMPT.md` and supplied through `before_agent_start`. Workflow,
-planning depth, skill choice, and response style follow the user's request.
-No regex-triggered repo-state, output-recovery, or editor-comment prompts are injected.
+The first-turn prompt is assembled from a small Pi host adapter, the canonical coder kernel from `@octocodeai/agent-contracts/prompts`, and the canonical `EXTERNAL_AGENT_AWARENESS_PROMPT`. The kernel owns intent classification, execution and delegation, verification, continuation, repository/tool routing, lifecycle, and output rules. Full Awareness recipes remain on demand through `guide` and the skill. The built prompt is supplied through `before_agent_start`; no regex-triggered repo-state, output-recovery, or editor-comment prompts are injected.
 
 On the first main-agent turn, the hook freezes seven stable system segments:
 product policy, MCP catalog, runtime capabilities, dynamic tool contracts, available
@@ -42,20 +36,21 @@ Catalogued tools via `MCPTool server:"octocode"`: `ghSearch` · `ghGetFileConten
 
 **Edit stale-check**: `MCPTool` intercepts `server:"octocode" tool:"localGetFileContent"` calls and runs `recordFileReadState()` so `file` operations with `type:"edit"` can detect stale targets.
 
-### Support Tools — 13
+### Support Tools — 14
 
-Registered from extension sources and named in `OCTOCODE_SUPPORT_TOOL_NAMES`: `file`, `web`, `chromeDebug`, `agent`, `callTool`, `skill`, `plan`, `localServer`, `MCPTool`, `askUser`, `inspectMedia`, `media`, and `runFfmpeg`. Together with the guarded `bash` override, these form the 14-tool direct palette. Every direct tool exposes only a top-level `queries[]` array; each query requires concise `reasoning`. `/configuration` is the local management page, not a model-callable support-tool alias.
+Registered from extension sources and named in `OCTOCODE_SUPPORT_TOOL_NAMES`: `file`, `web`, `chromeDebug`, `agent`, `callTool`, `skill`, `plan`, `localServer`, `awareness`, `MCPTool`, `askUser`, `inspectMedia`, `media`, and `runFfmpeg`. Together with the guarded `bash` override, these form the 15-tool direct palette. Every direct tool exposes only a top-level `queries[]` array; each query requires concise `reasoning`. `/configuration` is the local management page, not a model-callable support-tool alias.
 
 | Tool | Label | Description |
 |---|---|---|
 | `file` | File | Create, edit, or delete files through one guarded and fully preflighted mutation boundary |
 | `web` | Web | Fetch an absolute URL or run a web search |
 | `chromeDebug` | Chrome DevTools | Run direct, stateful CDP operations for DOM, network, console, evaluation, navigation, and screenshots |
-| `agent` | Agent | Spawn and manage researcher, planner, architect, browser, and custom worker profiles |
+| `agent` | Agent | Spawn and manage researcher, planner, architect, implementer, browser, and explicit custom worker profiles |
 | `callTool` | Call Tool | Invoke a registered dynamic-capability tool from the live `<dynamic_capabilities>` registry |
 | `skill` | Skill | Load installed skills or manage dynamic skill workflows with `type:"call"` |
 | `plan` | Plan | Own session/shared plans, stable task projection, and observed check receipts |
 | `localServer` | Local Server | Serve an inspected local static directory over loopback for user review |
+| `awareness` | Awareness | List, describe, and execute canonical Awareness commands with host-injected identity and storage bindings |
 | `MCPTool` | MCPTool | Call automatically discovered tools, describe one selected tool, and manage configured MCP servers |
 | `askUser` | Ask User | Ask the user through an interactive picker, form, or non-TUI fallback |
 | `inspectMedia` | Inspect Media | Perceive images, video frames/contact sheets, and audio metadata/visualizations |
@@ -141,26 +136,25 @@ Env var `OCTOCODE_SKILL_ROOT` is set to the skill root so bundled skills can loc
 
 ## Subagents
 
-Spawn workers with an `agent` query whose `type` is `spawn` and whose `profile` selects the runtime. The researcher, architect, and planner profiles use standalone prompts in `subagents/<name>/SYSTEM_PROMPT.md` and curated toolsets. Browser and custom profiles are orchestrated by the same public facade.
+Spawn workers with an `agent` query whose `type` is `spawn` and whose `profile` selects the runtime. Typed profiles use standalone prompts in `subagents/<name>/SYSTEM_PROMPT.md` and curated least-capability toolsets. Every spawn requires goal, context, scope, ownership, acceptance, and returnShape; incomplete packets fail before process creation.
 
 | Profile | Specialty | Tools |
 |---|---|---|
 | `researcher` | Evidence gathering and compact claim ledgers | `web` · `MCPTool` · `file` · `skill` · `bash` (Awareness CLI only) |
 | `architect` | Root-cause analysis and code archaeology | `web` · `MCPTool` · `file` · `skill` · `bash` (Awareness CLI and bounded test/build/debug checks) |
 | `planner` | Dependency-ordered implementation plans and test strategy | `web` · `MCPTool` · `file` · `skill` · `bash` (Awareness CLI only) |
+| `implementer` | One bounded implementation unit with exclusive ownership and an observed check | `MCPTool` · `file` · `skill` · `bash` |
 | `browser` | Multi-turn browser analysis and lifecycle management | `chromeDebug` · `MCPTool` · `skill` · `bash` |
-| `custom` | General research and caller-defined work | `MCPTool` · `skill` · `bash` by default |
+| `custom` | Caller-defined bounded role | Explicit caller-provided `tools` allowlist and non-empty `systemPrompt` |
 
-Typed workers keep product-code investigation read-only. Their `file` capability
+Researcher, architect, and planner workers keep product-code investigation read-only. Their `file` capability
 is limited by role policy to parent-assigned RFC or durable handback artifacts;
 it does not authorize product edits. `skill` loads operating guidance. Every typed
 worker can use the supplied Awareness CLI for scoped communication and bookkeeping;
 `bash` does not replace MCP research. Architect additionally permits bounded
 non-destructive test, build and debug checks. Typed profiles use the current
 `file` and `skill` names rather than removed standalone memory/write wrappers.
-Browser and default custom workers also load the Octocode extension, enabled skills,
-and Awareness bindings. Explicit `tools:[]` maps to `--no-tools`; explicit lean mode
-disables extension and skill loading for isolated tool-less workers.
+Browser workers load the Octocode extension, enabled skills, and Awareness bindings. Custom workers receive the shared bounded-worker contract before their required caller role prompt. Explicit `tools:[]` maps to `--no-tools`; explicit lean mode disables extension and skill loading for isolated tool-less workers.
 
 ---
 
@@ -223,10 +217,11 @@ Registered via `createHookComposer(pi, …)` (middleware composer that catches a
 
 The harness imports `@octocodeai/octocode-awareness` for native registry membership,
 shared plan projection, mutation guards/presence and peer-event delivery/policy.
-Model-facing signals, explicit locks, memory, bookkeeping and maintenance use the
-installed Awareness CLI through guarded `bash`; no separate wrappers are registered.
-Pi freezes seven stable system segments, including `awareness-cli-runtime`, which
-supplies the runner, physical SQLite path, normalized workspace and stable identity.
+Model-facing signals, explicit locks, memory, verification, history, bookkeeping,
+and maintenance use the single `awareness` list/describe/call facade. Commands labeled
+`external-host-only` retain the installed CLI fallback through guarded `bash`. Pi freezes
+seven stable system segments, including `awareness-cli-runtime`, which supplies routing,
+the fallback runner, physical SQLite path, normalized workspace, and stable identity.
 External CLI agents communicate through that same database/workspace with their own
 distinct IDs. Native run/task IDs and receipts are reused. Pi does not install shell
 hooks; its native events remain the lifecycle owner. See [agent flow](docs/AWARENESS_AGENT_FLOW.md).
@@ -259,11 +254,11 @@ Set by the harness at load time.
 
 | Variable | Value |
 |---|---|
-| `OCTOCODE_AWARENESS_CLI` | Installed Awareness CLI path; guarded `bash` receives the current binding |
+| `OCTOCODE_AWARENESS_CLI` | Installed Awareness CLI path used by the native runner and guarded `bash` fallback |
 | `OCTOCODE_NODE` | Node executable for the installed CLI |
-| `OCTOCODE_AWARENESS_DB` | Native Pi Awareness database, supplied to guarded `bash` |
-| `OCTOCODE_AWARENESS_WORKSPACE` | Normalized workspace, supplied to guarded `bash` |
-| `OCTOCODE_AGENT_ID` | Current participant identity, supplied to guarded `bash` |
+| `OCTOCODE_AWARENESS_DB` | Native Pi Awareness database forwarded to the runner and guarded `bash` |
+| `OCTOCODE_AWARENESS_WORKSPACE` | Normalized workspace forwarded to the runner and guarded `bash` |
+| `OCTOCODE_AGENT_ID` | Current participant identity forwarded to the runner and guarded `bash` |
 | `OCTOCODE_SKILL_ROOT` | Absolute path to `dist/skills/` |
 
 Read from env at runtime (not set by harness):
@@ -301,7 +296,7 @@ Resolved by `getAssetPaths()` in `src/assets.ts`.
 | Asset | Path |
 |---|---|
 | System prompt | `dist/system/SYSTEM_PROMPT.md` |
-| Shared Awareness runtime | Installed `@octocodeai/octocode-awareness`; native lifecycle imports and model-facing CLI operations share its ledger |
+| Shared Awareness runtime | Installed `@octocodeai/octocode-awareness`; native lifecycle imports and the `awareness` facade share its ledger; the CLI remains the external-host fallback |
 | Skills dir | `dist/skills/` |
 | APPEND_SYSTEM template | `dist/system/APPEND_SYSTEM.md` |
 
@@ -311,7 +306,7 @@ Resolved by `getAssetPaths()` in `src/assets.ts`.
 
 ```
  0  native research tools    (removed — served via MCPTool → octocode MCP server)
-13  support tools            (see Support Tools table)
+14  support tools            (see Support Tools table)
  1  guarded built-in override (bash)
  6  disabled built-ins       (read, edit, write, grep, find, ls → replaced)
 3  slash commands           (local recovery, worker inbox, and configuration)
@@ -319,9 +314,9 @@ Resolved by `getAssetPaths()` in `src/assets.ts`.
 12  lifecycle hooks          (hookComposer; session_start pre-warms MCP catalog)
     direct pi.on handlers    (metrics, UI, worker inbox, Awareness, and Pi-owned compaction observation)
 15  bundled skills           (including the canonical octocode-awareness skill)
- 5  worker profiles          (researcher, architect, planner, browser, custom)
+ 6  worker profiles          (researcher, architect, planner, implementer, browser, custom)
  1  built-in MCP server      (octocode — cache-first npx, pre-warmed at session start)
- 1  composed system prompt     (host facts + canonical full Awareness guide + runtime bindings)
+ 1  composed system prompt     (host facts + canonical coder kernel + Awareness guide + runtime bindings)
 ```
 
 ## Token Savings

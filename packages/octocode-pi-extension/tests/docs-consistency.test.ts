@@ -4,8 +4,10 @@ import path from 'node:path';
 import { test } from 'vitest';
 import { listExtensionHarness } from '../src/index.js';
 import { OCTOCODE_SUPPORT_TOOL_NAMES, OVERRIDDEN_BUILTIN_TOOL_NAMES } from '../src/constants.js';
+import { SUBAGENT_REGISTRY } from '../src/subagents.js';
 
 const packageRoot = path.resolve(import.meta.dirname, '..');
+const publicWorkerProfiles = [...Object.keys(SUBAGENT_REGISTRY).map((name) => name === 'browser-agent' ? 'browser' : name), 'custom'];
 
 function readPackageFile(relativePath: string): string {
   return fs.readFileSync(path.join(packageRoot, relativePath), 'utf8');
@@ -153,9 +155,9 @@ test('HARNESS summary counts match stable source contracts', () => {
   const harnessDoc = readPackageFile('HARNESS.md');
 
   assert.match(harnessDoc, new RegExp(`\n${OCTOCODE_SUPPORT_TOOL_NAMES.length}  support tools`));
-  assert.match(harnessDoc, /\n 5  worker profiles/);
+  assert.match(harnessDoc, new RegExp(`\n ${publicWorkerProfiles.length}  worker profiles`));
   assert.match(harnessDoc, /\n 1  composed system prompt/);
-  assert.match(harnessDoc, /lightweight host facts/is);
+  assert.match(harnessDoc, /canonical coder kernel/is);
 });
 
 
@@ -169,8 +171,8 @@ test('HARNESS and UI inventories derive from the current extension harness', () 
     assert.ok(harnessDoc.includes(`\`${tool}\``), `${tool} missing from HARNESS support inventory`);
   }
   assert.match(harnessDoc, new RegExp(`\n${harness.extensionCommands.length}  slash commands`));
-  assert.match(harnessDoc, /researcher, architect, and planner profiles use standalone prompts/);
-  for (const profile of ['researcher', 'architect', 'planner', 'browser', 'custom']) {
+  assert.match(harnessDoc, /Typed profiles use standalone prompts/);
+  for (const profile of publicWorkerProfiles) {
     assert.ok(harnessDoc.includes(`\`${profile}\``), `${profile} missing from HARNESS agent profiles`);
   }
   assert.doesNotMatch(harnessDoc, /spawnSubagent[^\n]*browser-agent/);

@@ -154,6 +154,19 @@ function validateStorage(storage: unknown, errors: string[]): void {
   }
 }
 
+function validateExtension(extension: unknown, errors: string[]): void {
+  if (extension === undefined || extension === null) return;
+  if (typeof extension !== 'object' || Array.isArray(extension)) {
+    errors.push('extension: Must be an object');
+    return;
+  }
+  const ext = extension as Record<string, unknown>;
+  // Reuse validateStorage but prefix any errors with 'extension.'
+  const storageErrors: string[] = [];
+  validateStorage(ext.storage, storageErrors);
+  errors.push(...storageErrors.map(e => `extension.${e}`));
+}
+
 function validateLocal(local: unknown, errors: string[]): void {
   if (local === undefined || local === null) return;
 
@@ -346,6 +359,7 @@ export function validateConfig(config: unknown): ValidationResult {
   validateLsp(cfg.lsp, errors);
   validateOutput(cfg.output, errors);
   validateStorage(cfg.storage, errors);
+  validateExtension(cfg.extension, errors);
 
   warnUnknownObjectKeys(cfg.github, 'github', ['apiUrl'], warnings);
   warnUnknownObjectKeys(
@@ -355,6 +369,10 @@ export function validateConfig(config: unknown): ValidationResult {
     warnings
   );
   warnUnknownObjectKeys(cfg.storage, 'storage', ['mode'], warnings);
+  warnUnknownObjectKeys(cfg.extension, 'extension', ['storage'], warnings);
+  if (typeof cfg.extension === 'object' && cfg.extension !== null && !Array.isArray(cfg.extension)) {
+    warnUnknownObjectKeys((cfg.extension as Record<string, unknown>).storage, 'extension.storage', ['mode'], warnings);
+  }
   warnUnknownObjectKeys(
     cfg.tools,
     'tools',
@@ -397,6 +415,7 @@ export function validateConfig(config: unknown): ValidationResult {
     'lsp',
     'output',
     'storage',
+    'extension',
   ]);
 
   for (const key of Object.keys(cfg)) {

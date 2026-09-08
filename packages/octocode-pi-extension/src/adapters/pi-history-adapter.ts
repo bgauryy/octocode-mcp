@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execHistoryCli, historyToolEffect } from '@octocodeai/octocode-awareness';
-import { isPersistentStorageEnabled } from '@octocodeai/config';
+import { isPersistentStorageEnabledForExtension as isPersistentStorageEnabled } from '@octocodeai/config';
 import type { PiContext } from '../types.js';
 import { getAwarenessAgentId } from '../tools/awareness-shared.js';
 

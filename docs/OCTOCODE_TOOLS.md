@@ -19,6 +19,9 @@ npx octocode tools <toolName> --scheme --json --compact
 
 ## Contents
 
+- [How every tool call works](#how-every-tool-call-works)
+- [Internal, external, and hybrid tools](#internal-external-and-hybrid-tools)
+- [Text, AST, graph, and LSP: choose the evidence you need](#text-ast-graph-and-lsp-choose-the-evidence-you-need)
 - [GitHub tools reference](#github-tools-reference)
 - [Local code tools reference](#local-code-tools-reference)
 - [LSP tools reference](#lsp-tools-reference)
@@ -26,6 +29,136 @@ npx octocode tools <toolName> --scheme --json --compact
 - [Tool verification playbook](#tool-verification-playbook)
 - [MCP tool quality and agent workflow](https://github.com/bgauryy/octocode/blob/main/docs/MCP_TOOL_QUALITY_AND_AGENT_WORKFLOW.md)
 
+## How every tool call works
+
+The CLI and MCP server expose the same canonical contracts from `@octocodeai/octocode-tools-core`. The interface validates one strict outer object, validates each query against the selected tool and operation, runs independent queries with bounded concurrency, and returns one row for every input position. A failure in one row does not erase successful sibling rows.
+
+### Base call envelope
+
+```json
+{
+  "queries": [
+    {
+      "goal": "Find the public parser entrypoint",
+      "reasoning": "A definition anchor is needed before requesting references"
+    }
+  ],
+  "responseCharLength": 20000,
+  "responseCharOffset": 0
+}
+```
+
+| Field | Scope | Meaning |
+| --- | --- | --- |
+| `queries` | Required outer field | Array of 1–5 queries for the **same tool**. Queries are independent and response rows retain their zero-based input `index`. Default execution concurrency is 3, so batching reduces round trips but does not create dependencies between rows. |
+| `goal` | Optional per query | States the result the query should accomplish. It is agent-facing context, not a ranking instruction or proof of correctness. |
+| `reasoning` | Optional per query | States why this query advances the goal. Use a short, decision-relevant sentence; do not put secrets, hidden chain-of-thought, or required runtime data here. |
+| `responseCharLength` | Optional outer field | Limits the rendered whole-response text window to 1–50,000 characters. It does not replace a tool's own result pagination. |
+| `responseCharOffset` | Optional outer field | Continues a whole-response text window. Copy the returned executable `responsePagination.next` call instead of constructing an offset by hand. |
+
+`goal` and `reasoning` are the only fields shared by every individual query. All other fields belong to a specific tool variant. The schemas are strict: fields from different `operation` branches cannot be mixed, selector pairs such as `startLine`/`endLine` must be complete, and mutually exclusive selectors must not be combined.
+
+### Schema discovery, variants, relations, and hints
+
+```bash
+# Catalog: canonical names and availability
+npx octocode tools --json
+
+# Compact agent-facing schema: fields plus branch relations
+npx octocode tools localSearch --scheme --json --compact
+
+# Full JSON Schema: nested selectors, defaults, limits, and descriptions
+npx octocode tools ghGetHistoryItem --scheme --json
+```
+
+The compact schema includes `variants` (when a branch applies, required fields, and a minimal example) and `relations` (cross-field rules that a flat field list cannot express). Treat runtime `hints` as recovery guidance, not data: they can suggest a tighter query, a corrected selector, a schema lookup, or a follow-up tool. A hint never proves absence or success.
+
+### Results, evidence, partial failures, and continuations
+
+A batched response preserves input order:
+
+```yaml
+results:
+  - index: 0
+    meta:
+      evidence:
+        kind: lexical
+        confidence: medium
+    data: { ... }
+  - index: 1
+    status: error
+    data:
+      error: "..."
+```
+
+Common row fields are `index`, optional `status`, optional `cache`, `meta`, and `data`. `status: empty` means the query ran but found no result in the observed scope; `status: error` means that row failed. Neither status should be inferred from missing output. Evidence metadata describes what the result can support: provider-index, lexical, structural, syntactic graph, exact content, or semantic LSP evidence have different failure modes.
+
+Pagination is layered:
+
+1. **Collection pagination** uses tool fields such as `page`, `pageSize`, `matchPage`, a cursor, or operation-specific selectors.
+2. **Content pagination** uses line or character windows inside a file, patch, comment body, or other resource.
+3. **Whole-response pagination** uses outer `responseCharLength` and `responseCharOffset` only for the rendered aggregate response.
+
+When output is partial, run the returned schema-valid `next.*` object. Do not stop at a numeric cursor, silently drop later pages, or treat a bounded first page as complete. When continuation is impossible, the tool emits a typed terminal-limit diagnostic instead of a fake next call.
+
+## Internal, external, and hybrid tools
+
+"External" describes the data or provider boundary, not the MCP transport. All ten tools can be called through MCP or the CLI.
+
+| Tool | Boundary | How it works |
+| --- | --- | --- |
+| `ghSearch` | External | Calls GitHub search/tree APIs to discover code, repositories, or a known repository tree. Code search covers the indexed default branch; read exact bytes afterward. |
+| `ghGetFileContent` | External; hybrid for directories | Reads a known GitHub path, ref, range, or match. `type:"directory"` materializes a directory locally and therefore also needs local access, storage, and clone enablement. |
+| `ghSearchHistory` | External | Searches GitHub pull-request, issue, or commit metadata. It discovers history identities; it does not replace exact history reads. |
+| `ghGetHistoryItem` | External | Reads one known pull request, issue, commit, or comparison, with explicit selectors for bodies, comments, files, reviews, commits, and patches. |
+| `npmSearch` | External | Resolves exact npm package metadata or searches one effective registry. Registry-scoped npm configuration supplies authentication; package results can lead to source-repository research. |
+| `ghCloneRepo` | Hybrid | Uses provider credentials/network access, then atomically materializes a full or sparse repository under managed local storage. Disabled unless cloning and local storage are enabled. |
+| `localSearch` | Internal/local | Runs bounded text/regex search, structural AST search, file metadata discovery, or tree browsing against allowed local paths. |
+| `localGetFileContent` | Internal/local | Reads a known allowed path with full, match, line-range, minified, or symbol-outline views and exact continuations. |
+| `localAnalyzeGraph` | Internal/local | Builds a syntactic file-import graph and answers dependencies, dependents, shortest path, cycles, reachability, or dead-code-candidate queries. |
+| `lspGetSemantics` | Internal/local with a language-server process | Resolves an anchored symbol and asks a real language server for definitions, references, calls, types, symbols, hierarchy, or diagnostics. It reports unavailable capabilities instead of returning a syntactic approximation as semantic proof. |
+
+Remote GitHub tools require provider runtime and credentials. `npmSearch` uses the effective npm registry configuration. Local tools require `ENABLE_LOCAL`; clone/materialization additionally requires `ENABLE_CLONE` and persistent storage. LSP availability also depends on a compatible server for the file language.
+
+## Text, AST, graph, and LSP: choose the evidence you need
+
+These surfaces complement one another; they are not interchangeable.
+
+| Surface | Octocode operation | Establishes | Does not establish |
+| --- | --- | --- | --- |
+| Text/regex | `localSearch(operation:"text")` | Exact lexical occurrences, paths, and source-line anchors within the scanned scope. | Symbol identity, reachability, or all runtime uses. |
+| Structural AST | `localSearch(operation:"structural")` with exactly one of `pattern` or `rule` | Syntax-shaped matches that ignore formatting differences and can expose captures. | That two same-shaped nodes refer to the same symbol or execute at runtime. |
+| File graph | `localAnalyzeGraph` | Syntactic import topology, candidate paths/cycles, and reachability under stated roots and exclusions. | Symbol-level identity, dynamic imports that were not resolved, or safe deletion by itself. |
+| LSP semantics | `lspGetSemantics` | Language-server identity and relations such as definitions, references, callers, callees, implementations, types, symbols, and diagnostics. | Runtime behavior outside the server's configured project/build context. |
+
+Recommended proof ladder:
+
+1. Orient with `localSearch(operation:"tree"|"files")`.
+2. Find a lexical anchor with `localSearch(operation:"text")`.
+3. Use structural search when syntax shape matters or text is noisy.
+4. Use `localAnalyzeGraph` to map file-level blast radius or candidate reachability.
+5. Read exact source with `localGetFileContent`.
+6. Use `lspGetSemantics` from a real file/line/symbol anchor to prove identity and usages.
+7. Run the relevant test, build, or runtime path before claiming behavior.
+
+Example:
+
+```json
+{
+  "queries": [
+    {
+      "operation": "structural",
+      "path": ".",
+      "langType": "typescript",
+      "pattern": "defineTool({ $$$FIELDS })",
+      "goal": "Find tool contract declarations",
+      "reasoning": "AST shape avoids unrelated prose matches"
+    }
+  ]
+}
+```
+
+Use the returned file and line as an exact-read/LSP anchor. For graph results, preserve `entrypoints`, `includeTests`, exclusions, scan caps, diagnostics, and `rustWorkspace`; changing any of them changes what "reachable" means.
 
 ---
 
@@ -1686,6 +1819,18 @@ Primary code: [packages/octocode-tools-core/src/tools/local_find_files/](https:/
 | Pagination | File pagination and char pagination both work. Cap notices must not replace next-page cursors. |
 | Empty | Empty hints quote active filters such as `names`, `time.modifiedWithin`, or `size.greater`. No-filter empty stays silent. |
 | Research quality | Results must support targeted follow-ups by path, type, size, permissions, and timestamps. |
+
+#### Verify `localAnalyzeGraph`
+
+Primary code: [packages/octocode-tools-core/src/tools/local_analyze_graph/](https://github.com/bgauryy/octocode/tree/main/packages/octocode-tools-core/src/tools/local_analyze_graph) and [packages/octocode-tools-core/src/graph/](https://github.com/bgauryy/octocode/tree/main/packages/octocode-tools-core/src/graph). Schema: `LocalAnalyzeGraphQuerySchema`.
+
+| Surface | Checks |
+| --- | --- |
+| Params | Verify all six operations, required `file`/`target` selectors, `depth`, roots, `includeTests`, exclusions, caps, `rustWorkspace`, result pages, and diagnostic pages. |
+| Implementation | Build one bounded graph per distinct batch configuration; preserve unresolved imports, inferred roots, skipped files, and partial scan diagnostics. |
+| Pagination | Execute `nextPage`, `nextDiagnostics`, and safe scan-expansion continuations; reject stale diagnostic snapshots. |
+| Empty | Distinguish a valid empty relation from unsupported syntax, unresolved imports, uncertain entrypoints, or an incomplete scan. |
+| Research quality | Treat imports and dead-code output as candidates. Confirm exact edges with source reads and prove symbol identity/reachability with LSP or runtime checks before change or deletion claims. |
 
 #### Verify `localGetFileContent`
 

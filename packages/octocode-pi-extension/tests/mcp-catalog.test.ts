@@ -172,32 +172,33 @@ function oversizedUnionSnapshot() {
   });
 }
 
-test('bounded guide preserves every union branch and required field before optional detail', () => {
+test('renders every union branch, required field, and optional field inline with no truncation', () => {
   const guide = renderMcpCatalogIndex(oversizedUnionSnapshot());
   const description = guide.split('description: ')[1]!;
-  assert.ok(description.split('\n')[0]!.length <= 4_000);
   for (const [operation, required] of [['text', 'searchText'], ['structural', 'pattern'], ['structural', 'rule'], ['files', 'names'], ['tree', 'maxDepth']]) {
     assert.ok(guide.includes(`operation="${operation}"`), operation);
     assert.ok(guide.includes(required!), required);
   }
-  assert.match(guide, /partial/i);
-  const next = /MCPTool\((\{"queries":.*?\})\)/.exec(guide);
-  assert.ok(next, 'partial summary provides a complete executable describe call');
-  assert.deepEqual(JSON.parse(next[1]!), { queries: [{ action: 'describe', server: 'octocode', tool: 'localSearch', reasoning: 'Read the complete input schema' }] });
+  assert.ok(guide.includes('option0'), 'optional fields render inline');
+  assert.ok(guide.includes('option11'), 'every optional field renders inline');
+  assert.doesNotMatch(guide, /partial/i);
+  assert.doesNotMatch(guide, /Input summary omitted/);
+  assert.doesNotMatch(guide, /Exact schema: MCPTool/);
   assert.doesNotMatch(description.split('\n')[0]!, /…$/);
 });
 
-test('minimum branch inventory survives when optional field names alone exceed the budget', () => {
+test('renders the full schema inline even when optional field names are numerous', () => {
   const snapshot = oversizedUnionSnapshot();
   const schema = snapshot.servers[0]!.tools[0]!.inputSchema as any;
   for (const variant of schema.properties.queries.items.anyOf) {
     for (let i = 0; i < 200; i++) variant.properties[`additionalOption${i}`] = { type: 'string' };
   }
   const guide = renderMcpCatalogIndex(snapshot);
-  assert.match(guide, /optional fields omitted/i);
+  assert.doesNotMatch(guide, /partial/i);
+  assert.doesNotMatch(guide, /optional fields omitted/i);
   for (const operation of ['text', 'structural', 'files', 'tree']) assert.ok(guide.includes(`operation="${operation}"`));
-  assert.match(guide, /maxDepth/);
-  assert.match(guide, /names/);
+  assert.ok(guide.includes('additionalOption0'), 'first injected field renders');
+  assert.ok(guide.includes('additionalOption199'), 'last injected field renders with no truncation');
 });
 
 test('the real localSearch CLI schema retains all five variants in the model-visible catalog', () => {
@@ -213,7 +214,7 @@ test('the real localSearch CLI schema retains all five variants in the model-vis
   });
   const guide = renderMcpCatalogIndex(snapshot);
   const description = guide.split('description: ')[1]!.split('\n')[0]!;
-  assert.ok(description.length <= 4_000, `description chars=${description.length}`);
+  assert.ok(description.length > 4_000, `full schema renders inline without truncation, chars=${description.length}`);
   const variants = tool.inputSchema.properties.queries.items.anyOf;
   assert.equal(variants.length, 5);
   for (const variant of variants) {
@@ -221,12 +222,13 @@ test('the real localSearch CLI schema retains all five variants in the model-vis
     assert.ok(description.includes(`operation="${operation}"`));
     for (const field of variant.required) assert.ok(description.includes(field), `${operation} missing ${field}`);
   }
-  assert.match(description, /operation="files"[^}]*names/);
-  assert.match(description, /operation="tree"[^}]*maxDepth/);
-  assert.match(description, /Input summary partial/);
+  assert.ok(description.includes('names'));
+  assert.ok(description.includes('maxDepth'));
+  assert.doesNotMatch(description, /Input summary partial/);
+  assert.doesNotMatch(description, /Exact schema: MCPTool/);
 });
 
-test('an oversized minimum inventory returns explicit recovery instead of a clipped schema', () => {
+test('renders every branch of a large union inline with no truncation or recovery pointer', () => {
   const snapshot = oversizedUnionSnapshot();
   const schema = snapshot.servers[0]!.tools[0]!.inputSchema as any;
   schema.properties.queries.items.anyOf = Array.from({ length: 100 }, (_, index) => ({
@@ -234,10 +236,11 @@ test('an oversized minimum inventory returns explicit recovery instead of a clip
     properties: { operation: { const: `operation-${index}` }, [`requiredBranchField${index}`]: { type: 'string' } },
   }));
   const description = renderMcpCatalogIndex(snapshot).split('description: ')[1]!.split('\n')[0]!;
-  assert.match(description, /Input summary omitted: complete branch inventory exceeds/);
-  assert.match(description, /MCPTool\(\{"queries":/);
-  assert.doesNotMatch(description, /requiredBranchField/);
-  assert.ok(description.length <= 4_000);
+  assert.doesNotMatch(description, /Input summary omitted/);
+  assert.doesNotMatch(description, /partial/i);
+  assert.doesNotMatch(description, /Exact schema: MCPTool/);
+  assert.ok(description.includes('requiredBranchField0'), 'first branch renders');
+  assert.ok(description.includes('requiredBranchField99'), 'last branch renders with no truncation');
 });
 
 test('cached guides from before branch-preserving rendering are invalidated', async () => {
@@ -382,7 +385,7 @@ test('oversized persisted snapshots are cache misses', async () => {
   }), undefined);
 });
 
-test('deterministic measurement fixture proves at least 70% model-visible reduction', () => {
+test('deterministic measurement fixture renders the full inline catalog without truncation', () => {
   const home = tempRoot('octocode-mcp-measure-');
   const largeSchema = {
     type: 'object',
@@ -408,7 +411,12 @@ test('deterministic measurement fixture proves at least 70% model-visible reduct
   });
   const measurement = measureMcpCatalog(snapshot);
 
-  assert.ok(measurement.eagerChars > measurement.indexChars);
-  assert.ok(measurement.schemaChars > measurement.indexChars);
-  assert.ok(measurement.reductionRatio >= 0.7, JSON.stringify(measurement));
+  // Truncation removed: the compact-summary index carries every field inline, so it is
+  // close to the eager raw-JSON catalog (small reduction), never larger, and never partial.
+  assert.ok(measurement.eagerChars >= measurement.indexChars, JSON.stringify(measurement));
+  assert.ok(measurement.reductionRatio >= 0, JSON.stringify(measurement));
+  assert.ok(measurement.reductionRatio < 0.5, JSON.stringify(measurement));
+  const index = renderMcpCatalogIndex(snapshot);
+  assert.ok(index.includes('field0') && index.includes('field119'), 'every schema field renders inline');
+  assert.doesNotMatch(index, /partial/i);
 });

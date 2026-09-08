@@ -4,6 +4,8 @@ Updated: 2026-09-07. Scope: Awareness, its private Git history, canonical schema
 SQLite entities, CLI, skill, hooks, and the Pi extension. This is the single overview
 and rating document; linked package references retain ownership of exact protocols.
 
+**Document boundary.** This assessment covers agent coordination, not the ten code-research tools. For tool schemas and internal/external execution, use [`OCTOCODE_TOOLS.md`](OCTOCODE_TOOLS.md); for the MCP transport use [`OCTOCODE_MCP.md`](OCTOCODE_MCP.md); for evidence routing use [`OCTOCODE_RESEARCH_MANIFEST.md`](OCTOCODE_RESEARCH_MANIFEST.md).
+
 **Overall implemented foundation: 7.5/10. Private Git subsystem: 6.5/10.
 Automatic cross-vendor readiness in this workspace: 3/10.** These are engineering
 judgments, not measured reliability percentages. The deeper review lowers the
@@ -27,8 +29,7 @@ experiment subject were unchanged during this review.
 
 Scores near 9 indicate strong tested contracts; 7–8 indicate useful behavior with
 material limits; 5–6 indicate important correctness or validation gaps; 2–3 indicate
-research or incomplete activation. Passing tests do not turn inferred properties
-into guarantees. No score is an arithmetic average of worker opinions.
+research or incomplete activation. Passing tests do not establish inferred properties. No score is an arithmetic average of worker opinions.
 
 ## Architecture and ownership
 
@@ -98,7 +99,7 @@ are under [Awareness](../packages/octocode-awareness/src/) or explicitly Pi.
 | Priority | Finding | Evidence and scope | Required improvement |
 |---|---|---|---|
 | P2 | Semantic recall credits unseen memories | `memory-semantic.ts:111` bumps all ranked candidates before slicing at 117. Three eligible rows with limit 1 all gained access credit. | Slice first; update only returned IDs; test nonreturned counters/timestamps and explicit access policy. |
-| P2 | Semantic pool silently omits matches | `memory-embeddings.ts:70–92` caps at 2,000 before ranking. A 2,001-row fixture hid its only exact match and returned an unqualified empty array. | Bounded ranking with typed partial/continuation or explicit terminal-limit diagnostics; do not simply raise the cap. |
+| P2 | Semantic pool silently omits matches | `memory-embeddings.ts:70–92` caps at 2,000 before ranking. A 2,001-row fixture hid its only exact match and returned an unqualified empty array. | Bounded ranking with typed partial/continuation or explicit terminal-limit diagnostics; raising the cap alone does not fix the contract. |
 | P2 | Commented hooks appear ready | `hooks-install-health.ts:242–261` checks independent substrings. Parent reproduced `definition: ready` from comments only through the built CLI. Runtime stayed unverified. | Parse active frontmatter structure and validate event-command bindings; cover comments, swapped bindings and malformed YAML. |
 | P2 | Same-ref publication is not atomic across processes | `history-git.ts:86–99,300–309` uses a process-local lock around check/write. Parent observed eight successful publishers in each of three races. SQLite narrows ordinary domain use. | Cross-process exclusive publication and winner/loser tests through the backend and domain. |
 | P2 | Git publication can precede durable ledger linkage | `history-capture.ts:81–90` publishes a ref before storing its OID/status in SQLite. A crash can strand `capturing`; caught failure can leave `failed`; retries do not reconcile. Code-order finding, not injected power-loss proof. | Persist/reconcile a capture phase journal and test crashes at each boundary without inventing success. |
@@ -181,7 +182,7 @@ test override. See [hook contracts](../packages/octocode-awareness/docs/HOOKS.md
 | Prospective interoception | No validated prediction of an action's future context, uncertainty or rollback trajectory. |
 | Micro-tasking | Plans/dependencies support decomposition; a homeostatic decomposition controller is not proven. |
 | Parallel worker regulation | Fixed host limits and coordination exist; uncertainty/merge-cost-driven adaptive concurrency is not proven. |
-| Memory consistency | References, provenance and freshness help; semantic correctness and complete dependency coverage are not guaranteed. |
+| Memory consistency | References, provenance and freshness help, but they cannot ensure semantic correctness or complete dependency coverage. |
 
 Conceptual controller maturity: **2/10** beyond the implemented observations and
 specific guards. Keep new regulation observation-only until held-out outcomes and

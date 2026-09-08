@@ -20,7 +20,7 @@ Flow: **NOTICE → SCOPE/IDENTITY → INSPECT → ACT → OBSERVE → SETTLE/VER
 
 One schema owns entities/history; private Git owns bytes. Reuse native run/task IDs and receipts. Work as a cooperative community: organize ownership, help blocked peers, share verified evidence and coordinate scarce resources fairly instead of competing or duplicating work. Balance token budget with quality; preserve uncertainty, checks and communication.
 
-Runner: `npx @octocodeai/octocode-awareness`; use host bindings when supplied. If absent, preview `npx @octocodeai/octocode-awareness skill install --platform shared --project-dir "$PWD" --dry-run`; apply when authorized. See `skill install --help`. `instructions export` supplies the canonical compact policy.
+Prefer native `awareness` list/describe/call; use CLI when unavailable or required. Reuse host bindings. Missing runner: preview `npx @octocodeai/octocode-awareness skill install --platform shared --project-dir "$PWD" --dry-run`; apply when authorized. See `skill install --help`.
 
 ## Start small
 
@@ -54,7 +54,7 @@ Reuse native captures. CLI-only writers use `history capture` with identical bef
 
 ## Capability map
 
-Discover: `schema command <noun> [action] --compact`; reuse discovery. `guide` lists all commands; use `--help` for other routes.
+Discover: native `awareness` list/describe, else `schema command <noun> [action] --compact`. Reuse results; `guide` lists all commands and `--help` covers other routes.
 
 Routes: `attend/status/query/docs/schema`, `plan/task/work/lock/verify`, `agent/signal/handoff/session`, `history`, `memory/refinement/reflect`, `maintenance/database/config/hooks`.
 

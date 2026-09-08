@@ -315,7 +315,7 @@ function invokeExecute(
       queries: sourceQueries.map((raw) => {
         const query = raw as Record<string, unknown>;
         const firstEdit = Array.isArray(query['edits']) ? query['edits'][0] as Record<string, unknown> | undefined : undefined;
-        return {
+        const normalized: Record<string, unknown> = {
           ...query,
           reasoning: typeof query['reasoning'] === 'string' && query['reasoning'].trim()
             ? query['reasoning']
@@ -323,10 +323,33 @@ function invokeExecute(
               ? firstEdit['reasoning']
               : 'exercise the tool contract in this integration test',
         };
+        if (tool.name === 'agent' && normalized['type'] === 'spawn') {
+          normalized['profile'] ??= 'custom';
+          normalized['goal'] ??= String(normalized['task'] ?? 'Exercise the delegated unit.');
+          normalized['context'] ??= 'Observed integration-test context.';
+          normalized['scope'] ??= 'Only this integration-test unit.';
+          normalized['ownership'] ??= 'Read-only integration-test ownership.';
+          normalized['acceptance'] ??= 'The asserted integration behavior is observed.';
+          normalized['returnShape'] ??= 'Observed result and terminal state.';
+          if (normalized['profile'] === 'custom') {
+            normalized['tools'] ??= [];
+            normalized['systemPrompt'] ??= 'Perform the bounded integration-test role.';
+          }
+        }
+        return normalized;
       }),
     };
   }
   return tool.execute('call-id', input, undefined, undefined, ctx);
+}
+
+type QuerySchemaBranch = { properties?: Record<string, Record<string, unknown>>; required?: string[] };
+function querySchemaBranches(tool: ToolDef): QuerySchemaBranch[] {
+  const item = (tool.parameters as { properties?: { queries?: { items?: QuerySchemaBranch & { anyOf?: QuerySchemaBranch[]; oneOf?: QuerySchemaBranch[] } } } }).properties?.queries?.items;
+  return item?.anyOf ?? item?.oneOf ?? (item ? [item] : []);
+}
+function queryPropertySchemas(tool: ToolDef, name: string): Record<string, unknown>[] {
+  return querySchemaBranches(tool).flatMap((branch) => branch.properties?.[name] ? [branch.properties[name]!] : []);
 }
 
 function argValues(args: string[], flag: string): string[] {
@@ -365,7 +388,7 @@ test('build composes the system prompt from the inlined prompt module', async ()
   const paths = getAssetPaths(distDir);
   const { SYSTEM_PROMPT } = await import('../src/prompts/system-prompt.js');
   assert.equal(fs.existsSync(paths.systemPrompt), true);
-  assert.ok(SYSTEM_PROMPT.includes('<octocode>'), 'host facts are composed');
+  assert.ok(SYSTEM_PROMPT.includes('<octocode_host>'), 'host facts are composed');
   // The prompt is one inlined document: src/prompts/system-prompt.ts → dist/prompts/system-prompt.js.
   // The per-section fragments and unused alternate assembler stay absent.
   assert.equal(
@@ -628,9 +651,9 @@ test('workers discover research tools and skills with one frozen Awareness guide
 
     assert.ok(result?.systemPrompt?.startsWith('typed specialist prompt from --append-system-prompt'));
     assert.match(result!.systemPrompt!, /<awareness>/);
-    assert.match(result!.systemPrompt!, /cooperative community/);
-    assert.match(result!.systemPrompt!, /do not compete/);
-    assert.match(result!.systemPrompt!, /token budget and quality together/);
+    assert.match(result!.systemPrompt!, /Awareness is shared coordination state/);
+    assert.match(result!.systemPrompt!, /highest-ROI command/);
+    assert.match(result!.systemPrompt!, /expired leases orphan work/);
     assert.match(result!.systemPrompt!, /<awareness_cli_runtime>/);
     assert.match(result!.systemPrompt!, /<mcp_catalog_index>[\s\S]*localSearch/);
     assert.match(result!.systemPrompt!, /<available_skills>[\s\S]*octocode-research/);
@@ -1076,12 +1099,7 @@ test('enum tool params use string-enum schemas (Google API compat), never litera
   // Google's API rejects. Every string-enum tool param must be a plain
   // {type:"string", enum:[...]} schema (see stringEnumSchema / pi-ai StringEnum).
   const { tools } = await captureExtensions();
-  const prop = (tool: string, name: string): Record<string, unknown> => {
-    const params = tools.get(tool)!.parameters as {
-      properties: { queries: { items: { properties: Record<string, Record<string, unknown>> } } };
-    };
-    return params.properties.queries.items.properties[name]!;
-  };
+  const prop = (tool: string, name: string): Record<string, unknown> => queryPropertySchemas(tools.get(tool)!, name)[0]!;
 
   const mcpAction = prop('MCPTool', 'action');
   assert.equal(mcpAction['type'], 'string');
@@ -1089,13 +1107,12 @@ test('enum tool params use string-enum schemas (Google API compat), never litera
   const mcpScope = prop('MCPTool', 'scope');
   assert.equal(mcpScope['type'], 'string');
   assert.deepEqual(mcpScope['enum'], ['project', 'global']);
-  const agentType = prop('agent', 'type');
-  assert.equal(agentType['type'], 'string');
-  assert.deepEqual(agentType['enum'], ['spawn', 'inspect', 'wait', 'message', 'steer', 'abort', 'kill']);
+  const agentTypes = queryPropertySchemas(tools.get('agent')!, 'type');
+  assert.deepEqual([...new Set(agentTypes.flatMap((schema) => schema['enum'] as string[]))], ['spawn', 'inspect', 'wait', 'message', 'steer', 'abort', 'kill']);
 
-  for (const [name, schema] of [['MCPTool.action', mcpAction], ['MCPTool.scope', mcpScope], ['agent.type', agentType]] as const) {
-    const json = JSON.stringify(schema);
-    assert.doesNotMatch(json, /anyOf|"const"/, `${name} must not compile to anyOf/const`);
+  for (const [name, schema] of [['MCPTool.action', mcpAction], ['MCPTool.scope', mcpScope], ...agentTypes.map((schema, index) => [`agent.type[${index}]`, schema] as const)] as const) {
+    assert.equal(schema['type'], 'string');
+    assert.doesNotMatch(JSON.stringify(schema), /anyOf|"const"/, `${name} must use string enum values, not literal unions`);
   }
 });
 
@@ -1174,10 +1191,10 @@ test('disable built-in read in favor of localGetFileContent (records read state 
   );
 });
 
-test('public direct palette is exactly 14 queries-only tools with bounded per-query reasoning', async () => {
+test('public direct palette is exactly 15 queries-only tools with bounded per-query reasoning', async () => {
   const { tools } = await captureExtensions();
   const expected = [...OCTOCODE_SUPPORT_TOOL_NAMES, 'bash'];
-  assert.equal(expected.length, 14);
+  assert.equal(expected.length, 15);
   assert.deepEqual([...tools.keys()].sort(), [...expected].sort());
 
   for (const name of expected) {
@@ -1196,15 +1213,16 @@ test('public direct palette is exactly 14 queries-only tools with bounded per-qu
         : ['sequential'],
       `${name} advertises only execution modes its implementation supports`,
     );
-    const queries = schema.properties?.['queries'] as {
-      maxItems?: number;
-      items?: { required?: string[]; properties?: Record<string, unknown> };
-    };
+    const queries = schema.properties?.['queries'] as { maxItems?: number };
     assert.equal(queries.maxItems, 100, `${name} caps batches at 100 queries`);
-    assert.ok(queries.items?.required?.includes('reasoning'), `${name} requires per-query reasoning`);
-    const reasoning = queries.items?.properties?.['reasoning'] as { minLength?: number; maxLength?: number };
-    assert.equal(reasoning.minLength, 1, `${name} rejects empty reasoning`);
-    assert.equal(reasoning.maxLength, 240, `${name} bounds reasoning at 240 characters`);
+    const branches = querySchemaBranches(tools.get(name)!);
+    assert.ok(branches.length > 0, `${name} exposes at least one query shape`);
+    for (const branch of branches) {
+      assert.ok(branch.required?.includes('reasoning'), `${name} requires per-query reasoning on every branch`);
+      const reasoning = branch.properties?.['reasoning'] as { minLength?: number; maxLength?: number };
+      assert.equal(reasoning.minLength, 1, `${name} rejects empty reasoning`);
+      assert.equal(reasoning.maxLength, 400, `${name} bounds reasoning at 400 characters`);
+    }
     const prepared = tools.get(name)!.prepareArguments?.({ queries: [{}] }) as {
       queries?: Array<Record<string, unknown>>;
     } | undefined;
@@ -1293,7 +1311,11 @@ test('every direct tool contract is concise enough for per-turn agent context', 
   assert.match(tools.get('MCPTool')!.description!, /over bash for code search\/file reads/i);
   assert.match(tools.get('MCPTool')!.description!, /describe unfamiliar tools before their first call/i);
   assert.match(tools.get('agent')!.description!, /use MCPTool for repository research/i);
-  assert.ok(totalContractChars <= 45_000, `direct tool contracts use ${totalContractChars} chars`);
+  assert.match(tools.get('agent')!.description!, /implementer/);
+  assert.match(tools.get('agent')!.description!, /custom.*requires.*tools.*systemPrompt/i);
+  assert.match(tools.get('skill')!.description!, /specialized workflow/i);
+  assert.doesNotMatch(tools.get('skill')!.description!, /matching skill BEFORE acting/i);
+  assert.ok(totalContractChars <= 45_000, `direct tool contracts use ${totalContractChars} chars: ${[...tools].map(([name, tool]) => `${name}=${JSON.stringify(tool.parameters).length + (tool.description?.length ?? 0)}`).join(', ')}`);
 });
 
 test('direct tool registration exposes the exact provider-contract subtotal', () => {
@@ -1385,7 +1407,7 @@ test('the removed unified-flow flag cannot restore retired tools', async () => {
   try {
     const { tools } = await captureExtensions();
     const expected = [...OCTOCODE_SUPPORT_TOOL_NAMES, 'bash'];
-    assert.equal(expected.length, 14);
+    assert.equal(expected.length, 15);
     assert.deepEqual([...tools.keys()].sort(), [...expected].sort());
     for (const retired of ['awarenessPlan', 'claim', 'task', 'handoff', 'verify', 'awarenessAgents']) {
       assert.equal(tools.has(retired), false, `${retired} cannot be restored by an obsolete environment variable`);
@@ -2600,7 +2622,7 @@ test('agent browser profile spawns with routed context without launching Chrome'
     assert.match(prompt, /Network, Runtime, DOM, DOMDebugger/);
     assert.match(prompt, /Your ONLY browser tool is `chromeDebug`/);
     assert.match(prompt, /https:\/\/example\.com\/account/);
-    assert.equal(argValues(spawned[0]!.args, '--tools')[0], 'chromeDebug,MCPTool,skill,bash');
+    assert.equal(argValues(spawned[0]!.args, '--tools')[0], 'chromeDebug,MCPTool,skill,awareness,bash');
     assert.match(browserTool.renderResult!(result, { expanded: false }).render(120)[0]!, /agent.*SPAWNED/);
   } finally {
     setAgentProcessFactoryForTests(null);
@@ -3853,9 +3875,9 @@ test('agent spawn starts a lean RPC Pi process and agent lifecycle can list/stat
     const messageTool = tools.get('agent')!;
     assert.ok(spawnTool, 'agent spawn registered');
     assert.ok(messageTool, 'agent lifecycle registered');
-    const itemSchema = (spawnTool.parameters as { properties: { queries: { items: { properties: Record<string, { description: string; enum?: string[] }> } } } }).properties.queries.items.properties;
-    assert.match(itemSchema.model!.description, /pi -ne --list-models/);
-    assert.match(itemSchema.planStep!.description, /Stable task ID/);
+    const itemSchema = querySchemaBranches(spawnTool).find((branch) => Boolean(branch.properties?.['model']))!.properties!;
+    assert.match(String(itemSchema['model']!.description), /pi -ne --list-models/);
+    assert.match(String(itemSchema['planStep']!.description), /Stable task ID/);
     assert.equal(
       tools.has('handoff_context'),
       false,
@@ -3904,7 +3926,7 @@ test('agent spawn starts a lean RPC Pi process and agent lifecycle can list/stat
     assert.equal(spawned[0]!.options.cwd, '/repo');
     assert.match(
       spawned[0]!.proc.stdinWrites[0]!,
-      /## Context/
+      /Context: Relevant file: docs\/a\.md/
     );
     assert.match(spawned[0]!.proc.stdinWrites[0]!, /check the docs/);
 
@@ -3956,7 +3978,7 @@ test('agent spawn starts a lean RPC Pi process and agent lifecycle can list/stat
         ['agent-wait', undefined],
       ]
     );
-    assert.ok(waitAgent.policyWarnings?.some(warning => /missing recommended section/i.test(warning)));
+    assert.equal(waitAgent.policyWarnings?.some(warning => /missing recommended section/i.test(warning)), false, 'typed packets are complete before spawn');
     const ledgerEntries = listWorkerLedgerEntries();
     assert.ok(ledgerEntries.some(entry =>
       entry.agentId === agentId
@@ -4283,9 +4305,9 @@ test('agentSpecialist starts researcher, planner, and architect with all Octocod
   try {
     const { tools } = await captureExtensions();
     const agentSpecialist = tools.get('agent')!;
-    const itemSchema = (agentSpecialist.parameters as { properties: { queries: { items: { properties: Record<string, { description: string; enum?: string[] }> } } } }).properties.queries.items.properties;
-    assert.deepEqual(itemSchema.profile!.enum, ['researcher', 'planner', 'architect', 'browser', 'custom']);
-    assert.match(itemSchema.model!.description, /pi -ne --list-models/);
+    const profileValues = queryPropertySchemas(agentSpecialist, 'profile').flatMap((schema) => schema['enum'] as string[]);
+    assert.deepEqual(profileValues, ['researcher', 'planner', 'architect', 'implementer', 'browser', 'custom']);
+    assert.match(String(queryPropertySchemas(agentSpecialist, 'model')[0]!.description), /pi -ne --list-models/);
 
     for (const agent of ['researcher', 'planner', 'architect']) {
       const result = await invokeExecute(
@@ -4377,43 +4399,18 @@ test('agentSpecialist starts researcher, planner, and architect with all Octocod
   }
 });
 
-test('agentSpecialist surfaces packet policy warnings immediately, not just on a later agent lifecycle(wait)', async () => {
-  setAgentProcessFactoryForTests((_command, _args, _options) => createMockAgentProcess());
+test('agent rejects an incomplete packet before process creation', async () => {
+  const factory = vi.fn((_command: string, _args: string[], _options: unknown) => createMockAgentProcess());
+  setAgentProcessFactoryForTests(factory);
   try {
     const { tools } = await captureExtensions();
-    const agentSpecialist = tools.get('agent')!;
-
-    const bare = await invokeExecute(
-      agentSpecialist,
-      { queries: [{ reasoning: 'Exercise worker lifecycle.', type: 'spawn', profile: 'researcher', task: 'look into the stale-read check', cwd: '/repo' }] },
-      { cwd: '/fallback' },
+    await assert.rejects(
+      tools.get('agent')!.execute('incomplete', {
+        queries: [{ reasoning: 'Exercise strict packet validation.', type: 'spawn', profile: 'researcher', goal: 'Inspect stale reads.' }],
+      }, undefined, undefined, { cwd: '/fallback' } as never),
+      /spawn requires non-empty context/,
     );
-    assert.match(
-      (bare.content[0] as { text: string }).text,
-      /\[POLICY\]/,
-      'an under-specified packet must surface a [POLICY] warning in the immediate spawn response, not only on a later agent lifecycle(wait)',
-    );
-    assert.match((bare.content[0] as { text: string }).text, /missing recommended section/i);
-
-    const structured = await invokeExecute(
-      agentSpecialist,
-      { queries: [{ reasoning: 'Exercise worker lifecycle.', type: 'spawn', profile: 'researcher',
-        task: [
-          'Goal: explain the stale-read check',
-          'Context: packages/octocode-pi-extension/src/tools/file-state.ts',
-          'Scope: read-only research',
-          'Ownership: manager-as-tool',
-          'Acceptance: cites file:line',
-          'Return: [FINDING]/[EVIDENCE] prefixes',
-        ].join('\n'),
-        cwd: '/repo', }] },
-      { cwd: '/fallback' },
-    );
-    assert.doesNotMatch(
-      (structured.content[0] as { text: string }).text,
-      /missing recommended section/i,
-      'a fully labeled packet must not warn about missing sections',
-    );
+    assert.equal(factory.mock.calls.length, 0);
   } finally {
     setAgentProcessFactoryForTests(null);
   }
@@ -4440,7 +4437,7 @@ test('agentSpecialist covers context injection, unknown agent, and render fallba
     const initialPrompt = JSON.parse(spawned[0]!.proc.stdinWrites[0]!) as {
       message: string;
     };
-    assert.match(initialPrompt.message, /## Context\nPrior finding/);
+    assert.match(initialPrompt.message, /Context: Prior finding/);
     assert.match(
       (result.content[0] as { text: string }).text,
       /\[SPAWNED\] name: Researcher/
@@ -4472,15 +4469,8 @@ test('unified agent keeps non-browser profiles available when Chrome debug is di
     assert.equal(tools.has('AgentMessage'), false);
     assert.equal(tools.has('agent'), true, 'typed and custom profiles are not Chrome-gated');
     const agent = tools.get('agent')!;
-    const schema = agent.parameters as {
-      properties: { queries: { items: { properties: { profile: { enum?: string[] } } } } };
-    };
-    assert.deepEqual(schema.properties.queries.items.properties.profile.enum, [
-      'researcher',
-      'planner',
-      'architect',
-      'browser',
-      'custom',
+    assert.deepEqual(queryPropertySchemas(agent, 'profile').flatMap((schema) => schema['enum'] as string[]), [
+      'researcher', 'planner', 'architect', 'implementer', 'browser', 'custom',
     ]);
     assert.match(agent.description!, /researcher/);
     assert.match(agent.description!, /architect/);
@@ -4695,12 +4685,8 @@ test('agent lifecycle abort sends Pi RPC abort command without killing the proce
     const spawnTool = tools.get('agent')!;
     const messageTool = tools.get('agent')!;
 
-    // Schema should include 'abort' in the action enum
-    const actionSchema = (messageTool.parameters as { properties: { queries: { items: { properties: { type: { enum?: string[] } } } } } }).properties.queries.items.properties.type;
-    assert.ok(
-      Array.isArray(actionSchema?.enum) && actionSchema.enum.includes('abort'),
-      'abort must be in agent lifecycle action schema'
-    );
+    const actionValues = queryPropertySchemas(messageTool, 'type').flatMap((schema) => schema['enum'] as string[]);
+    assert.ok(actionValues.includes('abort'), 'abort must be in the agent lifecycle schema');
 
     const result = await invokeExecute(
       spawnTool,
@@ -4968,14 +4954,9 @@ test('RPC response with success:false surfaces error in agent result', async () 
 test('agent lifecycle action schema includes all documented actions', async () => {
   const { tools } = await captureExtensions();
   const messageTool = tools.get('agent')!;
-  const actionSchema = (messageTool.parameters as { properties: { queries: { items: { properties: { type: { enum?: string[] } } } } } }).properties.queries.items.properties.type;
+  const actionValues = queryPropertySchemas(messageTool, 'type').flatMap((schema) => schema['enum'] as string[]);
   const expectedActions = ['spawn', 'inspect', 'wait', 'message', 'steer', 'abort', 'kill'];
-  for (const action of expectedActions) {
-    assert.ok(
-      actionSchema?.enum?.includes(action),
-      `agent lifecycle action schema must include "${action}"`
-    );
-  }
+  for (const action of expectedActions) assert.ok(actionValues.includes(action), `agent lifecycle schema must include "${action}"`);
 });
 
 test('cleanupSpawnedAgentsForShutdown kills only non-terminal spawned workers', async () => {
@@ -5140,7 +5121,8 @@ test('plan propose: approval card outcomes drive machine-legible [PLAN] verdicts
     let res = await invokeExecute(planTool, { action: 'propose', steps: ['step A', 'step B'] }, askCtx({ status: 'selected', value: 'start', label: 'Start implementation' }));
     let text = (res.content[0] as { text: string }).text;
     assert.match(text, /\[PLAN\] approved and started — keep steps updated via complete/);
-    assert.match(text, /step A/);
+    // Interactive approve: steps are shown in the plan widget, not echoed in content.
+    assert.doesNotMatch(text, /step A/);
 
     const rfcPath = path.join(cwd, '.octocode', 'rfc', 'review', 'RFC.md');
     fs.mkdirSync(path.dirname(rfcPath), { recursive: true });
@@ -5206,7 +5188,8 @@ test('plan propose: approval card outcomes drive machine-legible [PLAN] verdicts
     res = await invokeExecute(planTool, { action: 'propose', steps: ['step A'] }, askCtx({ status: 'text', value: 'split step A into two' }));
     text = (res.content[0] as { text: string }).text;
     assert.match(text, /\[PLAN\] changes requested: split step A into two/);
-    assert.match(text, /RFC plan overview/);
+    // Interactive outcome: RFC links and plan overview are shown in the widget, not echoed in content.
+    assert.doesNotMatch(text, /RFC plan overview|Plan doc:/);
 
     // Back/cancel leaves the review ready without executing.
     res = await invokeExecute(planTool, { action: 'propose', steps: ['step A'] }, askCtx({ status: 'cancelled' }));

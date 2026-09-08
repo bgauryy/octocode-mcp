@@ -798,7 +798,7 @@ test("catalog addendum never exposes oversized schemas and keeps sibling routing
   assert.doesNotMatch(addendum, /inputSchema/);
 });
 
-test("catalog addendum caps degenerate instructions and descriptions with an ellipsis", () => {
+test("catalog addendum renders long instructions and descriptions in full without truncation", () => {
   mcpTestHooks.setCachedMcpCatalog(mcpCtx, [
     {
       name: "verbose",
@@ -815,13 +815,10 @@ test("catalog addendum caps degenerate instructions and descriptions with an ell
     },
   ]);
   const addendum = getCachedMcpCatalogAddendum(mcpCtx);
-  assert.doesNotMatch(addendum, /DTAIL/, "description is capped");
-  assert.doesNotMatch(addendum, /ITAIL/, "instructions are capped");
-  assert.match(
-    addendum,
-    /description: a+…/,
-    "capped description carries an ellipsis",
-  );
+  assert.match(addendum, /DTAIL/, "description renders in full");
+  assert.match(addendum, /ITAIL/, "instructions render in full");
+  assert.doesNotMatch(addendum, /partial/i, "no partial fallback");
+  assert.doesNotMatch(addendum, /…/, "no ellipsis truncation");
 });
 
 test("mcpCatalogReady reports cache state without spawning servers", async () => {

@@ -1,4 +1,4 @@
-import { EXTERNAL_AGENT_AWARENESS_PROMPT } from '@octocodeai/octocode-awareness';
+import { AWARENESS_PI_HOST_PROMPT } from '@octocodeai/octocode-awareness';
 import { describe, expect, it } from 'vitest';
 import { assembleContextSegments, assertContextTokenBudget, contextSegmentFromInput, estimateContextTokens } from '../src/tools/context-segments.js';
 
@@ -49,8 +49,8 @@ describe('typed context segment manifest', () => {
 
  it('attributes embedded Awareness policy and bindings without counting unrelated policy', () => {
    const result = assembleContextSegments([
-     { ...base, id: 'octocode-product-policy', content: `Other rules. ${EXTERNAL_AGENT_AWARENESS_PROMPT}`, kind: 'product-policy', origin: 'harness', authority: 'product' },
+     { ...base, id: 'octocode-product-policy', content: `Other rules. ${AWARENESS_PI_HOST_PROMPT}`, kind: 'product-policy', origin: 'harness', authority: 'product' },
      { ...base, id: 'awareness-cli-runtime', content: '12345678', kind: 'product-policy', origin: 'harness', authority: 'product' },
    ]);
-   expect(result.estimates.awarenessInstructions).toBe(estimateContextTokens(EXTERNAL_AGENT_AWARENESS_PROMPT) + 2);
+   expect(result.estimates.awarenessInstructions).toBe(estimateContextTokens(AWARENESS_PI_HOST_PROMPT) + 2);
  });

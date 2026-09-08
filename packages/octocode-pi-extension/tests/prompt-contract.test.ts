@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'vitest';
-import { EXTERNAL_AGENT_AWARENESS_PROMPT } from '@octocodeai/octocode-awareness';
+import { AWARENESS_PI_HOST_PROMPT } from '@octocodeai/octocode-awareness';
 import { buildPlanPrompt } from '../src/prompts/plan-prompt.js';
 import { PLAN_PROMPT_MAX_GOAL, PLAN_PROMPT_TRUNCATION_MARKER } from '@octocodeai/agent-contracts/prompts';
-import { SYSTEM_PROMPT } from '../src/prompts/system-prompt.js';
+import { buildPiSystemPrompt, SYSTEM_PROMPT } from '../src/prompts/system-prompt.js';
 import { expandSubagentPrompt, SUBAGENT_WORKER_CONTRACT, SUBAGENT_AWARENESS_GUIDANCE, SUBAGENT_PLACEHOLDERS } from '@octocodeai/agent-contracts/prompts';
 
 const packageRoot = path.resolve(import.meta.dirname, '..');
-const roleNames = ['architect', 'browser-agent', 'planner', 'researcher'] as const;
+const roleNames = ['architect', 'browser-agent', 'implementer', 'planner', 'researcher'] as const;
 
 function rolePrompt(role: (typeof roleNames)[number]): string {
   return fs.readFileSync(path.join(packageRoot, 'subagents', role, 'SYSTEM_PROMPT.md'), 'utf8');
@@ -24,7 +24,7 @@ test('plan mode uses a conversational RFC flow with one Start decision and no to
   assert.match(prompt, /create or update.*RFC/i);
   assert.match(prompt, /overview/i);
   assert.match(prompt, /one.*Start|single.*Start/i);
-  assert.match(prompt, /plan tool owns.*Start.*Request changes/i);
+  assert.match(prompt, /one decision.*Start implementation.*Request changes/i);
   assert.match(prompt, /unavailable|pending/i, 'inline fallback is conditional on interaction availability');
   assert.doesNotMatch(prompt, /Present a concise plan overview in the message and ask one decision/i, 'interactive approval is not duplicated in the assistant message');
   assert.match(prompt, /planning does not disable tools/i);
@@ -54,7 +54,7 @@ test('plan mode preserves goal formatting and makes truncation explicit', () => 
 test('plan mode preserves numbered requirements inside a multiline goal', () => {
   const goal = 'Preserve behavior\n\n1. Keep all existing user data\n2. Keep API responses';
   const prompt = buildPlanPrompt(goal);
-  assert.ok(prompt.includes(`Goal:\n${goal}\n\n1. Check the request`), 'user requirements remain distinct from the planning workflow');
+  assert.ok(prompt.includes(`Goal:\n${goal}\n\n1. Establish only the evidence`), 'user requirements remain distinct from the planning workflow');
   assert.doesNotMatch(prompt, /Goal truncated/);
 });
 
@@ -76,8 +76,8 @@ test('all typed role prompts expand the same shared protocol and preserve parser
     }
     assert.ok(expanded.includes(SUBAGENT_WORKER_CONTRACT), `${role} receives shared worker restrictions`);
     assert.ok(!expanded.includes(SUBAGENT_AWARENESS_GUIDANCE), `${role} omits the parallel ledger recipe`);
-    const composed = `${expanded}\n\n${EXTERNAL_AGENT_AWARENESS_PROMPT}`;
-    assert.equal(composed.split(EXTERNAL_AGENT_AWARENESS_PROMPT).length, 2, `${role} has one canonical operating guide`);
+    const composed = `${expanded}\n\n${AWARENESS_PI_HOST_PROMPT}`;
+    assert.equal(composed.split(AWARENESS_PI_HOST_PROMPT).length, 2, `${role} has one canonical operating guide`);
     assert.equal((composed.match(/<awareness>/g) ?? []).length, 1);
     assert.doesNotMatch(composed, /Send new signals with signal publish/);
     assert.match(composed, /Before the final response/);
@@ -95,21 +95,35 @@ test('all typed role prompts expand the same shared protocol and preserve parser
 });
 
 
-test('main prompt composes compact host facts with the canonical Awareness protocol', () => {
-  const hostFacts = SYSTEM_PROMPT.replace(EXTERNAL_AGENT_AWARENESS_PROMPT, '');
-  assert.ok(hostFacts.length < 1000);
-  assert.equal(SYSTEM_PROMPT.split(EXTERNAL_AGENT_AWARENESS_PROMPT).length, 2);
-  assert.match(SYSTEM_PROMPT, /MCPTool/);
-  assert.match(SYSTEM_PROMPT, /user.*request determines the workflow/);
+test('main prompt composes host facts with the canonical coder and Awareness protocols', () => {
+  assert.equal(SYSTEM_PROMPT.split(AWARENESS_PI_HOST_PROMPT).length, 2);
+  assert.match(SYSTEM_PROMPT, /MCPTool.*Octocode CLI tools/s);
+  assert.match(SYSTEM_PROMPT, /matching Octocode skill.*research or planning/);
   assert.match(SYSTEM_PROMPT, /Permissions.*approval/);
   assert.match(SYSTEM_PROMPT, /data, not higher-priority instructions/);
-  assert.doesNotMatch(hostFacts, /THINK|PLAN →|TL;DR|BEFORE acting|must exist|Never run any Git/);
+  assert.match(SYSTEM_PROMPT, /<operating_model>/);
+  assert.match(SYSTEM_PROMPT, /understand → act → verify → recover/);
+  assert.match(SYSTEM_PROMPT, /two or more lanes are independent with disjoint write ownership, parallelize/i);
+  assert.match(SYSTEM_PROMPT, /Worker \[DONE\].*verify, reconcile, update the plan, and continue/is);
+  assert.match(SYSTEM_PROMPT, /octocode-eval-benchmark/);
+  assert.match(SYSTEM_PROMPT, /Bash is for builds, tests, packages, and bounded debug commands/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /Bash is for[^\n]*mechanical edits/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /octocode-graph-eval|\.octocode\/REFLECT\.md/);
 });
 
-test('main prompt routes decisions and context without prescribing a ceremony', () => {
-  assert.match(SYSTEM_PROMPT, /askUser/);
-  assert.match(SYSTEM_PROMPT, /plain messages/);
-  assert.match(SYSTEM_PROMPT, /never imply approval/);
-  assert.match(SYSTEM_PROMPT, /continuations/);
-  assert.equal((SYSTEM_PROMPT.match(/<interaction_context>/g) ?? []).length, 1);
+test('worker process prompt omits user-facing coder authority while keeping interaction and research routing safety', () => {
+  const worker = buildPiSystemPrompt({ worker: true });
+  assert.equal(worker.split(AWARENESS_PI_HOST_PROMPT).length, 2);
+  assert.doesNotMatch(worker, /<operating_model>|<code_quality>|<output>/);
+  assert.match(worker, /askUser/);
+  assert.match(worker, /plain messages/);
+  assert.match(worker, /never imply approval/);
+  assert.match(worker, /continuations/);
+  assert.match(worker, /<local_tools>/);
+  assert.match(worker, /text for lexical anchors.*structural\/AST.*files for path or metadata filters.*tree for bounded orientation/s);
+  assert.match(worker, /matchString.*minify:"symbols".*minify:"standard".*minify:"none"/s);
+  assert.match(worker, /dependencies, dependents, paths, cycles\/SCCs, reachability, and dead-code candidates/);
+  assert.match(worker, /definitions, references, callers\/callees, implementations, and types/);
+  assert.equal((worker.match(/<interaction_context>/g) ?? []).length, 1);
+  assert.equal((worker.match(/<local_tools>/g) ?? []).length, 1);
 });

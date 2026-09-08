@@ -29,7 +29,7 @@ import {
 } from '@octocodeai/octocode-awareness';
 import { getAwarenessAgentId } from '../awareness-shared.js';
 import { assertPersistentAwarenessEnabled } from '../storage-policy.js';
-import { buildQueryEnvelopeSchema, executeQueryBatch, type QueryRecord } from '../query-envelope.js';
+import { executeQueryBatch, toToolSchema, type QueryRecord } from '../query-envelope.js';
 import { appendSessionAuditForContext } from '../session-audit.js';
 
 // ─── Planning modules ────────────────────────────────────────────────────────
@@ -387,7 +387,7 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
           const started = startReviewedPlan(scope, revision, ctx);
           if (!started.ok) {
             return {
-              content: [{ type: 'text', text: `[PLAN] implementation did not start: ${started.message}\n\n${summary}` }],
+              content: [{ type: 'text', text: `[PLAN] implementation did not start: ${started.message}` }],
               isError: true,
               details: { action: p.action, ...planPresentation(ctx, scope), error: 'start-failed', revision },
             } as unknown as ToolCallResult;
@@ -398,7 +398,7 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
           const startVerdict = `[PLAN] approved and started · rev ${revision.slice(0, 8)}`;
           auditPlanEvent(ctx, scope, 'start', { revision, source: 'propose' });
           return {
-            content: [{ type: 'text', text: `${summary}\n\n${startVerdict}\n${renderList(steps)}` }],
+            content: [{ type: 'text', text: startVerdict }],
             details: { action: p.action, ...planPresentation(ctx, scope), verdict: startVerdict, revision, decision: 'start', ...(activeArtifacts ? { artifacts: activeArtifacts } : {}) },
           } as unknown as ToolCallResult;
         }
@@ -410,7 +410,7 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
           const changesVerdict = '[PLAN] changes requested — revise the RFC and re-propose.';
           auditPlanEvent(ctx, scope, 'changes', { revision, feedbackProvided: false });
           return {
-            content: [{ type: 'text', text: `${changesVerdict}\n${summary}` }],
+            content: [{ type: 'text', text: changesVerdict }],
             details: { action: p.action, ...planPresentation(ctx, scope), verdict: changesVerdict, revision, decision: outcome.status, ...(artifacts ? { artifacts } : {}) },
           } as unknown as ToolCallResult;
         }
@@ -424,7 +424,7 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
           const textVerdict = `[PLAN] changes requested: ${feedback}\nRevise the RFC and re-propose.`;
           auditPlanEvent(ctx, scope, 'changes', { revision, feedbackProvided: Boolean(feedback) });
           return {
-            content: [{ type: 'text', text: `${textVerdict}\n${summary}` }],
+            content: [{ type: 'text', text: textVerdict }],
             details: { action: p.action, ...planPresentation(ctx, scope), verdict: textVerdict, revision, decision: outcome.status, ...(artifacts ? { artifacts } : {}) },
           } as unknown as ToolCallResult;
         }
@@ -441,11 +441,11 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
           }
           return '[PLAN] rejected — do not execute. Ask the user how to proceed.';
         })();
-        const rfcPageNote = artifacts
-          ? `\nPlan doc: ${artifacts.mdPath}`
-          : '\nPlan doc could not be written — continuing with the in-terminal plan.';
+        // For non-interactive outcomes (unavailable/pending), the widget did not run — include the plan overview.
+        // For interactive outcomes (cancelled/back/rejected), the plan widget was shown; suppress steps and file paths.
+        const showFullContext = !outcome || outcome.status === 'unavailable' || outcome.status === 'pending';
         return {
-          content: [{ type: 'text', text: `${pendingOrUnavailableVerdict}\n${summary}${rfcPageNote}` }],
+          content: [{ type: 'text', text: showFullContext ? `${pendingOrUnavailableVerdict}\n${summary}` : pendingOrUnavailableVerdict }],
           details: {
             action: p.action,
             ...planPresentation(ctx, scope),
@@ -467,7 +467,7 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
       }
 
       // Non-RFC propose (simple approval gate)
-      const proposeArtifacts = writeCurrentPlanArtifacts(ctx, scope, 'draft');
+      writeCurrentPlanArtifacts(ctx, scope, 'draft');
       refreshPlanUi(ctx);
       auditPlanEvent(ctx, scope, 'propose');
       const proposeOutcome = ctx
@@ -512,17 +512,14 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
         }
         return '[PLAN] rejected — do not execute. Ask the user how to proceed.';
       })();
-      let proposePageNote = proposeArtifacts
-        ? `\nPlan doc: ${proposeArtifacts.mdPath}`
-        : '\nPlan doc could not be written — continuing with the in-terminal plan.';
       if (approved) {
-        const approvedArtifacts = writeCurrentPlanArtifacts(ctx, scope, 'approved');
-        proposePageNote = approvedArtifacts
-          ? `\nPlan doc: ${approvedArtifacts.mdPath}\nPlan HTML: ${approvedArtifacts.htmlPath}\n/octocode-plan html opens the visual plan.`
-          : '\n/octocode-plan html opens the visual plan.';
+        writeCurrentPlanArtifacts(ctx, scope, 'approved');
       }
+      // For non-interactive outcomes (unavailable/pending), no widget ran — include steps for the model to present.
+      // For interactive outcomes (approved/rejected/text), the plan widget is visible; suppress steps and file paths.
+      const isNonInteractivePropose = !proposeOutcome || proposeOutcome.status === 'unavailable' || proposeOutcome.status === 'pending';
       return {
-        content: [{ type: 'text', text: `${proposeVerdict}\n${renderList(steps)}${proposePageNote}` }],
+        content: [{ type: 'text', text: isNonInteractivePropose ? `${proposeVerdict}\n${renderList(steps)}` : proposeVerdict }],
         details: {
           action: p.action,
           ...planPresentation(ctx, scope),
@@ -738,75 +735,62 @@ export function registerPlanTool(
     name: 'plan',
     label: 'Plan',
     description: [
-      'Track a canonical, compaction-durable checklist for non-trivial multi-step or risky work; skip obvious single-step tasks. The footer shows progress/current work, while show and generated plan artifacts retain full detail.',
-      'Every call uses queries:[{reasoning, action, ...}]. Put lifecycle fields inside each query item; root-level action fields are invalid.',
-      'Use clarify only for unresolved decision-changing blockers; set for already-authorized work; propose with an RFC for review; add/start/complete/remove to keep execution truthful; clear when done or abandoned.',
-      'RFC review uses one user decision: Start approves the exact displayed bytes and begins implementation; Request changes returns the plan to draft.',
-      'Multiple independent steps may be doing in parallel. Use scope:"shared" for persistent multi-agent execution; it automatically projects stable steps, dependencies, ownership, and verification receipts into Awareness from one internal call. Shared tasks can only be completed via action:"complete" with an observed receipt {command,status,message}.',
-      'action:"start" without index begins the first dependency-ready todo step. action:"complete" without index completes the current doing step. action:"remove" without index removes the current doing step.',
-      'Shared task IDs are returned in the response and in the plan footer. The agent.planStep tool (if available) reads them for task-level Awareness operations; the plan tool handles ownership and projection automatically, so avoid duplicating that work once the task is done or abandoned. Shared task projection, ownership, dependencies, check receipts, and finalization are internal to plan; there is no separate public task tool.',
-      'For independent lanes, encode ordering with dependsOn, start runnable lanes with action:"start" and index:N before batching or spawning, and pass explicit indices when completing parallel steps.',
-      'Give active steps a concise activeForm (for example, "Editing file"). The footer shows plan progress and current or blocking work; action:"show", plan.md, and plan.html retain the complete checklist.',
-      'Plan lifecycle prompts are reserved for clarification, proposal approval, and consequential RFC review. Actions "set", "start", and "complete" never interrupt execution with presentation-only questions; use /octocode-plan html only when the user asks for the visual plan. The tool returns plan.md and plan.html paths for explicit review.',
+      'Definition: maintain the canonical checklist for work whose sequencing, risk, verification, or shared ownership must survive compaction.',
+      'Contrast: use set for already-authorized execution and propose for review; skip the tool for an obvious one-step edit. Start before acting and complete only after an observed check.',
+      'Consequence: stale status or an unverified completion misroutes the parent, workers, and recovery state.',
+      'Principle: one plan owns dependencies, active work, exact RFC revision, and shared verification receipts.',
+      'Action: choose the matching action branch; encode dependencies, keep statuses truthful, and clear the plan when the request is done or abandoned.',
     ].join('\n'),
-    promptSnippet: 'Maintain a visible compaction-safe checklist. Use for multi-step/risky/shared work; skip obvious single-step tasks. Consequential RFCs need review then Start; shared completion needs a check receipt. Every call uses queries:[{reasoning, action, ...}]. Use action:"set" for authorized work and action:"propose" with an RFC for review; then use add/start/complete/remove/show/clear to keep execution truthful.',
+    promptSnippet: 'Track multi-step, risky, or shared work. Use set for authorized execution, propose for review, and start/complete from observed state; skip obvious one-step work.',
     promptGuidelines: [
-      'Every call uses queries:[{reasoning, action, ...}]. Put lifecycle fields inside each query item; never send action or its fields at the tool root.',
-      'Full plan flow: (a) research proportionally; (b) for consequential work load octocode-rfc-generator skill and author the RFC; (c) use action:"clarify" only for decision-changing questions — answer will change scope, architecture, acceptance criteria, or authorization. Prefer one question; use 2–3 only for independent blockers. Always include a free-text discussion option; (d) call plan with action:"propose" + rfcPath; (e) after the proposal, send a message with plan overview and links to the RFC files; (f) the decision widget asks once: Start implementation or Request changes — always includes free-text for feedback.',
-      'Use action:"set" for already-authorized work. When the user asks for a plan, research first and propose the RFC; Planning never disables tools.',
-      'Keep the checklist truthful: start the active step before work, then use action:"complete" only after its check passes. Shared task projection, ownership, dependencies, check receipts, and finalization are internal to plan; there is no separate public task tool.',
-      'For independent lanes, encode ordering with dependsOn, start runnable lanes with action:"start" and index:N before batching or spawning, and pass explicit indices when completing parallel steps.',
+      'Every call is {queries:[{reasoning,action,...}]}; select exactly one action branch and keep action fields inside that query.',
+      'Wrong: propose a reversible local edit with a ceremonial RFC. Right: use action:"set" for authorized work, action:"propose" when review is required, or skip plan when no sequencing or recovery state is needed.',
+      'Wrong: complete because a worker said DONE. Right: verify the assigned check, then use action:"complete" with the observed receipt.',
+      'For independent lanes, encode dependsOn, start each runnable index before delegation, and complete each explicit index. Start on a reviewed proposal atomically binds its displayed revision and begins execution; cancellation never approves it.',
     ],
-    parameters: buildQueryEnvelopeSchema(
-      z.looseObject({
-        action: z.enum(['set','propose','clarify','add','start','complete','remove','clear','show'])
-          .describe('Plan lifecycle operation; use the matching action branch and fields.'),
-        scope: z.enum(['auto','session','shared']).optional()
-          .describe('Projection policy. auto stays local unless safely adopting existing shared ownership.'),
-        receipt: z.object({
-          command: z.string().min(1).describe('The exact declared check command that was actually run.'),
-          status: z.enum(['SUCCESS','FAILED']).describe('Observed check result.'),
-          message: z.string().min(1).describe('Concise observed result, such as test counts or failure cause.'),
-        }).optional(),
-        steps: z.array(z.union([
-          z.string(),
-          z.object({
-            text: z.string(),
-            acceptance: z.string().optional().describe('Observable done state for this task.'),
-            activeForm: z.string().optional().describe('Present-continuous label shown while this step runs.'),
-            checkCommand: z.string().optional().describe('Command that verifies this task after DONE.'),
-            dependsOn: z.array(z.number().int().min(1)).optional().describe('1-based indices of steps that must be done first.'),
-            paths: z.array(z.string()).optional().describe('Workspace-relative paths this task may change.'),
-            reasoning: z.string().optional().describe('Why this task exists or may omit paths.'),
-          }),
-        ])).min(1).optional(),
-        text: z.string().optional().describe('Step text for action:add.'),
-        activeForm: z.string().optional().describe('Present-continuous form for action:add.'),
-        dependsOn: z.array(z.number().int().min(1)).optional().describe('1-based step indices for action:add.'),
-        paths: z.array(z.string()).optional().describe('Paths for action:add.'),
-        taskReasoning: z.string().optional().describe('Why the step exists or why it has no path scope. For action:add.'),
-        acceptance: z.string().optional().describe('Observable done state for action:add.'),
-        checkCommand: z.string().optional().describe('Verification command for action:add.'),
-        index: z.number().int().min(1).optional().describe('1-based step index for start/complete/remove when targeting a specific step.'),
-        revision: z.string().optional().describe('For reviewed action:start — the exact displayed RFC revision string.'),
-        authorizationInteractionId: z.string().optional().describe('For noninteractive reviewed action:start — the interaction ID.'),
-        consequential: z.boolean().optional().describe('For propose: true requires RFC review; false with a non-empty reason overrides heuristic inference.'),
-        reason: z.string().optional().describe('Planning rationale. Required with consequential:false when overriding a consequential proposal heuristic.'),
-        rfcPath: z.string().optional().describe('For set/propose: a reviewable `.octocode/rfc/<name>/` folder or RFC.md. Propose hashes its exact bytes and enters review; the path must stay under the workspace RFC tree.'),
-        questions: z.array(z.object({
-          prompt: z.string().describe('One concise question whose answer changes scope, architecture, acceptance criteria, or authorization and cannot be answered from the repo.'),
-          options: z.array(z.object({
-            label: z.string(),
-            value: z.string().optional(),
-            description: z.string().optional().describe('One short sentence of decision-relevant nuance; omit when the label is self-explanatory.'),
-            recommended: z.boolean().optional().describe('Marks the recommended default; lands the cursor here.'),
-            pros: z.array(z.string()).optional().describe('Distinct upside bullets; omit when description or label already says it.'),
-            cons: z.array(z.string()).optional().describe('Distinct risk bullets; omit when description or label already says it.'),
-          })).optional().describe('Multiple-choice options; omit for a free-text question. A free-text escape is always offered.'),
-        })).min(1).max(3).optional().describe('For clarify: prefer one decision-changing blocker; use 2–3 only when independent and all must be answered before planning.'),
-      }),
-      { reasoningDescription: 'Why this plan transition is necessary.' },
-    ),
+    parameters: (() => {
+      const reasoning = z.string().min(1).max(400);
+      const scope = z.enum(['auto','session','shared']).optional();
+      const step = z.union([
+        z.string().min(1),
+        z.strictObject({
+          text: z.string().min(1),
+          acceptance: z.string().optional(),
+          activeForm: z.string().optional(),
+          checkCommand: z.string().optional(),
+          dependsOn: z.array(z.number().int().min(1)).optional().describe('Earlier 1-based prerequisite indices.'),
+          paths: z.array(z.string()).optional().describe('Workspace-relative write ownership.'),
+          reasoning: z.string().optional(),
+        }),
+      ]);
+      const receipt = z.strictObject({
+        command: z.string().min(1).describe('Exact declared check that ran.'),
+        status: z.enum(['SUCCESS','FAILED']).describe('Observed result; never predict it.'),
+        message: z.string().min(1).describe('Observed counts or failure cause.'),
+      });
+      const questions = z.array(z.strictObject({
+        prompt: z.string().min(1).describe('Decision-changing question repository evidence cannot answer.'),
+        options: z.array(z.strictObject({
+          label: z.string().min(1), value: z.string().optional(), description: z.string().optional(),
+          recommended: z.boolean().optional(), pros: z.array(z.string()).optional(), cons: z.array(z.string()).optional(),
+        })).optional().describe('Distinct choices; omit for free text. The UI always permits discussion.'),
+      })).min(1).max(3);
+      const query = z.union([
+        z.strictObject({ reasoning, action: z.enum(['set']), scope, steps: z.array(step).min(1), consequential: z.boolean().optional(), reason: z.string().optional(), rfcPath: z.string().optional() }),
+        z.strictObject({ reasoning, action: z.enum(['propose']), scope, steps: z.array(step).min(1), consequential: z.boolean().optional(), reason: z.string().optional(), rfcPath: z.string().optional().describe('Required for consequential review; workspace `.octocode/rfc/<name>/` directory or RFC.md.') }),
+        z.strictObject({ reasoning, action: z.enum(['clarify']), questions }),
+        z.strictObject({ reasoning, action: z.enum(['add']), scope, text: z.string().min(1), activeForm: z.string().optional(), dependsOn: z.array(z.number().int().min(1)).optional(), paths: z.array(z.string()).optional(), taskReasoning: z.string().optional(), acceptance: z.string().optional(), checkCommand: z.string().optional() }),
+        z.strictObject({ reasoning, action: z.enum(['start']), scope, index: z.number().int().min(1).optional(), revision: z.string().optional(), authorizationInteractionId: z.string().optional() }),
+        z.strictObject({ reasoning, action: z.enum(['complete']), scope, index: z.number().int().min(1).optional(), receipt: receipt.optional() }),
+        z.strictObject({ reasoning, action: z.enum(['remove']), scope, index: z.number().int().min(1).optional() }),
+        z.strictObject({ reasoning, action: z.enum(['clear']), scope }),
+        z.strictObject({ reasoning, action: z.enum(['show']), scope }),
+      ]);
+      return toToolSchema(z.strictObject({
+        queries: z.array(query).min(1).max(100).describe('Plan transitions execute sequentially in source order.'),
+        queryRunType: z.enum(['sequential']).default('sequential').optional(),
+      }));
+    })(),
 
     async execute(toolCallId: string, rawArgs: Record<string, unknown>, signal?: AbortSignal, onUpdate?: (update: ToolCallResult) => void, ctx?: PiContext) {
       return executeQueryBatch({

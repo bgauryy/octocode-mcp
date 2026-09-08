@@ -80,7 +80,9 @@ test('normal agent count is bounded while blocked and failed agents are individu
   const text = rowText.join('\n');
   assert.ok(rowText.some((row) => /atlas.*blocked.*\/octocode-inbox/i.test(row)));
   assert.ok(rowText.some((row) => /nova.*failed.*\/octocode-inbox/i.test(row)));
-  assert.ok(rowText.some((row) => /Agents 102.*100 running.*1 blocked.*1 failed.*\/octocode-inbox/i.test(row)));
+  const summary = rowText.find((row) => /Agents 102.*100 running.*\/octocode-inbox/i.test(row));
+  assert.ok(summary);
+  assert.doesNotMatch(summary!, /blocked|failed/i, 'named attention states are not duplicated in the aggregate row');
   assert.ok(result.rows.length <= 6);
   assert.doesNotMatch(text, /worker-99/);
 });

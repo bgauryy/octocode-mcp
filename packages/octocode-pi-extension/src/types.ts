@@ -295,11 +295,30 @@ export interface PiContext {
   hasUI?: boolean;
   /** 'tui' = interactive terminal, 'rpc' = JSON RPC, 'json' = event stream, 'print' = -p flag */
   mode?: 'tui' | 'rpc' | 'json' | 'print';
+  /**
+   * AbortSignal fired when the user cancels the current operation (Esc).
+   * Defined during active turn events: tool_call, tool_result, message_update, turn_end.
+   * Pass to fetch(), async iterators, or any other abort-aware work started inside an event handler.
+   */
+  signal?: AbortSignal;
   /** Pi reports project trust synchronously. */
   isProjectTrusted?(): boolean;
+  /**
+   * Returns Pi's current system prompt string.
+   * During before_agent_start this reflects chained changes made so far for the current turn.
+   */
+  getSystemPrompt?(): string;
   compact?(opts: CompactOptions): void;
   /** `tokens` is null when unknown — e.g. right after compaction (mirrors Pi's ContextUsage). */
   getContextUsage?(): (Partial<PiContextUsage> & { tokens: number | null; contextWindow: number }) | null | undefined;
+  /** True while Pi is NOT processing an agent run, retry, compaction, or queued continuation. */
+  isIdle?(): boolean;
+  /** Abort the current agent run immediately. */
+  abort?(): void;
+  /** True if there are pending user messages waiting to be delivered to the agent. */
+  hasPendingMessages?(): boolean;
+  /** Initiate a clean Pi shutdown (Ctrl+C equivalent). */
+  shutdown?(): void;
   sessionManager?: PiSessionManager;
   modelRegistry?: {
     find(provider: string, id: string): PiModel | undefined;
@@ -520,15 +539,22 @@ export interface PiInstance {
   on(event: 'tool_execution_end', handler: (event: { toolCallId: string; toolName: string; result: unknown; isError: boolean }, ctx: PiContext) => Promise<void>): void;
   on(event: 'before_provider_request', handler: (event: { payload: unknown }, ctx: PiContext) => unknown): void;
   on(event: 'after_provider_response', handler: (event: { status: number; headers: Record<string, string> }, ctx: PiContext) => void): void;
-  // Additional Pi-published events. Not currently subscribed by the extension,
-  // but declared so their names autocomplete and typos don't fall through to the
-  // untyped catch-all below. Payloads are left as unknown pending a concrete need.
+  // Events routed through PI_LIFECYCLE_MAPPINGS (observe-only, serialized via LifecycleBus).
+  /** Fires once after all retries, compaction retries, and queued follow-ups complete. */
   on(event: 'agent_settled', handler: (event: unknown, ctx: PiContext) => void | Promise<void>): void;
-  on(event: 'before_provider_headers', handler: (event: unknown, ctx: PiContext) => void | Promise<void>): void;
+  /** Streaming message content delta — observe only. */
   on(event: 'message_update', handler: (event: unknown, ctx: PiContext) => void | Promise<void>): void;
-  on(event: 'session_before_tree', handler: (event: unknown, ctx: PiContext) => void | Promise<void>): void;
+  /** Streaming tool-output update during execution — observe only. */
   on(event: 'tool_execution_update', handler: (event: unknown, ctx: PiContext) => void | Promise<void>): void;
+  // Events on the legacy pi.on() path (no agent-core canonical type).
+  // Payload is typed as unknown; narrow at the call site.
+  /** Can modify the final tool result (middleware chain). */
   on(event: 'tool_result', handler: (event: unknown, ctx: PiContext) => void | Promise<void | Partial<ToolCallResult>>): void;
+  /** Fired before Pi sends provider request headers; can mutate them. */
+  on(event: 'before_provider_headers', handler: (event: unknown, ctx: PiContext) => void | Promise<void>): void;
+  /** Fired before /tree navigation commits; return { cancel: true } to abort. */
+  on(event: 'session_before_tree', handler: (event: unknown, ctx: PiContext) => void | Promise<void>): void;
+  /** Fired when user runs ! or !! bash commands; can provide custom operations or intercept. */
   on(event: 'user_bash', handler: (event: unknown, ctx: PiContext) => void | Promise<void>): void;
   on(event: string, handler: (...args: unknown[]) => unknown): void;
   // ─── Tools ──────────────────────────────────────────────────────────────────
@@ -543,16 +569,20 @@ export interface PiInstance {
   registerShortcut?(shortcut: string, opts: { description: string; handler: (ctx: PiContext) => Promise<void> }): void;
   registerFlag?(name: string, opts: { description: string; type: 'boolean' | 'string'; default?: unknown }): void;
   getFlag?(name: string): unknown;
-  // ─── Messages / events bus ──────────────────────────────────────────────────
+  // ─── Messages ───────────────────────────────────────────────────────────────
   sendUserMessage(content: PiMessageContent, opts?: PiSendUserMessageOptions): void;
   sendMessage?(msg: { customType: string; content: PiMessageContent; display?: boolean; details?: unknown }, opts?: { triggerTurn?: boolean; deliverAs?: 'steer' | 'followUp' | 'nextTurn' | string }): void;
   registerMessageRenderer?(customType: string, renderer: (message: unknown, options: { expanded: boolean }, theme: PiTheme) => unknown): void;
-  events?: { on(event: string, cb: (data: unknown) => void): void; emit(event: string, data: unknown): void };
+  /**
+   * Transform rendered markdown before display. Runs for every message type.
+   * Return the original string unchanged when no transformation is needed.
+   */
+  registerMarkdownTransformer?(transformer: (markdown: string, context: { messageType: string; isStreaming: boolean }) => string): void;
   // ─── Model / thinking ───────────────────────────────────────────────────────
   getThinkingLevel?(): string | undefined;
   setThinkingLevel?(level: string): void;
   setModel?(model: PiModel): Promise<boolean>;
-  // ─── Session / labels ───────────────────────────────────────────────────────
+  // ─── Session ────────────────────────────────────────────────────────────────
   setSessionName?(name: string): void;
   getSessionName?(): string | undefined;
   /**
@@ -563,10 +593,8 @@ export interface PiInstance {
   appendEntry?(customType: string, data?: unknown): void;
   /** Render a CustomEntry type in the transcript (durable, TUI-only, zero prompt cost). */
   registerEntryRenderer?(customType: string, renderer: (entry: { data?: unknown }, options: { expanded: boolean }, theme: PiTheme) => unknown): void;
-  setLabel?(entryId: string, label: string | undefined): void;
   // ─── Providers ──────────────────────────────────────────────────────────────
   registerProvider?(name: string, config: Record<string, unknown>): void;
-  unregisterProvider?(name: string): void;
   // ─── Shell ──────────────────────────────────────────────────────────────────
   exec?(command: string, args: string[], opts?: { signal?: AbortSignal; timeout?: number }): Promise<PiExecResult>;
 }

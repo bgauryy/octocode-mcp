@@ -81,7 +81,8 @@ describe('SUBAGENT_REGISTRY', () => {
 
   it('preserves specialist research tools without exposing browser control to other profiles', () => {
     for (const [name, profile] of Object.entries(SUBAGENT_REGISTRY)) {
-      const expected = ['web', 'MCPTool', 'file', 'skill', 'bash'];
+      const expected = ['MCPTool', 'file', 'skill', 'awareness', 'bash'];
+      if (name !== 'implementer') expected.push('web');
       if (name === 'browser-agent') expected.push('chromeDebug');
       expect([...profile.tools].sort()).toEqual(expected.sort());
     }

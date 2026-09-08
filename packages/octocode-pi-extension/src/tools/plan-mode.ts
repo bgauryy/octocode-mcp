@@ -7,7 +7,12 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { contentDigest, effectiveCapabilityDecision, type CapabilityDecisionReceiptV1 } from '@octocodeai/octocode-awareness';
+import {
+  contentDigest,
+  effectiveCapabilityDecision,
+  getAwarenessCommandDescriptor,
+  type CapabilityDecisionReceiptV1,
+} from '@octocodeai/octocode-awareness';
 import { paintUi } from '../tui/palette.js';
 import type { PiContext } from '../types.js';
 import { resolveSessionIdentity, type SessionIdentityInput } from './session-artifacts.js';
@@ -199,6 +204,23 @@ export function getToolEffect(toolName: string | undefined, input?: Record<strin
       return type !== 'load';
     });
     return hasDynamicSkillEffect ? 'workspace-write' : 'read';
+  }
+  if (normalized === 'awareness') {
+    const queries = Array.isArray(input?.['queries'])
+      ? input['queries'].filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value))
+      : [input ?? {}];
+    let effect: ToolEffect = 'read';
+    for (const query of queries) {
+      const action = typeof query['action'] === 'string' ? query['action'].toLowerCase() : 'list';
+      if (action === 'list' || action === 'describe') continue;
+      if (action !== 'call' || typeof query['command'] !== 'string') return undefined;
+      const descriptor = getAwarenessCommandDescriptor(query['command']);
+      if (!descriptor) return undefined;
+      if (descriptor.effect === 'host-config-write' || descriptor.effect === 'destructive-admin') return 'external-effect';
+      if (descriptor.effect === 'workspace-write') effect = 'workspace-write';
+      else if (descriptor.effect === 'coordination-write' && effect === 'read') effect = 'coordination-write';
+    }
+    return effect;
   }
   if (normalized === 'mcptool') {
     const queries = Array.isArray(input?.['queries'])

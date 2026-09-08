@@ -32,7 +32,7 @@ import { CLI_GLYPH, CLI_STATUS_TEXT, cliSpinnerFrame, cliToolTitle } from '../tu
 import type { ToolDefinition, ToolCallResult, PiTheme, PiContext, RenderResultOptions } from '../types.js';
 import type { registerUniqueTool } from './octocode-tools.js';
 import { makeComponentRenderer } from './render-helpers.js';
-import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
+import { executeQueryBatch, toToolSchema } from './query-envelope.js';
 import { ASK_HEADER_LABEL } from '../tui/content.js';
 import { renderFrame } from '../tui/components.js';
 import { CURSOR_MARKER, Input, Key, matchesKey, wrapTextWithAnsi } from '@earendil-works/pi-tui';
@@ -138,6 +138,25 @@ function validateUniqueFieldNames(fields: readonly AskField[]): void {
   for (const field of fields) {
     if (seen.has(field.name)) throw new Error(`field names must be unique; duplicate "${field.name}".`);
     seen.add(field.name);
+  }
+}
+
+function validateAskMode(params: AskParams, options: readonly AskOption[], fields: readonly AskField[]): void {
+  validateUniqueFieldNames(fields);
+  if (fields.length > 0 && (options.length > 0 || params.multiSelect || params.min !== undefined || params.max !== undefined)) {
+    throw new Error('fields[] form mode cannot be combined with options, multiSelect, min, or max.');
+  }
+  if (params.multiSelect && options.length === 0) throw new Error('multiSelect requires a non-empty options[] list.');
+  if (!params.multiSelect && (params.min !== undefined || params.max !== undefined)) throw new Error('min and max are valid only with multiSelect:true.');
+  const min = params.min ?? 0;
+  const max = params.max ?? options.length;
+  if (min > max) throw new Error(`multiSelect min (${min}) cannot exceed max (${max}).`);
+  const selectable = options.filter((option) => !option.disabled).length;
+  if (params.multiSelect && min > selectable) throw new Error(`multiSelect min (${min}) exceeds ${selectable} selectable option(s).`);
+  for (const field of fields) {
+    if (field.minLength !== undefined && field.maxLength !== undefined && field.minLength > field.maxLength) {
+      throw new Error(`field "${field.name}" minLength cannot exceed maxLength.`);
+    }
   }
 }
 
@@ -937,49 +956,55 @@ export function registerAskUserTool(
   registerFn(pi, registeredToolNames, {
     name: 'askUser',
     label: 'Ask user',
-    description: 'Collect a decision in an inline widget: options for one choice, multiSelect for independent choices, fields for related answers, or text input. Returns an answer or explicit interaction status.',
-    promptSnippet: 'Collect a missing user decision with askUser.',
+    description: [
+      'Definition: collect one missing choice that changes the next action and evidence cannot answer.',
+      'Contrast: options choose one and still allow a custom answer; multiSelect:true toggles independent choices; fields collect related values; question alone collects text. Never combine modes.',
+      'Consequence: routine confirmation stalls authorized work; cancel, timeout, or unavailable UI grants no authority.',
+      'Principle: one decision, one input mode, one explicit outcome.',
+      'Action: choose the smallest branch, keep choices distinct, and continue independent authorized work while waiting.',
+    ].join('\n'),
+    promptSnippet: 'Ask only for a missing decision that changes the next action; choose one input mode and never infer approval.',
     promptGuidelines: [
-      'Ask only when the answer changes the next action and cannot be learned from available evidence. Continue routine authorized work without a confirmation widget.',
-      'Prefer one question and distinct short options. Mark a sensible recommendation; add descriptions, trade-offs, or previews only when they change the decision.',
-      'The discussion row allows free text. Back, cancel, and timeout never authorize a default. Resume pending interactions through the host; use an inline question only when no interaction is available.',
-      'Use options[] for one-of-many; multiSelect for independent toggles; fields[] for structured form input; omit options for free text.',
+      'Wrong: ask whether to continue routine authorized work. Right: continue; ask only for unresolved scope, trade-off, or authorization.',
+      'Wrong: repeat labels in descriptions. Right: add only distinguishing detail; mark recommended only for an evidence-backed safe default.',
+      'Back, cancel, timeout, and unavailable interaction never select a default; resume a durable continuation when present, otherwise ask inline.',
     ],
-    parameters: buildQueryEnvelopeSchema(
-      z.looseObject({
-        question: z.string().describe('The question to show the user. Keep it one clear sentence.'),
-        options: z.array(
-          z.object({
-            value: z.string().describe('Value returned to you when this option is chosen.'),
-            label: z.string().optional().describe('Short display label (defaults to value).'),
-            description: z.string().optional().describe('Optional one-line nuance shown only for the focused option; omit when the label is enough.'),
-            pros: z.array(z.string()).optional().describe('Upsides of this option — short bullets shown as ✓ lines under the focused row.'),
-            cons: z.array(z.string()).optional().describe('Downsides/risks of this option — short bullets shown as ✗ lines under the focused row.'),
-            recommended: z.boolean().optional().describe('Mark the safe/recommended default: badges the row and lands the cursor here first.'),
-            preview: z.string().optional().describe('Optional multi-line preview shown under the option while it is focused (multi-select overlay).'),
-            disabled: z.union([z.boolean(), z.string()]).optional().describe('true makes this option visible but not selectable. String reason is shown next to the option.'),
-            group: z.string().optional().describe('Optional group heading used to cluster related choices in the list.'),
-          })
-        ).optional(),
-        placeholder: z.string().optional().describe('Placeholder for the free-text input.'),
-        multiSelect: z.boolean().optional().describe('With options[]: let the user toggle several options (space), all/clear with a, invert with i, and confirm (enter). Returns the chosen values[].'),
-        min: z.number().int().min(0).optional().describe('Multi-select only: minimum number of selections required to confirm.'),
-        max: z.number().int().min(1).optional().describe('Multi-select only: maximum number of selections allowed.'),
-        fields: z.array(
-          z.object({
-            name: z.string().describe('Key for this answer in the returned values object.'),
-            label: z.string().optional().describe('Prompt label shown to the user (defaults to name).'),
-            placeholder: z.string().optional().describe('Placeholder for this field input.'),
-            required: z.boolean().optional().describe('Keep focus on this field until a non-empty value is provided.'),
-            minLength: z.number().int().min(0).optional().describe('Minimum trimmed character count for this field.'),
-            maxLength: z.number().int().min(1).optional().describe('Maximum trimmed character count for this field.'),
-            pattern: z.string().optional().describe('JavaScript regular expression the trimmed field value must match.'),
-          })
-        ).optional(),
-        timeoutMs: z.number().int().min(1).max(86_400_000).optional().describe('Interactive wait limit in milliseconds. Expiry returns timed_out and never selects a default.'),
-      }),
-      { reasoningDescription: 'Concise reason this question is necessary to decide the next action.' },
-    ),
+    parameters: (() => {
+      const reasoning = z.string().min(1).max(400);
+      const question = z.string().min(1);
+      const placeholder = z.string().optional();
+      const timeoutMs = z.number().int().min(1).max(86_400_000).optional();
+      const option = z.strictObject({
+        value: z.string().min(1),
+        label: z.string().optional(),
+        description: z.string().optional().describe('Only what distinguishes this choice.'),
+        pros: z.array(z.string()).optional(),
+        cons: z.array(z.string()).optional(),
+        recommended: z.boolean().optional().describe('Moves focus; never auto-selects.'),
+        preview: z.string().optional(),
+        disabled: z.union([z.boolean(), z.string()]).optional().describe('String explains why selection is blocked.'),
+        group: z.string().optional(),
+      });
+      const field = z.strictObject({
+        name: z.string().min(1).describe('Unique result key.'),
+        label: z.string().optional(),
+        placeholder: z.string().optional(),
+        required: z.boolean().optional(),
+        minLength: z.number().int().min(0).optional(),
+        maxLength: z.number().int().min(1).optional(),
+        pattern: z.string().optional().describe('JavaScript regular expression applied to trimmed input.'),
+      });
+      const query = z.union([
+        z.strictObject({ reasoning, question, placeholder, timeoutMs }),
+        z.strictObject({ reasoning, question, options: z.array(option).min(1), placeholder, timeoutMs }),
+        z.strictObject({ reasoning, question, options: z.array(option).min(1), multiSelect: z.literal(true), min: z.number().int().min(0).optional(), max: z.number().int().min(1).optional(), timeoutMs }),
+        z.strictObject({ reasoning, question, fields: z.array(field).min(1), timeoutMs }),
+      ]);
+      return toToolSchema(z.strictObject({
+        queries: z.array(query).min(1).max(100).describe('Questions run sequentially; preflight validates every mode before the first prompt opens.'),
+        queryRunType: z.enum(['sequential']).default('sequential').optional(),
+      }));
+    })(),
 
     async execute(id: string, raw: Record<string, unknown>, signal, onUpdate, ctx?: PiContext): Promise<ToolCallResult> {
       const queries = Array.isArray(raw.queries)
@@ -993,7 +1018,7 @@ export function registerAskUserTool(
       }
       const options = normalizeOptions(p.options);
       const fields = normalizeFields(p.fields);
-      validateUniqueFieldNames(fields);
+      validateAskMode(p, options, fields);
 
       if (!hasInteractiveUi(ctx)) {
         const mode = ctx?.mode ?? 'unknown';
@@ -1139,7 +1164,8 @@ export function registerAskUserTool(
         ctx,
         preflight(query) {
           if (!String(query['question'] ?? '').trim()) throw new Error('question is required.');
-          validateUniqueFieldNames(normalizeFields((query as unknown as AskParams).fields));
+          const params = query as unknown as AskParams;
+          validateAskMode(params, normalizeOptions(params.options), normalizeFields(params.fields));
         },
         execute: runQuery,
       });

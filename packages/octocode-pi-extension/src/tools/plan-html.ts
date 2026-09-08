@@ -227,6 +227,9 @@ function planStatsSectionHtml(model: PlanReadModelV1): string {
     `<div class="${escapeHtml(s.cls)}"><span class="stat-val">${escapeHtml(String(s.val))}</span><span class="stat-label">${escapeHtml(s.label)}</span></div>`,
   ).join('');
   const phaseLabel = model.phase === 'complete' ? 'complete' : model.phase.replace(/_/g, ' ');
+  const progress = model.shape === 'linear'
+    ? `<div class="progress-bar" title="${escapeHtml(pct + '% complete')}"><div class="progress-fill" style="width:${escapeHtml(pct + '%')}"></div></div>`
+    : `<p class="graph-progress">Dependency graph · ${done} done · ${running} active · ${todo} ready · ${blocked} blocked</p>`;
   return `<section class="plan-stats">
 <style>
   .plan-stats .progress-bar { height:8px; background:var(--line); border-radius:999px; overflow:hidden; margin:0 0 .9rem; }
@@ -242,9 +245,10 @@ function planStatsSectionHtml(model: PlanReadModelV1): string {
   .stat-running .stat-val { color:var(--gold); }
   .stat-decisions .stat-val { color:var(--violet); }
   .phase-badge { display:inline-flex; align-items:center; gap:.35rem; margin-left:.3rem; padding:.28rem .62rem; border-radius:999px; font-size:.72rem; font-weight:700; letter-spacing:.07em; text-transform:uppercase; background:color-mix(in srgb,var(--violet) 12%,transparent); color:var(--violet); border:1px solid color-mix(in srgb,var(--violet) 30%,transparent); }
+  .graph-progress { color:var(--muted); margin:0 0 .9rem; }
 </style>
 <h2>Progress <span class="phase-badge">${escapeHtml(phaseLabel)}</span></h2>
-<div class="progress-bar" title="${escapeHtml(pct + '% complete')}"><div class="progress-fill" style="width:${escapeHtml(pct + '%')}"></div></div>
+${progress}
 <div class="stats-grid">${statItems}</div>
 </section>`;
 }

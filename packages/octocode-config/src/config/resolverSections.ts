@@ -1,5 +1,6 @@
 import type {
   OctocodeConfig,
+  RequiredExtensionConfig,
   RequiredGitHubConfig,
   RequiredLocalConfig,
   RequiredToolsConfig,
@@ -10,6 +11,7 @@ import type {
   RequiredStorageConfig,
 } from './types.js';
 import {
+  DEFAULT_EXTENSION_CONFIG,
   DEFAULT_GITHUB_CONFIG,
   DEFAULT_LOCAL_CONFIG,
   DEFAULT_TOOLS_CONFIG,
@@ -163,6 +165,34 @@ export function resolveStorage(
   }
   return { mode: fileMode };
 }
+
+/**
+ * Resolve storage specifically for the Pi extension runtime.
+ *
+ * Priority (highest → lowest):
+ * 1. `OCTOCODE_EXTENSION_STORAGE_MODE` env var
+ * 2. `extension.storage.mode` in .octocoderc
+ * 3. Global `storage.mode` (via resolveStorage)
+ *
+ * This lets the researcher/CLI keep `storage.mode=memory` while the Pi
+ * extension uses `extension.storage.mode=persistent` for Awareness.
+ */
+export function resolveExtensionStorage(
+  fileConfig?: Pick<OctocodeConfig, 'storage' | 'extension'>
+): RequiredExtensionConfig {
+  const envMode = process.env.OCTOCODE_EXTENSION_STORAGE_MODE?.trim().toLowerCase();
+  if (envMode === 'memory' || envMode === 'persistent') {
+    return { storage: { mode: envMode } };
+  }
+  const extensionFileMode = fileConfig?.extension?.storage?.mode;
+  if (extensionFileMode === 'memory' || extensionFileMode === 'persistent') {
+    return { storage: { mode: extensionFileMode } };
+  }
+  // Fall back to the global storage resolution.
+  return { storage: resolveStorage(fileConfig?.storage) };
+}
+
+export { DEFAULT_EXTENSION_CONFIG };
 
 const VALID_OUTPUT_FORMATS = new Set(['yaml', 'json']);
 

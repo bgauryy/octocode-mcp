@@ -71,7 +71,7 @@ export function markVerified(
   if (allPending) {
     const dynWhere = [
       workspacePath ? ' AND workspace_path = ?' : '',
-      artifact ? ' AND (artifact = ? OR artifact IS NULL)' : '',
+      artifact ? ' AND artifact = ?' : '',
     ].join('');
     const selectSql = RUNS_SELECT_PENDING_IDS.replace('{DYNAMIC_WHERE}', dynWhere);
     const selectBinds: (string | number)[] = [agentId];

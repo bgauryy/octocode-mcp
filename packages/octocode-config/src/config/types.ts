@@ -50,6 +50,22 @@ export interface StorageConfigOptions {
   mode?: StorageMode;
 }
 
+/**
+ * Extension-specific overrides. Keys here take precedence over the global equivalents
+ * for the Pi extension runtime only; the Octocode CLI and MCP server continue to use
+ * the top-level settings.
+ */
+export interface ExtensionConfigOptions {
+  /**
+   * Override `storage.mode` for the Pi extension (Awareness, SQLite state) without
+   * changing the global CLI / MCP setting.
+   *
+   * Example: keep `storage.mode=memory` for the researcher and set
+   * `extension.storage.mode=persistent` to enable Awareness in Pi.
+   */
+  storage?: StorageConfigOptions;
+}
+
 export interface OctocodeConfig {
   $schema?: string;
 
@@ -68,6 +84,9 @@ export interface OctocodeConfig {
   output?: OutputConfigOptions;
 
   storage?: StorageConfigOptions;
+
+  /** Per-consumer overrides for the Pi extension runtime. */
+  extension?: ExtensionConfigOptions;
 }
 
 export interface RequiredGitHubConfig {
@@ -108,6 +127,11 @@ export interface RequiredStorageConfig {
   mode: StorageMode;
 }
 
+export interface RequiredExtensionConfig {
+  /** Resolved storage settings for the Pi extension (may differ from global storage). */
+  storage: RequiredStorageConfig;
+}
+
 export interface ResolvedConfig {
   version: number;
 
@@ -126,6 +150,9 @@ export interface ResolvedConfig {
   session: RequiredSessionConfig;
 
   storage: RequiredStorageConfig;
+
+  /** Resolved Pi-extension-specific overrides. */
+  extension: RequiredExtensionConfig;
 
   source: 'file' | 'defaults' | 'mixed' | 'env' | 'invalid';
 

@@ -48,8 +48,8 @@ Only one interactive surface owns keyboard focus. Closing or submitting that sur
 | Decision | Single-select `askUser` (`ask-user-tool.ts`) | Recommended choice receives initial focus; only that row expands optional nuance and trade-offs. The widget supports arrow keys, number keys, Enter, filtering, disabled reasons, and free text. |
 | Decision | Multi-select `askUser` (`ask-user-tool.ts`) | Space toggles, Enter confirms, min/max validation stays inline, and selected count remains visible. |
 | Decision | Text and form `askUser` (`ask-user-tool.ts`) | Use Pi's input component for cursor movement, paste, graphemes, validation, and IME positioning. |
-| Decision | Plan/RFC review (`plan-tool.ts`) | Ask only for clarification or proposal review. One Start decision binds the exact revision and starts implementation. Set/start/complete do not ask presentation-only questions. |
-| Status | Compact plan (`plan-tool.ts`, `extension-ui.ts`) | Show progress and current work in the footer. Explicit compact inspection prioritizes running tasks, then runnable tasks, then blocked backlog. Markdown, browser, and RPC retain the complete plan. |
+| Decision | Plan/RFC review (`tools/planning/plan-registration.ts`) | Ask only for clarification or proposal review. One Start decision binds the exact revision and starts implementation. Set/start/complete do not ask presentation-only questions. |
+| Status | Compact plan (`tools/plan-read-model.ts`, `extension-ui.ts`) | Show progress and current work in the footer. Explicit compact inspection prioritizes running tasks, then runnable tasks, then blocked backlog. Markdown, browser, and RPC retain the complete plan; graph plans use state counts rather than serial percentages. |
 | Navigation | Shared select overlay (`ui-overlays.ts`) | Search visible labels and descriptions; preserve focus through filtering; cancel with Escape or Ctrl-C. |
 | Navigation | Shared multi-select overlay (`ui-overlays.ts`, `multi-select-list.ts`) | Use the same focus, selection, validation, and cancellation language as `askUser`. |
 | Navigation | Command palette (`command-palette.ts`) | Filter all public commands and direct actions; dispatch the selected command through the normal message path. |
@@ -194,7 +194,7 @@ Browser feedback goes to the agent as plain text, without command expansion.
 The runtime tool inventory remains:
 
 ```text
-✓ tools: 0 native Pi tools + 13 support tools
+✓ tools: 0 native Pi tools + 14 support tools
 ```
 
 ## Command inventory

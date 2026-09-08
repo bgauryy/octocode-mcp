@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { initDb } from '../src/db-init.js';
 import { canonicalizePath } from '../src/git.js';
@@ -6,6 +6,8 @@ import { preFlightIntent } from '../src/intents-preflight.js';
 import { releaseFileLock } from '../src/intents-release.js';
 import { auditUnverified } from '../src/verify-audit.js';
 import { markVerified } from '../src/verify-mark.js';
+import { cmdAuditUnverified } from '../bin/cli-work.js';
+import type { ParsedArgs } from '../bin/cli-model.js';
 
 function freshDb(): DatabaseSync {
   const db = new DatabaseSync(':memory:');
@@ -20,12 +22,14 @@ function makePending(
   agentId: string,
   workspacePath: string,
   testPlan = 'verify edits',
+  artifact?: string,
 ): string {
   const claim = preFlightIntent(db, {
     agentId,
     workspacePath,
     targetFiles: [`/tmp/${agentId}-target.txt`],
     testPlan,
+    artifact,
   });
   if (!claim.ok) throw new Error('claim failed');
   releaseFileLock(db, { agentId, runId: claim.run.run_id, status: 'PENDING' });
@@ -116,6 +120,47 @@ describe('auditUnverified', () => {
     const result = auditUnverified(db, { workspacePath: '/tmp/ws-a' });
     expect(result.count).toBe(1);
     expect(result.unverified[0]!.run_id).toBe(aId);
+  });
+
+  it('treats an explicit artifact as a strict verification scope', () => {
+    const db = freshDb();
+    const scopedId = makePending(db, 'agent-a', '/tmp/ws-a', 'scoped', 'pkg-a');
+    makePending(db, 'agent-a', '/tmp/ws-a', 'unscoped');
+    makePending(db, 'agent-a', '/tmp/ws-a', 'other', 'pkg-b');
+
+    const result = auditUnverified(db, { agentId: 'agent-a', workspacePath: '/tmp/ws-a', artifact: 'pkg-a' });
+    expect(result.count).toBe(1);
+    expect(result.unverified.map((run) => run.run_id)).toEqual([scopedId]);
+  });
+
+  it('returns a lossless compact continuation instead of hiding owned runs', () => {
+    const db = freshDb();
+    for (let index = 0; index < 3; index += 1) {
+      makePending(db, 'agent-a', '/tmp/ws-a', `plan-${index}`);
+    }
+    const output: string[] = [];
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation(((value: string | Uint8Array) => {
+      output.push(String(value));
+      return true;
+    }) as typeof process.stdout.write);
+    try {
+      expect(cmdAuditUnverified(db, {
+        agent_id: 'agent-a', workspace: '/tmp/ws-a', limit: 1, offset: 0,
+      } as ParsedArgs, ':memory:', { compact: true })).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+    const payload = JSON.parse(output.join('\n')) as Record<string, unknown>;
+    expect(payload.unverified).toHaveLength(1);
+    expect(payload).toMatchObject({
+      unverified_count: 3,
+      omitted_count: 2,
+      pagination: { offset: 0, limit: 1, has_more: true, next_offset: 1 },
+      next: {
+        command: 'verify audit',
+        params: { agent_id: 'agent-a', workspace: '/tmp/ws-a', limit: 1, offset: 1 },
+      },
+    });
   });
 
   it('filters by both agentId and workspacePath', () => {

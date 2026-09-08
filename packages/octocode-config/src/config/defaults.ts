@@ -1,4 +1,5 @@
 import type {
+  RequiredExtensionConfig,
   RequiredGitHubConfig,
   RequiredLocalConfig,
   RequiredToolsConfig,
@@ -55,6 +56,11 @@ export const DEFAULT_STORAGE_CONFIG: RequiredStorageConfig = {
   mode: 'persistent',
 };
 
+/** Extension defaults inherit the global storage default (persistent). */
+export const DEFAULT_EXTENSION_CONFIG: RequiredExtensionConfig = {
+  storage: DEFAULT_STORAGE_CONFIG,
+};
+
 export const DEFAULT_CONFIG: Omit<ResolvedConfig, 'source' | 'configPath'> = {
   version: 1,
   github: DEFAULT_GITHUB_CONFIG,
@@ -65,6 +71,7 @@ export const DEFAULT_CONFIG: Omit<ResolvedConfig, 'source' | 'configPath'> = {
   output: DEFAULT_OUTPUT_CONFIG,
   session: DEFAULT_SESSION_CONFIG,
   storage: DEFAULT_STORAGE_CONFIG,
+  extension: DEFAULT_EXTENSION_CONFIG,
 };
 
 export const MIN_TIMEOUT = 5000;

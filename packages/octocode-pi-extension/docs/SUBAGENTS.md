@@ -6,13 +6,14 @@ The extension exposes one model-callable `agent` facade for spawning workers and
 
 | Profile | Resources | Default mode | Use |
 |---|---|---|---|
-| `researcher` | `web`, `MCPTool`, `file`, `skill`, `bash`, enabled skills | typed Octocode | Evidence gathering, prior art, and package or repository lookup. |
-| `planner` | `web`, `MCPTool`, `file`, `skill`, `bash`, enabled skills | typed Octocode | Dependency-ordered plans, risks, verification strategy, and RFC handoffs. |
-| `architect` | `bash`, `web`, `MCPTool`, `file`, `skill`, enabled skills | typed Octocode | Root-cause and architecture analysis with targeted debug or test loops. |
-| `browser` | `chromeDebug`, `MCPTool`, `skill`, `bash`, enabled skills | typed Octocode | Multi-turn security, network, DOM, coverage, worker, or emulation workflows. |
-| `custom` | `MCPTool`, `skill`, `bash`, enabled skills | `resourceMode:"octocode"` | A general research-capable worker; callers can narrow its resources. |
+| `researcher` | `web`, `MCPTool`, `file`, `skill`, `awareness`, `bash`, enabled skills | typed Octocode | Evidence gathering, prior art, and package or repository lookup. |
+| `planner` | `web`, `MCPTool`, `file`, `skill`, `awareness`, `bash`, enabled skills | typed Octocode | Dependency-ordered plans, risks, verification strategy, and RFC handoffs. |
+| `architect` | `bash`, `web`, `MCPTool`, `file`, `skill`, `awareness`, enabled skills | typed Octocode | Root-cause and architecture analysis with targeted debug or test loops. |
+| `implementer` | `bash`, `MCPTool`, `file`, `skill`, `awareness`, enabled skills | typed Octocode | One bounded source change under exclusive ownership, with an observed acceptance check. |
+| `browser` | `chromeDebug`, `MCPTool`, `skill`, `awareness`, `bash`, enabled skills | typed Octocode | Multi-turn security, network, DOM, coverage, worker, or emulation workflows. |
+| `custom` | caller-selected least-capability tools and explicit role prompt | explicit | A role not covered above; never an implicit catch-all. |
 
-Typed profiles use their packaged system prompts and explicit tool sets. The custom profile accepts `resourceMode:"lean"|"octocode"|"default"`; `octocode` is its default. An explicit `tools:[]` becomes Pi's `--no-tools`, while explicit lean mode disables extension and skill loading. Pass `model`, `provider`, and `thinking` when the task needs an override; resolve live model identifiers with `pi -ne --list-models`.
+Typed profiles use packaged prompts and role-bounded tool sets. `custom` requires both a non-empty `systemPrompt` and an explicit `tools` list; the shared bounded-worker contract is always prepended. `tools:[]` becomes Pi's `--no-tools`. `resourceMode:"lean"` disables extension and skill loading; use broader modes only when the explicit tool list requires them. Pass `model`, `provider`, and `thinking` only when the task needs an override; resolve live model identifiers with `pi -ne --list-models`.
 
 Workers never receive the `agent` facade, and worker-process registration omits the tool and skill smith surfaces, so workers can't spawn sub-workers recursively. A spawn returns an `agentId`; use it in a later lifecycle query. Spawn queries and lifecycle queries with explicit IDs can't share a batch because generated IDs aren't available during preflight.
 
@@ -20,7 +21,7 @@ Workers never receive the `agent` facade, and worker-process registration omits 
 
 For work tracked by the parent plan, pass `planStep` with the exact stable task ID from the `Task IDs for agent.planStep` line in a `plan` result. The active plan context also includes `task-id` values. Display indices and task labels aren't valid `planStep` values. Omit `planStep` for independent work that has no parent plan assignment.
 
-1. Start the accepted plan and any runnable task you intend to delegate. Independent tasks can run in parallel after their dependencies finish.
+1. Start the reviewed revision and each runnable task you intend to delegate. The one Start decision authorizes the displayed revision and begins execution atomically. Independent tasks can run in parallel after their dependencies finish.
 2. Call `plan` with `action:"show"` and copy the task's stable ID.
 3. Spawn a worker with that ID as `planStep` and a bounded assignment. The plan must be executing, the task must be `doing`, every dependency must be `done`, and no interaction can remain pending. These checks use the canonical plan, including shared task statuses.
 4. Collect the result with `agent` using `type:"wait"` or `type:"inspect"`. Check its evidence and verification before completing the parent task.
@@ -52,11 +53,9 @@ The `wait` operation's `timeoutMs` sets a silence window. An active worker can k
 After `wait` or `inspect` returns a result, the parent owns this sequence:
 
 1. Verify each load-bearing finding against the cited source, semantic result, or observed check. A worker's confidence marker is not verification.
-2. Distill only key findings that can affect the current session into the `memory.md` path advertised by `<session_artifacts>`, under `## Findings`. Keep each entry within 200 characters and retain at most 10 entries in that section.
-3. Update the parent session promptly when a finding changes the hypothesis, plan, risk, or next action. Do not interrupt the requester for routine progress or duplicate the full handback.
-4. Reconcile the finding with the active plan, then kill the worker unless another turn is intentional.
-
-Never copy raw handbacks or unverified claims into session memory. Awareness CLI `memory` commands are separate: use them only for verified reusable learning that should outlive this Pi session; use `memory.md` for bounded session continuity.
+2. Reconcile verified findings with the active hypothesis, plan, risk, and next action. Do not copy the raw handback or treat worker confidence as persistence authority.
+3. Persist a bounded session finding only when later recovery needs it, and anchor it to evidence the parent observed directly. Record reusable Awareness memory only when the normal memory policy independently requires it.
+4. Kill the worker unless another bounded turn is intentional, then continue the user request.
 
 Cancelling a `wait` call releases its timers, listeners, and liveness probes. It preserves the worker and other waits, including when the cancelled call requested `remove:true`. Use `type:"abort"` to interrupt the worker's turn or `type:"kill"` to terminate its process. Cancelling spawn preparation prevents subsequent process creation; a worker whose spawn already returned keeps running until explicitly stopped or the session shuts down.
 
@@ -89,7 +88,12 @@ agent({queries:[{
   reasoning:"Delegate an independent evidence-gathering lane.",
   type:"spawn",
   profile:"researcher",
-  task:"Goal: …\nContext: …\nScope: …\nOwnership: read-only …\nAcceptance: …\nReturn: …"
+  goal:"Identify the exact caller and contract.",
+  context:"The parent observed …",
+  scope:"Read-only evidence for package X.",
+  ownership:"No writes; inspect package X only.",
+  acceptance:"Return exact source and semantic anchors.",
+  returnShape:"Findings, evidence, confidence, and remaining gap."
 }]})
 → agentId: "abc123"
 

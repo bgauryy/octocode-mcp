@@ -68,19 +68,18 @@
       "success": "final-phase-in-review-on-new-revision-without-hint"
     },
     {
-      "id": "accept-without-start",
+      "id": "start-displayed-revision",
       "category": "acceptance-flow",
       "terminalProfile": "80-column-color",
-      "instruction": "Accept the displayed revision but do not start implementation; explain the resulting phase.",
-      "success": "final-phase-accepted-no-start-and-correct-state-explanation-without-hint",
-      "prohibited": "implementation-start"
+      "instruction": "Choose Start for the displayed revision and explain that this single action authorizes that exact revision and begins implementation.",
+      "success": "final-phase-executing-on-displayed-revision-without-separate-accept-or-hint"
     },
     {
       "id": "stale-revision-start",
       "category": "safety-flow",
       "terminalProfile": "80-column-color",
-      "instruction": "Attempt Start from a stale accepted revision and recover to current review without mutation.",
-      "success": "start-rejected-current-state-unchanged-and-review-reopened-without-hint",
+      "instruction": "Attempt Start using a stale displayed revision after a newer revision entered review; verify rejection without mutation.",
+      "success": "start-rejected-current-review-unchanged-without-mutation-or-hint",
       "prohibited": "workspace-mutation"
     }
   ]

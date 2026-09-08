@@ -141,13 +141,6 @@ function activityLabel(activity: ForegroundActivity): { label: string; detail?: 
   }
 }
 
-function isLinearPlan(plan: PlanReadModelV1): boolean {
-  if (plan.tasks.length <= 1) return true;
-  return plan.tasks.every((task, index) => index === 0
-    ? task.dependsOn.length === 0
-    : task.dependsOn.length === 1 && task.dependsOn[0] === index);
-}
-
 function taskVerification(task: PlanReadModelTaskV1, phase: PlanReadModelV1['phase']): UxVerificationState {
   if (task.status === 'done') return 'passed';
   if (task.status === 'doing' && phase === 'verifying') return 'running';
@@ -168,7 +161,7 @@ export function deriveUxSnapshot(input: UxSnapshotInput): UxSnapshotV1 {
   const activityPresentation = activityLabel(activity);
   const plan = input.plan;
   const dynamic = input.dynamicPlan ?? false;
-  const linear = plan ? isLinearPlan(plan) : false;
+  const linear = plan?.shape === 'linear';
   const progressMode: UxProgressMode = !plan || plan.summary.total === 0
     ? 'indeterminate'
     : dynamic ? 'dynamic' : linear ? 'linear' : 'graph';

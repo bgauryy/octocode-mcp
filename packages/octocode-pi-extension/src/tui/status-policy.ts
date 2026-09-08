@@ -122,7 +122,9 @@ function agentCandidates(snapshot: UxSnapshotV1): Candidate[] {
     const state = normalizedState(agent.state);
     counts.set(state, (counts.get(state) ?? 0) + 1);
   }
-  const stateOrder = ['running', 'idle', 'queued', 'blocked', 'failed', 'done', 'killed'];
+  // Blocked and failed workers already own named attention rows above; repeating
+  // their counts here would give one semantic fact two ambient owners.
+  const stateOrder = ['running', 'idle', 'queued', 'done', 'killed'];
   const summary: Candidate = {
     id: 'agents:summary',
     priority: 'P2',

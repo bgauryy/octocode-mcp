@@ -21,6 +21,7 @@ export type {
   ResolvedConfig,
   ValidationResult,
   LoadConfigResult,
+  ExtensionConfigOptions,
   GitHubConfigOptions,
   LocalConfigOptions,
   ToolsConfigOptions,
@@ -30,6 +31,7 @@ export type {
   OutputPaginationConfigOptions,
   StorageConfigOptions,
   StorageMode,
+  RequiredExtensionConfig,
   RequiredGitHubConfig,
   RequiredLocalConfig,
   RequiredToolsConfig,
@@ -44,6 +46,7 @@ export type {
 export { CONFIG_SCHEMA_VERSION, CONFIG_FILE_NAME } from './config/types.js';
 export {
   DEFAULT_CONFIG,
+  DEFAULT_EXTENSION_CONFIG,
   DEFAULT_GITHUB_CONFIG,
   DEFAULT_LOCAL_CONFIG,
   DEFAULT_TOOLS_CONFIG,
@@ -76,6 +79,7 @@ export {
   parseBooleanEnv,
   parseIntEnv,
   parseStringArrayEnv,
+  resolveExtensionStorage,
   resolveGitHub,
   resolveLocal,
   resolveTools,
@@ -279,6 +283,19 @@ export function isStatsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
 /** True when Octocode may persist caches and runtime state on this machine. */
 export function isPersistentStorageEnabled(): boolean {
   return getConfigSync().storage.mode === 'persistent';
+}
+
+/**
+ * True when the Pi extension may persist Awareness state, SQLite extension
+ * state, and session continuity on this machine.
+ *
+ * Reads `extension.storage.mode` from .octocoderc first (falling back to
+ * the global `storage.mode`), then the `OCTOCODE_EXTENSION_STORAGE_MODE`
+ * env var. This allows the researcher/CLI to run with `storage.mode=memory`
+ * while the Pi extension uses `extension.storage.mode=persistent`.
+ */
+export function isPersistentStorageEnabledForExtension(): boolean {
+  return getConfigSync().extension.storage.mode === 'persistent';
 }
 
 /**

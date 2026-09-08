@@ -1,6 +1,115 @@
+import type { ApprovalClass } from '@octocodeai/agent-contracts/protocols';
+import { CLI_REQUIRED, cliAllowedFlags } from './cli-contract.js';
 import { HISTORY_ROUTE_DESCRIPTORS } from './definitions-history.js';
 
-export const commandIndex = [
+export type AwarenessCommandEffect =
+  | 'read'
+  | 'coordination-write'
+  | 'workspace-write'
+  | 'host-config-write'
+  | 'destructive-admin';
+export type AwarenessCommandPiMode = 'normal' | 'recovery' | 'external-host-only';
+export type AwarenessInjectedField = 'database' | 'workspace' | 'agent-id' | 'compact';
+
+export interface AwarenessCommandCatalogEntry {
+  command: string;
+  schema: string;
+  use: string;
+  example: string;
+  effect: AwarenessCommandEffect;
+  piMode: AwarenessCommandPiMode;
+  approvalClass?: ApprovalClass;
+  injected: readonly AwarenessInjectedField[];
+  /** Process exit codes that carry a valid report rather than command failure. */
+  resultExitCodes?: readonly number[];
+  positionals?: readonly string[];
+  stdinField?: string;
+}
+
+const READ_COMMANDS = new Set([
+  'attend', 'status', 'plan list', 'plan show', 'task list', 'task ready', 'task show',
+  'work list', 'work show', 'memory recall', 'refinement get', 'lock wait', 'verify audit',
+  'signal list', 'agent list', 'query', 'query files', 'query workboard', 'query all',
+  'query developer-review', 'reflect mine-weakness', 'reflect developer-review', 'docs list',
+  'docs show', 'docs staleness', 'maintenance self-test', 'config show', 'config validate',
+  'hooks check', 'schema commands', 'schema command', 'schema entities', 'schema list',
+  'schema json-schema', 'schema example', 'schema validate', 'memory recall-verified',
+  'memory evaluate', 'handoff list', 'guide', 'instructions export', 'history status',
+  'history timeline', 'history read', 'history restore-preview',
+]);
+const COORDINATION_WRITE_COMMANDS = new Set([
+  'plan create', 'plan join', 'plan doc', 'plan status', 'task create', 'task claim',
+  'task heartbeat', 'task submit', 'task release', 'task retry', 'task depend', 'work start',
+  'work touch', 'work end', 'memory record', 'memory restore', 'refinement set', 'lock acquire',
+  'lock release', 'verify mark', 'signal publish', 'signal reply', 'signal ack', 'signal resolve',
+  'agent register', 'session capture', 'reflect record', 'maintenance init', 'hook run',
+  'agent touch', 'agent leave', 'memory store-verified', 'handoff add', 'handoff clear',
+  'hooks pre-edit', 'history capture', 'history checkpoint',
+]);
+const WORKSPACE_WRITE_COMMANDS = new Set(['reflect export-harness', 'history restore-apply']);
+const HOST_CONFIG_WRITE_COMMANDS = new Set(['skill install', 'config init', 'hooks install', 'hooks remove']);
+const DESTRUCTIVE_ADMIN_COMMANDS = new Set([
+  'memory forget', 'memory archive', 'memory reindex', 'memory prune', 'refinement delete',
+  'lock prune', 'signal prune', 'maintenance digest', 'database consolidate',
+]);
+const EXTERNAL_HOST_ONLY = new Set([
+  'skill install', 'hooks install', 'hooks check', 'hooks remove', 'hook run', 'hooks pre-edit',
+  'instructions export',
+]);
+const RECOVERY_COMMANDS = new Set([
+  'plan create', 'plan list', 'plan show', 'plan join', 'plan doc', 'plan status',
+  'task create', 'task list', 'task ready', 'task show', 'task claim', 'task heartbeat',
+  'task submit', 'task release', 'task retry', 'task depend', 'work start', 'work touch',
+  'work end', 'work list', 'work show', 'verify audit', 'verify mark', 'memory forget',
+  'memory archive', 'memory restore', 'memory reindex', 'memory prune', 'refinement delete',
+  'lock prune', 'signal prune', 'maintenance digest', 'maintenance init', 'database consolidate',
+  'history status', 'history capture', 'history checkpoint', 'history timeline', 'history read',
+  'history restore-preview', 'history restore-apply',
+]);
+const NO_DATABASE_INJECTION = new Set([
+  'docs list', 'docs show', 'docs staleness', 'skill install', 'maintenance self-test',
+  'config show', 'config init', 'config validate', 'hooks install', 'hooks check',
+  'hooks remove', 'hook run', 'schema commands', 'schema command', 'schema entities',
+  'schema list', 'schema json-schema', 'schema example', 'schema validate', 'guide',
+  'instructions export', 'database consolidate',
+]);
+const POSITIONALS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  'docs show': ['name'],
+  'hook run': ['event'],
+  'schema command': ['noun', 'subcommand'],
+  'schema json-schema': ['schema_name'],
+  'schema example': ['schema_name'],
+  'schema validate': ['schema_name', 'input'],
+});
+
+function injectedFor(command: string): readonly AwarenessInjectedField[] {
+  const flags = new Set([...(cliAllowedFlags(command) ?? []), ...(CLI_REQUIRED[command] ?? [])]);
+  const fields: AwarenessInjectedField[] = [];
+  if (!NO_DATABASE_INJECTION.has(command)) fields.push('database');
+  if (flags.has('workspace')) fields.push('workspace');
+  if (flags.has('agent_id') || flags.has('lead_agent_id')) fields.push('agent-id');
+  fields.push('compact');
+  return Object.freeze(fields);
+}
+
+function effectFor(command: string): AwarenessCommandEffect {
+  if (READ_COMMANDS.has(command)) return 'read';
+  if (COORDINATION_WRITE_COMMANDS.has(command)) return 'coordination-write';
+  if (WORKSPACE_WRITE_COMMANDS.has(command)) return 'workspace-write';
+  if (HOST_CONFIG_WRITE_COMMANDS.has(command)) return 'host-config-write';
+  if (DESTRUCTIVE_ADMIN_COMMANDS.has(command)) return 'destructive-admin';
+  throw new Error(`Awareness command is missing an explicit effect classification: ${command}`);
+}
+
+function approvalFor(command: string, effect: AwarenessCommandEffect): ApprovalClass | undefined {
+  if (command === 'skill install' || command === 'hooks install') return 'install';
+  if (effect === 'host-config-write') return 'system';
+  if (effect === 'workspace-write') return 'fs-delete';
+  if (effect === 'destructive-admin') return 'infra';
+  return undefined;
+}
+
+const rawCommandIndex = [
   { command: "attend", schema: "attend", use: "Build one bounded lobby with actions, relevant evidence/gaps, and a next command.", example: 'npx @octocodeai/octocode-awareness attend --query "current task" --workspace "$PWD" --compact' },
   { command: "status", schema: "workspace_status", use: "Check DB health, locks, pending verification, memory counts.", example: 'npx @octocodeai/octocode-awareness status --workspace "$PWD" --compact' },
   { command: "plan create", schema: "plan", use: "Create a shared plan and its managed narrative document folder.", example: 'npx @octocodeai/octocode-awareness plan create --name "Release" --objective "Ship safely" --lead-agent-id agent --workspace "$PWD" --compact' },
@@ -59,24 +168,24 @@ export const commandIndex = [
   { command: "docs list", schema: "docs_catalog", use: "List skill reference docs (references/*.md).", example: "npx @octocodeai/octocode-awareness docs list --compact" },
   { command: "docs show", schema: "docs_catalog", use: "Show one skill reference by name.", example: "npx @octocodeai/octocode-awareness docs show architecture" },
   { command: "docs staleness", schema: "doc_staleness", use: "Find docs likely stale from edit activity.", example: 'npx @octocodeai/octocode-awareness docs staleness --targets-json \'[{"docFile":"README.md","sourceDirs":["src"]}]\' --compact' },
-  { command: "skill install", schema: null, use: "Preview or copy the bundled octocode-awareness skill into an explicit agent platform and scope.", example: 'npx @octocodeai/octocode-awareness skill install --platform shared --project-dir "$PWD" --dry-run' },
+  { command: "skill install", schema: "skill_install", use: "Preview or copy the bundled octocode-awareness skill into an explicit agent platform and scope.", example: 'npx @octocodeai/octocode-awareness skill install --platform shared --project-dir "$PWD" --dry-run' },
   { command: "maintenance digest", schema: "digest", use: "Preview or run memory, expired-lock, terminal-refinement, and terminal-run cleanup; signal/reference pressure is report-only.", example: 'npx @octocodeai/octocode-awareness maintenance digest --dry-run --workspace "$PWD" --compact' },
-  { command: "maintenance init", schema: null, use: "Initialize the Awareness workflow store deterministically; safe to repeat.", example: "npx @octocodeai/octocode-awareness maintenance init --compact" },
-  { command: "maintenance self-test", schema: null, use: "Run in-memory DB smoke checks.", example: "npx @octocodeai/octocode-awareness maintenance self-test --compact" },
+  { command: "maintenance init", schema: "maintenance_init", use: "Initialize the Awareness workflow store deterministically; safe to repeat.", example: "npx @octocodeai/octocode-awareness maintenance init --compact" },
+  { command: "maintenance self-test", schema: "maintenance_self_test", use: "Run in-memory DB smoke checks.", example: "npx @octocodeai/octocode-awareness maintenance self-test --compact" },
   { command: "config show", schema: "awareness_config", use: "Inspect the effective Awareness feature configuration and return every onboarding question when the file is missing.", example: "npx @octocodeai/octocode-awareness config show --compact" },
   { command: "config init", schema: "awareness_config", use: "Create awareness.json only after the user answers every returned question; refuses overwrite.", example: "npx @octocodeai/octocode-awareness config init --hooks true --notifications true --verification-gate true --session-capture true --maintenance-reminders false --compact" },
   { command: "config validate", schema: "awareness_config", use: "Validate the existing awareness.json and report unsupported fields.", example: "npx @octocodeai/octocode-awareness config validate --compact" },
-  { command: "hooks install", schema: null, use: "Install hook config only after a fresh user approval; use non-compact preview for settings detail.", example: "npx @octocodeai/octocode-awareness hooks install --host codex --dry-run" },
-  { command: "hooks check", schema: null, use: "Check installed hook config and detect drift; use non-compact output for runtime detail.", example: "npx @octocodeai/octocode-awareness hooks check --host codex --strict" },
-  { command: "hooks remove", schema: null, use: "Remove awareness-owned hook config after a detailed preview.", example: "npx @octocodeai/octocode-awareness hooks remove --host codex --dry-run" },
-  { command: "hook run", schema: null, use: "Internal hook dispatcher used by wrappers.", example: "octocode-awareness hook run pre-edit < hook-payload.json" },
-  { command: "schema commands", schema: null, use: "Print this command-to-schema map.", example: "npx @octocodeai/octocode-awareness schema commands --compact" },
-  { command: "schema command", schema: null, use: "Print exact CLI flags and requirements for one noun/action route.", example: "npx @octocodeai/octocode-awareness schema command signal list --compact" },
-  { command: "schema entities", schema: null, use: "Print the read-only Awareness entity catalog from canonical DDL.", example: "npx @octocodeai/octocode-awareness schema entities --compact" },
-  { command: "schema list", schema: null, use: "Print schema names only.", example: "npx @octocodeai/octocode-awareness schema list --compact" },
-  { command: "schema json-schema", schema: null, use: "Print one JSON schema.", example: "npx @octocodeai/octocode-awareness schema json-schema memory_recall --compact" },
-  { command: "schema example", schema: null, use: "Print example JSON for one schema.", example: "npx @octocodeai/octocode-awareness schema example memory_recall --compact" },
-  { command: "schema validate", schema: null, use: "Validate JSON payload against one schema.", example: "npx @octocodeai/octocode-awareness schema validate memory_recall payload.json --compact" },
+  { command: "hooks install", schema: "hooks_install", use: "Install hook config only after a fresh user approval; use non-compact preview for settings detail.", example: "npx @octocodeai/octocode-awareness hooks install --host codex --dry-run" },
+  { command: "hooks check", schema: "hooks_check", use: "Check installed hook config and detect drift; use non-compact output for runtime detail.", example: "npx @octocodeai/octocode-awareness hooks check --host codex --strict" },
+  { command: "hooks remove", schema: "hooks_remove", use: "Remove awareness-owned hook config after a detailed preview.", example: "npx @octocodeai/octocode-awareness hooks remove --host codex --dry-run" },
+  { command: "hook run", schema: "hook_run", use: "Internal hook dispatcher used by wrappers.", example: "octocode-awareness hook run pre-edit < hook-payload.json" },
+  { command: "schema commands", schema: "schema_commands", use: "Print this command-to-schema map.", example: "npx @octocodeai/octocode-awareness schema commands --compact" },
+  { command: "schema command", schema: "schema_command", use: "Print exact CLI flags and requirements for one noun/action route.", example: "npx @octocodeai/octocode-awareness schema command signal list --compact" },
+  { command: "schema entities", schema: "schema_entities", use: "Print the read-only Awareness entity catalog from canonical DDL.", example: "npx @octocodeai/octocode-awareness schema entities --compact" },
+  { command: "schema list", schema: "schema_list", use: "Print schema names only.", example: "npx @octocodeai/octocode-awareness schema list --compact" },
+  { command: "schema json-schema", schema: "schema_json_schema", use: "Print one JSON schema.", example: "npx @octocodeai/octocode-awareness schema json-schema memory_recall --compact" },
+  { command: "schema example", schema: "schema_example", use: "Print example JSON for one schema.", example: "npx @octocodeai/octocode-awareness schema example memory_recall --compact" },
+  { command: "schema validate", schema: "schema_validate", use: "Validate JSON payload against one schema.", example: "npx @octocodeai/octocode-awareness schema validate memory_recall payload.json --compact" },
   {"command": "agent touch", "schema": "agent_presence", "use": "Refresh a registered agent presence.", "example": "npx @octocodeai/octocode-awareness agent touch --help"},
   {"command": "agent leave", "schema": "agent_presence", "use": "End agent presence.", "example": "npx @octocodeai/octocode-awareness agent leave --help"},
   {"command": "memory store-verified", "schema": "verified_memory", "use": "Store scoped evidence with source digest and expiry.", "example": "npx @octocodeai/octocode-awareness memory store-verified --help"},
@@ -93,6 +202,26 @@ export const commandIndex = [
   {"command": "database consolidate", "schema": "database_consolidate", "use": "Convert a supported historical database into a new canonical file.", "example": "npx @octocodeai/octocode-awareness database consolidate --help"},
   ...HISTORY_ROUTE_DESCRIPTORS.map(({ required: _required, allowed: _allowed, ...route }) => route),
 ];
+
+export const commandIndex: readonly AwarenessCommandCatalogEntry[] = Object.freeze(
+  rawCommandIndex.map((row) => {
+    const effect = effectFor(row.command);
+    return Object.freeze({
+      ...row,
+      effect,
+      piMode: EXTERNAL_HOST_ONLY.has(row.command)
+        ? 'external-host-only' as const
+        : RECOVERY_COMMANDS.has(row.command)
+          ? 'recovery' as const
+          : 'normal' as const,
+      ...(approvalFor(row.command, effect) ? { approvalClass: approvalFor(row.command, effect) } : {}),
+      injected: injectedFor(row.command),
+      ...(row.command === 'verify audit' ? { resultExitCodes: Object.freeze([0, 1]) } : {}),
+      ...(POSITIONALS[row.command] ? { positionals: POSITIONALS[row.command] } : {}),
+      ...(row.command === 'hook run' ? { stdinField: 'payload' } : {}),
+    });
+  }),
+);
 
 /** Vocabulary is derived from the same rows used by schema discovery. */
 export const CANONICAL_CLI_COMMANDS: Readonly<Record<string, readonly string[]>> = Object.freeze(

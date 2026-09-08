@@ -11,6 +11,9 @@ export { HistoryError } from './history-store.js';
 export { execHistoryCli } from '../bin/cli-history.js';
 export { historyToolEffect } from './history-tool-effects.js';
 export { historyRequestSchemas, historyEntitySchemas, HISTORY_ROUTE_DESCRIPTORS } from './schema/definitions-history.js';
+export { cliCommandSchema, getAwarenessCommandDescriptor, listAwarenessCommandDescriptors } from './schema/cli.js';
+export type { AwarenessCommandDescriptor } from './schema/cli.js';
+export type { AwarenessCommandCatalogEntry, AwarenessCommandEffect, AwarenessCommandPiMode, AwarenessInjectedField } from './schema/command-catalog.js';
 export {
   connectDb, connectCachedDb, resolveDbPath, getDeliveryFingerprint, setDeliveryFingerprint,
 } from './db-runtime.js';
@@ -221,7 +224,7 @@ export { dispatchAwarenessCommand } from './coordination/dispatch.js';
 export { AWARENESS_COMMANDS, getCommandGroup } from './coordination/commands-spec.js';
 export { defaultDbPath } from './coordination/coordination-shared.js';
 export { runPreEditLockGate, checkLockConflicts, extractHookTargetPaths } from './coordination/hooks.js';
-export { EXTERNAL_AGENT_AWARENESS_PROMPT, EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS, EXTERNAL_AGENT_AWARENESS_MARKER_START, EXTERNAL_AGENT_AWARENESS_MARKER_END, formatExternalAgentAwarenessInstructions, getExternalAgentAwarenessGuide, formatExternalAgentCoordinationContext } from './coordination/external-policy.js';
+export { AWARENESS_PI_HOST_PROMPT, EXTERNAL_AGENT_AWARENESS_PROMPT, EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS, EXTERNAL_AGENT_AWARENESS_MARKER_START, EXTERNAL_AGENT_AWARENESS_MARKER_END, formatExternalAgentAwarenessInstructions, getExternalAgentAwarenessGuide, formatExternalAgentCoordinationContext } from './coordination/external-policy.js';
 export { readExternalAwarenessStatus } from './coordination/external-status.js';
 export { executeExternalMemoryAction, EXTERNAL_MEMORY_ACTIONS, EXTERNAL_MEMORY_RECALL_MODES, validateExternalMemoryParams } from './coordination/external-memory.js';
 export { completeExternalPlanTask, finalizeExternalPlan, projectExternalPlan } from './coordination/external-plan.js';

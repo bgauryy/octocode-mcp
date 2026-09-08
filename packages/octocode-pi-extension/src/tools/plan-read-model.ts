@@ -28,6 +28,8 @@ export interface PlanReadModelV1 {
   phase: ReviewState['phase'];
   revision?: string;
   acceptedRevision?: string;
+  /** linear has one stable predecessor chain; graph has parallel or non-linear readiness. */
+  shape: 'linear' | 'graph';
   summary: { total: number; done: number; running: number; blocked: number };
   tasks: PlanReadModelTaskV1[];
   review: {
@@ -70,6 +72,15 @@ function sharedDisplayStatus(status: string | undefined): PlanReadModelTaskV1['s
     : undefined;
 }
 
+export function planShape(tasks: readonly Pick<PlanReadModelTaskV1, 'dependsOn'>[]): PlanReadModelV1['shape'] {
+  if (tasks.length <= 1) return 'linear';
+  return tasks.every((task, index) => index === 0
+    ? task.dependsOn.length === 0
+    : task.dependsOn.length === 1 && task.dependsOn[0] === index)
+    ? 'linear'
+    : 'graph';
+}
+
 export function buildPlanReadModel(input: {
   steps: PlanStep[];
   review: ReviewState;
@@ -102,6 +113,7 @@ export function buildPlanReadModel(input: {
     phase: input.review.phase,
     ...(input.review.revision ? { revision: input.review.revision } : {}),
     ...(input.review.acceptedRevision ? { acceptedRevision: input.review.acceptedRevision } : {}),
+    shape: planShape(tasks),
     summary: {
       total: tasks.length,
       done: tasks.filter((task) => task.status === 'done').length,
@@ -198,9 +210,12 @@ export function renderPlanContext(model: PlanReadModelV1): string {
     return fields.length ? [`contract ${task.index}: ${fields.join(' | ')}`] : [];
   });
   const current = model.tasks.filter((task) => task.status === 'doing');
+  const progress = model.shape === 'linear'
+    ? `Progress: ${model.summary.done}/${model.summary.total} completed.`
+    : `Progress: ${model.summary.done} done · ${model.summary.running} active · ${model.tasks.filter((task) => task.status === 'todo').length} ready · ${model.summary.blocked} blocked.`;
   return [
     '<active_plan>',
-    `Progress: ${model.summary.done}/${model.summary.total} completed.`,
+    progress,
     ...metadata,
     ...rows,
     ...contracts,
@@ -213,7 +228,10 @@ export function renderPlanReadModel(model: PlanReadModelV1, format: 'terminal' |
   if (format === 'rpc') return model;
   const rows = model.tasks.map((task) => `${task.index}. [${task.status}] ${task.text}`);
   const inputGate = model.pendingInteractionIds.length > 0 ? `Input needed · ${model.pendingInteractionIds.join(', ')}` : undefined;
-  const text = [inputGate, `Plan ${model.summary.done}/${model.summary.total} · ${model.phase}`, ...rows].filter((line): line is string => Boolean(line)).join('\n');
+  const progress = model.shape === 'linear'
+    ? `Plan ${model.summary.done}/${model.summary.total}`
+    : `Plan · ${model.summary.done} done · ${model.summary.running} active · ${model.summary.blocked} blocked`;
+  const text = [inputGate, `${progress} · ${model.phase}`, ...rows].filter((line): line is string => Boolean(line)).join('\n');
   if (format === 'terminal') return text;
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return `<section data-plan-read-model="1" data-revision="${model.revision ?? ''}"><pre>${escaped}</pre></section>`;

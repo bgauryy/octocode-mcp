@@ -207,10 +207,10 @@ export async function checkReadState(
 ): Promise<ReadStateCheck> {
   const state = readStates.get(absolutePath);
   if (!state) {
-    const message = 'No prior localGetFileContent read state recorded for this file. Use MCPTool for the read; shell reads do not refresh this guard.';
+    const message = 'No prior localGetFileContent read state recorded for this file. Shell reads (bash/cat/grep) do not refresh this guard — use MCPTool localGetFileContent instead: MCPTool(action:"call",server:"octocode",tool:"localGetFileContent",arguments:{queries:[{path:"<absolute_path>"}]}).';
     if (requireRecentRead) {
       throw new Error(
-        `${message} Re-read the file before editing or set requireRecentRead:false intentionally.`,
+        `${message} Re-read the file via MCPTool before editing, or set requireRecentRead:false only when intentional.`,
       );
     }
     return { state: 'missing', message };
@@ -247,7 +247,7 @@ export async function checkReadState(
         message: 'File changed since last recorded read; proceeding because the edit is anchored to exact oldText.',
       };
     }
-    throw new Error('File changed since last recorded read. Re-read the target range with MCPTool localGetFileContent before editing; shell reads do not refresh this guard.');
+    throw new Error('File changed since last recorded read. Re-read the target range via MCPTool localGetFileContent before editing (shell reads do not refresh this guard): MCPTool(action:"call",server:"octocode",tool:"localGetFileContent",arguments:{queries:[{path:"<absolute_path>"}]}).');
   }
   return {
     state: 'fresh',

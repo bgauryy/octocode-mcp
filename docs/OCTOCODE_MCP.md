@@ -14,6 +14,8 @@ MCP gives assistants a stable tool catalog instead of making them shell out by h
 | Tools core | GitHub/package/local/LSP runners, credentials, config, session, pagination, response shaping |
 | Engine | native ripgrep, structural AST search, minify/signatures, secret scan, LSP orchestration |
 
+A request flows through catalog registration → strict schema validation → security/config gates → tools-core runner → provider, filesystem, graph, or language-server boundary → sanitized structured/text response. The outer batch envelope, `goal`/`reasoning`, result indexes, partial failures, and continuation layers are documented once in [How every tool call works](OCTOCODE_TOOLS.md#how-every-tool-call-works). MCP does not maintain a second copy of those contracts.
+
 ## Quick start
 
 Install through the CLI helper when you can:

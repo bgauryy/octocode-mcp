@@ -27,14 +27,11 @@ exposes fields, operation variants, and conditional relations. Read the full
 schema when a nested selector is abbreviated: for example, selected PR patches
 support both file selection and added/deleted line ranges.
 
-Raw execution uses `tools TOOL_NAME --queries 'JSON' --compact`; replace
-`TOOL_NAME` with a catalog name and `JSON` with an object or a batch of up to five
-query objects. Batch independent queries for the same tool. Sequence calls when
-one needs an identity, path, source line, or continuation from another.
+Raw execution uses `tools TOOL_NAME --queries 'JSON' --compact`; replace `TOOL_NAME` with a catalog name and `JSON` with one query object or a batch of up to five same-tool queries. Batch only independent work. Sequence calls when a later query needs an identity, path, source line, snapshot, cursor, or continuation returned by an earlier query.
 
-Queries can include the optional `goal` and `reasoning` fields shown in the full
-schema. Result `index` identifies the corresponding query. Do not add fields
-from another operation or assume a former tool name remains an alias.
+Every query may include optional `goal` (what the query should accomplish) and `reasoning` (why it advances the goal). Keep both short and decision-relevant; they are context, not ranking controls or proof. Result `index` identifies the matching zero-based input position, and one row can fail while siblings succeed. Runtime `hints` suggest recovery or a next evidence surface but do not count as result data.
+
+Do not add fields from another operation or assume a former tool name remains an alias. Follow returned executable `next.*` calls across collection, content, diagnostic, and whole-response pagination. A first page, bounded scan, empty result, or numeric cursor alone is not a completeness claim. See [How every tool call works](OCTOCODE_TOOLS.md#how-every-tool-call-works) for the complete shared envelope.
 
 ## Choose the evidence surface
 

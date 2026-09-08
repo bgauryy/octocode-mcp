@@ -97,6 +97,17 @@ test('buildPlanPageHtmlFromModel escapes dynamic checklist text and embeds the d
   assert.match(html, /Show the plan overview and ask once: Start implementation or Request changes/);
   assert.match(html, /<pre class="mermaid">/);
   assert.match(html, /1\/4 done/);
+  assert.match(html, /Dependency graph · 1 done/);
+  assert.doesNotMatch(html, /% complete/, 'graph progress never implies serial percentage completion');
+});
+
+test('stable linear plan retains bounded percentage progress', () => {
+  const html = renderPage([
+    { id: 'one', text: 'One', status: 'done' },
+    { id: 'two', text: 'Two', status: 'doing', dependsOnStepIds: ['one'] },
+  ]);
+  assert.match(html, /50% complete/);
+  assert.doesNotMatch(html, /Dependency graph/);
 });
 
 // ─── RFC embed (plan page = RFC) ──────────────────────────────────────────────
@@ -273,7 +284,7 @@ test('plan HTML includes a direct, acceptance-aware browser reply widget', () =>
   assert.match(html, /run \/configuration and choose Review plan to reopen the live page/);
   assert.match(html, /Your feedback remains saved/);
   assert.match(html, /const consumesNotes = !action \|\| action === 'changes'/,
-    'Start/Accept never clear feedback text they did not send');
+    'Start never clears feedback text it did not send');
   assert.match(html, /white-space:normal; overflow:visible/,
     'handler errors wrap in full instead of being visually truncated');
   assert.doesNotMatch(html, /data-plan-action=/, 'no state-changing action is shown without persisted review state');

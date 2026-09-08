@@ -34,7 +34,28 @@ import {
 /** Build a minimal one-query batch for the tool's execute(). */
 function batch(...queries: Record<string, unknown>[]): Record<string, unknown> {
   return {
-    queries: queries.map((q) => ({ reasoning: 'test operation', ...q })),
+    queries: queries.map((q) => {
+      const query: Record<string, unknown> = { reasoning: 'test operation', ...q };
+      if (query['type'] !== 'spawn') return query;
+      const complete = { ...query } as Record<string, unknown>;
+      if (!Object.hasOwn(complete, 'profile')) complete['profile'] = 'researcher';
+      const defaults: Record<string, string> = {
+        goal: String(complete['task'] ?? 'Complete the delegated unit'),
+        context: 'Observed test context',
+        scope: 'Only the delegated test unit; exclude unrelated work',
+        ownership: 'Read-only test ownership',
+        acceptance: 'The delegated test unit reports its result',
+        returnShape: 'Status, evidence, verification, confidence, and next action',
+      };
+      for (const [field, value] of Object.entries(defaults)) {
+        if (!Object.hasOwn(complete, field)) complete[field] = value;
+      }
+      if (complete['profile'] === 'custom') {
+        if (!Object.hasOwn(complete, 'tools')) complete['tools'] = [];
+        if (!Object.hasOwn(complete, 'systemPrompt')) complete['systemPrompt'] = 'Perform the bounded custom test role.';
+      }
+      return complete;
+    }),
   };
 }
 
@@ -228,6 +249,15 @@ vi.mock('../src/subagents.js', async () => {
         systemPromptPath: '/mock/architect/SYSTEM_PROMPT.md',
         extraSkillPaths: [],
       },
+      implementer: {
+        name: 'implementer',
+        label: 'Implementer',
+        tools: ['MCPTool', 'file', 'skill', 'bash'],
+        resourceMode: 'octocode',
+        thinking: 'medium',
+        systemPromptPath: '/mock/implementer/SYSTEM_PROMPT.md',
+        extraSkillPaths: [],
+      },
       'browser-agent': {
         name: 'browser-agent',
         label: 'Browser Agent',
@@ -238,7 +268,7 @@ vi.mock('../src/subagents.js', async () => {
         extraSkillPaths: [],
       },
     },
-    SUBAGENT_NAMES: ['researcher', 'planner', 'architect', 'browser-agent'],
+    SUBAGENT_NAMES: ['researcher', 'planner', 'architect', 'implementer', 'browser-agent'],
     loadSystemPrompt: vi.fn(() => '# Mock System Prompt'),
     resolveSubagentSkills: vi.fn(() => []),
     getExternalSkillDirs: vi.fn(() => []),
@@ -282,70 +312,47 @@ describe('schema', () => {
     expect(schema.required).toContain('queries');
   });
 
-  it('queries array has minItems:1 and each item requires reasoning', async () => {
-    const tools = await loadSut();
-    const schema = tools.get('agent')!.parameters as {
-      properties?: {
-        queries?: {
-          minItems?: number;
-          items?: {
-            properties?: Record<string, { minLength?: number; maxLength?: number }>;
-            required?: string[];
-          };
-        };
-      };
-    };
-    const q = schema.properties?.queries;
-    expect(q?.minItems).toBe(1);
-    const reasoning = q?.items?.properties?.['reasoning'];
-    expect(reasoning?.minLength).toBe(1);
-    expect(reasoning?.maxLength).toBe(240);
-    expect(q?.items?.required).toContain('reasoning');
-  });
+  function schemaBranches(schema: ToolDefinition['parameters']): Array<{ properties?: Record<string, { const?: string; enum?: string[]; minLength?: number; maxLength?: number }>; required?: string[] }> {
+    const root = schema as { properties?: { queries?: { minItems?: number; items?: { anyOf?: unknown[]; oneOf?: unknown[] } } } };
+    const items = root.properties?.queries?.items;
+    return (items?.anyOf ?? items?.oneOf ?? []) as Array<{ properties?: Record<string, { const?: string; enum?: string[]; minLength?: number; maxLength?: number }>; required?: string[] }>;
+  }
 
-  it('item schema carries a "type" field with the full operation enum', async () => {
+  it('queries array has minItems:1 and every discriminated branch requires bounded reasoning', async () => {
     const tools = await loadSut();
-    const schema = tools.get('agent')!.parameters as {
-      properties?: {
-        queries?: {
-          items?: {
-            properties?: Record<string, { enum?: string[] }>;
-          };
-        };
-      };
-    };
-    const typeField = schema.properties?.queries?.items?.properties?.['type'];
-    expect(typeField?.enum).toBeDefined();
-    for (const op of AGENT_OPERATIONS) {
-      expect(typeField?.enum).toContain(op);
+    const schema = tools.get('agent')!.parameters as { properties?: { queries?: { minItems?: number } } };
+    expect(schema.properties?.queries?.minItems).toBe(1);
+    const branches = schemaBranches(tools.get('agent')!.parameters);
+    expect(branches.length).toBeGreaterThan(AGENT_OPERATIONS.length);
+    for (const branch of branches) {
+      expect(branch.required).toContain('reasoning');
+      expect(branch.properties?.['reasoning']?.minLength).toBe(1);
+      expect(branch.properties?.['reasoning']?.maxLength).toBe(400);
     }
   });
 
-  it('item schema carries a "profile" field with the full profile enum', async () => {
+  it('schema discriminates every operation and spawn profile', async () => {
     const tools = await loadSut();
-    const schema = tools.get('agent')!.parameters as {
-      properties?: {
-        queries?: {
-          items?: {
-            properties?: Record<string, { enum?: string[] }>;
-          };
-        };
-      };
-    };
-    const profileField = schema.properties?.queries?.items?.properties?.['profile'];
-    expect(profileField?.enum).toBeDefined();
-    for (const p of AGENT_PROFILES) {
-      expect(profileField?.enum).toContain(p);
-    }
+    const branches = schemaBranches(tools.get('agent')!.parameters);
+    const operations = new Set(branches.map((branch) => branch.properties?.['type']?.enum?.[0]));
+    for (const op of AGENT_OPERATIONS) expect(operations).toContain(op);
+    const profiles = new Set(branches.flatMap((branch) => [
+      ...(branch.properties?.['profile']?.enum ?? []),
+      ...(branch.properties?.['profile']?.const ? [branch.properties['profile'].const!] : []),
+    ]));
+    for (const profile of AGENT_PROFILES) expect(profiles).toContain(profile);
+    const custom = branches.find((branch) => branch.properties?.['profile']?.enum?.includes('custom'));
+    expect(custom?.required).toEqual(expect.arrayContaining(['goal', 'context', 'scope', 'ownership', 'acceptance', 'returnShape', 'tools', 'systemPrompt']));
   });
 
-  it('guides the parent to verify, persist, and surface key handback findings', async () => {
+  it('guides the parent through bounded delegation, verification, integration, and continuation', async () => {
     const tools = await loadSut();
     const tool = tools.get('agent')!;
     const guidance = [tool.description, tool.promptSnippet, ...(tool.promptGuidelines ?? [])].join('\n');
-    expect(guidance).toMatch(/wait or inspect.*verify.*key finding.*memory\.md/is);
-    expect(guidance).toMatch(/update the user.*hypothesis.*plan.*risk.*next action/is);
-    expect(guidance).toMatch(/never.*raw handback/is);
+    expect(guidance).toMatch(/two or more bounded lanes.*independent.*disjoint ownership/is);
+    expect(guidance).toMatch(/continue non-overlapping parent work.*type:wait.*verify.*reconcile.*kill.*continue the user request/is);
+    expect(guidance).toMatch(/rejects incomplete packets before creating a worker/is);
+    expect(guidance).toMatch(/never trust or persist a raw handback/is);
   });
 
   it('AGENT_OPERATIONS covers all seven expected ops', () => {
@@ -355,9 +362,9 @@ describe('schema', () => {
     expect([...AGENT_OPERATIONS].sort()).toEqual([...expected].sort());
   });
 
-  it('AGENT_PROFILES covers all five expected profiles', () => {
+  it('AGENT_PROFILES covers all six expected profiles', () => {
     const expected: AgentProfile[] = [
-      'researcher', 'planner', 'architect', 'browser', 'custom',
+      'researcher', 'planner', 'architect', 'implementer', 'browser', 'custom',
     ];
     expect([...AGENT_PROFILES].sort()).toEqual([...expected].sort());
   });
@@ -444,12 +451,12 @@ describe('preflight', () => {
     ).rejects.toThrow(/type must be one of/i);
   });
 
-  it('rejects spawn without task in preflight', async () => {
+  it('rejects an incomplete spawn packet in preflight before execution', async () => {
     const tools = await loadSut();
     const tool = tools.get('agent')!;
     await expect(
-      run(tool, batch({ type: 'spawn', profile: 'custom' })),
-    ).rejects.toThrow(/spawn requires a non-empty task/i);
+      run(tool, batch({ type: 'spawn', profile: 'custom', goal: ' ' })),
+    ).rejects.toThrow(/spawn requires non-empty goal/i);
   });
 
   it('rejects empty queries array', async () => {
@@ -813,14 +820,16 @@ describe('spawn: typed profiles', () => {
     expect(spawnCall.tools).toContain('web');
   });
 
-  it('profile:custom uses the Octocode host with useful default tools', async () => {
+  it('profile:custom uses the explicit least-capability tool list and shared worker contract', async () => {
     await run(tools.get('agent')!, batch({ type: 'spawn', profile: 'custom', task: 'custom job' }));
     const spawnCall = vi.mocked(agentProcess.prepareSpawnAgentParams).mock.calls[0]![0] as {
-      resourceMode?: string; tools?: string[]; skills?: string[];
+      resourceMode?: string; tools?: string[]; skills?: string[]; systemPrompt?: string;
     };
     expect(spawnCall.resourceMode).toBe('octocode');
-    expect(spawnCall.tools).toEqual(['MCPTool', 'skill', 'bash']);
+    expect(spawnCall.tools).toEqual([]);
     expect(spawnCall.skills).toBeDefined();
+    expect(spawnCall.systemPrompt).toMatch(/bounded worker, not the user-facing agent/i);
+    expect(spawnCall.systemPrompt).toMatch(/Perform the bounded custom test role/);
   });
 
   it('profile:custom preserves explicit lean mode and explicit tool scoping', async () => {
@@ -924,7 +933,7 @@ describe('spawn: browser profile routing', () => {
     const spawnCall = vi.mocked(agentProcess.prepareSpawnAgentParams).mock.calls[0]![0] as {
       tools?: string[];
     };
-    expect(spawnCall.tools).toEqual(['chromeDebug', 'MCPTool', 'skill', 'bash']);
+    expect(spawnCall.tools).toEqual(['chromeDebug', 'MCPTool', 'skill', 'awareness', 'bash']);
   });
 
   it('defaults to port 9222 when no port provided', async () => {

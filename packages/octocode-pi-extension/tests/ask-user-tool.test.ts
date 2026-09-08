@@ -67,23 +67,27 @@ test('askUser registration teaches decision-changing questions, concise choices,
   assert.equal(tool.name, 'askUser');
   const guidance = `${tool.description}\n${tool.promptGuidelines?.join('\n') ?? ''}`;
   assert.ok(guidance.length < 1000, 'widget policy stays compact beside its schema');
-  assert.match(guidance, /answer changes the next action/);
-  assert.match(guidance, /Continue routine authorized work/);
-  assert.match(guidance, /distinct short options/);
-  assert.match(guidance, /recommendation/);
-  assert.match(guidance, /discussion row allows free text/);
-  assert.match(guidance, /cancel, and timeout never authorize a default/);
-  assert.match(guidance, /Resume pending interactions through the host/);
-  assert.match(guidance, /inline question only when no interaction is available/);
+  assert.match(guidance, /missing choice that changes the next action/);
+  assert.match(guidance, /routine confirmation stalls authorized work/);
+  assert.match(guidance, /keep choices distinct/);
+  assert.match(guidance, /recommended only for an evidence-backed safe default/);
+  assert.match(guidance, /options choose one and still allow a custom answer/);
+  assert.match(guidance, /cancel, timeout, or unavailable UI grants no authority/);
+  assert.match(guidance, /resume a durable continuation/);
+  assert.match(guidance, /otherwise ask inline/);
   const schema = tool.parameters as {
-    properties?: { queries?: { items?: { properties?: Record<string, unknown>; required?: string[] } } };
+    properties?: { queries?: { items?: { anyOf?: Array<{ properties?: Record<string, unknown>; required?: string[] }> } } };
     required?: string[];
   };
-      assert.deepEqual(Object.keys(schema.properties ?? {}), ['queries', 'queryRunType']);
+  assert.deepEqual(Object.keys(schema.properties ?? {}), ['queries', 'queryRunType']);
   assert.ok(schema.required?.includes('queries'));
-  assert.ok(schema.properties?.queries?.items?.properties?.['reasoning']);
-  assert.ok(schema.properties?.queries?.items?.properties?.['timeoutMs']);
-  assert.ok(schema.properties?.queries?.items?.required?.includes('reasoning'));
+  const branches = schema.properties?.queries?.items?.anyOf ?? [];
+  assert.equal(branches.length, 4);
+  for (const branch of branches) {
+    assert.ok(branch.properties?.['reasoning']);
+    assert.ok(branch.properties?.['timeoutMs']);
+    assert.ok(branch.required?.includes('reasoning'));
+  }
 });
 
 test('askUser processes multiple noninteractive questions in source order', async () => {
@@ -131,6 +135,18 @@ test('askUser rejects duplicate form field names before opening a prompt', async
     }],
   }, undefined, undefined, ctx), /field names must be unique/i);
   assert.equal(customCalled, false);
+});
+
+test('askUser rejects ambiguous or impossible modes before opening a prompt', async () => {
+  const tool = loadTool();
+  const ctx = { hasUI: true, mode: 'tui', ui: { custom: async () => { throw new Error('must not open'); } } } as unknown as PiContext;
+  const invoke = (query: Record<string, unknown>) => tool.execute('invalid-mode', {
+    queries: [{ reasoning: 'prove mode validation', question: 'Choose?', ...query }],
+  }, undefined, undefined, ctx);
+  await assert.rejects(invoke({ options: [{ value: 'a' }], fields: [{ name: 'note' }] }), /cannot be combined/i);
+  await assert.rejects(invoke({ multiSelect: true }), /requires a non-empty options/i);
+  await assert.rejects(invoke({ options: [{ value: 'a' }], min: 1 }), /only with multiSelect/i);
+  await assert.rejects(invoke({ options: [{ value: 'a' }], multiSelect: true, min: 2, max: 1 }), /min .* cannot exceed max/i);
 });
 
 test('askUser creates a pending RPC interaction even though hasUI is true and custom exists', async () => {
@@ -564,19 +580,21 @@ test('askUser echoes the question in free-text and cancelled results', async () 
   assert.match((cancelled.content[0] as { text: string }).text, /cancelled/i);
 });
 
-test('askUser schema gains preview, disabled options, multiSelect, min/max, and field validation additively', () => {
+test('askUser schema discriminates text, single, multi, and form modes', () => {
   const tool = loadTool();
   const params = tool.parameters as {
-    properties: { queries: { items: { properties: Record<string, { items?: { properties?: Record<string, unknown> } }> } } };
+    properties: { queries: { items: { anyOf?: Array<{ properties: Record<string, { const?: unknown; items?: { properties?: Record<string, unknown> } }>; required?: string[] }> } } };
   };
-  const queryProps = params.properties.queries.items.properties;
-
-  assert.ok(queryProps['multiSelect'], 'multiSelect input exists');
-  assert.ok(queryProps['min'], 'min input exists');
-  assert.ok(queryProps['max'], 'max input exists');
-  assert.ok(queryProps['options']!.items?.properties?.['preview'], 'options gain preview');
-  assert.ok(queryProps['options']!.items?.properties?.['disabled'], 'options gain disabled');
-  const fieldProps = queryProps['fields']!.items?.properties ?? {};
+  const branches = params.properties.queries.items.anyOf ?? [];
+  assert.equal(branches.length, 4);
+  const multi = branches.find((branch) => branch.properties['multiSelect']?.const === true)!;
+  assert.ok(multi.properties['min']);
+  assert.ok(multi.properties['max']);
+  const optionProps = multi.properties['options']!.items?.properties ?? {};
+  assert.ok(optionProps['preview']);
+  assert.ok(optionProps['disabled']);
+  const form = branches.find((branch) => Boolean(branch.properties['fields']))!;
+  const fieldProps = form.properties['fields']!.items?.properties ?? {};
   assert.deepEqual(Object.keys(fieldProps).sort(), ['label', 'maxLength', 'minLength', 'name', 'pattern', 'placeholder', 'required']);
 });
 
@@ -688,17 +706,18 @@ test('askUser transcript renderers wrap complete questions and selected labels i
   assert.ok(normalize(resultLines).includes(label));
 });
 
-test('askUser schema exposes pros, cons, and recommended on options', () => {
+test('askUser option branches expose distinguishing choice metadata', () => {
   const tool = loadTool();
   const params = tool.parameters as {
-    properties: { queries: { items: { properties: Record<string, { items?: { properties?: Record<string, unknown> } }> } } };
+    properties: { queries: { items: { anyOf?: Array<{ properties: Record<string, { items?: { properties?: Record<string, unknown> } }> }> } } };
   };
-  const optProps = params.properties.queries.items.properties['options']!.items?.properties ?? {};
-  assert.ok(optProps['pros'], 'options gain pros');
-  assert.ok(optProps['cons'], 'options gain cons');
-  assert.ok(optProps['recommended'], 'options gain recommended');
-  assert.ok(optProps['disabled'], 'options gain disabled');
-  assert.ok(optProps['group'], 'options gain group');
+  const optionBranch = (params.properties.queries.items.anyOf ?? []).find((branch) => Boolean(branch.properties['options']))!;
+  const optProps = optionBranch.properties['options']!.items?.properties ?? {};
+  assert.ok(optProps['pros']);
+  assert.ok(optProps['cons']);
+  assert.ok(optProps['recommended']);
+  assert.ok(optProps['disabled']);
+  assert.ok(optProps['group']);
 });
 
 test('askUser multiSelect returns multiSelected values through the overlay', async () => {

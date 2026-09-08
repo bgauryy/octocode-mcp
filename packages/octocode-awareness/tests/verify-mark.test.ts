@@ -19,12 +19,14 @@ function makePending(
   agentId: string,
   workspacePath: string,
   testPlan = 'verify edits',
+  artifact?: string,
 ): string {
   const claim = preFlightIntent(db, {
     agentId,
     workspacePath,
     targetFiles: [`/tmp/${agentId}-target.txt`],
     testPlan,
+    artifact,
   });
   if (!claim.ok) throw new Error('claim failed');
   releaseFileLock(db, { agentId, runId: claim.run.run_id, status: 'PENDING' });
@@ -63,6 +65,23 @@ describe('markVerified', () => {
       expect(result.status).toBe('SUCCESS');
     }
     expect(auditUnverified(db).count).toBe(0);
+  });
+
+  it('keeps artifact-scoped allPending verification away from unscoped runs', () => {
+    const db = freshDb();
+    const scopedId = makePending(db, 'agent-a', '/tmp/ws-a', 'scoped', 'pkg-a');
+    const unscopedId = makePending(db, 'agent-a', '/tmp/ws-a', 'unscoped');
+
+    expect(markVerified(db, {
+      agentId: 'agent-a',
+      allPending: true,
+      workspacePath: '/tmp/ws-a',
+      artifact: 'pkg-a',
+      status: 'SUCCESS',
+      message: 'pkg-a checks passed',
+    })).toMatchObject({ ok: true, run_ids: [scopedId], count: 1 });
+    expect(auditUnverified(db, { agentId: 'agent-a', workspacePath: '/tmp/ws-a' })
+      .unverified.map((run) => run.run_id)).toEqual([unscopedId]);
   });
 
   it('transitions a PENDING task to FAILED', () => {

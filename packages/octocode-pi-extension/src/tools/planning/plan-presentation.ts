@@ -23,7 +23,7 @@ import { MARK, displayStatus, dependencyIndexes } from './plan-types.js';
 import type { DisplayStatus, PlanStep } from './plan-types.js';
 import type { ExternalPlanScope } from '@octocodeai/octocode-awareness';
 import { projectExternalPlan } from '@octocodeai/octocode-awareness';
-import { isPersistentStorageEnabled } from '@octocodeai/config';
+import { isPersistentStorageEnabledForExtension as isPersistentStorageEnabled } from '@octocodeai/config';
 import { assertPersistentAwarenessEnabled } from '../storage-policy.js';
 import { appendSessionAuditForContext } from '../session-audit.js';
 import { createSessionArtifactContext } from '../session-artifacts.js';

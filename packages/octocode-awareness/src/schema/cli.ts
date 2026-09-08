@@ -7,7 +7,8 @@ import { operationSchemas } from './definitions-operations.js';
 import { examples as coreExamples } from './examples.js';
 import { integrationExamples } from './examples-integration.js';
 import { awarenessEntityCatalog } from './entities.js';
-import { commandIndex } from './command-catalog.js';
+import { commandIndex, type AwarenessCommandCatalogEntry } from './command-catalog.js';
+import { adminExamples, adminSchemas } from './definitions-admin.js';
 import { integrationSchemas } from './definitions-integration.js';
 import { CLI_REQUIRED, projectCliProperties } from './cli-contract.js';
 import { historyExamples, historyRequestSchemas, historySchemas } from './definitions-history.js';
@@ -17,13 +18,15 @@ export const schemas = {
   ...workSchemas,
   ...operationSchemas,
   ...integrationSchemas,
+  ...adminSchemas,
   ...historySchemas,
 };
-export const examples = { ...coreExamples, ...integrationExamples, ...historyExamples };
+export const examples = { ...coreExamples, ...integrationExamples, ...adminExamples, ...historyExamples };
 export type SchemaName = keyof typeof schemas;
 
 const listableSchemas = [
   ...Object.keys(integrationSchemas),
+  ...Object.keys(adminSchemas),
   ...Object.keys(historyRequestSchemas),
   "memory_record", "memory_recall",
   "attend", "query",
@@ -79,7 +82,7 @@ function toJsonSchema(schema: z.ZodType) {
   throw new Error("This script requires Zod v4 with z.toJSONSchema().");
 }
 
-function cliCommandSchema(commandName: string): Record<string, unknown> | null {
+export function cliCommandSchema(commandName: string): Record<string, unknown> | null {
   const row = commandIndex.find((candidate) => candidate.command === commandName);
   if (!row?.schema) return null;
   const schema = schemas[row.schema as SchemaName];
@@ -104,7 +107,43 @@ function cliCommandSchema(commandName: string): Record<string, unknown> | null {
   output["x-cli-command"] = commandName;
   output["x-cli-example"] = row.example;
   output["x-cli-note"] = "CLI flags use kebab-case; repeat array flags. The router injects the action.";
+  output["x-awareness-effect"] = row.effect;
+  output["x-awareness-pi-mode"] = row.piMode;
+  output["x-awareness-injected"] = row.injected;
+  if (row.approvalClass) output["x-awareness-approval-class"] = row.approvalClass;
+  if (row.positionals) output["x-cli-positionals"] = row.positionals;
+  if (row.stdinField) output["x-cli-stdin-field"] = row.stdinField;
   return output;
+}
+
+export interface AwarenessCommandDescriptor extends AwarenessCommandCatalogEntry {
+  inputSchema: Readonly<Record<string, unknown>>;
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+  }
+  return value;
+}
+
+/** Read one immutable command contract without invoking the CLI process. */
+export function getAwarenessCommandDescriptor(commandName: string): AwarenessCommandDescriptor | undefined {
+  const row = commandIndex.find((candidate) => candidate.command === commandName);
+  if (!row) return undefined;
+  const inputSchema = cliCommandSchema(commandName);
+  if (!inputSchema) return undefined;
+  return deepFreeze({ ...row, inputSchema });
+}
+
+/** Read the complete immutable command contract catalog. */
+export function listAwarenessCommandDescriptors(): readonly AwarenessCommandDescriptor[] {
+  return Object.freeze(commandIndex.map((row) => {
+    const descriptor = getAwarenessCommandDescriptor(row.command);
+    if (!descriptor) throw new Error(`Awareness command is missing a schema: ${row.command}`);
+    return descriptor;
+  }));
 }
 
 function parseJson(input: string): unknown {
@@ -142,7 +181,9 @@ export async function runSchemaCli(argv: string[]): Promise<number> {
 
   if (command === "commands") {
     const commands = includeAll
-      ? (includeExamples ? commandIndex : commandIndex.map(({ command: cmd, schema }) => ({ command: cmd, schema })))
+      ? commandIndex.map((row) => includeExamples
+        ? row
+        : ({ command: row.command, schema: row.schema, effect: row.effect, piMode: row.piMode, injected: row.injected, ...(row.approvalClass ? { approvalClass: row.approvalClass } : {}), ...(row.positionals ? { positionals: row.positionals } : {}), ...(row.stdinField ? { stdinField: row.stdinField } : {}) }))
       : groupedCommandIndex();
     printJson({
       ok: true,

@@ -32,6 +32,16 @@ test('every shipped support/override tool has declared effect metadata', () => {
   assert.equal(getToolEffect('web'), 'read');
 });
 
+test('Awareness tool effects follow the canonical command catalog', () => {
+  const query = (command?: string) => ({ queries: [{ action: command ? 'call' : 'list', ...(command ? { command } : {}) }] });
+  assert.equal(getToolEffect('awareness', query()), 'read');
+  assert.equal(getToolEffect('awareness', query('status')), 'read');
+  assert.equal(getToolEffect('awareness', query('signal publish')), 'coordination-write');
+  assert.equal(getToolEffect('awareness', query('history restore-apply')), 'workspace-write');
+  assert.equal(getToolEffect('awareness', query('memory prune')), 'external-effect');
+  assert.equal(getToolEffect('awareness', query('not a command')), undefined);
+});
+
 test('capability receipts are deterministic and deny precedence is fail-closed', () => {
   const input = { toolName: 'unknown-plugin-tool', phase: 'in_review' as const, createdAt: '2026-08-26T00:00:00.000Z' };
   const first = evaluateToolCapability(input);

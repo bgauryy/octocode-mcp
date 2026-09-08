@@ -1,7 +1,7 @@
 import type {PromptMode} from '@octocodeai/agent-contracts/protocols';
 import fs from 'node:fs';
 import path from 'node:path';
-import { propagateOctocodeEnv, getOctocodeHome, isPersistentStorageEnabled } from '@octocodeai/config';
+import { propagateOctocodeEnv, getOctocodeHome, isPersistentStorageEnabledForExtension as isPersistentStorageEnabled } from "@octocodeai/config";
 import { extensionWorkspaceRoot } from './extension-paths.js';
 import { connectDb, defaultDbPath, insertEditLog } from '@octocodeai/octocode-awareness';
 import { ensurePrivateDirectory, hardenPrivateFile, PRIVATE_FILE_MODE } from '@octocodeai/agent-contracts/permissions';
@@ -122,7 +122,8 @@ import {
   configureInteractionBrokerRoute,
 } from './tools/interaction-broker.js';
 import { renderAwarenessCliContext } from './tools/awareness-cli-context.js';
-import { EXTERNAL_AGENT_AWARENESS_PROMPT } from '@octocodeai/octocode-awareness';
+import { registerAwarenessTool } from './tools/awareness-tool.js';
+import { AWARENESS_PI_HOST_PROMPT } from '@octocodeai/octocode-awareness';
 import { awarenessEventStatusText, registerAwarenessEventConsumer } from './tools/awareness-event-consumer.js';
 import { getAwarenessAgentId, getAwarenessAgentIdentity } from './tools/awareness-shared.js';
 import {
@@ -731,6 +732,7 @@ function registerSupportToolPhase({ pi, registeredToolNames, notify, getLatestAv
   registerPlanTool(pi, registeredToolNames, registerUniqueTool);
   registerLocalServerTool(pi, registeredToolNames, registerUniqueTool);
   registerAskUserTool(pi, registeredToolNames, registerUniqueTool);
+  registerAwarenessTool(pi, registeredToolNames, registerUniqueTool);
   registerMcpTool(pi, registeredToolNames, registerUniqueTool);
 }
 
@@ -1441,6 +1443,15 @@ async function wireOctocodePiExtension(
       updateOctocodeMetricsUi(ctx);
     });
 
+    // agent_settled fires once after ALL retries, auto-compaction retries, and
+    // queued follow-up messages complete — a more precise "agent is done" signal
+    // than agent_end (which fires per-run, possibly before a continuation starts).
+    // Use it as a definitive safety net to clear the active-turn indicator.
+    hooks.on('agent_settled', 'octocode-agent-settled', async (_event: unknown, ctx: PiContext | undefined) => {
+      runtimeStoreFor(ctx)?.getState().setFooter({ activeTurnStartedAt: undefined });
+      updateOctocodeMetricsUi(ctx);
+    });
+
     let sessionAutoNamed = false;
     hooks.on('input', 'octocode-session-autoname', async (event: { text: string; source?: string; streamingBehavior?: string }, ctx: PiContext | undefined) => {
       // Name the session from the first real user prompt so /resume, the session
@@ -1601,7 +1612,9 @@ async function wireOctocodePiExtension(
         'dynamic-tool-contracts': getDynamicCapabilitiesAddendum(latestAvailableSkills?.map(skill => skill.name), { tools: hasCapability('callTool'), skills: hasCapability('skill') }),
         'available-skills': hasCapability('skill') ? renderAvailableSkillsAddendum(latestAvailableSkills) : '',
         'session-artifact-contract': sessionArtifactPathsContext,
-        'awareness-cli-runtime': hasCapability('bash') ? renderAwarenessCliContext(ctx) : '',
+        'awareness-cli-runtime': hasCapability('awareness') || hasCapability('bash')
+          ? renderAwarenessCliContext(ctx, { nativeTool: hasCapability('awareness') })
+          : '',
       });
 
       // Role policy stays caller-owned; capabilities and Awareness use the same
@@ -1609,7 +1622,7 @@ async function wireOctocodePiExtension(
       if (worker) {
         if (frozenSystemPrompt === undefined) {
           await discoverPromptCapabilities();
-          const awareness = !hasCapability('bash') || piPrompt.includes(EXTERNAL_AGENT_AWARENESS_PROMPT) ? '' : EXTERNAL_AGENT_AWARENESS_PROMPT;
+          const awareness = (!hasCapability('awareness') && !hasCapability('bash')) || piPrompt.includes(AWARENESS_PI_HOST_PROMPT) ? '' : AWARENESS_PI_HOST_PROMPT;
           const assembly = collectPromptContext(awareness);
           frozenSystemPrompt = composeSystemPrompt({ piSystemPrompt: piPrompt, octocodePrompt: assembly.content, promptMode });
         }
@@ -1878,6 +1891,23 @@ export function createOctocodePiExtension(
     return wireOctocodePiExtension(pi, { promptMode });
   };
 }
+
+// The evaluation API is host-adapter based: importing it performs no model or network call.
+export {
+  FROZEN_TRAJECTORY_CORPUS,
+  FROZEN_TRAJECTORY_CORPUS_SHA256,
+  TrajectoryReceiptSchema,
+  buildTrajectoryReceipt,
+  gradeTrajectory,
+  runFrozenTrajectoryEvaluation,
+} from './evals/prompt-trajectory.js';
+export type {
+  ScenarioGrade,
+  TrajectoryEvent,
+  TrajectoryModelAdapter,
+  TrajectoryReceipt,
+  TrajectoryScenario,
+} from './evals/prompt-trajectory.js';
 
 // Default export preserves the historical single-arg contract: Pi calls `default(pi)`.
 export default createOctocodePiExtension();

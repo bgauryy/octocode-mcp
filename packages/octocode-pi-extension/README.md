@@ -21,7 +21,7 @@ The live source inventory is authoritative. Use `/configuration` inside Pi and s
 | Surface | Count |
 |---|---:|
 | Native Octocode research tools | 0 (research is served through `MCPTool`) |
-| Pi support tools | 13 |
+| Pi support tools | 14 |
 | Guarded Pi builtin overrides | 1 (`bash`) |
 | Disabled Pi builtins | 6 |
 | Slash command entries | 3 |
@@ -34,11 +34,12 @@ The live source inventory is authoritative. Use `/configuration` inside Pi and s
 | `file` | Create, edit, or delete files through one guarded mutation boundary. |
 | `web` | Fetch an absolute URL or search the web. |
 | `chromeDebug` | Inspect and control Chrome through CDP. |
-| `agent` | Spawn and manage researcher, architect, planner, browser, and custom workers. |
+| `agent` | Spawn and manage researcher, architect, planner, implementer, browser, and explicit custom workers. |
 | `callTool` | Invoke a capability from the live dynamic-tool registry. |
 | `skill` | Load and manage installed skills. |
 | `plan` | Manage session and shared plans with verification receipts. |
 | `localServer` | Serve an inspected local directory on loopback for review. |
+| `awareness` | Discover, describe, and invoke the canonical Awareness command runtime without shell syntax. |
 | `MCPTool` | Discover, describe, call, and manage MCP tools and servers. |
 | `askUser` | Request structured input through Pi's UI. |
 | `inspectMedia` | Inspect images, video, and audio. |
@@ -47,19 +48,18 @@ The live source inventory is authoritative. Use `/configuration` inside Pi and s
 
 The extension overrides `bash` with command and path guards. It removes Pi's public `read`, `edit`, `write`, `grep`, `find`, and `ls` tools; use Octocode research tools for reads and discovery, and `file` for mutations.
 
-Awareness coordination uses the bundled skill and installed Awareness CLI through
-`bash`. The system prompt includes Awareness's complete operating guide and command
-catalog; Pi supplies the runner, database, workspace and agent identity. Signals,
+Awareness coordination uses the native `awareness` facade for catalog discovery and
+host-bound command calls without shell syntax. The bundled skill provides workflow guidance,
+and the installed CLI remains the explicit fallback for external-host-only operations. Pi
+supplies the runner, database, workspace and agent identity. Signals,
 locks, memory, bookkeeping and maintenance share the same SQLite ledger as native
 Pi events and external CLI agents. Pi retains automatic registry/event delivery,
 mutation guards and plan UI. Peers must use the same physical database and workspace
 with distinct stable IDs. See [Awareness agent flow](docs/AWARENESS_AGENT_FLOW.md).
 
-Awareness also records bounded local file history around native `file` mutations with bundled private Git storage. `/octocode-rewind` previews and explicitly applies a selected file restore in interactive Pi; headless sessions use the same `history` commands through the bundled Awareness CLI and skill. This does not snapshot the workspace on every prompt or rewind the conversation.
+Awareness also records bounded local file history around native `file` mutations with bundled private Git storage. `/octocode-rewind` previews and explicitly applies a selected file restore in interactive Pi; headless sessions use the same `history` commands through the native `awareness` facade, with the bundled CLI retained for external-host fallback. This does not snapshot the workspace on every prompt or rewind the conversation.
 
-Typed and browser workers receive explicit Octocode research, skill, and Awareness
-capabilities. Custom workers default to `MCPTool`, `skill`, and `bash`; callers can
-request an explicit allowlist, `tools:[]`, or lean mode for a narrower worker.
+Typed and browser workers receive explicit Octocode research, skill, and Awareness capabilities. Custom workers require an explicit least-capability tool allowlist and a non-empty role prompt; all workers receive the shared bounded-worker contract.
 
 ## Configuration and privacy
 

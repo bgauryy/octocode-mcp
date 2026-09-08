@@ -25,8 +25,8 @@ import {
 import { executeSpawnQuery, executeAgentLifecycle } from './lifecycle.js';
 import { isSubagentProcess } from './registry.js';
 import {
-  buildQueryEnvelopeSchema,
   executeQueryBatch,
+  toToolSchema,
   type QueryRecord,
 } from '../query-envelope.js';
 import { makeComponentRenderer } from '../render-helpers.js';
@@ -46,82 +46,84 @@ export function registerUnifiedAgentTool(
   // Workers cannot spawn workers — never register this tool inside a subagent process.
   if (isSubagentProcess()) return;
 
-  // ── Item schema ──────────────────────────────────────────────────────────────────────────────────
-  const itemSchema = z.looseObject({
-    type: z.enum(AGENT_OPERATIONS as unknown as [string, ...string[]]).describe('Operation: spawn | inspect | wait | message | steer | abort | kill.'),
-    name: z.string().optional().describe('Worker display name.'),
-    task: z.string().optional().describe('Worker assignment/instructions for spawn; not a plan task record.'),
-    context: z.string().optional().describe('Evidence or constraints prepended to the worker assignment.'),
-    profile: z.enum(AGENT_PROFILES as unknown as [string, ...string[]]).optional().describe('Spawn profile: researcher | planner | architect | browser | custom.'),
+  // ── Discriminated operation schema ───────────────────────────────────────────
+  const reasoning = z.string().min(1).max(400);
+  const packetFields = {
+    goal: z.string().min(1),
+    context: z.string().min(1),
+    scope: z.string().min(1),
+    ownership: z.string().min(1).describe('Exclusive write paths/symbols, or explicit read-only ownership.'),
+    acceptance: z.string().min(1).describe('Observable done condition.'),
+    returnShape: z.string().min(1).describe('Required evidence and terminal handback shape.'),
+    task: z.string().optional().describe('Additional role instruction; never repeat the packet.'),
+    name: z.string().optional(),
     model: z.string().optional().describe('Model id from `pi -ne --list-models`.'),
-    provider: z.string().optional().describe('Provider name (required when model id collides with a builtin namespace).'),
-    thinking: z.string().optional().describe('Thinking level: off|minimal|low|medium|high|xhigh.'),
-    noSession: z.boolean().optional().describe('Pass --no-session to the spawned worker (default true).'),
-    isolation: z.enum(['shared', 'worktree']).optional().describe('Filesystem isolation for spawn. shared (default) uses current cwd; worktree creates an isolated git worktree.'),
-    includeUncommitted: z.boolean().optional().describe('With isolation:worktree, apply uncommitted tracked changes.'),
-    planStep: z.string().optional().describe('Stable task ID from the current plan (spawn with plan assignment).'),
-    // browser profile
-    url: z.string().optional().describe('URL to pass to the browser profile (spawn/browser).'),
-    port: z.number().int().optional().describe('Chrome remote debug port (spawn/browser, default 9222).'),
-    launch: z.boolean().optional().describe('Launch Chrome for initial browser analysis (default false).'),
-    headless: z.boolean().optional().describe('Launch Chrome headless for initial browser analysis (default true).'),
-    runNow: z.boolean().optional().describe('Run routed initial browser analysis before spawning (default true).'),
-    durationMs: z.number().int().optional().describe('Initial browser scheme observation window in milliseconds (default 5000).'),
-    workspaceCwd: z.string().optional().describe('Workspace root for browser screenshots and session paths.'),
-    // custom profile
-    tools: z.array(z.string()).optional().describe('Tool allowlist for custom profile. Defaults to MCPTool, skill, and bash; [] requests no tools.'),
-    systemPrompt: z.string().optional().describe('Extra system prompt for custom profile (spawn).'),
-    resourceMode: z.enum(['lean', 'octocode', 'default']).optional().describe('Resource mode for custom profile. octocode is the default; lean disables extensions and skills.'),
-    // lifecycle fields
-    agentId: z.string().optional().describe('Target agent id (inspect/wait/message/steer/abort/kill).'),
-    message: z.string().optional().describe('Message text (message/steer).'),
-    delivery: z.enum(['send', 'followUp']).optional().describe('Message delivery: send starts a new idle turn; followUp queues after the current turn.'),
-    timeoutMs: z.number().int().optional().describe('Wait silence budget in milliseconds (default 300000).'),
-    remove: z.boolean().optional().describe('Remove the worker record after wait/kill when safe.'),
-    full: z.boolean().optional().describe('Return full retained history for inspect/wait/abort/kill.'),
+    provider: z.string().optional(),
+    thinking: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).optional(),
+    noSession: z.boolean().optional(),
+    isolation: z.enum(['shared', 'worktree']).optional().describe('worktree requires explicit approval.'),
+    includeUncommitted: z.boolean().optional(),
+    planStep: z.string().optional().describe('Stable task ID from the executing plan.'),
+  };
+  const typedSpawn = z.strictObject({
+    reasoning,
+    type: z.enum(['spawn']),
+    profile: z.enum(['researcher', 'planner', 'architect', 'implementer']),
+    ...packetFields,
   });
-
-  const parameters = buildQueryEnvelopeSchema(itemSchema, {
-    reasoningDescription: 'Concise reason this agent operation is necessary.',
+  const browserSpawn = z.strictObject({
+    reasoning,
+    type: z.enum(['spawn']),
+    profile: z.enum(['browser']),
+    ...packetFields,
+    url: z.string().optional(),
+    port: z.number().int().optional(),
+    launch: z.boolean().optional(),
+    headless: z.boolean().optional(),
+    runNow: z.boolean().optional(),
+    durationMs: z.number().int().optional(),
+    workspaceCwd: z.string().optional(),
   });
+  const customSpawn = z.strictObject({
+    reasoning,
+    type: z.enum(['spawn']),
+    profile: z.enum(['custom']),
+    ...packetFields,
+    tools: z.array(z.string()).describe('Explicit least-capability tool allowlist; [] requests no tools.'),
+    systemPrompt: z.string().min(1).describe('Required bounded custom role; the shared worker contract is prepended automatically.'),
+    resourceMode: z.enum(['lean', 'octocode', 'default']).optional(),
+  });
+  const inspect = z.strictObject({ reasoning, type: z.enum(['inspect']), agentId: z.string().optional(), full: z.boolean().optional() });
+  const wait = z.strictObject({ reasoning, type: z.enum(['wait']), agentId: z.string().min(1), timeoutMs: z.number().int().optional(), remove: z.boolean().optional(), full: z.boolean().optional() });
+  const message = z.strictObject({ reasoning, type: z.enum(['message']), agentId: z.string().min(1), message: z.string().min(1), delivery: z.enum(['send', 'followUp']).optional() });
+  const steer = z.strictObject({ reasoning, type: z.enum(['steer']), agentId: z.string().min(1), message: z.string().min(1) });
+  const abort = z.strictObject({ reasoning, type: z.enum(['abort']), agentId: z.string().min(1), full: z.boolean().optional() });
+  const kill = z.strictObject({ reasoning, type: z.enum(['kill']), agentId: z.string().min(1), remove: z.boolean().optional(), full: z.boolean().optional() });
+  const query = z.union([typedSpawn, browserSpawn, customSpawn, inspect, wait, message, steer, abort, kill]);
+  const parameters = toToolSchema(z.strictObject({
+    queries: z.array(query).min(1).max(100).describe('Operations run one-by-one in source order.'),
+    queryRunType: z.enum(['sequential']).default('sequential').optional(),
+  }));
 
   registerFn(pi, registeredToolNames, {
     name: 'agent',
     label: 'Agent',
     description: [
-      'Unified agent facade. Spawn typed/custom/browser workers and manage their lifecycle.',
-      '',
-      'Operations (type field):',
-      '  spawn   — create a new worker. Returns agentId.',
-      '  inspect — list all agents (no agentId) or show status (with agentId).',
-      '  wait    — wait for the current turn, returning a live snapshot after a quiet gap.',
-      '  message — send or queue a message (delivery: send|followUp).',
-      '  steer   — redirect in-flight turn or queue follow-up.',
-      '  abort   — gracefully interrupt the active worker turn without killing the process.',
-      '  kill    — terminate a worker process.',
-      '',
-      'Profiles for spawn:',
-      '  researcher — web/GitHub/npm/local research specialist.',
-      '  planner    — implementation-planning specialist.',
-      '  architect  — local-code / root-cause specialist.',
-      '  browser    — Chrome DevTools Protocol specialist; routes task to CDP domains.',
-      '  custom     — Octocode-capable worker by default; accepts explicit tools/systemPrompt/resourceMode.',
-      '',
-      'Same-batch rule: spawn and lifecycle ops with explicit agentIds cannot coexist.',
-      'Spawn first, then use the returned agentId in a subsequent call.',
+      'Definition: spawn one bounded specialist or control an existing worker turn.',
+      'Contrast: delegate independent lanes with disjoint ownership; keep dependent, shared-file, or small work with the parent.',
+      'Consequence: an incomplete packet or trusted handback causes scope drift, lost updates, or an unverified final answer.',
+      'Principle: workers supply bounded evidence or edits; the parent owns authorization, verification, integration, and the user request.',
+      'Action: spawn with the complete packet, continue parent work, then wait, verify, reconcile, and kill or reuse the worker.',
     ].join('\n'),
 
     promptSnippet:
-      'Spawn/manage researcher, planner, architect, browser, or custom workers. Spawn first; use agentId later. Workers use MCPTool for repository research and the harness Awareness CLI for coordination; other shell access follows their role.',
+      'Spawn or manage bounded workers. Every spawn requires Goal, Context, Scope, Ownership, Acceptance, and Return; the parent must verify and integrate the handback.',
     promptGuidelines: [
-      'Use agent when a task needs independent context, its own tools, or parallel execution. Do NOT use agent for tasks a direct tool call, bash, or skill workflow already handles — prefer the simplest surface.',
-      'Profile routing: researcher (web+GitHub+local research), planner (implementation planning), architect (root-cause/design), browser (CDP automation), custom (explicit tools/systemPrompt).',
-      'Never mix spawn and agentId-bearing lifecycle queries in the same batch — spawn first, lifecycle next call.',
-      'Provide a labelled task packet (Goal/Context/Scope/Acceptance/Return) in the task field to avoid vague handoffs.',
-      'Use type:wait to collect the current turn before trusting a worker is complete. After wait or inspect, verify any key finding, distill it into session memory.md, and update the user when it changes the hypothesis, plan, risk, or next action; never persist or repeat a raw handback.',
-      'Use type:kill after collecting results to free resources.',
-      'Use type:inspect without agentId to list all agents; with agentId to check status.',
-      'For plan work, start a runnable step first, then pass its stable task id as planStep so the worker receives paths, acceptance, and check contract.',
+      'Delegate when two or more bounded lanes are independent with disjoint ownership, or a specialist materially improves coverage. Keep dependent/shared-file work serial.',
+      'Route evidence→researcher, dependency plan→planner, root cause/design→architect, owned code+check→implementer, CDP evidence→browser; custom requires explicit least-capability tools and systemPrompt.',
+      'The tool rejects incomplete packets before creating a worker. Wrong: spawn and reference its unknown agentId in one batch. Right: spawn first; use inspect, wait, message, steer, abort, or kill later.',
+      'After all spawns, continue non-overlapping parent work; then type:wait, verify load-bearing findings and checks, reconcile the plan, kill or reuse the worker, and continue the user request. Never trust or persist a raw handback.',
+      'For plan work, start the runnable step first and pass its stable task id as planStep.',
     ],
 
     parameters,
@@ -154,11 +156,16 @@ export function registerUnifiedAgentTool(
             );
           }
           if (type === 'spawn') {
-            const task = String(query['task'] ?? '').trim();
-            if (!task) throw new Error(`queries[${index}]: spawn requires a non-empty task.`);
-            const profile = String(query['profile'] ?? 'custom');
+            const profile = String(query['profile'] ?? '').trim();
             if (!(AGENT_PROFILES as readonly string[]).includes(profile)) {
               throw new Error(`queries[${index}].profile must be one of: ${AGENT_PROFILES.join(', ')}.`);
+            }
+            for (const field of ['goal', 'context', 'scope', 'ownership', 'acceptance', 'returnShape'] as const) {
+              if (!String(query[field] ?? '').trim()) throw new Error(`queries[${index}]: spawn requires non-empty ${field}.`);
+            }
+            if (profile === 'custom') {
+              if (!Array.isArray(query['tools'])) throw new Error(`queries[${index}]: custom profile requires tools[].`);
+              if (!String(query['systemPrompt'] ?? '').trim()) throw new Error(`queries[${index}]: custom profile requires a non-empty systemPrompt.`);
             }
             return;
           }

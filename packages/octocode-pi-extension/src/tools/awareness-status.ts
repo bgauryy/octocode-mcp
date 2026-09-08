@@ -20,7 +20,7 @@ import {
   readExternalAwarenessStatus,
   type ExternalAwarenessStatus,
 } from '@octocodeai/octocode-awareness';
-import { isPersistentStorageEnabled } from '@octocodeai/config';
+import { isPersistentStorageEnabledForExtension as isPersistentStorageEnabled } from '@octocodeai/config';
 import type { PiContext, PiTheme } from '../types.js';
 
 import { SEP_WIDE, paint } from '../tui/palette.js';

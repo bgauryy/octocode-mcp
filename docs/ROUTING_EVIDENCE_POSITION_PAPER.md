@@ -1,17 +1,16 @@
-# Evidence-Graded Retrieval for Agentic Code Research: A Routing Model and Three Reading Dimensions
+# Evidence-graded retrieval for agentic code research: A routing model and three reading dimensions
 
 **Status.** Position paper draft. Extracted from an internal engineering manifest
 (`OCTOCODE_RESEARCH_MANIFEST.md`) and stripped of implementation-specific
 operational detail so the model stands on its own. The claims below are
-qualitative and framework-level; §5 states plainly what has and has not been
-measured.
+qualitative and framework-level; §5 states plainly what has and has not been measured. For executable routing rules use [`OCTOCODE_RESEARCH_MANIFEST.md`](OCTOCODE_RESEARCH_MANIFEST.md); for concrete text/AST/graph/LSP operations, schemas, and failure boundaries use [`OCTOCODE_TOOLS.md`](OCTOCODE_TOOLS.md).
 
 ## Abstract
 
 Agentic code research fails in two symmetric ways: an LLM reasoning without
 deterministic backing hallucinates identifiers and generalizes from a single
 match; deterministic retrieval tools without an agent directing them cannot
-decide what the question even is. We describe a routing model for the middle
+decide what the question even is. This paper describes a routing model for the middle
 ground — pairing LLM judgment with retrieval primitives of known, differing
 reliability — built around two ideas. First, **evidence grading**: lexical
 (text/regex), structural (AST-matched), semantic (language-server-proven),
@@ -21,7 +20,7 @@ evidence a question requires*, not by a fixed tool pipeline. Second, **three
 reading dimensions**: any codebase question can be approached through
 structure (the file tree), stream (raw or outlined text), and connections
 (call/import/type graphs), and each dimension is individually incomplete and
-silent about what it cannot see. We argue that agent quality on code-research
+silent about what it cannot see. The model proposes that agent quality on code-research
 tasks is more sensitive to reading across dimensions than to going deeper in
 one, and that cross-dimension *disagreement* is itself informative rather
 than noise to average away. The model is implemented and exercised in an
@@ -50,7 +49,7 @@ when to distrust its own conclusion.
 
 ## 2. Evidence grades
 
-We classify retrieval results into four grades, ordered by what they prove
+The model classifies retrieval results into four grades, ordered by what they prove
 versus what they miss:
 
 | Grade | Proves | Blind to |
@@ -78,7 +77,7 @@ error before it becomes a wrong conclusion.
 ## 3. Three reading dimensions
 
 Orthogonal to evidence grading is a second axis: what *aspect* of the
-codebase a query targets. We identify three:
+codebase a query targets. This paper identifies three:
 
 - **Structure** — the file tree: layout, naming, nesting, size. Answers
   "where does this live, relative to what."
@@ -97,11 +96,11 @@ flags that it is partial:
 - Connections give proof with a scope boundary — capability gaps (an
   unsupported language, dynamic dispatch, a non-project script) are
   invisible to it, and a language server that cannot see something reports
-  a capability limitation, not a proof of absence, though the two are easy
-  to conflate if the caller does not check for it explicitly.
+  a capability limitation, not a proof of absence. Callers can conflate the two
+  when they do not check the limitation explicitly.
 
-We conjecture — without yet having measured it directly, see §5 — that
-research quality on non-trivial code questions correlates more strongly with
+The unmeasured conjecture, discussed in §5, is that research quality on
+non-trivial code questions correlates more strongly with
 *how many of the three dimensions were read* than with how deep any single
 dimension was queried. An agent that only ever searches text, or only ever
 queries a language server, builds a model that is confidently incomplete in
@@ -147,7 +146,7 @@ inconvenience to resolve by picking one answer.
 
 **Where this model aligns with recent context-engineering work.** The
 practice of holding a lightweight handle and fetching content only on demand
-matches "just-in-time retrieval" as described in industry context-engineering
+matches retrieval at the point of need as described in industry context-engineering
 guidance (Anthropic, 2025; a comparable "memory pointer" pattern is described
 independently by StackOne, 2025-2026). Tiered, on-demand schema disclosure —
 a small catalog before a large per-tool contract — mirrors StackOne's
@@ -157,7 +156,7 @@ direction with Sourcegraph's CodeScaleBench results, which report
 substantially higher file recall and precision for a code-graph-augmented
 retrieval layer over grep-only baselines; this paper's ordering is argued
 qualitatively and has not been validated against that or any other
-task-level benchmark under our own model (see gaps below).
+task-level benchmark under this model (see gaps below).
 
 **Deliberately excluded lanes.** Two retrieval families are intentionally out
 of scope: embedding/vector indexes (fuzzy concept recall over large unfamiliar
@@ -165,7 +164,7 @@ corpora, at the cost of index staleness and identity-blindness), and
 precomputed knowledge/code graphs (cheaper at very large monorepo scale, at
 the cost of being memoryless of point-in-time query intent). Both are
 plausible complements to, not replacements for, the model above, and the
-routing procedure in §4 explicitly names where each would outperform it
+routing procedure in §4 explicitly names where each can outperform it
 (purely conceptual queries at large scale for the former; repository-wide
 blast-radius sweeps at scale for the latter).
 
@@ -182,21 +181,21 @@ are complementary rather than competing.
    largest gap between this paper and a comparable systems-evaluation paper
    such as Sourcegraph's CodeScaleBench work.
 2. **The cross-grade/cross-dimension check is agent discipline, not a
-   tool-enforced guarantee.** Nothing in the model prevents an agent from
+   tool-enforced property.** Nothing in the model prevents an agent from
    skipping the second dimension; the claim is only that skipping it
    produces a worse and undetectably-partial result, not that the tooling
    makes skipping impossible.
 3. **Scale is untested.** The model has not been validated on very large
    monorepos, where a precomputed graph is plausibly a better entry point
    than per-query language-server calls.
-4. **"Three dimensions" is a descriptive framework, not a metric.** We do
-   not yet have a way to quantify "how many dimensions were read" as a
-   feature that predicts task success; this is future work, not a claim
-   made here.
+4. **"Three dimensions" is a descriptive framework, not a metric.** No
+   current metric quantifies "how many dimensions were read" as a feature
+   that predicts task success; developing one remains future work, not a
+   claim made here.
 
 ## 6. Conclusion
 
-We describe a routing model for agentic code research built on two axes:
+This paper describes a routing model for agentic code research built on two axes:
 evidence grading (what a retrieval result proves, versus what grade
 of failure it produces silently) and reading dimension (structure, stream,
 connections — each individually incomplete). The procedural claim is narrow

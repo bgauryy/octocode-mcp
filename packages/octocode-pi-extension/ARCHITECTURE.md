@@ -1,6 +1,6 @@
 # @octocodeai/pi-extension — Architecture
 
-This document describes the Octocode Pi Extension (`packages/octocode-pi-extension`): system prompt assembly, tool registration, skill discovery, session data layout, plan lifecycle, and the HTML/Markdown plan surface. Source contracts remain authoritative. Prompt and discovery sections checked 2026-09-05.
+This document describes the Octocode Pi Extension (`packages/octocode-pi-extension`): system prompt assembly, tool registration, skill discovery, session data layout, plan lifecycle, and the HTML/Markdown plan surface. Source contracts remain authoritative. Prompt, worker, tool, and discovery sections checked 2026-09-08.
 
 ---
 
@@ -8,14 +8,14 @@ This document describes the Octocode Pi Extension (`packages/octocode-pi-extensi
 
 | Area | Source contract |
 |---|---|
-| Main-agent policy | [`src/prompts/system-prompt.ts`](src/prompts/system-prompt.ts): concise host facts plus canonical Awareness operating instructions; the requester determines workflow and response format |
-| Awareness CLI bindings | [`src/tools/awareness-cli-context.ts`](src/tools/awareness-cli-context.ts): installed runner, shared database/workspace and stable agent identity |
+| Main-agent policy | `@octocodeai/agent-contracts/prompts` owns the canonical coder kernel; [`src/prompts/system-prompt.ts`](src/prompts/system-prompt.ts) adds Pi host facts and canonical Awareness guidance |
+| Awareness host bindings | [`src/tools/awareness-cli-context.ts`](src/tools/awareness-cli-context.ts): native-facade routing, installed fallback runner, shared database/workspace and stable agent identity |
 | Runtime physiology | [`src/adapters/pi-physiology.ts`](src/adapters/pi-physiology.ts): headless native measurements and session fences; [`src/adapters/pi-physiology-regulation.ts`](src/adapters/pi-physiology-regulation.ts): bounded projection of canonical Awareness advice |
 | Context assembly and lifecycle | [`src/index.ts`](src/index.ts), [`src/tools/session-prompt-context.ts`](src/tools/session-prompt-context.ts), and [`src/tools/context-segments.ts`](src/tools/context-segments.ts) |
 | Direct tool names | [`src/constants.ts`](src/constants.ts); registration in `registerSupportToolPhase` |
 | MCP discovery and execution | [`src/tools/mcp-tool.ts`](src/tools/mcp-tool.ts) and [`src/tools/mcp-config.ts`](src/tools/mcp-config.ts) |
 | Skill discovery | [`src/tools/skill-discovery.ts`](src/tools/skill-discovery.ts); the `skill` tool consumes that inventory from [`src/tools/skill-tool.ts`](src/tools/skill-tool.ts) |
-| Worker spawning and waits | [`src/tools/unified-agent-tool.ts`](src/tools/unified-agent-tool.ts) and [`src/tools/agent-tools.ts`](src/tools/agent-tools.ts) |
+| Worker spawning and waits | [`src/tools/agents/tool.ts`](src/tools/agents/tool.ts), [`src/tools/agents/lifecycle.ts`](src/tools/agents/lifecycle.ts), and [`src/tools/agents/wait.ts`](src/tools/agents/wait.ts) |
 | Pi retained-context evidence | [`src/adapters/pi-retained-context.ts`](src/adapters/pi-retained-context.ts) |
 | Plan projection | [`src/tools/plan-read-model.ts`](src/tools/plan-read-model.ts) |
 
@@ -27,14 +27,7 @@ This reference does not assign quality grades or claim token savings without a m
 
 ### 2.1 Composition
 
-The extension adds a short `<octocode>` block describing host capabilities, the
-user’s ownership of workflow, trust boundaries, and `/configuration`, followed by
-the compact canonical `EXTERNAL_AGENT_AWARENESS_PROMPT` from Awareness, including
-cooperation, communication, verification and a generated capability summary. Full
-recipes and command details remain available through the skill, `guide` and schemas. It does not
-inject repository-state snapshots, regex-triggered instructions, or a mandatory
-engineering workflow. Tool catalogs and explicitly selected skills provide their
-own capability descriptions.
+The extension adds a short `<octocode_host>` capability and trust-boundary adapter, then composes the canonical coder kernel from `@octocodeai/agent-contracts/prompts` with `EXTERNAL_AGENT_AWARENESS_PROMPT`. The root process receives intent classification, execution/delegation, verification, continuation, tool routing, and output rules. Workers receive host/interaction safety plus their bounded shared and role contracts, never root user-facing authority. Live catalogs and selected skills retain operational detail; no regex-triggered repository instruction is injected.
 
 Source: `src/prompts/system-prompt.ts` → `SYSTEM_PROMPT`.
 Bundled artifact: `dist/system/SYSTEM_PROMPT.md`.
@@ -59,7 +52,7 @@ catalog or rebuild the system prompt. Session initialization resets the frozen p
 
 Workers receive only segments supported by their active tool allowlist. Their role
 prompt remains caller-owned, while MCP contracts, enabled skills, session artifacts,
-and Awareness CLI bindings use the same attribution and token-budget contract as the
+and Awareness host bindings use the same attribution and token-budget contract as the
 main session.
 
 The active plan is a separate attributed turn-context segment, budgeted at 15k
@@ -90,8 +83,8 @@ load or list call; the initial prompt inventory stays frozen.
 
 | File | Content |
 |---|---|
-| `src/prompts/system-prompt.ts` | `SYSTEM_PROMPT` constant (host facts plus canonical full Awareness guide) |
-| `src/prompts/plan-prompt.ts` | Describes current plan state using shared goal length and truncation constants |
+| `src/prompts/system-prompt.ts` | Pi host adapter plus root/worker selection over the shared canonical prompt builders |
+| `src/prompts/plan-prompt.ts` | Thin Pi call-syntax adapter over the shared atomic-Start plan prompt |
 | `@octocodeai/agent-contracts/prompts` | Local owner: `packages/octocode-agent-contracts/src/prompts/`. Pi build selects `coordination:"worker-only"`; runtime injects the canonical Awareness guide once, preserving shared worker restrictions without parallel ledger instructions |
 
 ---
@@ -109,7 +102,7 @@ OVERRIDDEN_BUILTIN_TOOL_NAMES = ['bash']
 // Octocode owns the implementation (path guard, write-target guard)
 ```
 
-### 3.2 Direct Pi tools (14)
+### 3.2 Direct Pi tools (15 including the `bash` override)
 
 Registered in `registerSupportToolPhase` in [`src/index.ts`](src/index.ts):
 
@@ -117,22 +110,24 @@ Registered in `registerSupportToolPhase` in [`src/index.ts`](src/index.ts):
 |---|---|---|
 | `file` | `file-tool.ts` | Guarded file mutations (edit/write/delete) |
 | `bash` | `bash-tool.ts` | Shell tasks (overrides Pi weak builtin) |
-| `readMedia` | `read-media-tool.ts` | Inspect image/video/audio |
+| `inspectMedia` | `read-media-tool.ts` | Inspect image/video/audio |
 | `media` | `create-media-tool.ts` | Create/transform media |
 | `runFfmpeg` | `run-ffmpeg-tool.ts` | Raw ffmpeg argv |
 | `web` | `web-tool.ts` | Web search and fetch |
 | `chromeDebug` | `chrome-debug-tool.ts` | CDP browser automation |
-| `agent` | `unified-agent-tool.ts` | Spawn/manage subagents |
+| `agent` | `agents/tool.ts` | Spawn/manage bounded subagents |
 | `callTool` | `call-tool.ts` | Dynamic reusable tool registry |
 | `skill` | `skill-tool.ts` | Load installed skills + manage dynamic skills |
-| `plan` | `plan-tool.ts` | Compaction-safe task checklist |
+| `plan` | `planning/plan-registration.ts` | Compaction-safe task checklist and reviewed Start lifecycle |
 | `localServer` | `local-server-tool.ts` | Local static server |
 | `askUser` | `ask-user-tool.ts` | Interactive user input |
+| `awareness` | `awareness-tool.ts` | Canonical Awareness catalog and argv-only command gateway |
 | `MCPTool` | `mcp-tool.ts` | MCP 2026-07-28 client → all research tools |
 
-The 13 support tools and guarded `bash` override form the direct palette. Awareness
-signals, locks, durable memory and maintenance use its installed CLI through `bash`.
-Native Pi registry, event delivery/policy, mutation guards and plan UI remain active.
+The 14 support tools and guarded `bash` override form the direct palette. The native
+`awareness` facade handles catalog discovery and host-bound calls; the installed CLI remains
+available for external-host-only operations. Native Pi registry, event delivery/policy,
+mutation guards and plan UI remain active.
 External CLI agents can participate through the same physical SQLite file and
 normalized workspace, using distinct stable IDs. See [the agent flow](docs/AWARENESS_AGENT_FLOW.md).
 

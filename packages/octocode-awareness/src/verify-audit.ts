@@ -82,7 +82,7 @@ export function auditUnverified(
   }
   const artifact = normalizeArtifact(params.artifact);
   if (artifact) {
-    where.push('(artifact = ? OR artifact IS NULL)');
+    where.push('artifact = ?');
     binds.push(artifact);
   }
 
@@ -129,7 +129,7 @@ export function auditUnverified(
     const staleBinds: (string | number)[] = [nowIso, nowIso];
     if (params.agentId) { staleWhere.push('ai.agent_id = ?'); staleBinds.push(params.agentId); }
     if (workspacePath) { staleWhere.push('ai.workspace_path = ?'); staleBinds.push(workspacePath); }
-    if (artifact) { staleWhere.push('(ai.artifact = ? OR ai.artifact IS NULL)'); staleBinds.push(artifact); }
+    if (artifact) { staleWhere.push('ai.artifact = ?'); staleBinds.push(artifact); }
     if (ageCutoff) { staleWhere.push('ai.updated_at < ?'); staleBinds.push(ageCutoff); }
     if (params.origins?.length) {
       const origins = [...new Set(params.origins)];

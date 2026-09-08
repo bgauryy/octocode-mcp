@@ -38,12 +38,18 @@ export const PI_LIFECYCLE_MAPPINGS = {
   session_tree: { canonical: 'session.tree-changed', phase: 'after', authority: ['observe'] },
   agent_start: { canonical: 'agent.started', phase: 'after', authority: ['observe'] },
   agent_end: { canonical: 'agent.ended', phase: 'after', authority: ['observe'] },
+  /** Fires once after all retries, compaction retries, and queued follow-ups complete. */
+  agent_settled: { canonical: 'agent.settled', phase: 'after', authority: ['observe'] },
   turn_start: { canonical: 'turn.started', phase: 'after', authority: ['observe'] },
   turn_end: { canonical: 'turn.ended', phase: 'after', authority: ['observe'] },
   message_start: { canonical: 'message.started', phase: 'after', authority: ['observe'] },
+  /** Streaming content delta — observe only. */
+  message_update: { canonical: 'message.delta', phase: 'after', authority: ['observe'] },
   message_end: { canonical: 'message.ended', phase: 'after', authority: ['rewrite', 'context'] },
   tool_call: { canonical: 'tool.requested', phase: 'permission', authority: ['allow-deny', 'rewrite'] },
   tool_execution_start: { canonical: 'tool.started', phase: 'after', authority: ['observe'] },
+  /** Streaming tool-output update — observe only. */
+  tool_execution_update: { canonical: 'tool.updated', phase: 'after', authority: ['observe'] },
   tool_execution_end: { canonical: 'tool.ended', phase: 'after', authority: ['observe'] },
   model_select: { canonical: 'model.selected', phase: 'after', authority: ['observe'] },
   thinking_level_select: { canonical: 'model.thinking-level-selected', phase: 'after', authority: ['observe'] },

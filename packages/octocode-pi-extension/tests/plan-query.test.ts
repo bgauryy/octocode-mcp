@@ -64,52 +64,50 @@ test('plan guidance teaches the required queries[] envelope without function-cal
   assert.doesNotMatch(guidance, /plan\((?:set|propose|clarify|add|start|complete|remove|clear|show)(?::[^)]*)?\)/i);
 });
 
-test('plan schema exposes session, shared, and auto scope on each query', () => {
-  const tool = loadTool();
-  const schema = tool.parameters as {
-    properties?: { queries?: { items?: { properties?: Record<string, { enum?: string[] }> } } };
-  };
-  assert.deepEqual(schema.properties?.queries?.items?.properties?.['scope']?.enum, ['auto', 'session', 'shared']);
-  assert.ok(schema.properties?.queries?.items?.properties?.['receipt'], 'complete exposes an observed check receipt');
+type PlanSchemaBranch = {
+  properties?: Record<string, { const?: string; enum?: string[]; minItems?: number; maxItems?: number }>;
+  required?: string[];
+};
+
+function planSchemaBranches(tool: ToolDefinition): PlanSchemaBranch[] {
+  const schema = tool.parameters as { properties?: { queries?: { items?: { anyOf?: PlanSchemaBranch[]; oneOf?: PlanSchemaBranch[] } } } };
+  const items = schema.properties?.queries?.items;
+  return items?.anyOf ?? items?.oneOf ?? [];
+}
+
+test('plan schema exposes scope and receipts only on matching action branches', () => {
+  const branches = planSchemaBranches(loadTool());
+  const set = branches.find((branch) => branch.properties?.['action']?.enum?.[0] === 'set')!;
+  assert.deepEqual(set.properties?.['scope']?.enum, ['auto', 'session', 'shared']);
+  const complete = branches.find((branch) => branch.properties?.['action']?.enum?.[0] === 'complete')!;
+  assert.ok(complete.properties?.['receipt']);
+  assert.equal(set.properties?.['receipt'], undefined);
 });
 
-test('plan schema requires reasoning on each query item', () => {
+test('plan schema requires bounded reasoning on every action branch', () => {
   const tool = loadTool();
-  const schema = tool.parameters as {
-    properties?: {
-      queries?: {
-        minItems?: number;
-        items?: { properties?: Record<string, unknown>; required?: string[] };
-      };
-    };
-  };
-  const item = schema.properties?.queries?.items;
-  assert.ok(item?.properties?.['reasoning'], 'reasoning property exists on item');
-  assert.ok(item?.required?.includes('reasoning'), 'reasoning is required on item');
-  assert.ok(item?.properties?.['action'], 'action property exists on item');
-  assert.equal(schema.properties?.queries?.minItems, 1, 'minItems is 1');
+  const schema = tool.parameters as { properties?: { queries?: { minItems?: number } } };
+  assert.equal(schema.properties?.queries?.minItems, 1);
+  const branches = planSchemaBranches(tool);
+  assert.equal(branches.length, 9);
+  for (const branch of branches) {
+    assert.ok(branch.required?.includes('reasoning'));
+    assert.ok(branch.required?.includes('action'));
+  }
 });
 
-test('plan schema discriminates actions and advertises their required fields', () => {
-  const tool = loadTool();
-  const schema = tool.parameters as {
-    properties?: {
-      queries?: {
-        items?: {
-          oneOf?: Array<{ title?: string; required?: string[] }>;
-          properties?: Record<string, { minItems?: number; maxItems?: number; items?: { maxItems?: number } }>;
-        };
-      };
-    };
-  };
-  const item = schema.properties?.queries?.items;
-  // Check action enum values (replaces oneOf discrimination)
+test('plan schema discriminates actions and advertises required branch fields', () => {
+  const branches = planSchemaBranches(loadTool());
   assert.deepEqual(
-    (item?.properties?.['action'] as { enum?: string[] })?.enum,
+    branches.map((branch) => branch.properties?.['action']?.enum?.[0]),
     ['set', 'propose', 'clarify', 'add', 'start', 'complete', 'remove', 'clear', 'show'],
   );
-  assert.equal(item?.properties?.['steps']?.minItems, 1);
-  assert.equal(item?.properties?.['questions']?.maxItems, 3);
+  const set = branches[0]!;
+  const clarify = branches[2]!;
+  assert.ok(set.required?.includes('steps'));
+  assert.equal(set.properties?.['steps']?.minItems, 1);
+  assert.ok(clarify.required?.includes('questions'));
+  assert.equal(clarify.properties?.['questions']?.maxItems, 3);
 });
 
 // ─── Single-query passthrough ─────────────────────────────────────────────────

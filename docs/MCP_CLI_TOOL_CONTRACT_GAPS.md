@@ -8,8 +8,7 @@ tool—including a second continuation page—through tools-core, CLI, and MCP.
 This is a historical snapshot of the 2026-09-01 audit, not production approval.
 Later fixes and verification can supersede its scores and open items. Use
 [`MCP_TOOL_QUALITY_AND_AGENT_WORKFLOW.md`](https://github.com/bgauryy/octocode/blob/main/docs/MCP_TOOL_QUALITY_AND_AGENT_WORKFLOW.md)
-for tool-routing guidance and [`OCTOCODE_TOOLS.md`](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_TOOLS.md) for the
-field-level reference.
+for acceptance guidance and [`OCTOCODE_TOOLS.md`](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_TOOLS.md) for the current field-level reference, shared call envelope, and internal/external execution map. The live `tools <name> --scheme` output remains authoritative when this dated snapshot differs.
 
 ## Audit result
 

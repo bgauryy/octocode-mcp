@@ -1,13 +1,13 @@
 # Plan Review UX Rubric V1
 
-Status: Frozen before TUI implementation
+Status: Frozen for the atomic Start lifecycle
 
 ## Sample
 
 - Recruit at least five participants who did not implement the feature.
 - Each participant completes all ten tasks in `plan-review-ux-v1.json`.
 - Randomize task order per participant while preserving prerequisite state inside a task.
-- Record the current product baseline against the same corpus before changing the generic question or plan-review TUI.
+- Record a named baseline build and candidate build against the same corpus before a rollout decision.
 - Human baseline and target receipts stay local; no telemetry is uploaded automatically.
 
 ## Assistance
@@ -24,9 +24,9 @@ Each of the 50 observations records:
 - selected path/action;
 - final review phase;
 - revision identified by the participant;
-- whether Accepted and Executing were distinguished correctly when asked;
+- whether Start was correctly understood to authorize the displayed revision and begin execution atomically;
 - completion and moderator-intervention booleans;
-- accidental-Start boolean;
+- unauthorized-Start boolean;
 - elapsed time in seconds;
 - one short confusion note with no secrets or raw RFC content.
 
@@ -37,9 +37,9 @@ An observation passes only when:
 1. the participant reaches the task's declared `success` state;
 2. no prohibited event occurs;
 3. no moderator hint is given after start; and
-4. the participant distinguishes Accepted from Executing correctly whenever the task asks.
+4. the participant identifies Start as the only approval action and understands its immediate execution consequence.
 
-Aggregate score is passing observations divided by 50. Default rollout and old-path removal require at least 45/50 passes (90%) and zero accidental Starts. Any accidental Start fails the launch gate regardless of aggregate score.
+Aggregate score is passing observations divided by 50. Default rollout and old-path removal require at least 45/50 passes (90%) and zero unauthorized Starts (zero accidental Starts). Any unauthorized Start fails the launch gate regardless of aggregate score.
 
 ## Density
 

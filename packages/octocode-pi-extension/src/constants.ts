@@ -28,6 +28,7 @@ const COMMON_SUPPORT_TOOL_NAMES = [
   'skill',
   'plan',
   'localServer',
+  'awareness',
   'MCPTool',
   'askUser',
 ] as const;
@@ -35,7 +36,7 @@ const COMMON_SUPPORT_TOOL_NAMES = [
 const MEDIA_SUPPORT_TOOL_NAMES = ['inspectMedia', 'media', 'runFfmpeg'] as const;
 
 // Default model-callable support tools. Together with the overridden bash tool,
-// this is the 14-tool unified direct palette. Awareness operations use its CLI;
+// this is the 15-tool unified direct palette. Explicit Awareness operations prefer the native facade;
 // native events, edit guards and plan projections remain host integrations. MCP research tools and
 // slash commands are separate surfaces and are not counted here.
 export const OCTOCODE_SUPPORT_TOOL_NAMES = [

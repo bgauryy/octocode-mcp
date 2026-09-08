@@ -4,9 +4,10 @@ Pi exposes one coordinated task flow over the Awareness ledger. The model uses
 `plan` for session and shared execution; it does not manually synchronize a local
 checklist with separate plan, task, work-presence, and verification tools.
 
-Awareness remains the cross-host SQLite backend. Other agents use its canonical
-CLI and library operations. Pi retains its plan UI and uses the same canonical CLI
-for model-facing signals, locks, memory, bookkeeping and maintenance.
+Awareness remains the cross-host SQLite backend. Other hosts use its canonical CLI
+and library operations. Pi retains its plan UI and exposes one native `awareness`
+facade for model-facing signals, locks, memory, verification, history, bookkeeping,
+and maintenance. The facade consumes the same package-owned command catalog.
 
 ## Read claims by evidence level
 
@@ -29,11 +30,11 @@ and [session artifacts](SESSION_ARTIFACTS.md) for Pi-local projections.
 | Concern | Owner |
 |---|---|
 | Session or shared execution | `plan` |
-| Unread peer input | Native status/events and CLI `signal list` |
-| Exceptional non-mergeable exclusivity | CLI `lock` |
-| Necessary peer communication | CLI `signal publish`, `signal reply`, `signal ack`, `signal resolve` |
-| Reusable verified learning | CLI `memory`, `reflect`, `refinement` |
-| Full workflows, diagnostics, and recovery | `$OCTOCODE_AWARENESS_CLI` |
+| Unread peer input | Native status/events and `awareness` calls such as `signal list` |
+| Exceptional non-mergeable exclusivity | `awareness` calls for `lock` |
+| Necessary peer communication | `awareness` calls for `signal publish`, `signal reply`, `signal ack`, and `signal resolve` |
+| Reusable verified learning | `awareness` calls for `memory`, `reflect`, and `refinement` |
+| Catalog, diagnostics, recovery, and administration | `awareness` list/describe/call; bound CLI only when a descriptor says `external-host-only` |
 
 The catalog is unconditional. Pi uses the full `@octocodeai/octocode-awareness`
 CLI and library. Database opening validates the store; it does not implicitly
@@ -43,9 +44,11 @@ diagnostics when an existing store is rejected.
 ## Identity and automatic lifecycle
 
 The system prompt includes Awareness's compact canonical cooperation policy and
-generated capability summary; `guide` and schemas provide full detail on demand. A separate `awareness-cli-runtime` segment supplies host facts from
-`src/tools/awareness-cli-context.ts`. Guarded `bash` inherits the installed runner,
-current database/workspace and participant identity:
+generated capability summary. A separate `awareness-cli-runtime` segment supplies
+host facts from `src/tools/awareness-cli-context.ts`. In Pi, call `awareness` with
+`action:"list"`, `"describe"`, or `"call"`; the host injects the current database,
+workspace, and participant identity. Guarded `bash` inherits the same bindings for
+the external-host-only fallback:
 
 ```bash
 "$OCTOCODE_NODE" "$OCTOCODE_AWARENESS_CLI" --db "$OCTOCODE_AWARENESS_DB" signal list \
@@ -189,14 +192,14 @@ non-mergeable state when concurrent mutation is unsafe.
 - `memory`: recall only when prior learning can change the approach; store only
   verified reusable outcomes that source and docs do not already own.
 
-With `storage.mode=memory`, Pi omits durable CLI bindings and directs the model to
-session state. It does not pretend a lock, signal or memory write succeeded. Session-local
+With `storage.mode=memory`, Pi rejects durable `awareness` calls, omits CLI bindings,
+and directs the model to session state. It does not pretend a lock, signal or memory write succeeded. Session-local
 `session.json`, `plan/index.json`, `tasks/index.json`, and `backlog/index.json` remain
 available as inspectable projections, never as replacements for the Awareness ledger.
 
 ## Diagnostics and recovery
 
-Use the bundled full CLI to inspect the installed contracts:
+Prefer `awareness` list/describe to inspect the installed contracts. For external-host diagnostics, the same bundled CLI remains available:
 
 ```bash
 "$OCTOCODE_NODE" "$OCTOCODE_AWARENESS_CLI" --db "$OCTOCODE_AWARENESS_DB" schema commands --all --compact
@@ -207,12 +210,13 @@ The same package is available as `npx @octocodeai/octocode-awareness`.
 
 | Capability | Full CLI routes | Native Pi exposure |
 |---|---|---|
-| Planning, ownership, and checks | `plan`, `task`, `work`, `lock`, `verify` | Shared `plan` and mutation presence; explicit locks and audits use CLI |
-| Peer coordination | `agent`, `signal` | Automatic registry and peer-event delivery/policy; explicit signals use CLI |
-| Continuation | `handoff add`, `handoff list`, `handoff clear`, `session capture` | Explicit CLI; Pi also maintains its own session/compaction artifacts |
-| Durable learning | `memory`, `reflect`, `refinement` | Canonical CLI through guarded `bash` |
-| Operational inspection | `attend`, `status`, `query` | Passive status; structured operational state and regulation use CLI |
-| Maintenance and configuration | `maintenance`, `database`, `config`, `hooks`, `hook run` | Explicit CLI; Pi mutation and lifecycle hooks run natively |
+| Planning, ownership, and checks | `plan`, `task`, `work`, `lock`, `verify` | Shared `plan` for normal execution; `awareness` for explicit recovery, locks, and audits |
+| Peer coordination | `agent`, `signal` | Automatic registry/event delivery plus explicit `awareness` signal calls |
+| Continuation | `handoff add`, `handoff list`, `handoff clear`, `session capture` | `awareness`; Pi also maintains session/compaction artifacts |
+| Durable learning | `memory`, `reflect`, `refinement` | `awareness` list/describe/call |
+| Operational inspection | `attend`, `status`, `query` | Passive status plus structured `awareness` calls |
+| History and recovery | `history` | Native captures plus `awareness`; restore calls retain approval and preview binding |
+| Maintenance and configuration | `maintenance`, `database`, `config`, `hooks`, `hook run` | `awareness` for supported commands; bound CLI for descriptors marked `external-host-only` |
 
 Full-package availability does not mean Pi automatically captures Awareness
 sessions, runs reflection, or supplies native-runtime sensors to `attend`. Operational

@@ -28,7 +28,7 @@ import type { QueryRecord } from '../query-envelope.js';
 // ─── Profile & operation constants ────────────────────────────────────────────
 
 /** Typed profiles backed by SUBAGENT_REGISTRY. */
-const TYPED_REGISTRY_PROFILES = ['researcher', 'planner', 'architect'] as const;
+const TYPED_REGISTRY_PROFILES = ['researcher', 'planner', 'architect', 'implementer'] as const;
 
 /** All public profiles exposed on the `agent` tool. */
 export const AGENT_PROFILES = [
@@ -59,6 +59,7 @@ export const PROFILE_TO_SUBAGENT: Record<
   researcher: 'researcher',
   planner: 'planner',
   architect: 'architect',
+  implementer: 'implementer',
 };
 
 const DYNAMIC_CHILD_TOOLS = new Set([
@@ -102,8 +103,9 @@ export function resolveAgentBatchEffect(input?: Record<string, unknown>): ToolEf
     if (!operation || !(AGENT_OPERATIONS as readonly string[]).includes(operation)) return undefined;
     if (operation !== 'spawn') continue;
 
-    if (!String(value['task'] ?? '').trim()) return undefined;
-    const profile = typeof value['profile'] === 'string' ? value['profile'] : 'custom';
+    if (!String(value['task'] ?? value['goal'] ?? '').trim()) return undefined;
+    const profile = typeof value['profile'] === 'string' ? value['profile'] : undefined;
+    if (!profile) return undefined;
     if (!(AGENT_PROFILES as readonly string[]).includes(profile)) return undefined;
     if (profile === 'custom' || profile === 'browser') return 'external-effect';
 

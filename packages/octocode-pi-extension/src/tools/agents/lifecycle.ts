@@ -9,6 +9,7 @@
  */
 
 import type { PiContext, ToolCallResult } from '../../types.js';
+import { SUBAGENT_WORKER_CONTRACT } from '@octocodeai/agent-contracts/prompts';
 import { setManagedStatus } from '../runtime-renderer.js';
 import {
   type AgentRecord,
@@ -296,9 +297,29 @@ export async function executeSpawnQuery(
   signal?: AbortSignal,
 ): Promise<ToolCallResult> {
   signal?.throwIfAborted();
-  const profile = (query['profile'] as AgentProfile | undefined) ?? 'custom';
-  const task = String(query['task'] ?? '').trim();
-  const context = query['context'] as string | undefined;
+  const profile = query['profile'] as AgentProfile | undefined;
+  if (!profile) throw new Error('agent spawn requires an explicit profile.');
+  const packet = {
+    goal: String(query['goal'] ?? '').trim(),
+    context: String(query['context'] ?? '').trim(),
+    scope: String(query['scope'] ?? '').trim(),
+    ownership: String(query['ownership'] ?? '').trim(),
+    acceptance: String(query['acceptance'] ?? '').trim(),
+    returnShape: String(query['returnShape'] ?? '').trim(),
+  };
+  for (const [field, value] of Object.entries(packet)) {
+    if (!value) throw new Error(`agent spawn requires non-empty ${field}.`);
+  }
+  const roleInstructions = String(query['task'] ?? '').trim();
+  const task = [
+    `Goal: ${packet.goal}`,
+    `Context: ${packet.context}`,
+    `Scope: ${packet.scope}`,
+    `Ownership: ${packet.ownership}`,
+    `Acceptance: ${packet.acceptance}`,
+    `Return: ${packet.returnShape}`,
+    ...(roleInstructions ? [`Instructions: ${roleInstructions}`] : []),
+  ].join('\n');
   const name = query['name'] as string | undefined;
   const model = query['model'] as string | undefined;
   const provider = query['provider'] as string | undefined;
@@ -308,14 +329,8 @@ export async function executeSpawnQuery(
   const includeUncommitted = query['includeUncommitted'] as boolean | undefined;
   const planStep = (query['planStep'] as string | undefined)?.trim() || undefined;
 
-  if (!task) {
-    throw new Error('agent spawn requires a non-empty task.');
-  }
   const assignment = planStep ? resolvePlanAssignment(planStep, ctx) : undefined;
-
-  const fullTask = context
-    ? `## Context\n${(context as string).trim()}\n\n## Task\n${task}`
-    : task;
+  const fullTask = task;
 
   let spawnParams: SpawnAgentParams;
 
@@ -327,7 +342,7 @@ export async function executeSpawnQuery(
     const runNow = query['runNow'] !== false;
     const durationMs = (query['durationMs'] as number | undefined) ?? 5000;
     const workspaceCwd = query['workspaceCwd'] as string | undefined;
-    const { schemes, cdpDomains } = routeTask(task);
+    const { schemes, cdpDomains } = routeTask(packet.goal);
     const initialFindings: string[] = [];
 
     if (runNow) {
@@ -393,10 +408,10 @@ export async function executeSpawnQuery(
       initialFindings,
     });
     spawnParams = {
-      task: context ? `## Context\n${context.trim()}\n\n## Task\n${spawnConfig.task}` : spawnConfig.task,
+      task: spawnConfig.task,
       name: name ?? `Browser Agent · ${getRandomAgentName()}`,
       cwd,
-      tools: [...new Set([...spawnConfig.tools, 'MCPTool', 'skill', 'bash'])],
+      tools: [...new Set([...spawnConfig.tools, 'MCPTool', 'skill', 'awareness', 'bash'])],
       skills: resolveSubagentSkills(
         SUBAGENT_REGISTRY['browser-agent'],
         cwd ?? ctx?.cwd ?? process.cwd(),
@@ -411,10 +426,12 @@ export async function executeSpawnQuery(
       includeUncommitted,
     };
   } else if (profile === 'custom') {
-    // Custom workers use the Octocode host path by default. Explicit empty
-    // tools and explicit lean mode remain available for isolated smith workers.
+    // Custom workers retain the shared bounded-worker authority; callers supply
+    // only the specialized role delta and least-capability tool set.
     const tools = query['tools'] as string[] | undefined;
-    const systemPrompt = query['systemPrompt'] as string | undefined;
+    const rolePrompt = String(query['systemPrompt'] ?? '').trim();
+    if (!rolePrompt) throw new Error('custom profile requires a non-empty systemPrompt describing the bounded role.');
+    const systemPrompt = `${SUBAGENT_WORKER_CONTRACT}\n\n## Custom role\n\n${rolePrompt}`;
     const resourceMode =
       (query['resourceMode'] as SpawnAgentParams['resourceMode']) ?? 'octocode';
     const workerCwd = cwd ?? ctx?.cwd ?? process.cwd();
@@ -422,7 +439,7 @@ export async function executeSpawnQuery(
       task: fullTask,
       name: name ?? `Worker · ${getRandomAgentName()}`,
       cwd,
-      tools: tools ?? (resourceMode === 'lean' ? [] : ['MCPTool', 'skill', 'bash']),
+      tools: tools ?? (resourceMode === 'lean' ? [] : ['MCPTool', 'skill', 'awareness', 'bash']),
       skills: resourceMode === 'octocode'
         ? resolveSubagentSkills({}, workerCwd)
         : undefined,
@@ -436,7 +453,7 @@ export async function executeSpawnQuery(
       includeUncommitted,
     };
   } else {
-    // Typed registry profile (researcher / planner / architect).
+    // Typed registry profile (researcher / planner / architect / implementer).
     const subagentName = PROFILE_TO_SUBAGENT[profile];
     const config = SUBAGENT_REGISTRY[subagentName] as SubagentConfig & {
       model?: string;

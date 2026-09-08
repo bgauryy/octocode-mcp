@@ -17,7 +17,7 @@ import {
   resolveRehydrationContentRefs,
   type RehydrationLedgerV1,
 } from './session-artifacts.js';
-import { isPersistentStorageEnabled } from '@octocodeai/config';
+import { isPersistentStorageEnabledForExtension as isPersistentStorageEnabled } from '@octocodeai/config';
 import { openPersistentAwareness } from './storage-policy.js';
 
 export const REHYDRATION_RECEIPT_ENTRY_TYPE = 'octocode-rehydration-receipt';

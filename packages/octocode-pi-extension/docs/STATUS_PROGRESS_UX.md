@@ -72,7 +72,8 @@ No renderer mutates workflow state. No notification becomes canonical evidence.
 The footer has a viewport budget. It is not a dashboard squeezed under the editor. The footer can aggregate state when the summary is explicit and reversible:
 
 ```text
-Agents 8 · 3 running · 1 blocked (atlas) · 4 done · /octocode-inbox
+atlas blocked · inspect /octocode-inbox
+Agents 8 · 3 running · 4 done · /octocode-inbox
 ```
 
 This is more truthful than either eight persistent rows or an unexplained `+7`.
@@ -226,7 +227,7 @@ Waiting for you:
 
 ```text
 Needs you · Start plan rev 0284e84f
-Plan accepted · 0/10 · exact revision ready
+Plan review ready · exact revision pending
 ```
 
 Parallel work without attention:

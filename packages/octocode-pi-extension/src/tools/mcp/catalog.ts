@@ -15,8 +15,6 @@ const MAX_TOOLS_PER_SERVER = 5_000;
 const MAX_NAME_CHARS = 256;
 const MAX_INSTRUCTIONS_CHARS = 64_000;
 const MAX_DESCRIPTION_CHARS = 32_000;
-const INDEX_DESCRIPTION_CAP = 4_000;
-const INDEX_INSTRUCTIONS_CAP = 2_000;
 const MAX_GUIDE_CHARS = 16 * 1024 * 1024;
 const MAX_GENERATED_DESCRIPTION_CHARS = 4_000;
 const GUIDE_HEADER_VERSION = 3;
@@ -362,55 +360,13 @@ function summarizeInputSchema(schema: unknown): string {
   return `Input: ${fields.join('; ')}${suffix.length ? `. Relations: ${suffix.join('; ')}` : ''}`;
 }
 
-/** Preserve complete branch rows before spending the budget on optional schema detail. */
-function compactSchemaOutline(schema: unknown, requiredOnly: boolean): string {
-  const lines: string[] = [];
-  const visit = (value: unknown, location: string): void => {
-    if (!isRecord(value)) return;
-    const properties = isRecord(value['properties']) ? value['properties'] : {};
-    const required = schemaRequiredFields(value);
-    const requiredFields = [...required].sort().map((name) => {
-      const field = properties[name];
-      if (!isRecord(field)) return name;
-      return Object.hasOwn(field, 'const')
-        ? `${name}=${JSON.stringify(field['const'])}`
-        : `${name}:${schemaType(field)}`;
-    });
-    const optional = Object.keys(properties).filter(name => !required.has(name)).sort();
-    if (requiredFields.length || (!requiredOnly && optional.length)) {
-      lines.push(`${location} {required: ${requiredFields.join(', ') || 'none'}${!requiredOnly && optional.length ? `; optional: ${optional.join(', ')}` : ''}}`);
-    }
-    if (typeof value['$ref'] === 'string') lines.push(`${location} reference: ${value['$ref']}`);
-    for (const key of ['oneOf', 'anyOf', 'allOf'] as const) {
-      const variants = value[key];
-      if (Array.isArray(variants)) variants.forEach((variant, index) => {
-        if (isRecord(variant)) visit(variant, `${location} ${variantLabel(variant, index)}`);
-      });
-    }
-    for (const [name, field] of Object.entries(properties)) visit(field, `${location}.${name}`);
-    if (isRecord(value['items'])) visit(value['items'], `${location}[]`);
-  };
-  visit(schema, '$');
-  return lines.join('; ');
-}
-
-function fallbackToolDescription(tool: McpCatalogToolSnapshot, server: string): string {
+function fallbackToolDescription(tool: McpCatalogToolSnapshot): string {
   const purpose = tool.description?.replace(/\s+/g, ' ').trim();
   const input = summarizeInputSchema(tool.inputSchema);
-  const full = [purpose, input].filter(Boolean).join(' ');
-  if (full.length <= INDEX_DESCRIPTION_CAP) return full;
-  const shortPurpose = cap(purpose ?? '', 320);
-  const shorter = [shortPurpose, input].filter(Boolean).join(' ');
-  if (shorter.length <= INDEX_DESCRIPTION_CAP) return shorter;
-
-  const next = `Exact schema: MCPTool(${JSON.stringify({ queries: [{ action: 'describe', server, tool: tool.name, reasoning: 'Read the complete input schema' }] })})`;
-  for (const requiredOnly of [false, true]) {
-    const partial = `Input summary partial: ${requiredOnly ? 'optional fields omitted; ' : ''}descriptions/constraints omitted; do not mix variants.`;
-    const summary = `${shortPurpose} ${partial} ${compactSchemaOutline(tool.inputSchema, requiredOnly)} ${next}`.trim();
-    if (summary.length <= INDEX_DESCRIPTION_CAP) return summary;
-  }
-  // A pathological inventory may exceed even the minimal budget. Never emit half a branch.
-  return `${shortPurpose} Input summary omitted: complete branch inventory exceeds the catalog budget. ${next}`.trim();
+  // Render the complete schema summary and description for every tool inline.
+  // No per-tool truncation and no partial/describe fallback: snapshot bounds
+  // (MAX_DESCRIPTION_CHARS, MAX_SCHEMA_CHARS) and MAX_GUIDE_CHARS are the only guards.
+  return [purpose, input].filter(Boolean).join(' ');
 }
 
 function renderGuide(
@@ -421,11 +377,11 @@ function renderGuide(
     const escapedServer = escapePromptMetadata(server.name);
     const lines = [`server: ${escapedServer}`];
     if (server.instructions) {
-      lines.push(`instructions: ${escapePromptMetadata(cap(server.instructions.replace(/\s+/g, ' ').trim(), INDEX_INSTRUCTIONS_CAP))}`);
+      lines.push(`instructions: ${escapePromptMetadata(server.instructions.replace(/\s+/g, ' ').trim())}`);
     }
     for (const tool of [...server.tools].sort((left, right) => left.name.localeCompare(right.name))) {
       lines.push(`tool: ${escapePromptMetadata(tool.name)}`);
-      const description = generated?.get(`${server.name}\0${tool.name}`) ?? fallbackToolDescription(tool, server.name);
+      const description = generated?.get(`${server.name}\0${tool.name}`) ?? fallbackToolDescription(tool);
       lines.push(`description: ${escapePromptMetadata(description)}`);
     }
     return lines.join('\n');
