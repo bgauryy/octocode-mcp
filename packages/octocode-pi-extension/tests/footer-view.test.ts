@@ -53,6 +53,25 @@ test('is cell-width safe for ASCII, CJK, emoji, combining characters, and ANSI l
   }
 });
 
+test('non-attention routes appear after content segments', () => {
+  const lines = renderFooterView({
+    rows: [[
+      { text: 'Plan 3/6', token: 'brand' as const },
+      { text: 'task 2 Implement feature', token: 'muted' as const },
+      { text: '/octocode-inbox', token: 'link' as const },  // no attention — should be last
+    ]],
+  }, { width: 80 });
+  assert.equal(lines.length, 1);
+  const line = lines[0]!;
+  // compactRoute maps /octocode-inbox → inbox in the rendered output
+  assert.ok(line.indexOf('task 2') < line.indexOf('inbox'),
+    'content segment appears before non-attention route');
+  assert.match(line, /Plan 3\/6/);
+  assert.match(line, /task 2 Implement/);
+  // compactRoute maps /octocode-inbox → inbox in the rendered output
+  assert.match(line, /inbox/);
+});
+
 test('heartbeat text changes do not change footer height', () => {
   const before = renderFooterView({ rows: [[{ text: 'Working · 14s' }], [{ text: 'Plan 1/3' }]] }, { width: 52 });
   const after = renderFooterView({ rows: [[{ text: 'Working · 15s' }], [{ text: 'Plan 1/3' }]] }, { width: 52 });

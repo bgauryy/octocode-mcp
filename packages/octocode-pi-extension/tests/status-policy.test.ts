@@ -141,6 +141,57 @@ test('heartbeat-only changes preserve selected row identities and height', () =>
   assert.equal(after.rows.length, before.rows.length);
 });
 
+test('agent summary is suppressed when all agents are blocked or failed', () => {
+  const result = selectStatusRows(snapshot({
+    agents: [
+      { id: 'a1', label: 'atlas', state: 'blocked', pendingMessages: 0, updatedAt: 9_000 },
+      { id: 'a2', label: 'nova', state: 'failed', pendingMessages: 0, updatedAt: 8_000 },
+    ],
+  }), { width: 120, height: 40, density: 'automatic' });
+  // Named rows should exist for each attention agent
+  assert.ok(result.rowIds.some((id) => id.startsWith('agent:')), 'named attention rows present');
+  // Summary must be absent — no state breakdown beyond what the named rows already say
+  assert.ok(!result.rowIds.includes('agents:summary'), 'no redundant summary row');
+});
+
+test('agent summary shows non-attention state breakdown when agents are mixed', () => {
+  const result = selectStatusRows(snapshot({
+    agents: [
+      { id: 'a1', label: 'atlas', state: 'blocked', pendingMessages: 0, updatedAt: 9_000 },
+      { id: 'a2', label: 'nova', state: 'running', pendingMessages: 0, updatedAt: 8_500 },
+      { id: 'a3', label: 'luna', state: 'done', pendingMessages: 0, updatedAt: 7_000 },
+    ],
+  }), { width: 120, height: 40, density: 'automatic' });
+  assert.ok(result.rowIds.includes('agents:summary'), 'summary row present for non-attention agents');
+  const summaryRow = result.rows[result.rowIds.indexOf('agents:summary')]!;
+  const text = summaryRow.map((s) => s.text).join(' ');
+  assert.match(text, /Agents 3/, 'total count');
+  assert.match(text, /1 running/, 'running count');
+});
+
+test('compact mode caps agent attention at 2 named workers and shows overflow count', () => {
+  const result = selectStatusRows(snapshot({
+    agents: [
+      { id: 'a1', label: 'atlas', state: 'blocked', pendingMessages: 0, updatedAt: 9_500 },
+      { id: 'a2', label: 'nova', state: 'blocked', pendingMessages: 0, updatedAt: 9_000 },
+      { id: 'a3', label: 'luna', state: 'blocked', pendingMessages: 0, updatedAt: 8_500 },
+      { id: 'a4', label: 'mercury', state: 'failed', pendingMessages: 0, updatedAt: 8_000 },
+      { id: 'a5', label: 'venus', state: 'error', pendingMessages: 0, updatedAt: 7_500 },
+    ],
+  }), { width: 120, height: 40, density: 'compact' });
+  const attentionRow = result.rows[result.rowIds.indexOf('agents:attention')];
+  assert.ok(attentionRow, 'compact attention row present');
+  const text = attentionRow!.map((s) => s.text).join(' ');
+  // Only the two most-recently-updated workers are named
+  assert.match(text, /atlas blocked/, 'first named worker');
+  assert.match(text, /nova blocked/, 'second named worker');
+  // Remaining 3 workers collapsed into overflow count
+  assert.match(text, /\+3/, 'overflow count');
+  // Third worker must NOT be named individually
+  assert.doesNotMatch(text, /luna blocked/, 'third worker collapsed');
+  assert.match(text, /\/octocode-inbox/, 'inbox route preserved');
+});
+
 test('selection is deterministic for every density regardless of attention input order', () => {
   const attention = [
     { id: 'b', kind: 'messages' as const, priority: 'P2' as const, severity: 'info' as const, actor: 'Messages', reason: '2 pending', detailRoute: '/octocode-inbox', createdAt: 9_000 },

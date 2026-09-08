@@ -125,16 +125,20 @@ function agentCandidates(snapshot: UxSnapshotV1): Candidate[] {
   // Blocked and failed workers already own named attention rows above; repeating
   // their counts here would give one semantic fact two ambient owners.
   const stateOrder = ['running', 'idle', 'queued', 'done', 'killed'];
+  const summaryParts = stateOrder.flatMap((state) => {
+    const count = counts.get(state) ?? 0;
+    return count > 0 ? [{ text: `${count} ${state}`, token: state === 'failed' ? 'error' as const : state === 'blocked' ? 'warning' as const : 'muted' as const }] : [];
+  });
+  // When every agent already has a named attention row there is nothing useful to
+  // add in a summary — suppress it to avoid a redundant 'Agents N · /octocode-inbox' row.
+  if (summaryParts.length === 0 && attention.length > 0) return attention;
   const summary: Candidate = {
     id: 'agents:summary',
     priority: 'P2',
     order: 1_000,
     segments: [
       { text: `Agents ${snapshot.agents.length}`, token: 'brand' },
-      ...stateOrder.flatMap((state) => {
-        const count = counts.get(state) ?? 0;
-        return count > 0 ? [{ text: `${count} ${state}`, token: state === 'failed' ? 'error' as const : state === 'blocked' ? 'warning' as const : 'muted' as const }] : [];
-      }),
+      ...summaryParts,
       { text: '/octocode-inbox', token: 'link' },
     ],
     detailRoute: '/octocode-inbox',
@@ -214,10 +218,14 @@ function compactCandidates(all: Candidate[]): Candidate[] {
   }
   if (agentAttention.length > 0) {
     for (const candidate of agentAttention) removed.add(candidate.id);
+    const MAX_NAMED = 2;
+    const visibleAttention = agentAttention.slice(0, MAX_NAMED);
+    const overflow = agentAttention.length - MAX_NAMED;
     grouped.push({
       id: 'agents:attention', priority: 'P2', order: -1, detailRoute: '/octocode-inbox',
       segments: [
-        ...agentAttention.flatMap((candidate) => candidate.segments.slice(0, 1)),
+        ...visibleAttention.flatMap((candidate) => candidate.segments.slice(0, 1)),
+        ...(overflow > 0 ? [{ text: `+${overflow}`, token: 'warning' as const, attention: true }] : []),
         { text: '/octocode-inbox', token: 'link', attention: true },
       ],
     });

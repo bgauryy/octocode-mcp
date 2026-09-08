@@ -4073,7 +4073,7 @@ test('agent ledger splits ambient counts from bounded worker detail', async () =
       false,
       'worker detail does not create a duplicate persistent panel'
     );
-    assert.match(footerText(), /Agents 1[\s\S]*inbox[\s\S]*1 running/, 'normal workers use one bounded aggregate row with a promoted route');
+    assert.match(footerText(), /Agents 1[\s\S]*1 running[\s\S]*inbox/, 'normal workers use one bounded aggregate row with state counts before route');
     assert.doesNotMatch(footerText(), /agent ui-worker.*running/, 'normal workers do not grow the footer by entity');
 
     spawned[0]!.emitStdout({
@@ -4119,7 +4119,7 @@ test('agent ledger splits ambient counts from bounded worker detail', async () =
     spawned[0]!.close(0);
     assert.match(
       footerText(),
-      /Agents 1[\s\S]*inbox[\s\S]*1 done/,
+      /Agents 1[\s\S]*1 done[\s\S]*inbox/,
       'completed workers collapse to one normal completion summary with an inbox route',
     );
     assert.doesNotMatch(footerText(), /ui-worker|\bok\b/, 'completed worker detail leaves the ambient footer');

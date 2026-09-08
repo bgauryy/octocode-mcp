@@ -26,7 +26,9 @@ function renderSemanticRow(segments: readonly InlineSegment[], context: TuiRende
   const routes = visible.slice(1).filter(isRoute);
   const required = visible.slice(1).filter((segment) => segment.attention && !isRoute(segment));
   const optional = visible.slice(1).filter((segment) => !segment.attention && !isRoute(segment));
-  const ordered = [first, ...routes, ...required, ...optional];
+  const attentionRoutes = routes.filter((r) => r.attention);
+  const tailRoutes = routes.filter((r) => !r.attention);
+  const ordered = [first, ...attentionRoutes, ...required, ...optional, ...tailRoutes];
   let line = '';
   for (const segment of ordered) {
     const text = compactRoute(segment.text);
