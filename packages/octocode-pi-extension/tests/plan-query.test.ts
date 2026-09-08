@@ -61,6 +61,7 @@ test('plan guidance teaches the required queries[] envelope without function-cal
   assert.match(guidance, /every call.*queries.*reasoning.*action/is);
   assert.match(guidance, /action:\"set\"/i);
   assert.match(guidance, /action:\"propose\"/i);
+  assert.match(guidance, /during execution.*optional index.*reviewed proposal.*revision.*authorizationInteractionId.*omit index/is);
   assert.doesNotMatch(guidance, /plan\((?:set|propose|clarify|add|start|complete|remove|clear|show)(?::[^)]*)?\)/i);
 });
 
@@ -89,7 +90,7 @@ test('plan schema requires bounded reasoning on every action branch', () => {
   const schema = tool.parameters as { properties?: { queries?: { minItems?: number } } };
   assert.equal(schema.properties?.queries?.minItems, 1);
   const branches = planSchemaBranches(tool);
-  assert.equal(branches.length, 9);
+  assert.equal(branches.length, 10);
   for (const branch of branches) {
     assert.ok(branch.required?.includes('reasoning'));
     assert.ok(branch.required?.includes('action'));
@@ -100,7 +101,7 @@ test('plan schema discriminates actions and advertises required branch fields', 
   const branches = planSchemaBranches(loadTool());
   assert.deepEqual(
     branches.map((branch) => branch.properties?.['action']?.enum?.[0]),
-    ['set', 'propose', 'clarify', 'add', 'start', 'complete', 'remove', 'clear', 'show'],
+    ['set', 'propose', 'clarify', 'add', 'start', 'start', 'complete', 'remove', 'clear', 'show'],
   );
   const set = branches[0]!;
   const clarify = branches[2]!;
@@ -108,6 +109,21 @@ test('plan schema discriminates actions and advertises required branch fields', 
   assert.equal(set.properties?.['steps']?.minItems, 1);
   assert.ok(clarify.required?.includes('questions'));
   assert.equal(clarify.properties?.['questions']?.maxItems, 3);
+});
+
+test('plan schema separates step and reviewed Start into executable variants', () => {
+  const starts = planSchemaBranches(loadTool())
+    .filter((branch) => branch.properties?.['action']?.enum?.[0] === 'start');
+  assert.equal(starts.length, 2);
+
+  const stepStart = starts.find((branch) => branch.properties?.['index']);
+  const reviewedStart = starts.find((branch) => branch.properties?.['revision']);
+  assert.ok(stepStart);
+  assert.ok(reviewedStart);
+  assert.equal(stepStart.properties?.['revision'], undefined);
+  assert.equal(stepStart.properties?.['authorizationInteractionId'], undefined);
+  assert.equal(reviewedStart.properties?.['index'], undefined);
+  assert.ok(reviewedStart.required?.includes('revision'));
 });
 
 // ─── Single-query passthrough ─────────────────────────────────────────────────
@@ -932,6 +948,24 @@ test('review-phase and draft step actions fail instead of reporting a no-op succ
   }, undefined, undefined, ctx) as { isError?: boolean; details?: { error?: string } };
   assert.equal(completed.isError, true);
   assert.equal(completed.details?.error, 'phase-not-executing');
+});
+
+test('reviewed Start fields fail during execution instead of starting a step', async () => {
+  const tool = loadTool();
+  await tool.execute('id', {
+    queries: [{ reasoning: 'set up active execution', action: 'set', steps: ['A', 'B', 'C'] }],
+  }, undefined, undefined, ctx);
+  await tool.execute('id', {
+    queries: [{ reasoning: 'finish the active step', action: 'complete', index: 1 }],
+  }, undefined, undefined, ctx);
+  assert.deepEqual(getPlan(CWD).map((step) => step.status), ['done', 'doing', 'todo']);
+
+  const started = await tool.execute('id', {
+    queries: [{ reasoning: 'must not reinterpret reviewed fields', action: 'start', revision: 'stale-review' }],
+  }, undefined, undefined, ctx) as { isError?: boolean; details?: { error?: string } };
+  assert.equal(started.isError, true);
+  assert.equal(started.details?.error, 'wrong-start-variant');
+  assert.deepEqual(getPlan(CWD).map((step) => step.status), ['done', 'doing', 'todo']);
 });
 
 test('set activates the first dependency-ready step rather than a blocked first row', async () => {

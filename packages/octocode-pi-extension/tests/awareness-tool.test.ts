@@ -65,6 +65,13 @@ function details(value: ToolCallResult): Record<string, unknown> {
   return (value.details ?? {}) as Record<string, unknown>;
 }
 
+test('guidance closes work before marking the resulting pending run verified', () => {
+  const tool = makeTool();
+  const guidance = [tool.promptSnippet, ...(tool.promptGuidelines ?? [])].join('\n');
+  assert.match(guidance, /declared check.*observed result.*work end.*PENDING.*verify mark/is);
+  assert.ok(guidance.indexOf('work end') < guidance.indexOf('verify mark'));
+});
+
 test('lists the complete Awareness catalog through one direct tool', async () => {
   const tool = makeTool();
   const value = await run(tool, { action: 'list', pageSize: 25 });
@@ -182,10 +189,10 @@ test('calls the bundled CLI with explicit database, workspace, actor, and compac
 });
 
 test('injects workspace and actor for verify all-pending without caller overrides', async () => {
-  const exec = vi.fn(async (): Promise<PiExecResult> => ({
+  const exec = vi.fn(async (_command: string, _args: string[], _options?: { timeout?: number }): Promise<PiExecResult> => ({
     stdout: JSON.stringify({ ok: true, count: 0, run_ids: [] }), stderr: '', code: 0,
   }));
-  const value = await run(makeTool(exec), {
+  const value = await run(makeTool(exec as PiInstance['exec']), {
     action: 'call',
     command: 'verify mark',
     params: { all_pending: true, message: 'isolated checks passed' },

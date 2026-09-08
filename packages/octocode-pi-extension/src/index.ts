@@ -102,6 +102,7 @@ import {
   startMcpConfigWatcher,
   stopAllMcpServers,
   stopMcpConfigWatchers,
+  waitForMcpShutdown,
   warmMcpCatalog,
 } from './tools/mcp-tool.js';
 import { isCompactMcpEnabled } from './tools/mcp/env.js';
@@ -932,6 +933,7 @@ async function wireOctocodePiExtension(
   // killed/exit ledger events would spam desktop notifications.
   let agentInbox: AgentInboxRegistration | undefined;
   let sessionRuntime: SessionRuntime | undefined;
+  let pendingMcpDiscoveryWrite: Promise<void> | undefined;
   let interactionBrokerAdapter: RegisteredInteractionBrokerAdapter | undefined;
   const hostBrokerRegistry = pi as PiInstance & Partial<InteractionBrokerAdapterRegistry>;
   const hasHostInteractionAnswerRoute = typeof hostBrokerRegistry.registerInteractionBrokerAdapter === 'function';
@@ -1077,6 +1079,9 @@ async function wireOctocodePiExtension(
       if (ctx) clearCurrentContextSources(ctx);
       const cleanedAgents = cleanupSpawnedAgentsForShutdown();
       const stoppedMcpServers = stopAllMcpServers();
+      await waitForMcpShutdown();
+      await pendingMcpDiscoveryWrite?.catch(() => undefined);
+      pendingMcpDiscoveryWrite = undefined;
       const closedChrome = closeAllChromeConnections();
       if (closedChrome > 0 && canUseShutdownContext) notify(ctx, `Closed ${closedChrome} cached CDP connection(s).`, 'info');
       setPeerWipStatusPainter(undefined);
@@ -1327,7 +1332,7 @@ async function wireOctocodePiExtension(
           if (!await mcpCatalogReady(ctx)) throw new Error('MCP prompt catalog was not ready before the startup deadline');
         },
       }));
-      void liveMcpWarm.then(() => {
+      pendingMcpDiscoveryWrite = liveMcpWarm.then(() => {
         // The old warm may settle after /new invalidates its ctx. Shutdown and
         // the next session both advance this generation before microtasks resume.
         if (!runtime.isCurrent()) return;
@@ -1339,6 +1344,8 @@ async function wireOctocodePiExtension(
           skills: discoverSkillStates(sessionCwd, latestAvailableSkills),
           nativeTools: [...registeredToolNames],
         });
+      }).catch((error) => {
+        logInternalError('mcp-discovery-write', error, {}, ctx);
       });
       // Check for a newer @octocodeai/pi-extension on npm — fire-and-forget, never
       // awaited before the session becomes usable, matching how Pi checks its own

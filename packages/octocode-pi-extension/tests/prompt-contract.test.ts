@@ -15,6 +15,11 @@ function rolePrompt(role: (typeof roleNames)[number]): string {
   return fs.readFileSync(path.join(packageRoot, 'subagents', role, 'SYSTEM_PROMPT.md'), 'utf8');
 }
 
+test('canonical Awareness prompt closes a run before marking its observed verification', () => {
+  assert.match(AWARENESS_PI_HOST_PROMPT, /declared check.*work end.*PENDING.*verify mark/is);
+  assert.ok(AWARENESS_PI_HOST_PROMPT.indexOf('awareness(call "work end")') < AWARENESS_PI_HOST_PROMPT.indexOf('awareness(call "verify mark")'));
+});
+
 test('plan mode uses a conversational RFC flow with one Start decision and no tool restrictions', () => {
   const prompt = buildPlanPrompt('change the public API');
   assert.match(prompt, /PLAN MODE/i);
@@ -120,10 +125,10 @@ test('worker process prompt omits user-facing coder authority while keeping inte
   assert.match(worker, /never imply approval/);
   assert.match(worker, /continuations/);
   assert.match(worker, /<local_tools>/);
-  assert.match(worker, /text for lexical anchors.*structural\/AST.*files for path or metadata filters.*tree for bounded orientation/s);
+  assert.match(worker, /`text` for raw string or regex anchors.*`structural`\/AST.*`files` for path\/metadata.*`tree` for orientation/s);
   assert.match(worker, /matchString.*minify:"symbols".*minify:"standard".*minify:"none"/s);
-  assert.match(worker, /dependencies, dependents, paths, cycles\/SCCs, reachability, and dead-code candidates/);
-  assert.match(worker, /definitions, references, callers\/callees, implementations, and types/);
+  assert.match(worker, /dependency, change-impact, refactoring scope, dead-code, or cycle.*localAnalyzeGraph/s);
+  assert.match(worker, /lspGetSemantics.*type:references.*type:callers.*callees.*callHierarchy.*type:implementation/s);
   assert.equal((worker.match(/<interaction_context>/g) ?? []).length, 1);
   assert.equal((worker.match(/<local_tools>/g) ?? []).length, 1);
 });

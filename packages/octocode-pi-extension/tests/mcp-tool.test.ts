@@ -7,7 +7,7 @@ import {
 } from "@octocodeai/agent-contracts/mcp-state";
 import { openOctocodeDb } from "../src/tools/storage-policy.js";
 import { afterEach, beforeEach, test } from "vitest";
-import { __test__ as mcpTestHooks, getCachedMcpCatalogAddendum, getCachedMcpCounts, formatMcpSchemaValidationErrors, mcpCatalogReady, stopAllMcpServers, warmMcpCatalog } from '../src/tools/mcp-tool.js';
+import { __test__ as mcpTestHooks, getCachedMcpCatalogAddendum, getCachedMcpCounts, formatMcpSchemaValidationErrors, mcpCatalogReady, stopAllMcpServers, waitForMcpShutdown, warmMcpCatalog } from '../src/tools/mcp-tool.js';
 import { isCompactMcpEnabled, isMcpAiGuideEnabled } from '../src/tools/mcp/env.js';
 import { resolveMcpCallContent, resolveMcpCallTable, resolveMcpCallText, summarizeMcpStructuredResults, summarizeMcpCallDetails } from '../src/tools/mcp/sanitize.js';
 import { OCTOCODE_MCP_ENV_DEFAULTS } from '../src/tools/mcp/config.js';
@@ -410,6 +410,20 @@ test("stopAllMcpServers clears the cached catalog + recent-schema caches (no sta
     0,
     "server count reset after shutdown",
   );
+});
+
+test("waitForMcpShutdown waits for tracked background MCP work", async () => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  mcpTestHooks.trackAsyncWork(pending);
+  let settled = false;
+  const draining = waitForMcpShutdown().then(() => { settled = true; });
+
+  await Promise.resolve();
+  assert.equal(settled, false);
+  release();
+  await draining;
+  assert.equal(settled, true);
 });
 
 test("catalog addendum carries server instructions and a compact routing guide without exact schemas", () => {

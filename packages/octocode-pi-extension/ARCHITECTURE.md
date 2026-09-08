@@ -376,6 +376,8 @@ researching → needs_answers → draft → in_review ── Start ─→ execut
 
 `Start` is the single user decision: it binds the displayed RFC revision and begins the first runnable step in one transaction. `accepted` remains an internal/recovery phase if projection cannot finish after revision acceptance; it is not a second normal UI gate. `Request changes` returns review to `draft`.
 
+The native `plan` schema publishes two separate `action:"start"` variants because they are different transitions: an executing plan may start one runnable step with optional `index`, while a reviewed proposal supplies the exact `revision` and answered `authorizationInteractionId` and must omit `index` (`accepted` recovery may reuse its persisted receipt). Keep these fields in separate schema branches; aggregating them advertises a call the preflight contract must reject.
+
 ### 6.3 Storage
 
 Plan steps are held in memory (an in-process Map keyed by scope), snapshotted as branch-aware Pi CustomEntries, and projected to `plan/state.json` in the session artifact tree. The manifest records that projection; it is not the plan-state authority.

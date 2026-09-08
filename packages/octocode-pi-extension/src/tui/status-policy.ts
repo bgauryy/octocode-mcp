@@ -242,11 +242,28 @@ export function selectStatusRows(snapshot: UxSnapshotV1, options: StatusPolicyOp
     ? compactCandidates(candidates(snapshot, options.diagnostics ?? []))
     : candidates(snapshot, options.diagnostics ?? []);
   const selected = projected.slice(0, maxRows);
+  const omittedCandidates = projected.slice(maxRows);
+  const omitted = omittedCandidates.length;
+  const detailRoutes = [...new Set(omittedCandidates.flatMap((candidate) => candidate.detailRoute ? [candidate.detailRoute] : []))];
+  const rows = selected.map((candidate) => candidate.segments);
+  if (omitted > 0 && selected[0]?.priority !== 'P0') {
+    const urgentContext = omittedCandidates.find((candidate) => candidate.id === 'context:pressure'
+      && candidate.segments.some((segment) => segment.attention));
+    const decisionRelevant = omittedCandidates.filter((candidate) => PRIORITY_ORDER[candidate.priority] <= PRIORITY_ORDER.P3
+      && candidate !== urgentContext);
+    const route = urgentContext?.detailRoute ?? decisionRelevant[0]?.detailRoute;
+    rows[0] = [
+      ...(urgentContext ? urgentContext.segments : []),
+      ...(route ? [{ text: route, token: 'link' as const, attention: true }] : []),
+      ...(decisionRelevant.length > 0 ? [{ text: `${decisionRelevant.length} more`, token: 'muted' as const }] : []),
+      ...rows[0]!,
+    ];
+  }
   return {
-    rows: selected.map((candidate) => candidate.segments),
+    rows,
     rowIds: selected.map((candidate) => candidate.id),
     maxRows,
-    omitted: Math.max(0, projected.length - selected.length),
-    detailRoutes: [...new Set(projected.slice(maxRows).flatMap((candidate) => candidate.detailRoute ? [candidate.detailRoute] : []))],
+    omitted,
+    detailRoutes,
   };
 }

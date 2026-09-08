@@ -145,8 +145,8 @@ describe('auditUnverified', () => {
     }) as typeof process.stdout.write);
     try {
       expect(cmdAuditUnverified(db, {
-        agent_id: 'agent-a', workspace: '/tmp/ws-a', limit: 1, offset: 0,
-      } as ParsedArgs, ':memory:', { compact: true })).toBe(1);
+        _: [], agent_id: 'agent-a', workspace: '/tmp/ws-a', limit: '1', offset: '0',
+      } satisfies ParsedArgs, ':memory:', { compact: true })).toBe(1);
     } finally {
       spy.mockRestore();
     }

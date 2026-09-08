@@ -594,6 +594,9 @@ async function executePlanQuery(p: PlanParams, ctx: PiContext | undefined): Prom
           details: { action: p.action, ...planPresentation(ctx, scope), revision, decision: 'start' },
         } as unknown as ToolCallResult;
       }
+      if (p.action === 'start' && (p.revision?.trim() || p.authorizationInteractionId?.trim())) {
+        return planError(`[PLAN] reviewed Start fields are only valid while a plan is in_review or accepted (current phase: ${reviewPhase}). During execution, omit revision and authorizationInteractionId and use optional index only.`, 'wrong-start-variant');
+      }
       if (p.action === 'start' && reviewPhase !== 'executing' && reviewPhase !== 'verifying') {
         return planError(`[PLAN] implementation cannot start from ${reviewPhase}; propose the plan for review and obtain an explicit human Start decision first.`, 'authorization-required');
       }
@@ -746,7 +749,8 @@ export function registerPlanTool(
       'Every call is {queries:[{reasoning,action,...}]}; select exactly one action branch and keep action fields inside that query.',
       'Wrong: propose a reversible local edit with a ceremonial RFC. Right: use action:"set" for authorized work, action:"propose" when review is required, or skip plan when no sequencing or recovery state is needed.',
       'Wrong: complete because a worker said DONE. Right: verify the assigned check, then use action:"complete" with the observed receipt.',
-      'For independent lanes, encode dependsOn, start each runnable index before delegation, and complete each explicit index. Start on a reviewed proposal atomically binds its displayed revision and begins execution; cancellation never approves it.',
+      'For independent lanes, encode dependsOn, start each runnable index before delegation, and complete each explicit index.',
+      'During execution, action:"start" targets one runnable step with optional index. For a reviewed proposal, action:"start" instead requires revision plus the answered authorizationInteractionId and must omit index; accepted-recovery may omit the interaction. Cancellation never approves it.',
     ],
     parameters: (() => {
       const reasoning = z.string().min(1).max(400);
@@ -780,7 +784,19 @@ export function registerPlanTool(
         z.strictObject({ reasoning, action: z.enum(['propose']), scope, steps: z.array(step).min(1), consequential: z.boolean().optional(), reason: z.string().optional(), rfcPath: z.string().optional().describe('Required for consequential review; workspace `.octocode/rfc/<name>/` directory or RFC.md.') }),
         z.strictObject({ reasoning, action: z.enum(['clarify']), questions }),
         z.strictObject({ reasoning, action: z.enum(['add']), scope, text: z.string().min(1), activeForm: z.string().optional(), dependsOn: z.array(z.number().int().min(1)).optional(), paths: z.array(z.string()).optional(), taskReasoning: z.string().optional(), acceptance: z.string().optional(), checkCommand: z.string().optional() }),
-        z.strictObject({ reasoning, action: z.enum(['start']), scope, index: z.number().int().min(1).optional(), revision: z.string().optional(), authorizationInteractionId: z.string().optional() }),
+        z.strictObject({
+          reasoning,
+          action: z.enum(['start']),
+          scope,
+          index: z.number().int().min(1).optional().describe('Executing plan only: 1-based runnable step; omit to start the next dependency-ready step.'),
+        }),
+        z.strictObject({
+          reasoning,
+          action: z.enum(['start']),
+          scope,
+          revision: z.string().min(1).describe('Reviewed plan only: exact displayed RFC revision; omit index.'),
+          authorizationInteractionId: z.string().min(1).optional().describe('Answered human Start interaction; required while in review and omitted only for persisted accepted-recovery.'),
+        }),
         z.strictObject({ reasoning, action: z.enum(['complete']), scope, index: z.number().int().min(1).optional(), receipt: receipt.optional() }),
         z.strictObject({ reasoning, action: z.enum(['remove']), scope, index: z.number().int().min(1).optional() }),
         z.strictObject({ reasoning, action: z.enum(['clear']), scope }),

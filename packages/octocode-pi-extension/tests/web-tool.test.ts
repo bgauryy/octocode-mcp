@@ -97,6 +97,10 @@ test('registerWebTool registers schema and executes through runWebTool', async (
   assert.equal(tool.name, 'web');
   assert.equal(tool.label, 'Web');
   assert.match(tool.description!, /Browse the live web/);
+  const guidance = [tool.description, ...(tool.promptGuidelines ?? [])].join('\n');
+  assert.doesNotMatch(guidance, /exactly one/i);
+  assert.match(guidance, /url or query.*both.*url takes precedence/is);
+  assert.match(guidance, /omit engine.*auto.*available/i);
 
   const ac = new AbortController();
   const result = await tool.execute('call-1', {

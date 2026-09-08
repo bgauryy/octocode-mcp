@@ -31,6 +31,20 @@ test('preserves state and action route before optional tail detail in narrow pan
   assert.ok(visibleWidth(lines[0]!) <= 28);
 });
 
+test('keeps urgent context and its detail route visible in a narrow row', () => {
+  const lines = renderFooterView({
+    rows: [[
+      { text: 'ctx 96%', attention: true },
+      { text: '/configuration', attention: true },
+      { text: 'Working · task 2 Implement' },
+    ]],
+  }, { width: 20 });
+  assert.equal(lines.length, 1);
+  assert.match(lines[0]!, /ctx 96%/);
+  assert.match(lines[0]!, /config/);
+  assert.ok(visibleWidth(lines[0]!) <= 20);
+});
+
 test('drops empty rows and preserves policy-owned row order', () => {
   const lines = renderFooterView({
     rows: [[], [{ text: '' }], [{ text: 'Working' }], [{ text: 'Plan 1/3' }]],

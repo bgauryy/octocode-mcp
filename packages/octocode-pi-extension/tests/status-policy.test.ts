@@ -53,6 +53,25 @@ test('automatic density obeys the 15% soft budget and six-row hard maximum', () 
   }
 });
 
+test('one-row automatic footer exposes urgent context and its route without counting P4 chrome', () => {
+  const result = selectStatusRows(snapshot({
+    plan: undefined,
+    session: { ...snapshot().session, contextPressure: 96 },
+  }), {
+    width: 28,
+    height: 10,
+    density: 'automatic',
+    diagnostics: [{ id: 'identity', priority: 'P4', segments: [{ text: 'model openai/gpt-5.6' }] }],
+  });
+  const text = result.rows[0]!.map((segment) => segment.text).join(' ');
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.maxRows, 1);
+  assert.ok(result.omitted > 0);
+  assert.match(text, /ctx 96%.*\/configuration/);
+  assert.doesNotMatch(text, /hidden|more/i, 'P4 identity chrome does not create a hidden-state badge');
+  assert.ok(result.detailRoutes.includes('/configuration'));
+});
+
 test('compact and expanded density override row targets without changing priority', () => {
   const source = snapshot({
     attention: [{

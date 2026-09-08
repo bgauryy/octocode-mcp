@@ -64,8 +64,8 @@ export function registerWebTool(
     name: 'web',
     label: 'Web',
     description:
-      'Browse the live web. Accepts one or more queries[] (parallel or sequential); each query needs reasoning plus exactly one of ' +
-      '`url` (fetch a page as readable text) or `query` (web search). When both are given, url takes precedence. ' +
+      'Browse the live web. Accepts one or more queries[] (parallel or sequential); each query needs reasoning plus ' +
+      '`url` (fetch a page as readable text) or `query` (web search). If both are given, url takes precedence. ' +
       'Fetch: converts HTML to plain text, supports page:N pagination, enforces a 15s deadline per request. ' +
       'Search: uses the best available provider \u2014 Tavily \u2192 Serper \u2192 Exa \u2192 DuckDuckGo (auto by available API key); ' +
       'returns {title, url, snippet} results plus an AI answer when available; enforces a 30s deadline. ' +
@@ -76,14 +76,14 @@ export function registerWebTool(
     promptGuidelines: [
       'Prefer Octocode/local tools for code and packages; use web for external docs, news, and live info. ' +
         'Search with `query` to discover, then read the best hit with `url`.',
-      'Provide exactly one of url or query per query item. When both are given, url takes precedence and query is ignored.',
+      'Provide url or query per query item. If both are given, url takes precedence and query is ignored.',
       'Pagination: when a fetch result shows truncated: true, re-call the same url with page: 2, page: 3 \u2026 to continue. Each page is maxChars chars.',
       'Blocked or thin pages: if a fetch returns a bot-challenge, 403, or near-empty content, try the URL from a search snippet, a docs-subdomain variant, or search instead of fetching directly.',
       'DuckDuckGo (the no-key fallback) frequently returns bot-challenge errors. ' +
         'Set TAVILY_API_KEY, SERPER_API_KEY, or EXA_API_KEY in ~/.octocode/.env for reliable results.',
       'includeDomains and excludeDomains are Tavily-only \u2014 they are silently ignored by Serper, Exa, and DuckDuckGo.',
       'Timeouts are built-in and fixed: 15s per fetch (headers + body + all redirects), 30s for search API calls. They cannot be overridden by the agent.',
-      'engine must be one of: tavily, serper, exa, duckduckgo (all lowercase). An unrecognised value falls back to the auto-ladder.',
+      'engine must be one of: tavily, serper, exa, duckduckgo (all lowercase). Omit engine to use the auto-ladder by available key.',
     ],
     parameters,
 
@@ -106,7 +106,7 @@ export function registerWebTool(
           if (!hasUrl && !hasQuery) {
             throw new Error(
               'web requires either url (to fetch a page) or query (to search). ' +
-              'Both are missing — provide exactly one.',
+              'Both are missing — provide url or query.',
             );
           }
         },

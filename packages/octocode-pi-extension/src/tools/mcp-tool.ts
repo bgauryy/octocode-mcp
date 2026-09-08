@@ -130,6 +130,23 @@ const mcpSchemaMetrics = {
 };
 /** In-flight init discoveries keyed by cwd, so turn 1 can await the warm started at session_start. */
 const warmsInFlight = new Map<string, Promise<void>>();
+/** Warm and close promises that session shutdown must drain before releasing its filesystem scope. */
+const pendingMcpAsyncWork = new Set<Promise<unknown>>();
+
+function trackMcpAsyncWork<T>(work: Promise<T>): Promise<T> {
+  pendingMcpAsyncWork.add(work);
+  void work.then(
+    () => pendingMcpAsyncWork.delete(work),
+    () => pendingMcpAsyncWork.delete(work),
+  );
+  return work;
+}
+
+export async function waitForMcpShutdown(): Promise<void> {
+  while (pendingMcpAsyncWork.size > 0) {
+    await Promise.allSettled([...pendingMcpAsyncWork]);
+  }
+}
 /** Prompt readiness is intentionally separate from live refresh completion. A
  * matching persisted guide resolves this barrier immediately while exact schema
  * refresh continues in the background. */
@@ -495,7 +512,7 @@ export function stopAllMcpServers(): number {
     const connection = connections.get(name);
     connections.delete(name);
     connection?.oauth?.close();
-    void connection?.client.close().catch(() => undefined);
+    if (connection) trackMcpAsyncWork(connection.client.close().catch(() => undefined));
   }
   // Drop the injected-catalog cache so a following session in the same process
   // (/new, /resume) cannot serve tools from now-stopped servers in the system
@@ -1283,6 +1300,7 @@ export function warmMcpCatalog(
       warmGenerations.delete(key);
     }
   });
+  trackMcpAsyncWork(warm);
   warmsInFlight.set(key, warm);
   return warm;
 }
@@ -1450,6 +1468,7 @@ export async function getMcpDiscoverySnapshot(
 export const __test__ = {
   registerMcpClientHandlers,
   persistMcpArtifacts,
+  trackAsyncWork: trackMcpAsyncWork,
   setCachedMcpCatalog(
     ctx: PiContext | undefined,
     entries: ListedMcpServer[],
