@@ -47,7 +47,7 @@ describe('skill routing boundaries', () => {
     expect(desc).not.toContain('packages/octocode-awareness');
     expect(text).toContain('meet workspace peers once → work → communicate when it matters');
     expect(text).toContain('npx @octocodeai/octocode-awareness');
-    expect(text).toContain('`guide` retains the full catalog');
+    expect(text).toContain('schema commands --all --compact');
     expect(text).toContain('references/configuration.md');
     expect(text).not.toContain('npx -p @octocodeai/octocode-awareness octocode-awareness');
     expect(text).not.toContain('node packages/octocode-awareness/out/octocode-awareness.js');
@@ -62,7 +62,7 @@ describe('skill routing boundaries', () => {
     expect(awarenessSkillFile('references/agent-cheatsheet.md')).toMatch(/CLI[^.]*operational state[^.]*observed records/i);
     expect(text).toContain('npx @octocodeai/octocode-awareness attend');
     expect(text).toContain('flow-matrix.md');
-    expect(text).toContain('Load only the relevant reference');
+    expect(text).toContain('Load only the needed reference');
     expect(text).toContain('yarn workspace @octocodeai/octocode-awareness build');
     expect(awarenessSkillFile('references/hooks.md')).toContain('Smoke:');
     expect(existsSync(resolve(PACKAGE_ROOT, 'skills/octocode-awareness/SKILL.md'))).toBe(true);
@@ -71,7 +71,7 @@ describe('skill routing boundaries', () => {
 
   it('teaches the complete agent lifecycle without assigning judgment to hooks', () => {
     const text = skill('octocode-awareness');
-    for (const step of ['attend --compact', 'If tracking is used, run the declared check', 'Unrun checks remain PENDING', 'Real continuation']) {
+    for (const step of ['attend --compact', 'For tracked work, run the check', 'Unrun checks stay PENDING', 'Real continuation']) {
       expect(text).toContain(step);
     }
     const detail = awarenessSkillFile('references/agent-cheatsheet.md');
@@ -89,7 +89,7 @@ describe('skill routing boundaries', () => {
 
   it('shows a lean overview of every Awareness feature family', () => {
     const text = skill('octocode-awareness');
-    expect(text).toContain('Load only the relevant reference');
+    expect(text).toContain('Load only the needed reference');
     for (const feature of [
       'plan', 'task', 'work', 'lock', 'verification', 'Messages', 'handoffs',
       'Memory', 'reflection', 'hooks', 'schema',
@@ -130,8 +130,8 @@ describe('skill routing boundaries', () => {
   it('routes each fresh-agent feature question to one direct owner', () => {
     const text = skill('octocode-awareness');
     const journeys = [
-      ['Choose an unfamiliar workflow', 'flow-matrix.md'],
-      ['when binding another host', 'architecture.md'],
+      ['workflow routing', 'flow-matrix.md'],
+      ['storage', 'architecture.md'],
       ['recipes', 'coordination-protocol.md'],
     ] as const;
     for (const [trigger, owner] of journeys) {

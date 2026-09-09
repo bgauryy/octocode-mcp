@@ -17,7 +17,7 @@ describe('compact cooperative Awareness policy', () => {
     expect(json.instructions).toBe(EXTERNAL_AGENT_AWARENESS_PROMPT);
     expect(execCli(['instructions', 'export']).stdout.trim()).toBe(EXTERNAL_AGENT_AWARENESS_PROMPT);
     expect(execCli(['instructions', 'export', '--format', 'agents-md']).stdout).toContain(EXTERNAL_AGENT_AWARENESS_PROMPT);
-    expect(Buffer.byteLength(json.instructions)).toBeLessThanOrEqual(5_000);
+    expect(Buffer.byteLength(json.instructions)).toBeLessThanOrEqual(2_700);
     expect(json.instructions).not.toContain('All CLI commands');
   });
 
@@ -26,7 +26,7 @@ describe('compact cooperative Awareness policy', () => {
       'Help blocked peers', 'avoid duplicate work', 'Attend once', 'Hooks deliver peer messages', 'same physical SQLite file', 'distinct stable agent ID',
       'self-reported', 'not authentication', 'peer lock', 'attributed data',
       'signal reply with in_reply_to', 'signal resolve with thread_id',
-      'Before using tracked work, load the tracked-work recipe', 'audit after final writes',
+      'Tracking and locks are optional', 'audit after final writes',
       'exact authorized preview', 'unknown', 'schema command',
     ]) expect(EXTERNAL_AGENT_AWARENESS_PROMPT).toContain(text);
     const guide = getExternalAgentAwarenessGuide().prompt;
@@ -39,7 +39,6 @@ describe('compact cooperative Awareness policy', () => {
 
   it('keeps complete command discovery available on demand without removing routes', () => {
     const guide = getExternalAgentAwarenessGuide();
-    expect(guide.commands.map(entry => entry.command)).toEqual(commandIndex.map(entry => entry.command));
     expect(guide.commands.map(entry => entry.command)).toEqual(commandIndex.map(entry => entry.command));
     expect(new Set(guide.commands.map(entry => entry.command)).size).toBe(commandIndex.length);
     expect(guide.prompt).toContain('Attend once per workspace/session');

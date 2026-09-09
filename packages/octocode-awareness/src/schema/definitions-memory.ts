@@ -17,7 +17,7 @@ memory_record: z
       importance: importanceLevel,
       label: memoryLabel,
       tags,
-      references,
+      references: references.describe('Provenance links; fingerprint capture accepts only file:<local-path>. Git pointers: memory store-verified history_ref.'),
       workspace_path: workspacePath
         .optional()
         .describe("Memory scope."),
@@ -36,12 +36,12 @@ memory_record: z
         .optional()
         .describe("Opaque provenance; use capture_fingerprint for a runtime-generated declared-file fingerprint. Never verification proof."),
       capture_fingerprint: z.boolean().default(false)
-        .describe("Capture current content/modes for all declared file references and dependencies; rejects unknown/foreign/bounded-out sources. Do not combine with file_tree_fingerprint."),
+        .describe("Capture local files only, not git:/signal:/artifact:/URL references. Rejects partial capture and file_tree_fingerprint."),
       supersedes: z
         .array(z.string().trim().min(1).max(128))
         .max(200)
         .default([])
-        .describe("Memory ids replaced."),
+        .describe("ACTIVE memory record IDs with the same agent and scope; excludes shared store-verified records. Omit for independent evidence."),
       failure_signature: z
         .string()
         .trim()

@@ -49,6 +49,7 @@ export interface AwarenessPeerDelivery {
     sequence: number;
     createdAt: string;
     messageClass: 'informational' | 'blocking' | 'handoff';
+    actionable: boolean;
     /** Validated routing metadata; broadcasts never cause a directed host wake. */
     toAgentId?: string | null;
     provenance: 'peer-attributed-data';
@@ -175,6 +176,7 @@ export function createAwarenessEventConsumer(options: AwarenessEventConsumerOpti
                   sequence: candidate.sequence,
                   createdAt: candidate.createdAt,
                   messageClass: policy.messageClass as 'informational' | 'blocking' | 'handoff',
+                  actionable: policy.actionable,
                   toAgentId: peerMessage.toAgentId,
                   provenance: 'peer-attributed-data',
                   ...(peerMessage.data ? { data: peerMessage.data } : {}),

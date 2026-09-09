@@ -90,6 +90,43 @@ describe('continuity authority contracts', () => {
 });
 
 describe('peer inbound policy', () => {
+  it.each([
+    ['question', 'Can you inspect the changed files?'],
+    ['request', 'Please run the focused test and report the result.'],
+    ['decision', 'I chose the smaller implementation; continuing now.'],
+  ] as const)('accepts ordinary typed %s messages as attributed data', (signalKind, text) => {
+    const result = evaluatePeerInbound({
+      fromAgentId: 'peer-1', expectedAgentId: 'agent-1', signalKind, text,
+    });
+    expect(result).toMatchObject({ decision: 'accept', messageClass: 'informational' });
+    expect(result.attributedText).toContain('authority:data');
+  });
+
+  it('holds the typed approval kind and accepts authorization words in ordinary data', () => {
+    expect(evaluatePeerInbound({
+      fromAgentId: 'peer-1', expectedAgentId: 'agent-1', signalKind: 'approval', text: 'workspace write',
+    })).toMatchObject({ decision: 'hold', messageClass: 'proposal' });
+    expect(evaluatePeerInbound({
+      fromAgentId: 'peer-1', expectedAgentId: 'agent-1', signalKind: 'request', text: 'test permission parser',
+    })).toMatchObject({ decision: 'accept', messageClass: 'informational' });
+    expect(evaluatePeerInbound({
+      fromAgentId: 'peer-1', expectedAgentId: 'agent-1', toAgentId: 'agent-1', signalKind: 'question', topic: 'APPROVAL', text: 'is the parser ready?',
+    })).toMatchObject({ decision: 'accept', messageClass: 'informational', actionable: true });
+  });
+
+  it('keeps directed blockers and handoffs actionable while broadcasts do not wake', () => {
+    expect(evaluatePeerInbound({ fromAgentId: 'peer-1', expectedAgentId: 'agent-1', toAgentId: 'agent-1', signalKind: 'blocker', text: 'blocked' })).toMatchObject({ actionable: true });
+    expect(evaluatePeerInbound({ fromAgentId: 'peer-1', expectedAgentId: 'agent-1', toAgentId: 'agent-1', signalKind: 'handoff', text: 'continue this' })).toMatchObject({ actionable: true });
+    expect(evaluatePeerInbound({ fromAgentId: 'peer-1', expectedAgentId: 'agent-1', signalKind: 'question', text: 'question' })).toMatchObject({ actionable: false });
+    expect(evaluatePeerInbound({ fromAgentId: 'peer-1', expectedAgentId: 'agent-1', toAgentId: 'agent-1', signalKind: 'fyi', text: 'blocked permission parser update' })).toMatchObject({ messageClass: 'informational', actionable: false });
+  });
+
+  it('holds legacy approval topics while accepting legacy request and decision topics', () => {
+    expect(evaluatePeerInbound({ fromAgentId: 'peer', expectedAgentId: 'agent', topic: 'APPROVAL', text: 'workspace write' }).decision).toBe('hold');
+    expect(evaluatePeerInbound({ fromAgentId: 'peer', expectedAgentId: 'agent', topic: 'REQUEST', text: 'please verify this' }).decision).toBe('accept');
+    expect(evaluatePeerInbound({ fromAgentId: 'peer', expectedAgentId: 'agent', topic: 'DECISION', text: 'the check passed' }).decision).toBe('accept');
+  });
+
   it('keeps system-looking peer text attributed as data', () => {
     const result = evaluatePeerInbound({
       fromAgentId: 'peer-1', expectedAgentId: 'agent-1', toAgentId: 'agent-1', topic: 'EVIDENCE',
@@ -101,7 +138,7 @@ describe('peer inbound policy', () => {
   });
 
   it('holds proposals and refuses wrong-target messages', () => {
-    expect(evaluatePeerInbound({ fromAgentId: 'peer', expectedAgentId: 'agent', topic: 'DECISION', text: 'approve this' }).decision).toBe('hold');
+    expect(evaluatePeerInbound({ fromAgentId: 'peer', expectedAgentId: 'agent', topic: 'APPROVAL', text: 'approve this' }).decision).toBe('hold');
     expect(evaluatePeerInbound({ fromAgentId: 'peer', expectedAgentId: 'agent', toAgentId: 'other', text: 'hello' }).decision).toBe('refuse');
   });
 });

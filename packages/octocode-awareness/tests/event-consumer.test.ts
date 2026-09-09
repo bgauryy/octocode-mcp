@@ -50,12 +50,13 @@ function fakeStore(events: OutboxEventV1[]) {
 
 describe('Awareness event consumer', () => {
   it.each([
-    ['blocker', 'blocking', 'accept'],
-    ['handoff', 'handoff', 'accept'],
-    ['request', 'proposal', 'hold'],
-    ['decision', 'proposal', 'hold'],
-    ['fyi', 'informational', 'accept'],
-  ] as const)('preserves canonical %s signals through publication and delivery', async (kind, messageClass, decision) => {
+    ['blocker', 'blocking', 'accept', true],
+    ['handoff', 'handoff', 'accept', true],
+    ['request', 'informational', 'accept', true],
+    ['decision', 'informational', 'accept', false],
+    ['approval', 'proposal', 'hold', false],
+    ['fyi', 'informational', 'accept', false],
+  ] as const)('preserves canonical %s signals through publication and delivery', async (kind, messageClass, decision, actionable) => {
     const db = new DatabaseSync(':memory:');
     try {
       initDb(db);
@@ -77,7 +78,7 @@ describe('Awareness event consumer', () => {
         expect(fixture.reads).toEqual([]);
       } else {
         expect(deliver).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
-          details: expect.objectContaining({ messageClass }),
+          details: expect.objectContaining({ messageClass, actionable }),
         }));
       }
     } finally { db.close(); }
@@ -134,7 +135,7 @@ describe('Awareness event consumer', () => {
   it('holds proposals and refuses internal, wrong-target, expired, and malformed events without delivery', async () => {
     const fixture = fakeStore([
       peerEvent(1, { type: 'plan.projected', actor: { kind: 'system', id: 'harness' }, provenance: { source: 'harness', trust: 'authority' }, payload: { secret: 'hidden' } }),
-      peerEvent(2, { payload: { messageId: 'msg-2', fromAgentId: 'peer-a', toAgentId: 'native:session-1', topic: 'DECISION', text: 'approve this' } }),
+      peerEvent(2, { payload: { messageId: 'msg-2', fromAgentId: 'peer-a', toAgentId: 'native:session-1', topic: 'APPROVAL', text: 'approve this' } }),
       peerEvent(3, { payload: { messageId: 'msg-3', fromAgentId: 'peer-a', toAgentId: 'other', topic: 'EVIDENCE', text: 'wrong target' } }),
       peerEvent(4, { expiresAt: '2026-08-27T23:59:00.000Z' }),
       peerEvent(5, { provenance: { source: 'peer', trust: 'authority' } }),

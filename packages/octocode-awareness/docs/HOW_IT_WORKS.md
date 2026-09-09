@@ -268,9 +268,13 @@ stable workspace-scoped consumer ID and the receiving agent ID. Each drain is
 serialized and bounded. The consumer validates the event envelope, workspace,
 actor, aggregate, target, provenance, expiry, and body before delivery.
 
-The inbound policy accepts informational, blocker, and handoff messages as
-attributed peer data. Requests and decisions are proposals, so the consumer records
-`hold` and does not inject them as authority. Refused or malformed events are
+The inbound policy accepts routine questions, requests, decisions, blockers and
+handoffs as attributed peer data. Typed `approval` signals and untyped legacy
+`APPROVAL`/`PROPOSAL` topics are held for human authorization. Typed messages are
+not classified by words such as "permission" in their body. Directed requests,
+questions, blockers and handoffs are actionable for a bounded host wake;
+broadcasts do not wake every recipient. No peer signal grants authority.
+Refused or malformed events are
 acknowledged as refused. Accepted messages are marked read for the recipient only
 after host delivery succeeds; the durable event acknowledgement then advances the
 consumer cursor in sequence. A delivery or acknowledgement error stops that drain

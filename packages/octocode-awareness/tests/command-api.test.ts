@@ -129,6 +129,8 @@ describe('structured Awareness API', () => {
     const invoke = (command: string, params: Record<string, unknown> = {}, agentId = ctx.agentId) => executeAwarenessCommand({ command, params }, { ...ctx, agentId });
     const published = await invoke('signal publish', { kind: 'question', subject: 'Own a.ts?', body: 'Can I edit it?', to_agent: ['peer'] });
     expect(published.exitCode, JSON.stringify(published)).toBe(0);
+    const approval = await invoke('signal publish', { kind: 'approval', subject: 'Workspace write', body: 'Approval required', to_agent: ['peer'] });
+    expect(approval.exitCode, JSON.stringify(approval)).toBe(0);
     const inbox = await invoke('signal list', { include_bodies: true }, 'peer');
     expect(inbox.exitCode, JSON.stringify(inbox)).toBe(0);
     expect(JSON.stringify(inbox.payload)).toContain('Can I edit it?');

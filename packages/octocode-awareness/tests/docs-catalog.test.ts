@@ -51,7 +51,9 @@ describe('docs-catalog', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.title).toBe('Shared Awareness Flow');
-    expect(result.content).toContain('Trigger | Action | Expected output / close');
+    expect(result.content).toContain('handoff add');
+    expect(result.content).toContain('handoff list');
+    expect(result.content).toContain('handoff clear');
     expect(result.content).toContain('schema commands');
     expect(result.content).toContain('verify mark');
   });

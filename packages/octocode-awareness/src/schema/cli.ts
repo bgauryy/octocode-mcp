@@ -36,8 +36,9 @@ const COMPACT_ADVANCED_COMMANDS = new Set<string>([
   "lock prune", "refinement delete", "signal prune",
   "history restore-preview", "history restore-apply", "history retention-preview", "history retention-prune",
   "history recovery", "history evidence",
+  "history capture", "query all",
 ]);
-const COMPACT_CORE_NOUNS = new Set(["verify", "attend", "plan", "task", "work", "memory", "signal", "query", "history"]);
+const COMPACT_CORE_NOUNS = new Set(["verify", "attend", "plan", "task", "work", "memory", "signal", "query", "history", "handoff"]);
 const COMPACT_CORE_COMMANDS = new Set([
   "status", "agent register", "agent list", "lock acquire", "lock wait", "lock release",
 ]);
@@ -49,17 +50,22 @@ const COMPACT_CORE_COMMANDS = new Set([
 const COMPACT_HIDE = new Set<string>([
   "reflect mine-weakness", "reflect export-harness", "reflect developer-review",
   "query developer-review", "docs staleness",
+  "refinement get", "refinement set", "session capture",
   "schema list", "schema json-schema", "schema example", "schema validate",
 ]);
+
+function commandDiscoveryTier(command: string): 'core' | 'advanced' | 'hidden' {
+  if (COMPACT_HIDE.has(command)) return 'hidden';
+  if (COMPACT_ADVANCED_COMMANDS.has(command)) return 'advanced';
+  return COMPACT_CORE_COMMANDS.has(command) || COMPACT_CORE_NOUNS.has(command.split(' ')[0]!) ? 'core' : 'advanced';
+}
 
 function groupedCommandIndex() {
   const grouped: Record<"core" | "advanced", Record<string, string[]>> = { core: {}, advanced: {} };
   for (const row of commandIndex) {
-    if (COMPACT_HIDE.has(row.command)) continue;
+    const tier = commandDiscoveryTier(row.command);
+    if (tier === 'hidden') continue;
     const [noun, ...rest] = row.command.split(" ");
-    const tier = COMPACT_ADVANCED_COMMANDS.has(row.command)
-      ? "advanced"
-      : COMPACT_CORE_COMMANDS.has(row.command) || COMPACT_CORE_NOUNS.has(noun!) ? "core" : "advanced";
     (grouped[tier][noun!] ??= []).push(rest.length > 0 ? rest.join(" ") : noun === "query" ? "<view>" : "<direct>");
   }
   return grouped;
@@ -119,6 +125,7 @@ function deepFreeze<T>(value: T): T {
 
 const descriptorCache = new Map<string, AwarenessCommandDescriptor>();
 let descriptorList: readonly AwarenessCommandDescriptor[] | undefined;
+let routineDescriptorList: readonly AwarenessCommandDescriptor[] | undefined;
 
 /** Read one immutable command contract without invoking the CLI process. */
 export function getAwarenessCommandDescriptor(commandName: string): AwarenessCommandDescriptor | undefined {
@@ -134,12 +141,15 @@ export function getAwarenessCommandDescriptor(commandName: string): AwarenessCom
 }
 
 /** Read the complete immutable command contract catalog. */
-export function listAwarenessCommandDescriptors(): readonly AwarenessCommandDescriptor[] {
-  return descriptorList ??= Object.freeze(commandIndex.map((row) => {
+export function listAwarenessCommandDescriptors(options: { routine?: boolean } = {}): readonly AwarenessCommandDescriptor[] {
+  descriptorList ??= Object.freeze(commandIndex.map((row) => {
     const descriptor = getAwarenessCommandDescriptor(row.command);
     if (!descriptor) throw new Error(`Awareness command is missing a schema: ${row.command}`);
     return descriptor;
   }));
+  return options.routine
+    ? routineDescriptorList ??= Object.freeze(descriptorList.filter(row => commandDiscoveryTier(row.command) === 'core'))
+    : descriptorList;
 }
 
 function parseJson(input: string): unknown {

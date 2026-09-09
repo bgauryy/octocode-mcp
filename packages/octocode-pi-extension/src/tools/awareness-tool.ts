@@ -9,10 +9,7 @@ import type { ApprovalClass } from '@octocodeai/agent-contracts/protocols';
 import { z } from 'zod';
 import type { PiContext, PiInstance, PiTheme, ToolCallResult } from '../types.js';
 import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from './octocode-tools.js';
-import {
-  buildQueryEnvelopeSchema,
-  executeQueryBatch,
-} from './query-envelope.js';
+import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 import { buildAwarenessContext } from './awareness-context.js';
 import { assertPersistentAwarenessEnabled } from './storage-policy.js';
 import { requestApproval } from './approval.js';
@@ -195,6 +192,7 @@ function approvalRequest(
 
 function listCommands(query: Record<string, unknown>): ToolCallResult {
   const noun = typeof query['noun'] === 'string' ? query['noun'].trim() : '';
+  const all = query['all'] === true;
   const effect =
     typeof query['effect'] === 'string'
       ? (query['effect'] as AwarenessCommandEffect)
@@ -206,7 +204,7 @@ function listCommands(query: Record<string, unknown>): ToolCallResult {
   const page = typeof query['page'] === 'number' ? query['page'] : 1;
   const pageSize =
     typeof query['pageSize'] === 'number' ? query['pageSize'] : 25;
-  const filtered = listAwarenessCommandDescriptors().filter(
+  const filtered = listAwarenessCommandDescriptors({ routine: !all && !noun }).filter(
     entry =>
       (!noun ||
         entry.command === noun ||
@@ -231,6 +229,7 @@ function listCommands(query: Record<string, unknown>): ToolCallResult {
           reasoning: 'Continue listing Awareness commands',
           action: 'list',
           ...(noun ? { noun } : {}),
+          ...(all ? { all: true } : {}),
           ...(effect ? { effect } : {}),
           ...(piMode ? { piMode } : {}),
           page: page + 1,
@@ -500,6 +499,7 @@ export function registerAwarenessTool(
         'Call parameters exactly matching describe output. Pi auto-injects database, workspace, and actor — never include those fields here.'
       ),
     noun: z.string().optional().describe('list filter by top-level noun.'),
+    all: z.boolean().optional().describe('list the complete catalog, including specialist routes.'),
     effect: z
       .enum(EFFECTS)
       .optional()

@@ -119,7 +119,7 @@ describe('ordered Awareness event consumer', () => {
   });
   it('coalesces directed actionable delivery into one bounded wake and ignores informational noise', async () => {
     const actionable = (sequence: number, directed = true) => peerEvent(sequence, {
-      payload: { messageId: `msg-${sequence}`, fromAgentId: 'peer-a', toAgentId: directed ? 'pi:session-1' : null, signalKind: 'blocker', text: 'Please inspect the blocker', files: [] },
+      payload: { messageId: `msg-${sequence}`, fromAgentId: 'peer-a', toAgentId: directed ? 'pi:session-1' : null, signalKind: 'request', text: 'Please inspect the request', files: [] },
     });
     const events = [actionable(1), actionable(2), peerEvent(3), actionable(4, false)];
     const fixture = fakeStore(events);
@@ -210,7 +210,7 @@ describe('ordered Awareness event consumer', () => {
       provenance: { source: 'harness', trust: 'authority' },
       payload: { secret: 'internal-body' },
     });
-    const proposal = peerEvent(2, { payload: { messageId: 'm2', fromAgentId: 'peer-a', toAgentId: 'pi:session-1', topic: 'DECISION', text: 'proposal-body' } });
+    const proposal = peerEvent(2, { payload: { messageId: 'm2', fromAgentId: 'peer-a', toAgentId: 'pi:session-1', topic: 'APPROVAL', text: 'proposal-body' } });
     const wrongTarget = peerEvent(3, { payload: { messageId: 'm3', fromAgentId: 'peer-a', toAgentId: 'someone-else', text: 'wrong-body' } });
     const expired = peerEvent(4, { expiresAt: '2026-08-26T23:59:00.000Z', payload: { messageId: 'm4', fromAgentId: 'peer-a', toAgentId: 'pi:session-1', text: 'expired-body' } });
     const malformed = peerEvent(5, { provenance: { source: 'peer', trust: 'authority' } });

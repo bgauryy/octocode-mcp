@@ -1,17 +1,19 @@
 # Shared Awareness Flow
 
-Load when choosing between shared coordination outcomes. This reference step ends here; return to the main skill flow.
+Use the live schema for exact flags: `schema commands --compact` and
+`schema command <noun> [action]`. Reads are observational; mutations require
+the caller's existing authorization and scope.
 
-Use `npx @octocodeai/octocode-awareness`. Host tools and hooks may perform the same operations through the package API. One root vocabulary covers the ledger: `plan`, `task`, `work`, `lock`, `verify`, `memory`, `agent`, and `signal`; use `verify`, not `check`, and `signal`, not `message`. Run `schema commands --compact` and `schema command <noun> [action]` for exact flags.
-
-| Trigger | Action | Expected output / close |
+| Need | Routine route | Boundary |
 |---|---|---|
-| Orient | `attend`, `status`, `query <view>` | Bounded state and targeted rows; reads do not mutate. |
-| Plan work | `plan list/show/status`, `task ready/claim`, `work list/show` | Inspect one decision-changing row before claiming or declaring. |
-| Declare and protect | `work start/touch/end`, `lock acquire/wait/release/prune` | Presence is advisory; locks are exceptional and expiry is not success. |
-| Coordinate | `agent list/register`, `signal list/publish/reply/ack/resolve`, `session capture` | Durable peer evidence or a scoped continuation capture. |
-| Finish | `task submit/release`, `work end`, `verify mark/audit` | Run the declared check; only an observed receipt proves success. |
-| Learn | `memory recall/record/forget/archive/restore`, `refinement get/set/delete`, `reflect record` | Memory is a verified lead; follow-up has an owner and terminal receipt. |
-| Inspect and maintain | `docs list/show/staleness`, `schema ...`, `config ...`, `maintenance ...`, `hooks ...`, `hook run` | Load one doc or schema; preview cleanup and hook mutations. |
+| Orient | `attend` or targeted `status`/`query` | Read only what can change the next action. |
+| Coordinate | `agent list`, `signal list/publish/reply` | Send only a decision-changing question, request, blocker, or handoff. |
+| Continue unfinished work | `handoff add`, `handoff list`, `handoff clear` | Keep one concise summary and file pointers; clear only after acting. |
+| Plan/protect | `task ready/claim`, `work list/show`, `lock acquire/wait` | Plans and locks are opt in; presence is advisory. |
+| Finish tracked work | `task submit/release`, `work end`, `verify audit`, `verify mark` | Run the declared check; only an observed receipt proves success. |
+| Learn | `memory recall/record`, `reflect record` | Record reusable verified lessons, not routine status. |
 
-Return to `SKILL.md` after choosing the shared outcome. Reads are observational; explicit mutation commands reclaim or prune stored rows.
+Specialist routes remain available by exact schema/help lookup: refinements are
+owned follow-up records, `session capture` is hook-driven, and reflection is
+optional challenge or learning. They are not prerequisites for an ordinary
+request or a routine continuation.

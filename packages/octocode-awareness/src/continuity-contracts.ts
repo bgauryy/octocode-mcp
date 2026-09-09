@@ -16,6 +16,7 @@ export interface PeerInboundPolicyResultV1 {
   decision: InboundDecision;
   messageClass: PeerMessageClass;
   reason: string;
+  actionable: boolean;
   attributedText?: string;
 }
 
@@ -275,26 +276,29 @@ export function effectiveCapabilityDecision(guards: CapabilityDecisionReceiptV1[
   return 'allow';
 }
 
-const PROPOSAL_TOPICS = new Set(['DECISION', 'PROPOSAL', 'APPROVAL', 'REQUEST']);
+const PROPOSAL_TOPICS = new Set(['PROPOSAL', 'APPROVAL']);
 const BLOCKING_TOPICS = new Set(['BLOCKED', 'OVERLAP', 'CONFLICT']);
 const HANDOFF_TOPICS = new Set(['HANDOFF']);
 
 /**
  * Classify peer input without interpreting its body as host policy. Canonical
- * signal kinds preserve routing independently of human-written subjects. Direct
- * peer messages use their topic, with conservative body heuristics as a fallback.
+ * signal kinds preserve routing independently of human-written subjects. Routine
+ * questions, requests, and decisions are data; only the typed approval kind or
+ * legacy approval topics cross the human authorization boundary.
  */
 export function classifyPeerMessage(topic: string | null | undefined, body: string, signalKind?: string): PeerMessageClass {
   // Canonical signals carry a kind independently of their human-written subject.
-  // Never require magic subject words to surface blockers or hold decisions.
-  if (signalKind === 'request' || signalKind === 'decision') return 'proposal';
-  if (signalKind === 'blocker') return 'blocking';
-  if (signalKind === 'handoff') return 'handoff';
+  // Never require magic subject words to surface blockers or handoffs.
+  const normalizedKind = signalKind?.trim().toLowerCase();
+  if (normalizedKind === 'approval') return 'proposal';
+  if (normalizedKind === 'blocker') return 'blocking';
+  if (normalizedKind === 'handoff') return 'handoff';
+  // A known typed kind owns routing; human subjects cannot override it.
+  if (normalizedKind) return 'informational';
   const normalizedTopic = topic?.trim().toUpperCase() ?? '';
   if (PROPOSAL_TOPICS.has(normalizedTopic)) return 'proposal';
   if (BLOCKING_TOPICS.has(normalizedTopic)) return 'blocking';
   if (HANDOFF_TOPICS.has(normalizedTopic)) return 'handoff';
-  if (/\b(approve|authorize|permission|choose|decision needed)\b/i.test(body)) return 'proposal';
   if (/\b(blocked|conflict|overlap|cannot continue)\b/i.test(body)) return 'blocking';
   return 'informational';
 }
@@ -316,19 +320,26 @@ export function evaluatePeerInbound(input: {
   const to = input.toAgentId?.trim() || null;
   const body = input.text.trim();
   const messageClass = classifyPeerMessage(input.topic, body, input.signalKind);
-  if (!from || !expected || !body) return { version: 1, decision: 'refuse', messageClass, reason: 'missing peer identity, target, or body' };
-  if (from === expected) return { version: 1, decision: 'refuse', messageClass, reason: 'self-authored messages are not inbound peer events' };
-  if (to !== null && to !== expected) return { version: 1, decision: 'refuse', messageClass, reason: 'message target does not match this agent' };
+  if (!from || !expected || !body) return { version: 1, decision: 'refuse', messageClass, actionable: false, reason: 'missing peer identity, target, or body' };
+  if (from === expected) return { version: 1, decision: 'refuse', messageClass, actionable: false, reason: 'self-authored messages are not inbound peer events' };
+  if (to !== null && to !== expected) return { version: 1, decision: 'refuse', messageClass, actionable: false, reason: 'message target does not match this agent' };
   if (Buffer.byteLength(body, 'utf8') > (input.maxBytes ?? 16_384)) {
-    return { version: 1, decision: 'refuse', messageClass, reason: 'message exceeds the inbound size limit' };
+    return { version: 1, decision: 'refuse', messageClass, actionable: false, reason: 'message exceeds the inbound size limit' };
   }
   if (messageClass === 'proposal') {
-    return { version: 1, decision: 'hold', messageClass, reason: 'peer proposals require a human-mediated decision' };
+    return { version: 1, decision: 'hold', messageClass, actionable: false, reason: 'peer proposals require a human-mediated decision' };
   }
+  const normalizedKind = input.signalKind?.trim().toLowerCase();
+  const actionable = to === expected && (
+    messageClass === 'blocking' || messageClass === 'handoff'
+    || normalizedKind === 'question' || normalizedKind === 'request'
+    || (!normalizedKind && input.topic?.trim().toUpperCase() === 'REQUEST')
+  );
   return {
     version: 1,
     decision: 'accept',
     messageClass,
+    actionable,
     reason: 'attributed peer data accepted',
     attributedText: `[peer:${from}; class:${messageClass}; authority:data]\n${body}`,
   };

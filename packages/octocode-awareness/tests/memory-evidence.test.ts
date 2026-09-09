@@ -61,6 +61,12 @@ describe('memory evidence reuse', () => {
     expect(recall()).toBeUndefined();
   });
 
+  it('explains the supported provenance format before a failed capture can create memory', () => {
+    expect(() => record(['signal:peer-message', 'file:source.ts']))
+      .toThrow(/capture_fingerprint accepts only workspace-local file:<path>/);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM awareness_memories').get()).toMatchObject({ count: 0 });
+  });
+
   it('rejects symlinks, directories and oversized source bytes without storing partial evidence', () => {
     symlinkSync(join(workspace, 'source.ts'), join(workspace, 'link.ts'));
     for (const path of ['link.ts', '.']) expect(() => record([`file:${join(workspace, path)}`])).toThrow();

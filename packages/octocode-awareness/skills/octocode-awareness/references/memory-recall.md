@@ -26,6 +26,16 @@ Reuse a known memory ID rather than storing the same lesson again. Verified writ
 deduplicate exact selected evidence; use explicit supersession for a changed
 decision. No memory or reflection is required to finish work.
 
+Choose one write route; do not store the same lesson through both:
+
+| Need | Route and ownership |
+|---|---|
+| Agent-owned lesson, optionally fingerprinting current files | `memory record`; `supersedes` requires ACTIVE records from the same agent and workspace/artifact/repo/ref scope. |
+| Shared file/area reasoning with checked digest and validity | `memory store-verified`; shared owner is `awareness`, and replacement IDs must come from this route in the same scope. |
+
+A rejected cross-owner replacement is not a reason to impersonate the owner.
+Reuse the original ID, or store materially independent evidence without `supersedes`.
+
 For file reasoning, retain what matters and why, file/area and actual artifact
 identity, source digest and validity. An optional history pointer references
 already captured evidence; it does not enable per-edit recording. Verified recall
@@ -37,7 +47,11 @@ narrow its filters rather than assuming the returned top matches are everything.
 
 For file-backed learning, `memory record --capture-fingerprint` captures current
 bytes and modes from every declared `--file` and `--reference file:<path>` source.
-Include dependencies explicitly. `memory recall --check-fingerprint` checks those
+Use plain workspace-local paths in `--file`; fingerprinted references accept only
+`file:<path>`, not `file://`, `git:`, `signal:`, `artifact:` or web URLs. Put an
+existing checkpoint in `memory store-verified --history-ref <operation-id>`;
+that pointer does not fetch or fingerprint bytes. Include file dependencies
+explicitly. `memory recall --check-fingerprint` checks those
 sources in the same canonical workspace and retains `evidence.state` in lean output:
 `fresh`, `stale`, or `unknown`. Without the check, a captured fingerprint is unknown.
 
@@ -61,7 +75,5 @@ Discover exact fields with `schema command memory record --compact` and
 - Never load a human thesis or large corpus automatically into prompt context.
 
 Default hooks deliver peer messages without recalling memory. Request memory explicitly when prior learning could change a decision.
-
-Before writing, ask: Is it verified? Will it change a later action? Is its scope clear? Can a future agent re-check the cited source? If any answer is no, keep it out of durable memory.
 
 Next: use `references/learning-loop.md` to route a verified outcome or return to `SKILL.md`.

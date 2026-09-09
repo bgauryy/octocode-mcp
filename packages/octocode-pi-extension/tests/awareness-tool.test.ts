@@ -131,15 +131,20 @@ test('guidance routes to the shared policy and teaches an executable discovery e
   );
 });
 
-test('lists the complete Awareness catalog through one direct tool', async () => {
+test('lists the routine Awareness catalog through one direct tool', async () => {
   const tool = makeTool();
   const value = await run(tool, { action: 'list', pageSize: 25 });
-  const canonical = listAwarenessCommandDescriptors();
+  const canonical = listAwarenessCommandDescriptors({ routine: true });
   const canonicalNames = canonical.map(entry => entry.command);
   assert.equal(new Set(canonicalNames).size, canonicalNames.length, 'canonical catalog commands must be unique');
   assert.equal(value.isError, false);
   assert.equal(details(value).status, 'listed');
   assert.equal(details(value).count, canonical.length);
+  const routineEntries = details(value).entries as Array<{ command: string }>;
+  assert.ok(!routineEntries.some(entry => /^(refinement|session) /.test(entry.command)));
+  assert.ok(!routineEntries.some(entry => /^(memory forget|memory evaluate|memory prune)$/.test(entry.command)));
+  const handoff = await run(tool, { action: 'list', noun: 'handoff', pageSize: 25 });
+  assert.deepEqual((details(handoff).entries as Array<{ command: string }>).map(entry => entry.command), ['handoff add', 'handoff list', 'handoff clear']);
   assert.equal(
     (details(value).next as Record<string, unknown> | undefined)?.tool,
     'awareness'
@@ -174,11 +179,24 @@ test('lists the complete Awareness catalog through one direct tool', async () =>
   assert.equal(modelPayload.entries[0]?.approvalClass, undefined);
 });
 
+test('keeps specialist routes available through explicit all discovery', async () => {
+  const tool = makeTool();
+  const value = await run(tool, { action: 'list', all: true, pageSize: 25 });
+  const all = listAwarenessCommandDescriptors();
+  assert.equal(details(value).count, all.length);
+  const entries = details(value).entries as Array<{ command: string }>;
+  assert.ok(entries.length > 0);
+  assert.ok(all.some(entry => entry.command === 'refinement set'));
+  assert.ok(all.some(entry => entry.command === 'session capture'));
+  const refinement = await run(tool, { action: 'list', noun: 'refinement', pageSize: 25 });
+  assert.equal(details(refinement).count, all.filter(entry => entry.command.startsWith('refinement ')).length);
+});
+
 test('paginates every canonical command exactly once and describes every native schema', async () => {
   const tool = makeTool();
   const expected = listAwarenessCommandDescriptors();
   const listed = new Set<string>();
-  let request: Record<string, unknown> = { queries: [{ reasoning: 'Discover Awareness commands', action: 'list', pageSize: 25 }] };
+  let request: Record<string, unknown> = { queries: [{ reasoning: 'Discover Awareness commands', action: 'list', all: true, pageSize: 25 }] };
   for (let page = 0; page <= expected.length; page += 1) {
     assert.equal(compileMcpSchemaValidator(tool.parameters).validate(request).valid, true);
     const value = await tool.execute('catalog-page', request, undefined, undefined, { cwd: root } as PiContext);

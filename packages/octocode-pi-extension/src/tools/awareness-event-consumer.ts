@@ -92,7 +92,7 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
   let wakeAvailable = true;
   let pendingActionable = 0;
   const recordActionable = (message: AwarenessPeerDelivery, expectedAgentId: string): void => {
-    if (message.details.toAgentId === expectedAgentId && message.details.messageClass !== 'informational') {
+    if (message.details.actionable && message.details.toAgentId === expectedAgentId) {
       pendingActionable = Math.min(pendingActionable + 1, 999);
     }
   };

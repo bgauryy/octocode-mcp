@@ -103,7 +103,12 @@ export function prepareMemoryEvidence(params: InsertMemoryParams, workspace = pa
     return `file:${local !== '..' && !local.startsWith(`..${sep}`) && !isAbsolute(local) ? resolve(canonicalBase, local) : requested}`;
   });
   const result = snapshot(workspace, references, createMemoryEvidenceBudget());
-  if ('reason' in result) throw new Error(`Cannot capture memory evidence: ${result.reason}`);
+  if ('reason' in result) {
+    const hint = result.reason === 'unsupported_reference'
+      ? '. capture_fingerprint accepts only workspace-local file:<path> references; use memory store-verified history_ref for an existing Git checkpoint'
+      : '';
+    throw new Error(`Cannot capture memory evidence: ${result.reason}${hint}`);
+  }
   return { ...params, captureFingerprint: false, fileTreeFingerprint: result.fingerprint, references: result.references };
 }
 

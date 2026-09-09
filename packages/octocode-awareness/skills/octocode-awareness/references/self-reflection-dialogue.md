@@ -2,7 +2,10 @@
 
 Load when a fuzzy or risky decision benefits from structured challenge. Afterward, return to the main skill flow.
 
-Use role dialogue when an important, fuzzy, risky, or creative idea needs challenge. Skip routine edits, status checks, and obvious verification. For a real second agent, see `references/homeostatic-loop.md` (subagent rubber-duck section); loop closure lives in `references/learning-loop.md`.
+Use role dialogue only when an important, fuzzy, risky, or creative idea needs
+challenge. Skip routine edits, status checks, and obvious verification. A real
+second agent is a separate workflow; loop closure lives in
+`references/learning-loop.md`.
 
 ## Pattern
 
@@ -23,7 +26,10 @@ Use two temporary lenses. Add a third only for a distinct user-approved job such
 
 ## Awareness Form
 
-Run `attend` before a hard judgment. For post-task learning, `reflect record --duo` returns advisory supporter/skeptic prompts; it does not spawn a subagent, store role output, or score it. Use internal roles for a quick bounded challenge; use a real rubber-duck subagent when independent source inspection, restatement, or assumption checking materially reduces risk.
+For post-task learning, `reflect record --duo` returns advisory
+supporter/skeptic prompts; it does not spawn a subagent, store role output, or
+score it. Use internal roles for a bounded challenge; use a real second agent
+when independent inspection materially reduces risk.
 
 Use the prompts for one pass: name what improved, one remaining uncertainty, and one concrete check. Structured eval failures belong in `--eval-failure-json` with a stable `failure_signature`; recurring patterns belong in `reflect mine-weakness`. Publish a signal/refinement only when another run needs the unresolved question. Record memory only after synthesis is reusable, scoped, and verified.
 
@@ -33,7 +39,8 @@ Use the prompts for one pass: name what improved, one remaining uncertainty, and
 - Agreement is not proof; verify against source, tests, commands, or user feedback.
 - Preserve dissent when evidence is missing; never claim fake consensus.
 - Capture synthesis and next check, not raw dialogue.
-- Keep one question, two roles, one pass, and one next action.
+- Keep one question, two roles, one pass, and one next action; do not turn this
+  into a mandatory completion ceremony.
 - Do not inject projections for ordinary brainstorming.
 
-Output: question, roles, best arguments, synthesis, dissent, evidence/check, next action, and capture choice (`none|memory|refinement|signal`). Then follow `references/learning-loop.md` until the chosen output is applied, verified, and closed.
+Capture only a reusable verified result, using `none|memory|refinement|signal`.

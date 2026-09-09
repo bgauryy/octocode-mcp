@@ -103,7 +103,7 @@ export function normalizeLabel(value: unknown): string {
 }
 
 export const NOTIFICATION_KIND_VALUES = [
-  'claim', 'handoff', 'question', 'reply', 'blocker', 'request', 'decision', 'fyi',
+  'claim', 'handoff', 'question', 'reply', 'blocker', 'request', 'decision', 'approval', 'fyi',
 ] as const;
 
 export const NOTIFICATION_KINDS = new Set<string>(NOTIFICATION_KIND_VALUES);

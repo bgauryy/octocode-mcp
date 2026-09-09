@@ -637,7 +637,7 @@ test('workers discover research tools and skills with one frozen Awareness guide
     assert.match(result!.systemPrompt!, /<awareness>/);
     assert.match(result!.systemPrompt!, /Attend once per workspace\/session/);
     assert.match(result!.systemPrompt!, /Recall memory only when prior learning could change the approach/);
-    assert.match(result!.systemPrompt!, /A routine solo edit needs no calls or record/);
+    assert.match(result!.systemPrompt!, /routine solo work needs no record/);
     assert.match(result!.systemPrompt!, /bound CLI when the facade is unavailable/);
     assert.doesNotMatch(result!.systemPrompt!, /highest-ROI command|Essential loop/);
     assert.match(result!.systemPrompt!, /<awareness_cli_runtime>/);

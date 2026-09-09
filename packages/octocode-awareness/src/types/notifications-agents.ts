@@ -2,7 +2,7 @@
 
 export type NotificationKind =
   | 'claim' | 'handoff' | 'question' | 'reply'
-  | 'blocker' | 'request' | 'decision' | 'fyi';
+  | 'blocker' | 'request' | 'decision' | 'approval' | 'fyi';
 
 export type NotificationStatus = 'open' | 'resolved';
 

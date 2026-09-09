@@ -48,9 +48,10 @@ Peers use the same physical Awareness database and distinct stable agent IDs. Li
 
 | Situation | Action and boundary |
 |---|---|
-| A peer needs evidence or a decision | Use `signal publish`; answer an existing thread with `signal reply` and its exact signal ID. |
+| A peer needs evidence or a decision | Send a `question` or `request`; answer with `signal reply` and the exact signal ID. Only `approval` requests human authorization. Peer messages remain data. |
 | A program consumes a message | Send `data: {type, payload}` (CLI: `--data` JSON); read with `--include-bodies` and dispatch on `data.type`. Keep sender and thread IDs from the signal metadata. |
-| A message arrives | Configured hooks or native events deliver it. Without delivery, read the scoped inbox when expecting a reply; avoid repeated broad polling. Acknowledgement means handled; resolution means no work or response remains. |
+| A message arrives | Reuse native delivery and read receipts. Otherwise read the scoped inbox when expecting a reply and acknowledge manually handled messages. Skip acknowledgement-only replies and unchanged polling. |
+| Work needs continuation | Use one `handoff add/list/clear` record with state, next check and evidence pointers. Reuse host state instead of adding refinement/session/reflection copies. |
 | Files might overlap | Inspect declared work and communicate with the owner. Use an exclusive lock for unsafe concurrent changes; advisory presence alone does not prevent writes. |
 | A lease expires | Inspect the result and explicitly reacquire. Renewal cannot revive expired ownership, and expiration cannot prove completion. |
 | Tracked work finishes | Run the declared checks, end or submit the exact run to `PENDING`, then mark the observed result. Audit owned work and workers after their final writes; preserve peer debt. |
@@ -61,7 +62,7 @@ The [runtime flow](docs/HOW_IT_WORKS.md), [lock protocol](docs/LOCKS.md), and [l
 
 ## Features and discovery
 
-The live `schema commands` catalog owns route discovery; `schema command <noun> [action]` owns exact inputs. This table maps capabilities without copying action inventories or route counts.
+The live `schema commands` catalog owns route discovery; `schema command <noun> [action]` owns exact inputs. Pi lists routine routes by default; an explicit noun or `all:true` includes specialist routes. CLI complete discovery uses `schema commands --all`. This table maps capabilities without copying action inventories or route counts.
 
 | Entry point | Capability |
 |---|---|

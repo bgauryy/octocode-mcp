@@ -18,7 +18,8 @@ function rolePrompt(role: (typeof roleNames)[number]): string {
 }
 
 test('standing Awareness policy loads optional tracking detail only when needed', () => {
-  assert.match(AWARENESS_PI_HOST_PROMPT, /Before using tracked work, load the tracked-work recipe/);
+  assert.match(AWARENESS_PI_HOST_PROMPT, /Tracking and locks are optional/);
+  assert.match(AWARENESS_PI_HOST_PROMPT, /load its recipe only when needed/);
   assert.doesNotMatch(AWARENESS_PI_HOST_PROMPT, /work end|task submit|verify mark/);
   const guide = getExternalAgentAwarenessGuide().prompt;
   assert.match(guide, /run that declared check.*work end.*task submit.*PENDING.*verify mark/is);

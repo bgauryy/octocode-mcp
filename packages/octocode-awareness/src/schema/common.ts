@@ -1,5 +1,6 @@
 /* v8 ignore file -- exercised through built CLI and isolated-package subprocess tests */
 import { z } from 'zod';
+import { NOTIFICATION_KIND_VALUES } from '../helpers.js';
 export const agentId = z.string().min(1).max(128).describe('Agent id.');
 export const nonEmptyText = (description: string, max = 4000) => z.string().trim().min(1).max(max).describe(description);
 export const tag = z
@@ -32,16 +33,7 @@ export const awarenessOutputFormat = z.enum(['json', 'table', 'csv', 'markdown',
 // Signals — repo-scoped agent-to-agent messages. The `kind` enum is the
 // "smart" part: typed messages let recipients filter (e.g. only blockers) and
 // act, instead of parsing free prose.
-export const NOTIFICATION_KINDS = [
-  'claim', // "I'm taking these files / this area"
-  'handoff', // "finished X, you can start Y" — also session handoffs (self-addressed; pair with a run id in refs)
-  'question', // ask another agent something
-  'reply', // answer within a thread
-  'blocker', // "don't touch X — mid-change / broken"
-  'request', // "can you run Y / verify Z"
-  'decision', // "chose approach Z" — broadcast a call others should know
-  'fyi', // low-stakes heads-up
-] as const;
+export const NOTIFICATION_KINDS = NOTIFICATION_KIND_VALUES;
 export const notificationKind = z.enum(NOTIFICATION_KINDS);
 export const fileList = z.array(z.string().trim().min(1).max(1024)).max(200).default([]).describe('Related files.');
 export const refIds = z.array(z.string().trim().min(1).max(128)).max(50).default([]).describe('Related ids.');
