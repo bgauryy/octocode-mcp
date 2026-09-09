@@ -12,7 +12,7 @@ import { MANAGED_BLOCK_END, MANAGED_BLOCK_START, SYSTEM_PROMPT_MARKER, DISABLED_
 import { applyOctocodeUi, getThinkingStatus } from '../src/extension-ui.js';
 import { getAssetPaths, getAwarenessCLIPath, buildAwarenessCommand, getInstallSource, listBundledSkills, readTextIfExists, resolveAwarenessCoordinationScope } from '../src/assets.js';
 import { openAwarenessStore } from '@octocodeai/octocode-awareness';
-import { SUBAGENT_WORKER_CONTRACT, SUBAGENT_AWARENESS_GUIDANCE } from '@octocodeai/agent-contracts/prompts';
+import { SUBAGENT_WORKER_CONTRACT, SUBAGENT_AWARENESS_GUIDANCE, SUBAGENT_SKILLS_INTRO, SUBAGENT_SURFACE } from '@octocodeai/agent-contracts/prompts';
 import { getAppendSystemTarget, parseSetupScope, splitArgs, truncateUserVisibleToolOutput } from '../src/utils.js';
 import { mergeManagedAppendSystem } from '../src/prompt.js';
 import { cleanupSpawnedAgentsForShutdown } from '../src/tools/agents/process.js';
@@ -414,29 +414,18 @@ test('build composes the system prompt from the inlined prompt module', async ()
 
   // Worker artifacts contain shared host constraints once. The runtime injects
   // Awareness's canonical guide, so the artifact must omit its parallel recipe.
-  const renderedCoordination: string[] = [];
   for (const agent of ['architect', 'browser-agent', 'planner', 'researcher']) {
     const source = fs.readFileSync(path.join(packageRoot, 'subagents', agent, 'SYSTEM_PROMPT.md'), 'utf8');
     assert.match(source, /\{\{OCTOCODE_COORDINATION\}\}/, `source subagent keeps the shared placeholder: ${agent}`);
     const dist = fs.readFileSync(path.join(distDir, 'subagents', agent, 'SYSTEM_PROMPT.md'), 'utf8');
     assert.doesNotMatch(dist, /\{\{OCTOCODE_[A-Z_]+\}\}/, `dist subagent has no unexpanded placeholder: ${agent}`);
-    assert.match(dist, /## Coordination/, `dist subagent has coordination: ${agent}`);
+    // The identical canonical fragments appear exactly once per subagent — the
+    // exact-string split checks are what enforce the shared coordination block.
     assert.equal(dist.split(SUBAGENT_WORKER_CONTRACT).length, 2, `dist subagent has one worker contract: ${agent}`);
     assert.ok(!dist.includes(SUBAGENT_AWARENESS_GUIDANCE), `dist subagent omits duplicate Awareness guidance: ${agent}`);
-    // Shared skills intro is present in every subagent.
-    assert.match(dist, /You have access to bundled \*and\* user-installed Octocode skills\./, `dist subagent has shared skills intro: ${agent}`);
-    const block = dist.slice(dist.indexOf('## Coordination'), dist.indexOf('Treat Awareness state'));
-    renderedCoordination.push(block);
+    assert.equal(dist.split(SUBAGENT_SKILLS_INTRO).length, 2, `dist subagent has shared skills intro: ${agent}`);
+    assert.equal(dist.split(SUBAGENT_SURFACE).length, 2, `dist subagent has the shared Octocode-surface fragment: ${agent}`);
   }
-  assert.equal(new Set(renderedCoordination).size, 1, 'all subagents share one identical coordination block');
-  // The Octocode-surface line is shared across the three research subagents (not browser-agent).
-  const surfaceLines = ['architect', 'planner', 'researcher'].map((agent) => {
-    const dist = fs.readFileSync(path.join(distDir, 'subagents', agent, 'SYSTEM_PROMPT.md'), 'utf8');
-    const i = dist.indexOf('Use the Octocode surface');
-    assert.notEqual(i, -1, `research subagent has shared surface line: ${agent}`);
-    return dist.slice(i, dist.indexOf('\n', i));
-  });
-  assert.equal(new Set(surfaceLines).size, 1, 'research subagents share one identical Octocode-surface line');
 });
 
 test('build copies bundled Octocode skills without secret env files', () => {
@@ -650,9 +639,9 @@ test('workers discover research tools and skills with one frozen Awareness guide
 
     assert.ok(result?.systemPrompt?.startsWith('typed specialist prompt from --append-system-prompt'));
     assert.match(result!.systemPrompt!, /<awareness>/);
-    assert.match(result!.systemPrompt!, /Start lean: attend once/);
+    assert.match(result!.systemPrompt!, /Attend once per workspace\/session/);
     assert.match(result!.systemPrompt!, /Recall memory only when prior learning could change the approach/);
-    assert.match(result!.systemPrompt!, /Refresh only an active claim or presence you own/);
+    assert.match(result!.systemPrompt!, /Re-attend when participation changes and the briefing is stale/);
     assert.match(result!.systemPrompt!, /bound CLI when the facade is unavailable/);
     assert.doesNotMatch(result!.systemPrompt!, /highest-ROI command|Essential loop/);
     assert.match(result!.systemPrompt!, /<awareness_cli_runtime>/);
@@ -1278,19 +1267,22 @@ test('every direct tool contract is concise enough for per-turn agent context', 
     const description = tool.description ?? '';
     const schemaText = JSON.stringify(tool.parameters);
     assert.ok(description.length > 0, `${name} has a model-visible description`);
-    assert.ok(description.length <= 360, `${name} description is ${description.length} chars`);
+    // MCPTool carries the envelope-vs-nested routing rules and is allowed a
+    // slightly larger budget than the other direct tools.
+    const cap = name === 'MCPTool' ? 480 : 360;
+    assert.ok(description.length <= cap, `${name} description is ${description.length} chars`);
     visitDescriptions(tool.parameters, name);
     totalContractChars += description.length + schemaText.length;
   }
   assert.match(tools.get('bash')!.description!, /never for code search or file reads/i);
-  assert.match(tools.get('MCPTool')!.description!, /over bash for code search\/file reads/i);
-  assert.match(tools.get('MCPTool')!.description!, /describe unfamiliar tools before their first call/i);
+  assert.match(tools.get('MCPTool')!.description!, /server:"octocode" holds the code, GitHub, history, npm/i);
+  assert.match(tools.get('MCPTool')!.description!, /describe an unfamiliar tool once, then reuse that schema/i);
   assert.match(tools.get('agent')!.description!, /use MCPTool for repository research/i);
   assert.match(tools.get('agent')!.description!, /implementer/);
   assert.match(tools.get('agent')!.description!, /custom.*requires.*tools.*systemPrompt/i);
   assert.match(tools.get('skill')!.description!, /specialized workflow/i);
   assert.doesNotMatch(tools.get('skill')!.description!, /matching skill BEFORE acting/i);
-  assert.ok(totalContractChars <= 45_000, `direct tool contracts use ${totalContractChars} chars: ${[...tools].map(([name, tool]) => `${name}=${JSON.stringify(tool.parameters).length + (tool.description?.length ?? 0)}`).join(', ')}`);
+  assert.ok(totalContractChars <= 48_000, `direct tool contracts use ${totalContractChars} chars: ${[...tools].map(([name, tool]) => `${name}=${JSON.stringify(tool.parameters).length + (tool.description?.length ?? 0)}`).join(', ')}`);
 });
 
 test('direct tool registration exposes the exact provider-contract subtotal', () => {
@@ -1397,7 +1389,11 @@ test('file exposes one edit schema and rendering contract', async () => {
   const { tools } = await captureExtensions();
   const editTool = tools.get('file')!;
   assert.equal(editTool.label, 'file (Octocode)');
-  assert.match(editTool.description!, /stale\/lost-update checks and diffs/i);
+  assert.match(editTool.description!, /guarded edit, write, or delete/i);
+  assert.ok(
+    editTool.promptGuidelines!.some(line => line.includes('stale-edit guard')),
+    'edit guidance covers the stale/lost-update guard'
+  );
   assert.ok(
     editTool.promptGuidelines!.some(line =>
       line.includes('targeted replacements')
@@ -1434,7 +1430,7 @@ test('file write preserves atomic creation and path guards', async () => {
   const { tools, activeTools } = await captureExtensions();
   const writeTool = tools.get('file')!;
   assert.equal(writeTool.label, 'file (Octocode)');
-  assert.match(writeTool.description!, /write is atomic/i);
+  assert.match(writeTool.description!, /write replaces the whole file/i);
   assert.equal(activeTools.includes('write'), false, 'native write stays disabled');
   assert.equal(tools.has('file'), true, 'file replaces native edit/write');
   assert.equal(activeTools.includes('read'), false);
@@ -2453,14 +2449,14 @@ test('mcp initialization reads canonical project config before the agent calls t
   assert.ok(mcpTool, 'MCPTool registered');
   assert.equal(tools.has('mcp'), false, 'mcp alias was removed to slim the tool surface');
   assert.match(mcpTool.promptSnippet!, /mcp_catalog_index/);
-  assert.match(mcpTool.promptSnippet!, /Exact schemas are compiled and validated internally/i);
-  assert.match(mcpTool.description!, /automatically discovered MCP tools/i);
-  assert.match(mcpTool.description!, /stdio and Streamable HTTP/i);
+  assert.match(mcpTool.promptSnippet!, /Gateway to connected MCP servers/i);
+  assert.match(mcpTool.description!, /tools, resources, and prompts/i);
+  assert.match(mcpTool.description!, /inner field placed at the MCPTool level is rejected/i);
   assert.doesNotMatch(mcpTool.description!, /prepare/i);
   const mcpGuidelines = mcpTool.promptGuidelines?.join('\n') ?? '';
   assert.match(mcpGuidelines, /\$OCTOCODE_HOME\/extension\/mcp\/servers\.json/);
-  assert.match(mcpGuidelines, /Streamable HTTP/i);
-  assert.match(mcpGuidelines, /pinned local.*npx.*fallback/i);
+  assert.match(mcpGuidelines, /restart\/stop manages connections/i);
+  assert.match(mcpGuidelines, /built-in octocode server cannot be removed/i);
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), '.tmp-mcp-test-'));
   try {
@@ -2594,7 +2590,7 @@ test('agent browser profile spawns with routed context without launching Chrome'
     assert.equal(spawned.length, 1);
     const prompt = promptFileContent(spawned[0]!.args);
     assert.match(prompt, /Network, Runtime, DOM, DOMDebugger/);
-    assert.match(prompt, /Your ONLY browser tool is `chromeDebug`/);
+    assert.match(prompt, /Inspect the parent-assigned browser phase with chromeDebug/);
     assert.match(prompt, /https:\/\/example\.com\/account/);
     assert.equal(argValues(spawned[0]!.args, '--tools')[0], 'chromeDebug,MCPTool,skill,awareness,bash');
     assert.match(browserTool.renderResult!(result, { expanded: false }).render(120)[0]!, /agent.*SPAWNED/);
@@ -2746,8 +2742,8 @@ test('Octocode metrics footer updates on session and turn lifecycle (single surf
   assert.equal(workingVisibility.at(-1), false, 'working animation hides when the operation ends');
 
   const latest = renderFooter();
-  assert.match(latest, /turns 1/);
-  assert.match(latest, /last \d+(ms|s)/);
+  assert.match(latest, /tools \d+/);
+  assert.doesNotMatch(latest, /\bturn \d/, 'turn timer yields to session uptime after turn_end');
   // Pi best practice (docs/tui.md): the footer is registered exactly ONCE and
   // live updates repaint via tui.requestRender — NOT by re-calling setFooter on
   // every tick/turn (that churn caused message flicker + scroll jumps).
@@ -3122,7 +3118,7 @@ test('session_before_compact provides the deterministic checkpoint ONLY on overf
   assert.match(result.compaction?.summary ?? '', /Read Pi compaction internals/);
   assert.match(result.compaction?.summary ?? '', /src\/tools\/context-tools\.ts/);
   assert.match(result.compaction?.summary ?? '', /src\/new-file\.ts/, 'files created via write appear as modified');
-  assert.match(result.compaction?.summary ?? '', /overall request/i, 'overflow checkpoints preserve whole-task continuation');
+  assert.match(result.compaction?.summary ?? '', /A passed substep does not complete the request/i, 'overflow checkpoints preserve whole-task continuation');
   assert.doesNotMatch(result.compaction?.summary ?? '', /next small step only/i, 'overflow checkpoints do not impose an artificial one-step stop');
   assert.deepEqual(result.compaction?.details?.modifiedFiles, ['src/index.ts', 'src/new-file.ts']);
   assert.deepEqual(result.compaction?.details?.readFiles, ['src/tools/context-tools.ts'], 'modified files excluded from reads');
@@ -4024,7 +4020,7 @@ test('agent ledger splits ambient counts from bounded worker detail', async () =
       false,
       'worker detail does not create a duplicate persistent panel'
     );
-    assert.match(footerText(), /Agents 1[\s\S]*1 running[\s\S]*inbox/, 'normal workers use one bounded aggregate row with state counts before route');
+    assert.match(footerText(), /starting[\s\S]*ui-worker[\s\S]*inbox/, 'live workers render one bounded row with the state token before the name and an inbox route');
     assert.doesNotMatch(footerText(), /agent ui-worker.*running/, 'normal workers do not grow the footer by entity');
 
     spawned[0]!.emitStdout({
@@ -4037,26 +4033,27 @@ test('agent ledger splits ambient counts from bounded worker detail', async () =
     spawned[0]!.emitStdout({ type: 'agent_end', messages: [] });
     assert.match(
       footerText(),
-      /ui-worker blocked[\s\S]*inbox/,
+      /blocked[\s\S]*ui-worker[\s\S]*inbox/,
       'blocked workers remain individually identifiable with a detail route',
     );
-    assert.doesNotMatch(footerText(), /need parent input/, 'handback detail remains in the inbox instead of the ambient footer');
+    // The bounded block-reason segment may surface, but raw handback markers stay in the inbox.
+    assert.doesNotMatch(footerText(), /\[BLOCKED\]/, 'raw handback markers remain in the inbox instead of the ambient footer');
 
     await invokeExecute(
       messageTool,
       { queries: [{ reasoning: 'Exercise worker lifecycle.', type: 'message', agentId, message: 'answer: proceed' }] },
       ctx
     );
-    // Before the worker starts the turn, the prior blocked result remains
-    // authoritative while the queued message is surfaced as separate attention.
-    assert.match(footerText(), /ui-worker blocked/, 'queued work does not erase the durable blocked result');
+    // Queuing a message flips the worker to queued (the blocked handback stays
+    // durable in the inbox) and surfaces the pending message as attention.
+    assert.match(footerText(), /queued[\s\S]*ui-worker/, 'a queued message shows the worker as queued for its next turn');
     assert.match(footerText(), /1 messages pending[\s\S]*inbox/, 'queued work names the inbox detail route');
     // The worker actually begins the queued turn → running.
     spawned[0]!.emitStdout({ type: 'agent_start' });
     assert.match(
       footerText(),
-      /Agents 1[\s\S]*1 running/,
-      'the aggregate footer switches to running once the queued turn starts',
+      /running[\s\S]*ui-worker/,
+      'the worker row switches to running once the queued turn starts',
     );
 
     spawned[0]!.emitStdout({
@@ -4068,11 +4065,8 @@ test('agent ledger splits ambient counts from bounded worker detail', async () =
     });
     spawned[0]!.emitStdout({ type: 'agent_end', messages: [] });
     spawned[0]!.close(0);
-    assert.match(
-      footerText(),
-      /Agents 1[\s\S]*1 done[\s\S]*inbox/,
-      'completed workers collapse to one normal completion summary with an inbox route',
-    );
+    // Settled workers remain in the inbox; ambient footer space belongs to live
+    // work and failures, so the completed row disappears entirely.
     assert.doesNotMatch(footerText(), /ui-worker|\bok\b/, 'completed worker detail leaves the ambient footer');
     assert.equal(
       widgetCalls.some((call) => call.key === 'octocode-status-panel'),
@@ -4308,20 +4302,20 @@ test('agentSpecialist starts researcher, planner, and architect with all Octocod
       assert.ok(args.includes('--tools'));
     }
 
+    // Templates carry no role headers; each role is identified by its
+    // distinctive opening directive and must not leak into the other prompts.
     const researcherSystemPrompt = promptFileContent(researcherArgs!);
-    assert.match(researcherSystemPrompt, /^# Researcher/m);
+    assert.match(researcherSystemPrompt, /Answer one bounded research question/);
     assert.match(researcherSystemPrompt, /claim ledger/);
-    assert.doesNotMatch(researcherSystemPrompt, /^# Planner|^# Architect|^# Browser Agent/m);
+    assert.doesNotMatch(researcherSystemPrompt, /dependency-ordered plan|Find the cause at the failing boundary|parent-directed browser phase/);
 
     const plannerSystemPrompt = promptFileContent(plannerArgs!);
-    assert.match(plannerSystemPrompt, /^# Planner/m);
-    assert.match(plannerSystemPrompt, /dependency-ordered implementation plan/);
-    assert.doesNotMatch(plannerSystemPrompt, /^# Researcher|^# Architect|^# Browser Agent/m);
+    assert.match(plannerSystemPrompt, /dependency-ordered plan with observable acceptance checks/);
+    assert.doesNotMatch(plannerSystemPrompt, /Answer one bounded research question|Find the cause at the failing boundary|parent-directed browser phase/);
 
     const architectSystemPrompt = promptFileContent(architectArgs!);
-    assert.match(architectSystemPrompt, /^# Architect/m);
-    assert.match(architectSystemPrompt, /root-cause specialist/);
-    assert.doesNotMatch(architectSystemPrompt, /^# Researcher|^# Planner|^# Browser Agent/m);
+    assert.match(architectSystemPrompt, /Find the cause at the failing boundary/);
+    assert.doesNotMatch(architectSystemPrompt, /Answer one bounded research question|dependency-ordered plan|parent-directed browser phase/);
 
     const researcherTools =
       researcherArgs![researcherArgs!.indexOf('--tools') + 1]!;

@@ -628,7 +628,12 @@ function buildSandboxedNodeInvocation(policy: SandboxInvocationPolicy): { args: 
     for (const scope of policy.readScopes) flags.push(`--allow-fs-read=${readSubtree(scope)}`);
     for (const scope of policy.writeScopes) flags.push(`--allow-fs-write=${readSubtree(scope)}`);
   }
-  if (caps.has('net')) flags.push('--allow-net');
+  // Node 22's permission model has no net permission (network is not restricted
+  // under --permission there); --allow-net exists from Node 24. Pass it only when
+  // the runtime knows the flag — the effective grant is identical either way.
+  if (caps.has('net') && process.allowedNodeEnvironmentFlags.has('--allow-net')) {
+    flags.push('--allow-net');
+  }
   if (caps.has('exec')) flags.push('--allow-child-process');
 
   // Scrub the environment: expose only PATH so explicitly approved exec tools can

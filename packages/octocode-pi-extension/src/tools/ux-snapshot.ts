@@ -222,15 +222,19 @@ export function deriveUxSnapshot(input: UxSnapshotInput): UxSnapshotV1 {
       const startedAt = parsedTime(agent.startedAt, updatedAt);
       const state = effectiveAgentStatus(agent);
       const terminal = TERMINAL_AGENT_STATES.has(state) || state === 'blocked';
+      // Raw handback markers ([DONE]/[BLOCKED]/…) belong to the inbox detail;
+      // the ambient surface shows only the bounded reason text.
+      const stripMarker = (text: string): string => text.replace(/^\[[A-Z]+\]\s*/, '');
       const messageUpdate = agent.lastMessage
-        ? `msg${agent.lastMessage.direction === 'to-agent' ? '→' : '←'} ${agent.lastMessage.action}: ${agent.lastMessage.preview}`
+        ? `msg${agent.lastMessage.direction === 'to-agent' ? '→' : '←'} ${agent.lastMessage.action}: ${stripMarker(agent.lastMessage.preview)}`
         : undefined;
       const latestMessage = agent.lastMessage && agent.lastMessage.timestamp >= updatedAt;
+      const ambientDelta = agent.deltaSummary ? stripMarker(agent.deltaSummary) : undefined;
       const activeOperation = state === 'running' && agent.activeTool
         ? `tool ${agent.activeTool}`
         : (state === 'queued' || latestMessage) && messageUpdate
           ? messageUpdate
-          : agent.deltaSummary ?? messageUpdate;
+          : ambientDelta || messageUpdate;
       return {
         id: agent.agentId,
         label: agent.name,

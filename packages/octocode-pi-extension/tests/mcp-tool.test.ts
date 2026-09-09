@@ -1886,13 +1886,16 @@ test("schema: top-level only exposes queries property", () => {
 
 test("prompt guidance distinguishes the MCP envelope from nested server arguments", () => {
   const def = buildMcpToolDef();
-  const guidance = [def.promptSnippet, ...(def.promptGuidelines ?? [])].join(
-    "\n",
-  );
+  const guidance = [
+    def.description,
+    def.promptSnippet,
+    ...(def.promptGuidelines ?? []),
+  ].join("\n");
 
-  assert.match(guidance, /MCPTool\.queries\[\]/);
-  assert.match(guidance, /arguments\.queries\[\]/);
-  assert.match(guidance, /never.*inner.*MCPTool\.queries\[\]/i);
+  assert.match(guidance, /MCP action fields belong in queries\[\]/);
+  assert.match(guidance, /input belongs in queries\[\]\.arguments/);
+  assert.match(guidance, /nests its own queries\[\] inside arguments/);
+  assert.match(guidance, /inner field placed at the MCPTool level is rejected/i);
 });
 
 test("schema: call queries expose the compact table response view", () => {

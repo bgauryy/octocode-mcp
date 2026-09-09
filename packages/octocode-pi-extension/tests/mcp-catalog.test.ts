@@ -201,7 +201,7 @@ test('renders the full schema inline even when optional field names are numerous
   assert.ok(guide.includes('additionalOption199'), 'last injected field renders with no truncation');
 });
 
-test('the real localSearch CLI schema retains all five variants in the model-visible catalog', () => {
+test('the real localSearch CLI schema renders completely in the model-visible catalog', () => {
   const home = tempRoot('octocode-live-catalog-');
   const tool = JSON.parse(execFileSync(process.execPath, [
     path.resolve(import.meta.dirname, '../../octocode/out/octocode.js'),
@@ -214,15 +214,13 @@ test('the real localSearch CLI schema retains all five variants in the model-vis
   });
   const guide = renderMcpCatalogIndex(snapshot);
   const description = guide.split('description: ')[1]!.split('\n')[0]!;
-  assert.ok(description.length > 4_000, `full schema renders inline without truncation, chars=${description.length}`);
-  const variants = tool.inputSchema.properties.queries.items.anyOf;
-  assert.equal(variants.length, 5);
-  for (const variant of variants) {
-    const operation = variant.properties.operation.const;
-    assert.ok(description.includes(`operation="${operation}"`));
-    for (const field of variant.required) assert.ok(description.includes(field), `${operation} missing ${field}`);
+  const items = tool.inputSchema.properties.queries.items;
+  // The consolidated flat schema (single object, no anyOf variants) must render
+  // every field inline — required and optional alike — with no truncation.
+  assert.deepEqual(items.required, ['searchText', 'path']);
+  for (const field of Object.keys(items.properties)) {
+    assert.ok(description.includes(field), `catalog omits ${field}`);
   }
-  assert.ok(description.includes('names'));
   assert.ok(description.includes('maxDepth'));
   assert.doesNotMatch(description, /Input summary partial/);
   assert.doesNotMatch(description, /Exact schema: MCPTool/);

@@ -21,7 +21,7 @@ test('standing Awareness policy loads optional tracking detail only when needed'
   assert.match(AWARENESS_PI_HOST_PROMPT, /Before using tracked work, load the tracked-work recipe/);
   assert.doesNotMatch(AWARENESS_PI_HOST_PROMPT, /work end|task submit|verify mark/);
   const guide = getExternalAgentAwarenessGuide().prompt;
-  assert.match(guide, /run the check.*work end.*task submit.*PENDING.*verify mark/is);
+  assert.match(guide, /run that declared check.*work end.*task submit.*PENDING.*verify mark/is);
   assert.ok(guide.indexOf('work end') < guide.indexOf('verify mark'));
   assert.match(guide, /Reuse host run\/task IDs/);
 });

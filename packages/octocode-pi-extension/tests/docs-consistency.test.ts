@@ -178,7 +178,10 @@ test('HARNESS and UI inventories derive from the current extension harness', () 
   assert.doesNotMatch(harnessDoc, /spawnSubagent[^\n]*browser-agent/);
   assert.doesNotMatch(harnessDoc, /bundles its skill assets|bundled skill\s+\(octocode-awareness/);
 
-  assert.match(uiDoc, new RegExp(`✓ tools: 0 native Pi tools \\+ ${OCTOCODE_SUPPORT_TOOL_NAMES.length} support tools`));
+  // The standalone dashboard (and its "✓ tools: …" inventory line) was removed;
+  // the UI doc must not resurrect it, and the removed handlers stay documented.
+  assert.doesNotMatch(uiDoc, /Octocode dashboard/);
+  assert.match(uiDoc, /removed command handlers and standalone dashboard formatters have no compatibility aliases/);
   assert.doesNotMatch(uiDoc, /13 native Pi tools \+ 7 support tools/);
 });
 

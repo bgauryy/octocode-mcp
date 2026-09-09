@@ -308,7 +308,7 @@ Resolved by `getAssetPaths()` in `src/assets.ts`.
 14  support tools            (see Support Tools table)
  1  guarded built-in override (bash)
  6  disabled built-ins       (read, edit, write, grep, find, ls → replaced)
-5  slash commands           (recovery, worker inbox, status, events, and configuration)
+4  slash commands           (recovery, worker inbox, status, and configuration)
  1  flag                     (--no-context)
 12  lifecycle hooks          (hookComposer; session_start pre-warms MCP catalog)
     direct pi.on handlers    (metrics, UI, worker inbox, Awareness, and Pi-owned compaction observation)

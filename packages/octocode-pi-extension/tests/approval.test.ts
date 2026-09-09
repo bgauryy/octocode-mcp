@@ -304,6 +304,6 @@ test('choosing Always notifies how to revoke the session grant', async () => {
   } as unknown as PiContext;
   const outcome = await requestApproval(ctx, { actionClass: 'install', title: 't', detail: 'd' });
   assert.equal(outcome.always, true);
-  assert.match(notices[0]!, /Always-allow remembered for "install"/);
-  assert.match(notices[0]!, /revoke install/);
+  assert.match(notices[0]!, /Allowed "install" for this session/);
+  assert.match(notices[0]!, /Manage grants in \/configuration → Permissions/);
 });

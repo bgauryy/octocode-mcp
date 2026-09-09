@@ -24,7 +24,7 @@ The live source inventory is authoritative. Use `/configuration` inside Pi and s
 | Pi support tools | 14 |
 | Guarded Pi builtin overrides | 1 (`bash`) |
 | Disabled Pi builtins | 6 |
-| Slash command entries | 5 |
+| Slash command entries | 4 |
 | Bundled main-agent skills | 15 |
 
 ### Support tools
@@ -83,14 +83,13 @@ Set `OCTOCODE_HOME` to change the Octocode home directory. Set `OCTOCODE_STORAGE
 
 See the repository [configuration guide](https://github.com/bgauryy/octocode/blob/main/docs/CONFIGURATION.md) for every supported key and [docs/SETTINGS.md](docs/SETTINGS.md) for Pi's control center, persistence, and security behavior.
 
-## Slash command entries (5)
+## Slash command entries (4)
 
 | Command | Purpose |
 |---|---|
 | `/octocode-rewind` | Preview and explicitly apply a local file-history restore. |
 | `/octocode-inbox` | Inspect, steer, or stop spawned workers through a keyboard-driven picker. |
-| `/octocode-status` | Inspect session usage, tools, skills, plan, agents, and pending decisions. |
-| `/octocode-status events` | Inspect the selected branch’s execution journal; use `export` to save JSONL. |
+| `/octocode-status` | Inspect session usage, tools, skills, plan, agents, and pending decisions; `events` shows the selected branch’s execution journal and `export` saves JSONL. |
 | `/configuration` | Open the local browser configuration page. |
 
 The footer separates live activity from session metadata. `/octocode-status` opens details; `/octocode-status export` writes the semantic journal into the session artifact directory. Full messages and tool output remain in Pi’s transcript. The footer shows `/configuration`. The page controls MCP connections and tools,

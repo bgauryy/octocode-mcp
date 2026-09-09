@@ -362,7 +362,7 @@ test('before_agent_start bumps plan staleness exactly once before the frozen-pro
   const hook = source.slice(hookStart, hookEnd);
   assert.equal(hook.match(/bumpPlanTurn\(planScope\)/g)?.length, 1, 'one bump is wired per hook invocation');
   assert.ok(
-    hook.indexOf('bumpPlanTurn(planScope)') < hook.indexOf('if (frozenSystemPrompt !== undefined)'),
+    hook.indexOf('bumpPlanTurn(planScope)') < hook.indexOf('if (session.frozenSystemPrompt !== undefined)'),
     'the bump runs on frozen turns instead of only during initial prompt construction',
   );
 });
@@ -718,7 +718,7 @@ test('plan tool add supports dependsOn ordering', async () => {
 test('plan tool gives compact behavioral routing and truthful transition contrasts', () => {
   const tool = loadTool();
   assert.match(tool.description, /Use a plan only for complex work/);
-  assert.match(tool.description, /Skip plans for routine fixes, a few straightforward steps, or simple delegation/);
+  assert.match(tool.description, /Skip routine fixes, straightforward steps, and simple delegation/);
   assert.match(tool.description, /complete only after an observed check/i);
   const guidelines = tool.promptGuidelines?.join('\n') ?? '';
   assert.match(guidelines, /queries.*reasoning.*action/is);

@@ -314,7 +314,7 @@ describe.sequential('real Pi runtime contract', () => {
       await created.session.prompt('Verify the installed Awareness skill and CLI bindings.', { expandPromptTemplates: false });
       await created.session.waitForIdle();
 
-      expect(providerPrompts[0]).toContain('<awareness_cli_runtime>');
+      expect(providerPrompts[0]).toContain('<awareness_runtime>');
       expect(providerPrompts[0]).toContain('octocode-awareness');
       expect(providerPrompts[0]).toContain(path.resolve(workspace));
       expect(providerPrompts[0]).toContain(octocodeHome);
