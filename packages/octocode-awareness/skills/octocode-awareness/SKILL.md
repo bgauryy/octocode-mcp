@@ -56,6 +56,8 @@ If tracking is used, run the declared check, end/submit the run to PENDING, then
 
 ## Remember selectively
 
+When coordination needs source evidence, use [Octocode research](references/octocode.md); when deciding whether to record or export it, use [output routing](references/output-routing.md). These routes are optional and do not add steps to routine peer communication.
+
 After substantial work or a meaningful event, save **one concise memory or reflection** only when verified learning will help future work: a root cause, non-obvious constraint, consequential decision, or reusable fix. Include evidence and scope. Skip routine edits, status summaries, raw dialogue and repeated lessons. See [memory](references/memory-recall.md).
 
 ## Automation and detail

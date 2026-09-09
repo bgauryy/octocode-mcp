@@ -60,17 +60,17 @@
     "verify": "yarn lint && yarn test"
   },
   "devDependencies": {
-    "@octocodeai/agent-contracts": "^0.1.0",
-    "@types/node": "^26.2.0",
+    "@octocodeai/agent-contracts": "0.1.0",
+    "@types/node": "^26.4.1",
     "@vitest/coverage-v8": "^4.1.11",
     "esbuild": "^0.28.2",
     "eslint": "^10.10.0",
     "isomorphic-git": "1.41.9",
-    "tsx": "^4.23.12",
-    "typescript": "^5.9.3",
+    "tsx": "^4.23.13",
+    "typescript": "^6.0.3",
     "typescript-eslint": "^8.69.0",
     "vitest": "^4.1.11",
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "publishConfig": {
     "access": "public"

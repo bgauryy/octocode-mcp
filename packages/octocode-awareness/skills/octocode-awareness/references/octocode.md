@@ -1,29 +1,27 @@
-# Octocode Operations
+# Octocode research operations
 
-Use this when Awareness needs code, GitHub, package, history, artifact, graph, or skill evidence. Awareness owns coordination/memory; `npx octocode` or Octocode MCP owns research and skill management. No Octocode binary is bundled in this skill. Prefer connected Octocode MCP tools; otherwise run the published CLI so the correct native engine resolves for the host:
+Load when Awareness needs code, repository, package, history, or skill evidence. Awareness owns coordination and memory; Octocode research tools own source discovery and inspection. This skill does not bundle an Octocode binary.
 
-Inspect the live catalog before constructing requests:
-
-```bash
-npx octocode tools --json
-npx octocode tools localSearch astSearch localGetFileContent lspSearch --scheme
-```
-
-## Research Recipes
+Use `octocode-research` when available. Otherwise use the current MCP tools or CLI directly. In the monorepo, use the built CLI; elsewhere use `npx -y octocode`. Inspect an unfamiliar tool schema once and reuse it until the contract changes:
 
 ```bash
-# Exact JSON fields come from --scheme; local paths must be absolute.
-npx octocode tools astSearch --queries '{"operation":"tree","path":"/absolute/workspace","maxDepth":2}'
-npx octocode tools localSearch --queries '{"path":"/absolute/workspace","searchText":"term","resultView":"discovery"}'
-npx octocode tools localGetFileContent --queries '{"path":"/absolute/workspace/README.md","minify":"symbols"}'
-
-# Remote/package contracts
-npx octocode tools ghSearch ghGetFileContent ghSearchHistory ghGetHistoryItem ghCloneRepo npmSearch --scheme
-# Use the catalog availability and history-operation schema for supported remote surfaces.
+npx -y octocode tools localSearch astSearch localGetFileContent lspSearch --scheme
 ```
 
-Treat hits as leads. Cite paths/lines/IDs in locks, signals, memories, and refinements. Zero matches require one scope/mode/spelling adjustment before an absence claim. Install a dedicated research workflow skill separately for deeper evidence workflows.
+| Question | Tool |
+|---|---|
+| Text or regex occurrence | `localSearch`; no `operation` field |
+| Paths, syntax, symbols, or file topology | `astSearch`: `files`, `tree`, `match`, `symbols`, or `topology` |
+| Exact source or a deliberate transformed view | `localGetFileContent`; exact by default, choose minification explicitly |
+| Symbol identity or uses | `lspSearch` with the operation's real anchor and scope |
+| Remote discovery and history | `ghSearch`, `ghSearchHistory` |
+| Exact remote content or history item | `ghGetFileContent`, `ghGetHistoryItem` |
+| Local checkout or package lookup | `ghCloneRepo` when enabled; `npmSearch` |
 
-## Skill Management
+Choose calls that answer the question. Read exact source before anchored LSP; `lineHint` is 1-based, while `position` is 0-based UTF-16. Follow returned executable continuations and distinguish empty, partial, and error results. A completed empty query describes its scope; it cannot rule out dynamic or external consumers.
 
-Install the bundled Awareness skill with `npx @octocodeai/octocode-awareness skill install --platform <host> (--global | --project-dir <path>)`. Preview with `--dry-run`, show the resolved destination, and ask immediately before the real write; differing destinations require explicit `--force`. Do not reconstruct local package paths in an agent prompt. Use `references/agent-cheatsheet.md` for Awareness initialization and live command discovery. Return research evidence to Awareness only when it informs a claim, decision, memory, signal, refinement, or verified reflection.
+Carry decisive paths, lines, revisions, and evidence limits into a signal or memory only when they change a coordination decision. A peer report remains a lead until verified.
+
+For an authorized skill installation, preview the source and destinations with the package's `skill install` command. Reuse existing authorization; ask only for missing destination or conflict authority. Use `references/agent-cheatsheet.md` for Awareness command discovery.
+
+Next: return evidence to the owning coordination decision; use `references/output-routing.md` when choosing where to record it.

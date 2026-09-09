@@ -1,6 +1,6 @@
 import { Compile } from 'typebox/compile';
 import { ErrorContext, ErrorSchema, Stack } from 'typebox/schema';
-import { Locale } from 'typebox/system';
+import { Locale, Settings } from 'typebox/system';
 
 const MAX_SCHEMA_CHARS = 256 * 1024;
 const MAX_ERRORS = 8;
@@ -186,28 +186,37 @@ export function compileMcpSchemaValidator(
       // Filter before applying our limit so unrelated union branches cannot displace
       // diagnostics for the operation the caller selected.
       const excluded = irrelevantUnionBranches(schema, value);
-      const collected: Parameters<ErrorContext['AddError']>[0][] = [];
-      const context = new ErrorContext(error => {
-        if (collected.length >= MAX_ERRORS) return;
-        if (
-          excluded.some(
-            branch =>
-              withinPointer(error.schemaPath, branch.schemaPath) &&
-              withinPointer(error.instancePath, branch.instancePath)
-          )
-        )
-          return;
-        collected.push(error);
-      });
+      const context = new ErrorContext();
       const inputSchema = schema as Parameters<typeof ErrorSchema>[4];
-      ErrorSchema(
-        new Stack({}, inputSchema),
-        context,
-        '#',
-        '',
-        inputSchema,
-        value
-      );
+      // ErrorContext buffers at most Settings maxErrors (default 8) BEFORE the
+      // irrelevant-union-branch filter below, which could drop the diagnostics
+      // for the operation the caller selected. Raise the buffer bound during
+      // collection — bounded, so exhaustive diagnostics still cannot balloon.
+      const previousMaxErrors = Settings.Get().maxErrors;
+      Settings.Set({ maxErrors: 256 });
+      try {
+        ErrorSchema(
+          new Stack({}, inputSchema),
+          context,
+          '#',
+          '',
+          inputSchema,
+          value
+        );
+      } finally {
+        Settings.Set({ maxErrors: previousMaxErrors });
+      }
+      const collected = context
+        .GetErrors()
+        .filter(
+          error =>
+            !excluded.some(
+              branch =>
+                withinPointer(error.schemaPath, branch.schemaPath) &&
+                withinPointer(error.instancePath, branch.instancePath)
+            )
+        )
+        .slice(0, MAX_ERRORS);
       const localize = Locale.Get();
       const rawErrors = collected
         .flatMap<McpSchemaValidationError>(error => {

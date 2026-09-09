@@ -1,23 +1,17 @@
-# Awareness Output Routing
+# Awareness output routing
 
-Load when deciding whether output belongs in live response, SQLite, or an export. This reference step ends here; return to the main skill flow.
+Load when choosing between a live answer, shared coordination state, and an export. Keep one owner for each fact and avoid recording routine tool output in several places.
 
-Use live output for current work and durable SQLite rows for cross-run state. SQLite is canonical; no generated wiki projection — only optional read-only query exports.
-
-| Need | Output |
+| Need | Destination |
 |---|---|
-| Start/action queue | `attend --compact`, then targeted command |
-| File peers/exclusivity | `work list|show`; FilesUnderWork workboard lane |
-| Tasks/verify/inbox | `attend`, then `task ready`, `verify audit`, or `signal list --limit 3` |
-| Reusable learning | memory recall/record; verify before trust |
-| Owned follow-up | task, signal, refinement |
-| Automation/human bulk | query JSON/CSV or HTML export; not prompt expansion |
-| Contracts | grouped `schema commands --compact`; `schema commands --all` for the flat catalog; exact `schema command <noun> [action]` for schema-backed routes |
+| Current answer or transient explanation | The conversation |
+| A peer question, blocker, decision, or handoff | A targeted signal; reply to an existing thread when applicable |
+| Shared ownership or verification already being tracked | The existing work, plan, task, or verification record |
+| Verified learning that can change future work | One scoped memory or reflection with evidence |
+| A requested report or export | Its authorized destination; keep workspace artifacts under the workspace `.octocode/` |
 
-Compact `attend` caps paths/peers/bodies/IDs, ≤1 row per actionable lane. Compact list defaults are bounded; explicit limits/full flags restore depth. `query workboard --limit N` caps each lane and can still be large. Normal hooks emit once. Request full rows only for the next decision. Load one `docs show` reference, never the whole set.
+The Awareness SQLite database owns shared coordination state. An export is a read-only view, not another source of truth. Preserve the host's stable identity, database, and workspace bindings.
 
-Empty results stay empty. Lean rows omit absent optional fields and cap repeated tags/references with omitted counts. Filter server-side before raising limits.
+Discover only the command needed for the next decision. Follow returned continuations and inspect actual result status; omitted fields, acknowledgement, and process completion do not establish that work succeeded. Apply the tracking and verification rules in `SKILL.md` when tracking is in use.
 
-`query all --format html` (and JSON/CSV) writes a read-only view under `.octocode/` only when explicitly requested; it is an export, never a canonical store, and may contain local paths. There is no automatic `.octocode/` generation.
-
-Return to `SKILL.md` after closing the owning row: verify work, resolve signals, complete refinements, or supersede stale memory.
+Do not create rows, summaries, or exports merely to close a turn. Return to the main skill flow after recording the information that changes the next action.

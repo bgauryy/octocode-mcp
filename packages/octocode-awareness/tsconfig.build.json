@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "./out/types",
+    "declaration": true,
     "declarationMap": false,
     "sourceMap": false
   },

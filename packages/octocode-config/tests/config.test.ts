@@ -1527,3 +1527,156 @@ describe('isStatsEnabled', () => {
     expect(isStatsEnabled({ OCTOCODE_ENABLE_STATS: 'on' })).toBe(false);
   });
 });
+
+// ─── extension config (validateExtension / resolveExtensionStorage) ──────────
+
+import { resolveExtensionStorage } from '../src/config/resolverSections.js';
+import { isPersistentStorageEnabledForExtension } from '../src/index.js';
+
+describe('validateConfig extension section', () => {
+  it('rejects a non-object extension section', () => {
+    const arr = validateConfig({ extension: [] });
+    expect(arr.valid).toBe(false);
+    expect(arr.errors).toContain('extension: Must be an object');
+
+    const str = validateConfig({ extension: 'persistent' });
+    expect(str.valid).toBe(false);
+    expect(str.errors).toContain('extension: Must be an object');
+  });
+
+  it('prefixes nested storage errors with extension.', () => {
+    const badShape = validateConfig({ extension: { storage: 'memory' } });
+    expect(badShape.valid).toBe(false);
+    expect(badShape.errors).toContain('extension.storage: Must be an object');
+
+    const badMode = validateConfig({ extension: { storage: { mode: 'disk' } } });
+    expect(badMode.valid).toBe(false);
+    expect(badMode.errors).toContain(
+      'extension.storage.mode: Must be "persistent" or "memory"'
+    );
+  });
+
+  it('accepts a valid extension storage mode', () => {
+    expect(
+      validateConfig({ extension: { storage: { mode: 'persistent' } } }).valid
+    ).toBe(true);
+    expect(
+      validateConfig({ extension: { storage: { mode: 'memory' } } }).valid
+    ).toBe(true);
+    expect(validateConfig({ extension: {} }).valid).toBe(true);
+  });
+
+  it('warns on unknown extension keys, including nested storage keys', () => {
+    const r = validateConfig({
+      extension: { storag: {}, storage: { mode: 'memory', mod: 'typo' } },
+    });
+    expect(r.valid).toBe(true);
+    expect(r.warnings).toEqual(
+      expect.arrayContaining([
+        'Unknown configuration key: extension.storag',
+        'Unknown configuration key: extension.storage.mod',
+      ])
+    );
+  });
+});
+
+describe('resolveExtensionStorage', () => {
+  const previousExtMode = process.env['OCTOCODE_EXTENSION_STORAGE_MODE'];
+  const previousMode = process.env['OCTOCODE_STORAGE_MODE'];
+
+  afterEach(() => {
+    if (previousExtMode === undefined)
+      delete process.env['OCTOCODE_EXTENSION_STORAGE_MODE'];
+    else process.env['OCTOCODE_EXTENSION_STORAGE_MODE'] = previousExtMode;
+    if (previousMode === undefined) delete process.env['OCTOCODE_STORAGE_MODE'];
+    else process.env['OCTOCODE_STORAGE_MODE'] = previousMode;
+  });
+
+  it('OCTOCODE_EXTENSION_STORAGE_MODE env var wins', () => {
+    process.env['OCTOCODE_EXTENSION_STORAGE_MODE'] = ' Persistent ';
+    expect(resolveExtensionStorage({ storage: { mode: 'memory' } })).toEqual({
+      storage: { mode: 'persistent' },
+    });
+
+    process.env['OCTOCODE_EXTENSION_STORAGE_MODE'] = 'memory';
+    expect(
+      resolveExtensionStorage({ extension: { storage: { mode: 'persistent' } } })
+    ).toEqual({ storage: { mode: 'memory' } });
+  });
+
+  it('falls back to extension.storage.mode from the file config', () => {
+    delete process.env['OCTOCODE_EXTENSION_STORAGE_MODE'];
+    delete process.env['OCTOCODE_STORAGE_MODE'];
+    expect(
+      resolveExtensionStorage({ extension: { storage: { mode: 'persistent' } } })
+    ).toEqual({ storage: { mode: 'persistent' } });
+    expect(
+      resolveExtensionStorage({ extension: { storage: { mode: 'memory' } } })
+    ).toEqual({ storage: { mode: 'memory' } });
+  });
+
+  it('invalid env and absent extension fall back to global storage', () => {
+    process.env['OCTOCODE_EXTENSION_STORAGE_MODE'] = 'bogus';
+    delete process.env['OCTOCODE_STORAGE_MODE'];
+    expect(resolveExtensionStorage({ storage: { mode: 'memory' } })).toEqual({
+      storage: { mode: 'memory' },
+    });
+    expect(resolveExtensionStorage()).toEqual({
+      storage: { mode: 'persistent' },
+    });
+  });
+});
+
+describe('isPersistentStorageEnabledForExtension', () => {
+  const previousHome = process.env['OCTOCODE_HOME'];
+  const previousExtMode = process.env['OCTOCODE_EXTENSION_STORAGE_MODE'];
+  const previousMode = process.env['OCTOCODE_STORAGE_MODE'];
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'octo-ext-'));
+    process.env['OCTOCODE_HOME'] = tmpDir;
+  });
+
+  afterEach(() => {
+    if (previousHome === undefined) delete process.env['OCTOCODE_HOME'];
+    else process.env['OCTOCODE_HOME'] = previousHome;
+    if (previousExtMode === undefined)
+      delete process.env['OCTOCODE_EXTENSION_STORAGE_MODE'];
+    else process.env['OCTOCODE_EXTENSION_STORAGE_MODE'] = previousExtMode;
+    if (previousMode === undefined) delete process.env['OCTOCODE_STORAGE_MODE'];
+    else process.env['OCTOCODE_STORAGE_MODE'] = previousMode;
+  });
+
+  it('reflects the resolved extension storage mode', () => {
+    process.env['OCTOCODE_EXTENSION_STORAGE_MODE'] = 'persistent';
+    expect(isPersistentStorageEnabledForExtension()).toBe(true);
+
+    process.env['OCTOCODE_EXTENSION_STORAGE_MODE'] = 'memory';
+    expect(isPersistentStorageEnabledForExtension()).toBe(false);
+  });
+});
+
+// ─── loader non-Error throw ──────────────────────────────────────────────────
+
+describe('loadConfigSync non-Error throw', () => {
+  it('stringifies non-Error values thrown while reading', async () => {
+    vi.resetModules();
+    vi.doMock('node:fs', () => ({
+      existsSync: () => true,
+      readFileSync: () => {
+        throw 'raw-string-failure';
+      },
+    }));
+
+    const { loadConfigSync: mockedLoad } = await import(
+      '../src/config/loader.js'
+    );
+    const r = mockedLoad('/nonexistent-home');
+    expect(r.success).toBe(false);
+    expect(r.error).toBe('Failed to parse config file: raw-string-failure');
+
+    vi.doUnmock('node:fs');
+    vi.resetModules();
+  });
+});

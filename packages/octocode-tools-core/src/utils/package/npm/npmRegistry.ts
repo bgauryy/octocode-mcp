@@ -81,14 +81,18 @@ export async function fetchNpmRegistryJson(
     });
   } catch (error) {
     const status = (error as { statusCode?: number }).statusCode;
-    // Raw provider causes may contain credentials or echoed response bodies.
+    // Raw provider causes may contain credentials or echoed response bodies,
+    // so the caught error is intentionally not attached as `cause`.
     if (status === 401 || status === 403) {
+      // eslint-disable-next-line preserve-caught-error
       throw new Error(
         `npm registry authentication failed (${status}). Check npm login and registry-scoped credentials.`
       );
     }
+    // eslint-disable-next-line preserve-caught-error
     if (status === 404) throw new Error('npm registry returned 404 Not Found.');
     // Provider response bodies can echo secrets; never pass them to tool output.
+    // eslint-disable-next-line preserve-caught-error
     throw new Error(
       status
         ? `npm registry request failed (HTTP ${status}).`
