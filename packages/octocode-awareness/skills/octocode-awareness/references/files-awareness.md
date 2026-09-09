@@ -1,8 +1,8 @@
 # Files Awareness And Overlap
 
-Load when overlapping edits or file-presence semantics can change the action. This reference step ends here; return to the main skill flow.
+Load when overlapping edits or file-presence semantics can change the action.
 
-Every structured edit declares advisory `run_files` presence. Ordinary peers may work on the same path; awareness makes that choice informed rather than silently blocking it. Without hooks or manual `work start`, edits are invisible to peers.
+Guard/full hooks declare advisory `run_files` presence for recognized writes; the default coordination profile does not. Use manual `work start` when shared ownership needs it. Ordinary overlap is allowed. Git changes remain inspectable without work records, but do not identify an author.
 
 ## On Overlap
 
@@ -26,7 +26,7 @@ Stop before editing. Preserve holder, run/task, reason, heartbeat/expiry. Choose
 
 ## Coverage
 
-Hooks cover recognized write payloads. Arbitrary shell/external writes may only be found by dirty-tree reconciliation; without hooks, call `work start` manually.
+Guard/full hooks cover recognized write payloads. Arbitrary shell/external writes may only be found by dirty-tree reconciliation; declare manual work only when coordination needs it.
 Use `work touch` only to refresh files already declared on that active run; add new paths with `work start --run-id <run> --file <path>`.
 Keep one normalized workspace and absolute operational paths so the same file joins.
 

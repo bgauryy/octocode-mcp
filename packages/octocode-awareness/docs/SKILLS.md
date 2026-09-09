@@ -177,7 +177,9 @@ npx @octocodeai/octocode-awareness reflect record --agent-id "$OCTOCODE_AGENT_ID
 Use `--fix-repo`, `--fix-harness`, or `--fix-instructions` to route unresolved
 improvements. Add a stable `--failure-signature` for recurring failures.
 
-For unfinished work, use a handoff signal, `refinement set`, or `session capture`.
+For unfinished continuation, use `handoff add/list/clear` and reuse the host's
+existing handoff. Refinement and session capture are specialist routes, not
+additional completion steps. Routine work needs no reflection or memory record.
 Preview cleanup before mutation:
 
 ```bash

@@ -51,8 +51,14 @@ export async function runHookCommand(
     ...(options.host ? { [INTERNAL_HOOK_HOST]: options.host } : {}),
     ...(options.skillRoot ? { [INTERNAL_SKILL_ROOT]: options.skillRoot } : {}),
   };
-  const configuredProfile = process.env.OCTOCODE_HOOK_PROFILE
-    ?? loadWorkspacePolicy(workspace(payload) ?? process.cwd()).policy.hooks.profile;
+  let configuredProfile: string | undefined;
+  try {
+    configuredProfile = process.env.OCTOCODE_HOOK_PROFILE
+      ?? loadWorkspacePolicy(workspace(payload) ?? process.cwd()).policy.hooks.profile;
+  } catch (error) {
+    writeCommandDiagnostic(`octocode-awareness hook policy warning (hooks inert): ${(error as Error).message}`);
+    return 0;
+  }
   if (!['guard', 'coordination', 'full'].includes(configuredProfile)) {
     writeCommandDiagnostic(`octocode-awareness hook profile warning (hooks inert): expected guard, coordination, or full; got ${configuredProfile}`);
     return 0;

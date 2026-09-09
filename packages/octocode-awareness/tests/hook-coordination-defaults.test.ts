@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -30,6 +30,19 @@ describe('coordination defaults', () => {
       await runHookCommand('notify-deliver', JSON.stringify({ ...payload, hook_event_name: 'sessionStart' }), { host: 'cursor' });
       expect(out.mock.calls.map(([s]) => String(s)).join('')).toContain('Keep this for the supported event.');
     } finally { db.close(); rmSync(home, { recursive: true, force: true }); }
+  });
+  it('fails open when the workspace hook policy is malformed', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'awareness-invalid-hook-policy-'));
+    vi.stubEnv('OCTOCODE_HOME', home);
+    vi.stubEnv('OCTOCODE_AGENT_ID', 'owner');
+    // A policy parse error must not escape the host hook boundary.
+    mkdirSync(join(home, '.octocode'));
+    writeFileSync(join(home, '.octocode', 'awareness.json'), '{ malformed', 'utf8');
+    const out = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await expect(runHookCommand('notify-deliver', JSON.stringify({ cwd: home, session_id: 'session' }), { host: 'codex' })).resolves.toBe(0);
+      expect(out.mock.calls.map(([s]) => String(s)).join('')).toContain('hooks inert');
+    } finally { rmSync(home, { recursive: true, force: true }); }
   });
   it.each(['claude', 'codex', 'cursor', 'copilot', 'gemini'] as const)('installs only communication and departure hooks for %s', host => {
     const specs = specsFor(host, { globalMode: false, projectDir: '/repo', hookDir: '/repo/skills/octocode-awareness/scripts/hooks' });
