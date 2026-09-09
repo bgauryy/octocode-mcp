@@ -55,6 +55,7 @@ Use the host facade (Pi: `awareness` list/describe/call) or CLI. Describe unfami
 | Real continuation | `handoff add/list/clear`: state, next check and relevant IDs/files. Reuse the host handoff instead of refinement/session/reflection copies. |
 
 Use `memory recall-verified --memory-id <id>` for an exact evidence pointer; do not combine it with `--query`; keep source digest, scope, and expiry filters.
+Reuse retrieved evidence in the same scope while valid; fetch again only after change, expiry or a new unresolved question.
 
 For tracked work, run the check, end/submit to PENDING, then `verify mark` the returned ID from the observed result. Unrun checks stay PENDING. Audit owned tracked work after the last artifact or worker write with `verify audit`; settle or disclose debt. Respect actual lease/conflict results and release owned leases; preserve peer debt. See [tracked work](references/agent-cheatsheet.md).
 
